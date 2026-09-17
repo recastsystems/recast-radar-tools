@@ -40,16 +40,28 @@ pub enum Flavor {
 }
 
 /// Ray dimension and ray order. Only a row permutation changes; no data moves.
+///
+/// A field whose storage order already is the view's ray order is
+/// [`Values::Borrowed`] (in a layout, [`DataRef::is_zero_copy`]); otherwise the
+/// view carries a [`RowOrder::Permutation`]. Storage keeps the source's order,
+/// so which choice avoids the permutation depends on the format (design note
+/// 12.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FirstDim {
     /// Dimension `time`; rays in acquisition order (stable sort by `time_s`).
     /// xradar's `first_dim="time"`, and the only choice for
     /// [`Flavor::Wmo2022`] (a CF coordinate must be monotonic). The permutation
-    /// is the identity for NEXRAD, CfRadial and DORADE storage order.
+    /// is the identity when storage order is acquisition order (NEXRAD,
+    /// CfRadial, most DORADE files) or every ray time is equal (JMA, ODIM
+    /// without per-ray times). It is not for ODIM with per-ray times (azimuth
+    /// order, starting where the scan did not) or for DORADE files whose ray
+    /// times run backwards (NOXP 2009).
     Time,
     /// xradar's default `first_dim="auto"`: dimension `azimuth` (or `elevation`
     /// for RHI sweeps of non-CfRadial sources, as observed in xradar 0.12), rays
-    /// sorted by that angle.
+    /// sorted by that angle. The permutation is the identity for azimuth-ordered
+    /// storage (ODIM, NOXP 2009), and not for NEXRAD, CfRadial or JMA, whose
+    /// sweeps start at an arbitrary azimuth.
     Auto,
 }
 

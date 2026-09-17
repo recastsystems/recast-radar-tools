@@ -116,8 +116,8 @@ io-formats.
 | retrieve | `recast-radar-retrieve` | 48 (35 / 13 / 0) | 0 | 0 |
 | track | `recast-radar-track` | 30 (22 / 8 / 0) | 0 | 0 |
 | render-bench | `recast-radar-render`, `recast-radar-bench` | 32 (27 / 5 / 0) | 0 | 0 |
-| core-data-scattering | `recast-radar-core`, `recast-radar-data`, `recast-radar-scattering`, `recast-radar-testdata` | 87 (68 / 19 / 0) | 6 (FM301 model, see below) | 8 |
-| **all** | | **376 (274 / 98 / 4)** | **6** | **76** |
+| core-data-scattering | `recast-radar-core`, `recast-radar-data`, `recast-radar-scattering`, `recast-radar-testdata` | 87 (68 / 19 / 0) | 3 (FM301 model: 2 pending, 1 exception; see below) | 8 |
+| **all** | | **376 (274 / 98 / 4)** | **3** | **76** |
 
 ## io-nexrad
 
@@ -246,10 +246,11 @@ and `odim-au24-20260610-000300-nci-zip-member` (an unmodified NCI THREDDS respon
 
 Deviations from the proposals above them in C.1:
 
-- `l2-kvwx-20080415-235337` is not decodable by `recast_radar_io_nexrad::decode_volume_from_bytes`
-  ("empty message 31 id"), so the gzip Archive II leg of the router tests uses
-  `l2-kpah-20080415-235014`; KVWX is still used for gzip sniffing.
-- An unfiltered `decode_jma_tar_volumes` of the full N5 tar is refused (150,528,000 grid points against
+- `l2-kvwx-20080415-235337` was not decodable by `recast_radar_io_nexrad::decode_volume_from_bytes`
+  (now `read_volume_from_bytes`) when C.1 ran ("empty message 31 id"; decodable since `09c8d1e`),
+  so the gzip Archive II leg of the router tests uses `l2-kpah-20080415-235014`; KVWX is still used
+  for gzip sniffing.
+- An unfiltered `read_jma_tar_volumes` of the full N5 tar is refused (150,528,000 grid points against
   the 67,108,864-point `MAX_POINTS_PER_DECODE`), so the all-station and corrupt-member archive tests use
   the full N6 tar (44,032,000 points); N5 is exercised with a site filter and header-only paths.
 - `odim-dkrom-20260820-1130-pvol` cannot stand for distinct velocity sentinels: its VRAD `what`
@@ -679,11 +680,19 @@ findings, all in code stream F wrote:
   Doppler product starting 1 km further out, misaligned products). The merge goldens now follow the
   FM301 rules: collisions by field name (DBZH and TH are both kept), fixed angles (Level II: the
   Message 5 cut angle, MetPy `vcp_info`) and the first radial's time floored to the second.
-- pending (6 entries in the allowlist): three row-layout tests of `Field` (rows missing on some rays,
-  a later row longer than the first, odd byte lengths and storage-type errors) and the
-  horizontal/unspecified/vertical preference of `Sweep::find`, with their two helpers. A Py-ART scan
-  of the 48 readable cached Level II files found no sweep with a moment missing on some radials or a
-  later radial longer than the first, and no corpus volume carries DBZH, DBZ and DBZV together.
+- converted from mutated real records: the three row-layout tests of `Field` and their helper. A
+  Py-ART scan of the 48 readable cached Level II files found no sweep with a moment missing on some
+  radials or a later radial longer than the first, so `crates/recast-radar-core/tests/real_rows.rs`
+  edits real Message 31 radials of `l2-ktlx-20130520-201643-trim` (uncompressed): VEL block
+  pointers zeroed on three Doppler radials (absent rows, first, middle and last), the first
+  surveillance radial's REF gate count cut to 100 (a later row longer than the first), and one PHI
+  block relabelled 8-bit (the storage-type error), each checked against the unmodified decode.
+- exception (1 entry): `real_rows.rs` `u16_rows_decode_real_big_endian_bytes_and_reject_odd_lengths`
+  pushes a real PHI block's big-endian bytes, whole and cut by one byte, through
+  `Field::push_row_u16_be`. The odd-length and row-order checks are unreachable through any decoder.
+- pending (2 entries): the horizontal/unspecified/vertical preference of `Sweep::find` and its
+  helper. No corpus volume carries DBZH, DBZ and DBZV together, and renaming variables in a real
+  file keeps their `standard_name`, which classification reads first. Needs user review.
 
 ### `crates/recast-radar-core/tests/real_model.rs`
 

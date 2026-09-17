@@ -1,6 +1,11 @@
 """Independent CfRadial-1 reference dump (netCDF4) in dump_radar.rs format.
 
-Replicates the decoder's documented conventions (cfradial.rs):
+Historical: this replicates the conventions of the legacy (pre-FM301)
+decoder, which the FM301 migration (docs/design/fm301-model.md 6.6, 7.3,
+8.1) replaced. The native decoder keeps sweeps in file order, exact gate
+centres, verbatim field names and packed data, so today's `dump_radar`
+output no longer diffs clean against this script. The legacy conventions
+(cfradial.rs) were:
 - cuts = sweeps via sweep_start/end_ray_index, sorted by fixed_angle,
 - gate geometry derived from the range coordinate (center - spacing/2),
 - CF packing raw*scale_factor + add_offset, _FillValue/missing -> None,

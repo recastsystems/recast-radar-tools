@@ -1,9 +1,12 @@
 # Synthetic test inputs still in the workspace (plan task C.1).
 #
-# Empty since C.3: every C.1 entry was converted to real inputs in C.2, and the
-# tests merged from main in C.3 were converted too (docs/testdata/synthetic-inventory.md).
-# New findings must be converted; an entry may be added only as a justified
-# exception (see `status` below).
+# Every C.1 entry was converted to real inputs in C.2, and the tests merged
+# from main in C.3 were converted too (docs/testdata/synthetic-inventory.md).
+# What remains comes from the FM301 model (stream F), under
+# core-data-scattering: two pending model unit tests that need a corpus file
+# nobody has found yet (user review), and one exception. New findings must be
+# converted; an entry may be added only as a justified exception (see `status`
+# below).
 #
 # `crates/recast-radar-testdata/tests/no_synthetic.rs` scans test code and data
 # files (rules: `recast_radar_testdata::synthetic`) and fails on any finding
@@ -18,7 +21,9 @@
 #   [[<group>]]
 #   path = "crates/<crate>/..."   # workspace-relative
 #   name = "tests::helper"        # item path inside the file; omitted for a data file
-#   status = "pending"            # "pending": convert in C.2, then delete the entry
+#   status = "pending"            # "pending": not converted yet (C.2 entries, and
+#                                 #   stream F model tests awaiting a real input);
+#                                 #   delete the entry once converted
 #                                 # "exception": permanent; allowed only for pure math or
 #                                 #   geometry helpers that do not consume radar data, fuzz
 #                                 #   regression inputs, and corruption helpers that start
@@ -77,7 +82,7 @@
 # ============================================================================
 
 # ============================================================================
-# core-data-scattering (6 entries, all pending)
+# core-data-scattering (3 entries: 2 pending, 1 exception)
 # ============================================================================
 #
 # Every legacy entry of this group was converted in C.2 (branch
@@ -93,36 +98,15 @@
 # learned the FM301 names (Volume, Sweep, Field, push_ray, add_field,
 # push_row_*), the tests with a real equivalent moved to real_model.rs and
 # real_merge.rs (ICD code resolution, float fill values, CF packing, buffer
-# moves, Message 1 range mapping, seal, merge geometry). The entries below
-# exercise row layouts and a name preference that no corpus file has: a scan of
-# all 48 cached Level II files with Py-ART (stream F) found no sweep where a
-# moment is missing on some radials or where a later radial has more gates than
-# the first, and no corpus volume has horizontal, unspecified and vertical
-# reflectivity together.
-
-[[core-data-scattering]]
-path = "crates/recast-radar-core/src/model/field.rs"
-name = "tests::nexrad_ref"
-status = "pending"
-justification = "helper of the three row-layout tests below; goes with them"
-
-[[core-data-scattering]]
-path = "crates/recast-radar-core/src/model/field.rs"
-name = "tests::skipped_rays_become_absent_rows_and_short_rows_are_padded"
-status = "pending"
-justification = "replace with a real Level II sweep whose moment is missing on some radials (none in the corpus); short-row padding is covered by real_model.rs decoded_field_pads_rows_with_fewer_gates (KDMX 2008) and trailing absent rows by seal_pads_trailing_absent_rows_and_checks_invariants; the RowOrder error has no real input"
-
-[[core-data-scattering]]
-path = "crates/recast-radar-core/src/model/field.rs"
-name = "tests::longer_rows_widen_existing_rows"
-status = "pending"
-justification = "replace with a real Level II sweep whose first radial is shorter than a later one (none in the corpus)"
-
-[[core-data-scattering]]
-path = "crates/recast-radar-core/src/model/field.rs"
-name = "tests::u16_be_rows_decode_and_reject_odd_lengths"
-status = "pending"
-justification = "16-bit decoding is covered by real_model.rs decoded_u16_differential_phase_field_matches_big_endian_codes (KTLX 2013 PHI vs Py-ART); the odd-length and storage-type errors need a corrupted real record that reaches them"
+# moves, Message 1 range mapping, seal, merge geometry). The row layouts no
+# corpus file has (a scan of all 48 cached Level II files with Py-ART found no
+# sweep where a moment is missing on some radials or where a later radial has
+# more gates than the first) are built from mutated real Message 31 records in
+# crates/recast-radar-core/tests/real_rows.rs. What remains: the reflectivity
+# name preference, which needs a volume with horizontal, unspecified and
+# vertical reflectivity together (none in the corpus; renaming variables of a
+# real file keeps their standard_name, which classification reads first), and
+# the 16-bit row API's own checks, which no decoder can reach.
 
 [[core-data-scattering]]
 path = "crates/recast-radar-core/src/model/sweep.rs"
@@ -135,3 +119,9 @@ path = "crates/recast-radar-core/src/model/sweep.rs"
 name = "tests::find_prefers_horizontal_then_unspecified_then_vertical"
 status = "pending"
 justification = "replace with a real volume carrying DBZH, DBZ and DBZV (none in the corpus)"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/tests/real_rows.rs"
+name = "u16_rows_decode_real_big_endian_bytes_and_reject_odd_lengths"
+status = "exception"
+justification = "corruption helper that starts from real bytes: the big-endian gate bytes of a real KTLX 2013 PHI block, pushed whole (compared with the decoded row) and cut by one byte; the odd-length and row-order checks of Field::push_row_u16_be are unreachable through any decoder, which always hands over whole 16-bit rows once per ray"

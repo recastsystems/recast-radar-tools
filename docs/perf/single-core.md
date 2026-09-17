@@ -24,7 +24,8 @@ Corpus (real volumes, `recast-radar-testdata` ids): `KTLX20240315_000217_V06`
 17 cuts / 8,280 radials).
 
 Decode harness (Linux): a 150-line binary that calls
-`recast_radar_io_nexrad::decode_volume_from_bytes` on the file bytes read
+`recast_radar_io_nexrad::decode_volume_from_bytes` (`read_volume_from_bytes`
+since the FM301 migration) on the file bytes read
 before any timing, built with `lto = "fat"`, `codegen-units = 1`, release,
 `debug = true`. Modes `time` (1 warmup + N timed decodes, the volume dropped
 after each), `once` (one decode, for callgrind) and `verify` (cut/radial
@@ -159,7 +160,8 @@ allocation per record. Over a loop of decodes the branch takes no faults at
 all once glibc keeps freed memory (23,794 for 10 decodes equals one decode),
 while `main` still faults about 3 K per decode. With default glibc settings
 the loop counts are allocator policy on caller-owned output: each decode's
-MomentGrid storage (about 77 MB) is freed by the harness, trimmed by glibc
+moment storage (about 77 MB; `MomentGrid` before the FM301 migration) is
+freed by the harness, trimmed by glibc
 and re-faulted by the next decode. `main` re-faults less on KILX in that
 configuration because its per-record 3.6 MB callocs raise glibc's dynamic
 mmap threshold, so its freed memory is not returned; the application keeps

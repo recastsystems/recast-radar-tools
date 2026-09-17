@@ -29,7 +29,7 @@
 //! - The `range` coordinate holds gate centres: `rstart` (km to the start of
 //!   the first bin) plus half a `rscale` (bin spacing in metres). Implausibly
 //!   large `rstart` values are reinterpreted as metres — see
-//!   [`first_gate_m_from_rstart`] for the writer quirk that requires it.
+//!   `first_gate_m_from_rstart` for the writer quirk that requires it.
 //! - `nyquist_velocity(time)` broadcasts `how/NI` (dataset, else root).
 //! - Planes are stored verbatim (design note 7.2): no rewrite pass, so the
 //!   raw arrays hash equal to xradar's. Some IRIS exporters (AEMET Spain,
@@ -556,7 +556,7 @@ fn plane_sentinels(field: &Field) -> (Option<f64>, Option<f64>, f64) {
 ///
 /// This is an opt-in post-pass: [`read_odim_h5_volume`] stores every plane
 /// verbatim. The velocity and reflectivity planes are the highest-priority
-/// ones of each kind ([`canonical_field`]). Guarded by the copied-what-group
+/// ones of each kind (`canonical_field`). Guarded by the copied-what-group
 /// signature (velocity sentinels equal the reflectivity sentinels) so
 /// conformant writers — which give velocity its own distinct sentinels,
 /// already masked by the coding — are never touched. Also a no-op for a

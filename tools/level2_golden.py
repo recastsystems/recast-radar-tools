@@ -112,7 +112,7 @@ msg31  (tests/messages_msg31.rs)
 metadata  (tests/volume_metadata.rs)
     What Py-ART's own Level II reader (`pyart.io.nexrad_level2.
     NEXRADLevel2File`, used by `read_nexrad_archive`) reads for
-    `decode_volume_with_metadata`: the radial message type, the VCP number
+    `read_volume_with_metadata`: the radial message type, the VCP number
     from message 5, and per scan the ray count, the message 5 target
     elevation angle code, and the first ray's Data Header Block fields and
     VOL, ELV and RAD blocks. Py-ART groups rays into scans by elevation
@@ -123,7 +123,7 @@ metadata  (tests/volume_metadata.rs)
     "+" are concatenated and named as in msg31.
 
 volume  (tests/volume_pyart.rs)
-    What Py-ART's `NEXRADLevel2File` reads for `decode_volume_from_bytes`:
+    What Py-ART's `NEXRADLevel2File` reads for `read_volume_from_bytes`:
     the volume header ICAO, the ray count, and per scan the ray count, the
     sums of the rays' collection times (ms) and azimuths (degrees), and for
     each moment Py-ART names (REF, VEL, SW, ZDR, PHI, RHO, CFP) the rays

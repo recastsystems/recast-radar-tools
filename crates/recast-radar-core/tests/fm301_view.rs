@@ -290,6 +290,83 @@ fn odim_and_cfradial_ray_dimensions_follow_xradar() {
     }
 }
 
+/// Dataset variables whose field buffer is already the FM301 array
+/// (`DataRef::is_zero_copy`), and all dataset variables, under `first_dim`.
+fn zero_copy_fields(volume: &Volume, first_dim: FirstDim) -> (usize, usize) {
+    let options = ViewOptions {
+        first_dim,
+        ..ViewOptions::XRADAR
+    };
+    let layout = fm301::volume_view(volume, options, None).unwrap().layout();
+    let fields: Vec<&DataRef> = layout
+        .root
+        .children
+        .iter()
+        .filter(|group| group.name.starts_with("sweep_"))
+        .flat_map(|group| &group.variables)
+        .map(|variable| &variable.data)
+        .filter(|data| matches!(data, DataRef::Field { .. }))
+        .collect();
+    let zero_copy = fields.iter().filter(|data| data.is_zero_copy()).count();
+    (zero_copy, fields.len())
+}
+
+/// Whether a moved field buffer is already the variable depends on
+/// `first_dim` (design note 12.2): storage keeps the source's ray order.
+/// `FirstDim::Time` needs no permutation for acquisition-ordered storage
+/// (NEXRAD, CfRadial, most DORADE) or when every ray time is equal (JMA, and
+/// ODIM files without per-ray times such as dkrom); truncated and coarse
+/// fields are mapped either way. `FirstDim::Auto` needs none for
+/// azimuth-ordered storage (ODIM, and the NOXP sweepfile, whose RYIB times
+/// decrease). JMA storage starts at an arbitrary azimuth.
+#[test]
+fn zero_copy_fields_depend_on_first_dim() {
+    // (id, (zero-copy, fields) under Time, the same under Auto)
+    type Case<'a> = (&'a str, (usize, usize), (usize, usize));
+    let cases: [Case; 10] = [
+        ("l2-ktlx-20240315-000217", (76, 104), (0, 104)),
+        ("l2-kilx-20260418-013553", (95, 125), (0, 125)),
+        ("l2-kpah-20080415-235014", (8, 15), (0, 15)),
+        (
+            "cfrad1-dow8-20211011-223602-rhi-trim3-classic",
+            (3, 3),
+            (0, 3),
+        ),
+        ("dorade-dow6-20211230-222139-rhi-head41", (32, 32), (0, 32)),
+        ("odim-norst-20170421-0908-pvol", (0, 6), (6, 6)),
+        ("odim-iesha-20260305-0115-pvol", (0, 30), (30, 30)),
+        ("dorade-noxp-20090501-190244-ppi", (0, 9), (9, 9)),
+        ("odim-dkrom-20260820-1130-pvol", (80, 80), (80, 80)),
+        ("jma-n5-20191012-090000-rs47773", (26, 26), (0, 26)),
+    ];
+    for (id, time, auto) in cases {
+        let Some(volume) = volume(id) else {
+            continue;
+        };
+        assert_eq!(
+            zero_copy_fields(&volume, FirstDim::Time),
+            time,
+            "{id}: time"
+        );
+        assert_eq!(
+            zero_copy_fields(&volume, FirstDim::Auto),
+            auto,
+            "{id}: auto"
+        );
+    }
+    // NOXP: RYIB seconds 44, 43, 42 within the sweep, so acquisition order
+    // reverses storage order.
+    if let Some(noxp) = volume("dorade-noxp-20090501-190244-ppi") {
+        let times = &noxp.sweeps[0].rays.time_s;
+        assert!(
+            times.first() > times.last(),
+            "{:?}",
+            (times.first(), times.last())
+        );
+        assert!(times.windows(2).all(|pair| pair[0] >= pair[1]));
+    }
+}
+
 #[test]
 fn flag_values_that_do_not_fit_the_packed_type_are_an_error() {
     let Some(mut volume) = volume("l2-ktlx-20240315-000217-trim") else {

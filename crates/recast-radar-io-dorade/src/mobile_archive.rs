@@ -586,7 +586,7 @@ const PEEK_HEAD_BYTES: usize = 64 * 1024;
 /// Scans the file's directory for sibling `swp.*` files from the same
 /// instrument, segments them into ascending fixed-angle runs (see module
 /// docs), and decodes the run containing `path` as one volume. Sibling
-/// headers are peeked from the first [`PEEK_HEAD_BYTES`] only, so opening a
+/// headers are peeked from the first `PEEK_HEAD_BYTES` only, so opening a
 /// file in a large deployment directory stays cheap.
 pub fn read_dorade_volume_for_path(path: &Path) -> Result<Volume> {
     decode_dorade_volume_for_path_as::<Volume>(path)

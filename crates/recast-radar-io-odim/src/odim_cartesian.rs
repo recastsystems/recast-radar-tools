@@ -185,7 +185,7 @@ impl OdimCartesianGrid {
 /// dataset.
 ///
 /// This function is intentionally not part of
-/// `recast_radar_io::decode_supported_volume_bytes`: an IMAGE is a georeferenced
+/// `recast_radar_io::read_supported_volume_bytes`: an IMAGE is a georeferenced
 /// grid, not a radar volume. Callers must opt into the grid path explicitly.
 pub fn decode_odim_h5_cartesian_max(bytes: &[u8]) -> Result<OdimCartesianGrid> {
     let file = H5File::open(bytes)?;

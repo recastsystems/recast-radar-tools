@@ -4,7 +4,7 @@
 //! CFP, and blocks with names the ICD does not define.
 //!
 //! This decoder serves [`MessageWalker`](super::MessageWalker) and metadata
-//! extraction. [`crate::decode_volume_from_bytes`] keeps its own fast path
+//! extraction. [`crate::read_volume_from_bytes`] keeps its own fast path
 //! for the moment grids and reads only the fields it needs.
 //!
 //! # Layouts across RDA builds

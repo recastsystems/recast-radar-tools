@@ -23,7 +23,7 @@
 //!   and yields the message once, and [`MessageWalker`] decodes it.
 //!
 //! The walker is for metadata and inspection. Radial decoding keeps its own
-//! fast path in [`crate::decode_volume_from_bytes`]; message 1 and 29 bodies
+//! fast path in [`crate::read_volume_from_bytes`]; message 1 and 29 bodies
 //! are yielded as [`MessageBody::Unparsed`], and message 31 bodies are decoded
 //! completely by [`msg31_blocks`].
 

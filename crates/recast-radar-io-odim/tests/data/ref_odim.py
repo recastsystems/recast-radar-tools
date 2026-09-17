@@ -1,13 +1,18 @@
 """Independent ODIM_H5 reference dump (h5py) in dump_radar.rs format.
 
-Replicates the decoder's documented conventions so `diff` against the Rust
-output is mechanical:
+Historical: this replicates the conventions of the legacy (pre-FM301)
+decoder, which the FM301 migration (docs/design/fm301-model.md 5.2, 7.2,
+8.1) replaced. The native decoder keeps sweeps in file order, measured
+azimuths, verbatim field names and packed planes, so today's
+`dump_radar` output no longer diffs clean against this script. The legacy
+conventions were:
 - cuts sorted by elangle ascending,
 - ray center azimuth = (i + 0.5) * 360 / nrays,
 - physical = gain * raw + offset; nodata/undetect -> None,
 - canonical quantity mapping with first-wins (duplicates keep raw name),
-- moments per cut printed in BTreeMap order of the Rust MomentType
-  (variant order, Unknown(name) sorted by name last).
+- moments per cut printed in BTreeMap order of the legacy Rust MomentType
+  enum, removed in the migration (variant order, Unknown(name) sorted by
+  name last).
 """
 import sys
 import h5py
@@ -22,7 +27,7 @@ CANON = {
     "PHIDP": "PHI", "PHIDPU": "PHI", "UPHIDP": "PHI",
     "KDP": "KDP", "KDPU": "KDP",
 }
-# BTreeMap order = MomentType variant declaration order, Unknowns last by name.
+# BTreeMap order = legacy MomentType variant declaration order, Unknowns last by name.
 VARIANT_ORDER = {"REF": 0, "VEL": 1, "SW": 2, "ZDR": 3, "RHO": 4, "PHI": 5, "KDP": 6}
 
 
