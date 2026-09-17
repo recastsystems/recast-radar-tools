@@ -1,0 +1,33 @@
+{
+ "schema": "recast-radar-tools/fm301-golden/xradar/1",
+ "id": "l2-ktlx-19990504-002218",
+ "format": "nexrad-level2",
+ "sha256": "1d94cbb7680e2ba2e888b098631762cc024924d1e04a0ca3465333dab761bf65",
+ "size": 2473255,
+ "categories": ["nexrad-level2", "message1", "nul-icao"],
+ "note": "ARCHIVE2.036 Message 1 with NUL ICAO and no site location, VCP 11, 16 sweeps. xradar 0.12 fails to open the volume; Py-ART reads it (design note A.3).",
+ "generator": {
+  "script": "tools/fm301_golden.py",
+  "python": "3.13",
+  "numpy": "2.5.3",
+  "xradar": "0.12.0",
+  "xarray": "2026.7.0",
+  "netCDF4": "1.7.4",
+  "h5netcdf": "1.8.1",
+  "h5py": "3.16.0"
+ },
+ "reader": {
+  "function": "xradar.io.open_nexradlevel2_datatree",
+  "input": "gunzip",
+  "input_sha256": "aac48439213f7537d1f7f854f3a908b0bcbd81f605a4591d85810fedf1435e10",
+  "input_size": 14246680
+ },
+ "status": "error",
+ "error": {
+  "type": "ValueError",
+  "message": "conflicting sizes for dimension 'azimuth': length 366 on 'azimuth' and length 367 on {'azimuth': 'VRADH', 'range': 'VRADH'}"
+ },
+ "warnings": [],
+ "views": null,
+ "decoded": null
+}

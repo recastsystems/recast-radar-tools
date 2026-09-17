@@ -1,0 +1,2492 @@
+{
+ "schema": "recast-radar-tools/fm301-golden/pyart/1",
+ "id": "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
+ "format": "cfradial1",
+ "sha256": "6c9d57caf330a1fdfe7366b6440204523853089342769c3b7d789a7edd89feb9",
+ "size": 1664412,
+ "categories": ["cfradial1", "ppi", "int8-packed"],
+ "note": "SMART-R2 Radx CfRadial 1.3 PPI, 2 sweeps, int8 packed DBZ/VEL with _FillValue -128, per-ray instrument variables and r_calib_* calibration (design note A.5).",
+ "generator": {
+  "script": "tools/fm301_golden.py",
+  "python": "3.13",
+  "numpy": "2.5.3",
+  "arm_pyart": "2.2.5",
+  "netCDF4": "1.7.4",
+  "h5py": "3.16.0"
+ },
+ "reader": {"function": "pyart.io.read_cfradial", "input": "file", "kwargs": {}},
+ "status": "ok",
+ "error": null,
+ "warnings": [
+  "UserWarning: Py-ART's CfRadial module is deprecated, please use xradar to read in the file using xd.io.open_cfradial1_datatree",
+  "DeprecationWarning: Setting the shape on a NumPy array has been deprecated in NumPy 2.5.\nAs an alternative, you can create a new view using np.reshape (with copy=False if needed)."
+ ],
+ "radar": {
+  "scan_type": "ppi",
+  "nrays": 719,
+  "ngates": 1107,
+  "nsweeps": 2,
+  "metadata": {
+   "Conventions": "CF-1.6",
+   "Sub_conventions": "CF-Radial instrument_parameters radar_parameters radar_calibration",
+   "comment": "",
+   "created": "2019/10/16 22:12:06.603",
+   "driver": "RadxConvert(NCAR)",
+   "end_datetime": "2011-08-27T12:08:02Z",
+   "end_time": "2011-08-27 12:08:02.081",
+   "history": "Sigmet RAW file: ",
+   "institution": "",
+   "instrument_name": "CPOLRVP",
+   "instrument_type": "radar",
+   "n_gates_vary": "false",
+   "original_format": "SIGMETRAW",
+   "platform_is_mobile": "false",
+   "platform_type": "fixed",
+   "primary_axis": "axis_z",
+   "ray_times_increase": "true",
+   "references": "Conversion software: Radx::SigmetRadxFile",
+   "scan_id": 0,
+   "scan_name": "IRENE_WINDS",
+   "site_name": "CPOLRVP",
+   "source": "Sigmet IRIS software",
+   "start_datetime": "2011-08-27T12:04:20Z",
+   "start_time": "2011-08-27 12:04:20.760",
+   "time_coverage_end": "2011-08-27T12:08:02Z",
+   "time_coverage_start": "2011-08-27T12:04:20Z",
+   "title": "IRENE-WINDS",
+   "version": "CF-Radial-1.3",
+   "volume_number": 395
+  },
+  "metadata_types": {
+   "Conventions": "str",
+   "Sub_conventions": "str",
+   "comment": "str",
+   "created": "str",
+   "driver": "str",
+   "end_datetime": "str",
+   "end_time": "str",
+   "history": "str",
+   "institution": "str",
+   "instrument_name": "str",
+   "instrument_type": "str",
+   "n_gates_vary": "str",
+   "original_format": "str",
+   "platform_is_mobile": "str",
+   "platform_type": "str",
+   "primary_axis": "str",
+   "ray_times_increase": "str",
+   "references": "str",
+   "scan_id": "int32",
+   "scan_name": "str",
+   "site_name": "str",
+   "source": "str",
+   "start_datetime": "str",
+   "start_time": "str",
+   "time_coverage_end": "str",
+   "time_coverage_start": "str",
+   "title": "str",
+   "version": "str",
+   "volume_number": "int"
+  },
+  "sweeps": [
+   {"sweep": 0, "start": 0, "end": 359, "rays": 360},
+   {"sweep": 1, "start": 360, "end": 718, "rays": 359}
+  ],
+  "variables": {
+   "time": {
+    "meta": {
+     "calendar": "gregorian",
+     "comment": "times are relative to the volume start_time",
+     "long_name": "time in seconds since volume start",
+     "standard_name": "time",
+     "units": "seconds since 2011-08-27T12:04:20Z"
+    },
+    "meta_types": {
+     "calendar": "str",
+     "comment": "str",
+     "long_name": "str",
+     "standard_name": "str",
+     "units": "str"
+    },
+    "values": {
+     "dtype": "float64",
+     "shape": [719],
+     "count": 719,
+     "sha256": "8421cac381e9f60e7b9e1c64e792b7d7334d963e52081f439f9e234c79bdea5c",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.76,
+     "max": 24.811,
+     "mean": 12.318148817802506,
+     "first": [0.76, 0.76, 0.76],
+     "last": 24.811,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "d15e75c2394973ef2ff98927a0e2bfb28b138a3417c2e31f92af51d38467feac",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.76,
+      "max": 12.76,
+      "mean": 6.293333333333333,
+      "first": [0.76, 0.76, 0.76],
+      "last": 12.76,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [359],
+      "count": 359,
+      "sha256": "9f14364a5066bd56e84bb8c382ff8d7d30215ff2375f551fa5254cc68e4a0980",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 12.811,
+      "max": 24.811,
+      "mean": 18.359746518105855,
+      "first": [12.811, 12.811, 12.811],
+      "last": 24.811,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "range": {
+    "meta": {
+     "long_name": "Range from instrument to center of gate",
+     "meters_between_gates": 75.00000298023224,
+     "meters_to_center_of_first_gate": 0.0,
+     "spacing_is_constant": "true",
+     "units": "meters"
+    },
+    "meta_types": {
+     "long_name": "str",
+     "meters_between_gates": "float",
+     "meters_to_center_of_first_gate": "float",
+     "spacing_is_constant": "str",
+     "units": "str"
+    },
+    "values": {
+     "dtype": "float32",
+     "shape": [1107],
+     "count": 1107,
+     "sha256": "5072624d63ed67fcb03129c7264204b4b837e83352b67b87dc44f1cee2ba0a26",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.0,
+     "max": 82950.0,
+     "mean": 41475.0,
+     "first": [0.0, 75.0, 150.0],
+     "last": 82950.0,
+     "non_decreasing": true
+    }
+   },
+   "azimuth": {
+    "meta": {"_FillValue": -9999.0, "long_name": "ray_azimuth_angle", "units": "degrees"},
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "12e643b5aae029ee08dac97f0fccd9e40a34c65f2f3364caaf576385150d73b7",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.208740234375,
+     "max": 359.18975830078125,
+     "mean": 179.50531727415463,
+     "first": [314.20074462890625, 315.20599365234375, 316.20025634765625],
+     "last": 314.20074462890625,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "4cea434f51b546ee8b485df53d04a464a174fd473518d03be17f9c3d32b8f3e8",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.208740234375,
+      "max": 359.18701171875,
+      "mean": 179.695556640625,
+      "first": [314.20074462890625, 315.20599365234375, 316.20025634765625],
+      "last": 313.21197509765625,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "d16429d8f5714f5bb64af5c1d5120e5d0eb0d319a0c2557802fe0293b87e0c2f",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.21148681640625,
+      "max": 359.18975830078125,
+      "mean": 179.31454799301446,
+      "first": [315.19775390625, 317.21099853515625, 318.19976806640625],
+      "last": 314.20074462890625,
+      "non_decreasing": false
+     }
+    ]
+   },
+   "elevation": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "ray_elevation_angle",
+     "positive": "up",
+     "units": "degrees"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "positive": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "37d9ad2b33bdf52cf101c3c9bd422f112ef296f89ca74ae1a7fd15a2f86bbf0c",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.6976318359375,
+     "max": 1.593017578125,
+     "mean": 1.1213885693291463,
+     "first": [0.791015625, 0.780029296875, 0.80474853515625],
+     "last": 1.47216796875,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9c5fc449a1ba606a408a72e024295a4c84333a34b59e1f3334d582bf7d81e016",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.6976318359375,
+      "max": 0.80474853515625,
+      "mean": 0.7900009155273438,
+      "first": [0.791015625, 0.780029296875, 0.80474853515625],
+      "last": 0.791015625,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "26a5d50ec4771d4e4d861b7a743bc0c12ddc67a91051971b2aa1c5875577df27",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.791015625,
+      "max": 1.593017578125,
+      "mean": 1.4536993085175836,
+      "first": [0.791015625, 0.791015625, 0.791015625],
+      "last": 1.47216796875,
+      "non_decreasing": false
+     }
+    ]
+   },
+   "fixed_angle": {
+    "meta": {"_FillValue": -9999.0, "long_name": "ray_target_fixed_angle", "units": "degrees"},
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "60cefe547dfb93cd6387dfc8cdb301672c7cb5607c390eeefcc542e54c219e3a",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.802001953125,
+     "max": 1.4996337890625,
+     "mean": 1.15081787109375,
+     "first": [0.802001953125, 1.4996337890625],
+     "last": 1.4996337890625,
+     "non_decreasing": true,
+     "values": [0.802001953125, 1.4996337890625]
+    }
+   },
+   "sweep_number": {
+    "meta": {"_FillValue": -9999, "long_name": "sweep_index_number_0_based", "units": ""},
+    "meta_types": {"_FillValue": "int32", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d",
+     "min": 0,
+     "max": 1,
+     "sum": 1,
+     "first": [0, 1],
+     "last": 1,
+     "non_decreasing": true,
+     "values": [0, 1]
+    }
+   },
+   "sweep_mode": {
+    "meta": {
+     "long_name": "scan_mode_for_sweep",
+     "options": "sector, coplane, rhi, vertical_pointing, idle, azimuth_surveillance, elevation_surveillance, sunscan, pointing, calibration, manual_ppi, manual_rhi, sunscan_rhi"
+    },
+    "meta_types": {"long_name": "str", "options": "str"},
+    "masked_count": 24,
+    "values": {"dtype": "S1", "shape": [2, 32], "strings": ["azimuth_surveillance", "azimuth_surveillance"]}
+   },
+   "sweep_start_ray_index": {
+    "meta": {"_FillValue": -9999, "long_name": "index_of_first_ray_in_sweep", "units": ""},
+    "meta_types": {"_FillValue": "int32", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "95ddd6f483e45e5dc04240b29beb83b1544e0ee137ea479c8c6a063bb623257b",
+     "min": 0,
+     "max": 360,
+     "sum": 360,
+     "first": [0, 360],
+     "last": 360,
+     "non_decreasing": true,
+     "values": [0, 360]
+    }
+   },
+   "sweep_end_ray_index": {
+    "meta": {"_FillValue": -9999, "long_name": "index_of_last_ray_in_sweep", "units": ""},
+    "meta_types": {"_FillValue": "int32", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "4eafddaaba430e662dc9380dc000efcdca25bf6a21ad6980db32798af79fbbd5",
+     "min": 359,
+     "max": 718,
+     "sum": 1077,
+     "first": [359, 718],
+     "last": 718,
+     "non_decreasing": true,
+     "values": [359, 718]
+    }
+   },
+   "target_scan_rate": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "target_scan_rate_for_sweep",
+     "units": "degrees per second"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+    "masked_count": 2,
+    "values": {
+     "dtype": "float32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "b50be33ce2d5b3c88a54f93517b6ae8097e78c9b6b0c808032d03ed0452f4fda",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0, -9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0, -9999.0]
+    }
+   },
+   "rays_are_indexed": {
+    "meta": {"long_name": "flag_for_indexed_rays"},
+    "meta_types": {"long_name": "str"},
+    "masked_count": 6,
+    "values": {"dtype": "S1", "shape": [2, 8], "strings": ["false", "false"]}
+   },
+   "ray_angle_res": {
+    "meta": {"_FillValue": -9999.0, "long_name": "angular_resolution_between_rays", "units": "degrees"},
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "80b8fd6d60fa85fd14a38b5295cb92abd80dfec5ca406c9f969609a79d36809d",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 1.0,
+     "max": 1.0,
+     "mean": 1.0,
+     "first": [1.0, 1.0],
+     "last": 1.0,
+     "non_decreasing": true,
+     "values": [1.0, 1.0]
+    }
+   },
+   "scan_rate": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "antenna_angle_scan_rate",
+     "meta_group": "instrument_parameters",
+     "units": "degrees per second"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 719,
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "379922542eb8f4ce3802ed1d13df471140b745f2d9113d81f79860d63a0e03cd",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0, -9999.0, -9999.0],
+     "last": -9999.0,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -9999.0,
+      "max": -9999.0,
+      "mean": -9999.0,
+      "first": [-9999.0, -9999.0, -9999.0],
+      "last": -9999.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -9999.0,
+      "max": -9999.0,
+      "mean": -9999.0,
+      "first": [-9999.0, -9999.0, -9999.0],
+      "last": -9999.0,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "antenna_transition": {
+    "meta": {
+     "_FillValue": -128,
+     "comment": "1 if antenna is in transition, 0 otherwise",
+     "long_name": "antenna_is_in_transition_between_sweeps",
+     "units": ""
+    },
+    "meta_types": {"_FillValue": "int8", "comment": "str", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int8",
+     "shape": [719],
+     "count": 719,
+     "sha256": "cfd53bdada0e2b0411845b9a96b1cd3840fc146e5dacd0dd63ee944ea0be80bb",
+     "min": 0,
+     "max": 0,
+     "sum": 0,
+     "first": [0, 0, 0],
+     "last": 0,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "int8",
+      "shape": [360],
+      "count": 360,
+      "sha256": "d3df611a0ed2e328b050d285287637c60643ba96ec09e4aaefaad7f2cd114b77",
+      "min": 0,
+      "max": 0,
+      "sum": 0,
+      "first": [0, 0, 0],
+      "last": 0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "int8",
+      "shape": [359],
+      "count": 359,
+      "sha256": "8bcfcd6be82aeb4875ef1ce86bc6b0ea7667c95fd4243f1d7da32ec159da1087",
+      "min": 0,
+      "max": 0,
+      "sum": 0,
+      "first": [0, 0, 0],
+      "last": 0,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "latitude": {
+    "meta": {"_FillValue": -9999.0, "long_name": "latitude", "units": "degrees_north"},
+    "meta_types": {"_FillValue": "float", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "ceded95ad041c26e679dc8d96ea978d4e29bbe937df203dc54546539bf875ca6",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 34.73310470581055,
+     "max": 34.73310470581055,
+     "mean": 34.73310470581055,
+     "first": [34.73310470581055],
+     "last": 34.73310470581055,
+     "non_decreasing": true,
+     "values": [34.73310470581055]
+    }
+   },
+   "longitude": {
+    "meta": {"_FillValue": -9999.0, "long_name": "longitude", "units": "degrees_east"},
+    "meta_types": {"_FillValue": "float", "long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "cbff4bed99996fbd2308933368f26f1fd2047de781a8dcba672ab559c2c1e099",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -76.66191101074219,
+     "max": -76.66191101074219,
+     "mean": -76.66191101074219,
+     "first": [-76.66191101074219],
+     "last": -76.66191101074219,
+     "non_decreasing": true,
+     "values": [-76.66191101074219]
+    }
+   },
+   "altitude": {
+    "meta": {"_FillValue": -9999.0, "long_name": "altitude", "positive": "up", "units": "meters"},
+    "meta_types": {"_FillValue": "float", "long_name": "str", "positive": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.0,
+     "max": 0.0,
+     "mean": 0.0,
+     "first": [0.0],
+     "last": 0.0,
+     "non_decreasing": true,
+     "values": [0.0]
+    }
+   },
+   "altitude_agl": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "altitude_above_ground_level",
+     "positive": "up",
+     "units": "meters"
+    },
+    "meta_types": {"_FillValue": "float", "long_name": "str", "positive": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "067b85c2321bc510c2c65801d05e7cee379c7b339a739ea1b8101a158230b016",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -65.0,
+     "max": -65.0,
+     "mean": -65.0,
+     "first": [-65.0],
+     "last": -65.0,
+     "non_decreasing": true,
+     "values": [-65.0]
+    }
+   }
+  },
+  "instrument_parameters": {
+   "follow_mode": {
+    "meta": {
+     "long_name": "follow_mode_for_scan_strategy",
+     "meta_group": "instrument_parameters",
+     "options": "none, sun, vehicle, aircraft, target, manual"
+    },
+    "meta_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+    "masked_count": 56,
+    "values": {"dtype": "S1", "shape": [2, 32], "strings": ["none", "none"]}
+   },
+   "frequency": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "transmission_frequency",
+     "meta_group": "instrument_parameters",
+     "units": "s-1"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "c1a33f90e6d33adbe79343e12715286cf3efd5fc309880ebd69ca350cf05e08e",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 5624624128.0,
+     "max": 5624624128.0,
+     "mean": 5624624128.0,
+     "first": [5624624128.0],
+     "last": 5624624128.0,
+     "non_decreasing": true,
+     "values": [5624624128.0]
+    }
+   },
+   "measured_transmit_power_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "measured_radar_transmit_power_h_channel",
+     "meta_group": "radar_parameters",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 719,
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "379922542eb8f4ce3802ed1d13df471140b745f2d9113d81f79860d63a0e03cd",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0, -9999.0, -9999.0],
+     "last": -9999.0,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -9999.0,
+      "max": -9999.0,
+      "mean": -9999.0,
+      "first": [-9999.0, -9999.0, -9999.0],
+      "last": -9999.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -9999.0,
+      "max": -9999.0,
+      "mean": -9999.0,
+      "first": [-9999.0, -9999.0, -9999.0],
+      "last": -9999.0,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "measured_transmit_power_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "measured_radar_transmit_power_v_channel",
+     "meta_group": "radar_parameters",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 719,
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "379922542eb8f4ce3802ed1d13df471140b745f2d9113d81f79860d63a0e03cd",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0, -9999.0, -9999.0],
+     "last": -9999.0,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -9999.0,
+      "max": -9999.0,
+      "mean": -9999.0,
+      "first": [-9999.0, -9999.0, -9999.0],
+      "last": -9999.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -9999.0,
+      "max": -9999.0,
+      "mean": -9999.0,
+      "first": [-9999.0, -9999.0, -9999.0],
+      "last": -9999.0,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "n_samples": {
+    "meta": {
+     "_FillValue": -9999,
+     "long_name": "number_of_samples_used_to_compute_moments",
+     "meta_group": "instrument_parameters",
+     "units": ""
+    },
+    "meta_types": {"_FillValue": "int32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "ba0059406c5075743a93df0ec6b3e2071da21da1692527fa6c6f5e6136fbd355",
+     "min": 32,
+     "max": 32,
+     "sum": 23008,
+     "first": [32, 32, 32],
+     "last": 32,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "int32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "5924cee464535f9675ad5b16cd721d716cc97f01f931b740df4b33dacf4098b4",
+      "min": 32,
+      "max": 32,
+      "sum": 11520,
+      "first": [32, 32, 32],
+      "last": 32,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "int32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "4f16b6cc92c5e8dfbf25cd71b3885285967da0dff9ab263f9a6f6bec626e0fd2",
+      "min": 32,
+      "max": 32,
+      "sum": 11488,
+      "first": [32, 32, 32],
+      "last": 32,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "nyquist_velocity": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "unambiguous_doppler_velocity",
+     "meta_group": "instrument_parameters",
+     "units": "meters per second"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "9fbcff6df6b080c40876d9203f782e024b70ad5fe37880f55027527869fb7911",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 47.970001220703125,
+     "max": 47.970001220703125,
+     "mean": 47.970001220703125,
+     "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+     "last": 47.970001220703125,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "061ad78918d15fd1b6a147ccc1d8976b7cda4d076643a35a337c5d6e71114d16",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 47.970001220703125,
+      "max": 47.970001220703125,
+      "mean": 47.970001220703125,
+      "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+      "last": 47.970001220703125,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "fd59c7c898cce4e61ad88b8f5678a8042e5028611ef92a913f67e9b914a6d9db",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 47.970001220703125,
+      "max": 47.970001220703125,
+      "mean": 47.970001220703125,
+      "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+      "last": 47.970001220703125,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "polarization_mode": {
+    "meta": {
+     "long_name": "polarization_mode_for_sweep",
+     "meta_group": "radar_parameters",
+     "options": "horizontal, vertical, hv_alt, hv_sim, circular"
+    },
+    "meta_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+    "masked_count": 44,
+    "values": {"dtype": "S1", "shape": [2, 32], "strings": ["horizontal", "horizontal"]}
+   },
+   "prt": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "pulse_repetition_time",
+     "meta_group": "instrument_parameters",
+     "units": "seconds"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "975138cc1dfa9ac74bf8cda8d729a5f037b13d0927b7496b315bbff6b9b96203",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.0005555555690079927,
+     "max": 0.0005555555690079927,
+     "mean": 0.0005555555690079927,
+     "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+     "last": 0.0005555555690079927,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "204df996357c0eda5b4ab92975303b75b2a9b33d41e3d27d9f485ecf5f238c9f",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.0005555555690079927,
+      "max": 0.0005555555690079927,
+      "mean": 0.0005555555690079927,
+      "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+      "last": 0.0005555555690079927,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "9ebd24926078ae985001b51ef1fb537362a755085dbd0d1428db7297f1ce147d",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.0005555555690079927,
+      "max": 0.0005555555690079927,
+      "mean": 0.0005555555690079927,
+      "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+      "last": 0.0005555555690079927,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "prt_mode": {
+    "meta": {
+     "long_name": "transmit_pulse_mode",
+     "meta_group": "radar_parameters",
+     "options": "fixed, staggered, dual"
+    },
+    "meta_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+    "masked_count": 54,
+    "values": {"dtype": "S1", "shape": [2, 32], "strings": ["fixed", "fixed"]}
+   },
+   "prt_ratio": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "pulse_repetition_frequency_ratio",
+     "meta_group": "instrument_parameters",
+     "units": "seconds"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "951906a554b5ba672d65019f33ac279ac84c6943a5c563c83798d06acaf702f5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 1.0,
+     "max": 1.0,
+     "mean": 1.0,
+     "first": [1.0, 1.0, 1.0],
+     "last": 1.0,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "724b49484d64642b5ad9498b592d7000319021434a2cb82f69cab22910dae805",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 1.0,
+      "max": 1.0,
+      "mean": 1.0,
+      "first": [1.0, 1.0, 1.0],
+      "last": 1.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "c5eca97910f128b517f6e93cd34cda1b0470af283934966d60c32e74003938aa",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 1.0,
+      "max": 1.0,
+      "mean": 1.0,
+      "first": [1.0, 1.0, 1.0],
+      "last": 1.0,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "pulse_width": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "transmitter_pulse_width",
+     "meta_group": "instrument_parameters",
+     "units": "seconds"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "57ebccac01c9cb0a9a3e1031c3a7757dc2c39283a0d922533abe352738c2209f",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 4.999999987376214e-07,
+     "max": 4.999999987376214e-07,
+     "mean": 4.999999987376214e-07,
+     "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+     "last": 4.999999987376214e-07,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "6fd2ecfe85410599a907bcbecf48d1fac28cb488f98c38c744b42e16da1c0f80",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 4.999999987376214e-07,
+      "max": 4.999999987376214e-07,
+      "mean": 4.999999987376214e-07,
+      "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+      "last": 4.999999987376214e-07,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "840f904aa8df0434da1acda18f5ae7203149b22224785bad6ef060700ed84852",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 4.999999987376214e-07,
+      "max": 4.999999987376214e-07,
+      "mean": 4.999999987376214e-07,
+      "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+      "last": 4.999999987376214e-07,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "radar_antenna_gain_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "nominal_radar_antenna_gain_h_channel",
+     "meta_group": "radar_parameters",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "radar_antenna_gain_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "nominal_radar_antenna_gain_v_channel",
+     "meta_group": "radar_parameters",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "radar_beam_width_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "half_power_radar_beam_width_h_channel",
+     "meta_group": "radar_parameters",
+     "units": "degrees"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "691bad078b0c2ca992da373fa8daefcc0da0494cc74f13d3f2f6c410852c7a32",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 1.559999942779541,
+     "max": 1.559999942779541,
+     "mean": 1.559999942779541,
+     "first": [1.559999942779541],
+     "last": 1.559999942779541,
+     "non_decreasing": true,
+     "values": [1.559999942779541]
+    }
+   },
+   "radar_beam_width_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "half_power_radar_beam_width_v_channel",
+     "meta_group": "radar_parameters",
+     "units": "degrees"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "691bad078b0c2ca992da373fa8daefcc0da0494cc74f13d3f2f6c410852c7a32",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 1.559999942779541,
+     "max": 1.559999942779541,
+     "mean": 1.559999942779541,
+     "first": [1.559999942779541],
+     "last": 1.559999942779541,
+     "non_decreasing": true,
+     "values": [1.559999942779541]
+    }
+   },
+   "radar_rx_bandwidth": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_receiver_bandwidth",
+     "meta_group": "radar_parameters",
+     "units": "s-1"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "unambiguous_range": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "unambiguous_range",
+     "meta_group": "instrument_parameters",
+     "units": "meters"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "9e865bb1980f29672db423b6c8967df556b211d9dfa702eaeac4ac19922e115f",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 83275.6796875,
+     "max": 83275.6796875,
+     "mean": 83275.6796875,
+     "first": [83275.6796875, 83275.6796875, 83275.6796875],
+     "last": 83275.6796875,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "f3032f42fd34b1c75d544cc14744ab1c257d43167035b721fb599762f0f3fb96",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 83275.6796875,
+      "max": 83275.6796875,
+      "mean": 83275.6796875,
+      "first": [83275.6796875, 83275.6796875, 83275.6796875],
+      "last": 83275.6796875,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "646eefd980c8e4939d2371c8d469a92c74ac2b686148bbbef1a4bf107e4d4414",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 83275.6796875,
+      "max": 83275.6796875,
+      "mean": 83275.6796875,
+      "first": [83275.6796875, 83275.6796875, 83275.6796875],
+      "last": 83275.6796875,
+      "non_decreasing": true
+     }
+    ]
+   }
+  },
+  "radar_calibration": {
+   "r_calib_antenna_gain_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_antenna_gain_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_antenna_gain_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_antenna_gain_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_base_dbz_1km_hc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_reflectivity_at_1km_at_zero_snr_h_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBZ"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_base_dbz_1km_hx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_reflectivity_at_1km_at_zero_snr_h_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBZ"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_base_dbz_1km_vc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_reflectivity_at_1km_at_zero_snr_v_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBZ"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_base_dbz_1km_vx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_reflectivity_at_1km_at_zero_snr_v_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBZ"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_coupler_forward_loss_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_coupler_forward_loss_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_coupler_forward_loss_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_coupler_forward_loss_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_dbz_correction": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_dbz_correction",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.0,
+     "max": 0.0,
+     "mean": 0.0,
+     "first": [0.0],
+     "last": 0.0,
+     "non_decreasing": true,
+     "values": [0.0]
+    }
+   },
+   "r_calib_index": {
+    "meta": {
+     "_FillValue": -9999,
+     "comment": "This is the index for the calibration which applies to this ray",
+     "long_name": "calibration_data_array_index_per_ray",
+     "meta_group": "radar_calibration",
+     "units": ""
+    },
+    "meta_types": {
+     "_FillValue": "int32",
+     "comment": "str",
+     "long_name": "str",
+     "meta_group": "str",
+     "units": "str"
+    },
+    "values": {
+     "dtype": "int32",
+     "shape": [719],
+     "count": 719,
+     "sha256": "e8063513aa25c895fae800a6413cb54987f4b2ad96d2b35eb3b6a1e3cafcafb3",
+     "min": 0,
+     "max": 0,
+     "sum": 0,
+     "first": [0, 0, 0],
+     "last": 0,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "int32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "52dbd4365b026555e3382c056240376d3aa319c7e46c1aa7c38caa4883570517",
+      "min": 0,
+      "max": 0,
+      "sum": 0,
+      "first": [0, 0, 0],
+      "last": 0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "int32",
+      "shape": [359],
+      "count": 359,
+      "sha256": "c3bf51869a4db89a6a6c3d459827243126e1b05a8235b11a29380c8eb692679d",
+      "min": 0,
+      "max": 0,
+      "sum": 0,
+      "first": [0, 0, 0],
+      "last": 0,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "r_calib_ldr_correction_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_ldr_correction_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "329f723a7d397d9d1246d95dd9e9a0e2b015374450b76a5bb8e7911d3295c3f7",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -77.9800033569336,
+     "max": -77.9800033569336,
+     "mean": -77.9800033569336,
+     "first": [-77.9800033569336],
+     "last": -77.9800033569336,
+     "non_decreasing": true,
+     "values": [-77.9800033569336]
+    }
+   },
+   "r_calib_ldr_correction_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_ldr_correction_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.0,
+     "max": 0.0,
+     "mean": 0.0,
+     "first": [0.0],
+     "last": 0.0,
+     "non_decreasing": true,
+     "values": [0.0]
+    }
+   },
+   "r_calib_noise_hc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_noise_h_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "ef9895d4b41a1285e9b5108a12fa099cc81ae5a5d3f868f75212d2806d32b43b",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -105.69000244140625,
+     "max": -105.69000244140625,
+     "mean": -105.69000244140625,
+     "first": [-105.69000244140625],
+     "last": -105.69000244140625,
+     "non_decreasing": true,
+     "values": [-105.69000244140625]
+    }
+   },
+   "r_calib_noise_hx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_noise_h_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_noise_source_power_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_noise_source_power_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_noise_source_power_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_noise_source_power_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_noise_vc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_noise_v_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_noise_vx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_noise_v_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_power_measure_loss_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_power_measurement_loss_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_power_measure_loss_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_power_measurement_loss_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_pulse_width": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_pulse_width",
+     "meta_group": "radar_calibration",
+     "units": "seconds"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "dc20b6eaa7a9d1581d355bf012b3ee29f79e7fb8cfca80cd567e4784aeed6d3a",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -0.009998999536037445,
+     "max": -0.009998999536037445,
+     "mean": -0.009998999536037445,
+     "first": [-0.009998999536037445],
+     "last": -0.009998999536037445,
+     "non_decreasing": true,
+     "values": [-0.009998999536037445]
+    }
+   },
+   "r_calib_radar_constant_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_constant_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "14deeec02fc6e683b43a1c9bcbc6b8d5922b5d2e86913029e92a33090f0d1347",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 96.13999938964844,
+     "max": 96.13999938964844,
+     "mean": 96.13999938964844,
+     "first": [96.13999938964844],
+     "last": 96.13999938964844,
+     "non_decreasing": true,
+     "values": [96.13999938964844]
+    }
+   },
+   "r_calib_radar_constant_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_constant_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_gain_hc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_gain_h_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_gain_hx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_gain_h_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_gain_vc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_gain_v_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_gain_vx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_gain_v_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_mismatch_loss": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_receiver_mismatch_loss",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_slope_hc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_slope_h_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": ""
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_slope_hx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_slope_h_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": ""
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_slope_vc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_slope_v_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": ""
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_receiver_slope_vx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_receiver_slope_v_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": ""
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_sun_power_hc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_sun_power_h_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_sun_power_hx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_sun_power_h_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_sun_power_vc": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_sun_power_v_co_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_sun_power_vx": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_sun_power_v_cross_polar_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_system_phidp": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_system_phidp",
+     "meta_group": "radar_calibration",
+     "units": "degrees"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.0,
+     "max": 0.0,
+     "mean": 0.0,
+     "first": [0.0],
+     "last": 0.0,
+     "non_decreasing": true,
+     "values": [0.0]
+    }
+   },
+   "r_calib_test_power_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_test_power_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_test_power_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_test_power_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_time": {
+    "meta": {"long_name": "radar_calibration_time_utc", "meta_group": "radar_calibration"},
+    "meta_types": {"long_name": "str", "meta_group": "str"},
+    "masked_count": 12,
+    "values": {"dtype": "S1", "shape": [1, 32], "strings": ["2011-08-27T12:04:20Z"]}
+   },
+   "r_calib_two_way_radome_loss_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_two_way_radome_loss_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_two_way_radome_loss_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_two_way_radome_loss_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_two_way_waveguide_loss_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_two_way_waveguide_loss_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_two_way_waveguide_loss_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "radar_calibration_two_way_waveguide_loss_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_xmit_power_h": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_xmit_power_h_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "3a739344ac6c6dd745bc67dbfab1ada3420a2b50a023fa1f79e7e0a258194bcd",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 82.04119873046875,
+     "max": 82.04119873046875,
+     "mean": 82.04119873046875,
+     "first": [82.04119873046875],
+     "last": 82.04119873046875,
+     "non_decreasing": true,
+     "values": [82.04119873046875]
+    }
+   },
+   "r_calib_xmit_power_v": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_xmit_power_v_channel",
+     "meta_group": "radar_calibration",
+     "units": "dBm"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "masked_count": 1,
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9d1e4178315e5b0ba3a840f4d5b3064d383233a722331c5827515d839c6074e5",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -9999.0,
+     "max": -9999.0,
+     "mean": -9999.0,
+     "first": [-9999.0],
+     "last": -9999.0,
+     "non_decreasing": true,
+     "values": [-9999.0]
+    }
+   },
+   "r_calib_zdr_correction": {
+    "meta": {
+     "_FillValue": -9999.0,
+     "long_name": "calibrated_radar_zdr_correction",
+     "meta_group": "radar_calibration",
+     "units": "db"
+    },
+    "meta_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [1],
+     "count": 1,
+     "sha256": "9310a52a0cc5c0967f84872983636dfb3468a12dc75c874096944c14c863fbb0",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -76.97000122070312,
+     "max": -76.97000122070312,
+     "mean": -76.97000122070312,
+     "first": [-76.97000122070312],
+     "last": -76.97000122070312,
+     "non_decreasing": true,
+     "values": [-76.97000122070312]
+    }
+   }
+  }
+ },
+ "fields": {
+  "DBZ": {
+   "meta": {
+    "_FillValue": -128,
+    "coordinates": "time range",
+    "grid_mapping": "grid_mapping",
+    "sampling_ratio": 1.0,
+    "units": "dBZ"
+   },
+   "meta_types": {
+    "_FillValue": "int8",
+    "coordinates": "str",
+    "grid_mapping": "str",
+    "sampling_ratio": "float32",
+    "units": "str"
+   },
+   "dtype": "float32",
+   "shape": [719, 1107],
+   "masked": true,
+   "total": {
+    "count_unmasked": 745236,
+    "count_masked": 50697,
+    "count_nan_unmasked": 0,
+    "min": -31.5,
+    "max": 69.5,
+    "mean": 23.8353642336119,
+    "extent": 1107,
+    "sha256": "9887f56089f8f36fe90f7198f54aada0fbc26e2d43acec271061a6e7576c16b9"
+   },
+   "per_sweep": [
+    {
+     "sweep": 0,
+     "rays": 360,
+     "gates": 1107,
+     "count_unmasked": 374741,
+     "count_masked": 23779,
+     "count_nan_unmasked": 0,
+     "min": -31.5,
+     "max": 69.5,
+     "mean": 23.602425408482127,
+     "extent": 1107,
+     "sha256": "150f40c3a30f4a53d767a11720580741c0416d997f3ae69726364d205f910581"
+    },
+    {
+     "sweep": 1,
+     "rays": 359,
+     "gates": 1107,
+     "count_unmasked": 370495,
+     "count_masked": 26918,
+     "count_nan_unmasked": 0,
+     "min": -31.5,
+     "max": 64.0,
+     "mean": 24.07097261771414,
+     "extent": 1107,
+     "sha256": "4c86fddeb07ae52c4a28072ee2e708ce76f808cb9a6ec4638b9e31456bcca671"
+    }
+   ]
+  },
+  "VEL": {
+   "meta": {
+    "_FillValue": -128,
+    "coordinates": "time range",
+    "grid_mapping": "grid_mapping",
+    "sampling_ratio": 1.0,
+    "units": "m/s"
+   },
+   "meta_types": {
+    "_FillValue": "int8",
+    "coordinates": "str",
+    "grid_mapping": "str",
+    "sampling_ratio": "float32",
+    "units": "str"
+   },
+   "dtype": "float32",
+   "shape": [719, 1107],
+   "masked": true,
+   "total": {
+    "count_unmasked": 795933,
+    "count_masked": 0,
+    "count_nan_unmasked": 0,
+    "min": -47.970001220703125,
+    "max": 47.970001220703125,
+    "mean": -0.2473392653527247,
+    "extent": 1107,
+    "sha256": "80c941c51b5e8cd37ebb1a3051a573f736401cd72c4982ebc8b07dce9b8013a5"
+   },
+   "per_sweep": [
+    {
+     "sweep": 0,
+     "rays": 360,
+     "gates": 1107,
+     "count_unmasked": 398520,
+     "count_masked": 0,
+     "count_nan_unmasked": 0,
+     "min": -47.970001220703125,
+     "max": 47.970001220703125,
+     "mean": -0.4624013633226925,
+     "extent": 1107,
+     "sha256": "a911ae9633d96c0ec0fd0371a64c082a211cf5e820b545ade867d52d53915150"
+    },
+    {
+     "sweep": 1,
+     "rays": 359,
+     "gates": 1107,
+     "count_unmasked": 397413,
+     "count_masked": 0,
+     "count_nan_unmasked": 0,
+     "min": -47.970001220703125,
+     "max": 47.970001220703125,
+     "mean": -0.031678108614038365,
+     "extent": 1107,
+     "sha256": "04d40eee75e2a0f5a1404bc0f09949cb92ce66a2493a4732dc8401cd99bfa0d9"
+    }
+   ]
+  }
+ }
+}

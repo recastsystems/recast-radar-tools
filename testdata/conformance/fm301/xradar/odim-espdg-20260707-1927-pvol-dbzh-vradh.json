@@ -1,0 +1,1823 @@
+{
+ "schema": "recast-radar-tools/fm301-golden/xradar/1",
+ "id": "odim-espdg-20260707-1927-pvol-dbzh-vradh",
+ "format": "odim-h5",
+ "sha256": "1d297d435a504df3cf09e06054bb588be3417af112839a3a0685e5fd95abdfbd",
+ "size": 162450,
+ "categories": ["odim-h5", "pvol", "float64"],
+ "note": "AEMET Perdiguera PVOL, 2 sweeps, DBZH and VRADH as float64 planes (gain 1, offset 0, nodata 95.5, undetect -32; design note 7.2).",
+ "generator": {
+  "script": "tools/fm301_golden.py",
+  "python": "3.13",
+  "numpy": "2.5.3",
+  "xradar": "0.12.0",
+  "xarray": "2026.7.0",
+  "netCDF4": "1.7.4",
+  "h5netcdf": "1.8.1",
+  "h5py": "3.16.0"
+ },
+ "reader": {
+  "function": "xradar.io.open_odim_datatree",
+  "input": "file",
+  "input_sha256": "1d297d435a504df3cf09e06054bb588be3417af112839a3a0685e5fd95abdfbd",
+  "input_size": 162450
+ },
+ "status": "ok",
+ "error": null,
+ "warnings": [],
+ "views": {
+  "time": {
+   "kwargs": {"first_dim": "time", "mask_and_scale": false, "optional_groups": true},
+   "groups": [
+    {
+     "path": "/",
+     "dims": {"sweep": 2},
+     "attrs": {
+      "Conventions": "ODIM_H5/V2_2",
+      "comment": "im/exported using xradar",
+      "history": "None",
+      "institution": "None",
+      "instrument_name": "None",
+      "references": "None",
+      "source": "None",
+      "title": "None",
+      "version": "None"
+     },
+     "attr_types": {
+      "Conventions": "str",
+      "comment": "str",
+      "history": "str",
+      "institution": "str",
+      "instrument_name": "str",
+      "references": "str",
+      "source": "str",
+      "title": "str",
+      "version": "str"
+     },
+     "variables": [
+      {
+       "name": "altitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {"long_name": "altitude", "standard_name": "altitude", "units": "meters"},
+       "attr_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": 835.0}
+      },
+      {
+       "name": "latitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {
+        "long_name": "latitude",
+        "positive": "up",
+        "standard_name": "latitude",
+        "units": "degrees_north"
+       },
+       "attr_types": {"long_name": "str", "positive": "str", "standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": 41.7339900881052}
+      },
+      {
+       "name": "longitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {"long_name": "longitude", "standard_name": "longitude", "units": "degrees_east"},
+       "attr_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": -0.5459400080144405}
+      },
+      {
+       "name": "instrument_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "U5",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {},
+       "encoding_types": {},
+       "values": {"dtype": "U5", "shape": [], "value": "radar"}
+      },
+      {
+       "name": "platform_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "U5",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {},
+       "encoding_types": {},
+       "values": {"dtype": "U5", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "float64",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [2],
+        "count": 2,
+        "sha256": "044b21f64c6c0207fa2fa3c7aab4360ddce8d14ff9926f435907b53be7998726",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.4998779296875,
+        "max": 1.4996337890625,
+        "mean": 0.999755859375,
+        "first": [1.4996337890625, 0.4998779296875],
+        "last": 0.4998779296875,
+        "non_decreasing": false,
+        "values": [1.4996337890625, 0.4998779296875]
+       }
+      },
+      {
+       "name": "sweep_group_name",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "int64",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "int64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "int64",
+        "shape": [2],
+        "count": 2,
+        "sha256": "9d34149fbd1fe777eb238799054c8cbfbce372255f219f8740838def9bfd02db",
+        "min": 0,
+        "max": 1,
+        "sum": 1,
+        "first": [0, 1],
+        "last": 1,
+        "non_decreasing": true,
+        "values": [0, 1]
+       }
+      },
+      {
+       "name": "time_coverage_end",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {},
+       "encoding_types": {},
+       "values": {"dtype": "U20", "shape": [], "value": "2026-07-07T19:28:49Z"}
+      },
+      {
+       "name": "time_coverage_start",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {},
+       "encoding_types": {},
+       "values": {"dtype": "U20", "shape": [], "value": "2026-07-07T19:27:49Z"}
+      },
+      {
+       "name": "volume_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int64",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {},
+       "encoding_types": {},
+       "values": {"dtype": "int64", "shape": [], "value": 0}
+      }
+     ]
+    },
+    {"path": "/radar_parameters", "dims": {}, "attrs": {}, "attr_types": {}, "variables": []},
+    {
+     "path": "/georeferencing_correction",
+     "dims": {},
+     "attrs": {},
+     "attr_types": {},
+     "variables": []
+    },
+    {"path": "/radar_calibration", "dims": {}, "attrs": {}, "attr_types": {}, "variables": []},
+    {
+     "path": "/sweep_0",
+     "dims": {"range": 299, "time": 360},
+     "attrs": {},
+     "attr_types": {},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float64",
+       "attrs": {
+        "axis": "radial_azimuth_coordinate",
+        "long_name": "azimuth_angle_from_true_north",
+        "standard_name": "ray_azimuth_angle",
+        "units": "degrees"
+       },
+       "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "b40e5d1364a81e1283da03a35d8aa07085414cbe00341bd478290fae5fd91e4f",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.00250244140625,
+        "max": 359.99176025390625,
+        "mean": 180.4937515258789,
+        "first": [202.994384765625, 203.98590087890625, 204.9993896484375],
+        "last": 202.00836181640625,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float64",
+       "attrs": {
+        "axis": "radial_elevation_coordinate",
+        "long_name": "elevation_angle_from_horizontal_plane",
+        "standard_name": "ray_elevation_angle",
+        "units": "degrees"
+       },
+       "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "4abc31434ed968859a98efe6a2be1aa63c182747a7fb9c5a2fcfeb3d9a58ab90",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.4776611328125,
+        "max": 1.494140625,
+        "mean": 1.4913330078125,
+        "first": [1.48590087890625, 1.4776611328125, 1.4776611328125],
+        "last": 1.494140625,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "attrs": {
+        "axis": "radial_range_coordinate",
+        "long_name": "range_to_measurement_volume",
+        "meters_between_gates": 500.0,
+        "meters_to_center_of_first_gate": 450.0,
+        "spacing_is_constant": "true",
+        "standard_name": "projection_range_coordinate",
+        "units": "meters"
+       },
+       "attr_types": {
+        "axis": "str",
+        "long_name": "str",
+        "meters_between_gates": "float32",
+        "meters_to_center_of_first_gate": "float32",
+        "spacing_is_constant": "str",
+        "standard_name": "str",
+        "units": "str"
+       },
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [299],
+        "count": 299,
+        "sha256": "bb153bd863ebacbe619be9fe5630fa790333dbacc3c9543266b1e81d9aa9b8a7",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 450.0,
+        "max": 149450.0,
+        "mean": 74950.0,
+        "first": [450.0, 950.0, 1450.0],
+        "last": 149450.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "datetime64[ns]",
+       "attrs": {"standard_name": "time"},
+       "attr_types": {"standard_name": "str"},
+       "encoding": {"dtype": "float64", "units": "seconds since 1970-01-01T00:00:00Z"},
+       "encoding_types": {"dtype": "dtype", "units": "str"},
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [360],
+        "count": 360,
+        "sha256": "b32c390634fb82f2603762a12a18a17c65f5357dbed26695c601df7d2188d625",
+        "count_nat": 0,
+        "min": 1783452469.0847223,
+        "max": 1783452529.91532,
+        "mean": 1783452499.500021,
+        "first": [1783452469.0847223, 1783452469.2541668, 1783452469.4236114],
+        "last": 1783452529.91532,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "DBZH",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "float64",
+       "attrs": {
+        "_FillValue": 95.5,
+        "_Undetect": -32.0,
+        "long_name": "Equivalent reflectivity factor H",
+        "standard_name": "radar_equivalent_reflectivity_factor_h",
+        "units": "dBZ"
+       },
+       "attr_types": {
+        "_FillValue": "float",
+        "_Undetect": "float",
+        "long_name": "str",
+        "standard_name": "str",
+        "units": "str"
+       },
+       "encoding": {
+        "coordinates": "elevation azimuth range latitude longitude altitude time",
+        "dtype": "float64"
+       },
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "007cc62008ca0cb9b9ece15cae24465e4f05f516364e81b568ab709b51aadc20",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -32.0,
+        "max": 46.0,
+        "mean": -27.0185618729097
+       }
+      },
+      {
+       "name": "VRADH",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "float64",
+       "attrs": {
+        "_FillValue": 95.5,
+        "_Undetect": -32.0,
+        "long_name": "Radial velocity of scatterers away from instrument H",
+        "standard_name": "radial_velocity_of_scatterers_away_from_instrument_h",
+        "units": "meters per seconds"
+       },
+       "attr_types": {
+        "_FillValue": "float",
+        "_Undetect": "float",
+        "long_name": "str",
+        "standard_name": "str",
+        "units": "str"
+       },
+       "encoding": {
+        "coordinates": "elevation azimuth range latitude longitude altitude time",
+        "dtype": "float64"
+       },
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "de2c03a9c06ef2ff094d42daaf38073f013c7ee4fb4b730a69fd14a1fb9b999b",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -34.240633464566926,
+        "max": 32.3558279527559,
+        "mean": 0.14485954909848225
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "U7"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": [],
+       "dtype": "object",
+       "attrs": {"standard_name": "nyquist_velocity", "units": "m s-1"},
+       "attr_types": {"standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "object"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "object", "shape": [], "value": null}
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "U7"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": 1.4996337890625}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "U20"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int64",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "int64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "int64", "shape": [], "value": 0}
+      }
+     ]
+    },
+    {
+     "path": "/sweep_1",
+     "dims": {"range": 299, "time": 360},
+     "attrs": {},
+     "attr_types": {},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float64",
+       "attrs": {
+        "axis": "radial_azimuth_coordinate",
+        "long_name": "azimuth_angle_from_true_north",
+        "standard_name": "ray_azimuth_angle",
+        "units": "degrees"
+       },
+       "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "268d0d333d9acdf9359da75e76302d82902fa559142444daef8240a50ab316f9",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.00799560546875,
+        "max": 359.9945068359375,
+        "mean": 180.49459838867188,
+        "first": [233.00628662109375, 233.98406982421875, 235.00030517578125],
+        "last": 231.9873046875,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float64",
+       "attrs": {
+        "axis": "radial_elevation_coordinate",
+        "long_name": "elevation_angle_from_horizontal_plane",
+        "standard_name": "ray_elevation_angle",
+        "units": "degrees"
+       },
+       "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "14b7c669e6d4438b2bc94f6ad14142b94ddae4db4d50506e4edb3bb9d15ad2c4",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.450439453125,
+        "max": 0.46142578125,
+        "mean": 0.45871734619140625,
+        "first": [0.450439453125, 0.45867919921875, 0.45867919921875],
+        "last": 0.46142578125,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "attrs": {
+        "axis": "radial_range_coordinate",
+        "long_name": "range_to_measurement_volume",
+        "meters_between_gates": 500.0,
+        "meters_to_center_of_first_gate": 450.0,
+        "spacing_is_constant": "true",
+        "standard_name": "projection_range_coordinate",
+        "units": "meters"
+       },
+       "attr_types": {
+        "axis": "str",
+        "long_name": "str",
+        "meters_between_gates": "float32",
+        "meters_to_center_of_first_gate": "float32",
+        "spacing_is_constant": "str",
+        "standard_name": "str",
+        "units": "str"
+       },
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [299],
+        "count": 299,
+        "sha256": "bb153bd863ebacbe619be9fe5630fa790333dbacc3c9543266b1e81d9aa9b8a7",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 450.0,
+        "max": 149450.0,
+        "mean": 74950.0,
+        "first": [450.0, 950.0, 1450.0],
+        "last": 149450.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "datetime64[ns]",
+       "attrs": {"standard_name": "time"},
+       "attr_types": {"standard_name": "str"},
+       "encoding": {"dtype": "float64", "units": "seconds since 1970-01-01T00:00:00Z"},
+       "encoding_types": {"dtype": "dtype", "units": "str"},
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [360],
+        "count": 360,
+        "sha256": "bb06e66f0b4bc67b7bf8f4ded638a3b2cdf4841b47efd28bf52c332f4dc24ebc",
+        "count_nat": 0,
+        "min": 1783452493.051389,
+        "max": 1783452529.9485903,
+        "mean": 1783452511.4999897,
+        "first": [1783452493.051389, 1783452493.1541667, 1783452493.2569444],
+        "last": 1783452529.9485903,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "DBZH",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "float64",
+       "attrs": {
+        "_FillValue": 95.5,
+        "_Undetect": -32.0,
+        "long_name": "Equivalent reflectivity factor H",
+        "standard_name": "radar_equivalent_reflectivity_factor_h",
+        "units": "dBZ"
+       },
+       "attr_types": {
+        "_FillValue": "float",
+        "_Undetect": "float",
+        "long_name": "str",
+        "standard_name": "str",
+        "units": "str"
+       },
+       "encoding": {
+        "coordinates": "elevation azimuth range latitude longitude altitude time",
+        "dtype": "float64"
+       },
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "79b33d30d99013360827071dd045b2b08542055cdb8d52e4e6c2549517d008c7",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -32.0,
+        "max": 49.5,
+        "mean": -26.69194072835377
+       }
+      },
+      {
+       "name": "VRADH",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "float64",
+       "attrs": {
+        "_FillValue": 95.5,
+        "_Undetect": -32.0,
+        "long_name": "Radial velocity of scatterers away from instrument H",
+        "standard_name": "radial_velocity_of_scatterers_away_from_instrument_h",
+        "units": "meters per seconds"
+       },
+       "attr_types": {
+        "_FillValue": "float",
+        "_Undetect": "float",
+        "long_name": "str",
+        "standard_name": "str",
+        "units": "str"
+       },
+       "encoding": {
+        "coordinates": "elevation azimuth range latitude longitude altitude time",
+        "dtype": "float64"
+       },
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "4be7940a2b91e51c58e3111f680a5b22ad0658bda69349bb102915da717994c0",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -36.75370748031496,
+        "max": 39.89505,
+        "mean": -0.06169160119251398
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "U7"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": [],
+       "dtype": "object",
+       "attrs": {"standard_name": "nyquist_velocity", "units": "m s-1"},
+       "attr_types": {"standard_name": "str", "units": "str"},
+       "encoding": {"dtype": "object"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "object", "shape": [], "value": null}
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "U7"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": 0.4998779296875}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "U20"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int64",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "int64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "int64", "shape": [], "value": 1}
+      }
+     ]
+    }
+   ]
+  },
+  "auto": {
+   "kwargs": {"first_dim": "auto", "mask_and_scale": false, "optional_groups": true},
+   "groups": [
+    {
+     "path": "/",
+     "dims": {"sweep": 2},
+     "variables": [
+      {
+       "name": "altitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": 835.0}
+      },
+      {
+       "name": "latitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": 41.7339900881052}
+      },
+      {
+       "name": "longitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": -0.5459400080144405}
+      },
+      {
+       "name": "instrument_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "U5",
+       "values": {"dtype": "U5", "shape": [], "value": "radar"}
+      },
+      {
+       "name": "platform_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "U5",
+       "values": {"dtype": "U5", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [2],
+        "count": 2,
+        "sha256": "044b21f64c6c0207fa2fa3c7aab4360ddce8d14ff9926f435907b53be7998726",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.4998779296875,
+        "max": 1.4996337890625,
+        "mean": 0.999755859375,
+        "first": [1.4996337890625, 0.4998779296875],
+        "last": 0.4998779296875,
+        "non_decreasing": false,
+        "values": [1.4996337890625, 0.4998779296875]
+       }
+      },
+      {
+       "name": "sweep_group_name",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "int64",
+       "values": {
+        "dtype": "int64",
+        "shape": [2],
+        "count": 2,
+        "sha256": "9d34149fbd1fe777eb238799054c8cbfbce372255f219f8740838def9bfd02db",
+        "min": 0,
+        "max": 1,
+        "sum": 1,
+        "first": [0, 1],
+        "last": 1,
+        "non_decreasing": true,
+        "values": [0, 1]
+       }
+      },
+      {
+       "name": "time_coverage_end",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "values": {"dtype": "U20", "shape": [], "value": "2026-07-07T19:28:49Z"}
+      },
+      {
+       "name": "time_coverage_start",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "values": {"dtype": "U20", "shape": [], "value": "2026-07-07T19:27:49Z"}
+      },
+      {
+       "name": "volume_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int64",
+       "values": {"dtype": "int64", "shape": [], "value": 0}
+      }
+     ]
+    },
+    {"path": "/radar_parameters", "dims": {}, "variables": []},
+    {"path": "/georeferencing_correction", "dims": {}, "variables": []},
+    {"path": "/radar_calibration", "dims": {}, "variables": []},
+    {
+     "path": "/sweep_0",
+     "dims": {"azimuth": 360, "range": 299},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "bfc14412d43a2a404588338aa023b416df2a2ae59613db3b59b6a2a20329eb1b",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.00250244140625,
+        "max": 359.99176025390625,
+        "mean": 180.4937515258789,
+        "first": [1.00250244140625, 1.9830322265625, 3.01300048828125],
+        "last": 359.99176025390625,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "6d37bd880e151e3d491b063eb2dd1153ed966a0eeefdc55bb473a387c9f34647",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.4776611328125,
+        "max": 1.494140625,
+        "mean": 1.4913330078125,
+        "first": [1.494140625, 1.49139404296875, 1.49139404296875],
+        "last": 1.49139404296875,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [299],
+        "count": 299,
+        "sha256": "bb153bd863ebacbe619be9fe5630fa790333dbacc3c9543266b1e81d9aa9b8a7",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 450.0,
+        "max": 149450.0,
+        "mean": 74950.0,
+        "first": [450.0, 950.0, 1450.0],
+        "last": 149450.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "datetime64[ns]",
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [360],
+        "count": 360,
+        "sha256": "3e09a437859625fd0e8418e2b8e4859300bec6826a0519363e617fcea1de026b",
+        "count_nat": 0,
+        "min": 1783452469.0847223,
+        "max": 1783452529.91532,
+        "mean": 1783452499.500021,
+        "first": [1783452495.856963, 1783452496.0264075, 1783452496.195852],
+        "last": 1783452495.6875184,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "DBZH",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "b7c02a3efc0cd63e8a086e587697cc128f9e29e34f6d295fb397caa38cf389bf",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -32.0,
+        "max": 46.0,
+        "mean": -27.0185618729097
+       }
+      },
+      {
+       "name": "VRADH",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "9751d793e59e98a224f0587c23a652c0f502ef1826242c87e7dae0f3ec5892d8",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -34.240633464566926,
+        "max": 32.3558279527559,
+        "mean": 0.14485954909848225
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": [],
+       "dtype": "object",
+       "values": {"dtype": "object", "shape": [], "value": null}
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": 1.4996337890625}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int64",
+       "values": {"dtype": "int64", "shape": [], "value": 0}
+      }
+     ]
+    },
+    {
+     "path": "/sweep_1",
+     "dims": {"azimuth": 360, "range": 299},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "34d22e34e491ff73506bec7a546628aa4c421fe184f6be150043d5437e06c363",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.00799560546875,
+        "max": 359.9945068359375,
+        "mean": 180.49459838867188,
+        "first": [1.00799560546875, 1.9830322265625, 2.99652099609375],
+        "last": 359.9945068359375,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360],
+        "count": 360,
+        "sha256": "8a1d84ae4b2d539fba3e29a3e77b3c10fec54d765293b1731d295e7ca50d69a3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.450439453125,
+        "max": 0.46142578125,
+        "mean": 0.45871734619140625,
+        "first": [0.46142578125, 0.46142578125, 0.45867919921875],
+        "last": 0.46142578125,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [299],
+        "count": 299,
+        "sha256": "bb153bd863ebacbe619be9fe5630fa790333dbacc3c9543266b1e81d9aa9b8a7",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 450.0,
+        "max": 149450.0,
+        "mean": 74950.0,
+        "first": [450.0, 950.0, 1450.0],
+        "last": 149450.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "datetime64[ns]",
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [360],
+        "count": 360,
+        "sha256": "561d8ef25a16fc2bb40e202b9b27fed5e837593ff736f664c68fc95ad0380aa0",
+        "count_nat": 0,
+        "min": 1783452493.051389,
+        "max": 1783452529.9485903,
+        "mean": 1783452511.4999897,
+        "first": [1783452506.206937, 1783452506.3097148, 1783452506.4124925],
+        "last": 1783452506.104159,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "DBZH",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "2e0ffaa2110c589ae71c255614421cc12605f5958f3195729994ba022c44e9af",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -32.0,
+        "max": 49.5,
+        "mean": -26.69194072835377
+       }
+      },
+      {
+       "name": "VRADH",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "float64",
+       "values": {
+        "dtype": "float64",
+        "shape": [360, 299],
+        "count": 107640,
+        "sha256": "3e6addd5c66ce2fe39a4a269285cd59c3dbd8324d0cb1dc39946c655403b4997",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -36.75370748031496,
+        "max": 39.89505,
+        "mean": -0.06169160119251398
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": [],
+       "dtype": "object",
+       "values": {"dtype": "object", "shape": [], "value": null}
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U7",
+       "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": 0.4998779296875}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int64",
+       "values": {"dtype": "int64", "shape": [], "value": 1}
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "decoded": {
+  "kwargs": {"first_dim": "time", "optional_groups": true},
+  "groups": [
+   {
+    "path": "/",
+    "variables": [
+     {
+      "name": "altitude",
+      "role": "coord",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "altitude", "standard_name": "altitude", "units": "meters"},
+      "attr_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 835.0}
+     },
+     {
+      "name": "latitude",
+      "role": "coord",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {
+       "long_name": "latitude",
+       "positive": "up",
+       "standard_name": "latitude",
+       "units": "degrees_north"
+      },
+      "attr_types": {"long_name": "str", "positive": "str", "standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 41.7339900881052}
+     },
+     {
+      "name": "longitude",
+      "role": "coord",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "longitude", "standard_name": "longitude", "units": "degrees_east"},
+      "attr_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": -0.5459400080144405}
+     },
+     {
+      "name": "instrument_type",
+      "role": "data",
+      "dims": [],
+      "dtype": "U5",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {},
+      "encoding_types": {},
+      "values": {"dtype": "U5", "shape": [], "value": "radar"}
+     },
+     {
+      "name": "platform_type",
+      "role": "data",
+      "dims": [],
+      "dtype": "U5",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {},
+      "encoding_types": {},
+      "values": {"dtype": "U5", "shape": [], "value": "fixed"}
+     },
+     {
+      "name": "sweep_fixed_angle",
+      "role": "data",
+      "dims": ["sweep"],
+      "dtype": "float64",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [2],
+       "count": 2,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.4998779296875,
+       "max": 1.4996337890625,
+       "mean": 0.999755859375,
+       "first": [1.4996337890625, 0.4998779296875],
+       "last": 0.4998779296875,
+       "non_decreasing": false,
+       "values": [1.4996337890625, 0.4998779296875]
+      }
+     },
+     {
+      "name": "sweep_group_name",
+      "role": "data",
+      "dims": ["sweep"],
+      "dtype": "int64",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "int64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "int64",
+       "shape": [2],
+       "count": 2,
+       "min": 0,
+       "max": 1,
+       "sum": 1,
+       "first": [0, 1],
+       "last": 1,
+       "non_decreasing": true,
+       "values": [0, 1]
+      }
+     },
+     {
+      "name": "time_coverage_end",
+      "role": "data",
+      "dims": [],
+      "dtype": "U20",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {},
+      "encoding_types": {},
+      "values": {"dtype": "U20", "shape": [], "value": "2026-07-07T19:28:49Z"}
+     },
+     {
+      "name": "time_coverage_start",
+      "role": "data",
+      "dims": [],
+      "dtype": "U20",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {},
+      "encoding_types": {},
+      "values": {"dtype": "U20", "shape": [], "value": "2026-07-07T19:27:49Z"}
+     },
+     {
+      "name": "volume_number",
+      "role": "data",
+      "dims": [],
+      "dtype": "int64",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {},
+      "encoding_types": {},
+      "values": {"dtype": "int64", "shape": [], "value": 0}
+     }
+    ]
+   },
+   {"path": "/radar_parameters", "variables": []},
+   {"path": "/georeferencing_correction", "variables": []},
+   {"path": "/radar_calibration", "variables": []},
+   {
+    "path": "/sweep_0",
+    "variables": [
+     {
+      "name": "azimuth",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "axis": "radial_azimuth_coordinate",
+       "long_name": "azimuth_angle_from_true_north",
+       "standard_name": "ray_azimuth_angle",
+       "units": "degrees"
+      },
+      "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 1.00250244140625,
+       "max": 359.99176025390625,
+       "mean": 180.4937515258789,
+       "first": [202.994384765625, 203.98590087890625, 204.9993896484375],
+       "last": 202.00836181640625,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "elevation",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "axis": "radial_elevation_coordinate",
+       "long_name": "elevation_angle_from_horizontal_plane",
+       "standard_name": "ray_elevation_angle",
+       "units": "degrees"
+      },
+      "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 1.4776611328125,
+       "max": 1.494140625,
+       "mean": 1.4913330078125,
+       "first": [1.48590087890625, 1.4776611328125, 1.4776611328125],
+       "last": 1.494140625,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "range",
+      "role": "coord",
+      "dims": ["range"],
+      "dtype": "float32",
+      "attrs": {
+       "axis": "radial_range_coordinate",
+       "long_name": "range_to_measurement_volume",
+       "meters_between_gates": 500.0,
+       "meters_to_center_of_first_gate": 450.0,
+       "spacing_is_constant": "true",
+       "standard_name": "projection_range_coordinate",
+       "units": "meters"
+      },
+      "attr_types": {
+       "axis": "str",
+       "long_name": "str",
+       "meters_between_gates": "float32",
+       "meters_to_center_of_first_gate": "float32",
+       "spacing_is_constant": "str",
+       "standard_name": "str",
+       "units": "str"
+      },
+      "encoding": {"dtype": "float32"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [299],
+       "count": 299,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 450.0,
+       "max": 149450.0,
+       "mean": 74950.0,
+       "first": [450.0, 950.0, 1450.0],
+       "last": 149450.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "time",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "datetime64[ns]",
+      "attrs": {"standard_name": "time"},
+      "attr_types": {"standard_name": "str"},
+      "encoding": {"dtype": "float64", "units": "seconds since 1970-01-01T00:00:00Z"},
+      "encoding_types": {"dtype": "dtype", "units": "str"},
+      "values": {
+       "dtype": "datetime64[ns]",
+       "shape": [360],
+       "count": 360,
+       "count_nat": 0,
+       "min": 1783452469.0847223,
+       "max": 1783452529.91532,
+       "mean": 1783452499.500021,
+       "first": [1783452469.0847223, 1783452469.2541668, 1783452469.4236114],
+       "last": 1783452529.91532,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "DBZH",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float64",
+      "attrs": {
+       "_Undetect": -32.0,
+       "long_name": "Equivalent reflectivity factor H",
+       "standard_name": "radar_equivalent_reflectivity_factor_h",
+       "units": "dBZ"
+      },
+      "attr_types": {"_Undetect": "float", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {
+       "_FillValue": 95.5,
+       "coordinates": "elevation azimuth range latitude longitude altitude time",
+       "dtype": "float64"
+      },
+      "encoding_types": {"_FillValue": "float", "coordinates": "str", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360, 299],
+       "count": 107640,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": -32.0,
+       "max": 46.0,
+       "mean": -27.0185618729097
+      }
+     },
+     {
+      "name": "VRADH",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float64",
+      "attrs": {
+       "_Undetect": -32.0,
+       "long_name": "Radial velocity of scatterers away from instrument H",
+       "standard_name": "radial_velocity_of_scatterers_away_from_instrument_h",
+       "units": "meters per seconds"
+      },
+      "attr_types": {"_Undetect": "float", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {
+       "_FillValue": 95.5,
+       "coordinates": "elevation azimuth range latitude longitude altitude time",
+       "dtype": "float64"
+      },
+      "encoding_types": {"_FillValue": "float", "coordinates": "str", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360, 299],
+       "count": 107640,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": -34.240633464566926,
+       "max": 32.3558279527559,
+       "mean": 0.14485954909848225
+      }
+     },
+     {
+      "name": "follow_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U7",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "U7"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+     },
+     {
+      "name": "nyquist_velocity",
+      "role": "data",
+      "dims": [],
+      "dtype": "object",
+      "attrs": {"standard_name": "nyquist_velocity", "units": "m s-1"},
+      "attr_types": {"standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "object"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "object", "shape": [], "value": null}
+     },
+     {
+      "name": "prt_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U7",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "U7"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+     },
+     {
+      "name": "sweep_fixed_angle",
+      "role": "data",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 1.4996337890625}
+     },
+     {
+      "name": "sweep_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U20",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "U20"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+     },
+     {
+      "name": "sweep_number",
+      "role": "data",
+      "dims": [],
+      "dtype": "int64",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "int64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "int64", "shape": [], "value": 0}
+     }
+    ]
+   },
+   {
+    "path": "/sweep_1",
+    "variables": [
+     {
+      "name": "azimuth",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "axis": "radial_azimuth_coordinate",
+       "long_name": "azimuth_angle_from_true_north",
+       "standard_name": "ray_azimuth_angle",
+       "units": "degrees"
+      },
+      "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 1.00799560546875,
+       "max": 359.9945068359375,
+       "mean": 180.49459838867188,
+       "first": [233.00628662109375, 233.98406982421875, 235.00030517578125],
+       "last": 231.9873046875,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "elevation",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "axis": "radial_elevation_coordinate",
+       "long_name": "elevation_angle_from_horizontal_plane",
+       "standard_name": "ray_elevation_angle",
+       "units": "degrees"
+      },
+      "attr_types": {"axis": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.450439453125,
+       "max": 0.46142578125,
+       "mean": 0.45871734619140625,
+       "first": [0.450439453125, 0.45867919921875, 0.45867919921875],
+       "last": 0.46142578125,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "range",
+      "role": "coord",
+      "dims": ["range"],
+      "dtype": "float32",
+      "attrs": {
+       "axis": "radial_range_coordinate",
+       "long_name": "range_to_measurement_volume",
+       "meters_between_gates": 500.0,
+       "meters_to_center_of_first_gate": 450.0,
+       "spacing_is_constant": "true",
+       "standard_name": "projection_range_coordinate",
+       "units": "meters"
+      },
+      "attr_types": {
+       "axis": "str",
+       "long_name": "str",
+       "meters_between_gates": "float32",
+       "meters_to_center_of_first_gate": "float32",
+       "spacing_is_constant": "str",
+       "standard_name": "str",
+       "units": "str"
+      },
+      "encoding": {"dtype": "float32"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [299],
+       "count": 299,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 450.0,
+       "max": 149450.0,
+       "mean": 74950.0,
+       "first": [450.0, 950.0, 1450.0],
+       "last": 149450.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "time",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "datetime64[ns]",
+      "attrs": {"standard_name": "time"},
+      "attr_types": {"standard_name": "str"},
+      "encoding": {"dtype": "float64", "units": "seconds since 1970-01-01T00:00:00Z"},
+      "encoding_types": {"dtype": "dtype", "units": "str"},
+      "values": {
+       "dtype": "datetime64[ns]",
+       "shape": [360],
+       "count": 360,
+       "count_nat": 0,
+       "min": 1783452493.051389,
+       "max": 1783452529.9485903,
+       "mean": 1783452511.4999897,
+       "first": [1783452493.051389, 1783452493.1541667, 1783452493.2569444],
+       "last": 1783452529.9485903,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "DBZH",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float64",
+      "attrs": {
+       "_Undetect": -32.0,
+       "long_name": "Equivalent reflectivity factor H",
+       "standard_name": "radar_equivalent_reflectivity_factor_h",
+       "units": "dBZ"
+      },
+      "attr_types": {"_Undetect": "float", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {
+       "_FillValue": 95.5,
+       "coordinates": "elevation azimuth range latitude longitude altitude time",
+       "dtype": "float64"
+      },
+      "encoding_types": {"_FillValue": "float", "coordinates": "str", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360, 299],
+       "count": 107640,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": -32.0,
+       "max": 49.5,
+       "mean": -26.69194072835377
+      }
+     },
+     {
+      "name": "VRADH",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float64",
+      "attrs": {
+       "_Undetect": -32.0,
+       "long_name": "Radial velocity of scatterers away from instrument H",
+       "standard_name": "radial_velocity_of_scatterers_away_from_instrument_h",
+       "units": "meters per seconds"
+      },
+      "attr_types": {"_Undetect": "float", "long_name": "str", "standard_name": "str", "units": "str"},
+      "encoding": {
+       "_FillValue": 95.5,
+       "coordinates": "elevation azimuth range latitude longitude altitude time",
+       "dtype": "float64"
+      },
+      "encoding_types": {"_FillValue": "float", "coordinates": "str", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360, 299],
+       "count": 107640,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": -36.75370748031496,
+       "max": 39.89505,
+       "mean": -0.06169160119251398
+      }
+     },
+     {
+      "name": "follow_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U7",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "U7"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+     },
+     {
+      "name": "nyquist_velocity",
+      "role": "data",
+      "dims": [],
+      "dtype": "object",
+      "attrs": {"standard_name": "nyquist_velocity", "units": "m s-1"},
+      "attr_types": {"standard_name": "str", "units": "str"},
+      "encoding": {"dtype": "object"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "object", "shape": [], "value": null}
+     },
+     {
+      "name": "prt_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U7",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "U7"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "U7", "shape": [], "value": "not_set"}
+     },
+     {
+      "name": "sweep_fixed_angle",
+      "role": "data",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "float64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 0.4998779296875}
+     },
+     {
+      "name": "sweep_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U20",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "U20"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+     },
+     {
+      "name": "sweep_number",
+      "role": "data",
+      "dims": [],
+      "dtype": "int64",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"dtype": "int64"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "int64", "shape": [], "value": 1}
+     }
+    ]
+   }
+  ]
+ }
+}
