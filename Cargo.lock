@@ -920,8 +920,8 @@ name = "recast-radar-bench"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "recast-radar-color-tables",
  "recast-radar-core",
+ "recast-radar-correct",
  "recast-radar-io-nexrad",
  "recast-radar-render",
  "serde",
@@ -929,15 +929,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "recast-radar-color-tables"
-version = "0.1.0"
-
-[[package]]
 name = "recast-radar-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "serde",
+]
+
+[[package]]
+name = "recast-radar-correct"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "image",
+ "rayon",
+ "recast-radar-core",
+ "recast-radar-io-nexrad",
 ]
 
 [[package]]
@@ -951,6 +958,14 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "recast-radar-filters"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "recast-radar-core",
 ]
 
 [[package]]
@@ -969,15 +984,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-radar-map"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "recast-radar-core",
+ "recast-radar-correct",
+ "recast-radar-filters",
+ "recast-radar-io-nexrad",
+]
+
+[[package]]
 name = "recast-radar-render"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "image",
  "rayon",
- "recast-radar-color-tables",
  "recast-radar-core",
+ "recast-radar-correct",
+ "recast-radar-filters",
  "recast-radar-io-nexrad",
+ "recast-radar-map",
+ "recast-radar-retrieve",
+ "recast-radar-track",
  "thiserror",
 ]
 
@@ -985,7 +1015,13 @@ dependencies = [
 name = "recast-radar-retrieve"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "rayon",
  "recast-radar-core",
+ "recast-radar-correct",
+ "recast-radar-io-nexrad",
+ "recast-radar-map",
+ "thiserror",
 ]
 
 [[package]]
@@ -996,6 +1032,19 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "recast-radar-track"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "image",
+ "recast-radar-core",
+ "recast-radar-correct",
+ "recast-radar-io-nexrad",
+ "recast-radar-map",
+ "recast-radar-retrieve",
 ]
 
 [[package]]

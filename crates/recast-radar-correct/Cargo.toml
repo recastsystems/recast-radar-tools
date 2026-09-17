@@ -1,5 +1,5 @@
 [package]
-name = "recast-radar-retrieve"
+name = "recast-radar-correct"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,12 +8,10 @@ license.workspace = true
 chrono.workspace = true
 rayon.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
-recast-radar-correct = { path = "../recast-radar-correct" }
-thiserror.workspace = true
 
 [dev-dependencies]
+image.workspace = true
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
-recast-radar-map = { path = "../recast-radar-map" }
 
 [lints]
 workspace = true

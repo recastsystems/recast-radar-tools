@@ -35,7 +35,7 @@ use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use recast_radar_core::{ElevationCut, MomentGrid, MomentStorage, MomentType, RadarVolume};
-use recast_radar_render::{
+use recast_radar_correct::{
     EnvWindLevel, EnvironmentalWindProfile, TemporalPrior, dealias_velocity_grid,
     dealias_velocity_grid_pyart_region, dealias_volume_v4, fit_range_band_reference,
     project_environmental_winds,
@@ -780,7 +780,7 @@ struct EngineRun {
     worst_tilt_ms: f64,
     /// True when `worst_tilt_ms` is amortized (single volume solve).
     amortized: bool,
-    diagnostics: Option<recast_radar_render::V4Diagnostics>,
+    diagnostics: Option<recast_radar_correct::V4Diagnostics>,
 }
 
 fn run_engine(
@@ -905,8 +905,8 @@ struct EngineReport {
 /// the engine's own env setting).
 #[derive(Default)]
 struct PriorSolutions {
-    with_env: Option<recast_radar_render::V4VolumeSolution>,
-    without_env: Option<recast_radar_render::V4VolumeSolution>,
+    with_env: Option<recast_radar_correct::V4VolumeSolution>,
+    without_env: Option<recast_radar_correct::V4VolumeSolution>,
 }
 
 #[allow(clippy::too_many_arguments)]

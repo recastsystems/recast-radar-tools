@@ -10,9 +10,8 @@
 use std::path::PathBuf;
 
 use recast_radar_core::MomentType;
-use recast_radar_render::{
-    RasterOptions, SwathAggregation, base_tilt_cut, max_value_swath, render_moment_png,
-};
+use recast_radar_render::{RasterOptions, render_moment_png};
+use recast_radar_track::{SwathAggregation, base_tilt_cut, max_value_swath};
 
 fn main() {
     let mut args = std::env::args_os().skip(1);

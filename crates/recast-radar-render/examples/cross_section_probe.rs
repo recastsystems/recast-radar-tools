@@ -6,10 +6,10 @@
 
 use std::path::PathBuf;
 
-use recast_radar_color_tables::builtin_reflectivity_table;
 use image::{ImageBuffer, Rgba};
 use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_render::{composite_reflectivity_grid, reflectivity_cross_section};
+use recast_radar_map::{composite_reflectivity_grid, reflectivity_cross_section};
+use recast_radar_render::color::builtin_reflectivity_table;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);

@@ -6,9 +6,9 @@ license.workspace = true
 
 [dependencies]
 chrono.workspace = true
-recast-radar-color-tables = { path = "../recast-radar-color-tables" }
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-correct = { path = "../recast-radar-correct" }
 recast-radar-render = { path = "../recast-radar-render" }
 serde.workspace = true
 serde_json.workspace = true

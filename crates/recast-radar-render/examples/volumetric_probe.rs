@@ -7,10 +7,10 @@ use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
 use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_render::{
-    ECHO_TOP_THRESHOLD_DBZ, RasterOptions, composite_reflectivity_grid, echo_top_grid,
-    render_moment_image, vil_grid,
+use recast_radar_map::{
+    ECHO_TOP_THRESHOLD_DBZ, composite_reflectivity_grid, echo_top_grid, vil_grid,
 };
+use recast_radar_render::{RasterOptions, render_moment_image};
 
 fn stats(grid: &recast_radar_core::MomentGrid, label: &str, scale: f32, unit: &str) {
     let rows = grid.radial_count();

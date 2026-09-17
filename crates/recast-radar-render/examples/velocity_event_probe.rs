@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
-use recast_radar_color_tables::{ColorTable, builtin_velocity_table};
 use recast_radar_core::{ElevationCut, MomentGrid, MomentType, RadarVolume};
-use recast_radar_render::dealias_velocity_grid;
+use recast_radar_correct::dealias_velocity_grid;
+use recast_radar_render::color::{ColorTable, builtin_velocity_table};
 
 const EARTH_KM_PER_DEG: f32 = 111.32;
 
