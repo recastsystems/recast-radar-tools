@@ -42,6 +42,7 @@ use chrono::NaiveDateTime;
 
 use super::listing::{ListingEntry, fnv1a64, has_dir, join_url, parse_autoindex};
 use super::{FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames};
+#[cfg(feature = "net")]
 use crate::{fetch_listing_text, fetch_text};
 
 const DWD_SITES_ROOT: &str = "https://opendata.dwd.de/weather/radar/sites/";
@@ -156,6 +157,7 @@ impl DwdProvider {
     /// is always the required `sweep_vol_z` listing with at least one
     /// timestamped sweep — missing or empty required listings are errors —
     /// so callers can anchor cycles on `products[0]`.
+    #[cfg(feature = "net")]
     fn fetch_product_sweeps(&self, site_id: &str) -> Result<Vec<DwdProductSweeps>, String> {
         let mut products = Vec::new();
         for product in self.included_products() {
@@ -205,6 +207,7 @@ impl IntlProvider for DwdProvider {
         "Germany"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         let stations_url = format!("{DWD_SITES_ROOT}sweep_vol_z/");
         let html = fetch_text(&stations_url)
@@ -238,6 +241,7 @@ impl IntlProvider for DwdProvider {
         Ok(sites)
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         if !is_safe_path_segment(site_id) {
             return Err(format!("DWD: invalid site id '{site_id}'"));
@@ -274,6 +278,7 @@ impl IntlProvider for DwdProvider {
 }
 
 impl RecentFrames for DwdProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         if !is_safe_path_segment(site_id) {
             return Err(format!("DWD: invalid site id '{site_id}'"));
@@ -386,6 +391,7 @@ struct ResolvedProductDir {
 /// when present (LATEST-bearing raw quantities), else `hdf5/` descending
 /// into `filter_polarimetric/` over `filter_simple/` (filtered quantities,
 /// timestamped files only).
+#[cfg(feature = "net")]
 fn resolve_product_dir(site_id: &str, product: &DwdProduct) -> Result<ResolvedProductDir, String> {
     let station_url = format!("{DWD_SITES_ROOT}{}/{site_id}/", product.dir);
     let station_html =

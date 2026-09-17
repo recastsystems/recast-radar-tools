@@ -1,0 +1,532 @@
+# Real NEXRAD real-time chunk listings from unidata-nexrad-level2-chunks, written by
+# tools/capture_chunk_listings.py (see its docstring for the file formats). The .xml
+# files are the raw ListObjectsV2 responses; the .csv files are decoded from the
+# downloaded chunks, which are not committed (they expire from the bucket).
+
+[[volume]]
+site = "KAMA"
+volume_id = 480
+volume_time = "2026-09-17T01:03:37Z"
+vcp = 35
+vcp_cuts = 12
+elevations_collected = 12
+chunks = 55
+radials = 6480
+bytes = 4266914
+start_last_modified = "2026-09-17T01:03:40.000Z"
+end_last_modified = "2026-09-17T01:10:18.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KAMA/480/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KAMA/480-20260917-010337.xml"
+listing_sha256 = "3ee4b5a27d359d4cd4df474e2693de73e03403836a5057c76e41ffd668aaa968"
+chunks_csv = "KAMA/480-20260917-010337.chunks.csv"
+chunks_csv_sha256 = "78f10c47e57d01a960737992eeabfea199fff50516f77176d6d9421bc0f11ea0"
+vcp_csv = "KAMA/480-20260917-010337.vcp.csv"
+vcp_csv_sha256 = "00bfecf589e4e98df57e6beb00e1baf5c2e6d03fba715f226c711ec92f41b065"
+metpy = "MetPy 1.7.1 Level2File agrees: 12 sweeps, VCP 35 with 12 cuts"
+
+[[volume]]
+site = "KAMA"
+volume_id = 481
+volume_time = "2026-09-17T01:10:18Z"
+vcp = 35
+vcp_cuts = 12
+elevations_collected = 12
+chunks = 55
+radials = 6480
+bytes = 4840745
+start_last_modified = "2026-09-17T01:10:20.000Z"
+end_last_modified = "2026-09-17T01:16:52.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KAMA/481/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KAMA/481-20260917-011018.xml"
+listing_sha256 = "58b4ec863f9aba282bdfaecccee724788db1b749521d3271550b6837b4804b6d"
+chunks_csv = "KAMA/481-20260917-011018.chunks.csv"
+chunks_csv_sha256 = "50c3a41fd651a93b74b6574ae4ba0cc503271831d811c4a26edf9b3951e6a776"
+vcp_csv = "KAMA/481-20260917-011018.vcp.csv"
+vcp_csv_sha256 = "00bfecf589e4e98df57e6beb00e1baf5c2e6d03fba715f226c711ec92f41b065"
+metpy = "MetPy 1.7.1 Level2File agrees: 12 sweeps, VCP 35 with 12 cuts"
+
+[[volume]]
+site = "KAMA"
+volume_id = 482
+volume_time = "2026-09-17T01:16:58Z"
+vcp = 35
+vcp_cuts = 12
+elevations_collected = 12
+chunks = 55
+radials = 6480
+bytes = 5458525
+start_last_modified = "2026-09-17T01:17:01.000Z"
+end_last_modified = "2026-09-17T01:23:50.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KAMA/482/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KAMA/482-20260917-011658.xml"
+listing_sha256 = "275f007c9f2a4ee895b4e77a1ed8e736a50806afd59b940a98defcb7482987b1"
+chunks_csv = "KAMA/482-20260917-011658.chunks.csv"
+chunks_csv_sha256 = "58184a7e2990aa69f46db58cfc7c4a9d596c39979a4604040caacaf69a4e9533"
+vcp_csv = "KAMA/482-20260917-011658.vcp.csv"
+vcp_csv_sha256 = "9844b77d18603cecda78452a2adf52b3199b5c56479bbec1c5ad1de7c610c81d"
+metpy = "MetPy 1.7.1 Level2File agrees: 12 sweeps, VCP 35 with 12 cuts"
+
+[[volume]]
+site = "KDGX"
+volume_id = 122
+volume_time = "2026-09-17T00:56:16Z"
+vcp = 35
+vcp_cuts = 16
+elevations_collected = 16
+chunks = 79
+radials = 9360
+bytes = 13113017
+start_last_modified = "2026-09-17T00:56:20.000Z"
+end_last_modified = "2026-09-17T01:06:19.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KDGX/122/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KDGX/122-20260917-005616.xml"
+listing_sha256 = "61daffbb7c3d28d4835313f4a845dc814c7c59323759b10290a4ac11d91e6ea4"
+chunks_csv = "KDGX/122-20260917-005616.chunks.csv"
+chunks_csv_sha256 = "71da52dc73548f9983d06187901f063c16fa70a49cee26d47a27de22065b5308"
+vcp_csv = "KDGX/122-20260917-005616.vcp.csv"
+vcp_csv_sha256 = "89b5442d10fb2fd9fef94f8c9856234bed28ebd09f33fee5ff775399f9cbf7df"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 35 with 16 cuts"
+
+[[volume]]
+site = "KDGX"
+volume_id = 123
+volume_time = "2026-09-17T01:06:27Z"
+vcp = 35
+vcp_cuts = 16
+elevations_collected = 16
+chunks = 79
+radials = 9360
+bytes = 14082620
+start_last_modified = "2026-09-17T01:06:31.000Z"
+end_last_modified = "2026-09-17T01:16:30.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KDGX/123/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KDGX/123-20260917-010627.xml"
+listing_sha256 = "c073840c5d6aad1fd2eed2d13e6cdf6e7adb9f3f0d087d6d9d970d2bed0e4af4"
+chunks_csv = "KDGX/123-20260917-010627.chunks.csv"
+chunks_csv_sha256 = "c046c6d223cf54dd4eaccce2a2391fea0c1bf55a011c48b514ce0712bbe9ff59"
+vcp_csv = "KDGX/123-20260917-010627.vcp.csv"
+vcp_csv_sha256 = "89b5442d10fb2fd9fef94f8c9856234bed28ebd09f33fee5ff775399f9cbf7df"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 35 with 16 cuts"
+
+[[volume]]
+site = "KDGX"
+volume_id = 124
+volume_time = "2026-09-17T01:16:37Z"
+vcp = 35
+vcp_cuts = 16
+elevations_collected = 16
+chunks = 79
+radials = 9360
+bytes = 14853582
+start_last_modified = "2026-09-17T01:16:41.000Z"
+end_last_modified = "2026-09-17T01:26:40.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KDGX/124/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KDGX/124-20260917-011637.xml"
+listing_sha256 = "21ff3ef5070a2506229480b3cf7ebe9457bf5c10b3ede6c7c7a3cc2719e8739b"
+chunks_csv = "KDGX/124-20260917-011637.chunks.csv"
+chunks_csv_sha256 = "509efa2c6c52ceb5992740f1dbf0e5a341777bb793513821ddb2e124b7f50545"
+vcp_csv = "KDGX/124-20260917-011637.vcp.csv"
+vcp_csv_sha256 = "89b5442d10fb2fd9fef94f8c9856234bed28ebd09f33fee5ff775399f9cbf7df"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 35 with 16 cuts"
+
+[[volume]]
+site = "KGRB"
+volume_id = 504
+volume_time = "2026-09-17T00:56:32Z"
+vcp = 34
+vcp_cuts = 10
+elevations_collected = 10
+chunks = 49
+radials = 5760
+bytes = 5189617
+start_last_modified = "2026-09-17T00:56:36.000Z"
+end_last_modified = "2026-09-17T01:05:21.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KGRB/504/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KGRB/504-20260917-005632.xml"
+listing_sha256 = "10c876d98aa749006df5853e80eb7bb393b35456e8aaeac5e31b1ae7e241134e"
+chunks_csv = "KGRB/504-20260917-005632.chunks.csv"
+chunks_csv_sha256 = "1b5f6fcda188202edd85854af34b77bbdf88dc6c81c685b3fbd0d3893a0cfd69"
+vcp_csv = "KGRB/504-20260917-005632.vcp.csv"
+vcp_csv_sha256 = "da932441c7d02b00a20030250d81f296f56e4845cee9dde312cb5472f29ef295"
+metpy = "MetPy 1.7.1 Level2File agrees: 10 sweeps, VCP 34 with 10 cuts"
+
+[[volume]]
+site = "KGRB"
+volume_id = 505
+volume_time = "2026-09-17T01:05:31Z"
+vcp = 34
+vcp_cuts = 10
+elevations_collected = 10
+chunks = 49
+radials = 5760
+bytes = 5452685
+start_last_modified = "2026-09-17T01:05:35.000Z"
+end_last_modified = "2026-09-17T01:14:20.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KGRB/505/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KGRB/505-20260917-010531.xml"
+listing_sha256 = "6b1dcca7ab815ffe04ff9dc87744ced68cef5241dcdb6fcc47aca0d5f0d5070a"
+chunks_csv = "KGRB/505-20260917-010531.chunks.csv"
+chunks_csv_sha256 = "fcb82d8dbed40ba51ded70e580084f901b9cca87e9572be8326575f9b364f18d"
+vcp_csv = "KGRB/505-20260917-010531.vcp.csv"
+vcp_csv_sha256 = "da932441c7d02b00a20030250d81f296f56e4845cee9dde312cb5472f29ef295"
+metpy = "MetPy 1.7.1 Level2File agrees: 10 sweeps, VCP 34 with 10 cuts"
+
+[[volume]]
+site = "KGRB"
+volume_id = 506
+volume_time = "2026-09-17T01:14:28Z"
+vcp = 34
+vcp_cuts = 10
+elevations_collected = 10
+chunks = 49
+radials = 5760
+bytes = 5729081
+start_last_modified = "2026-09-17T01:14:32.000Z"
+end_last_modified = "2026-09-17T01:23:18.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KGRB/506/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KGRB/506-20260917-011428.xml"
+listing_sha256 = "92ce5e3bfe2c2542971dc6df7166b633de375ef3e6e51d048b5ea3c7a4948437"
+chunks_csv = "KGRB/506-20260917-011428.chunks.csv"
+chunks_csv_sha256 = "0bd3b26dfc826e43ffe2969131517a4a1e420adef007b172634c2cc53395229c"
+vcp_csv = "KGRB/506-20260917-011428.vcp.csv"
+vcp_csv_sha256 = "da932441c7d02b00a20030250d81f296f56e4845cee9dde312cb5472f29ef295"
+metpy = "MetPy 1.7.1 Level2File agrees: 10 sweeps, VCP 34 with 10 cuts"
+
+[[volume]]
+site = "KRGX"
+volume_id = 669
+volume_time = "2026-09-17T01:20:48Z"
+vcp = 12
+vcp_cuts = 19
+elevations_collected = 14
+chunks = 67
+radials = 7920
+bytes = 4029539
+start_last_modified = "2026-09-17T01:20:51.000Z"
+end_last_modified = "2026-09-17T01:24:12.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KRGX/669/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KRGX/669-20260917-012048.xml"
+listing_sha256 = "81733967f528253bd7dc7ac89c2eca8a17f204e4877e83b9c51e688da616195d"
+chunks_csv = "KRGX/669-20260917-012048.chunks.csv"
+chunks_csv_sha256 = "5fc24d24cd5f850fb4ed9f6af4db3ff51cec53daf9747b2507a294208b5265ff"
+vcp_csv = "KRGX/669-20260917-012048.vcp.csv"
+vcp_csv_sha256 = "3e92533e7bf926938c274a2c704c40157cadf3a47dfe13128a5e4feeb5224046"
+metpy = "MetPy 1.7.1 Level2File agrees: 14 sweeps, VCP 12 with 19 cuts"
+
+[[volume]]
+site = "KRGX"
+volume_id = 670
+volume_time = "2026-09-17T01:24:19Z"
+vcp = 12
+vcp_cuts = 19
+elevations_collected = 14
+chunks = 67
+radials = 7920
+bytes = 4093248
+start_last_modified = "2026-09-17T01:24:22.000Z"
+end_last_modified = "2026-09-17T01:27:45.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KRGX/670/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KRGX/670-20260917-012419.xml"
+listing_sha256 = "6573f55acecbcae5783d26afccdcb9a6c2c0fe1f6756bab6224775296406e6d4"
+chunks_csv = "KRGX/670-20260917-012419.chunks.csv"
+chunks_csv_sha256 = "c766b889e602d80b4752972aa4401b3a2bedefbb5bb29360545ce892e5113af0"
+vcp_csv = "KRGX/670-20260917-012419.vcp.csv"
+vcp_csv_sha256 = "8aa569823b778d8ef03eb62256b59bf9e45b5b8243925163ae68941e0ab039c2"
+metpy = "MetPy 1.7.1 Level2File agrees: 14 sweeps, VCP 12 with 19 cuts"
+
+[[volume]]
+site = "KRGX"
+volume_id = 671
+volume_time = "2026-09-17T01:27:52Z"
+vcp = 12
+vcp_cuts = 19
+elevations_collected = 14
+chunks = 67
+radials = 7920
+bytes = 4083293
+start_last_modified = "2026-09-17T01:27:56.000Z"
+end_last_modified = "2026-09-17T01:31:17.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KRGX/671/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KRGX/671-20260917-012752.xml"
+listing_sha256 = "8077cbd260b8ca7461aa8ef5a893c41dcda296559108bdde89eeab0b5b8d1ae0"
+chunks_csv = "KRGX/671-20260917-012752.chunks.csv"
+chunks_csv_sha256 = "cd76a5a0ec9bdf1f0ad2dff9d42a6d387999d6e77733a7420ed3a72b70ac0f54"
+vcp_csv = "KRGX/671-20260917-012752.vcp.csv"
+vcp_csv_sha256 = "8aa569823b778d8ef03eb62256b59bf9e45b5b8243925163ae68941e0ab039c2"
+metpy = "MetPy 1.7.1 Level2File agrees: 14 sweeps, VCP 12 with 19 cuts"
+
+[[volume]]
+site = "KMAX"
+volume_id = 6
+volume_time = "2026-09-17T01:10:07Z"
+vcp = 212
+vcp_cuts = 21
+elevations_collected = 21
+chunks = 94
+radials = 11160
+bytes = 10460403
+start_last_modified = "2026-09-17T01:10:18.000Z"
+end_last_modified = "2026-09-17T01:16:10.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KMAX/6/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KMAX/006-20260917-011007.xml"
+listing_sha256 = "5113870b389ff09dc46dc10d72e75191508fecfcbe39f9b41274c580345db461"
+chunks_csv = "KMAX/006-20260917-011007.chunks.csv"
+chunks_csv_sha256 = "3f718f31d84a6ef6d302a41584b11cfee0243ecc651a24a166d489cc9c95761b"
+vcp_csv = "KMAX/006-20260917-011007.vcp.csv"
+vcp_csv_sha256 = "4833e23a65e4eee819399344d70528b9e0226cae3a0852deda8b804edeb8cec8"
+metpy = "MetPy 1.7.1 Level2File agrees: 21 sweeps, VCP 212 with 21 cuts"
+
+[[volume]]
+site = "KMAX"
+volume_id = 7
+volume_time = "2026-09-17T01:16:17Z"
+vcp = 212
+vcp_cuts = 21
+elevations_collected = 21
+chunks = 94
+radials = 11160
+bytes = 10401954
+start_last_modified = "2026-09-17T01:16:20.000Z"
+end_last_modified = "2026-09-17T01:21:58.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KMAX/7/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KMAX/007-20260917-011617.xml"
+listing_sha256 = "ab49b442715eb985a2b2aa8021b136a34250e3ae2618dc8fd46421f23698ba84"
+chunks_csv = "KMAX/007-20260917-011617.chunks.csv"
+chunks_csv_sha256 = "4d0e273a47cfc9fe4654bffed5f7bcfd1c23552d95d18d2c79d4a50dc1495b2d"
+vcp_csv = "KMAX/007-20260917-011617.vcp.csv"
+vcp_csv_sha256 = "a5b453c27a52479d2a70c0bf7a79258f170c5f06dd4563eb7a303ed9c6af1169"
+metpy = "MetPy 1.7.1 Level2File agrees: 21 sweeps, VCP 212 with 21 cuts"
+
+[[volume]]
+site = "KMAX"
+volume_id = 8
+volume_time = "2026-09-17T01:22:06Z"
+vcp = 212
+vcp_cuts = 21
+elevations_collected = 21
+chunks = 94
+radials = 11160
+bytes = 10344499
+start_last_modified = "2026-09-17T01:22:11.000Z"
+end_last_modified = "2026-09-17T01:27:31.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KMAX/8/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KMAX/008-20260917-012206.xml"
+listing_sha256 = "c2e13b0325fba5346ebc4499420f698ce2dc8a142d618589a04e7d6f95ac97e9"
+chunks_csv = "KMAX/008-20260917-012206.chunks.csv"
+chunks_csv_sha256 = "3d974ac5f4cd2dd6ee624d77953d41af41443f6ac2219432848c7535371b3d2c"
+vcp_csv = "KMAX/008-20260917-012206.vcp.csv"
+vcp_csv_sha256 = "140dc612f54ead08fe9fc42adda4c68e7909fa25de78412b7a62ff0594df25bc"
+metpy = "MetPy 1.7.1 Level2File agrees: 21 sweeps, VCP 212 with 21 cuts"
+
+[[volume]]
+site = "KEAX"
+volume_id = 136
+volume_time = "2026-09-17T01:12:52Z"
+vcp = 212
+vcp_cuts = 21
+elevations_collected = 16
+chunks = 79
+radials = 9360
+bytes = 13396260
+start_last_modified = "2026-09-17T01:12:55.000Z"
+end_last_modified = "2026-09-17T01:17:51.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KEAX/136/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KEAX/136-20260917-011252.xml"
+listing_sha256 = "9396caa2437fa1b3f8b764391b1e1b010564d54784b7c22d965a164aae2bd828"
+chunks_csv = "KEAX/136-20260917-011252.chunks.csv"
+chunks_csv_sha256 = "a4a3e5b784e09e794df7eb3d6701cd8c1155984bd4d9e9a7cd05f6443bf17865"
+vcp_csv = "KEAX/136-20260917-011252.vcp.csv"
+vcp_csv_sha256 = "10130eb27af9a3b79472d421a6f206872428013d1d63fe94da7d2c8b970b9232"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 212 with 21 cuts"
+
+[[volume]]
+site = "KEAX"
+volume_id = 137
+volume_time = "2026-09-17T01:17:58Z"
+vcp = 212
+vcp_cuts = 21
+elevations_collected = 16
+chunks = 79
+radials = 9360
+bytes = 13827532
+start_last_modified = "2026-09-17T01:18:01.000Z"
+end_last_modified = "2026-09-17T01:22:57.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KEAX/137/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KEAX/137-20260917-011758.xml"
+listing_sha256 = "3c3674ccc7c28f0672159b5521221ea7d4193539362466adb6dea77bfbf55aee"
+chunks_csv = "KEAX/137-20260917-011758.chunks.csv"
+chunks_csv_sha256 = "1b6275a3acdb1cdf9fd98b9e373b8775b65697e679c01f3a32cb44e4ff5aedba"
+vcp_csv = "KEAX/137-20260917-011758.vcp.csv"
+vcp_csv_sha256 = "10130eb27af9a3b79472d421a6f206872428013d1d63fe94da7d2c8b970b9232"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 212 with 21 cuts"
+
+[[volume]]
+site = "KEAX"
+volume_id = 138
+volume_time = "2026-09-17T01:23:05Z"
+vcp = 212
+vcp_cuts = 21
+elevations_collected = 16
+chunks = 79
+radials = 9360
+bytes = 14238208
+start_last_modified = "2026-09-17T01:23:08.000Z"
+end_last_modified = "2026-09-17T01:28:04.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KEAX/138/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KEAX/138-20260917-012305.xml"
+listing_sha256 = "361c50ed03aa8f9e0bdead225e8e12ba49be6b6246718281c3e7843065ae4278"
+chunks_csv = "KEAX/138-20260917-012305.chunks.csv"
+chunks_csv_sha256 = "cee9d2099540cadd2aaf3c4f03343e7f47238970ad8da22a842d3b31a024edb5"
+vcp_csv = "KEAX/138-20260917-012305.vcp.csv"
+vcp_csv_sha256 = "10130eb27af9a3b79472d421a6f206872428013d1d63fe94da7d2c8b970b9232"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 212 with 21 cuts"
+
+[[volume]]
+site = "KIWA"
+volume_id = 306
+volume_time = "2026-09-17T00:30:49Z"
+vcp = 215
+vcp_cuts = 20
+elevations_collected = 15
+chunks = 70
+radials = 8280
+bytes = 12850418
+start_last_modified = "2026-09-17T00:30:51.000Z"
+end_last_modified = "2026-09-17T00:36:20.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KIWA/306/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KIWA/306-20260917-003049.xml"
+listing_sha256 = "7286d15cc25fb624e619f58450e15efba48e47eb16cb34845821d41ccc39718c"
+chunks_csv = "KIWA/306-20260917-003049.chunks.csv"
+chunks_csv_sha256 = "55c0db22736119c66815431fcc2917e392ce606e961875b9d6e02be1dce46fcf"
+vcp_csv = "KIWA/306-20260917-003049.vcp.csv"
+vcp_csv_sha256 = "5b5fd406f66f4d63ef4809d185fee760291c97890523464ed3bf1daf89e6122d"
+metpy = "MetPy 1.7.1 Level2File agrees: 15 sweeps, VCP 215 with 20 cuts"
+
+[[volume]]
+site = "KIWA"
+volume_id = 307
+volume_time = "2026-09-17T00:36:29Z"
+vcp = 215
+vcp_cuts = 20
+elevations_collected = 15
+chunks = 70
+radials = 8280
+bytes = 12653945
+start_last_modified = "2026-09-17T00:36:31.000Z"
+end_last_modified = "2026-09-17T00:41:50.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KIWA/307/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KIWA/307-20260917-003629.xml"
+listing_sha256 = "d96968dde54b274b569754335dac6de94c9e60583b9f9ec68ad20642333a2285"
+chunks_csv = "KIWA/307-20260917-003629.chunks.csv"
+chunks_csv_sha256 = "b09f6bd0fe59fbb7d829ef3c1b9e76da37a45a9dfad4b39fb69a1e8d77783b78"
+vcp_csv = "KIWA/307-20260917-003629.vcp.csv"
+vcp_csv_sha256 = "6d801c0d7bc8722cb9e811bcbd8ffa0763a4605aa6b98300a7ee4ed07f9f6e5d"
+metpy = "MetPy 1.7.1 Level2File agrees: 15 sweeps, VCP 215 with 20 cuts"
+
+[[volume]]
+site = "KIWA"
+volume_id = 308
+volume_time = "2026-09-17T00:41:56Z"
+vcp = 215
+vcp_cuts = 20
+elevations_collected = 15
+chunks = 70
+radials = 8280
+bytes = 12743979
+start_last_modified = "2026-09-17T00:41:58.000Z"
+end_last_modified = "2026-09-17T00:47:35.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=KIWA/308/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "KIWA/308-20260917-004156.xml"
+listing_sha256 = "b3d9a67e48001317fb3bc2f2320ef8d6e6b878c55309b8e1430cd890c1141bf8"
+chunks_csv = "KIWA/308-20260917-004156.chunks.csv"
+chunks_csv_sha256 = "8c09e99d8c83fb4134a459a06d6aad01b36ce95d270b8c6a81f3d73d674cfa19"
+vcp_csv = "KIWA/308-20260917-004156.vcp.csv"
+vcp_csv_sha256 = "1d1e1a8c71ddb5a8d027812827ae88a20fa6855ab1f6125f3e36d07327cd4332"
+metpy = "MetPy 1.7.1 Level2File agrees: 15 sweeps, VCP 215 with 20 cuts"
+
+[[volume]]
+site = "TATL"
+volume_id = 700
+volume_time = "2026-09-17T01:11:07Z"
+vcp = 90
+vcp_cuts = 16
+elevations_collected = 16
+chunks = 49
+radials = 5727
+bytes = 1520019
+start_last_modified = "2026-09-17T01:11:32.000Z"
+end_last_modified = "2026-09-17T01:17:22.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=TATL/700/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "TATL/700-20260917-011107.xml"
+listing_sha256 = "f583b41b616a205a9f6b8e45abfdfac387d00197b41261d96b4c7b26cc6bd886"
+chunks_csv = "TATL/700-20260917-011107.chunks.csv"
+chunks_csv_sha256 = "4f67359a1152c1fec896e6739e03fab92e56abe62b60a0836ff0887b9cb89da2"
+vcp_csv = "TATL/700-20260917-011107.vcp.csv"
+vcp_csv_sha256 = "fccbdbb3924e8c1c5a6d0185b3190ebbe9813e976db6cc42aeb9ac36efbc6572"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 90 with 16 cuts"
+
+[[volume]]
+site = "TATL"
+volume_id = 701
+volume_time = "2026-09-17T01:17:07Z"
+vcp = 90
+vcp_cuts = 16
+elevations_collected = 16
+chunks = 49
+radials = 5728
+bytes = 1528257
+start_last_modified = "2026-09-17T01:17:31.000Z"
+end_last_modified = "2026-09-17T01:23:21.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=TATL/701/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "TATL/701-20260917-011707.xml"
+listing_sha256 = "b342b16c31ce96452726edc00a0c5f643f241c211d2800f447958a61ef70c013"
+chunks_csv = "TATL/701-20260917-011707.chunks.csv"
+chunks_csv_sha256 = "8cdeba3ec093e2084184044d731a4b714ee7f208b2261d1186f53003ab164030"
+vcp_csv = "TATL/701-20260917-011707.vcp.csv"
+vcp_csv_sha256 = "fccbdbb3924e8c1c5a6d0185b3190ebbe9813e976db6cc42aeb9ac36efbc6572"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 90 with 16 cuts"
+
+[[volume]]
+site = "TATL"
+volume_id = 702
+volume_time = "2026-09-17T01:23:07Z"
+vcp = 90
+vcp_cuts = 16
+elevations_collected = 16
+chunks = 49
+radials = 5728
+bytes = 1532330
+start_last_modified = "2026-09-17T01:23:32.000Z"
+end_last_modified = "2026-09-17T01:29:21.000Z"
+listing_url = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=TATL/702/"
+captured_at = "2026-09-17T01:30:29Z"
+listing = "TATL/702-20260917-012307.xml"
+listing_sha256 = "842ccfc0d761945395759f46de92d699eb43eccb95260d4ab5a6305ad548a328"
+chunks_csv = "TATL/702-20260917-012307.chunks.csv"
+chunks_csv_sha256 = "1c17b22a204ded638a5a4a8eb1f418afbaa1db056b45cb2ecae77597ce9f7e59"
+vcp_csv = "TATL/702-20260917-012307.vcp.csv"
+vcp_csv_sha256 = "fccbdbb3924e8c1c5a6d0185b3190ebbe9813e976db6cc42aeb9ac36efbc6572"
+metpy = "MetPy 1.7.1 Level2File agrees: 16 sweeps, VCP 90 with 16 cuts"

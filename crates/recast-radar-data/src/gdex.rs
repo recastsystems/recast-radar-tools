@@ -5,16 +5,16 @@
 //! `catalog.xml` twin. This module provides the tested, UI-free plumbing:
 //!
 //! 1. **Catalog crawl** — recursively fetch `catalog.xml`
-//!    ([`fetch_and_parse_catalog`] for one level; [`crawl_dataset`] for a full,
+//!    (`fetch_and_parse_catalog` for one level; `crawl_dataset` for a full,
 //!    disk-cached crawl). `<catalogRef xlink:href>` = subdir (resolved relative
 //!    and recursed), `<dataset urlPath>` = a leaf file (kept when the urlPath
 //!    ends with a data extension, dropping the stray scan `dump`).
-//! 2. **NCSS metadata + subset URL** — [`fetch_ncss_dataset`] parses the grid
+//! 2. **NCSS metadata + subset URL** — `fetch_ncss_dataset` parses the grid
 //!    `dataset.xml` (variables, lat/lon box, time span); [`ncss_subset_url`]
 //!    builds a subset request. NCSS grid rejects `accept=netcdf4` (HTTP 400) —
 //!    this module always requests `accept=netcdf` (classic NetCDF-3, which
 //!    `netcrust` reads).
-//! 3. **Resumable download** — [`download_to_path`] streams a URL to a
+//! 3. **Resumable download** — `download_to_path` streams a URL to a
 //!    `.download` temp with HTTP `Range` resume, verifies the final size, and
 //!    atomically renames. Local paths sanitize `:` -> `_` (the leaf filenames
 //!    carry `:` which is illegal on NTFS).
@@ -48,9 +48,11 @@ use std::thread;
 use std::time::Duration as StdDuration;
 
 use chrono::Utc;
+#[cfg(feature = "net")]
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use serde::{Deserialize, Serialize};
 
+use crate::realtime::retry::{Jitter, RetryPolicy, random_seed};
 use crate::{DataSourceError, Result};
 
 /// TDS catalog base (a dataset's crawl entry point lives under here).
@@ -66,15 +68,46 @@ const DATA_EXTENSIONS: &[&str] = &[".nc", ".grb", ".grib", ".grb2"];
 /// Crawl concurrency cap — the server is flaky; be polite (doc §5).
 const GDEX_CRAWL_CONCURRENCY: usize = 4;
 
-/// Backoff schedule for the GDEX retry wrapper. `len + 1` total attempts (6):
-/// one initial try plus five retries at 2s, 3s, 6s, 6s, 6s.
-const GDEX_RETRY_BACKOFFS: &[StdDuration] = &[
-    StdDuration::from_secs(2),
-    StdDuration::from_secs(3),
-    StdDuration::from_secs(6),
-    StdDuration::from_secs(6),
-    StdDuration::from_secs(6),
-];
+/// Retry schedule of every GDEX request: six attempts, delays 2, 4, 6, 6 and
+/// 6 s, no jitter.
+pub const GDEX_RETRY: RetryPolicy = RetryPolicy {
+    max_attempts: 6,
+    initial_delay: StdDuration::from_secs(2),
+    max_delay: StdDuration::from_secs(6),
+    multiplier: 2.0,
+    jitter: Jitter::None,
+};
+
+/// How blocking GDEX requests retry: `policy` supplies the delays and `sleep`
+/// waits them out. The `*_with_retry` functions take one; the plain functions
+/// use [`GdexRetry::blocking`].
+#[derive(Clone, Copy)]
+pub struct GdexRetry<'a> {
+    /// Attempts and delays. Only 5xx answers, empty 2xx bodies and failed
+    /// sends are retried.
+    pub policy: RetryPolicy,
+    /// Called with each delay. The crawl fetches catalogs on several threads,
+    /// hence `Sync`.
+    pub sleep: &'a (dyn Fn(StdDuration) + Sync),
+}
+
+impl GdexRetry<'static> {
+    /// [`GDEX_RETRY`], sleeping on the calling thread.
+    pub fn blocking() -> Self {
+        Self {
+            policy: GDEX_RETRY,
+            sleep: &thread::sleep,
+        }
+    }
+}
+
+impl std::fmt::Debug for GdexRetry<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GdexRetry")
+            .field("policy", &self.policy)
+            .finish_non_exhaustive()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public data types
@@ -101,7 +134,7 @@ pub struct Leaf {
 
 /// One level of a crawl: the child catalogs to recurse into, plus the leaves
 /// found at this level. Stage 1b can drive lazy per-node tree expansion with
-/// this directly instead of a full up-front [`crawl_dataset`].
+/// this directly instead of a full up-front `crawl_dataset`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedCatalog {
     /// The catalog URL this was parsed from.
@@ -185,7 +218,7 @@ pub struct NcssSubset {
     pub time_end: Option<String>,
 }
 
-/// Result of a [`download_to_path`] call.
+/// Result of a `download_to_path` call.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DownloadOutcome {
     /// The final local path (temp renamed into place).
@@ -379,27 +412,25 @@ enum Attempt<T> {
     Fatal(DataSourceError),
 }
 
-/// Drive `attempt` up to `backoffs.len() + 1` times, sleeping the matching
-/// backoff between transient retries. Returns the first `Accept`, any `Fatal`,
-/// or the last `Retry` error once attempts are exhausted.
-fn with_retry<T>(
-    backoffs: &[StdDuration],
-    mut attempt: impl FnMut(usize) -> Attempt<T>,
-) -> Result<T> {
-    let mut last: Option<DataSourceError> = None;
-    for index in 0..=backoffs.len() {
-        match attempt(index) {
+/// Drive `attempt` until it accepts, fails for good, or `retry.policy` runs
+/// out of attempts, handing each delay to `retry.sleep`. Returns the first
+/// `Accept`, any `Fatal`, or the last `Retry` error.
+fn with_retry<T>(retry: GdexRetry<'_>, mut attempt: impl FnMut(u32) -> Attempt<T>) -> Result<T> {
+    let mut backoff = retry.policy.backoff(random_seed());
+    loop {
+        match attempt(backoff.failures()) {
             Attempt::Accept(value) => return Ok(value),
             Attempt::Fatal(err) => return Err(err),
-            Attempt::Retry(err) => {
-                last = Some(err);
-                if index < backoffs.len() && !backoffs[index].is_zero() {
-                    thread::sleep(backoffs[index]);
+            Attempt::Retry(err) => match backoff.next_delay() {
+                Some(delay) => {
+                    if !delay.is_zero() {
+                        (retry.sleep)(delay);
+                    }
                 }
-            }
+                None => return Err(err),
+            },
         }
     }
-    Err(last.unwrap_or_else(|| gdex_error("gdex request exhausted retries")))
 }
 
 /// A GDEX protocol error carried on the shared [`DataSourceError::Io`] variant
@@ -411,8 +442,9 @@ fn gdex_error(message: impl Into<String>) -> DataSourceError {
 /// Fetch a text resource (catalog.xml / dataset.xml) with the GDEX retry
 /// policy on the long-timeout download client (these documents run to
 /// hundreds of KB).
-fn gdex_fetch_text(url: &str) -> Result<String> {
-    with_retry(GDEX_RETRY_BACKOFFS, |_| {
+#[cfg(feature = "net")]
+fn gdex_fetch_text(url: &str, retry: GdexRetry<'_>) -> Result<String> {
+    with_retry(retry, |_| {
         let client = match crate::download_http_client() {
             Ok(client) => client,
             Err(err) => return Attempt::Fatal(err),
@@ -443,8 +475,18 @@ fn gdex_fetch_text(url: &str) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 /// Fetch and parse a single catalog level.
+#[cfg(feature = "net")]
 pub fn fetch_and_parse_catalog(catalog_url: &str) -> Result<ParsedCatalog> {
-    let xml = gdex_fetch_text(catalog_url)?;
+    fetch_and_parse_catalog_with_retry(catalog_url, GdexRetry::blocking())
+}
+
+/// [`fetch_and_parse_catalog`] under an explicit retry policy.
+#[cfg(feature = "net")]
+pub fn fetch_and_parse_catalog_with_retry(
+    catalog_url: &str,
+    retry: GdexRetry<'_>,
+) -> Result<ParsedCatalog> {
+    let xml = gdex_fetch_text(catalog_url, retry)?;
     parse_catalog(&xml, catalog_url)
 }
 
@@ -613,12 +655,25 @@ fn normalize_path(path: &str) -> String {
 /// Recursively crawl a dataset and cache the flat leaf list to disk as JSON.
 /// With `refresh == false` a valid cache is returned without touching the
 /// network; `refresh == true` always re-crawls and rewrites the cache.
+#[cfg(feature = "net")]
 pub fn crawl_dataset(dataset_id: &str, cache_dir: &Path, refresh: bool) -> Result<CatalogCache> {
+    crawl_dataset_with_retry(dataset_id, cache_dir, refresh, GdexRetry::blocking())
+}
+
+/// [`crawl_dataset`] under an explicit retry policy (applied to every catalog
+/// request of the crawl).
+#[cfg(feature = "net")]
+pub fn crawl_dataset_with_retry(
+    dataset_id: &str,
+    cache_dir: &Path,
+    refresh: bool,
+    retry: GdexRetry<'_>,
+) -> Result<CatalogCache> {
     let cache_path = catalog_cache_path(cache_dir, dataset_id);
     if !refresh && let Some(cached) = read_catalog_cache(&cache_path)? {
         return Ok(cached);
     }
-    let leaves = crawl_from(&dataset_catalog_url(dataset_id))?;
+    let leaves = crawl_from(&dataset_catalog_url(dataset_id), retry)?;
     let cache = CatalogCache {
         dataset_id: dataset_id.to_owned(),
         crawled_at: Utc::now().to_rfc3339(),
@@ -630,7 +685,8 @@ pub fn crawl_dataset(dataset_id: &str, cache_dir: &Path, refresh: bool) -> Resul
 
 /// Breadth-first crawl from a starting catalog URL, capping concurrency and
 /// guarding against revisits.
-fn crawl_from(start_url: &str) -> Result<Vec<Leaf>> {
+#[cfg(feature = "net")]
+fn crawl_from(start_url: &str, retry: GdexRetry<'_>) -> Result<Vec<Leaf>> {
     let mut frontier = vec![start_url.to_owned()];
     let mut visited: HashSet<String> = HashSet::new();
     visited.insert(start_url.to_owned());
@@ -639,7 +695,7 @@ fn crawl_from(start_url: &str) -> Result<Vec<Leaf>> {
     while !frontier.is_empty() {
         let parsed: Mutex<Vec<ParsedCatalog>> = Mutex::new(Vec::new());
         crate::for_each_concurrent(&frontier, GDEX_CRAWL_CONCURRENCY, |url| {
-            let level = fetch_and_parse_catalog(url)?;
+            let level = fetch_and_parse_catalog_with_retry(url, retry)?;
             if let Ok(mut guard) = parsed.lock() {
                 guard.push(level);
             }
@@ -690,8 +746,18 @@ fn write_catalog_cache(path: &Path, cache: &CatalogCache) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Fetch and parse an NCSS grid `dataset.xml` for a leaf's `urlPath`.
+#[cfg(feature = "net")]
 pub fn fetch_ncss_dataset(url_path: &str) -> Result<NcssGridDataset> {
-    let xml = gdex_fetch_text(&ncss_dataset_url(url_path))?;
+    fetch_ncss_dataset_with_retry(url_path, GdexRetry::blocking())
+}
+
+/// [`fetch_ncss_dataset`] under an explicit retry policy.
+#[cfg(feature = "net")]
+pub fn fetch_ncss_dataset_with_retry(
+    url_path: &str,
+    retry: GdexRetry<'_>,
+) -> Result<NcssGridDataset> {
+    let xml = gdex_fetch_text(&ncss_dataset_url(url_path), retry)?;
     parse_ncss_dataset(&xml)
 }
 
@@ -758,6 +824,7 @@ pub fn local_path_for_leaf(cache_dir: &Path, leaf: &Leaf) -> PathBuf {
 
 /// Download a leaf to `cache_dir`, choosing the local path from its (sanitized)
 /// name. The returned [`DownloadOutcome::path`] is the ingest seam for Stage 1b.
+#[cfg(feature = "net")]
 pub fn download_leaf(leaf: &Leaf, cache_dir: &Path) -> Result<DownloadOutcome> {
     let dest = local_path_for_leaf(cache_dir, leaf);
     download_to_path(&leaf.download_url, &dest)
@@ -813,6 +880,7 @@ fn copy_with_cancel(
 /// `Range` when the server supports it. Verifies the final size against the
 /// server's `Content-Length` (when advertised) and atomically renames the temp
 /// into place. Never buffers the body in memory.
+#[cfg(feature = "net")]
 pub fn download_to_path(url: &str, dest: &Path) -> Result<DownloadOutcome> {
     download_to_path_with_cancel(url, dest, &AtomicBool::new(false))
 }
@@ -825,10 +893,23 @@ pub fn download_to_path(url: &str, dest: &Path) -> Result<DownloadOutcome> {
 /// PLACE — the next call for the same `dest` Range-resumes it exactly like an
 /// interrupted download — and `Err(`[`DataSourceError::DownloadCancelled`]`)`
 /// is returned so callers can tell a user stop from a failure.
+#[cfg(feature = "net")]
 pub fn download_to_path_with_cancel(
     url: &str,
     dest: &Path,
     cancel: &AtomicBool,
+) -> Result<DownloadOutcome> {
+    download_to_path_with_retry(url, dest, cancel, GdexRetry::blocking())
+}
+
+/// [`download_to_path_with_cancel`] under an explicit retry policy, applied
+/// to the size probe (HEAD) and the start of the download (GET).
+#[cfg(feature = "net")]
+pub fn download_to_path_with_retry(
+    url: &str,
+    dest: &Path,
+    cancel: &AtomicBool,
+    retry: GdexRetry<'_>,
 ) -> Result<DownloadOutcome> {
     let cancelled = || DataSourceError::DownloadCancelled {
         url: url.to_owned(),
@@ -842,7 +923,7 @@ pub fn download_to_path_with_cancel(
 
     // Best-effort total size (fileServer advertises Content-Length; NCSS may
     // not). Used for the cache-hit shortcut and the final size check.
-    let expected_total = head_content_length(url, cancel);
+    let expected_total = head_content_length(url, cancel, retry);
     if let Some(total) = expected_total
         && dest
             .metadata()
@@ -863,10 +944,10 @@ pub fn download_to_path_with_cancel(
 
     // Retry only the request start (send + status); a mid-body break is
     // recovered by the caller re-invoking, which Range-resumes the temp.
-    let mut response = with_retry(GDEX_RETRY_BACKOFFS, |_| {
+    let mut response = with_retry(retry, |_| {
         // Fatal short-circuits the remaining retries, so a cancel during the
         // flaky-server backoff schedule stops at the next attempt instead of
-        // sleeping out the rest (up to ~23 s).
+        // sleeping out the rest (up to 24 s under GDEX_RETRY).
         if cancel.load(Ordering::Relaxed) {
             return Attempt::Fatal(cancelled());
         }
@@ -948,8 +1029,9 @@ pub fn download_to_path_with_cancel(
 /// cache-hit shortcut. Any ultimate failure (exhausted retries, a 4xx, or a
 /// missing header) yields `None`; the download then relies on the GET's own
 /// status rather than failing.
-fn head_content_length(url: &str, cancel: &AtomicBool) -> Option<u64> {
-    with_retry(GDEX_RETRY_BACKOFFS, |_| {
+#[cfg(feature = "net")]
+fn head_content_length(url: &str, cancel: &AtomicBool, retry: GdexRetry<'_>) -> Option<u64> {
+    with_retry(retry, |_| {
         // A cancel during the HEAD's flaky-server retries falls out as `None`
         // here; the caller's own cancel checks then stop the download before
         // any bytes move.
@@ -1411,13 +1493,35 @@ mod tests {
         assert_eq!(classify_response(400, false), ResponseClass::Fatal);
     }
 
+    /// `attempts` attempts with delays of 1, 2, 3, ... ms (no jitter).
+    fn test_policy(attempts: u32) -> RetryPolicy {
+        RetryPolicy {
+            max_attempts: attempts,
+            initial_delay: StdDuration::from_millis(1),
+            max_delay: StdDuration::from_secs(1),
+            multiplier: 2.0,
+            jitter: Jitter::None,
+        }
+    }
+
+    #[test]
+    fn gdex_retry_schedule() {
+        let delays: Vec<u64> = GDEX_RETRY.backoff(0).map(|delay| delay.as_secs()).collect();
+        assert_eq!(delays, [2, 4, 6, 6, 6]);
+    }
+
     #[test]
     fn with_retry_stops_on_first_success() {
         use std::cell::Cell;
         // Two transient failures, then success on the third attempt.
         let calls = Cell::new(0usize);
-        let no_sleep = [StdDuration::ZERO, StdDuration::ZERO, StdDuration::ZERO];
-        let result: Result<&str> = with_retry(&no_sleep, |_| {
+        let slept = Mutex::new(Vec::new());
+        let record = |delay| slept.lock().expect("lock").push(delay);
+        let retry = GdexRetry {
+            policy: test_policy(4),
+            sleep: &record,
+        };
+        let result: Result<&str> = with_retry(retry, |_| {
             let n = calls.get();
             calls.set(n + 1);
             if n < 2 {
@@ -1428,14 +1532,22 @@ mod tests {
         });
         assert_eq!(result.expect("succeeds by the third try"), "ok");
         assert_eq!(calls.get(), 3, "must stop the instant it succeeds");
+        assert_eq!(
+            *slept.lock().expect("lock"),
+            [1, 2].map(StdDuration::from_millis),
+            "the policy's delays, handed to the caller's sleep"
+        );
     }
 
     #[test]
     fn with_retry_returns_fatal_immediately() {
         use std::cell::Cell;
         let calls = Cell::new(0usize);
-        let no_sleep = [StdDuration::ZERO, StdDuration::ZERO];
-        let result: Result<&str> = with_retry(&no_sleep, |_| {
+        let retry = GdexRetry {
+            policy: test_policy(3),
+            sleep: &|_| panic!("a fatal answer does not wait"),
+        };
+        let result: Result<&str> = with_retry(retry, |_| {
             calls.set(calls.get() + 1);
             Attempt::Fatal(gdex_error("permanent"))
         });
@@ -1447,13 +1559,20 @@ mod tests {
     fn with_retry_exhausts_then_errors() {
         use std::cell::Cell;
         let calls = Cell::new(0usize);
-        let no_sleep = [StdDuration::ZERO, StdDuration::ZERO];
-        let result: Result<&str> = with_retry(&no_sleep, |_| -> Attempt<&str> {
+        let slept = Mutex::new(Vec::new());
+        let record = |delay| slept.lock().expect("lock").push(delay);
+        let retry = GdexRetry {
+            policy: test_policy(3),
+            sleep: &record,
+        };
+        let result: Result<&str> = with_retry(retry, |attempt| -> Attempt<&str> {
+            assert_eq!(attempt as usize, calls.get(), "attempt index");
             calls.set(calls.get() + 1);
             Attempt::Retry(gdex_error("always transient"))
         });
         assert!(result.is_err());
         assert_eq!(calls.get(), 3, "one initial try plus two backoff retries");
+        assert_eq!(slept.lock().expect("lock").len(), 2);
     }
 
     /// Yields one prebuilt chunk per `read` call; optionally sets a shared
@@ -1669,6 +1788,7 @@ mod tests {
     //   cargo test -p recast-radar-data gdex -- --ignored
     // -----------------------------------------------------------------------
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: crawls GDEX; run once on a node"]
     fn live_crawl_d612005_top_and_one_month() {
@@ -1708,6 +1828,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: lists the ERA-20C catalog root + one decade; run once on a node"]
     fn live_era20c_catalog_root_and_one_decade() {
@@ -1758,6 +1879,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: NCSS subset download; run once on a node"]
     fn live_ncss_tiny_subset_is_valid_netcdf3() {
@@ -1794,13 +1916,15 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: Range probe (1 KB, not a full download); run once on a node"]
     fn live_fileserver_supports_range_resume() {
         let url = "https://tds.gdex.ucar.edu/thredds/fileServer/files/g/d612005/future2D/208001/wrf2d_d01_2080-01-01_00:00:00.nc";
 
         // HEAD advertises the full size (recon: ~156 MB).
-        let total = head_content_length(url, &AtomicBool::new(false)).expect("HEAD Content-Length");
+        let total = head_content_length(url, &AtomicBool::new(false), GdexRetry::blocking())
+            .expect("HEAD Content-Length");
         eprintln!("live HEAD Content-Length: {total}");
         assert!(total > 100_000_000, "the 00:00 file is ~156 MB");
 
@@ -1808,22 +1932,25 @@ mod tests {
         // the server honors Range (so an interrupted big download can resume).
         // Retry through the server's transient 503s (see the doc's flakiness
         // note) so the proof is stable.
-        let response = with_retry(GDEX_RETRY_BACKOFFS, |_| match crate::download_http_client()
-            .expect("HTTP client")
-            .get(url)
-            .header(RANGE, "bytes=0-1023")
-            .send()
-        {
-            Err(err) => Attempt::Retry(DataSourceError::Http(err)),
-            Ok(resp) => {
-                let status = resp.status().as_u16();
-                if (500..600).contains(&status) {
-                    Attempt::Retry(gdex_error(format!("range probe: status {status}")))
-                } else {
-                    Attempt::Accept(resp)
+        let response = with_retry(
+            GdexRetry::blocking(),
+            |_| match crate::download_http_client()
+                .expect("HTTP client")
+                .get(url)
+                .header(RANGE, "bytes=0-1023")
+                .send()
+            {
+                Err(err) => Attempt::Retry(DataSourceError::Http(err)),
+                Ok(resp) => {
+                    let status = resp.status().as_u16();
+                    if (500..600).contains(&status) {
+                        Attempt::Retry(gdex_error(format!("range probe: status {status}")))
+                    } else {
+                        Attempt::Accept(resp)
+                    }
                 }
-            }
-        })
+            },
+        )
         .expect("range GET");
         assert_eq!(
             response.status().as_u16(),

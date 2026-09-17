@@ -14,7 +14,9 @@
 # - recast-radar-tools (facade): each feature alone, plus no features and the
 #   defaults, except `net` and `full` (which includes `net`).
 # - recast-radar-data: networking is its `net` feature (stream E.1), so it is
-#   checked with --no-default-features; skipped while it has no `net` feature.
+#   checked with --no-default-features, and with --no-default-features
+#   --features async-client (the non-blocking client, which uses the browser's
+#   fetch on wasm32); skipped while it has no `net` feature.
 # - recast-radar-bench: not checked. It is the native benchmark harness binary,
 #   not a library, so wasm32 is not a goal for it (it did compile for wasm32
 #   when G.3 was done).
@@ -52,6 +54,8 @@ cargo hack check --locked --target "$target" -p recast-radar-tools \
 
 if has_net_feature crates/recast-radar-data/Cargo.toml; then
     cargo check --locked --target "$target" -p recast-radar-data --no-default-features
+    cargo check --locked --target "$target" -p recast-radar-data --no-default-features \
+        --features async-client
 else
     note "recast-radar-data skipped: it has no \`net\` feature yet (stream E.1)"
 fi

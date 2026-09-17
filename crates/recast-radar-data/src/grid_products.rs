@@ -8,6 +8,7 @@
 //! product is a radar site.
 
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
+#[cfg(feature = "net")]
 use reqwest::header::{ACCEPT, CONTENT_TYPE, REFERER};
 use serde::{Deserialize, Serialize};
 
@@ -423,6 +424,7 @@ pub struct ItalyDpcDownloadPlan {
 }
 
 /// Query the current DPC timestamp for a downloadable product type.
+#[cfg(feature = "net")]
 pub fn italy_dpc_latest_product(product_type: &str) -> Result<ItalyDpcLatestProduct, String> {
     let product_type = canonical_italy_dpc_product_type(product_type)?;
     let url = format!(
@@ -434,6 +436,7 @@ pub fn italy_dpc_latest_product(product_type: &str) -> Result<ItalyDpcLatestProd
 }
 
 /// Request a short-lived raw-file URL for a known DPC product timestamp.
+#[cfg(feature = "net")]
 pub fn italy_dpc_download_plan(
     product_type: &str,
     product_time_millis: i64,
@@ -443,6 +446,7 @@ pub fn italy_dpc_download_plan(
 }
 
 /// Query the latest timestamp, then request a short-lived raw-file URL.
+#[cfg(feature = "net")]
 pub fn italy_dpc_latest_download_plan(product_type: &str) -> Result<ItalyDpcDownloadPlan, String> {
     let latest = italy_dpc_latest_product(product_type)?;
     request_italy_dpc_download_plan(
@@ -452,6 +456,7 @@ pub fn italy_dpc_latest_download_plan(product_type: &str) -> Result<ItalyDpcDown
     )
 }
 
+#[cfg(feature = "net")]
 fn request_italy_dpc_download_plan(
     product_type: &str,
     product_time_millis: i64,
@@ -610,6 +615,7 @@ impl TaiwanCwaRadarGrid {
     }
 }
 
+#[cfg(feature = "net")]
 pub fn taiwan_cwa_latest_radar_grid() -> Result<TaiwanCwaRadarGrid, String> {
     let url = taiwan_cwa_latest_json_url();
     let text = crate::fetch_listing_text(&url)
@@ -1845,6 +1851,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live CWA endpoint smoke"]
     fn taiwan_cwa_latest_live_smoke() {
@@ -2009,6 +2016,7 @@ mod tests {
     ///
     /// Run manually with:
     /// `cargo test -p recast-radar-data italy_dpc_live_latest_download_plan -- --ignored --nocapture`
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live Italy DPC endpoint probe"]
     fn italy_dpc_live_latest_download_plan() {

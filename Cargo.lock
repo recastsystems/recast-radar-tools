@@ -911,13 +911,17 @@ name = "recast-radar-data"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures-core",
  "quick-xml",
  "recast-radar-io",
  "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
+ "recast-radar-testdata",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

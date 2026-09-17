@@ -31,6 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::listing::{digit_run, fnv1a64, join_url, parse_autoindex};
 use super::{FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames};
+#[cfg(feature = "net")]
 use crate::fetch_text;
 
 const SHMU_VOLUME_ROOT: &str = "https://opendata.shmu.sk/meteorology/weather/radar/volume/";
@@ -71,6 +72,7 @@ impl IntlProvider for ShmuProvider {
         "Slovakia"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         let html = fetch_text(SHMU_VOLUME_ROOT)
             .map_err(|err| format!("SHMU station listing {SHMU_VOLUME_ROOT}: {err}"))?;
@@ -101,6 +103,7 @@ impl IntlProvider for ShmuProvider {
         Ok(sites)
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         let mut plans = shmu_recent_plans(site_id, 1)?;
         plans
@@ -128,6 +131,7 @@ impl IntlProvider for ShmuProvider {
 }
 
 impl RecentFrames for ShmuProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         shmu_recent_plans(site_id, count)
     }
@@ -137,6 +141,7 @@ impl RecentFrames for ShmuProvider {
 /// With `count = 1` this is byte-for-byte the frame `latest` has always
 /// described (same stamp choice, part order, and identity), so the loop's
 /// newest frame stays the live poll's dedupe key.
+#[cfg(feature = "net")]
 fn shmu_recent_plans(site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
     if !is_safe_path_segment(site_id) {
         return Err(format!("SHMU: invalid site id '{site_id}'"));
@@ -274,6 +279,7 @@ fn product_file_url(site_id: &str, product: &str, date: &str, name: &str) -> Str
 
 /// Map `timestamp -> file name` for one product on its newest (or
 /// `dates_back`-th newest) date directory.
+#[cfg(feature = "net")]
 fn product_files_for_newest_date(
     site_id: &str,
     product: &str,
@@ -301,6 +307,7 @@ fn product_files_for_newest_date(
 }
 
 /// Map `timestamp -> file name` for one product/date directory.
+#[cfg(feature = "net")]
 fn product_files_for_date(
     site_id: &str,
     product: &str,

@@ -68,6 +68,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 
 use super::listing::{digit_run, fnv1a64, join_url, parse_autoindex};
 use super::{FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames};
+#[cfg(feature = "net")]
 use crate::fetch_listing_text;
 
 const ANM_RADAR_ROOT: &str = "https://opendata.meteoromania.ro/radar/";
@@ -131,6 +132,7 @@ impl IntlProvider for MeteoRomaniaProvider {
         "Romania"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         // The network is a fixed set of seven WSR-98D/METEOR stations; the
         // compiled-in table IS the catalog (the root listing would only
@@ -138,6 +140,7 @@ impl IntlProvider for MeteoRomaniaProvider {
         Ok(self.static_sites())
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         let mut plans = anm_recent_plans(site_id, 1, Utc::now())?;
         plans
@@ -165,6 +168,7 @@ impl IntlProvider for MeteoRomaniaProvider {
 }
 
 impl RecentFrames for MeteoRomaniaProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         anm_recent_plans(site_id, count, Utc::now())
     }
@@ -174,6 +178,7 @@ impl RecentFrames for MeteoRomaniaProvider {
 /// With `count = 1` this is exactly the frame `latest` describes (same
 /// stamp choice, part order, and identity), so the loop's newest frame
 /// stays the live poll's dedupe key.
+#[cfg(feature = "net")]
 fn anm_recent_plans(
     site_id: &str,
     count: usize,
@@ -532,6 +537,7 @@ mod tests {
     /// upstream directory names and whose coordinates agree with the ORD
     /// `ro*` rows (same radars, `NOD:ro...` sources — the table values are
     /// the live PVOL `/where` groups rounded to 4 decimals).
+    #[cfg(feature = "net")]
     #[test]
     fn site_table_lists_the_seven_anm_radars_with_ord_consistent_coords() {
         let provider = MeteoRomaniaProvider::new();
@@ -571,6 +577,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     fn unknown_site_ids_are_rejected_before_any_fetch() {
         let err = anm_recent_plans("COMPOSITE", 1, utc(2026, 7, 7, 18, 55, 0)).unwrap_err();
@@ -582,6 +589,7 @@ mod tests {
     /// Live ANM roundtrip: listing, plan, download, per-part ODIM decode
     /// (the poll consumer owns the merge). Network test; run with
     /// `cargo test -p recast-radar-data anm_live -- --ignored --nocapture`
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live opendata.meteoromania.ro probe — run manually with --ignored"]
     fn anm_live_roundtrip_lists_plans_downloads_and_decodes() {
