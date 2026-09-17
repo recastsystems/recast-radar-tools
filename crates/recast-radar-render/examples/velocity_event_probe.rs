@@ -1,9 +1,20 @@
+// Print the strongest inbound and outbound velocity gates inside an event's
+// bounding box for every low sweep of a Level II file, with the colors the
+// velocity table gives them raw and dealiased.
+//
+// usage: cargo run --release -p recast-radar-render --example velocity_event_probe -- <level2-file>
+
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
-use recast_radar_core::{ElevationCut, MomentGrid, MomentType, RadarVolume};
-use recast_radar_correct::dealias_velocity_grid;
+use recast_radar_core::{Field, Quantity, Sweep, Volume};
 use recast_radar_render::color::{ColorTable, builtin_velocity_table};
+use recast_radar_render::dealiased_velocity_field;
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 const EARTH_KM_PER_DEG: f32 = 111.32;
 
@@ -13,21 +24,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.next()
             .ok_or("usage: velocity_event_probe <level2-file>")?,
     );
-    let volume = recast_radar_io_nexrad::decode_volume_from_path(&input)?;
+    let volume = legacy_bridge::read_volume(&input)?;
     let table = builtin_velocity_table();
     let flipped = table.mirrored_values(format!("{} flipped", table.name()));
 
     println!(
-        "file={} site={} volume={} cuts={} radials={}",
+        "file={} site={} volume={} sweeps={} rays={}",
         input.display(),
-        volume.site.id,
-        volume.volume_time,
-        volume.cuts.len(),
-        volume.metadata.decoded_radial_count
+        volume.attrs.instrument_name,
+        volume.time_reference,
+        volume.sweeps.len(),
+        volume.provenance.decode.decoded_ray_count
     );
 
     let (site_lat, site_lon) = site_location(&volume).ok_or("missing site location")?;
-    let bbox = event_bbox(&volume.site.id).unwrap_or((
+    let bbox = event_bbox(&volume.attrs.instrument_name).unwrap_or((
         site_lat - 0.5,
         site_lat + 0.5,
         site_lon - 0.6,
@@ -42,23 +53,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         table.name()
     );
 
-    for (cut_index, cut) in volume.cuts.iter().enumerate() {
-        if cut.elevation_deg > 1.4 {
+    for (sweep_index, sweep) in volume.sweeps.iter().enumerate() {
+        if sweep.fixed_angle_deg > 1.4 {
             continue;
         }
-        let Some(grid) = cut.moments.get(&MomentType::Velocity) else {
+        let Some(field) = sweep.find(Quantity::RadialVelocity) else {
             continue;
         };
-        let nyquist = median_nyquist(cut, grid);
-        let dealiased = dealias_velocity_grid(cut, grid);
-        let samples = collect_samples(cut, grid, Some(&dealiased), site_lat, site_lon, bbox);
+        let nyquist = median_nyquist(sweep);
+        let dealiased = dealiased_velocity_field(&volume, sweep_index, &field.name)?;
+        let samples = collect_samples(sweep, field, Some(&dealiased), site_lat, site_lon, bbox);
         if samples.is_empty() {
             println!(
-                "cut=#{cut_index:02} elev={:.2} rows={} gates={} nyq={:?} no samples in bbox",
-                cut.elevation_deg,
-                grid.radial_count(),
-                grid.gate_range.gate_count,
-                nyquist
+                "sweep=#{sweep_index:02} elev={:.2} rows={} gates={} nyq={:?} no samples in bbox",
+                sweep.fixed_angle_deg, field.nrays, field.ngates, nyquist
             );
             continue;
         }
@@ -71,10 +79,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .filter(|sample| sample.raw_value < 0.0)
             .max_by(|left, right| abs_cmp(left.raw_value, right.raw_value));
         println!(
-            "cut=#{cut_index:02} elev={:.2} rows={} gates={} nyq={:.2?} samples={} pos={} neg={}",
-            cut.elevation_deg,
-            grid.radial_count(),
-            grid.gate_range.gate_count,
+            "sweep=#{sweep_index:02} elev={:.2} rows={} gates={} nyq={:.2?} samples={} pos={} neg={}",
+            sweep.fixed_angle_deg,
+            field.nrays,
+            field.ngates,
             nyquist,
             samples.len(),
             samples
@@ -110,28 +118,30 @@ struct GateSample {
 }
 
 fn collect_samples(
-    cut: &ElevationCut,
-    grid: &MomentGrid,
-    dealiased: Option<&MomentGrid>,
+    sweep: &Sweep,
+    field: &Field,
+    dealiased: Option<&Field>,
     site_lat: f32,
     site_lon: f32,
     bbox: (f32, f32, f32, f32),
 ) -> Vec<GateSample> {
     let mut samples = Vec::new();
-    for (row, radial_index) in grid.radial_indices.iter().copied().enumerate() {
-        let Some(radial) = cut.radials.get(radial_index) else {
+    let Some((first_center_m, spacing_m)) = field.native_geometry(&sweep.range) else {
+        return samples;
+    };
+    let (rows, gates) = field.shape();
+    for row in 0..rows {
+        let Some(azimuth_deg) = sweep.rays.azimuth_deg.get(row).copied() else {
             continue;
         };
-        let azimuth = radial.azimuth_deg.to_radians();
+        let azimuth = azimuth_deg.to_radians();
         let sin_az = azimuth.sin();
         let cos_az = azimuth.cos();
-        for gate in 0..grid.gate_range.gate_count {
-            let Some(raw_value) = grid.scaled_value(row, gate) else {
+        for gate in 0..gates {
+            let Some(raw_value) = field.value(row, gate) else {
                 continue;
             };
-            let range_km = (grid.gate_range.first_gate_m as f32
-                + grid.gate_range.gate_spacing_m as f32 * gate as f32)
-                / 1000.0;
+            let range_km = ((first_center_m + spacing_m * gate as f64) / 1000.0) as f32;
             let dy = cos_az * range_km;
             let dx = sin_az * range_km;
             let lat = site_lat + dy / EARTH_KM_PER_DEG;
@@ -142,12 +152,12 @@ fn collect_samples(
             samples.push(GateSample {
                 row,
                 gate,
-                azimuth: radial.azimuth_deg,
+                azimuth: azimuth_deg,
                 range_km,
                 lat,
                 lon,
                 raw_value,
-                dealiased_value: dealiased.and_then(|grid| grid.scaled_value(row, gate)),
+                dealiased_value: dealiased.and_then(|field| field.value(row, gate)),
             });
         }
     }
@@ -181,11 +191,15 @@ fn color_string(color: [u8; 4]) -> String {
     format!("rgba({},{},{},{})", color[0], color[1], color[2], color[3])
 }
 
-fn site_location(volume: &RadarVolume) -> Option<(f32, f32)> {
-    match volume.site.id.as_str() {
+fn site_location(volume: &Volume) -> Option<(f32, f32)> {
+    match volume.attrs.instrument_name.as_str() {
         "KTWX" => Some((38.9969, -96.2326)),
         "KICT" => Some((37.6546, -97.4431)),
-        _ => volume.site.latitude_deg.zip(volume.site.longitude_deg),
+        _ => volume
+            .location
+            .latitude_deg
+            .zip(volume.location.longitude_deg)
+            .map(|(lat, lon)| (lat as f32, lon as f32)),
     }
 }
 
@@ -197,11 +211,13 @@ fn event_bbox(site: &str) -> Option<(f32, f32, f32, f32)> {
     }
 }
 
-fn median_nyquist(cut: &ElevationCut, grid: &MomentGrid) -> Option<f32> {
-    let mut values = grid
-        .radial_indices
+fn median_nyquist(sweep: &Sweep) -> Option<f32> {
+    let mut values = sweep
+        .ray_vars
+        .nyquist_velocity_mps
         .iter()
-        .filter_map(|index| cut.radials.get(*index)?.nyquist_velocity_mps)
+        .flatten()
+        .copied()
         .filter(|value| value.is_finite() && *value > 0.0)
         .collect::<Vec<_>>();
     values.sort_by(|left, right| left.total_cmp(right));

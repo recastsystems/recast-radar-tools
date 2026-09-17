@@ -1,43 +1,33 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Render the full product set for a scan to PNGs through the SAME
-// ViewportMomentCache path the GUI uses — visual proof every product + palette
+// ViewportFieldCache path the GUI uses — visual proof every product + palette
 // works end to end (base moments, dual-pol, dealiased velocity, the derived
 // volumetric/shear products). usage: product_gallery <l2-file> <out-dir>
 
 use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
-use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_map::{
-    ECHO_TOP_THRESHOLD_DBZ, composite_reflectivity_grid, echo_top_grid, mehs_grid,
-    reflectivity_cross_section, vil_density_grid, vil_grid,
-};
+use recast_radar_core::{Quantity, Volume};
 use recast_radar_render::{
-    ColorTableFamily, ColorTableSet, ViewportMomentCache, ViewportRasterOptions,
+    ColorTableFamily, ColorTableSet, ViewportFieldCache, ViewportRasterOptions,
     viewport_rgba_buffer_len,
 };
-use recast_radar_retrieve::{azimuthal_shear_grid, radial_divergence_grid};
 
-fn lowest_cut_with(volume: &RadarVolume, moment: &MomentType) -> Option<usize> {
-    volume
-        .cuts
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| c.moments.contains_key(moment))
-        .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
-        .map(|(i, _)| i)
-}
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
+use legacy_bridge::{Decoded, Derived, ECHO_TOP_THRESHOLD_DBZ};
 
 fn save_cache(
-    volume: &RadarVolume,
-    cache: &ViewportMomentCache,
+    volume: &Volume,
+    cache: &ViewportFieldCache,
     opts: ViewportRasterOptions,
     path: &str,
 ) {
     let mut px = vec![0u8; viewport_rgba_buffer_len(opts)];
-    let Ok((w, h)) = cache.render_moment_rgba_into(volume, opts, &mut px) else {
+    let Ok((w, h)) = cache.render_field_rgba_into(volume, opts, &mut px) else {
         eprintln!("render failed: {path}");
         return;
     };
@@ -70,7 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| ".".into());
-    let volume: RadarVolume = recast_radar_io_nexrad::decode_volume_from_path(&input)?;
+    let decoded = Decoded::from_path(&input)?;
+    let volume = &decoded.volume;
     let tables = ColorTableSet::default();
 
     // Full-disk viewport centred on the radar (~±250 km).
@@ -84,31 +75,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rotation_rad: 0.0,
     };
 
-    let ref_cut = lowest_cut_with(&volume, &MomentType::Reflectivity);
-    let vel_cut = lowest_cut_with(&volume, &MomentType::Velocity);
+    let ref_sweep = decoded.lowest_sweep_with(Quantity::Reflectivity);
+    let vel_sweep = decoded.lowest_sweep_with(Quantity::RadialVelocity);
 
     // Base + dual-pol moments via their normal caches.
     let base = [
-        ("REF", MomentType::Reflectivity),
-        ("CC", MomentType::CorrelationCoefficient),
-        ("ZDR", MomentType::DifferentialReflectivity),
-        ("SW", MomentType::SpectrumWidth),
+        ("REF", Quantity::Reflectivity),
+        ("CC", Quantity::CorrelationCoefficient),
+        ("ZDR", Quantity::DifferentialReflectivity),
+        ("SW", Quantity::SpectrumWidth),
     ];
-    for (name, moment) in base {
-        if let Some(cut) = lowest_cut_with(&volume, &moment)
-            && let Ok(c) = ViewportMomentCache::new_with_color_tables(&volume, cut, moment, &tables)
+    for (label, quantity) in base {
+        if let Some(sweep) = decoded.lowest_sweep_with(quantity)
+            && let Some(field) = volume.sweeps[sweep].find(quantity)
+            && let Ok(c) =
+                ViewportFieldCache::new_with_color_tables(volume, sweep, &field.name, &tables)
         {
-            save_cache(&volume, &c, opts, &format!("{dir}/gallery_{name}.png"));
+            save_cache(volume, &c, opts, &format!("{dir}/gallery_{label}.png"));
         }
     }
 
     // Dealiased velocity.
-    if let Some(cut) = vel_cut
-        && let Ok(c) =
-            ViewportMomentCache::new_dealiased_velocity_with_color_tables(&volume, cut, &tables)
+    if let Some(sweep) = vel_sweep
+        && let Some(velocity) = volume.sweeps[sweep].find(Quantity::RadialVelocity)
+        && let Ok(c) = ViewportFieldCache::new_dealiased_velocity_with_color_tables(
+            volume,
+            sweep,
+            &velocity.name,
+            &tables,
+        )
     {
         save_cache(
-            &volume,
+            volume,
             &c,
             opts,
             &format!("{dir}/gallery_VEL_dealiased.png"),
@@ -116,91 +114,88 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Derived volume products on the base reflectivity tilt.
-    if let Some(base_idx) = ref_cut {
-        let derived: Vec<(
-            &str,
-            Option<recast_radar_core::MomentGrid>,
-            ColorTableFamily,
-        )> = vec![
+    if let Some(base_idx) = ref_sweep {
+        let derived: Vec<(&str, Option<Derived>, ColorTableFamily)> = vec![
             (
                 "CREF",
-                composite_reflectivity_grid(&volume),
+                decoded.composite_reflectivity(base_idx),
                 ColorTableFamily::Reflectivity,
             ),
             (
                 "EchoTops",
-                echo_top_grid(&volume, ECHO_TOP_THRESHOLD_DBZ),
+                decoded.echo_tops(base_idx, ECHO_TOP_THRESHOLD_DBZ),
                 ColorTableFamily::EchoTops,
             ),
-            ("VIL", vil_grid(&volume), ColorTableFamily::Vil),
+            ("VIL", decoded.vil(base_idx), ColorTableFamily::Vil),
             (
                 "VILDensity",
-                vil_density_grid(&volume),
+                decoded.vil_density(base_idx),
                 ColorTableFamily::VilDensity,
             ),
             (
                 "MEHS",
-                mehs_grid(&volume, 3200.0, 6400.0),
+                decoded.mehs(base_idx, 3200.0, 6400.0),
                 ColorTableFamily::HailSize,
             ),
         ];
-        for (name, grid, family) in derived {
-            if let Some(grid) = grid
-                && let Ok(c) =
-                    ViewportMomentCache::new_derived(&volume, base_idx, grid, family, &tables)
+        for (label, derived, family) in derived {
+            if let Some(derived) = derived
+                && let Ok(c) = ViewportFieldCache::new_derived(
+                    volume,
+                    base_idx,
+                    derived.field,
+                    &derived.range,
+                    family,
+                    &tables,
+                )
             {
-                save_cache(&volume, &c, opts, &format!("{dir}/gallery_{name}.png"));
+                save_cache(volume, &c, opts, &format!("{dir}/gallery_{label}.png"));
             }
         }
     }
 
-    // Per-cut velocity derivatives.
-    if let Some(cut) = vel_cut {
-        let velocity = volume.cuts[cut].moments.get(&MomentType::Velocity).unwrap();
-        for (name, grid) in [
-            ("AzShear", azimuthal_shear_grid(&volume.cuts[cut], velocity)),
-            (
-                "Divergence",
-                radial_divergence_grid(&volume.cuts[cut], velocity),
-            ),
+    // Per-sweep velocity derivatives.
+    if let Some(sweep) = vel_sweep {
+        for (label, derived) in [
+            ("AzShear", decoded.azimuthal_shear(sweep)),
+            ("Divergence", decoded.radial_divergence(sweep)),
         ] {
-            if let Ok(c) = ViewportMomentCache::new_derived(
-                &volume,
-                cut,
-                grid,
-                ColorTableFamily::AzimuthalShear,
-                &tables,
-            ) {
-                save_cache(&volume, &c, opts, &format!("{dir}/gallery_{name}.png"));
+            if let Some(derived) = derived
+                && let Ok(c) = ViewportFieldCache::new_derived(
+                    volume,
+                    sweep,
+                    derived.field,
+                    &derived.range,
+                    ColorTableFamily::AzimuthalShear,
+                    &tables,
+                )
+            {
+                save_cache(volume, &c, opts, &format!("{dir}/gallery_{label}.png"));
             }
         }
     }
 
     // A cross-section through the strongest composite cell, colorized REF.
-    if let Some(comp) = composite_reflectivity_grid(&volume)
-        && let Some(base_idx) = ref_cut
+    if let Some(base_idx) = ref_sweep
+        && let Some(comp) = decoded.composite_reflectivity(base_idx)
     {
-        let bc = &volume.cuts[base_idx];
-        let bg = bc.moments.get(&MomentType::Reflectivity).unwrap();
+        let base_sweep = &volume.sweeps[base_idx];
+        let (rows, gates) = comp.field.shape();
         let (mut best, mut rg) = (f32::NEG_INFINITY, (0usize, 0usize));
-        for r in 0..comp.radial_count() {
-            for g in 0..comp.gate_range.gate_count {
-                if let Some(v) = comp
-                    .scaled_value(r, g)
-                    .filter(|v| v.is_finite() && *v > best)
-                {
+        for r in 0..rows {
+            for g in 0..gates {
+                if let Some(v) = comp.field.value(r, g).filter(|v| *v > best) {
                     best = v;
                     rg = (r, g);
                 }
             }
         }
-        let az = bc.radials[bg.radial_indices[rg.0]].azimuth_deg.to_radians();
-        let rkm = (bg.gate_range.first_gate_m as f32
-            + rg.1 as f32 * bg.gate_range.gate_spacing_m as f32)
-            / 1000.0;
+        let az = base_sweep.rays.azimuth_deg[rg.0].to_radians();
+        let (first_center_m, spacing_m) = comp.field.native_geometry(&comp.range).unwrap();
+        let rkm = ((first_center_m + rg.1 as f64 * spacing_m) / 1000.0) as f32;
         let (e, n) = (rkm * az.sin(), rkm * az.cos());
         if let Some(xs) =
-            reflectivity_cross_section(&volume, (e - 30.0, n), (e + 30.0, n), 700, 320, 18_000.0)
+            decoded.reflectivity_cross_section((e - 30.0, n), (e + 30.0, n), 700, 320, 18_000.0)
         {
             let table = tables.for_family(ColorTableFamily::Reflectivity);
             let mut img =

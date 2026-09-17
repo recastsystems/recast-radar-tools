@@ -1,5 +1,6 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Verify the vertical cross-section on a real scan: locate the strongest
 // composite-reflectivity cell, slice a W->E section through it, and render it
@@ -10,9 +11,11 @@
 use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
-use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_map::{composite_reflectivity_grid, reflectivity_cross_section};
+use recast_radar_core::Quantity;
 use recast_radar_render::color::builtin_reflectivity_table;
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
@@ -25,60 +28,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "xs.png".into());
 
-    let volume: RadarVolume = recast_radar_io_nexrad::decode_volume_from_path(&input)?;
+    let decoded = legacy_bridge::Decoded::from_path(&input)?;
+    let volume = &decoded.volume;
 
-    // base reflectivity cut (lowest elevation)
-    let (base_idx, base_cut) = volume
-        .cuts
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| c.moments.contains_key(&MomentType::Reflectivity))
-        .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
+    // base reflectivity sweep (lowest elevation)
+    let base_idx = decoded
+        .lowest_sweep_with(Quantity::Reflectivity)
         .ok_or("no reflectivity")?;
-    let base_grid = base_cut.moments.get(&MomentType::Reflectivity).unwrap();
+    let base_sweep = &volume.sweeps[base_idx];
 
-    let comp = composite_reflectivity_grid(&volume).ok_or("composite failed")?;
+    let comp = decoded
+        .composite_reflectivity(base_idx)
+        .ok_or("composite failed")?;
 
     // locate strongest composite cell
-    let rows = comp.radial_count();
-    let gates = comp.gate_range.gate_count;
+    let (rows, gates) = comp.field.shape();
     let (mut best, mut best_rg) = (f32::NEG_INFINITY, (0usize, 0usize));
     for r in 0..rows {
         for g in 0..gates {
-            if let Some(v) = comp
-                .scaled_value(r, g)
-                .filter(|v| v.is_finite() && *v > best)
-            {
+            if let Some(v) = comp.field.value(r, g).filter(|v| *v > best) {
                 best = v;
                 best_rg = (r, g);
             }
         }
     }
     let (br, bg) = best_rg;
-    let az = base_cut.radials[base_grid.radial_indices[br]]
-        .azimuth_deg
-        .to_radians();
-    let range_km = (base_grid.gate_range.first_gate_m as f32
-        + bg as f32 * base_grid.gate_range.gate_spacing_m as f32)
-        / 1000.0;
+    let az = base_sweep.rays.azimuth_deg[br].to_radians();
+    let (first_center_m, spacing_m) = comp
+        .field
+        .native_geometry(&comp.range)
+        .ok_or("composite geometry")?;
+    let range_km = ((first_center_m + bg as f64 * spacing_m) / 1000.0) as f32;
     let cx_e = range_km * az.sin();
     let cx_n = range_km * az.cos();
     println!(
-        "max composite {best:.1} dBZ at az={:.1} range={range_km:.1} km -> (E {cx_e:.1}, N {cx_n:.1}) km; base cut #{base_idx}",
+        "max composite {best:.1} dBZ at az={:.1} range={range_km:.1} km -> (E {cx_e:.1}, N {cx_n:.1}) km; base sweep #{base_idx}",
         az.to_degrees()
     );
 
     let half = 30.0f32;
     let (w, h, top_m) = (700usize, 320usize, 18_000.0f32);
-    let xs = reflectivity_cross_section(
-        &volume,
-        (cx_e - half, cx_n),
-        (cx_e + half, cx_n),
-        w,
-        h,
-        top_m,
-    )
-    .ok_or("cross section failed")?;
+    let xs = decoded
+        .reflectivity_cross_section((cx_e - half, cx_n), (cx_e + half, cx_n), w, h, top_m)
+        .ok_or("cross section failed")?;
 
     let table = builtin_reflectivity_table();
     let mut img =

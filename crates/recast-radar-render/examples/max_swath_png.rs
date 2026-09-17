@@ -1,4 +1,4 @@
-//! Build a max-REF swath from a real loop of Level II volumes and render it
+//! Build a max-DBZH swath from a real loop of Level II volumes and render it
 //! (plus the newest single frame, for comparison) to PNG.
 //!
 //! Usage:
@@ -9,12 +9,16 @@
 
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::PathBuf;
 
-use recast_radar_core::MomentType;
-use recast_radar_render::{RasterOptions, render_moment_png};
-use recast_radar_track::{SwathAggregation, base_tilt_cut, max_value_swath};
+use recast_radar_core::{Quantity, Volume};
+use recast_radar_render::{RasterOptions, render_field_png};
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
+use legacy_bridge::swath::{SwathAggregation, base_tilt_sweep, max_value_swath};
 
 fn main() {
     let mut args = std::env::args_os().skip(1);
@@ -32,16 +36,16 @@ fn main() {
 
     let mut volumes = Vec::new();
     for path in &paths {
-        match recast_radar_io_nexrad::decode_volume_from_path(path) {
-            Ok(volume) => {
+        match legacy_bridge::Decoded::from_path(path) {
+            Ok(decoded) => {
                 println!(
-                    "decoded {} -> {} cuts, {} @ {}",
+                    "decoded {} -> {} sweeps, {} @ {}",
                     path.display(),
-                    volume.cuts.len(),
-                    volume.site.id,
-                    volume.volume_time
+                    decoded.volume.sweeps.len(),
+                    decoded.volume.attrs.instrument_name,
+                    decoded.volume.time_reference
                 );
-                volumes.push(volume);
+                volumes.push(decoded);
             }
             Err(err) => eprintln!("decode {} failed: {err}", path.display()),
         }
@@ -51,7 +55,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let refs: Vec<&recast_radar_core::RadarVolume> = volumes.iter().collect();
+    let refs: Vec<&legacy_bridge::Decoded> = volumes.iter().collect();
     let options = RasterOptions {
         width: 1200,
         height: 1200,
@@ -59,49 +63,61 @@ fn main() {
     };
 
     // Newest single frame, base reflectivity — the "current scan" reference.
-    let newest = refs.iter().max_by_key(|v| v.volume_time).copied().unwrap();
-    if let Some(cut) = base_tilt_cut(newest, &MomentType::Reflectivity) {
+    let newest = &refs
+        .iter()
+        .max_by_key(|v| v.volume.time_reference)
+        .copied()
+        .unwrap()
+        .volume;
+    if let Some(sweep) = base_tilt_sweep(newest, Quantity::Reflectivity) {
+        let name = &newest.sweeps[sweep]
+            .find(Quantity::Reflectivity)
+            .unwrap()
+            .name;
         let out = out_dir.join("single_frame_ref.png");
-        render_moment_png(newest, cut, MomentType::Reflectivity, &out, options).unwrap();
+        render_field_png(newest, sweep, name, &out, options).unwrap();
         println!("wrote {}", out.display());
     }
 
-    // Max-REF swath over the whole loop.
+    // Max-DBZH swath over the whole loop.
     let swath =
-        max_value_swath(&refs, MomentType::Reflectivity, SwathAggregation::Max).expect("swath");
-    report_coverage("REF swath", &swath, &MomentType::Reflectivity);
+        max_value_swath(&refs, Quantity::Reflectivity, SwathAggregation::Max).expect("swath");
+    report_coverage("DBZH swath", &swath, Quantity::Reflectivity);
     let out = out_dir.join("max_ref_swath.png");
-    render_moment_png(&swath, 0, MomentType::Reflectivity, &out, options).unwrap();
+    let name = &swath.sweeps[0].find(Quantity::Reflectivity).unwrap().name;
+    render_field_png(&swath, 0, name, &out, options).unwrap();
     println!("wrote {}", out.display());
 
     // Max-|V| swath (second toggle).
-    if let Some(swath) =
-        max_value_swath(&refs, MomentType::Velocity, SwathAggregation::MaxMagnitude)
-    {
-        report_coverage("|V| swath", &swath, &MomentType::Velocity);
+    if let Some(swath) = max_value_swath(
+        &refs,
+        Quantity::RadialVelocity,
+        SwathAggregation::MaxMagnitude,
+    ) {
+        report_coverage("|V| swath", &swath, Quantity::RadialVelocity);
         let out = out_dir.join("max_vel_swath.png");
-        render_moment_png(&swath, 0, MomentType::Velocity, &out, options).unwrap();
+        let name = &swath.sweeps[0].find(Quantity::RadialVelocity).unwrap().name;
+        render_field_png(&swath, 0, name, &out, options).unwrap();
         println!("wrote {}", out.display());
     }
 }
 
 /// Print how many gates carry a finite value — a swath should cover far more
 /// than any single frame.
-fn report_coverage(label: &str, volume: &recast_radar_core::RadarVolume, moment: &MomentType) {
-    let grid = &volume.cuts[0].moments[moment];
+fn report_coverage(label: &str, volume: &Volume, quantity: Quantity) {
+    let field = volume.sweeps[0].find(quantity).expect("swath field");
+    let (rows, gates) = field.shape();
     let (mut finite, mut total) = (0usize, 0usize);
-    for row in 0..grid.radial_count() {
-        for gate in 0..grid.gate_range.gate_count {
+    for row in 0..rows {
+        for gate in 0..gates {
             total += 1;
-            if grid.scaled_value(row, gate).is_some_and(|v| v.is_finite()) {
+            if field.value(row, gate).is_some() {
                 finite += 1;
             }
         }
     }
     println!(
-        "{label}: {finite}/{total} gates finite ({:.1}%), {} rows x {} gates",
-        100.0 * finite as f64 / total.max(1) as f64,
-        grid.radial_count(),
-        grid.gate_range.gate_count
+        "{label}: {finite}/{total} gates finite ({:.1}%), {rows} rows x {gates} gates",
+        100.0 * finite as f64 / total.max(1) as f64
     );
 }

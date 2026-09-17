@@ -1,26 +1,25 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Render native vs smoothed reflectivity PNGs for visual comparison.
 // usage: smooth_probe <l2-file> <out-dir>
 use image::{ImageBuffer, Rgba};
-use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_filters::smooth_moment_grid;
+use recast_radar_core::{FieldName, Quantity, Volume};
 use recast_radar_render::{
-    ColorTableFamily, ColorTableSet, ViewportMomentCache, ViewportRasterOptions,
+    ColorTableFamily, ColorTableSet, ViewportFieldCache, ViewportRasterOptions,
     viewport_rgba_buffer_len,
 };
+use std::path::PathBuf;
 use std::time::Instant;
 
-fn save(
-    volume: &RadarVolume,
-    cache: &ViewportMomentCache,
-    options: ViewportRasterOptions,
-    path: &str,
-) {
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
+
+fn save(volume: &Volume, cache: &ViewportFieldCache, options: ViewportRasterOptions, path: &str) {
     let mut px = vec![0u8; viewport_rgba_buffer_len(options)];
     let (w, h) = cache
-        .render_moment_rgba_into(volume, options, &mut px)
+        .render_field_rgba_into(volume, options, &mut px)
         .expect("render");
     let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_pixel(w, h, Rgba([15, 17, 20, 255]));
     for (i, p) in px.chunks_exact(4).enumerate() {
@@ -43,12 +42,13 @@ fn save(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
-    let input = args.next().ok_or("usage: smooth_probe <l2> <dir>")?;
+    let input = PathBuf::from(args.next().ok_or("usage: smooth_probe <l2> <dir>")?);
     let dir = args
         .next()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| ".".into());
-    let volume: RadarVolume = recast_radar_io_nexrad::decode_volume_from_path(input.as_ref())?;
+    let decoded = legacy_bridge::Decoded::from_path(&input)?;
+    let volume = &decoded.volume;
     let tables = ColorTableSet::default();
     // Zoomed view (~±60 km) where smoothing is most visible.
     let options = ViewportRasterOptions {
@@ -60,45 +60,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         km_per_px_y: 0.135,
         rotation_rad: 0.0,
     };
-    let cut = volume
-        .cuts
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| c.moments.contains_key(&MomentType::Reflectivity))
-        .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
-        .map(|(i, _)| i)
-        .ok_or("no REF")?;
+    let sweep = decoded
+        .lowest_sweep_with(Quantity::Reflectivity)
+        .ok_or("no DBZH")?;
 
-    let native = ViewportMomentCache::new_with_color_tables(
-        &volume,
-        cut,
-        MomentType::Reflectivity,
-        &tables,
-    )?;
+    let native =
+        ViewportFieldCache::new_with_color_tables(volume, sweep, &FieldName::Dbzh, &tables)?;
     save(
-        &volume,
+        volume,
         &native,
         options,
         &format!("{dir}/smooth_native.png"),
     );
 
-    let grid = volume.cuts[cut]
-        .moments
-        .get(&MomentType::Reflectivity)
-        .unwrap();
     let start = Instant::now();
-    let smoothed_grid = smooth_moment_grid(grid);
+    let smoothed = decoded.smoothed(sweep, &FieldName::Dbzh).ok_or("no DBZH")?;
     println!(
         "smoothing pass: {:.1} ms",
         start.elapsed().as_secs_f64() * 1000.0
     );
-    let smoothed = ViewportMomentCache::new_derived(
-        &volume,
-        cut,
-        smoothed_grid,
+    let smoothed = ViewportFieldCache::new_derived(
+        volume,
+        sweep,
+        smoothed.field,
+        &smoothed.range,
         ColorTableFamily::Reflectivity,
         &tables,
     )?;
-    save(&volume, &smoothed, options, &format!("{dir}/smooth_on.png"));
+    save(volume, &smoothed, options, &format!("{dir}/smooth_on.png"));
     Ok(())
 }
