@@ -22,6 +22,8 @@
 //! volume's cuts, returns the same volume as `decode_volume_from_bytes`, and
 //! keeps decoding when a metadata message is broken.
 
+mod common;
+
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
@@ -33,56 +35,13 @@ use recast_radar_io_nexrad::{
 };
 use serde_json::Value;
 
+use common::{assert_checked_every_available, load, load_all};
+
 const CHUNKS: [&str; 3] = [
     "l2chunk-kiwa-307-20260917-003629-001-s",
     "l2chunk-kiwa-307-20260917-003629-002-i",
     "l2chunk-kiwa-307-20260917-003629-003-i",
 ];
-
-/// Volumes the volume decoder rejects, with its error text. Their metadata
-/// is checked through [`NexradMetadata::from_metadata_record`] in
-/// `matches_metpy_metadata_messages`.
-///
-/// KVWX 2008-04-15 writes four spaces as the radar identifier of every
-/// message 31 radial, which `decode_volume_from_bytes` treats as an empty
-/// message and rejects (MetPy and Py-ART read the file).
-const VOLUME_DECODER_REJECTS: [(&str, &str); 1] =
-    [("l2-kvwx-20080415-235337", "empty message 31 id")];
-
-/// For a volume in [`VOLUME_DECODER_REJECTS`], checks that both decoders
-/// return the listed error and returns true.
-fn rejected_by_volume_decoder(name: &str, bytes: &[u8]) -> bool {
-    let Some((_, reason)) = VOLUME_DECODER_REJECTS.iter().find(|(id, _)| *id == name) else {
-        return false;
-    };
-    let plain = decode_volume_from_bytes(bytes).unwrap_err().to_string();
-    let with_metadata = decode_volume_with_metadata(bytes).unwrap_err().to_string();
-    assert!(plain.contains(reason), "{name}: {plain}");
-    assert_eq!(with_metadata, plain, "{name}: same error");
-    true
-}
-
-/// Real file bytes, or `None` (with a message) when the file cannot be
-/// downloaded right now.
-fn load(id: &str) -> Option<Vec<u8>> {
-    match recast_radar_testdata::bytes(id) {
-        Ok(bytes) => Some(bytes),
-        Err(error) if error.is_offline() => {
-            eprintln!("skipping {id}: {error}");
-            None
-        }
-        Err(error) => panic!("{error}"),
-    }
-}
-
-/// Several files concatenated (a real-time volume is its chunks in order).
-fn load_all(ids: &[&str]) -> Option<Vec<u8>> {
-    let mut bytes = Vec::new();
-    for id in ids {
-        bytes.extend_from_slice(&load(id)?);
-    }
-    Some(bytes)
-}
 
 fn golden_dir(group: &str) -> PathBuf {
     recast_radar_testdata::testdata_dir().join(format!("level2/golden/{group}"))
@@ -453,13 +412,18 @@ fn check_pyart_scan(name: &str, decoded: &NexradVolume, scan: &Value) {
 fn matches_pyart_and_the_volume_decoder() {
     let mut checked = 0;
     let mut message_31_volumes = 0;
+    let mut sources = Vec::new();
+    let mut message_31_goldens = 0;
     for (name, golden) in goldens("metadata") {
+        let ids: Vec<String> = source_ids(&golden)
+            .iter()
+            .map(|id| (*id).to_owned())
+            .collect();
+        sources.push(ids);
         let Some(bytes) = load_all(&source_ids(&golden)) else {
             continue;
         };
-        if rejected_by_volume_decoder(&name, &bytes) {
-            continue;
-        }
+        message_31_goldens += usize::from(uint(&golden["msg_type"], "msg_type") == 31);
         let decoded =
             decode_volume_with_metadata(&bytes).unwrap_or_else(|error| panic!("{name}: {error}"));
         assert_eq!(
@@ -526,8 +490,11 @@ fn matches_pyart_and_the_volume_decoder() {
         }
         checked += 1;
     }
-    // The committed chunks keep the test meaningful offline.
-    assert!(checked >= 1 && message_31_volumes >= 1);
+    // 27 goldens: 23 message 31 sources (the committed chunks among them,
+    // which keep the test meaningful offline) and 4 message 1 files.
+    assert_eq!(sources.len(), 27, "metadata goldens");
+    assert_checked_every_available("metadata goldens", checked, &sources);
+    assert_eq!(message_31_volumes, message_31_goldens);
     eprintln!("checked {checked} volumes ({message_31_volumes} message 31)");
 }
 
@@ -536,7 +503,9 @@ fn matches_pyart_and_the_volume_decoder() {
 #[test]
 fn matches_metpy_metadata_messages() {
     let mut checked = 0;
+    let mut sources = Vec::new();
     for (id, status) in goldens("status") {
+        sources.push(vec![id.clone()]);
         let Some(bytes) = load(&id) else {
             continue;
         };
@@ -664,10 +633,9 @@ fn matches_metpy_metadata_messages() {
         }
         checked += 1;
     }
-    assert!(
-        checked >= 1,
-        "the committed start chunk has a status golden"
-    );
+    // 27 status goldens, the committed start chunk among them.
+    assert_eq!(sources.len(), 27, "status goldens");
+    assert_checked_every_available("status goldens", checked, &sources);
 }
 
 /// Per-sweep constant blocks against MetPy's sweeps (the `msg31` goldens):
@@ -676,13 +644,17 @@ fn matches_metpy_metadata_messages() {
 #[test]
 fn per_sweep_data_matches_metpy_sweeps() {
     let mut checked = 0;
+    let mut sources = Vec::new();
     for (name, golden) in goldens("msg31") {
+        sources.push(
+            source_ids(&golden)
+                .iter()
+                .map(|id| (*id).to_owned())
+                .collect::<Vec<_>>(),
+        );
         let Some(bytes) = load_all(&source_ids(&golden)) else {
             continue;
         };
-        if rejected_by_volume_decoder(&name, &bytes) {
-            continue;
-        }
         let decoded = decode_volume_with_metadata(&bytes).unwrap();
         let sweeps = sweeps(&name, &decoded);
         let metpy = golden["sweeps"].as_array().unwrap();
@@ -787,7 +759,9 @@ fn per_sweep_data_matches_metpy_sweeps() {
         }
         checked += 1;
     }
-    assert!(checked >= 1, "the committed chunks have a msg31 golden");
+    // 14 msg31 goldens, the committed chunks among them.
+    assert_eq!(sources.len(), 14, "msg31 goldens");
+    assert_checked_every_available("msg31 goldens", checked, &sources);
 }
 
 /// Decompress one bzip2 LDM record.
@@ -988,18 +962,14 @@ fn first_message_of_a_type_is_kept() {
 /// cut.
 #[test]
 fn out_of_order_chunks_keep_per_sweep_alignment() {
-    let order = [
-        "l2chunk-kiwa-307-20260917-003629-001-s",
-        "l2chunk-kiwa-307-20260917-003629-002-i",
-        "l2chunk-kiwa-307-20260917-003629-014-i",
-        "l2chunk-kiwa-307-20260917-003629-003-i",
-    ];
-    let Some(bytes) = load_all(&order) else {
-        return;
-    };
-    let Some(first_two) = load_all(&order[..2]) else {
-        return;
-    };
+    // Chunk 014 is the only one not committed: skip (with a message) only
+    // when it cannot be downloaded. The others are committed and always
+    // load.
+    let chunk_014 = recast_radar_testdata::require_file!("l2chunk-kiwa-307-20260917-003629-014-i");
+    let chunk_014 = std::fs::read(&chunk_014).unwrap();
+    let committed = |id: &str| recast_radar_testdata::bytes(id).unwrap();
+    let first_two = [committed(CHUNKS[0]), committed(CHUNKS[1])].concat();
+    let bytes = [first_two.clone(), chunk_014, committed(CHUNKS[2])].concat();
     let decoded = decode_volume_with_metadata(&bytes).unwrap();
     assert_eq!(decoded.volume, decode_volume_from_bytes(&bytes).unwrap());
     let volume = &decoded.volume;

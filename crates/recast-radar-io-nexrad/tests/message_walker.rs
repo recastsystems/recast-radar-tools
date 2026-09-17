@@ -10,6 +10,8 @@
 //! The mutation tests start from the committed KIWA start chunk and change
 //! single header fields to exercise the error paths.
 
+mod common;
+
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use recast_radar_io_nexrad::NexradError;
 use recast_radar_io_nexrad::messages::{self, MessageWalker, RawMessages};
@@ -294,14 +296,17 @@ fn metadata_record_status_only_stub() {
 /// Messages 2, 3 and 5 at the start of the volume carry the volume time.
 #[test]
 fn status_message_headers_carry_the_volume_time() {
-    for id in [
+    const IDS: [&str; 5] = [
         "l2-ktlx-20240315-000217",
         START_CHUNK,
         "l2-kdvn-20200810-180401",
         "l2-kmaf-20230331-230843",
         "l2-tstl-20230331-230314",
-    ] {
+    ];
+    let mut files = 0;
+    for id in IDS {
         let Some(raw) = load(id) else { continue };
+        files += 1;
         let date = u32::from_be_bytes(raw[12..16].try_into().unwrap());
         let milliseconds = u32::from_be_bytes(raw[16..20].try_into().unwrap());
         let volume_time: DateTime<Utc> = Utc.timestamp_opt(0, 0).unwrap()
@@ -324,6 +329,8 @@ fn status_message_headers_carry_the_volume_time() {
         }
         assert!(checked >= 2, "{id}: status messages checked");
     }
+    let sources: Vec<Vec<&str>> = IDS.iter().map(|id| vec![*id]).collect();
+    common::assert_checked_every_available("status message headers", files, &sources);
 }
 
 // Whole files: every record decompressed and walked.

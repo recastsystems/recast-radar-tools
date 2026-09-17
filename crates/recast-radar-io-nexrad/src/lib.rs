@@ -99,6 +99,20 @@ pub enum NexradError {
     },
     #[error("input is too short for an Archive II volume header: {actual} bytes")]
     ShortVolumeHeader { actual: usize },
+    /// The input does not start with an Archive II volume header (`AR2V` or
+    /// `ARCHIVE2`, Table I of the Archive II ICD 2620010). Model-data
+    /// (`_MDM`) files, intermediate real-time chunks and bare records have
+    /// none: their messages are read with [`messages::record_bytes`] and
+    /// [`messages::MessageWalker`], and their metadata with
+    /// [`NexradMetadata::from_metadata_record`]. Without a header there is no
+    /// site or volume time, so no [`RadarVolume`] is built from them.
+    #[error(
+        "no Archive II volume header: the input starts with `{found}`, not AR2V or ARCHIVE2 (model-data _MDM files and intermediate real-time chunks have no header; read their messages with messages::MessageWalker)"
+    )]
+    MissingVolumeHeader {
+        /// The first 8 input bytes, ASCII-escaped.
+        found: String,
+    },
     #[error("truncated {what} at offset {offset}: need {needed} bytes, have {available}")]
     Truncated {
         what: &'static str,
@@ -562,7 +576,7 @@ fn decode_normalized_volume_bytes_within_observed(
             break;
         }
 
-        let message_total_len = usize::from(header.size_halfwords) * 2;
+        let (message_total_len, variable_framing) = message_framing(&header);
         if message_total_len < MESSAGE_HEADER_LEN {
             return Err(NexradError::InvalidMessage {
                 offset: header_offset,
@@ -619,7 +633,9 @@ fn decode_normalized_volume_bytes_within_observed(
             _ => volume.metadata.skipped_message_count += 1,
         }
 
-        let record_len = if header.message_type != 31 {
+        let record_len = if variable_framing {
+            message_total_len + CONTROL_WORD_LEN
+        } else if header.message_type != 31 {
             RECORD_BYTES
         } else if record_index >= 134 || early_variable_msg31 {
             message_total_len + CONTROL_WORD_LEN
@@ -714,7 +730,7 @@ where
             break;
         }
 
-        let message_total_len = usize::from(header.size_halfwords) * 2;
+        let (message_total_len, variable_framing) = message_framing(&header);
         if message_total_len < MESSAGE_HEADER_LEN {
             return Err(NexradError::InvalidMessage {
                 offset: header_offset,
@@ -722,7 +738,9 @@ where
             });
         }
 
-        let record_len = if record_index < 134 || header.message_type != 31 {
+        let record_len = if variable_framing {
+            message_total_len + CONTROL_WORD_LEN
+        } else if record_index < 134 || header.message_type != 31 {
             RECORD_BYTES
         } else {
             message_total_len + CONTROL_WORD_LEN
@@ -841,6 +859,9 @@ pub struct MessageHeader {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message31Header {
+    /// Bytes 0-3: radar identifier as recorded. It can be blank (KVWX
+    /// 2008-04-15 records four spaces); see [`Self::radar_identifier_or`].
+    pub radar_identifier: [u8; 4],
     pub collect_ms: u32,
     pub collect_date: u16,
     pub azimuth_number: u16,
@@ -1250,7 +1271,7 @@ fn parse_bzip_block_volume(
             break;
         }
 
-        let message_total_len = usize::from(header.size_halfwords) * 2;
+        let (message_total_len, variable_framing) = message_framing(&header);
         if message_total_len < MESSAGE_HEADER_LEN {
             return Err(NexradError::InvalidMessage {
                 offset: header_offset,
@@ -1258,7 +1279,9 @@ fn parse_bzip_block_volume(
             });
         }
 
-        let record_len = if record_index < 134 || header.message_type != 31 {
+        let record_len = if variable_framing {
+            message_total_len + CONTROL_WORD_LEN
+        } else if record_index < 134 || header.message_type != 31 {
             RECORD_BYTES
         } else {
             message_total_len + CONTROL_WORD_LEN
@@ -1516,8 +1539,23 @@ fn reserve_atomic_budget(total: &AtomicUsize, additional: usize, limit: usize) -
         .is_ok()
 }
 
+/// True when `bytes` start with an Archive II volume header tape name:
+/// `AR2V` (Build 5 on, 2004) or `ARCHIVE2` (1991-2003).
+pub(crate) fn starts_with_volume_header(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"AR2V") || bytes.starts_with(b"ARCHIVE2")
+}
+
+/// Parse the 24-byte volume header. Bytes that do not start with `AR2V` or
+/// `ARCHIVE2` are [`NexradError::MissingVolumeHeader`]: the volume decoders
+/// never treat headerless bytes (a model-data file, an intermediate
+/// real-time chunk, compressed data) as a header followed by records.
 fn parse_volume_header(bytes: &[u8]) -> Result<VolumeHeader> {
     require_len(bytes, 0, VOLUME_HEADER_LEN, "volume header")?;
+    if !starts_with_volume_header(bytes) {
+        return Err(NexradError::MissingVolumeHeader {
+            found: bytes[..8].escape_ascii().to_string(),
+        });
+    }
     let tape = ascii_trim(&bytes[0..9]);
     let extension = ascii_trim(&bytes[9..12]);
     let date = u32_at(bytes, 12)?;
@@ -1529,6 +1567,21 @@ fn parse_volume_header(bytes: &[u8]) -> Result<VolumeHeader> {
         volume_time: nexrad_date_ms_to_datetime(date, milliseconds),
         icao,
     })
+}
+
+/// Framing of one message in the volume decoders: the message length from
+/// its header (Table II: the size halfwords, or the byte count in the segment
+/// fields when the size is the 0xFFFF sentinel, notes 6 and 7) and whether
+/// the message has its own variable-length record instead of a fixed
+/// 2432-byte frame. Message 29 (model data) and every extended-size message
+/// are variable length, like the walker treats them; message 31 framing is
+/// decided by the caller (fixed inside the metadata record, variable after
+/// it). Without this, a message 29 was skipped as one 2432-byte frame and
+/// its remaining bytes were parsed as message headers and radials.
+fn message_framing(header: &MessageHeader) -> (usize, bool) {
+    let total_len = header.message_len();
+    let variable = header.has_extended_size() || header.message_type == 29;
+    (total_len, variable)
 }
 
 pub fn parse_message_header(bytes: &[u8], offset: usize) -> Result<MessageHeader> {
@@ -1969,18 +2022,34 @@ fn volume_needs_constant_block(volume: &RadarVolume) -> bool {
         || volume.vcp.is_none()
 }
 
+impl Message31Header {
+    /// The radar identifier: the message 31 identifier with spaces and NULs
+    /// trimmed, or, when that is blank, `volume_header_icao` trimmed (which
+    /// may be empty too).
+    pub fn radar_identifier_or(&self, volume_header_icao: &str) -> String {
+        radar_identifier_or(&self.radar_identifier, volume_header_icao)
+    }
+}
+
+/// A message 31 radar identifier, falling back to the volume header ICAO when
+/// the identifier is blank (spaces or NULs), and then to the empty string.
+pub(crate) fn radar_identifier_or(identifier: &[u8; 4], volume_header_icao: &str) -> String {
+    let identifier = ascii_trim(identifier);
+    if identifier.is_empty() {
+        volume_header_icao
+            .trim_matches(|c: char| c == '\0' || c.is_whitespace())
+            .to_owned()
+    } else {
+        identifier
+    }
+}
+
+/// Parse the Data Header Block of a message 31 body. A blank radar
+/// identifier (spaces or NULs) is accepted: real files have one (KVWX
+/// 2008-04-15), and MetPy and Py-ART read them.
 pub fn parse_message_31_header(bytes: &[u8], offset: usize) -> Result<Message31Header> {
     require_len(bytes, offset, MSG_31_HEADER_LEN, "message 31 header")?;
     let bytes = &bytes[offset..offset + MSG_31_HEADER_LEN];
-    if bytes[..4]
-        .iter()
-        .all(|byte| *byte == 0 || byte.is_ascii_whitespace())
-    {
-        return Err(NexradError::InvalidMessage {
-            offset,
-            reason: "empty message 31 id".to_owned(),
-        });
-    }
 
     let mut block_pointers = [0; 10];
     for (index, pointer) in block_pointers.iter_mut().enumerate() {
@@ -1988,6 +2057,7 @@ pub fn parse_message_31_header(bytes: &[u8], offset: usize) -> Result<Message31H
     }
 
     Ok(Message31Header {
+        radar_identifier: [bytes[0], bytes[1], bytes[2], bytes[3]],
         collect_ms: be_u32(bytes, 4),
         collect_date: be_u16(bytes, 8),
         azimuth_number: be_u16(bytes, 10),
@@ -2201,6 +2271,8 @@ mod tests {
         let body = synthetic_message_31_body(false);
         let header = parse_message_31_header(&body, 0).unwrap();
 
+        assert_eq!(&header.radar_identifier, b"AR2V");
+        assert_eq!(header.radar_identifier_or("KTLX"), "AR2V");
         assert_eq!(header.azimuth_number, 1);
         assert_eq!(header.azimuth_angle, 180.5);
         assert_eq!(header.elevation_angle, 0.5);

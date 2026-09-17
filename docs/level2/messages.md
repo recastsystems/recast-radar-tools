@@ -17,7 +17,7 @@ The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crate
 | Type | Module | Struct (`MessageBody` variant) | Verified against |
 |---|---|---|---|
 | 1 | `lib.rs` (volume decoder) | radials of `RadarVolume`; walker: `Unparsed` | Py-ART: rays per elevation in 4 files, 1991-2005 (`volume_metadata.rs`) |
-| 2 | `rda_status.rs` | `RdaStatus` (`Orda`/`Legacy`) (`RdaStatus`) | MetPy, 27 files (`messages_status.rs`); hex for halfwords 26 and 59 |
+| 2 | `rda_status.rs` | `RdaStatus` (`Orda`/`Legacy`) (`RdaStatus`) | MetPy, 27 files (`messages_status.rs`); halfword positions against the body bytes in the same 27 files (22 ORDA and 18 legacy halfwords pinned by non-zero values, the rest verified as zero) |
 | 3 | `performance.rs` | `PerformanceMaintenance` (`Performance`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 21 Build 24.0 halfwords MetPy lacks. Legacy layout: not decoded |
 | 4, 10 | `console.rs` | `ConsoleMessage` (`Console`) | **no real sample** |
 | 5 | `vcp.rs` | `VolumeCoveragePattern` (`Vcp`) | MetPy, 22 metadata records (`messages_vcp.rs`); Py-ART pattern and cut angles, 22 sources (`volume_metadata.rs`) |
@@ -30,12 +30,45 @@ The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crate
 | 15 | `clutter_filter_map.rs` | `ClutterFilterMap` (`ClutterFilterMap`) | MetPy, 20 files, every range zone (`messages_clutter.rs`) |
 | 18 | `adaptation.rs` | `RdaAdaptationData` (`Adaptation`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 49 Build 24.0 offsets MetPy lacks. Legacy layout: not decoded |
 | 29 | none | `Unparsed` | framing only, against `tools/level2_message_scan.py` |
-| 31 | `msg31_blocks.rs` | `DigitalRadarDataGeneric` (`DigitalRadarDataGeneric`) | MetPy, 13 volumes and the KIWA chunks (`messages_msg31.rs`); hex (one radial); Py-ART VOL/ELV/RAD of each elevation's first ray, 22 sources (`volume_metadata.rs`). Compressed radials: **no real sample** |
+| 31 | `msg31_blocks.rs` | `DigitalRadarDataGeneric` (`DigitalRadarDataGeneric`) | MetPy, 13 volumes and the KIWA chunks (`messages_msg31.rs`); hex (one radial); Py-ART VOL/ELV/RAD of each elevation's first ray, 23 sources (`volume_metadata.rs`); Py-ART rays and moment codes, 4 sources (`volume_pyart.rs`). Compressed radials: **no real sample** |
 | 32 | `prf.rs` | `RdaPrfData` (`Prf`) | hex, 3 volumes; PRFs checked against MetPy's message 31 unambiguous ranges (no reader decodes message 32) |
 | 33 | `rda_log.rs` | `RdaLogData` (`RdaLog`) | **no real sample** |
 
 `decode_volume_with_metadata` (below) collects messages 2, 3, 5/7, 8, 13, 15, 18 and 32 and the per-sweep
 message 31 constant blocks into `NexradMetadata`.
+
+## Golden files
+
+`tools/level2_golden.py` writes every file under `testdata/level2/golden/` (groups `status`, `vcp`, `clutter`,
+`msg31`, `metadata`, `volume`) with MetPy 1.7.1 and Py-ART (arm_pyart) 2.2.5, and refuses other versions. It reads each
+source from its committed path or the testdata download cache and checks the manifest sha256 first. The module
+docstring describes each group.
+
+- `python tools/level2_golden.py <group|all> [source ...]` writes the files.
+- `python tools/level2_golden.py --check <group|all> [source ...]` writes nothing. It regenerates the documents in
+  memory and exits with status 1 unless every committed file is reproduced byte for byte. With a group's default
+  sources it also fails on committed files the script no longer produces, and on files it would write that are not
+  committed.
+- `python tools/level2_golden.py --list-sources all` prints the manifest ids the default sources read.
+
+The check runs as an ignored Rust test, which first fetches every listed source into the cache (a file that cannot
+be fetched fails the test) and then runs `--check all`:
+
+```sh
+RECAST_RADAR_GOLDEN_PYTHON=/path/to/python cargo test -p recast-radar-io-nexrad --test golden_script -- --ignored
+# or, for CI:
+RECAST_RADAR_GOLDEN_PYTHON=/path/to/python bash tools/ci/level2-golden-check.sh
+```
+
+The clutter group's default ids leave out trimmed fixtures (`derived_from` in the manifest). Their clutter messages
+are compared with their source files instead (see Message 15).
+
+Corpus coverage: every test that loops over corpus files pins the number of sources it applies to (from the
+golden directory or the manifest) and ends with `assert_checked_every_available` (`tests/common/mod.rs`), which
+requires that every source whose files are present locally after the loop was checked. A source is skipped only
+when it is neither committed nor cached and cannot be downloaded, and the skip is printed with the ids. With the
+cache filled (one `cargo test` online), every loop checks every source. Tests of one uncommitted file use
+`require_file!` (the out-of-order chunk test, for chunk 014) or the same `load` helper.
 
 ## Framing and reassembly
 
@@ -73,7 +106,8 @@ Quirks found in the real corpus:
 
 `decode_volume_with_metadata(bytes) -> Result<NexradVolume>` (`src/metadata.rs`) returns
 `NexradVolume { volume, metadata }`. `volume` is the `RadarVolume` that `decode_volume_from_bytes` returns for the
-same bytes, with the same errors. `metadata` is a `NexradMetadata`:
+same bytes, with the same errors (including `MissingVolumeHeader` for headerless input, see Message 29).
+`metadata` is a `NexradMetadata`:
 
 | Field | Type | Source |
 |---|---|---|
@@ -85,7 +119,7 @@ same bytes, with the same errors. `metadata` is a `NexradMetadata`:
 | `bypass_map` | `Option<ClutterFilterBypassMap>` | message 13 |
 | `clutter_censor_zones` | `Option<ClutterCensorZones>` | message 8 |
 | `prf` | `Option<RdaPrfData>` | message 32 |
-| `per_sweep_elevation_data` | `Option<Vec<SweepElevationData>>` | message 31 VOL, ELV and RAD blocks of each cut's first radial |
+| `per_sweep_elevation_data` | `Option<Vec<SweepElevationData>>` | message 31 VOL, ELV and RAD blocks of each cut's first radial, and its ZDR bias estimate in dB |
 | `build` | `Option<RdaBuild>` | `RdaStatus::rda_build` of the message 2 above (`None` for the legacy RDA) |
 | `errors` | `Vec<String>` | problems met while reading the metadata |
 
@@ -95,7 +129,7 @@ same bytes, with the same errors. `metadata` is a `NexradMetadata`:
   `NexradMetadata::from_metadata_record(bytes)` reads these fields without decoding the volume, for example for a
   real-time start chunk or a status-only stub.
 - `per_sweep_elevation_data` has one `SweepElevationData { cut_index, elevation_number, elevation_angle_deg,
-  elevation, volume, radial }` per cut, in `volume.cuts` order. It is `None` when no radial is a message 31
+  elevation, volume, radial, zdr_bias_estimate_db }` per cut, in `volume.cuts` order. It is `None` when no radial is a message 31
   (message 1 volumes). The blocks come from each cut's first radial. The ELV block is constant within a cut; VOL
   and RAD are sent with every radial, so the stored values are those at the start of the cut.
 - One decode pass. The volume decoders call an internal observer after each message 31 radial. When the radial
@@ -106,17 +140,17 @@ same bytes, with the same errors. `metadata` is a `NexradMetadata`:
   second time. On KTLX 2024-03-15 with one thread, that costs about 1 ms of a 310-370 ms decode
   (`NexradMetadata::from_metadata_record` alone: 0.8-0.9 ms).
 - Verified (`tests/volume_metadata.rs`):
-  - The Py-ART goldens cover 27 sources. 26 of them decode: 22 message 31 volumes and chunk sets from 2008 to
-    2026, and 4 message 1 files from 1991 to 2005. The 27th is KVWX 2008 (see the known limitation below). For
-    each of the 26, `volume` equals `decode_volume_from_bytes`, every metadata field equals the first message of
+  - The Py-ART goldens cover 27 sources, and all 27 decode: 23 message 31 volumes and chunk sets from 2008 to
+    2026 (including KVWX 2008, whose radials carry a blank radar identifier), and 4 message 1 files from 1991 to
+    2005. For each, `volume` equals `decode_volume_from_bytes`, every metadata field equals the first message of
     its type the walker decodes, and the rays per elevation number equal Py-ART's. For message 31 sources, these
     also equal Py-ART's raw values: the VCP number, the message 5 target angles, and, for each elevation, the
     first ray's time, azimuth and elevation and every VOL, ELV and RAD field.
   - For the 27 files with MetPy status goldens: message 2 layout, build and VCP; presence of messages 3 and 18;
     message 5 pattern and cut count; message 32 in the three volumes that have it and in no volume before
     Build 23; message 15 and 13 generation times and segment counts.
-  - For the 13 MetPy message 31 goldens that decode (KVWX 2008 does not): one entry per MetPy sweep, with the
-    same radial count, first radial time and elevation, and VOL, ELV and RAD values.
+  - For the 14 MetPy message 31 goldens: one entry per MetPy sweep, with the same radial count, first radial
+    time and elevation, and VOL, ELV and RAD values.
   - Mutations of the committed KIWA chunks (they run offline): a message 15 with 9 elevation segments is reported
     in `errors` and leaves `clutter_filter_map` `None`, while the volume and every other field are unchanged. A
     second message 2 inserted before the real one is the one kept. When elevation 3's first chunk is decoded
@@ -124,9 +158,8 @@ same bytes, with the same errors. `metadata` is a `NexradMetadata`:
     with the radials that opened each cut.
   - KLIX 2005 lists its zero-filled messages 5 and 15 and the message 13 orphan run in `errors`; KDMX 2008 lists
     its stale frames and decodes every metadata message.
-- Known limitation: `decode_volume_from_bytes` rejects KVWX 2008-04-15 ("empty message 31 id", because every
-  radial's identifier is four spaces), so `decode_volume_with_metadata` returns the same error. The test asserts
-  that error; `from_metadata_record` still reads the file's message 2.
+- KVWX 2008-04-15, whose 2500 radials all record four spaces as the radar identifier, was rejected with "empty
+  message 31 id" until wave 3. MetPy and Py-ART read it, and both decoders now do (see Message 31).
 
 ## Message 1: Digital Radar Data (Table III)
 
@@ -155,6 +188,16 @@ Real samples: every archive volume in the corpus (not the `_MDM` file or interme
   1991, 1999, 2005 and 2008, ORDA Builds 10.0 to 24.1, and TDWR. Halfwords 26 and 59, which MetPy skips, are
   0000 in every corpus file; the KLIX 2005 legacy fields and several Build 22 codes are checked against values
   read from the file bytes.
+- Halfword positions (`halfword_positions_pinned_by_nonzero_corpus_values`): in all 27 files with a status
+  golden, every decoded field equals the halfword read from the message 2 body at its Table IV position, through
+  the same code mapping. A position is pinned only where some file has a non-zero value there; a zero matches any
+  position. Pinned by non-zero values: ORDA halfwords 1-8, 10-15, 19-24, 41 and 60 (23 files, Build 10.0 to
+  24.1 and TDWR); legacy halfwords 1-8, 10-14, 19-22 and 24 (4 files: KTLX 1991 and 1999, KLIX 2005, KVWX 2008).
+  Verified only as zero, because no corpus file sets them: ORDA 9 (control authorization), 16 (command
+  acknowledgment), 17 (channel control), 18 (spot blanking), 25 (RMS control), 26 (performance check), 27-40
+  (alarm codes), 42-58 (spare) and 59 (downloaded pattern number); legacy 9, 15 (alarm summary), 16, 17, 18, 25
+  and 27-40. The test pins both lists, so a new corpus file that sets one of these fields fails it until the
+  lists and this paragraph are updated.
 
 ## Message 3: Performance/Maintenance Data (Table V)
 
@@ -322,6 +365,23 @@ bytes. Real samples: 4 segments in every metadata record from 2005 on, except KV
 Status: yielded unparsed. Table I lists type 29 as reserved.
 Real sample: the KLIX 2021-08-29 `_MDM` file, where it is one 809,229-byte message with a size of 65535.
 
+The volume decoders (`tests/headerless_inputs.rs`):
+
+- The `_MDM` file has no volume header: it is one LDM record. `decode_volume_from_bytes`,
+  `decode_volume_with_metadata` and the preview decoders return `NexradError::MissingVolumeHeader`, which
+  names the first 8 input bytes. Py-ART 2.2.5 raises `OSError: unknown compression record`; MetPy 1.7.1 logs
+  "Unable to read volume header" and returns a `Level2File` with 0 sweeps and no `stid` or `dt`. A `RadarVolume`
+  needs the site and volume time of the header, so an error is returned rather than an empty volume with
+  invented values. The walker and `NexradMetadata::from_metadata_record` still read the file (no metadata
+  message). An intermediate real-time chunk on its own gets the same error. Before wave 3, the decoder read
+  the compressed bytes as a volume header and uncompressed records, and failed only when a random "message 1"
+  tripped the gate limit.
+- A Message 29 inside a volume stream (the committed KIWA start chunk, the `_MDM` record, then chunk 002) is
+  skipped by its extended size, like every message whose size is the 0xFFFF sentinel (Table II notes 6 and 7).
+  The volume is the one decoded without it, plus one skipped message. Before wave 3, the decoder advanced one
+  2432-byte frame into the message and read its bytes as message headers: an `Ok` volume with VCP 52942, a
+  volume time in 2104 and a cut at 339 degrees.
+
 ## Message 31: Digital Radar Data Generic Format (Table XVII)
 
 Module: `msg31_blocks.rs` (`DigitalRadarDataGeneric`). Status: **verified**. The walker decodes every block:
@@ -361,6 +421,23 @@ Verification (`tests/messages_msg31.rs`):
 - **Fields MetPy does not read.** These are the VOL ZDR bias estimate, RAD radial flags, and spare bytes. The
   expected values come from the file bytes, read with a separate Python script: ZDR bias raw 407 to 430 (-0.34
   to +0.375 dB), or 0 (not available) for KMAF 2023 and both KTLX 2024 files. Radial flags and spares are 0.
+- **ZDR bias estimate in dB.** Table XVII-E note 33 says the estimate is encoded like the "ZDR" data moment,
+  and note 20 says conversions must use the scale and offset in the Data Moment Block of the same radial, which
+  could change from radial to radial. `VolumeDataBlock::zdr_bias_estimate_db(zdr)` takes that radial's ZDR
+  block; `DigitalRadarDataGeneric::zdr_bias_estimate_db()` passes it, and `SweepElevationData::zdr_bias_estimate_db`
+  holds the first radial's value. Radials without a ZDR block (the Doppler cuts of split cuts carry REF, VEL and
+  SW only) and blocks with scale 0 (floating-point gates, note 15) use the Table XVII-I typical values, offset 418
+  and scale 32. The encoding has changed between builds: Builds 12.0 to 18.2 (KVNX 2011 to KDVN 2020) write
+  8-bit ZDR with scale 16 and offset 128, and Build 19.1 on writes 16-bit ZDR with scale 32 and offset 418
+  (`check_file` pins the word size, scale and offset of every ZDR block in the 14 golden sources). Every volume
+  with the 52-byte VOL layout uses the Table XVII-I values, so in real data the fallback and the note 20
+  conversion agree. Verified (`zdr_bias_estimate_in_other_builds`): in 8 volumes from Build 20.1 to 24.1 the
+  first radial's ZDR block, located through the Data Header Block pointers in the record bytes, carries scale 32
+  and offset 418, and the decoded value equals `(raw - offset) / scale` from those bytes. On KILX 2026 every
+  sweep's first radial has the same raw code, and Doppler sweeps get the same value through the fallback. A
+  mutation of the committed KIWA radial's ZDR block bytes (scale 16, offset 256) moves the estimate to 10.5 dB,
+  and a scale of 0 or a renamed ZDR block falls back to the typical values; that mutation is the only exercise of
+  a 52-byte VOL with a non-typical ZDR encoding.
 - **Every field of one radial.** The first radial of the committed KIWA chunk 002 is checked field by field
   against its hex. The same radial's gate code counts (REF below threshold, CFP filter states 0-2, CFP values
   0-73 dB) are checked against the separate Python reader.
@@ -368,8 +445,15 @@ Verification (`tests/messages_msg31.rs`):
   LRTUP sizes exercise layout selection. Re-encoding the real blocks with zlib and BZIP2 exercises compression.
   Pointer, count, word-size and truncation errors are also covered.
 - **Py-ART.** `tests/volume_metadata.rs` compares every VOL, ELV and RAD field of each elevation's first radial,
-  as `decode_volume_with_metadata` stores it, with Py-ART 2.2.5's raw values on 22 sources. That includes the
+  as `decode_volume_with_metadata` stores it, with Py-ART 2.2.5's raw values on 23 sources. That includes the
   RAD radial flags, which MetPy skips. Py-ART reads a 44-byte VOL block, so the ZDR bias estimate is not compared.
+- **Py-ART rays and moments.** `tests/volume_pyart.rs` compares `decode_volume_from_bytes` with the `volume`
+  goldens (`tools/level2_golden.py volume`, Py-ART 2.2.5 `NEXRADLevel2File`) on KVWX 2008, KPAH 2008 (Build 10.0,
+  the same evening), the KTLX 2024-03-15 benchmark volume and the committed KIWA chunks: the site id is the volume
+  header ICAO; per elevation number, the ray count and the sums of the rays' collection times and azimuths; and
+  per moment, the rays that carry it, gate count, first gate, gate spacing, word size, scale, offset, and the sum
+  of the raw gate codes with the counts of codes 0 and 1 (grid rows shorter than the widest radial are padded
+  with code 0).
 
 Quirks found in the real corpus:
 
@@ -377,7 +461,11 @@ Quirks found in the real corpus:
   nonzero pointers first, then zero slots up to the fixed 68- or 72-byte header. For example, a Build 10
   reflectivity-only radial has 4 pointers and 5 zero slots.
 - Build 10 KDMX 2008: 2520 radials declare a radial length one byte shorter than the halfword-padded body.
-- KVWX 2008 has a blank (four-space) ICAO in every radial, no azimuth indexing, and no message 5.
+- KVWX 2008 has a blank (four-space) radar identifier in every radial, no azimuth indexing, and no message 5.
+  A blank identifier (spaces or NULs) is accepted; `DataHeaderBlock::radar_identifier` and
+  `Message31Header::radar_identifier` keep the bytes as recorded, `radar_identifier_str()` trims them to "", and
+  `radar_identifier_or(volume_header_icao)` falls back to the volume header ICAO ("KVWX" here) and then to "".
+  The volume's site id comes from the volume header, as in Py-ART and MetPy.
 
 **No real sample:** compressed radials (compression indicator 1 BZIP2, 2 zlib). The decoder inflates from the
 first block pointer, where the Data Header Block ends in every uncompressed radial. The inflated size is
