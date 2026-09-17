@@ -484,90 +484,69 @@ and dropped: the file stores PHIDP in radians and RHOHV with a 0.0028 gain (maxi
 
 ## track
 
-### `crates/recast-radar-track/src/cells.rs`
+**Converted in C.2** (branch `real-tests-track`): all 30 entries are gone from the allowlist (the
+counts table above is the C.1 snapshot). The 22 synthetic tests and 8 helpers were deleted from
+`src/`; the pure-math unit tests that stayed (`tracking.rs` Hungarian solver, `tracks.rs` running
+maximum, grid round trip, TDS thresholds and colour ramp) were never findings. The replacements are
+integration tests under `crates/recast-radar-track/tests/` that decode corpus files with the
+workspace readers and compare against JSON goldens under `testdata/golden/track/`, written by
+`tools/track_golden.py`. The script reads the same files with Py-ART 2.2.5 (composite reflectivity,
+region-based dealiasing, fields), MetPy 1.7.1 (Level II sweep summaries and volume times; Level III
+Storm Tracking Information products) and its own DORADE block walker, and computes the expected
+outputs with numpy/scipy (float32 arithmetic where the Rust code uses f32).
 
-`volume_with_field` builds a one-tilt volume from an analytic reflectivity function (Gaussian cores).
+Corpus additions for this group: the KDVN volumes before and after `l2-kdvn-20200810-180401`
+(`l2-kdvn-20200810-175718`, `-181043`, `-181724`; downloads, tag `sequence:kdvn-20200810`) and the
+four Level III STI products for those volumes (`l3-kdvn-20200810-{1757,1804,1810,1817}-nst`,
+committed, 57 KB). The STI product is the operational SCIT tracker's output (cell ids, positions,
+past/forecast positions, DBZM, forecast movement), the independent reference for the tracking tests.
 
-| test | real input | assertion source |
-|---|---|---|
-| `tests::finds_a_single_strong_cell_at_the_right_place` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | cell centroid from scipy.ndimage labelling of the thresholded Py-ART reflectivity, near azimuth 255 deg, 58 km |
-| `tests::weak_echo_yields_no_cells` | `l2-ktlx-20240515-000014` (clear air, max 35.5 dBZ) | no cells |
-| `tests::empty_volume_yields_no_cells` | `l2-tbwi-20230601-175101-stub` (no radials) | no cells |
-| `tests::watershed_splits_two_cores_in_one_envelope` | `l2-koax-20140616-205305` (Pilger twin-tornado supercells) | two cores from a scipy watershed on the thresholded Py-ART reflectivity |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::volume_with_field` | one-tilt volume from an analytic field | `tests::finds_a_single_strong_cell_at_the_right_place`, `tests::weak_echo_yields_no_cells`, `tests::empty_volume_yields_no_cells`, `tests::watershed_splits_two_cores_in_one_envelope` |
-
-
-### `crates/recast-radar-track/src/swath.rs`
-
-`volume_with` builds one-tilt u8 volumes with hand-set gates for swath frames.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::max_reflectivity_takes_per_gate_maximum` | consecutive sweeps from `dorade-noxp-20090525-sweeps-tgz` (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed `dorade-noxp-20090525-203211-sector`) | numpy per-gate maximum of the decoded reflectivity |
-| `tests::swath_covers_union_of_two_positions` | consecutive sweeps from `dorade-noxp-20090525-sweeps-tgz` (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed `dorade-noxp-20090525-203211-sector`) | swath coverage equals the union of valid gates |
-| `tests::max_magnitude_keeps_sign_of_extreme` | consecutive sweeps from `dorade-noxp-20090525-sweeps-tgz` (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed `dorade-noxp-20090525-203211-sector`), velocity | numpy signed extreme per gate |
-| `tests::empty_when_no_frame_has_the_moment` | `l2-tstl-20230331-230314-trim` frames (TDWR, no dual-pol) asked for ZDR | empty swath |
-| `tests::picks_lowest_tilt_carrying_the_moment` | `l2-ktlx-20240315-000217-trim` (REF on sweep 1, VEL first on sweep 2) | tilt choice from MetPy moment lists |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::volume_with` | one-tilt u8 volume | `tests::max_reflectivity_takes_per_gate_maximum`, `tests::swath_covers_union_of_two_positions`, `tests::max_magnitude_keeps_sign_of_extreme`, `tests::empty_when_no_frame_has_the_moment`, `tests::picks_lowest_tilt_carrying_the_moment` |
-
-
-### `crates/recast-radar-track/src/temporal.rs`
-
-`grid` builds 1-row grids from hand-written values for difference, rate and probability products.
+### `crates/recast-radar-track/tests/cells_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::difference_and_trend` | consecutive sweeps from `dorade-noxp-20090525-sweeps-tgz` (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed `dorade-noxp-20090525-203211-sector`) | numpy difference and trend of the decoded gates |
-| `tests::rate_accumulation_uses_trapezoids` | consecutive sweeps from `dorade-noxp-20090525-sweeps-tgz` (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed `dorade-noxp-20090525-203211-sector`) | numpy trapezoid accumulation with the sweep times |
-| `tests::probability_ignores_missing_values` | consecutive sweeps from `dorade-noxp-20090525-sweeps-tgz` (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed `dorade-noxp-20090525-203211-sector`) | numpy probability over non-missing gates |
+| `identifies_every_salient_hail_core_of_kewx` | `l2-kewx-20160413-022531` (19 tilts) | every 60 dBZ component of Py-ART's composite with area >= 20 km2 (four: 76.8, 72.5, 67.3, 66.9 dBZ) has its own cell within 3 km of the Z^(4/7)-weighted centroid; the strongest is the first cell; peaks stay in [60, composite max] |
+| `clear_air_volume_yields_no_cells` | `l2-ktlx-20240515-000014` | Py-ART composite maximum 40.8 dBZ, largest 30 dBZ patch 0.24 km2 (below the 20 km2 saliency floor): no cells |
+| `volume_without_radials_yields_no_cells` | `l2-tbwi-20230601-175101-stub` | MetPy reads 0 sweeps; the decoded volume has no cuts and no cells |
+| `watershed_splits_the_derecho_envelope_into_its_cores` | `l2-kdvn-20200810-180401` | one contiguous 40 dBZ envelope of 15,597 km2 on a 1 km Cartesian image of Py-ART's composite holding eight 60 dBZ local maxima 15 km or more apart; the four strongest each get a distinct cell within 5 km, and the envelope holds at least eight cells |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::grid` | 1-row grid from values | `tests::difference_and_trend`, `tests::rate_accumulation_uses_trapezoids`, `tests::probability_ignores_missing_values` |
-
-
-### `crates/recast-radar-track/src/tracking.rs`
-
-`cell` builds `StormCell` detections by hand (positions, areas, dBZ) for crossing, QLCS, split, merge, speed-gate, coast and time-gate scenarios.
+### `crates/recast-radar-track/tests/swath_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::crossing_cells_do_not_swap_ids` | needs corpus addition: a 30-60 min sequence of consecutive WSR-88D volumes with crossing cells, plus the Level III Storm Tracking Information (product 58) for the same volumes | cell ids compared with the Level III STI cell tracks |
-| `tests::qlcs_line_no_steal` | needs corpus addition: consecutive volumes around `l2-kdvn-20200810-180401` (derecho QLCS) and their Level III STI | track continuity along the line vs STI |
-| `tests::split_links_children_to_parent` | needs corpus addition: consecutive volumes with a splitting supercell (e.g. around `l2-koax-20140616-205305`) and Level III STI | split parent/children vs STI |
-| `tests::merge_terminates_the_loser_with_a_link` | needs corpus addition: consecutive volumes with a cell merger and Level III STI | merge link vs STI |
-| `tests::speed_gate_rejects_a_teleporting_cell` | cells detected in two real frames far apart in space: `l2-kewx-20160413-022531` and `l2-ktlx-20240315-000217` treated as successive frames (real cells, impossible motion) | no association |
-| `tests::coast_and_reacquire_keeps_the_id` | needs corpus addition: consecutive volumes where a cell drops below threshold for one volume | id kept across the gap |
-| `tests::time_gate_resets_everything` | cells from `l2-ktlx-20130520-201643` and `l2-ktlx-20240315-000217` (11 years apart) | tracker reset |
+| `max_reflectivity_takes_per_gate_maximum` | NOXP sector sweeps 2009-05-25 20:35:29 and 20:36:59Z from `dorade-noxp-20090525-sweeps-tgz` (171 rays, 1002 x 150 m gates) | numpy per-gate maximum after the documented 0.1-degree nearest-azimuth mapping (f32): 48,243 finite gates, sum, max, min, 48 samples, 24 gates where the earlier sweep wins; reference geometry equals the later sweep's azimuths |
+| `swath_covers_union_of_two_positions` | same | union count (48,243), 24 gates lit only in the earlier sweep and 24 only in the later one; each sweep alone covers less |
+| `max_magnitude_keeps_sign_of_extreme` | same, velocity | numpy signed extreme per gate: 39,770 finite gates, sum, 48 samples, 24 gates where the winner's sign differs from the loser's, 17,180 inbound gates |
+| `empty_when_no_frame_has_the_moment` | `l2-tstl-20230331-230314-trim` (MetPy: REF; REF/VEL/SW) | ZDR and RHOHV swaths and the ZDR base tilt are `None`; the REF swath exists; no frames give `None` |
+| `picks_lowest_tilt_carrying_the_moment` | `l2-ktlx-20240315-000217-trim` (0.58 deg REF/ZDR/PHI/RHO/CFP, 0.48 deg REF/VEL/SW), `l2-tstl-20230331-230314-trim` (two 0.26 deg cuts) | lowest first-ray elevation from MetPy among the sweeps carrying each moment (first on ties): REF and VEL resolve to the KTLX Doppler cut, ZDR/RHO/PHI to the surveillance cut; TSTL REF to cut 0, VEL to cut 1 |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::cell` | hand-built storm cell | `tests::crossing_cells_do_not_swap_ids`, `tests::qlcs_line_no_steal`, `tests::split_links_children_to_parent`, `tests::merge_terminates_the_loser_with_a_link`, `tests::speed_gate_rejects_a_teleporting_cell`, `tests::coast_and_reacquire_keeps_the_id`, `tests::time_gate_resets_everything` |
-
-
-### `crates/recast-radar-track/src/tracks.rs`
-
-`couplet_tilt` paints a velocity couplet and reflectivity onto a synthetic tilt; the TDS test fills REF/ZDR/CC arrays by hand.
+### `crates/recast-radar-track/tests/temporal_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::cartesian_frame_paints_couplet_location` | `l2-ktlx-20130520-201643` (full volume, Moore EF5 tornado at 20:16Z) | painted cell within a few km of the NWS damage-survey position at 20:16Z |
-| `tests::height_cap_bounds_range_coverage` | `l2-ktlx-20130520-201643` (full volume, Moore EF5 tornado at 20:16Z) | coverage limited by 4/3-earth beam height at the cap |
-| `tests::tds_gates_require_anchor_proximity_and_criteria` | `l2-ktlx-20130520-201643` (full volume, Moore EF5 tornado at 20:16Z) (its trimmed lowest sweep already has 406 gates with RHOHV < 0.8 and Z > 40 dBZ) | TDS gates within 5 km of the circulation; criteria checked with numpy on Py-ART REF/ZDR/RHOHV |
+| `difference_and_trend` | NOXP sweeps 20:35:29 and 20:36:59Z (SSWB start times 90 s apart) | numpy f32 difference and per-hour trend over the 37,628 gates both sweeps hold; zero, negative and NaN elapsed give `None`; the 170-ray 20:33:47Z sweep is a geometry mismatch |
+| `rate_accumulation_uses_trapezoids` | the first four equal-geometry sweeps (20:35:29-20:40:10Z) | numpy trapezoid accumulation between the SSWB start times (41,478 gates); one frame, reversed or stalled times give `None` |
+| `probability_ignores_missing_values` | all eleven equal-geometry sweeps (20:35:29-20:51:27Z) | numpy percentage of sweeps at or above 40 dBZ over the sweeps with data (68,169 gates; 120 at 100 %, 65,973 at 0 %); 24 partially-covered gates carry their valid and exceeding counts |
+| `maximum_minimum_mean_and_duration_match_the_reference` (new) | same eleven sweeps; first four for the duration | numpy maximum, minimum, sequential-f32 mean and minutes above 40 dBZ (half credit for one-sided windows) |
 
-| helper | builds | used by |
+### `crates/recast-radar-track/tests/tracking_real.rs`
+
+| test | real input | assertion source |
 |---|---|---|
-| `tests::f32_grid` | float grid from values | `tests::couplet_tilt`, `tests::tds_gates_require_anchor_proximity_and_criteria` |
-| `tests::full_circle_cut` | full-circle cut geometry | `tests::couplet_tilt`, `tests::tds_gates_require_anchor_proximity_and_criteria` |
-| `tests::couplet_tilt` | tilt with painted couplet | `tests::cartesian_frame_paints_couplet_location`, `tests::height_cap_bounds_range_coverage` |
-| `tests::volume_of` | volume from tilts | `tests::cartesian_frame_paints_couplet_location`, `tests::height_cap_bounds_range_coverage`, `tests::tds_gates_require_anchor_proximity_and_criteria` |
+| `co_identified_storms_keep_one_track_id_and_scit_motion` (was `qlcs_line_no_steal`, `crossing_cells_do_not_swap_ids`) | the four consecutive KDVN volumes and their STI products | SCIT storms present in all four volumes with a tracker cell within 3 km at each (M9 and D8 among 13 persistent ids) keep one tracker id, distinct storms distinct ids, one fix per volume, and the fitted motion is within 6 m/s of SCIT's forecast movement (256 deg / 32 kt and 257 deg / 21 kt) |
+| `merge_terminates_the_loser_with_a_link` | same | every `merged_into` link joins two fragments of one SCIT storm (both fixes within 8 km of the same storm id at the previous volume) and SCIT has exactly one storm within 8 km of the survivor; at least one merge occurs; tombstones vanish at the next volume |
+| `split_links_children_to_parent` | same | every child track's first fix and its parent's fix are within 8 km of the same SCIT storm; the child inherits the parent's motion; at least one split occurs |
+| `distant_new_storms_start_fresh_tracks` (was `speed_gate_rejects_a_teleporting_cell`) | same | SCIT storms new in a volume, 20 km or more from every previous SCIT storm and from every tracker fix (C2 at 18:10, S2 at 18:17: over 50 m/s to reach) get a one-fix track without a parent |
+| `coast_and_reacquire_keeps_the_id` | same | tracks that miss a volume keep their id, add no fix for the gap, count the miss and reset it on reacquisition; at least one such track is a SCIT storm present throughout (S1) |
+| `time_gate_resets_everything` | `l2-ktlx-20130520-201643` then `l2-ktlx-20240315-000217` (MetPy volume times eleven years apart) | every first-volume track is dropped and every second-volume cell starts a one-fix track; a repeated or out-of-order volume time is ignored |
 
+### `crates/recast-radar-track/tests/tracks_real.rs`
+
+| test | real input | assertion source |
+|---|---|---|
+| `cartesian_frame_paints_couplet_location` | `l2-ktlx-20130520-201643` (Moore EF5, 22 km W) | Py-ART region-based dealiased 0.5 deg velocity: strongest cyclonic azimuthal shear at az 266.8 deg / 22.6 km (gate-to-gate 119 m/s); the frame maximum inside 60 km lies within 2 km of it and reads above the display floor; cells inside 5 km, a no-data cell and a clear-air cell (velocity, no echo) stay off the display; a calm in-echo cell reads finite below the floor |
+| `height_cap_bounds_range_coverage` | same | 4/3-Earth beam height in Python: the 0.52 deg beam leaves 2 km at 122.75 km; a 69 dBZ echo at 154 km stays empty, a 56.5 dBZ echo at 110 km accumulates, no finite cell beyond the bound or inside 5 km |
+| `tds_gates_require_anchor_proximity_and_criteria` | same, lowest dual-pol sweep | the 218 gates within 5 km of the Py-ART circulation with RHOHV < 0.82 and Z > 30 dBZ in Py-ART's fields, matched one to one by position (50 m), RHOHV and Z; no anchor or a rank-1 anchor flags nothing; the detector's own significant circulations flag only gates within 5 km of themselves |
 
 ## render-bench
 
@@ -800,7 +779,7 @@ section):
 |---|---|---|
 | io-nexrad | a real GR2 `.msg31` export (back-to-back Message 31 records) | `decodes_gr2_style_variable_framed_msg31_records` |
 | correct | added in C.2: `l2-klix-20210829-175748` and `l2-klix-20210829-173117` | v4 temporal-reference tests |
-| track | 30-60 min sequences of consecutive WSR-88D volumes (crossing, splitting, merging cells; a QLCS) with the Level III Storm Tracking Information product for the same volumes | `tracking.rs` |
+| track (added in C.2) | the KDVN derecho volumes 17:57, 18:10 and 18:17Z around `l2-kdvn-20200810-180401` and the Level III STI products of all four (`l3-kdvn-20200810-*-nst`) | `tests/tracking_real.rs` |
 | core-data-scattering | one scan delivered as per-quantity files (MeteoRomania or DWD) | `merge_three_product_parts_assembles_full_dual_pol_cut` |
 | core-data-scattering | same-time NHC `CurrentStorms.json` and GDACS event-list captures sharing a storm | `tropical.rs` merge tests |
 | core-data-scattering | WRF `p3_lookupTable_1.dat-v5.4_2momI` / `_3momI` (or derived record excerpts) | `p3_table.rs` |

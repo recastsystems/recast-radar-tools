@@ -170,6 +170,7 @@ plus the legacy Message 1 volume from spec section 7 (KTLX 1999-05-04 00:22Z).
 | typhoon, non-CONUS | l2-pgua-20230524-030945 | Mawar eyewall over northern Guam (eye ~45 km NE); beam-blockage wedge |
 | winter storm (snow) | l2-kbox-20220129-150537 | blizzard snow bands; median ZDR 0.1 dB over Z > 15 dBZ, RHOHV > 0.97 gates |
 | derecho | l2-kdvn-20200810-180401 | bow echo 100-150 km W; 99 gates >= 60 dBZ within 120 km on the lowest sweep |
+| derecho, consecutive volumes | l2-kdvn-20200810-175718, l2-kdvn-20200810-180401, l2-kdvn-20200810-181043, l2-kdvn-20200810-181724 | the four consecutive KDVN volumes 17:57-18:17Z (tag `sequence:kdvn-20200810`, about 6.7 min apart); with their Level III STI products (`l3-kdvn-20200810-*-nst`) they are the storm-tracking test sequence |
 | hail | l2-kewx-20160413-022531 | San Antonio hailstorm: 259 gates >= 60 dBZ, 62 >= 65 dBZ, 39 with RHOHV < 0.93 and abs(ZDR) < 1 dB (lowest sweep, 120 km) |
 | tornado | l2-ktlx-19990504-002218, l2-ktlx-20030508-221041, l2-ktlx-20130520-201643, l2-koax-20140616-205305, l2-kdgx-20230325-010651 | Moore 1999 / 2003 / 2013, Pilger 2014, Rolling Fork 2023 |
 | clear air | l2-ktlx-20240515-000014 (VCP 35), l2-kmaf-20230331-230843 (VCP 31), l2-kvnx-20110315-000203, l2-kpah-20080415-235014, l2-kvwx-20080415-235337 (VCP 32) | no precipitation; ground clutter or biological returns |
@@ -573,11 +574,19 @@ Derivation recipes section below.
 |---|---|---|---|---|
 | `l3-kbmx-19980416-archive-tarz` | D | 32132224 | NCEI day archive (`.tar.Z`) holding the VWP product | Google Cloud `gcp-public-data-nexrad-l3` (NOAA, public domain) |
 | `l3-kbmx-19980416-0006-nvw` | C, derived | 7090 | Product 48 VWP whose HHMM timeline crosses midnight | archive member, unmodified |
+| `l3-kdvn-20200810-1757-nst` | C | 14838 | Product 58 Storm Tracking Information for `l2-kdvn-20200810-175718` (50 SCIT cells) | AWS `unidata-nexrad-level3` object `DVN_NST_2020_08_10_17_57_18`, unmodified (NOAA, public domain) |
+| `l3-kdvn-20200810-1804-nst` | C | 14928 | STI for `l2-kdvn-20200810-180401` (45 cells) | `DVN_NST_2020_08_10_18_04_01` |
+| `l3-kdvn-20200810-1810-nst` | C | 13758 | STI for `l2-kdvn-20200810-181043` (35 cells) | `DVN_NST_2020_08_10_18_10_43` |
+| `l3-kdvn-20200810-1817-nst` | C | 13158 | STI for `l2-kdvn-20200810-181724` (33 cells) | `DVN_NST_2020_08_10_18_17_24` |
 
 The Level III stream (`testdata/level3/manifest.toml`, branch `level3`) owns
-Level III coverage. This file is here only because it was among the BowEcho
-fixtures carried over. It may move to the Level III manifest when the branches
-merge.
+Level III coverage. The VWP file is here only because it was among the BowEcho
+fixtures carried over; the four STI products were added by stream C (task C.2,
+group `track`) as the independent reference for the storm-tracking tests: MetPy
+`Level3File` reads their storm-id symbology packets (current, past and forecast
+positions) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages, which
+`tools/track_golden.py` turns into `testdata/golden/track/tracking.json`. They
+may move to the Level III manifest when the branches merge.
 
 ### BowEcho carryover (radar-bow@66ceb9c `crates/nexrad_io/tests/data`)
 
@@ -963,6 +972,7 @@ lowercase.
 | `partial-sweeps` | trimmed fixture keeps only the first N radials of each kept sweep |
 | `provider:aws`, `bucket:*` | source |
 | `chunk-volume:kiwa-307`, `chunk:start\|intermediate\|end`, `elev:N`, `radial-status:N` | real-time chunk facts |
+| `sequence:kdvn-20200810` | one of the four consecutive KDVN derecho volumes 17:57-18:17Z (and, in the other manifest, their Level III STI products) |
 
 ### Other formats
 
@@ -1003,9 +1013,9 @@ Everything below the marker is generated from the manifests by
 | manifest | entries | committed files | committed bytes | download files | download bytes |
 |---|---:|---:|---:|---:|---:|
 | `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 |
-| `testdata/level2/manifest.toml` | 117 | 19 | 10,394,101 | 98 | 283,711,512 |
-| `testdata/other/manifest.toml` | 30 | 22 | 15,181,236 | 8 | 123,175,908 |
-| **all** | **147** | **41** | **25,575,337** | **106** | **406,887,420** |
+| `testdata/level2/manifest.toml` | 118 | 19 | 10,394,101 | 99 | 296,465,922 |
+| `testdata/other/manifest.toml` | 34 | 26 | 15,237,918 | 8 | 123,175,908 |
+| **all** | **152** | **45** | **25,632,019** | **107** | **419,641,830** |
 
 | format | committed | download |
 |---|---:|---:|
@@ -1013,9 +1023,9 @@ Everything below the marker is generated from the manifests by
 | `cfradial2` | 0 | 1 |
 | `dorade` | 8 | 0 |
 | `jma-grib2-tar` | 2 | 2 |
-| `nexrad-level2` | 16 | 31 |
+| `nexrad-level2` | 16 | 32 |
 | `nexrad-level2-chunk` | 3 | 67 |
-| `nexrad-level3` | 1 | 0 |
+| `nexrad-level3` | 5 | 0 |
 | `odim-h5` | 10 | 0 |
 | `tar-gz` | 0 | 2 |
 | `tar-z` | 0 | 1 |
@@ -1045,7 +1055,10 @@ No entries.
 | `l2-kgwx-20130601-235640` | `nexrad-level2` | download | 4,502,847 |  |
 | `l2-koax-20140616-205305` | `nexrad-level2` | download | 11,549,918 |  |
 | `l2-kewx-20160413-022531` | `nexrad-level2` | download | 15,533,296 |  |
+| `l2-kdvn-20200810-175718` | `nexrad-level2` | download | 15,760,259 |  |
 | `l2-kdvn-20200810-180401` | `nexrad-level2` | download | 16,063,887 |  |
+| `l2-kdvn-20200810-181043` | `nexrad-level2` | download | 16,341,122 |  |
+| `l2-kdvn-20200810-181724` | `nexrad-level2` | download | 16,483,359 |  |
 | `l2-klix-20210829-180425` | `nexrad-level2` | download | 17,635,589 |  |
 | `l2-klix-20210829-173117` | `nexrad-level2` | download | 17,996,934 |  |
 | `l2-klix-20210829-175748` | `nexrad-level2` | download | 17,833,396 |  |
@@ -1189,6 +1202,10 @@ No entries.
 | `jma-n6-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N6_grib2.RS47773.tar` | 624,640 | `jma-n6-20191012-090000` |
 | `l3-kbmx-19980416-archive-tarz` | `tar-z` | download | 32,132,224 |  |
 | `l3-kbmx-19980416-0006-nvw` | `nexrad-level3` | committed `files/other/nexrad-level3/KBMX_SDUS54_NVWBMX_199804160006` | 7,090 | `l3-kbmx-19980416-archive-tarz` |
+| `l3-kdvn-20200810-1757-nst` | `nexrad-level3` | committed `files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101757` | 14,838 |  |
+| `l3-kdvn-20200810-1804-nst` | `nexrad-level3` | committed `files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101804` | 14,928 |  |
+| `l3-kdvn-20200810-1810-nst` | `nexrad-level3` | committed `files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101810` | 13,758 |  |
+| `l3-kdvn-20200810-1817-nst` | `nexrad-level3` | committed `files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101817` | 13,158 |  |
 
 ### Index by tag
 
@@ -1200,7 +1217,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
 - `derived` (11): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
-- `dualpol` (30): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `dualpol` (31): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `long-pulse` (1): `l2-kmaf-20230331-230843`
 - `mpda` (4): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-180425-trim`
 - `no-metadata-record` (2): `l2-ktlx-19910605-162126`, `l2-ktlx-19910605-162126-trim`
@@ -1217,8 +1234,9 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `bucket:`
 
-- `bucket:unidata-nexrad-level2` (31): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`
+- `bucket:unidata-nexrad-level2` (32): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`
 - `bucket:unidata-nexrad-level2-chunks` (70): `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`
+- `bucket:unidata-nexrad-level3` (4): `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 
 #### `build:`
 
@@ -1228,8 +1246,8 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `build:13.2` (2): `l2-ktlx-20130520-201643`, `l2-ktlx-20130520-201643-trim`
 - `build:14.0` (2): `l2-koax-20140616-205305`, `l2-koax-20140616-205305-trim`
 - `build:16.1` (2): `l2-kewx-20160413-022531`, `l2-kewx-20160413-022531-trim`
-- `build:18.2` (2): `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-180401-trim`
-- `build:19.1` (4): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-180425-trim`
+- `build:18.2` (5): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdvn-20200810-180401-trim`
+- `build:19.1` (2): `l2-klix-20210829-180425`, `l2-klix-20210829-180425-trim`
 - `build:20.1` (3): `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kbox-20220129-150537-trim`
 - `build:21.0` (1): `l2-kmaf-20230331-230843`
 - `build:21.1` (3): `l2-kdgx-20230325-010651`, `l2-pgua-20230524-030945`, `l2-pgua-20230524-030945-trim`
@@ -1262,7 +1280,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `compression:`
 
 - `compression:gzip` (13): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`
-- `compression:ldm-bzip2` (34): `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `compression:ldm-bzip2` (35): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 
 #### `container:`
 
@@ -1356,8 +1374,8 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `era:2016` (2): `l2-kewx-20160413-022531`, `l2-kewx-20160413-022531-trim`
 - `era:2017` (1): `odim-norst-20170421-0908-pvol`
 - `era:2019` (5): `odim-bejab-20190606-0000-pvol`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
-- `era:2020` (2): `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-180401-trim`
-- `era:2021` (8): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-175748-mdm`, `l2-klix-20210829-180425-trim`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-dow6-20211230-222139-rhi-head41`
+- `era:2020` (9): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdvn-20200810-180401-trim`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
+- `era:2021` (6): `l2-klix-20210829-180425`, `l2-klix-20210829-175748-mdm`, `l2-klix-20210829-180425-trim`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-dow6-20211230-222139-rhi-head41`
 - `era:2022` (3): `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kbox-20220129-150537-trim`
 - `era:2023` (7): `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`
 - `era:2024` (5): `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`
@@ -1385,7 +1403,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `header:AR2V0001` (3): `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-klix-20050829-130035-trim`
 - `header:AR2V0003` (2): `l2-kdmx-20080525-205148`, `l2-kdmx-20080525-205148-trim`
 - `header:AR2V0004` (1): `l2-kpah-20080415-235014`
-- `header:AR2V0006` (29): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `header:AR2V0006` (30): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `header:AR2V0007` (1): `l2-kgwx-20130601-235640`
 - `header:AR2V0008` (3): `l2-tstl-20230331-230314`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`
 - `header:ARCHIVE2` (7): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`
@@ -1401,12 +1419,12 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `license:CC-BY-4.0` (15): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-au24-20260610-000300-nci-zip-member`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
 - `license:MIT` (7): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 - `license:imgw-attribution` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
-- `license:public-domain` (2): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`
+- `license:public-domain` (6): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 - `license:unknown` (5): `dorade-cow2-20260521-225514-sur-head24`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
 
 #### `meso-sails:`
 
-- `meso-sails:2` (3): `l2-kdvn-20200810-180401`, `l2-kdgx-20230325-010651`, `l2-kdvn-20200810-180401-trim`
+- `meso-sails:2` (6): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdgx-20230325-010651`, `l2-kdvn-20200810-180401-trim`
 - `meso-sails:3` (4): `l2-pgua-20230524-030945`, `l2-ktlx-20240315-000217`, `l2-pgua-20230524-030945-trim`, `l2-ktlx-20240315-000217-trim`
 
 #### `moment:`
@@ -1436,11 +1454,11 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `msg:2` (13): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-tstl-20230331-230314`, `l2-tbwi-20230601-175101-stub`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-tstl-20230331-230314-trim`
 - `msg:3` (2): `l2-klix-20050829-130035`, `l2-klix-20050829-130035-trim`
 - `msg:5` (4): `l2-klix-20050829-130035`, `l2-tstl-20230331-230314`, `l2-klix-20050829-130035-trim`, `l2-tstl-20230331-230314-trim`
-- `msg:13` (7): `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kdmx-20080525-205148`, `l2-kdvn-20200810-180401`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-kdvn-20200810-180401-trim`
+- `msg:13` (10): `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kdmx-20080525-205148`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-kdvn-20200810-180401-trim`
 - `msg:15` (3): `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-klix-20050829-130035-trim`
 - `msg:18` (2): `l2-klix-20050829-130035`, `l2-klix-20050829-130035-trim`
 - `msg:29` (1): `l2-klix-20210829-175748-mdm`
-- `msg:31` (36): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `msg:31` (37): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `msg:32` (4): `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-kilx-20260418-013553-trim`
 - `msg:202` (2): `l2-ktlx-20030508-221041`, `l2-ktlx-20030508-221041-trim`
 
@@ -1468,6 +1486,8 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `product:`
 
 - `product:48` (1): `l3-kbmx-19980416-0006-nvw`
+- `product:58` (4): `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
+- `product:NST` (4): `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 - `product:NVW` (1): `l3-kbmx-19980416-0006-nvw`
 - `product:max` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 
@@ -1477,7 +1497,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `provider:`
 
-- `provider:aws` (101): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`
+- `provider:aws` (106): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 - `provider:cswr` (1): `dorade-cow2-20260521-225514-sur-head24`
 - `provider:gcp-nexrad-l3` (2): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`
 - `provider:imgw-pib` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
@@ -1511,12 +1531,12 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `rad-block:`
 
 - `rad-block:20` (10): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-tstl-20230331-230314`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-tstl-20230331-230314-trim`
-- `rad-block:28` (26): `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `rad-block:28` (27): `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 
 #### `radar:`
 
 - `radar:tdwr` (3): `l2-tstl-20230331-230314`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`
-- `radar:wsr-88d` (114): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `radar:wsr-88d` (115): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-175748-mdm`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 
 #### `radial-status:`
 
@@ -1533,7 +1553,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `regime:clear-air` (5): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kvnx-20110315-000203`, `l2-kmaf-20230331-230843`, `l2-ktlx-20240515-000014`
 - `regime:complex-terrain` (2): `l2-kmtx-20240301-212827`, `l2-kmtx-20240301-212827-trim`
 - `regime:convective` (13): `l2-ktlx-19910605-162126`, `l2-kdmx-20080525-205148`, `l2-kgwx-20130601-235640`, `l2-tstl-20230331-230314`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-19910605-162126-trim`, `l2-kdmx-20080525-205148-trim`, `l2-kewx-20160413-022531-trim`, `l2-tstl-20230331-230314-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
-- `regime:derecho` (2): `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-180401-trim`
+- `regime:derecho` (9): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdvn-20200810-180401-trim`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 - `regime:hail` (1): `l2-kewx-20160413-022531`
 - `regime:hurricane` (7): `l2-klix-20050829-130035`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-tjua-20220918-190621`, `l2-klix-20050829-130035-trim`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
 - `regime:non-conus` (4): `l2-tjua-20220918-190621`, `l2-pgua-20230524-030945`, `l2-pahg-20250909-212549`, `l2-pgua-20230524-030945-trim`
@@ -1552,7 +1572,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `res:`
 
 - `res:legacy` (14): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kgwx-20130601-235640`, `l2-tstl-20230331-230314`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-tstl-20230331-230314-trim`
-- `res:super` (31): `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `res:super` (32): `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 
 #### `scan:`
 
@@ -1565,6 +1585,10 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 - `segmented:13` (2): `l2-klix-20050829-130035`, `l2-klix-20050829-130035-trim`
 - `segmented:15` (3): `l2-klix-20050829-130035`, `l2-kpah-20080415-235014`, `l2-klix-20050829-130035-trim`
+
+#### `sequence:`
+
+- `sequence:kdvn-20200810` (8): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 
 #### `site:`
 
@@ -1581,7 +1605,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `site:kbox` (2): `l2-kbox-20220129-150537`, `l2-kbox-20220129-150537-trim`
 - `site:kdgx` (1): `l2-kdgx-20230325-010651`
 - `site:kdmx` (2): `l2-kdmx-20080525-205148`, `l2-kdmx-20080525-205148-trim`
-- `site:kdvn` (2): `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-180401-trim`
+- `site:kdvn` (9): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdvn-20200810-180401-trim`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 - `site:kewx` (2): `l2-kewx-20160413-022531`, `l2-kewx-20160413-022531-trim`
 - `site:kgwx` (1): `l2-kgwx-20130601-235640`
 - `site:kilx` (2): `l2-kilx-20260418-013553`, `l2-kilx-20260418-013553-trim`
@@ -1623,12 +1647,12 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `vcp:80` (2): `l2-tstl-20230331-230314`, `l2-tstl-20230331-230314-trim`
 - `vcp:112` (4): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-180425-trim`
 - `vcp:121` (2): `l2-klix-20050829-130035`, `l2-klix-20050829-130035-trim`
-- `vcp:212` (16): `l2-kdmx-20080525-205148`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-kdgx-20230325-010651`, `l2-pgua-20230524-030945`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`, `l2-kdmx-20080525-205148-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-pgua-20230524-030945-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `vcp:212` (19): `l2-kdmx-20080525-205148`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdgx-20230325-010651`, `l2-pgua-20230524-030945`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`, `l2-kdmx-20080525-205148-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-pgua-20230524-030945-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `vcp:215` (77): `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kmtx-20240301-212827`, `l2-pahg-20250909-212549`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2-kbox-20220129-150537-trim`, `l2-kmtx-20240301-212827-trim`
 
 #### `vol-block:`
 
-- `vol-block:44` (20): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-tstl-20230331-230314`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-tstl-20230331-230314-trim`
+- `vol-block:44` (21): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-tstl-20230331-230314`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-tstl-20230331-230314-trim`
 - `vol-block:52` (16): `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 
 #### `writer:`
@@ -1638,7 +1662,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `zdr:`
 
-- `zdr:8bit` (10): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`
-- `zdr:16bit` (20): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `zdr:8bit` (13): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`
+- `zdr:16bit` (18): `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 
 <!-- END GENERATED -->

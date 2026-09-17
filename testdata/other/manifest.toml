@@ -378,3 +378,49 @@ derived_from = "l3-kbmx-19980416-archive-tarz"
 derivation = "unmodified archive member KBMX_SDUS54_NVWBMX_199804160006"
 tags = ["carryover:bowecho", "provider:gcp-nexrad-l3", "license:public-domain", "era:1998", "site:kbmx", "product:48", "product:NVW", "quirk:crosses-midnight", "derived", "derivation:archive-member"]
 description = "KBMX Product 48 VAD Wind Profile 1998-04-16 00:06:45Z; symbology fallback, metadata pages and a rolling HHMM timeline crossing midnight (NEXRAD Julian-date epoch regression)"
+
+# Storm Tracking Information (product 58) for the four consecutive KDVN derecho
+# volumes 2020-08-10 17:57-18:17Z (tag sequence:kdvn-20200810): the SCIT cell
+# ids, positions, past and forecast positions and the tabular motion/DBZM block
+# are the reference for the storm-tracking tests (tools/track_golden.py reads
+# them with MetPy Level3File).
+
+[[file]]
+id = "l3-kdvn-20200810-1757-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_17_57_18"]
+sha256 = "13f13f4b2022601007f2335fbd0ef1f6233c8d112b43f70556a62eaa7102cfe8"
+size = 14838
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101757"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 17:57:18Z volume (l2-kdvn-20200810-175718): WMO header SDUS33 KDVN, 50 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_17_57_18."
+
+[[file]]
+id = "l3-kdvn-20200810-1804-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_18_04_01"]
+sha256 = "e4cef6f52ef50a93e05e0c5653b5cba97857b71065b10bcb43df715de8a231b6"
+size = 14928
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101804"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 18:04:01Z volume (l2-kdvn-20200810-180401): WMO header SDUS33 KDVN, 45 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_18_04_01."
+
+[[file]]
+id = "l3-kdvn-20200810-1810-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_18_10_43"]
+sha256 = "6c0137006bbe1fe1fe46c8aee1bac064d9c5a817172e8f1a06f65550bbeb7211"
+size = 13758
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101810"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 18:10:43Z volume (l2-kdvn-20200810-181043): WMO header SDUS33 KDVN, 35 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_18_10_43."
+
+[[file]]
+id = "l3-kdvn-20200810-1817-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_18_17_24"]
+sha256 = "8fb2fa712add1e4c582a3395da16fc1523cf796881b5077836f2d7122d2082c5"
+size = 13158
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101817"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 18:17:24Z volume (l2-kdvn-20200810-181724): WMO header SDUS33 KDVN, 33 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_18_17_24."
