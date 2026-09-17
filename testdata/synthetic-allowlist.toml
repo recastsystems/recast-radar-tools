@@ -1,0 +1,2403 @@
+# Synthetic test inputs still in the workspace (plan task C.1).
+#
+# `crates/recast-radar-testdata/tests/no_synthetic.rs` scans test code and data
+# files (rules: `recast_radar_testdata::synthetic`) and fails on any finding
+# that is not listed here, and on any entry that no longer matches a finding.
+# docs/testdata/synthetic-inventory.md gives the real replacement for each one.
+#
+# One array of tables per conversion group (plan task C.2):
+#   io-nexrad, io-formats, correct, filters-map, retrieve, track, render-bench,
+#   core-data-scattering
+# Each entry sits under the group that owns its crate (the test checks this).
+#
+#   [[<group>]]
+#   path = "crates/<crate>/..."   # workspace-relative
+#   name = "tests::helper"        # item path inside the file; omitted for a data file
+#   status = "pending"            # "pending": convert in C.2, then delete the entry
+#                                 # "exception": permanent; allowed only for pure math or
+#                                 #   geometry helpers that do not consume radar data, fuzz
+#                                 #   regression inputs, and corruption helpers that start
+#                                 #   from real bytes
+#   justification = "..."         # pending: the real replacement; exception: why it stays
+#
+# Converting a test: switch it to real files, delete its entry and the entries of
+# helpers it no longer uses. To print every current finding as tables:
+#   RECAST_RADAR_SYNTHETIC_REPORT=findings.toml cargo test -p recast-radar-testdata --test no_synthetic
+
+# ============================================================================
+# io-nexrad (32 entries)
+# ============================================================================
+
+# --- crates/recast-radar-io-nexrad/src/lib.rs
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::parses_archive_volume_header"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (AR2V0006, KTLX) and l2-ktlx-19910605-162126-trim (ARCHIVE2.001, blank ICAO); assert against the 24-byte volume header read from the file bytes; MetPy Level2File station id and volume time"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::parses_message_header"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim; assert against first message header of the decompressed metadata record read from the file bytes; message type and count sequence from the corpus inspector (docs/testdata/corpus.md)"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::parses_message_31_header"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (first Message 31 radial); assert against MetPy Level2File.sweeps[0][0] radial header (azimuth number and angle, elevation, radial status) and data-block pointers read from the message bytes"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::decodes_synthetic_message_31_volume"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim; assert against MetPy VOL block (site latitude/longitude), VCP 212, sweep and radial counts (480/720 radials per the manifest), reflectivity gate values from Py-ART read_nexrad_archive"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::decodes_legacy_message_1_reflectivity_and_velocity"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim (Message 1, VCP 11): the first REF and VEL radial bodies passed to parse_message_1; assert against gate values and Nyquist from MetPy Level2File and Py-ART"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::decodes_legacy_message_1_spectrum_width_with_velocity_offset"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim; assert against spectrum width gates from MetPy and Py-ART (pins SW = (code - 129) / 2)"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::decodes_gzip_stream_without_normalized_buffer"
+status = "pending"
+justification = "pending C.2: real input l2-kvwx-20080415-235337 (175 KB gzip archive object, Message 31); assert against MetPy/Py-ART sweep and radial counts (7 sweeps, 2500 radials); compression reported as gzip"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::gzip_preview_waits_for_complete_displayable_cut"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990503-230052 (9 KB gzip, first cut truncated after 68 radials); assert against no preview; Py-ART and MetPy read 1 sweep of 68 rays (manifest)"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::gzip_preview_returns_completed_displayable_cut"
+status = "pending"
+justification = "pending C.2: real input l2-kvwx-20080415-235337; assert against preview equals the first cut of the full decode; radial count of MetPy sweep 0"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::gzip_preview_callback_continues_to_full_volume"
+status = "pending"
+justification = "pending C.2: real input l2-kvwx-20080415-235337; assert against callback radial count equals MetPy sweep 0; full volume has 2500 radials"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::decodes_bzip_blocks_without_concatenated_normalized_buffer"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (LDM bzip2 records); assert against compression bzip2-blocks; radial counts from MetPy"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::bzip_preview_waits_for_complete_displayable_cut"
+status = "pending"
+justification = "pending C.2: real input l2chunk-kiwa-307-20260917-003629-001-s + -002-i (a real archive prefix: start chunk and 120 radials of the first cut); assert against no preview (the first cut is incomplete); chunk contents per the manifest"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::bzip_preview_returns_completed_displayable_cut"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim; assert against preview cut equals the first cut of the full decode; radial count from MetPy sweep 0"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::bzip_preview_full_decode_reuses_path_and_returns_full_volume"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim; assert against callback count equals MetPy sweep 0; full decode equals the non-preview decode"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::multi_block_bzip_decode_matches_uncompressed_reference"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim; assert against decode of the LDM records equals decode of the same records decompressed and framed uncompressed (both from the file); radial counts from MetPy"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::bzip_preview_fires_past_legacy_block_window"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim re-framed into 40-radial LDM records (real Message 31 bytes, recompressed like the trim tool) so the first cut completes after record 16; assert against preview radial count equals MetPy sweep 0; full decode equals the original file's decode"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::corrupt_trailing_bzip_block_yields_partial_volume"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim with the last LDM record's bzip2 payload zeroed (mutated real bytes); assert against partial volume: radial count equals MetPy on the file truncated before that record; skipped messages reported"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::corrupt_first_bzip_block_is_a_hard_error"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim with the first (metadata) record's payload zeroed; assert against decode error"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::pipelined_decode_works_on_single_thread_rayon_pool"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim; assert against 1-thread pool decode equals default-pool decode; radial count from MetPy"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::decodes_synthetic_16_bit_moment"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim (PHI 16-bit, ZDR 8-bit) and l2-ktlx-20240315-000217-trim (ZDR 16-bit); assert against word sizes from the data-block headers; PHI and ZDR gates from Py-ART differential_phase / differential_reflectivity"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::decodes_gr2_style_variable_framed_msg31_records"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a real GR2 .msg31 export (e.g. the GR2 MSG31/COW2/nexrad.*.msg31 member of a CSWR deployment zip); assert against independent Python walker over the back-to-back Message 31 records (site, radial count, azimuths)"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::synthetic_archive"
+status = "pending"
+justification = "pending C.2: helper, builds single-radial Archive II volume; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::set_first_synthetic_radial_status"
+status = "pending"
+justification = "pending C.2: helper, builds rewrites the radial status of the synthetic radial; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::synthetic_multi_radial_archive"
+status = "pending"
+justification = "pending C.2: helper, builds multi-radial Archive II volume with chosen azimuths and statuses; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::synthetic_bzip_blocks_from_chunks"
+status = "pending"
+justification = "pending C.2: helper, builds LDM bzip2 framing around synthetic payload chunks; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::synthetic_bzip_block_archive"
+status = "pending"
+justification = "pending C.2: helper, builds one-block LDM bzip2 archive around the synthetic payload; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::synthetic_message_31_body"
+status = "pending"
+justification = "pending C.2: helper, builds Message 31 body with VOL/RAD blocks and 3-gate moments; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::push_volume_block"
+status = "pending"
+justification = "pending C.2: helper, builds RVOL block bytes; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::push_radial_block"
+status = "pending"
+justification = "pending C.2: helper, builds RRAD block bytes; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::push_u8_moment"
+status = "pending"
+justification = "pending C.2: helper, builds 8-bit moment data block; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::push_u16_moment"
+status = "pending"
+justification = "pending C.2: helper, builds 16-bit moment data block; delete when its users are converted"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/src/lib.rs"
+name = "tests::set_pointer"
+status = "pending"
+justification = "pending C.2: helper, builds Message 31 data-block pointer; delete when its users are converted"
+
+# ============================================================================
+# io-formats (79 entries)
+# ============================================================================
+
+# --- crates/recast-radar-io-cfradial/src/netcdf3.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/src/netcdf3.rs"
+name = "tests::tiny_cdf1"
+status = "pending"
+justification = "pending C.2: helper, builds handcrafted CDF-1 file; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/src/netcdf3.rs"
+name = "tests::magic_sniffer_accepts_classic_versions"
+status = "pending"
+justification = "pending C.2: real input first bytes of cfrad1-xsapr-sgp-20110520-ppi-classic (CDF-1), the same bytes with the version byte set to 2, 5 (accepted) and 3 (rejected), and cfrad1-xsapr-sgp-20110520-ppi-netcdf4 (HDF5 signature, rejected); assert against netCDF classic format specification (magic CDF + version 1, 2 or 5)"
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/src/netcdf3.rs"
+name = "tests::parses_handcrafted_cdf1"
+status = "pending"
+justification = "pending C.2: real input cfrad1-xsapr-sgp-20110520-ppi-classic (CDF-1, UNLIMITED time of 40 records, range 42); assert against dimensions, a global attribute and a packed variable with its attributes from netCDF4-python on the same file"
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/src/netcdf3.rs"
+name = "tests::cdf5_is_rejected_with_guidance"
+status = "pending"
+justification = "pending C.2: real input cfrad1-xsapr-sgp-20110520-ppi-classic with the version byte set to 5 (mutated real bytes); assert against error text mentions CDF-5"
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/src/netcdf3.rs"
+name = "tests::rejects_absurd_header_counts_before_allocating"
+status = "pending"
+justification = "pending C.2: real input cfrad1-xsapr-sgp-20110520-ppi-classic with the dimension count set to u32::MAX (mutated real header); assert against error before allocating; offsets from the netCDF classic header layout"
+
+# --- crates/recast-radar-io-cfradial/tests/cfradial_real.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/tests/cfradial_real.rs"
+name = "FIXTURE"
+status = "pending"
+justification = "pending C.2: helper, builds includes tests/data/cfrad_synth.nc; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/tests/cfradial_real.rs"
+name = "decodes_synthetic_cfradial1_volume"
+status = "pending"
+justification = "pending C.2: real input cfrad1-irene-sr2-20110827-120420-sur-sweeps01 (tagged replaces:cfrad_synth: classic CfRadial 1.3, 2 sweeps, int8-packed DBZ/VEL, per-ray prt/nyquist/n_samples) and cfrad1-xsapr-sgp-20110520-ppi-classic (UNLIMITED time, record-interleaved variables); assert against Py-ART read_cfradial and xradar open_cfradial1_datatree goldens: site, time, fixed angles, rays per sweep, gate geometry, per-ray instrument values, sample packed gates"
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/tests/cfradial_real.rs"
+name = "level2_decoder_is_not_fooled_by_netcdf_magic"
+status = "pending"
+justification = "pending C.2: real input bytes of cfrad1-irene-sr2-20110827-120420-sur-sweeps01 and cfrad1-xsapr-sgp-20110520-ppi-classic; assert against manifest format cfradial1: the HDF5 and DORADE sniffers reject both"
+
+# --- crates/recast-radar-io-cfradial/tests/data/cfrad_synth.nc
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/tests/data/cfrad_synth.nc"
+status = "pending"
+justification = "pending C.2: synthetic CfRadial 1.4 file (sha256 not in any manifest); replaced by cfrad1-irene-sr2-20110827-120420-sur-sweeps01, cfrad1-xsapr-sgp-20110520-ppi-classic; delete once unused"
+
+# --- crates/recast-radar-io-cfradial/tests/data/gen_cfradial_fixture.py
+
+[[io-formats]]
+path = "crates/recast-radar-io-cfradial/tests/data/gen_cfradial_fixture.py"
+status = "pending"
+justification = "pending C.2: generator of cfrad_synth.nc; delete with cfrad_synth.nc"
+
+# --- crates/recast-radar-io-dorade/src/dorade.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::put_i16"
+status = "pending"
+justification = "pending C.2: helper, builds writes an i16 into a block; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::put_i32"
+status = "pending"
+justification = "pending C.2: helper, builds writes an i32 into a block; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::put_f32"
+status = "pending"
+justification = "pending C.2: helper, builds writes an f32 into a block; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::base_block"
+status = "pending"
+justification = "pending C.2: helper, builds empty DORADE descriptor block; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::Synth"
+status = "pending"
+justification = "pending C.2: helper, builds synthetic sweep builder settings; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::Synth::build"
+status = "pending"
+justification = "pending C.2: helper, builds synthetic DORADE sweep file; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::synth_rays"
+status = "pending"
+justification = "pending C.2: helper, builds three synthetic rays; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::decodes_big_endian_synthetic_sweep"
+status = "pending"
+justification = "pending C.2: real input dorade-cow2-20260521-225514-sur-head24 (big-endian, HRD RLE, CSFD, 3 transition rays); assert against independent Python DORADE block walker and RLE decoder (the method of tests/dorade_real.rs): site, scan mode, gate geometry, time offsets, bad gates"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::decodes_little_endian_rle_sweep"
+status = "pending"
+justification = "pending C.2: real input dorade-dow6-20211230-222139-rhi-head41 (little-endian HRD RLE) and dorade-noxp-20090501-190244-ppi (little-endian uncompressed); assert against Python block walker: decoded gate values per field"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::rejects_extended_parm_with_absurd_gate_count"
+status = "pending"
+justification = "pending C.2: real input dorade-cow2-20260521-225514-sur-head24 with a PARM cell count set to i32::MAX (mutated real block); assert against error names gates per radial"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::peek_reads_grouping_metadata_without_rays"
+status = "pending"
+justification = "pending C.2: real input dorade-cow2-20260521-225514-sur-head24; assert against manifest and Python walker: instrument COW2, volume 215, sweep 6, fixed angle 1.0, start 22:55:14Z, latitude"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::multi_sweep_volume_sorts_cuts_by_elevation"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: two sweeps of one DORADE volume at different fixed angles (every corpus DORADE sweep set is single-elevation); assert against fixed angles from the Python walker; cut order and radial totals"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::mismatched_instruments_are_rejected"
+status = "pending"
+justification = "pending C.2: real input dorade-cow2-20260521-225514-sur-head24 with dorade-noxp-20090501-190244-ppi (COW2 vs NOXPRVP); assert against error: instruments do not match"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::rhi_scan_mode_is_detected_from_radd"
+status = "pending"
+justification = "pending C.2: real input dorade-dow6-20211230-222139-rhi-head41 (RADD scan mode 3, fixed azimuth 144 deg); assert against manifest and Python walker: scan mode, per-ray elevations"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/dorade.rs"
+name = "tests::u16_grids_preserve_dorade_scaling"
+status = "pending"
+justification = "pending C.2: real input dorade-cow2-20260521-225514-sur-head24; assert against PARM scale, bias and bad value from the Python walker"
+
+# --- crates/recast-radar-io-dorade/src/mobile_archive.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::synthetic_sweep"
+status = "pending"
+justification = "pending C.2: helper, builds one-ray DORADE sweep; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::write_zip"
+status = "pending"
+justification = "pending C.2: helper, builds zip archive of synthetic members; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::groups_zip_members_into_ascending_elevation_runs_per_instrument"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a real CSWR/FARM deployment zip with tilt directories and a second radar; until then a zip of real sweep members (dorade-noxp-20090501-sweeps-tgz members, dorade-cow2-20260521-225514-sur-head24); assert against grouping expected from member names and Python-walker headers"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::same_elevation_sequences_become_one_volume_per_sweep"
+status = "pending"
+justification = "pending C.2: real input headers peeked from dorade-noxp-20090501-190244-ppi and dorade-noxp-20090501-190324-ppi (consecutive 0.5 deg single tilts); assert against one run per sweep; times and angles from the Python walker"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::long_time_gap_splits_an_ascending_run"
+status = "pending"
+justification = "pending C.2: real input headers peeked from dorade-noxp-20090501-190244-ppi and dorade-noxp-20090525-203211-sector (24 days apart); assert against run split; times from the Python walker"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::rejects_archive_without_radar_members"
+status = "pending"
+justification = "pending C.2: real input a zip with no radar members (no radar bytes involved; candidate exception if no real archive without radar members is added); assert against error: no radar members"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::loose_sweepfile_groups_directory_siblings_from_same_run"
+status = "pending"
+justification = "pending C.2: real input sweep files extracted from dorade-noxp-20090501-sweeps-tgz into a temporary directory; assert against siblings grouped per the archive member names and walker times"
+
+[[io-formats]]
+path = "crates/recast-radar-io-dorade/src/mobile_archive.rs"
+name = "tests::zip_sniffers_match_magic_and_extension"
+status = "pending"
+justification = "pending C.2: real input first bytes of a real zip (needs corpus addition, as above) and of dorade-noxp-20090501-sweeps-tgz (not zip); assert against zip local-header signature from the PKWARE APPNOTE"
+
+# --- crates/recast-radar-io-jma/src/lib.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::push_u16"
+status = "pending"
+justification = "pending C.2: helper, builds big-endian u16 writer; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::push_u32"
+status = "pending"
+justification = "pending C.2: helper, builds big-endian u32 writer; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::section"
+status = "pending"
+justification = "pending C.2: helper, builds GRIB2 section with length prefix; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::synthetic_jma_grib2"
+status = "pending"
+justification = "pending C.2: helper, builds JMA polar GRIB2 message for one station; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::synthetic_jma_grib2_at_elevation"
+status = "pending"
+justification = "pending C.2: helper, builds JMA polar GRIB2 message at a chosen elevation; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::tar_member_blocks"
+status = "pending"
+justification = "pending C.2: helper, builds ustar header and data blocks; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::tar_archive"
+status = "pending"
+justification = "pending C.2: helper, builds tar archive of members; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::two_station_tar"
+status = "pending"
+justification = "pending C.2: helper, builds two-station JMA tar; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::grid_axis_limits_reject_pathological_radial_tables"
+status = "pending"
+justification = "pending C.2: real input section 3 of the jma-n5-20191012-090000-rs47773 member with the radial count set above the limit (mutated real bytes); assert against error: grid dimensions exceed limits; section offsets from an independent Python GRIB2 section walker"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::oversized_tar_member_is_rejected_from_its_header"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773 with the first member's size field set above the member limit; assert against error: declares ... limit"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::sniffs_jma_tar_bytes"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773, jma-n6-20191012-090000-rs47773, and the non-JMA ustar inside dorade-noxp-20090501-sweeps-tgz; assert against manifest formats; ustar magic and JMA member names from tar -t"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::cuts_sort_lowest_elevation_first_across_members"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773 (26 sweeps in four descending ladders with repeated angles); assert against elevation order from the Python GRIB2 section walker"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::decodes_every_station_in_archive_order"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000 (20 station members); assert against station order from tar -t member names (RS47899 first)"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::site_filter_selects_one_station_by_id_or_number"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000; assert against RS47773 / TAKA selected by number and id; coordinates 34.6164N 135.6564E (manifest)"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::first_station_decode_takes_the_first_member_only"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000; assert against first member RS47899 per tar -t"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::station_headers_skip_gate_data_and_dedupe"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000 and jma-n6-20191012-090000; assert against 20 unique stations with coordinates from the Python GRIB2 walker"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::repeated_station_members_merge_into_one_volume"
+status = "pending"
+justification = "pending C.2: real input members of jma-n5-20191012-090000-rs47773 and jma-n6-20191012-090000-rs47773 in one tar (real members); assert against one TAKA volume with reflectivity and velocity; sweep counts 26 and 13 (manifest)"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::corrupt_member_is_skipped_but_alone_is_an_error"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000 with one member's GRIB2 bytes zeroed; that member alone; assert against 19 stations decode; the lone corrupt member is an error"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/src/lib.rs"
+name = "tests::truncated_tar_member_is_an_error_not_a_panic"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773 truncated inside the member data; assert against error, no panic"
+
+# --- crates/recast-radar-io-odim/src/hdf5lite.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/src/hdf5lite.rs"
+name = "tests::magic_sniffer_matches_signature_only"
+status = "pending"
+justification = "pending C.2: real input first bytes of odim-bejab-20190606-0000-pvol (accepted), the same prefix cut to 7 bytes, cfrad1-xsapr-sgp-20110520-ppi-classic and l2-ktlx-20240315-000217-trim (rejected); assert against HDF5 format specification superblock signature"
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/src/hdf5lite.rs"
+name = "tests::v1_object_header_rejects_continuation_cycle"
+status = "pending"
+justification = "pending C.2: real input odim-bejab-20190606-0000-pvol (superblock v0, v1 object headers) with an object header continuation address pointed back at its own header (mutated real bytes); assert against error mentions a cycle; header addresses located with h5py low-level h5o/h5g info"
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/src/hdf5lite.rs"
+name = "tests::btree_walks_reject_self_references"
+status = "pending"
+justification = "pending C.2: real input odim-bejab-20190606-0000-pvol with a group B-tree child pointer and a chunk B-tree child pointer set to the node's own address; assert against error mentions a cycle; node addresses from h5py (dataset id.get_offset, chunk info)"
+
+# --- crates/recast-radar-io-odim/src/odim.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/src/odim.rs"
+name = "tests::float_grid"
+status = "pending"
+justification = "pending C.2: helper, builds one-ray float moment grid; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/src/odim.rs"
+name = "tests::copied_sentinel_cut"
+status = "pending"
+justification = "pending C.2: helper, builds cut with 4 hand-picked Z/V gates; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/src/odim.rs"
+name = "tests::copied_whatgroup_recovery_masks_only_no_echo_offset_gates"
+status = "pending"
+justification = "pending C.2: real input odim-espdg-20260707-1927-pvol-dbzh-vradh (VRADH what copies the DBZH sentinels: nodata 95.5, undetect -32.0, checked with h5py); assert against expected mask computed from the h5py raw DBZH/VRADH planes"
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/src/odim.rs"
+name = "tests::distinct_velocity_sentinels_are_never_reflectivity_gated"
+status = "pending"
+justification = "pending C.2: real input odim-dkrom-20260820-1130-pvol (VRAD gain/offset differ from DBZH); assert against velocity equals h5py raw * gain + offset with nodata/undetect masked"
+
+# --- crates/recast-radar-io-odim/tests/data/gen_odim_fixture.py
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/tests/data/gen_odim_fixture.py"
+status = "pending"
+justification = "pending C.2: generator of odim_pvol_synth.h5; delete with odim_pvol_synth.h5"
+
+# --- crates/recast-radar-io-odim/tests/data/odim_pvol_synth.h5
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/tests/data/odim_pvol_synth.h5"
+status = "pending"
+justification = "pending C.2: synthetic ODIM PVOL (sha256 not in any manifest); replaced by odim-iesha-20260305-0115-pvol; delete once unused"
+
+# --- crates/recast-radar-io-odim/tests/odim_real.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/tests/odim_real.rs"
+name = "FIXTURE"
+status = "pending"
+justification = "pending C.2: helper, builds includes tests/data/odim_pvol_synth.h5; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/tests/odim_real.rs"
+name = "decodes_synthetic_odim_pvol"
+status = "pending"
+justification = "pending C.2: real input odim-iesha-20260305-0115-pvol (tagged replaces:odim_pvol_synth: 10 sweeps 0.5-90 deg, DBZH/TH/VRADH, gate counts by tier); assert against h5py raw planes and what/where/how attributes; xradar open_odim_datatree sweep geometry"
+
+[[io-formats]]
+path = "crates/recast-radar-io-odim/tests/odim_real.rs"
+name = "non_odim_hdf5_is_rejected_with_guidance"
+status = "pending"
+justification = "pending C.2: real input cfrad1-xsapr-sgp-20110520-ppi-netcdf4 (HDF5 container without ODIM Conventions); assert against error guidance text"
+
+# --- crates/recast-radar-io/src/lib.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io/src/lib.rs"
+name = "tests::sniffs_supported_volume_formats_in_router_order"
+status = "pending"
+justification = "pending C.2: real input leading bytes of dorade-cow2-20260521-225514-sur-head24, odim-bejab-20190606-0000-pvol, cfrad1-xsapr-sgp-20110520-ppi-classic, jma-n5-20191012-090000-rs47773, l2-ktlx-20240315-000217-trim, l2-kvwx-20080415-235337 (gzip) and the non-JMA ustar inside dorade-noxp-20090501-sweeps-tgz; assert against each id's manifest format (the tar and gzip fall through to Level II)"
+
+[[io-formats]]
+path = "crates/recast-radar-io/src/lib.rs"
+name = "tests::unwraps_zip_local_member_stream_without_central_directory"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: one real Australia NCI THREDDS {site}_{date}.pvol.zip/{member}.pvol.h5 response (the zip local-member stream recast-radar-data australia_nci requests); assert against unwrapped bytes equal the member extracted with Python zipfile and open in h5py"
+
+# --- crates/recast-radar-io/tests/router_real_files.rs
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "ODIM_SYNTH"
+status = "pending"
+justification = "pending C.2: helper, builds includes odim_pvol_synth.h5; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "CFRADIAL_SYNTH"
+status = "pending"
+justification = "pending C.2: helper, builds includes cfrad_synth.nc; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "router_matches_direct_odim_decoder_on_real_pvols"
+status = "pending"
+justification = "pending C.2: real input drop the synthetic row; add odim-iesha-20260305-0115-pvol and odim-dkrom-20260820-1130-pvol; assert against routed decode equals direct decode; site ids IESHA/DKROM"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "router_matches_direct_cfradial_decoder_on_classic_netcdf"
+status = "pending"
+justification = "pending C.2: real input drop the synthetic row; add cfrad1-irene-sr2-20110827-120420-sur-sweeps01; assert against routed decode equals direct decode"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "image_decoder_and_volume_router_remain_separate"
+status = "pending"
+justification = "pending C.2: real input odim-iesha-20260305-0115-pvol (PVOL) in place of the synthetic PVOL; assert against image decoder rejects the PVOL"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "router_decodes_synthetic_archive_ii_same_as_direct_decoder"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim, l2-ktlx-19990504-002218-trim (Message 1), l2-kvwx-20080415-235337 (gzip); assert against routed decode equals recast_radar_io_nexrad::decode_volume_from_bytes"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "router_matches_direct_archive_ii_decoder_on_synthetic_volume"
+status = "pending"
+justification = "pending C.2: real input same files as above; assert against routed decode equals direct decode; site ids from the manifest"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "synthetic_archive_ii"
+status = "pending"
+justification = "pending C.2: helper, builds single-radial Archive II volume; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "synthetic_message_31_body"
+status = "pending"
+justification = "pending C.2: helper, builds Message 31 body; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "push_volume_block"
+status = "pending"
+justification = "pending C.2: helper, builds RVOL block; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "push_radial_block"
+status = "pending"
+justification = "pending C.2: helper, builds RRAD block; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "push_u8_moment"
+status = "pending"
+justification = "pending C.2: helper, builds 8-bit moment block; delete when its users are converted"
+
+[[io-formats]]
+path = "crates/recast-radar-io/tests/router_real_files.rs"
+name = "set_pointer"
+status = "pending"
+justification = "pending C.2: helper, builds data-block pointer; delete when its users are converted"
+
+# ============================================================================
+# correct (32 entries)
+# ============================================================================
+
+# --- crates/recast-radar-correct/src/dealias_v4/merge.rs
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/merge.rs"
+name = "tests::bridged_pairs_resolve_an_isolated_island_across_a_gap"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-pahg-20250909-212549 (stratiform; Py-ART region-based unfolds 4,120 of 404,963 gates at 0.53 deg) around an aliased echo island separated by no-data gates; assert against island fold from Py-ART region-based on the same sweep"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/merge.rs"
+name = "tests::aggregation_preserves_an_embedded_shear_couplet"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-ktlx-20130520-201643-trim sweep 2 around the Moore tornado couplet; assert against no region unfolded where Py-ART also leaves the couplet unfolded"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/merge.rs"
+name = "tests::uncorroborated_bridge_welds_without_unwrapping"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) containing a speck across a gap from strong outbound flow; assert against speck fold 0; Py-ART region-based agrees"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/merge.rs"
+name = "tests::merge_solve_is_deterministic"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates); assert against two solves identical"
+
+# --- crates/recast-radar-correct/src/dealias_v4/mod.rs
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::velocity_cut"
+status = "pending"
+justification = "pending C.2: helper, builds velocity tilt from a value closure; delete when its users are converted"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::wind_cut"
+status = "pending"
+justification = "pending C.2: helper, builds wrapped analytic uniform-wind tilt; delete when its users are converted"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_temporal_reference_recovers_a_topmost_aliased_high_tilt"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: the KLIX volume before l2-klix-20210829-180425 (about 17:58Z, same VCP), as the previous volume; assert against current-tilt branch agrees with Py-ART region-based and with the previous volume's dealiased tilt"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_lower_current_tilt_can_reference_a_folded_higher_tilt"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 (full volume, VCP 112 with MPDA: the 0.48 deg cut at Nyquist 32.1 m/s and the 0.53 deg cut at 23.2 m/s, where Py-ART region-based unfolds 70,140 and 152,673 gates); assert against Py-ART pyart.correct.dealias_region_based on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_current_lower_tilt_fixes_an_isolated_high_tilt_branch"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425, an isolated echo region on a higher tilt; assert against Py-ART pyart.correct.dealias_region_based on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_repairs_a_folded_patch_fused_into_legitimate_inbound"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401 (full volume; Py-ART region-based unfolds 79,228 of 337,846 gates at 0.44 deg); assert against Py-ART pyart.correct.dealias_region_based on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_stale_temporal_volume_is_ignored"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a KLIX volume 30 min or more before l2-klix-20210829-180425; assert against output identical with and without the stale previous volume"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_weak_edge_subgraph_rebranches_only_with_environmental_evidence"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 with crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json (real HRRR profile); assert against without the profile equals the v1 region engine exactly; with it the rebranched regions agree with the profile projection and Py-ART"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_branch_degenerate_volume_is_decided_by_the_environment"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643 with crates/recast-radar-bench/fixtures/dealias/env_ktlx.json (RAP analysis 2013-05-20 20Z); assert against with the profile, error against the profile projection below tolerance on both tilts"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_stale_environment_profile_is_ignored"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 with crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json (real HRRR profile) whose valid_time is moved 4 h earlier (edit of a real fixture); assert against output identical to no profile"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_solve_is_deterministic_across_runs"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 with crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json (real HRRR profile); assert against two solves byte-identical (grids and confidence)"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/mod.rs"
+name = "tests::v4_confidence_grid_reflects_decision_margins"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 with crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json (real HRRR profile); assert against confidence above the interior-only level where the profile covers; diagnostics report the profile"
+
+# --- crates/recast-radar-correct/src/dealias_v4/repair.rs
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/repair.rs"
+name = "tests::meso_couplet_survives_untouched"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-ktlx-20130520-201643-trim sweep 2 around the Moore couplet; assert against gauntlet leaves every couplet gate at fold 0"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/repair.rs"
+name = "tests::patch_repair_closes_its_ring"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from the 0.53 deg cut of l2-klix-20210829-180425 (Nyquist 23.2 m/s), with the Py-ART region-based output of that cut as the reference (its missing gates are the holes); assert against boundary pairs after repair do not exceed those of the Py-ART field"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/repair.rs"
+name = "tests::change_cap_aborts_the_patch_module"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) with the reference set to the observed field plus 2N (edit of real values); assert against module aborts, no fold changes"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/repair.rs"
+name = "tests::box_median_ladder_snaps_speckle_and_converges"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-pgua-20230524-030945-trim sweep 2 (Mawar; Py-ART region-based unfolds 22,560 of 165,809 gates) containing isolated aliased specks; assert against specks snapped to Py-ART's branch; converges within the round budget"
+
+# --- crates/recast-radar-correct/src/dealias_v4/super_regions.rs
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/super_regions.rs"
+name = "tests::single_contact_edge_is_weak_and_splits_super_regions"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) where solve_region_folds finds two regions touching along one gate pair; assert against weak edge with support below 12; two super-regions"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/dealias_v4/super_regions.rs"
+name = "tests::high_support_edge_welds_a_super_region"
+status = "pending"
+justification = "pending C.2: real input a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from l2-kbox-20220129-150537-trim sweep 2 (Py-ART region-based unfolds 13,900 of 189,629 gates) where two regions share a long unanimous fold boundary; assert against one super-region, no weak edges; fold vote from Py-ART region-based"
+
+# --- crates/recast-radar-correct/src/lib.rs
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::lightweight_velocity_dealias_unfolds_radial_continuity"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates), a radial crossing a fold; assert against Py-ART pyart.correct.dealias_region_based on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::dealias_skip_detection_reports_nyquist_less_feeds"
+status = "pending"
+justification = "pending C.2: real input jma-n6-20191012-090000-rs47773 (JMA radial velocity; the test comment says the decoder leaves Nyquist unset: confirm on the decoded cut) and l2-tstl-20230331-230314-trim sweep 2 (TDWR; Py-ART reports Nyquist 0); l2-kdvn-20200810-180401-trim as the positive control; assert against skip reported and output equal to the decoded input; control not skipped"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::region_dealias_recovers_smooth_folded_ramp"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20050829-130035-trim sweep 2 (Katrina, 362 radials over the full circle, Nyquist 32.1 m/s; Py-ART region-based unfolds 53,164 of 153,501 gates) and l2-kbox-20220129-150537-trim sweep 2 (Py-ART region-based unfolds 13,900 of 189,629 gates); assert against Py-ART pyart.correct.dealias_region_based on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::region_dealias_does_not_propagate_errors_down_a_radial"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425-trim sweep 2 (nearly alias-free: Py-ART region-based unfolds 11 of 63,544 gates); assert against every gate Py-ART leaves unchanged stays unchanged"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::region_dealias_is_deterministic_across_runs"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates); assert against 16 runs byte-identical"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::region_dealias_unfolds_geometrically_supported_fold"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates), a folded patch surrounded by unfolded gates; assert against Py-ART pyart.correct.dealias_region_based on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::tilt_with_uniform_wind"
+status = "pending"
+justification = "pending C.2: helper, builds 360-radial tilt of an analytic uniform wind, wrapped; delete when its users are converted"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::external_harmonic_reference_selects_the_absolute_branch"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 (full volume, VCP 112 with MPDA: the 0.48 deg cut at Nyquist 32.1 m/s and the 0.53 deg cut at 23.2 m/s, where Py-ART region-based unfolds 70,140 and 152,673 gates): reference fit on the 32.1 m/s cut, target the 23.2 m/s cut; assert against branch agrees with Py-ART region-based output and with crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json projected along the beams"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::velocity_dealias_preserves_supported_adjacent_folds"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20050829-130035-trim sweep 2 (Katrina, 362 radials over the full circle, Nyquist 32.1 m/s; Py-ART region-based unfolds 53,164 of 153,501 gates); assert against Py-ART pyart.correct.dealias_region_based on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically"
+
+[[correct]]
+path = "crates/recast-radar-correct/src/lib.rs"
+name = "tests::test_velocity_grid_rows"
+status = "pending"
+justification = "pending C.2: helper, builds velocity cut and grid from hand-written rows; delete when its users are converted"
+
+# ============================================================================
+# filters-map (36 entries)
+# ============================================================================
+
+# --- crates/recast-radar-filters/src/gate_filter.rs
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/gate_filter.rs"
+name = "tests::cut_with"
+status = "pending"
+justification = "pending C.2: helper, builds REF/VEL cut from hand-written gates; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/gate_filter.rs"
+name = "tests::keeps_velocity_only_where_reflectivity_clears_the_threshold"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim sweep 2 (REF/VEL/SW on the same radials); assert against Py-ART GateFilter.exclude_below('reflectivity', threshold) applied to Py-ART velocity"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/gate_filter.rs"
+name = "tests::no_reflectivity_moment_blanks_everything"
+status = "pending"
+justification = "pending C.2: real input jma-n6-20191012-090000-rs47773 (velocity-only cut); assert against every velocity gate blanked"
+
+# --- crates/recast-radar-filters/src/interpolate.rs
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::radial"
+status = "pending"
+justification = "pending C.2: helper, builds radial with a given azimuth; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::cut_and_grid"
+status = "pending"
+justification = "pending C.2: helper, builds cut and grid from azimuths and data; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::geometry_subdivides_exactly"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim sweep 1 (Message 1: 1 deg radials, 1 km REF gates); assert against range and azimuth arrays from MetPy/Py-ART: 4x in both axes, annulus preserved, native rows at their azimuths"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::azimuth_wraps_between_last_and_first_row"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim sweep 1 (Message 1: 1 deg radials, 1 km REF gates); assert against sub-row azimuths between the file's last and first radial"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::uniform_field_is_unchanged_and_fine_grids_pass_through"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim sweep 1 (Message 1: 1 deg radials, 1 km REF gates) and l2-ktlx-20240315-000217-trim (0.5 deg x 250 m, passes through); assert against native rows equal Py-ART values; fine grid returned unchanged"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::coverage_does_not_grow"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim sweep 1 (Message 1: 1 deg radials, 1 km REF gates); assert against no upsampled gate valid where Py-ART has no parent value"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::echo_edges_use_nearest_parent_not_partial_blends"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim sweep 1 (Message 1: 1 deg radials, 1 km REF gates); assert against edge gates equal a native parent value from Py-ART"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::velocity_fold_guard_uses_nearest_parent"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20050829-130035-trim sweep 2 (Katrina, legacy 1 deg, strongly aliased velocity); assert against no blend across adjacent gates differing by more than Nyquist (MetPy Nyquist)"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::cc_guard_never_blends_through_the_melting_layer"
+status = "pending"
+justification = "pending C.2: real input l2-kgwx-20130601-235640 (dual-pol at 1 deg azimuth with 250 m gates, so azimuth is upsampled; storms to 60 dBZ): radials where RHOHV falls below the guard threshold next to high values; assert against no blend across those RHOHV steps, located in Py-ART cross_correlation_ratio"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::sector_scan_gap_stays_native"
+status = "pending"
+justification = "pending C.2: real input dorade-noxp-20090525-203211-sector (100 rays over -160..-60 deg); assert against no sub-rows across the sector gap (azimuths from the DORADE walker)"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/interpolate.rs"
+name = "tests::upsample_cost_smoke"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218 (full legacy volume); assert against completes; output dimensions from the factor policy"
+
+# --- crates/recast-radar-filters/src/smooth.rs
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/smooth.rs"
+name = "tests::grid"
+status = "pending"
+justification = "pending C.2: helper, builds 8x8 reflectivity grid; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/smooth.rs"
+name = "tests::uniform_field_is_unchanged"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401-trim sweep 1 reflectivity (66 dBZ core at azimuth 270 deg, 15 km); assert against gates whose 3x3 neighbourhood is constant (Py-ART values) are unchanged"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/smooth.rs"
+name = "tests::steps_soften_and_coverage_does_not_grow"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401-trim sweep 1 reflectivity; assert against empty gates stay empty; edge gates keep their Py-ART value"
+
+[[filters-map]]
+path = "crates/recast-radar-filters/src/smooth.rs"
+name = "tests::interior_step_blends"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 1 (Moore core: 69.5 dBZ at azimuth 268 deg, 23 km); assert against smoothed values lie between the neighbouring Py-ART values across the steepest gradients"
+
+# --- crates/recast-radar-map/src/rhi.rs
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/rhi.rs"
+name = "tests::rhi_cut"
+status = "pending"
+justification = "pending C.2: helper, builds synthetic RHI fan; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/rhi.rs"
+name = "tests::rhi_section_samples_the_matching_beam"
+status = "pending"
+justification = "pending C.2: real input cfrad1-dow8-20211011-223602-rhi-trim3-classic (already used by tests/rhi_real.rs) and dorade-dow6-20211230-222139-rhi-head41; assert against 4/3-earth beam height of the sampled beam/gate (netCDF4 elevation and range arrays)"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/rhi.rs"
+name = "tests::rhi_section_is_empty_above_the_top_beam"
+status = "pending"
+justification = "pending C.2: real input cfrad1-dow8-20211011-223602-rhi-trim3-classic (already used by tests/rhi_real.rs); assert against pixels above the top beam height are empty"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/rhi.rs"
+name = "tests::rhi_section_is_empty_beyond_gate_coverage"
+status = "pending"
+justification = "pending C.2: real input cfrad1-dow8-20211011-223602-rhi-trim3-classic (already used by tests/rhi_real.rs); assert against pixels beyond 950 x 125 m are empty"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/rhi.rs"
+name = "tests::rhi_heuristic_accepts_elevation_sweeps_and_rejects_ppi"
+status = "pending"
+justification = "pending C.2: real input cfrad1-dow8-20211011-223602-rhi-trim3-classic (already used by tests/rhi_real.rs), dorade-dow6-20211230-222139-rhi-head41 (accepted) and l2-ktlx-20240315-000217-trim (rejected); assert against scan modes from the files"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/rhi.rs"
+name = "tests::rhi_coverage_extents_track_the_sweep"
+status = "pending"
+justification = "pending C.2: real input cfrad1-dow8-20211011-223602-rhi-trim3-classic (already used by tests/rhi_real.rs); assert against coverage top and range from the file's elevations and gate count"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/rhi.rs"
+name = "tests::azimuth_circular_mean_handles_north_wrap"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 1 (azimuths 123.2 through 2.7 deg, crossing north); assert against numpy circular mean of the file's azimuths"
+
+# --- crates/recast-radar-map/src/volumetric.rs
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::cut_with_ref"
+status = "pending"
+justification = "pending C.2: helper, builds constant-reflectivity cut; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::volume_with"
+status = "pending"
+justification = "pending C.2: helper, builds volume from cuts; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::composite_takes_column_max"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against Py-ART pyart.retrieve.composite_reflectivity / numpy column maximum on Py-ART fields"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::echo_top_rises_with_higher_tilt"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against numpy echo top: highest beam height with reflectivity above threshold (4/3-earth)"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::cross_section_reconstructs_a_reflectivity_column"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643 (full volume); assert against section values equal the Py-ART gate values at the sampled beams"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::cut_with_vel"
+status = "pending"
+justification = "pending C.2: helper, builds constant-velocity cut; delete when its users are converted"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::velocity_cross_section_reconstructs_velocity"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643; assert against section velocity equals the Py-ART gate values at the sampled beams"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::derived_products_handle_degraded_inputs_without_panicking"
+status = "pending"
+justification = "pending C.2: real input l2-tbwi-20230601-175101-stub (no radials), l2-ktlx-19990503-230052 (68 radials, REF only), jma-n6-20191012-090000-rs47773 (velocity only), l2-ktlx-20240315-000217-trim (two cuts); assert against no panic; empty or partial outputs"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::vil_positive_for_deep_reflectivity"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against numpy VIL (Greene and Clark 1972) on Py-ART reflectivity columns"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::mehs_flags_deep_intense_cores_only"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) and l2-ktlx-20240515-000014 (clear air); assert against numpy SHI/MEHS (Witt et al. 1998) with the melting level used by the code; SPC hail reports near San Antonio 2016-04-13"
+
+[[filters-map]]
+path = "crates/recast-radar-map/src/volumetric.rs"
+name = "tests::vil_density_is_in_physical_range"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against numpy VIL density (VIL / echo top) on Py-ART fields"
+
+# ============================================================================
+# retrieve (48 entries)
+# ============================================================================
+
+# --- crates/recast-radar-retrieve/src/availability.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/availability.rs"
+name = "tests::grid"
+status = "pending"
+justification = "pending C.2: helper, builds zero-filled moment grid; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/availability.rs"
+name = "tests::cut"
+status = "pending"
+justification = "pending C.2: helper, builds cut with chosen moments; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/availability.rs"
+name = "tests::derive_on_demand_admits_a_cut_the_presence_gate_rejects"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim sweep 1 (REF/ZDR/PHI/RHO/CFP); assert against derivable products from the moment list (MetPy moment names)"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/availability.rs"
+name = "tests::derive_on_demand_never_admits_kdp"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim sweep 1; assert against KDP not admitted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/availability.rs"
+name = "tests::native_moments_route_straight_through_the_presence_gate"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim sweep 2 (REF/VEL/SW); assert against native moments listed by MetPy"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/availability.rs"
+name = "tests::a_partial_sweep_carries_no_sources"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990503-230052 (68 radials of a truncated first cut); assert against no sources for the partial sweep"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/availability.rs"
+name = "tests::unknown_names_that_match_nothing_are_not_derivable"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim; assert against unknown product ids rejected"
+
+# --- crates/recast-radar-retrieve/src/detect.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::velocity_cut"
+status = "pending"
+justification = "pending C.2: helper, builds synthetic velocity tilt geometry; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::f32_grid"
+status = "pending"
+justification = "pending C.2: helper, builds float grid from values; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::tilt"
+status = "pending"
+justification = "pending C.2: helper, builds tilt with painted couplet and echo; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::volume_of"
+status = "pending"
+justification = "pending C.2: helper, builds volume from tilts; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::vertically_continuous_couplet_is_detected"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643 (full volume, Moore EF5 tornado at 20:16Z) and l2-kdgx-20230325-010651 (Rolling Fork); assert against detection within a few km of the NWS damage-survey track position at the volume time"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::explicit_rotation_api_never_falls_back_to_an_internal_engine"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643 (full volume, Moore EF5 tornado at 20:16Z) with the Py-ART region-based dealiased velocity passed explicitly; assert against results computed from the supplied grid"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::single_tilt_couplet_is_rejected"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim (one Doppler tilt); assert against no detection"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::couplet_without_echo_is_rejected"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240515-000014 (clear air, biological returns); assert against no detection"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/detect.rs"
+name = "tests::quiet_volume_detects_nothing"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240515-000014 and l2-kmaf-20230331-230843 (clear air); assert against no detection"
+
+# --- crates/recast-radar-retrieve/src/gbvtd.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/gbvtd.rs"
+name = "tests::synthetic_vortex"
+status = "pending"
+justification = "pending C.2: helper, builds analytic Rankine vortex velocity field; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/gbvtd.rs"
+name = "tests::synthetic_vortex_asym"
+status = "pending"
+justification = "pending C.2: helper, builds analytic vortex with wavenumber-1 asymmetry; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/gbvtd.rs"
+name = "tests::retrieves_rankine_profile_at_true_center"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 (full volume, Ida eye about 140 km SW) and l2-tjua-20220918-190621 (Fiona); assert against tangential wind maximum and radius consistent with the NHC best track (HURDAT2) intensity at the volume time"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/gbvtd.rs"
+name = "tests::simplex_recovers_the_storm_center"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 (full volume, Ida eye about 140 km SW); assert against center within tolerance of the HURDAT2 position interpolated to 18:04Z"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/gbvtd.rs"
+name = "tests::recovers_imposed_wavenumber1_asymmetry"
+status = "pending"
+justification = "pending C.2: real input l2-klix-20210829-180425 (full volume, Ida eye about 140 km SW); assert against wavenumber-1 phase consistent with the HURDAT2 storm motion; amplitude finite and bounded"
+
+# --- crates/recast-radar-retrieve/src/shear.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/shear.rs"
+name = "tests::detects_linear_rotational_shear"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 2 (Moore couplet); assert against numpy linear least-squares derivative (Smith and Elmore 2004) on Py-ART region-dealiased velocity"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/shear.rs"
+name = "tests::shear_handles_degraded_velocity_without_panicking"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990503-230052 (REF only), jma-n6-20191012-090000-rs47773 (no Nyquist); assert against no panic; empty or NaN output"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/shear.rs"
+name = "tests::detects_linear_radial_divergence"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401-trim sweep 2 (derecho outflow); assert against numpy LLSD radial divergence on Py-ART dealiased velocity"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/shear.rs"
+name = "tests::from_dealiased_derivative_does_not_run_a_second_engine"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 2 with a Py-ART dealiased grid supplied; assert against shear computed from the supplied grid only"
+
+# --- crates/recast-radar-retrieve/src/sweep.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::f32_grid"
+status = "pending"
+justification = "pending C.2: helper, builds float grid from rows; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::cut_with_rows"
+status = "pending"
+justification = "pending C.2: helper, builds cut geometry for rows; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::linear_wrapped_phi_retrieves_kdp"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 1 rays through the Moore core (69.5 dBZ at azimuth 268 deg, 23 km) and the lowest sweep of l2-kewx-20160413-022531 through the hail core; assert against Py-ART kdp_vulpiani (and kdp_maesaka) on the same rays, within tolerance"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::short_gap_is_used_for_fit_but_not_emitted_by_default"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 1 rays with short runs of missing PHIDP gates; assert against no KDP emitted at missing gates; neighbouring KDP close to Py-ART"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::native_kdp_is_preserved"
+status = "pending"
+justification = "pending C.2: real input a real file with valid native KDP: the KDP fields of dorade-noxp-20090525-203211-sector and dorade-dow6-20211230-222139-rhi-head41 decode as all missing, so check KDP_F of the DOW6 sweep (decoded as an unknown moment); otherwise a corpus addition (e.g. an ODIM PVOL with KDP); assert against KDP equals the values read with the independent reader"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::filtered_phase_survives_when_kdp_is_out_of_bounds"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 1 (Moore core); assert against filtered PHIDP present where KDP is rejected"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::velocity_range_gradient_uses_nyquist_wrapped_delta"
+status = "pending"
+justification = "pending C.2: real input l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates); assert against numpy wrapped gate-to-gate difference with MetPy Nyquist"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::rho_qc_is_aligned_by_physical_range"
+status = "pending"
+justification = "pending C.2: real input l2-kgwx-20130601-235640 (first gate 125 m) and l2-ktlx-20240315-000217-trim; assert against RHO and REF gates matched by range from MetPy data-block headers"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::cdr_is_finite_for_valid_dual_pol_values"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim sweep 1; assert against Py-ART pyart.retrieve.compute_cdr on the same gates"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/sweep.rs"
+name = "tests::unknown_band_blocks_band_sensitive_products_but_keeps_phif"
+status = "pending"
+justification = "pending C.2: real input a real volume without wavelength metadata (check odim-iesha-20260305-0115-pvol how/wavelength; otherwise a corpus addition); assert against band-sensitive products absent, filtered PHIDP present"
+
+# --- crates/recast-radar-retrieve/src/volume.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/volume.rs"
+name = "tests::test_volume"
+status = "pending"
+justification = "pending C.2: helper, builds two-tilt synthetic volume; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/volume.rs"
+name = "tests::column_max_finds_upper_tilt_value"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against numpy column maximum on Py-ART reflectivity"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/volume.rs"
+name = "tests::echo_depth_is_nonnegative"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against numpy echo depth on Py-ART fields"
+
+# --- crates/recast-radar-retrieve/src/vwp.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::synthetic_volume"
+status = "pending"
+justification = "pending C.2: helper, builds analytic wind-profile volume; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::uniform_wind_recovers_components_speed_and_from_direction"
+status = "pending"
+justification = "pending C.2: real input l2-kbox-20220129-150537 (widespread snow, strong winds); assert against Py-ART pyart.retrieve.vad_browning / vad_michelson on the same dealiased sweeps"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::vertical_shear_is_sampled_at_four_thirds_earth_beam_height"
+status = "pending"
+justification = "pending C.2: real input l2-pahg-20250909-212549 (stratiform, all tilts); assert against VAD levels vs Py-ART VAD at 4/3-earth beam heights"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::robust_refit_removes_large_convective_outliers"
+status = "pending"
+justification = "pending C.2: real input l2-kilx-20260418-013553 (dense convection); assert against refit wind closer to Py-ART VAD on the stratiform-only gates than the first fit"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::sector_scan_is_explicitly_rejected_for_azimuth_coverage"
+status = "pending"
+justification = "pending C.2: real input dorade-noxp-20090525-203211-sector (100 deg sector); assert against rejected for azimuth coverage"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::unresolved_second_harmonic_is_rejected_by_residual_qc"
+status = "pending"
+justification = "pending C.2: real input l2-kilx-20260418-013553 levels where Py-ART VAD residuals are large; assert against rejected by residual QC"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::missing_height_coverage_is_a_level_rejection_not_a_profile_error"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (lowest tilt only); assert against levels above the coverage rejected, profile returned"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/vwp.rs"
+name = "tests::input_contract_and_scan_mode_fail_loudly"
+status = "pending"
+justification = "pending C.2: real input cfrad1-dow8-20211011-223602-rhi-trim3-classic (already used by tests/rhi_real.rs) (RHI) and real grids of mismatched counts; assert against scan-mode and grid-count errors"
+
+# --- crates/recast-radar-retrieve/src/wind.rs
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/wind.rs"
+name = "tests::identity_grid"
+status = "pending"
+justification = "pending C.2: helper, builds grid with hand-picked radial indices; delete when its users are converted"
+
+[[retrieve]]
+path = "crates/recast-radar-retrieve/src/wind.rs"
+name = "tests::reflectivity_rows_follow_raw_radial_identity_not_row_position"
+status = "pending"
+justification = "pending C.2: real input a real cut whose reflectivity grid covers a subset of the radials (check the decoded radial_indices of the Doppler cut of l2-ktlx-19990504-002218-trim or l2-tstl-20230331-230314-trim); assert against row mapping from the decoded radial indices and MetPy radial order"
+
+# ============================================================================
+# track (30 entries)
+# ============================================================================
+
+# --- crates/recast-radar-track/src/cells.rs
+
+[[track]]
+path = "crates/recast-radar-track/src/cells.rs"
+name = "tests::volume_with_field"
+status = "pending"
+justification = "pending C.2: helper, builds one-tilt volume from an analytic field; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/cells.rs"
+name = "tests::finds_a_single_strong_cell_at_the_right_place"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against cell centroid from scipy.ndimage labelling of the thresholded Py-ART reflectivity, near azimuth 255 deg, 58 km"
+
+[[track]]
+path = "crates/recast-radar-track/src/cells.rs"
+name = "tests::weak_echo_yields_no_cells"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240515-000014 (clear air, max 35.5 dBZ); assert against no cells"
+
+[[track]]
+path = "crates/recast-radar-track/src/cells.rs"
+name = "tests::empty_volume_yields_no_cells"
+status = "pending"
+justification = "pending C.2: real input l2-tbwi-20230601-175101-stub (no radials); assert against no cells"
+
+[[track]]
+path = "crates/recast-radar-track/src/cells.rs"
+name = "tests::watershed_splits_two_cores_in_one_envelope"
+status = "pending"
+justification = "pending C.2: real input l2-koax-20140616-205305 (Pilger twin-tornado supercells); assert against two cores from a scipy watershed on the thresholded Py-ART reflectivity"
+
+# --- crates/recast-radar-track/src/swath.rs
+
+[[track]]
+path = "crates/recast-radar-track/src/swath.rs"
+name = "tests::volume_with"
+status = "pending"
+justification = "pending C.2: helper, builds one-tilt u8 volume; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/swath.rs"
+name = "tests::max_reflectivity_takes_per_gate_maximum"
+status = "pending"
+justification = "pending C.2: real input consecutive sweeps from dorade-noxp-20090525-sweeps-tgz (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed dorade-noxp-20090525-203211-sector); assert against numpy per-gate maximum of the decoded reflectivity"
+
+[[track]]
+path = "crates/recast-radar-track/src/swath.rs"
+name = "tests::swath_covers_union_of_two_positions"
+status = "pending"
+justification = "pending C.2: real input consecutive sweeps from dorade-noxp-20090525-sweeps-tgz (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed dorade-noxp-20090525-203211-sector); assert against swath coverage equals the union of valid gates"
+
+[[track]]
+path = "crates/recast-radar-track/src/swath.rs"
+name = "tests::max_magnitude_keeps_sign_of_extreme"
+status = "pending"
+justification = "pending C.2: real input consecutive sweeps from dorade-noxp-20090525-sweeps-tgz (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed dorade-noxp-20090525-203211-sector), velocity; assert against numpy signed extreme per gate"
+
+[[track]]
+path = "crates/recast-radar-track/src/swath.rs"
+name = "tests::empty_when_no_frame_has_the_moment"
+status = "pending"
+justification = "pending C.2: real input l2-tstl-20230331-230314-trim frames (TDWR, no dual-pol) asked for ZDR; assert against empty swath"
+
+[[track]]
+path = "crates/recast-radar-track/src/swath.rs"
+name = "tests::picks_lowest_tilt_carrying_the_moment"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (REF on sweep 1, VEL first on sweep 2); assert against tilt choice from MetPy moment lists"
+
+# --- crates/recast-radar-track/src/temporal.rs
+
+[[track]]
+path = "crates/recast-radar-track/src/temporal.rs"
+name = "tests::grid"
+status = "pending"
+justification = "pending C.2: helper, builds 1-row grid from values; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/temporal.rs"
+name = "tests::difference_and_trend"
+status = "pending"
+justification = "pending C.2: real input consecutive sweeps from dorade-noxp-20090525-sweeps-tgz (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed dorade-noxp-20090525-203211-sector); assert against numpy difference and trend of the decoded gates"
+
+[[track]]
+path = "crates/recast-radar-track/src/temporal.rs"
+name = "tests::rate_accumulation_uses_trapezoids"
+status = "pending"
+justification = "pending C.2: real input consecutive sweeps from dorade-noxp-20090525-sweeps-tgz (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed dorade-noxp-20090525-203211-sector); assert against numpy trapezoid accumulation with the sweep times"
+
+[[track]]
+path = "crates/recast-radar-track/src/temporal.rs"
+name = "tests::probability_ignores_missing_values"
+status = "pending"
+justification = "pending C.2: real input consecutive sweeps from dorade-noxp-20090525-sweeps-tgz (13 NOXP 0.5 deg sector sweeps, 20:32:11-20:51:27Z, about 90 s apart; from 20:33:47Z each has 170-171 rays over 200-10 deg, 1001 x 150 m gates and about 3,000 reflectivity gates at or above 30 dBZ; the first is the committed dorade-noxp-20090525-203211-sector); assert against numpy probability over non-missing gates"
+
+# --- crates/recast-radar-track/src/tracking.rs
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::cell"
+status = "pending"
+justification = "pending C.2: helper, builds hand-built storm cell; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::crossing_cells_do_not_swap_ids"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a 30-60 min sequence of consecutive WSR-88D volumes with crossing cells, plus the Level III Storm Tracking Information (product 58) for the same volumes; assert against cell ids compared with the Level III STI cell tracks"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::qlcs_line_no_steal"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: consecutive volumes around l2-kdvn-20200810-180401 (derecho QLCS) and their Level III STI; assert against track continuity along the line vs STI"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::split_links_children_to_parent"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: consecutive volumes with a splitting supercell (e.g. around l2-koax-20140616-205305) and Level III STI; assert against split parent/children vs STI"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::merge_terminates_the_loser_with_a_link"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: consecutive volumes with a cell merger and Level III STI; assert against merge link vs STI"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::speed_gate_rejects_a_teleporting_cell"
+status = "pending"
+justification = "pending C.2: real input cells detected in two real frames far apart in space: l2-kewx-20160413-022531 and l2-ktlx-20240315-000217 treated as successive frames (real cells, impossible motion); assert against no association"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::coast_and_reacquire_keeps_the_id"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: consecutive volumes where a cell drops below threshold for one volume; assert against id kept across the gap"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracking.rs"
+name = "tests::time_gate_resets_everything"
+status = "pending"
+justification = "pending C.2: real input cells from l2-ktlx-20130520-201643 and l2-ktlx-20240315-000217 (11 years apart); assert against tracker reset"
+
+# --- crates/recast-radar-track/src/tracks.rs
+
+[[track]]
+path = "crates/recast-radar-track/src/tracks.rs"
+name = "tests::f32_grid"
+status = "pending"
+justification = "pending C.2: helper, builds float grid from values; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracks.rs"
+name = "tests::full_circle_cut"
+status = "pending"
+justification = "pending C.2: helper, builds full-circle cut geometry; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracks.rs"
+name = "tests::couplet_tilt"
+status = "pending"
+justification = "pending C.2: helper, builds tilt with painted couplet; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracks.rs"
+name = "tests::volume_of"
+status = "pending"
+justification = "pending C.2: helper, builds volume from tilts; delete when its users are converted"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracks.rs"
+name = "tests::cartesian_frame_paints_couplet_location"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643 (full volume, Moore EF5 tornado at 20:16Z); assert against painted cell within a few km of the NWS damage-survey position at 20:16Z"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracks.rs"
+name = "tests::height_cap_bounds_range_coverage"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643 (full volume, Moore EF5 tornado at 20:16Z); assert against coverage limited by 4/3-earth beam height at the cap"
+
+[[track]]
+path = "crates/recast-radar-track/src/tracks.rs"
+name = "tests::tds_gates_require_anchor_proximity_and_criteria"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643 (full volume, Moore EF5 tornado at 20:16Z) (its trimmed lowest sweep already has 406 gates with RHOHV < 0.8 and Z > 40 dBZ); assert against TDS gates within 5 km of the circulation; criteria checked with numpy on Py-ART REF/ZDR/RHOHV"
+
+# ============================================================================
+# render-bench (32 entries)
+# ============================================================================
+
+# --- crates/recast-radar-bench/src/dealias_eval.rs
+
+[[render-bench]]
+path = "crates/recast-radar-bench/src/dealias_eval.rs"
+name = "tests::field"
+status = "pending"
+justification = "pending C.2: helper, builds bench velocity field from values; delete when its users are converted"
+
+[[render-bench]]
+path = "crates/recast-radar-bench/src/dealias_eval.rs"
+name = "tests::boundary_metric_counts_a_two_fold_ramp_exactly"
+status = "pending"
+justification = "pending C.2: real input raw and Py-ART-dealiased velocity of l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates); assert against boundary pairs recounted independently in numpy"
+
+[[render-bench]]
+path = "crates/recast-radar-bench/src/dealias_eval.rs"
+name = "tests::boundary_metric_counts_the_wrap_seam"
+status = "pending"
+justification = "pending C.2: real input raw velocity of l2-klix-20050829-130035-trim sweep 2 (Katrina, 362 radials over the full circle, Nyquist 32.1 m/s; Py-ART region-based unfolds 53,164 of 153,501 gates); assert against numpy count including the last-to-first radial seam"
+
+[[render-bench]]
+path = "crates/recast-radar-bench/src/dealias_eval.rs"
+name = "tests::percent_modified_flags_whole_fold_moves_only"
+status = "pending"
+justification = "pending C.2: real input raw vs Py-ART-dealiased l2-kdvn-20200810-180401-trim sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates); assert against numpy percentage of gates moved by more than Nyquist"
+
+[[render-bench]]
+path = "crates/recast-radar-bench/src/dealias_eval.rs"
+name = "tests::speck_count_finds_isolated_outliers_only"
+status = "pending"
+justification = "pending C.2: real input raw velocity of l2-pgua-20230524-030945-trim sweep 2; assert against numpy isolated-speck count"
+
+# --- crates/recast-radar-render/src/lib.rs
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::velocity_range_folded_bins_render_table_rf_color"
+status = "pending"
+justification = "pending C.2: real input range-folded velocity gates (raw code 1, located with MetPy raw data) in l2-ktlx-20240315-000217-trim sweep 2, else l2-klix-20210829-180425-trim; assert against pixels at those gates carry the table's RF colour"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::reflectivity_range_folded_bins_render_table_rf_color"
+status = "pending"
+justification = "pending C.2: real input a real reflectivity grid with range-folded codes (locate with MetPy raw data in the corpus; corpus addition if none); assert against RF colour at those gates"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::storm_relative_u8_row_palette_matches_direct_color_math"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against direct colour math on the same gates; Py-ART pyart.retrieve.storm_relative_velocity for the subtracted motion"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::custom_color_table_feeds_precomputed_u8_palette"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against palette lookup equals direct table sampling on real codes"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::storm_motion_basis_matches_direct_projection"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against basis equals direct projection per radial azimuth read from the file"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::grid_sample_cache_upper_bound_tracks_actual_radar_footprint"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against bound from the file's gate count and spacing"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_lookup_matches_reference_hypot_formula"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against the test's reference hypot lookup on the file's azimuths and gates"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_lookup_table_matches_reference_hypot_formula"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against reference hypot lookup"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_lookup_table_matches_rotated_viewport_lookup"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against rotated reference lookup"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::baked_rotation_changes_table_azimuth_bins"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against azimuth bins from the file's azimuths under rotation"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_row_span_covers_reference_samples"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against reference samples within the row span"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::azimuth_lookup_fills_wider_native_radial_sectors"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-19990504-002218-trim sweep 1 (Message 1: 1 deg radials, 1 km REF gates); assert against reference lookup on the file's azimuths"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::azimuth_lookup_prefers_duplicate_row_with_longer_valid_extent"
+status = "pending"
+justification = "pending C.2: real input a real sweep with duplicate azimuths: the transition rays of dorade-cow2-20260521-225514-sur-head24; assert against row with the longer valid extent per the Python DORADE walker"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::compact_sample_resolution_keeps_visible_range_folded_candidates"
+status = "pending"
+justification = "pending C.2: real input range-folded gates as in the velocity RF test above; assert against RF candidates kept"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_render_uses_requested_screen_resolution"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against buffer dimensions"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_sample_cache_matches_direct_moment_render"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against cached render equals direct render"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_geometry_cache_resolves_across_compatible_products"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against REF and VEL share geometry"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_sample_cache_matches_direct_storm_relative_render"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against cached equals direct storm-relative render"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_sample_cache_rejects_mismatched_cache"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against moment mismatch error"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_render_rejects_wrong_sized_reusable_buffer"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL); assert against buffer size error"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_cache_rejects_different_volume"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim (u8 REF and VEL) and l2-ktlx-20130520-201643-trim; assert against different-volume error"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::viewport_cache_renders_u16_palette_moments"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20130520-201643-trim (u16 PHI); assert against u16 palette render equals direct render"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::test_volume"
+status = "pending"
+justification = "pending C.2: helper, builds small u8 REF/VEL volume; delete when its users are converted"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "tests::test_u16_volume"
+status = "pending"
+justification = "pending C.2: helper, builds small u16 volume; delete when its users are converted"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "derived_product_tests::cut_with_ref"
+status = "pending"
+justification = "pending C.2: helper, builds constant-reflectivity cut; delete when its users are converted"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "derived_product_tests::volume_with"
+status = "pending"
+justification = "pending C.2: helper, builds volume from cuts; delete when its users are converted"
+
+[[render-bench]]
+path = "crates/recast-radar-render/src/lib.rs"
+name = "derived_product_tests::derived_products_render_through_viewport_cache"
+status = "pending"
+justification = "pending C.2: real input l2-kewx-20160413-022531 (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km); assert against cached derived-product render equals direct render"
+
+# ============================================================================
+# core-data-scattering (87 entries)
+# ============================================================================
+
+# --- crates/recast-radar-core/src/lib.rs
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::ray_instrument_metadata_is_optional_but_must_align"
+status = "pending"
+justification = "pending C.2: real input cut decoded from cfrad1-irene-sr2-20110827-120420-sur-sweeps01 (per-ray prt/nyquist/n_samples); misalignment by dropping one ray's metadata; assert against alignment error; values from netCDF4-python"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::moment_grid_scales_compact_u8_rows"
+status = "pending"
+justification = "pending C.2: real input u8 REF data blocks of l2-ktlx-20240315-000217-trim; assert against raw codes, scale and offset from MetPy data-block headers"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::moment_grid_expands_and_pads_variable_gate_rows"
+status = "pending"
+justification = "pending C.2: real input rows of different gate counts from odim-bejab-20190606-0000-pvol (598 and 300 gates); assert against h5py raw rows and gate counts"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::moment_grid_pushes_u8_slice_without_row_allocation"
+status = "pending"
+justification = "pending C.2: real input u8 REF data blocks of l2-ktlx-20240315-000217-trim; assert against MetPy raw codes"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::moment_grid_pushes_u16_be_bytes_without_row_allocation"
+status = "pending"
+justification = "pending C.2: real input u16 PHI data blocks of l2-ktlx-20130520-201643-trim; assert against MetPy raw codes"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::moment_grid_reserves_rows_and_gate_storage"
+status = "pending"
+justification = "pending C.2: real input dimensions of l2-ktlx-20240315-000217-trim sweep 1; assert against radial and gate counts from MetPy"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::cut_tracks_available_moments"
+status = "pending"
+justification = "pending C.2: real input l2-ktlx-20240315-000217-trim sweeps 1 and 2; assert against moment lists from MetPy (REF/ZDR/PHI/RHO/CFP; REF/VEL/SW)"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_radial"
+status = "pending"
+justification = "pending C.2: helper, builds hand-built radial; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_cut"
+status = "pending"
+justification = "pending C.2: helper, builds hand-built cut; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_volume"
+status = "pending"
+justification = "pending C.2: helper, builds hand-built volume; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_single_part_is_identity_with_sorted_cuts"
+status = "pending"
+justification = "pending C.2: real input l2-kiwa-20260917-003629; assert against merge of one part equals the part with cuts sorted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_rejects_mismatched_site_ids"
+status = "pending"
+justification = "pending C.2: real input a KIWA chunk part and l2-ktlx-20240315-000217-trim; assert against site mismatch error"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_keeps_earliest_volume_time"
+status = "pending"
+justification = "pending C.2: real input the committed KIWA chunks l2chunk-kiwa-307-20260917-003629-001-s..-003-i (and the cached rest of the 70) decoded as separate parts; l2-kiwa-20260917-003629 is the same bytes as one archive; assert against earliest part time (chunk radial times per the manifest)"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_unions_moments_of_elevation_matched_cuts"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773 (REF) and jma-n6-20191012-090000-rs47773 (VEL) of the same scan; assert against merged cuts carry both moments; sweep angles from the GRIB2 walker"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_fills_aligned_ray_instrument_metadata_without_overwriting_source_values"
+status = "pending"
+justification = "pending C.2: real input cfrad1-irene-sr2-20110827-120420-sur-sweeps01 split into a DBZ part and a VEL part (both real); assert against per-ray values from netCDF4-python kept"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_ignores_malformed_incoming_ray_instrument_metadata"
+status = "pending"
+justification = "pending C.2: real input the Irene parts with one part's ray metadata truncated (edit of real values); assert against malformed metadata ignored"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_collision_keeps_first_part_grid"
+status = "pending"
+justification = "pending C.2: real input the JMA N5 member decoded twice (same moment in both parts); assert against first part's grid kept"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_unions_unmatched_cuts_sorted_by_elevation"
+status = "pending"
+justification = "pending C.2: real input the committed KIWA chunks l2chunk-kiwa-307-20260917-003629-001-s..-003-i (and the cached rest of the 70) decoded as separate parts; l2-kiwa-20260917-003629 is the same bytes as one archive; assert against all cuts present, sorted by elevation"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_skips_matched_cut_with_different_radial_count"
+status = "pending"
+justification = "pending C.2: real input the lowest cuts of l2-ktlx-20240315-000217-trim (480 radials) and l2-ktlx-19990504-002218-trim (367 radials), both KTLX near 0.5 deg; assert against cut skipped; radial counts from Py-ART"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_skips_matched_cut_with_shifted_azimuths"
+status = "pending"
+justification = "pending C.2: real input sweep 1 of l2-ktlx-20240315-000217-trim (480 radials from 167.3 deg) and of l2-ktlx-20130520-201643-trim (480 radials from 123.2 deg); assert against cut skipped; azimuths from Py-ART"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_accepts_azimuths_equal_across_the_north_wrap"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773 and jma-n6-20191012-090000-rs47773 (512 radials each; azimuths from the GRIB2 walker); assert against matched across 0/360"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_accepts_matched_cut_with_different_gate_layout"
+status = "pending"
+justification = "pending C.2: real input odim-iesha-20260305-0115-pvol DBZH and VRADH as separate parts if their gate layouts differ (check with h5py), else a corpus addition; assert against merged; gate layouts from h5py"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_three_product_parts_assembles_full_dual_pol_cut"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: one scan delivered as per-quantity files (e.g. MeteoRomania TIM_*dBZ/V/ZDR/KDP.hdf or DWD per-moment sweep files listed by recast-radar-data); assert against merged cut carries every quantity; values from h5py"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773 (repeated elevations) and jma-n6-20191012-090000-rs47773; assert against repetitions kept with velocity, sequential numbering; ladder order from the GRIB2 walker"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/lib.rs"
+name = "tests::volume_can_keep_repeated_elevation_cuts_separate"
+status = "pending"
+justification = "pending C.2: real input jma-n5-20191012-090000-rs47773 (26 sweeps with repeated angles); assert against 26 cuts from the GRIB2 walker"
+
+# --- crates/recast-radar-data/src/international.rs
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::FakeProvider"
+status = "pending"
+justification = "pending C.2: helper, builds provider with an invented site and plan; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::FakeLoopProvider"
+status = "pending"
+justification = "pending C.2: helper, builds provider with invented recent frames; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::FakeLoopProvider::list_sites"
+status = "pending"
+justification = "pending C.2: helper, builds delegates to FakeProvider; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::FakeLoopProvider::latest"
+status = "pending"
+justification = "pending C.2: helper, builds delegates to FakeProvider; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::FakeArchiveProvider"
+status = "pending"
+justification = "pending C.2: helper, builds provider with invented archive plans; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::FakeArchiveProvider::list_sites"
+status = "pending"
+justification = "pending C.2: helper, builds delegates to FakeProvider; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::FakeArchiveProvider::latest"
+status = "pending"
+justification = "pending C.2: helper, builds delegates to FakeProvider; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::default_recent_is_a_single_frame_and_reports_no_loop_support"
+status = "pending"
+justification = "pending C.2: real input a real provider parsing a committed listing capture (src/international/fixtures/fmi_fianj_listing.xml or geosphere_listing_recent.xml); assert against frames and site ids from the captured listing"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::recent_source_routes_recent_and_flips_supports_recent_together"
+status = "pending"
+justification = "pending C.2: real input a real provider with recent-frame support over src/international/fixtures/ord_*_hour.xml; assert against frame count from the listing"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::default_archive_source_is_absent_and_reports_no_archive_support"
+status = "pending"
+justification = "pending C.2: real input a real provider without archive support; assert against trait defaults"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::archive_source_routes_day_plans_and_flips_supports_archive_together"
+status = "pending"
+justification = "pending C.2: real input a real archive-capable provider over committed day listings (ORD ord_*_hour.xml); assert against day plans from the listing"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::default_archive_progress_is_object_safe_and_honors_precancel"
+status = "pending"
+justification = "pending C.2: real input the same real archive-capable provider; assert against pre-cancel honoured"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::default_window_plans_folds_days_oldest_first_and_caps_to_the_newest"
+status = "pending"
+justification = "pending C.2: real input the same provider over two captured day listings; assert against oldest-first fold and cap from listing timestamps"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/international.rs"
+name = "tests::trait_contract_round_trips_through_a_boxed_provider"
+status = "pending"
+justification = "pending C.2: real input a real provider behind Box<dyn IntlProvider>; assert against listing-derived values round-trip; candidate exception (trait contract, no radar data) if no provider fits"
+
+# --- crates/recast-radar-data/src/tropical.rs
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/tropical.rs"
+name = "tests::synthetic_storm"
+status = "pending"
+justification = "pending C.2: helper, builds invented tropical cyclone record; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/tropical.rs"
+name = "tests::merge_dedupes_per_storm_not_per_basin"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: same-time captures of NHC CurrentStorms.json and the GDACS event list that share an Atlantic/East Pacific storm, committed under tests/fixtures/tropical/; assert against storm ids, names and positions from the captured JSON"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/tropical.rs"
+name = "tests::merge_drops_gdacs_duplicate_by_name"
+status = "pending"
+justification = "pending C.2: real input the same-time NHC + GDACS captures; assert against duplicate dropped by name"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/tropical.rs"
+name = "tests::merge_drops_gdacs_duplicate_by_position"
+status = "pending"
+justification = "pending C.2: real input the same-time NHC + GDACS captures; assert against duplicate dropped by position"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/tropical.rs"
+name = "tests::combine_keeps_all_gdacs_storms_when_nhc_is_down"
+status = "pending"
+justification = "pending C.2: real input committed tests/fixtures/tropical/gdacs_tc_list.json with an NHC error; assert against all GDACS storms kept"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-data/src/tropical.rs"
+name = "tests::empty_nhc_feed_does_not_hide_gdacs_atlantic_storm"
+status = "pending"
+justification = "pending C.2: real input the same-time captures with the NHC list emptied (edit of a real capture); assert against GDACS Atlantic storm kept"
+
+# --- crates/recast-radar-scattering/src/lut.rs
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::synthetic_node"
+status = "pending"
+justification = "pending C.2: helper, builds analytic affine scattering node; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::synthetic_fixture"
+status = "pending"
+justification = "pending C.2: helper, builds 2x2 analytic LUT; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::singleton_axis_fixture"
+status = "pending"
+justification = "pending C.2: helper, builds analytic LUT with a singleton axis; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::synthetic_fixture_round_trip_is_byte_deterministic"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against serialized bytes equal the committed LUT"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::synthetic_affine_fixture_interpolates_exactly_in_declared_axis_order"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against interpolated values vs pyTMatrix evaluated at the query points (tolerance)"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::prepared_plan_has_fixed_serializable_axis_ordered_layout"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against layout per PACK_FORMAT.md"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::prepared_execution_is_bit_identical_to_legacy_corner_order"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against prepared vs legacy interpolation bit-identical"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::prepared_plan_handles_singletons_and_exact_boundaries"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config (with a singleton axis); assert against exact at grid nodes"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::plan_preparation_preserves_outside_axis_failures"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against outside-axis errors"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::interpolation_refuses_extrapolation_and_nonfinite_coordinates"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against errors outside the axes and for non-finite coordinates"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::payload_and_external_config_hash_mismatches_fail_closed"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against hash mismatch errors after mutating the real payload/config"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::embedded_config_hash_is_recomputed_not_trusted"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config; assert against mutated embedded hash rejected"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::digest_cannot_hide_an_invalid_additive_grid_node"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config, a node value mutated to non-physical; assert against rejected despite a recomputed digest"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::file_magic_and_schema_are_never_guessed"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config, magic/schema bytes mutated; assert against rejected"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::redundant_header_contract_rejects_mislabeled_schema_axes_and_outputs"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config, header fields mutated; assert against rejected"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/lut.rs"
+name = "tests::singleton_axis_is_exact_and_does_not_duplicate_corner_weight"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: a small real T-matrix LUT generated by crates/recast-radar-scattering/tools/pytmatrix-0.3.3 (pyTMatrix 0.3.3), committed with its generator config (with a singleton axis); assert against exact node values"
+
+# --- crates/recast-radar-scattering/src/p3_table.rs
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/p3_table.rs"
+name = "tests::synthetic_table"
+status = "pending"
+justification = "pending C.2: helper, builds P3 table text with formula values; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/p3_table.rs"
+name = "tests::parse_synthetic"
+status = "pending"
+justification = "pending C.2: helper, builds parses the synthetic table; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/p3_table.rs"
+name = "tests::parser_accepts_exact_two_and_three_moment_record_layouts"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: the WRF run/p3_lookupTable_1.dat-v5.4_2momI and _3momI tables the crate targets (or record excerpts derived from them with provenance); assert against record counts and sample values read from the table text"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/p3_table.rs"
+name = "tests::parser_rejects_truncation_extra_content_nonfinite_values_and_wrong_indices"
+status = "pending"
+justification = "pending C.2: real input the WRF P3 tables above, truncated / with appended content / a value set to NaN / an index changed (edits of real text); assert against parse errors"
+
+# --- crates/recast-radar-scattering/src/scheme_psd.rs
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::synthetic_per_particle"
+status = "pending"
+justification = "pending C.2: helper, builds analytic per-particle scattering; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::synthetic_fall_speed_provenance"
+status = "pending"
+justification = "pending C.2: helper, builds invented fall-speed provenance; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::node_habit_comes_from_geometry_not_category_label"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against habit from node geometry"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::authenticated_solid_ice_closure_preserves_mass_and_shape_at_918_for_both_habits"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against mass and shape closure at 918 kg m-3"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::solid_ice_closure_rejects_an_unauthenticated_material_endpoint"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against rejection"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::equal_native_axes_produce_spherical_nodes"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against spherical nodes"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::exact_sphere_policy_represents_sub_floor_nodes_with_an_audited_route"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against audited route"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::small_sphere_policy_does_not_bridge_nonspheres_or_other_domain_misses"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against no bridging"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::refined_integration_closes_number_mass_d6_and_preserves_tail_audit"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against moment closure against analytic PSD integrals"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::size_dependent_fall_moments_produce_nonzero_variance"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against non-zero variance"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::narrow_particle_domain_fails_instead_of_clamping_nodes"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against error"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::sub_node_width_supported_sliver_cannot_hide_domain_omission"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against error"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::wrf_two_micron_mass_gap_is_typed_before_quadrature"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against typed gap error"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::qnsmall_qasmall_two_micron_mass_gap_is_typed_before_quadrature"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against typed gap error"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::unrelated_geometry_mass_gap_is_not_typed_as_wrf_two_micron_gap"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against untyped gap"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::callback_error_retains_quadrature_level_and_node"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against error context"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::node_budget_and_tail_limit_are_fail_closed"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against fail closed"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::prepared_workload_preserves_level_index_and_callback_order"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against callback order"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/scheme_psd.rs"
+name = "tests::prepared_cpu_finish_is_bit_identical_to_frozen_pre_refactor_result"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against re-freeze the pinned result on the real inputs"
+
+# --- crates/recast-radar-scattering/src/tmatrix_runtime.rs
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/tmatrix_runtime.rs"
+name = "tests::synthetic_speed_provenance"
+status = "pending"
+justification = "pending C.2: helper, builds invented fall-speed provenance; delete when its users are converted"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/tmatrix_runtime.rs"
+name = "tests::malformed_external_particle_node_still_fails_closed_after_preparation_seam"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against fails closed"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-scattering/src/tmatrix_runtime.rs"
+name = "tests::particle_node_query_rejects_habit_frequency_and_wrong_table_role"
+status = "pending"
+justification = "pending C.2: real input needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the SyntheticTestOnly provenance; assert against rejections"
