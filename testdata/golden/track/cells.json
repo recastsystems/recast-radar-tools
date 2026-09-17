@@ -1,0 +1,104 @@
+{
+ "kewx": {
+  "entry": "l2-kewx-20160413-022531",
+  "composite_max_dbz": 76.78,
+  "core_threshold_dbz": 60.0,
+  "min_core_area_km2": 20.0,
+  "cores": [
+   {
+    "east_km": -51.49,
+    "north_km": -18.525,
+    "max_dbz": 76.78,
+    "area_km2": 168.67,
+    "gates": 1403
+   },
+   {
+    "east_km": -128.516,
+    "north_km": -31.051,
+    "max_dbz": 72.48,
+    "area_km2": 58.12,
+    "gates": 202
+   },
+   {
+    "east_km": -188.47,
+    "north_km": -124.778,
+    "max_dbz": 67.32,
+    "area_km2": 63.09,
+    "gates": 128
+   },
+   {
+    "east_km": -135.47,
+    "north_km": 36.861,
+    "max_dbz": 66.89,
+    "area_km2": 22.67,
+    "gates": 74
+   }
+  ]
+ },
+ "kdvn": {
+  "entry": "l2-kdvn-20200810-180401",
+  "composite_max_dbz": 70.68,
+  "cartesian_cell_km": 1.0,
+  "smoothing_sigma_km": 1.5,
+  "envelope_threshold_dbz": 40.0,
+  "peak_threshold_dbz": 60.0,
+  "peak_window_km": 21,
+  "min_peak_separation_km": 15.0,
+  "envelope_area_km2": 15597,
+  "envelope_east_km": [-128.0,56.0],
+  "envelope_north_km": [-92.0,166.0],
+  "line_peaks": [
+   {
+    "east_km": -34.5,
+    "north_km": 76.5,
+    "smoothed_dbz": 63.12
+   },
+   {
+    "east_km": -12.5,
+    "north_km": 83.5,
+    "smoothed_dbz": 62.75
+   },
+   {
+    "east_km": 3.5,
+    "north_km": 129.5,
+    "smoothed_dbz": 62.2
+   },
+   {
+    "east_km": 17.5,
+    "north_km": 77.5,
+    "smoothed_dbz": 61.62
+   },
+   {
+    "east_km": -45.5,
+    "north_km": 50.5,
+    "smoothed_dbz": 60.94
+   },
+   {
+    "east_km": -91.5,
+    "north_km": 63.5,
+    "smoothed_dbz": 60.78
+   },
+   {
+    "east_km": 17.5,
+    "north_km": 122.5,
+    "smoothed_dbz": 60.27
+   },
+   {
+    "east_km": -43.5,
+    "north_km": 32.5,
+    "smoothed_dbz": 60.13
+   }
+  ]
+ },
+ "clear_air": {
+  "entry": "l2-ktlx-20240515-000014",
+  "composite_max_dbz": 40.83,
+  "patches_30dbz": 40,
+  "largest_30dbz_patch_km2": 0.24
+ },
+ "stub": {
+  "entry": "l2-tbwi-20230601-175101-stub",
+  "sweeps": 0,
+  "volume_time": "2023-06-01T17:51:01.000Z"
+ }
+}

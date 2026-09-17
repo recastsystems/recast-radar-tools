@@ -1106,12 +1106,16 @@ name = "recast-radar-track"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "flate2",
  "image",
  "recast-radar-core",
  "recast-radar-correct",
+ "recast-radar-io-dorade",
  "recast-radar-io-nexrad",
  "recast-radar-map",
  "recast-radar-retrieve",
+ "recast-radar-testdata",
+ "serde_json",
 ]
 
 [[package]]

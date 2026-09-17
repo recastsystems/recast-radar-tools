@@ -120,13 +120,40 @@ tags = ["era:2016", "site:kewx", "radar:wsr-88d", "header:AR2V0006", "build:16.1
 description = "KEWX 2016-04-13 02:25Z; San Antonio hailstorm ~55-60 km W with 70.5 dBZ cores: the lowest sweep has 259 gates >= 60 dBZ within 120 km, 39 of them with RHOHV < 0.93 and |ZDR| < 1 dB. Build 16.1, VCP 212 with one SAILS cut, 19 sweeps / 9720 radials."
 
 [[file]]
+id = "l2-kdvn-20200810-175718"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_175718_V06"]
+sha256 = "3e785475b2fd40be69a7c2eaa22170574aa9b36fd92f9fb32520f2d3eff680fb"
+size = 15760259
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 17:57:18Z; the volume before l2-kdvn-20200810-180401 (same layout: AR2V0006.156, 94 LDM bzip2 records, VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials). First of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810) used with the Level III Storm Tracking Information products l3-kdvn-20200810-*-nst by the storm-tracking tests."
+
+[[file]]
 id = "l2-kdvn-20200810-180401"
 format = "nexrad-level2"
 urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_180401_V06"]
 sha256 = "665415a2e2e7451fb0a030d97538f621a408002383d32a036962b579311bc808"
 size = 16063887
-tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
-description = "KDVN 2020-08-10 18:04Z; Iowa derecho bow echo 100-150 km W of the radar with aliased Doppler velocity in the bow. Uncompressed file of 94 LDM bzip2 records, Build 18.2, VOL 44 v2.0 / RAD 28, ZDR 8-bit, Message 13 present. VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials."
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 18:04Z; Iowa derecho bow echo 100-150 km W of the radar with aliased Doppler velocity in the bow. Uncompressed file of 94 LDM bzip2 records, Build 18.2, VOL 44 v2.0 / RAD 28, ZDR 8-bit, Message 13 present. VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials. Second of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810)."
+
+[[file]]
+id = "l2-kdvn-20200810-181043"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_181043_V06"]
+sha256 = "9aa4b6053ec7ef4a8292b04d940c292acadd18a93f0872f4ce39a397d71b3d97"
+size = 16341122
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 18:10:43Z; the volume after l2-kdvn-20200810-180401 (same layout: AR2V0006.158, 94 LDM bzip2 records, VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials). Third of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810)."
+
+[[file]]
+id = "l2-kdvn-20200810-181724"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_181724_V06"]
+sha256 = "5165223d6b45b626bfa3fb01794c1c0b70ddfbeea9fccffa38978f0bbae80187"
+size = 16483359
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 18:17:24Z; two volumes after l2-kdvn-20200810-180401 (same layout: AR2V0006.159, 94 LDM bzip2 records, VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials). Last of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810)."
 
 [[file]]
 id = "l2-klix-20210829-180425"
