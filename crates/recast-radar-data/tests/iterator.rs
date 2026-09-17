@@ -1652,6 +1652,322 @@ mod stream {
 }
 
 // ---------------------------------------------------------------------------
+// HTTP clients over loopback, serving recorded responses
+// ---------------------------------------------------------------------------
+
+/// The crate's real HTTP transports (blocking `ReqwestTransport`, feature
+/// `net`; async `AsyncReqwestTransport`, feature `async-client`) against a
+/// loopback HTTP/1.1 server that answers with a cassette's recorded
+/// responses: listing XML and chunk bytes as 200 bodies. A recorded
+/// `TooLarge` refusal is answered with the headers S3 sent, a
+/// `Content-Length` of the chunk's listed size, and no body.
+#[cfg(any(feature = "net", feature = "async-client"))]
+mod http {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    use recast_radar_data::realtime::iterator::CHUNKS_BUCKET_URL;
+
+    use super::*;
+
+    #[derive(Clone, Debug)]
+    pub enum Answer {
+        Body(Vec<u8>),
+        Status(u16),
+        /// Headers announcing this many bytes, then the connection closes.
+        HeadersOnly(u64),
+    }
+
+    /// A loopback server that expects `script` (path and query, answer) in
+    /// order, one connection per request.
+    pub struct Server {
+        pub base: String,
+        pub requests: Arc<Mutex<Vec<String>>>,
+        expected: Vec<String>,
+    }
+
+    impl Server {
+        pub fn start(script: Vec<(String, Answer)>) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            let base = format!("http://{}", listener.local_addr().expect("addr"));
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let log = Arc::clone(&requests);
+            let expected = script.iter().map(|(path, _)| path.clone()).collect();
+            std::thread::spawn(move || {
+                for (_, answer) in script {
+                    let Ok((stream, _)) = listener.accept() else {
+                        return;
+                    };
+                    let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+                    let mut request_line = String::new();
+                    reader.read_line(&mut request_line).expect("request line");
+                    let mut header = String::new();
+                    while reader.read_line(&mut header).expect("header") > 2 {
+                        header.clear();
+                    }
+                    let path = request_line
+                        .split(' ')
+                        .nth(1)
+                        .unwrap_or_default()
+                        .to_owned();
+                    log.lock().expect("log").push(path);
+                    let mut stream = stream;
+                    let (status, length, body) = match &answer {
+                        Answer::Body(body) => (200, body.len() as u64, body.as_slice()),
+                        Answer::Status(status) => (*status, 0, &[][..]),
+                        Answer::HeadersOnly(length) => (200, *length, &[][..]),
+                    };
+                    let head = format!(
+                        "HTTP/1.1 {status} Recorded\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n"
+                    );
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(body);
+                    let _ = stream.flush();
+                }
+            });
+            Self {
+                base,
+                requests,
+                expected,
+            }
+        }
+
+        /// Every expected request arrived, in order, and nothing else.
+        pub fn assert_served(&self, name: &str) {
+            let requests = self.requests.lock().expect("log").clone();
+            assert_eq!(requests, self.expected, "{name}: requests over HTTP");
+        }
+    }
+
+    /// The listed size of `key` in the cassette's recorded listings.
+    fn listed_size(cassette: &Cassette, key: &str) -> u64 {
+        cassette
+            .requests
+            .iter()
+            .filter_map(|request| match &request.response {
+                Ok(RecordedBody::Text(xml)) => Some(xml),
+                _ => None,
+            })
+            .find_map(|xml| {
+                let rest = xml.split(&format!("<Key>{key}</Key>")).nth(1)?;
+                rest.split("<Size>")
+                    .nth(1)?
+                    .split("</Size>")
+                    .next()?
+                    .parse()
+                    .ok()
+            })
+            .unwrap_or_else(|| panic!("{key} not listed"))
+    }
+
+    /// Path and query of recorded request `index`, and its recorded answer.
+    pub fn recorded(cassette: &Cassette, index: usize) -> (String, Answer) {
+        let request = &cassette.requests[index];
+        let path = request
+            .url
+            .strip_prefix(CHUNKS_BUCKET_URL)
+            .expect("bucket url")
+            .to_owned();
+        let answer = match &request.response {
+            Ok(body) => Answer::Body(cassette.body(body)),
+            Err(error) => match error.kind {
+                TransportErrorKind::Status(status) => Answer::Status(status),
+                TransportErrorKind::TooLarge => {
+                    Answer::HeadersOnly(listed_size(cassette, path.trim_start_matches('/')))
+                }
+                other => panic!("cannot serve a recorded {other:?}"),
+            },
+        };
+        (path, answer)
+    }
+
+    pub fn script(cassette: &Cassette) -> Vec<(String, Answer)> {
+        (0..cassette.requests.len())
+            .map(|index| recorded(cassette, index))
+            .collect()
+    }
+
+    pub fn config(cassette: &Cassette, server: &Server) -> ChunkIteratorConfig {
+        ChunkIteratorConfig {
+            bucket_url: server.base.clone(),
+            ..cassette.config()
+        }
+    }
+
+    /// A summary with the loopback base URL put back to the bucket URL, and
+    /// error messages cut after the error kind (the transports word their
+    /// detail differently).
+    pub fn normalized(event: &Event, base: &str) -> Value {
+        let mut summary = summarize(event);
+        if let Some(url) = summary["url"].as_str() {
+            summary["url"] = json!(url.replace(base, CHUNKS_BUCKET_URL));
+        }
+        if let Some(message) = summary["message"].as_str() {
+            let message = message.replace(base, CHUNKS_BUCKET_URL);
+            let cut = message
+                .find("attempt(s): ")
+                .map(|at| at + "attempt(s): ".len())
+                .and_then(|start| {
+                    message[start..]
+                        .find(':')
+                        .map(|colon| message[..start + colon].to_owned())
+                })
+                .unwrap_or(message);
+            summary["message"] = json!(cut);
+        }
+        summary
+    }
+
+    pub fn normalized_recording(cassette: &Cassette) -> Vec<Value> {
+        cassette
+            .events
+            .iter()
+            .map(|summary| {
+                let mut summary = summary.clone();
+                if let Some(message) = summary["message"].as_str() {
+                    let cut = message
+                        .find("attempt(s): ")
+                        .map(|at| at + "attempt(s): ".len())
+                        .and_then(|start| {
+                            message[start..]
+                                .find(':')
+                                .map(|colon| message[..start + colon].to_owned())
+                        })
+                        .unwrap_or_else(|| message.to_owned());
+                    summary["message"] = json!(cut);
+                }
+                summary
+            })
+            .collect()
+    }
+
+    /// Cassettes whose every recorded answer can be served: listings, chunk
+    /// bytes and a Content-Length refusal.
+    pub const SERVED: &[&str] = &[
+        "tlas-next-volume-bytes",
+        "tlas-chunk-too-large",
+        "tmco-710-abandoned",
+    ];
+
+    /// `tlas-next-volume-bytes` with a 404 for the first download of chunk 2,
+    /// then the relisting (request 19 again) and the recorded rest.
+    pub fn not_found_script(cassette: &Cassette) -> Vec<(String, Answer)> {
+        let mut script = script(cassette);
+        let (chunk_2, _) = recorded(cassette, 20);
+        script.insert(20, recorded(cassette, 19));
+        script.insert(20, (chunk_2, Answer::Status(404)));
+        script
+    }
+
+    #[cfg(feature = "net")]
+    #[test]
+    fn blocking_https_transport_over_http() {
+        use recast_radar_data::realtime::iterator::ReqwestTransport;
+
+        for name in SERVED {
+            let cassette = Cassette::load(name);
+            let server = Server::start(script(&cassette));
+            let transport = ReqwestTransport::try_new().expect("client");
+            let mut iter =
+                ChunkIterator::new(cassette.site(), config(&cassette, &server), transport);
+            let events = take_events(&mut iter, cassette.events.len());
+            let summaries: Vec<Value> = events
+                .iter()
+                .map(|event| normalized(event, &server.base))
+                .collect();
+            assert_eq!(summaries, normalized_recording(&cassette), "{name}");
+            assert_eq!(
+                &stats_json(&iter.stats()),
+                cassette.recorded_stats(),
+                "{name}"
+            );
+            server.assert_served(name);
+        }
+
+        let cassette = Cassette::load("tlas-next-volume-bytes");
+        let server = Server::start(not_found_script(&cassette));
+        let transport = ReqwestTransport::try_new().expect("client");
+        let mut iter = ChunkIterator::new(cassette.site(), config(&cassette, &server), transport);
+        let events = take_events(&mut iter, cassette.events.len() + 2);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Err(ChunkIterError::Transport { error, .. })
+                if error.kind == TransportErrorKind::Status(404)
+        )));
+        let rest: Vec<Value> = without_fault_events(&events)
+            .into_iter()
+            .map(|mut summary| {
+                if let Some(url) = summary["url"].as_str() {
+                    summary["url"] = json!(url.replace(&server.base, CHUNKS_BUCKET_URL));
+                }
+                summary
+            })
+            .collect();
+        assert_eq!(rest, cassette.events);
+        server.assert_served("404");
+    }
+
+    #[cfg(feature = "async-client")]
+    #[test]
+    fn async_https_transport_over_http() {
+        use std::pin::Pin;
+
+        use futures_core::Stream;
+        use recast_radar_data::realtime::stream::{AsyncReqwestTransport, ChunkStream};
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let collect = |stream: &mut ChunkStream<AsyncReqwestTransport>, count: usize| {
+            runtime.block_on(async {
+                let mut events = Vec::new();
+                while events.len() < count {
+                    let event =
+                        std::future::poll_fn(|cx| Pin::new(&mut *stream).poll_next(cx)).await;
+                    events.push(event.expect("the chunk stream never ends"));
+                }
+                events
+            })
+        };
+
+        for name in SERVED {
+            let cassette = Cassette::load(name);
+            let server = Server::start(script(&cassette));
+            let transport = AsyncReqwestTransport::new().expect("client");
+            let mut stream =
+                ChunkStream::new(cassette.site(), config(&cassette, &server), transport);
+            let events = collect(&mut stream, cassette.events.len());
+            let summaries: Vec<Value> = events
+                .iter()
+                .map(|event| normalized(event, &server.base))
+                .collect();
+            assert_eq!(summaries, normalized_recording(&cassette), "{name}");
+            assert_eq!(
+                &stats_json(&stream.stats()),
+                cassette.recorded_stats(),
+                "{name}"
+            );
+            server.assert_served(name);
+        }
+
+        let cassette = Cassette::load("tlas-next-volume-bytes");
+        let server = Server::start(not_found_script(&cassette));
+        let transport = AsyncReqwestTransport::new().expect("client");
+        let mut stream = ChunkStream::new(cassette.site(), config(&cassette, &server), transport);
+        let events = collect(&mut stream, cassette.events.len() + 2);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Err(ChunkIterError::Transport { error, .. })
+                if error.kind == TransportErrorKind::Status(404)
+        )));
+        assert_eq!(without_fault_events(&events), cassette.events);
+        server.assert_served("404");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Capture (live; run through tests/fixtures/listings/capture.sh)
 // ---------------------------------------------------------------------------
 

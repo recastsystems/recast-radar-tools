@@ -6,6 +6,11 @@
 //! identical responses. The stream depends on no runtime: it never sleeps or
 //! spawns. On [`ChunkEvent::Idle`] and [`ChunkEvent::Retry`] the caller waits
 //! with its own runtime's timer before polling the stream again.
+//!
+//! Feature `async-client` adds `AsyncReqwestTransport`, a non-blocking
+//! HTTPS client (reqwest). On native targets its requests run on a Tokio
+//! runtime, as reqwest requires; on `wasm32-unknown-unknown`, which has no
+//! blocking client, it uses the browser's `fetch`.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -100,4 +105,143 @@ impl<T: AsyncChunkTransport> Stream for ChunkStream<T> {
             }
         }
     }
+}
+
+/// The future [`AsyncReqwestTransport`] returns for one request.
+#[cfg(all(feature = "async-client", not(target_arch = "wasm32")))]
+pub type ReqwestFetch = Pin<Box<dyn Future<Output = Result<Vec<u8>, TransportError>> + Send>>;
+
+/// The future [`AsyncReqwestTransport`] returns for one request.
+#[cfg(all(feature = "async-client", target_arch = "wasm32"))]
+pub type ReqwestFetch = Pin<Box<dyn Future<Output = Result<Vec<u8>, TransportError>>>>;
+
+/// [`AsyncChunkTransport`] over reqwest's async client (feature
+/// `async-client`).
+///
+/// Status, timeout, connection and body failures map to
+/// [`TransportErrorKind`](super::iterator::TransportErrorKind) as in the
+/// blocking `ReqwestTransport`, and a body larger than
+/// [`FetchRequest::max_bytes`] fails with `TooLarge` (from `Content-Length`
+/// when present, else while reading). On native targets the futures must be
+/// polled inside a Tokio runtime.
+#[cfg(feature = "async-client")]
+#[derive(Clone, Debug)]
+pub struct AsyncReqwestTransport {
+    client: reqwest::Client,
+}
+
+#[cfg(feature = "async-client")]
+impl AsyncReqwestTransport {
+    /// Request timeout on native targets (on wasm32 the browser applies its
+    /// own).
+    pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+
+    /// A transport with a new client: on native targets rustls, a 10 s
+    /// connect timeout and a [`Self::TIMEOUT`] request timeout.
+    pub fn new() -> Result<Self, TransportError> {
+        let builder = reqwest::Client::builder();
+        #[cfg(not(target_arch = "wasm32"))]
+        let builder = builder
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(Self::TIMEOUT)
+            .user_agent(concat!("recast-radar-data/", env!("CARGO_PKG_VERSION")));
+        builder
+            .build()
+            .map(Self::with_client)
+            .map_err(async_transport_error)
+    }
+
+    /// A transport over a caller-configured client.
+    pub fn with_client(client: reqwest::Client) -> Self {
+        Self { client }
+    }
+}
+
+#[cfg(feature = "async-client")]
+impl AsyncChunkTransport for AsyncReqwestTransport {
+    type Fetch = ReqwestFetch;
+
+    fn fetch(&mut self, request: &FetchRequest) -> Self::Fetch {
+        let client = self.client.clone();
+        let url = request.url.clone();
+        let max_bytes = request.max_bytes;
+        Box::pin(async move {
+            use super::iterator::TransportErrorKind;
+
+            let too_large = |bytes: String| {
+                TransportError::new(
+                    TransportErrorKind::TooLarge,
+                    format!("{url}: body of {bytes} bytes exceeds the {max_bytes}-byte limit"),
+                )
+            };
+            let response = client
+                .get(&url)
+                .send()
+                .await
+                .map_err(async_transport_error)?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(TransportError::new(
+                    TransportErrorKind::Status(status.as_u16()),
+                    format!("{status} for {url}"),
+                ));
+            }
+            if let Some(length) = response
+                .content_length()
+                .filter(|length| *length > max_bytes as u64)
+            {
+                return Err(too_large(length.to_string()));
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let mut response = response;
+                let mut body = Vec::new();
+                while let Some(part) = response.chunk().await.map_err(async_transport_error)? {
+                    if body.len() + part.len() > max_bytes {
+                        return Err(too_large(format!("more than {max_bytes}")));
+                    }
+                    body.extend_from_slice(&part);
+                }
+                Ok(body)
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let body = response.bytes().await.map_err(async_transport_error)?;
+                if body.len() > max_bytes {
+                    return Err(too_large(body.len().to_string()));
+                }
+                Ok(body.to_vec())
+            }
+        })
+    }
+}
+
+#[cfg(feature = "async-client")]
+fn async_transport_error(err: reqwest::Error) -> TransportError {
+    use super::iterator::TransportErrorKind;
+
+    // reqwest has no connect classification on wasm32.
+    #[cfg(not(target_arch = "wasm32"))]
+    let connect = err.is_connect();
+    #[cfg(target_arch = "wasm32")]
+    let connect = false;
+    let kind = if err.is_timeout() {
+        TransportErrorKind::Timeout
+    } else if connect || err.is_request() {
+        TransportErrorKind::Connect
+    } else if let Some(status) = err.status() {
+        TransportErrorKind::Status(status.as_u16())
+    } else if err.is_body() || err.is_decode() {
+        TransportErrorKind::Body
+    } else {
+        TransportErrorKind::Other
+    };
+    let mut message = err.to_string();
+    let mut source = std::error::Error::source(&err);
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    TransportError::new(kind, message)
 }

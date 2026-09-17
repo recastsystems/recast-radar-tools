@@ -16,6 +16,10 @@ net = ["dep:reqwest"]
 # real-time chunk planner as the blocking `ChunkIterator`, generic over an
 # `AsyncChunkTransport`. Runtime-agnostic: it never sleeps or spawns.
 async = ["dep:futures-core"]
+# `realtime::stream::AsyncReqwestTransport`: a non-blocking HTTPS client for
+# `ChunkStream` (reqwest's async client; Tokio on native targets, the browser's
+# fetch on wasm32-unknown-unknown). Does not enable the blocking client (`net`).
+async-client = ["async", "dep:reqwest"]
 
 [dependencies]
 chrono.workspace = true
@@ -34,6 +38,11 @@ recast-radar-io = { path = "../recast-radar-io" }
 # tests; the library itself never parses GRIB2.
 recast-radar-io-jma = { path = "../recast-radar-io-jma" }
 recast-radar-testdata = { path = "../recast-radar-testdata" }
+
+# Drives AsyncReqwestTransport in tests/iterator.rs (already in the lockfile
+# through reqwest).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["net", "rt", "time"] }
 
 # Every example talks to live endpoints.
 [[example]]
