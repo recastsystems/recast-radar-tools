@@ -1,0 +1,967 @@
+# NEXRAD Level II corpus (TD.1): archive volumes across eras, RDA builds, VCPs and weather regimes,
+# plus one real-time chunk volume captured live. Loaded by recast-radar-testdata together with
+# testdata/manifest.toml; schema documented there. Provenance and verification: docs/testdata/corpus-level2.md
+
+[[file]]
+id = "l2-ktlx-19910605-162126"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/1991/06/05/KTLX/KTLX19910605_162126.gz"]
+sha256 = "8533beba43253a68c91adf75f8de2a6f351843ec97a76858bd3fd124b68f6293"
+size = 1439817
+tags = ["era:1991", "site:ktlx", "radar:wsr-88d", "header:ARCHIVE2", "icao:blank", "compression:gzip", "records:raw", "msg:1", "msg:2", "no-metadata-record", "vcp:21", "res:legacy", "regime:convective", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KTLX 1991-06-05 16:21Z; earliest volume in the AWS Level II archive. ARCHIVE2.001 header whose ICAO field is four spaces; gzip of raw 2432-byte records holding only Message 1 (4017 radials) and Message 2 (no metadata record). VCP 21, 11 sweeps (REF 1 km gates, Doppler 250 m); thunderstorms to 59.5 dBZ within 25 km on the lowest sweep."
+
+[[file]]
+id = "l2-ktlx-19990503-230052"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/1999/05/03/KTLX/KTLX19990503_230052.gz"]
+sha256 = "11b0e142f43146426a188842f4a3b49f6c43115e4e02fa872fef1371eb36e7eb"
+size = 9424
+tags = ["era:1999", "site:ktlx", "radar:wsr-88d", "header:ARCHIVE2", "icao:nul", "compression:gzip", "records:raw", "msg:1", "msg:2", "vcp:11", "res:legacy", "edge:truncated", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KTLX 1999-05-03 23:00Z; truncated archive object (9424 bytes gzip, 172696 bytes raw = 24-byte ARCHIVE2.022 header + 71 whole 2432-byte records): 3 Message 2 and the first 68 Message 1 radials of the 0.5 deg reflectivity cut, then end of file. Py-ART and MetPy both return 1 sweep of 68 rays."
+
+[[file]]
+id = "l2-ktlx-19990504-002218"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/1999/05/04/KTLX/KTLX19990504_002218.gz"]
+sha256 = "1d94cbb7680e2ba2e888b098631762cc024924d1e04a0ca3465333dab761bf65"
+size = 2473255
+tags = ["era:1999", "site:ktlx", "radar:wsr-88d", "header:ARCHIVE2", "icao:nul", "compression:gzip", "records:raw", "msg:1", "msg:2", "vcp:11", "res:legacy", "regime:tornado", "bench", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KTLX 1999-05-04 00:22Z; 3 May 1999 Bridge Creek-Moore F5 supercell within ~30 km of the radar (69.5 dBZ at 23 km). ARCHIVE2.036 header with NUL ICAO, gzip of raw records: 5855 Message 1 radials and 3 Message 2, VCP 11, 16 sweeps. Legacy Message 1 volume for the benchmark corpus."
+
+[[file]]
+id = "l2-ktlx-20030508-221041"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2003/05/08/KTLX/KTLX20030508_221041.gz"]
+sha256 = "6c5e028be67773ea0203afe4d067e21bba86e73958f2afe3e4bdd02a89f9a03a"
+size = 1652210
+tags = ["era:2003", "site:ktlx", "radar:wsr-88d", "header:ARCHIVE2", "icao:nul", "compression:gzip", "records:raw", "msg:1", "msg:2", "msg:202", "vcp:11", "res:legacy", "regime:tornado", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KTLX 2003-05-08 22:10Z; Moore F4 tornado supercell with a hook echo ~15 km W of the radar. ARCHIVE2.224 header with NUL ICAO; the first record carries message type 202 (18 halfwords, not an ICD message) ahead of 5856 Message 1 radials and 2 Message 2. VCP 11, 16 sweeps."
+
+[[file]]
+id = "l2-klix-20050829-130035"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2005/08/29/KLIX/KLIX20050829_130035.gz"]
+sha256 = "af4f106ef886e17cc809802b1f753329744842bf62727cf9082a2a1469b80d14"
+size = 4750949
+tags = ["era:2005", "site:klix", "radar:wsr-88d", "header:AR2V0001", "compression:gzip", "records:raw", "msg:1", "msg:2", "msg:3", "msg:5", "msg:13", "msg:15", "msg:18", "segmented:15", "segmented:13", "vcp:121", "res:legacy", "regime:hurricane", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KLIX 2005-08-29 13:00Z; Hurricane Katrina eye ~60 km S of the radar with the eyewall in range and strongly aliased velocity. AR2V0001.029 header, gzip of uncompressed records: metadata (Message 15 in 62 segments, Message 13 in 48, 18, 3, 5, 2) and 7252 Message 1 radials. VCP 121: 20 sweeps with 4 cuts near 0.5 deg, 4 near 1.45, 3 near 2.4, 3 near 3.3, 2 near 4.2 deg."
+
+[[file]]
+id = "l2-kvwx-20080415-235337"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2008/04/15/KVWX/KVWX20080415_235337_V01.gz"]
+sha256 = "31fb5f6c53b452c65e5b0fc0931c521fa1ac2f3e8426a89e04548d0fc4de3d37"
+size = 175233
+tags = ["era:2008", "site:kvwx", "radar:wsr-88d", "header:AR2V0001", "compression:gzip", "records:raw", "msg:31", "msg:2", "msg:13", "msg:15", "no-msg5", "vol-block:44", "rad-block:20", "vcp:32", "res:legacy", "edge:header-version-mismatch", "regime:clear-air", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KVWX 2008-04-15 23:53Z; the header says AR2V0001 but the radials are Message 31 (2500 radials at 1 deg; REF 460 gates x 1 km from 500 m; VOL 44 v1.0 / RAD 20 blocks). No Message 5, 105 records with message type 0, Message 2 RDA-build field raw value 1996. VCP 32 clear air, 7 sweeps."
+
+[[file]]
+id = "l2-kpah-20080415-235014"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2008/04/15/KPAH/KPAH20080415_235014_V04.gz"]
+sha256 = "788b1956e9cb47c0d665e49d52b6657a55196296213e36d0cf928d019a8852bf"
+size = 294612
+tags = ["era:2008", "site:kpah", "radar:wsr-88d", "header:AR2V0004", "build:10.0", "compression:gzip", "records:raw", "msg:31", "segmented:15", "vol-block:44", "rad-block:20", "vcp:32", "res:legacy", "regime:clear-air", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KPAH 2008-04-15 23:50Z; AR2V0004, Build 10.0 Message 31 at legacy resolution: 2520 radials at 1 deg, REF 460 gates x 1 km from 500 m, VOL 44 v1.0 / RAD 20 blocks, Message 15 in 77 segments. VCP 32 clear air, 7 sweeps."
+
+[[file]]
+id = "l2-kdmx-20080525-205148"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2008/05/25/KDMX/KDMX20080525_205148_V03.gz"]
+sha256 = "fbc999bd44b2d769449c8da988f12923c79d373f270ce279580f246975ed1a14"
+size = 3302990
+tags = ["era:2008", "site:kdmx", "radar:wsr-88d", "header:AR2V0003", "build:10.0", "compression:gzip", "records:raw", "msg:31", "msg:13", "vol-block:44", "rad-block:20", "vcp:212", "res:super", "regime:convective", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDMX 2008-05-25 20:51Z; first-generation super-resolution Message 31 (AR2V0003, Build 10.0): 8280 radials, 0.5 deg / 250 m split cuts, VOL 44 v1.0 / RAD 20 blocks, REF/VEL/SW only, 73 records with message type 0 among the metadata. VCP 212, 17 sweeps; storms to 68 dBZ at 123 km."
+
+[[file]]
+id = "l2-kvnx-20110315-000203"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2011/03/15/KVNX/KVNX20110315_000203_V06.gz"]
+sha256 = "9ce66976bc8589b73883ee4b2dc69aa23bf594785edda469863e1f6e86486945"
+size = 1260464
+tags = ["era:2011", "site:kvnx", "radar:wsr-88d", "header:AR2V0006", "build:12.0", "compression:gzip", "records:raw", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:20", "vcp:32", "res:super", "regime:clear-air", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KVNX 2011-03-15 00:02Z; early operational dual-pol volume (AR2V0006, Build 12.0): ZDR and RHO 8-bit, PHI 16-bit, VOL 44 v1.0 / RAD 20 blocks. VCP 32 clear air, 7 sweeps / 3960 radials."
+
+[[file]]
+id = "l2-ktlx-20130520-201643"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2013/05/20/KTLX/KTLX20130520_201643_V06.gz"]
+sha256 = "772e01b154a5c966982a6d0aa2fc78bc64f08a9b77165b74dc02d7aa5aa69275"
+size = 9548976
+tags = ["era:2013", "site:ktlx", "radar:wsr-88d", "header:AR2V0006", "build:13.2", "compression:gzip", "records:raw", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:20", "vcp:12", "res:super", "regime:tornado", "bench", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KTLX 2013-05-20 20:16Z; Moore EF5 tornado supercell near the radar (69.5 dBZ at 23 km). AR2V0006 gzip, Build 13.2, VOL 44 v1.0 / RAD 20 blocks, ZDR 8-bit. VCP 12, 17 sweeps / 8280 radials. Benchmark corpus volume."
+
+[[file]]
+id = "l2-kgwx-20130601-235640"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2013/06/01/KGWX/KGWX20130601_235640_V07.gz"]
+sha256 = "995a2d82354997bbb2ad574932e0fdf19e4b997ae98ed3b1a9dee4755e3b00c3"
+size = 4502847
+tags = ["era:2013", "site:kgwx", "radar:wsr-88d", "header:AR2V0007", "build:13.1", "compression:gzip", "records:raw", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:20", "vcp:212", "res:legacy", "first-gate:125m", "regime:convective", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KGWX 2013-06-01 23:56Z; AR2V0007 dual-pol at legacy azimuthal resolution (Build 13.1): 360 radials per sweep at 1 deg, 250 m gates starting at 125 m (REF 1840 gates), VOL 44 v1.0 / RAD 20. VCP 212, 16 sweeps; storms to 60 dBZ at 222 km."
+
+[[file]]
+id = "l2-koax-20140616-205305"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2014/06/16/KOAX/KOAX20140616_205305_V06.gz"]
+sha256 = "0250d1f8719ffde3fd9ca137b9cd0ab728ddb0c97f4225d69dc42a6525f8bea9"
+size = 11549918
+tags = ["era:2014", "site:koax", "radar:wsr-88d", "header:AR2V0006", "build:14.0", "compression:gzip", "records:raw", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "sails", "res:super", "regime:tornado", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KOAX 2014-06-16 20:53Z; Pilger, NE twin-tornado supercell ~110 km NW. Build 14.0 with VOL block v2.0 and the 28-byte RAD block. VCP 212 with one SAILS 0.5 deg split cut inserted after 3.1 deg (19 cuts; the Message 5 supplemental halfword is 0). 19 sweeps / 9720 radials."
+
+[[file]]
+id = "l2-kewx-20160413-022531"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2016/04/13/KEWX/KEWX20160413_022531_V06.gz"]
+sha256 = "1beb4252e87fe84061cbb526bea02b322ad8445628348f06c45cd3f070cbbed5"
+size = 15533296
+tags = ["era:2016", "site:kewx", "radar:wsr-88d", "header:AR2V0006", "build:16.1", "compression:gzip", "records:raw", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "sails", "res:super", "regime:hail", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KEWX 2016-04-13 02:25Z; San Antonio hailstorm ~55-60 km W with 70.5 dBZ cores: the lowest sweep has 259 gates >= 60 dBZ within 120 km, 39 of them with RHOHV < 0.93 and |ZDR| < 1 dB. Build 16.1, VCP 212 with one SAILS cut, 19 sweeps / 9720 radials."
+
+[[file]]
+id = "l2-kdvn-20200810-180401"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_180401_V06"]
+sha256 = "665415a2e2e7451fb0a030d97538f621a408002383d32a036962b579311bc808"
+size = 16063887
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 18:04Z; Iowa derecho bow echo 100-150 km W of the radar with aliased Doppler velocity in the bow. Uncompressed file of 94 LDM bzip2 records, Build 18.2, VOL 44 v2.0 / RAD 28, ZDR 8-bit, Message 13 present. VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials."
+
+[[file]]
+id = "l2-klix-20210829-180425"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2021/08/29/KLIX/KLIX20210829_180425_V06"]
+sha256 = "729483bb8b4587686acb885c967261dc49692f04244aec458ad4d94d683e228a"
+size = 17635589
+tags = ["era:2021", "site:klix", "radar:wsr-88d", "header:AR2V0006", "build:19.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:44", "rad-block:28", "vcp:112", "mpda", "sails", "res:super", "regime:hurricane", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KLIX 2021-08-29 18:04Z; Hurricane Ida eye ~140 km SW with the eyewall in range and an aliased velocity couplet. Build 19.1, CFP moment present, ZDR 16-bit, no Message 13. VCP 112 with the MPDA flag and SAILS x1: three cuts each near 0.5, 0.9 and 1.3 deg, 23 sweeps / 12600 radials."
+
+[[file]]
+id = "l2-klix-20210829-175748-mdm"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2021/08/29/KLIX/KLIX20210829_175748_V06_MDM"]
+sha256 = "45c1d37ee7711fabeee021cbc65532e0399375c0b6c4cc3cac023070da180090"
+size = 812213
+tags = ["era:2021", "site:klix", "radar:wsr-88d", "file:mdm", "compression:ldm-bzip2", "msg:29", "edge:no-volume-header", "edge:size-0xffff", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KLIX 2021-08-29 17:57Z model-data file (_V06_MDM): no 24-byte volume header; one bzip2 LDM record (812209 bytes) holding a single Message 29 whose size uses the 0xFFFF halfword convention (809229 bytes). Py-ART rejects it; MetPy reads 0 sweeps."
+
+[[file]]
+id = "l2-kbox-20220129-150537"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2022/01/29/KBOX/KBOX20220129_150537_V06"]
+sha256 = "bd98f912b781e2cbffd818cbbd56b3d2fde56254d6fb70247313f89d86b9df6c"
+size = 12070983
+tags = ["era:2022", "site:kbox", "radar:wsr-88d", "header:AR2V0006", "build:20.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:215", "res:super", "regime:winter-storm", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KBOX 2022-01-29 15:05Z; blizzard snow bands over southern New England with strong aliased winds. Build 20.1 with the 52-byte VOL block (v3.0). VCP 215, 18 sweeps / 8640 radials."
+
+[[file]]
+id = "l2-tjua-20220918-190621"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2022/09/18/TJUA/TJUA20220918_190621_V06"]
+sha256 = "e7e364dc0729fbe652984fe8b95d47b73c024bd9b214153c3da6e43953015179"
+size = 18452163
+tags = ["era:2022", "site:tjua", "radar:wsr-88d", "header:AR2V0006", "build:20.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:215", "sails", "res:super", "regime:hurricane", "regime:non-conus", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "TJUA 2022-09-18 19:06Z; Hurricane Fiona at landfall in SW Puerto Rico, eye ~100 km W of the radar with the eyewall in range. Build 20.1, VCP 215 SAILS x1, 20 sweeps / 10080 radials."
+
+[[file]]
+id = "l2-kdgx-20230325-010651"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2023/03/25/KDGX/KDGX20230325_010651_V06"]
+sha256 = "929688c5b13d53b013b7362f24d12aabacc6acd5e5da69add01e325c3aaf70d9"
+size = 14919420
+tags = ["era:2023", "site:kdgx", "radar:wsr-88d", "header:AR2V0006", "build:21.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:212", "meso-sails:2", "base-tilt:2", "avset", "res:super", "regime:tornado", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDGX 2023-03-25 01:06Z; Rolling Fork EF4 tornadic supercell about 130-150 km NW. Build 21.1, VCP 212 with the Message 5 base-tilt flag (a 0.31 deg base-tilt split cut below 0.48 deg) and SAILS x2; 21 of 23 cuts collected (AVSET), 11880 radials, 7 Message 2."
+
+[[file]]
+id = "l2-kmaf-20230331-230843"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2023/03/31/KMAF/KMAF20230331_230843_V06"]
+sha256 = "39318cbc31c4b5b67bc9a174745e65722124b81d61f6f9a4d575f31154681c94"
+size = 2250716
+tags = ["era:2023", "site:kmaf", "radar:wsr-88d", "header:AR2V0006", "build:21.0", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:31", "long-pulse", "res:super", "regime:clear-air", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KMAF 2023-03-31 23:08Z; clear air in long-pulse VCP 31: 8 sweeps / 5040 radials, lowest sweep maximum 45.5 dBZ at 6.6 km (ground clutter), no weather. Build 21.0, Message 15 in 6 segments."
+
+[[file]]
+id = "l2-tstl-20230331-230314"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2023/03/31/TSTL/TSTL20230331_230314_V08"]
+sha256 = "fca0348eda86a3c3e6f156e6e5a7a35577e836dda46c7cb72b7916d66d305850"
+size = 3524886
+tags = ["era:2023", "site:tstl", "radar:tdwr", "header:AR2V0008", "compression:ldm-bzip2", "msg:31", "msg:2", "msg:5", "vol-block:44", "rad-block:20", "vcp:80", "res:legacy", "regime:convective", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "TSTL (TDWR, St. Louis) 2023-03-31 23:03Z; AR2V0008 TDWR Level II in hazardous-weather VCP 80: 23 sweeps of 360 radials at 1 deg, a REF-only 0.26 deg long-range cut (1390 gates x 300 m) and REF/VEL/SW cuts at 150 m, 0.26 deg revisited 6 more times; metadata is only Message 2 and 5 (RDA-build field raw 20). Supercell line within 150 km."
+
+[[file]]
+id = "l2-pgua-20230524-030945"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2023/05/24/PGUA/PGUA20230524_030945_V06"]
+sha256 = "0dd7c143aa20093a218baff5359660069f16fc4c8d25b6057ac25509247de883"
+size = 20463715
+tags = ["era:2023", "site:pgua", "radar:wsr-88d", "header:AR2V0006", "build:21.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:212", "meso-sails:3", "res:super", "regime:typhoon", "regime:non-conus", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "PGUA 2023-05-24 03:09Z; Typhoon Mawar eyewall over northern Guam (eye ~45 km NE of the radar), aliased velocity and a beam-blockage wedge. Build 21.1, VCP 212 MESO-SAILS x3, 23 sweeps / 12600 radials."
+
+[[file]]
+id = "l2-tbwi-20230601-175101-stub"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2023/06/01/TBWI/TBWI20230601_175101_V08.008"]
+sha256 = "4a05662898b319903f499f879a6fe0869bd56407ed27901c169513d4dcf1cc0a"
+size = 311
+tags = ["era:2023", "site:tbwi", "radar:tdwr", "header:AR2V0008", "compression:ldm-bzip2", "msg:2", "edge:status-only", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "TBWI (TDWR) 2023-06-01 17:51Z archive object named TBWI20230601_175101_V08.008: 311 bytes, an AR2V0008.718 volume header and 3 LDM bzip2 records each holding one Message 2, no radials. Py-ART raises \"No MSG31 records found\"; MetPy reads 0 sweeps."
+
+[[file]]
+id = "l2-kmtx-20240301-212827"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2024/03/01/KMTX/KMTX20240301_212827_V06"]
+sha256 = "f8566e540124f7df3389d8de47f9dea904916678cd746d01b0b6214762be2e43"
+size = 9543462
+tags = ["era:2024", "site:kmtx", "radar:wsr-88d", "header:AR2V0006", "build:22.0", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:215", "base-tilt:2", "res:super", "regime:complex-terrain", "regime:snow", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KMTX 2024-03-01 21:28Z; mountain-top Salt Lake City radar (Promontory Point) with snow bands NW and NE (0.48 deg sweep: median ZDR -0.1 dB over gates with Z > 15 dBZ and RHOHV > 0.97), sparse echo elsewhere. Build 22.0, VCP 215 with the base-tilt flag: a split cut commanded at 0.0 deg in Message 5 (radials at 0.03-0.06 deg) below the 0.48 deg cuts; 20 sweeps / 10080 radials."
+
+[[file]]
+id = "l2-ktlx-20240315-000217"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2024/03/15/KTLX/KTLX20240315_000217_V06"]
+sha256 = "366e63315c7f541cadbac3e800dd5a0bd4880865f103e79db654a93c3ac09856"
+size = 10786581
+tags = ["era:2024", "site:ktlx", "radar:wsr-88d", "header:AR2V0006", "build:22.0", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:212", "meso-sails:3", "avset", "res:super", "regime:convective", "bench", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KTLX 2024-03-15 00:02Z; radrs/nexrad comparison volume. Build 22.0, 97 LDM bzip2 records, VCP 212 MESO-SAILS x3 with 20 of 23 cuts collected (AVSET), 11520 radials; supercells to 70 dBZ at 94 km."
+
+[[file]]
+id = "l2-ktlx-20240515-000014"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2024/05/15/KTLX/KTLX20240515_000014_V06"]
+sha256 = "4ea518cfdcb829b9f33522d2163d36326a96244ba2c77697c3a3665044b154c9"
+size = 4358239
+tags = ["era:2024", "site:ktlx", "radar:wsr-88d", "header:AR2V0006", "build:22.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:35", "res:super", "regime:clear-air", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KTLX 2024-05-15 00:00Z; clear air in VCP 35: boundary-layer biological returns within ~100 km with mixed, mostly low RHOHV, lowest-sweep maximum 35.5 dBZ, no precipitation. Build 22.1, 12 sweeps / 6480 radials."
+
+[[file]]
+id = "l2-pahg-20250909-212549"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2025/09/09/PAHG/PAHG20250909_212549_V06"]
+sha256 = "1837efc4fa411c9951aa1697bf4bed11093fb2d71cdf351791828462995b537e"
+size = 12382118
+tags = ["era:2025", "site:pahg", "radar:wsr-88d", "header:AR2V0006", "build:23.1", "compression:ldm-bzip2", "msg:31", "msg:32", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:215", "res:super", "regime:stratiform", "regime:non-conus", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "PAHG (Kenai, Alaska) 2025-09-09 21:25Z; widespread stratiform precipitation with aliased Doppler velocity. Build 23.1 with Message 32, VCP 215, 18 sweeps / 8640 radials."
+
+[[file]]
+id = "l2-kilx-20260418-013553"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2026/04/18/KILX/KILX20260418_013553_V06"]
+sha256 = "414655969c707f2ee20287240cbfd30aa9c60cd8341c9424e537150670b698e4"
+size = 23317197
+tags = ["era:2026", "site:kilx", "radar:wsr-88d", "header:AR2V0006", "build:23.1", "compression:ldm-bzip2", "msg:31", "msg:32", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:212", "mrle:3", "res:super", "regime:convective", "bench", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KILX 2026-04-18 01:35Z; dense convective benchmark volume (11338 gates >= 50 dBZ on the lowest sweep). Build 23.1 with Message 32, VCP 212 with MRLE x3 (0.5/0.9/1.3 deg re-scanned after 5.1 deg), 23 sweeps / 12600 radials in 106 LDM records."
+
+[[file]]
+id = "l2-kiwa-20260917-003629"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2026/09/17/KIWA/KIWA20260917_003629_V06"]
+sha256 = "947a4372554d3b43f59c5fe5f49ce46cc032384485aec057499735b447bd2f45"
+size = 12653945
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "header:AR2V0006", "build:24.1", "compression:ldm-bzip2", "msg:31", "msg:32", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:215", "sails", "avset", "res:super", "regime:convective", "chunk-volume:kiwa-307", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KIWA 2026-09-17 00:36Z archive volume; byte-identical to the concatenation, in sequence order, of the 70 captured real-time chunks l2chunk-kiwa-307-20260917-003629-001-s .. -070-e. Build 24.1 with Message 32, VCP 215 SAILS x1, 15 of 20 cuts collected (AVSET), 8280 radials in 70 LDM records; thunderstorms 130-260 km away, to 59.5 dBZ."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-001-s"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-001-S"]
+sha256 = "877225123863e22aa6191060113d6a75af09e15ce25ae518888f6cbb15836d09"
+size = 2455
+committed = "files/level2-chunks/KIWA-307-20260917-003629-001-S"
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:start", "build:24.1", "vcp:215"]
+description = "KIWA real-time chunk volume 307, chunk 1/70 (Start), captured live 2026-09-17: 24-byte AR2V0006.307 volume header + one LDM bzip2 record with the metadata messages (Message 15 x5, 18 x4, 3, 5, 2, 32); no radials. S3 LastModified 2026-09-17T00:36:31.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-002-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-002-I"]
+sha256 = "716cf183a18bad096c62fcc6e20741991b2af78dcf24e9586e1eb8f58e155ff9"
+size = 162173
+committed = "files/level2-chunks/KIWA-307-20260917-003629-002-I"
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:1", "radial-status:3"]
+description = "KIWA real-time chunk volume 307, chunk 2/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (~0.53 deg), radial times 00:36:29.397-00:36:34.532Z, azimuth 155.23-214.75 deg, radial status [1, 3]. S3 LastModified 2026-09-17T00:36:37.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-003-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-003-I"]
+sha256 = "5b7112289dcfae2f4c6bdf22214929b73d8d8a23e4d317e5d634c3dddedc9bc0"
+size = 337551
+committed = "files/level2-chunks/KIWA-307-20260917-003629-003-I"
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:1"]
+description = "KIWA real-time chunk volume 307, chunk 3/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (~0.53 deg), radial times 00:36:34.576-00:36:39.702Z, azimuth 215.25-274.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:36:42.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-004-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-004-I"]
+sha256 = "f91d7092f6ea24e8b2c6d338a15c61cec0477aa57f19e6d3bf4bffe7509061b7"
+size = 366778
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:1"]
+description = "KIWA real-time chunk volume 307, chunk 4/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (~0.53 deg), radial times 00:36:39.742-00:36:44.878Z, azimuth 275.23-334.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:36:47.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-005-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-005-I"]
+sha256 = "841fe385b840ffa1c046831a267083ddf41a2049a9ca816c66571c4e4d19afd0"
+size = 279908
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:1"]
+description = "KIWA real-time chunk volume 307, chunk 5/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (~0.53 deg), radial times 00:36:44.918-00:36:50.050Z, azimuth 335.24-34.74 deg, radial status [1]. S3 LastModified 2026-09-17T00:36:52.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-006-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-006-I"]
+sha256 = "73faee237baa0b3bbedcc9c984c55c58b249b9e94686a7ea219f7a78b6d6c4ad"
+size = 177861
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:1"]
+description = "KIWA real-time chunk volume 307, chunk 6/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (~0.53 deg), radial times 00:36:50.094-00:36:55.220Z, azimuth 35.25-94.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:36:57.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-007-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-007-I"]
+sha256 = "83c6ce10102ac49b7e3281ddeb7e57e05d4ffa02e71211912bd80bf669ca6dbe"
+size = 380987
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:1"]
+description = "KIWA real-time chunk volume 307, chunk 7/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (~0.53 deg), radial times 00:36:55.263-00:37:00.395Z, azimuth 95.24-154.75 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:37:02.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-008-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-008-I"]
+sha256 = "77d1c766ff28532ba97556a9b01b5a9e89364f03e8fd7d235f700038fdaf4473"
+size = 66306
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:2"]
+description = "KIWA real-time chunk volume 307, chunk 8/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 2 (~0.53 deg), radial times 00:37:01.664-00:37:04.547Z, azimuth 172.22-231.7 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:37:07.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-009-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-009-I"]
+sha256 = "723608ae61371caf0abb236a9bdaf1affd9a77574519bbddfb08c5e05a8c38f8"
+size = 125773
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:2"]
+description = "KIWA real-time chunk volume 307, chunk 9/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 2 (~0.53 deg), radial times 00:37:04.571-00:37:07.469Z, azimuth 232.2-291.7 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:09.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-010-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-010-I"]
+sha256 = "f4f5507c8974e78b644ec2917c95cc61bc62c6e3d5fe8c56fd1fa30d38f18568"
+size = 123597
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:2"]
+description = "KIWA real-time chunk volume 307, chunk 10/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 2 (~0.53 deg), radial times 00:37:07.493-00:37:10.388Z, azimuth 292.2-351.72 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:12.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-011-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-011-I"]
+sha256 = "d57b5305677b0b4d011a067ff837018eb175bb97f0fdbd552edfe9d9661dda2f"
+size = 63918
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:2"]
+description = "KIWA real-time chunk volume 307, chunk 11/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 2 (~0.53 deg), radial times 00:37:10.412-00:37:13.305Z, azimuth 352.22-51.69 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:15.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-012-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-012-I"]
+sha256 = "43c9dcda4f8e29402a13d78c1a212024315aeea8c3336a8799b35356ff5904a9"
+size = 81280
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:2"]
+description = "KIWA real-time chunk volume 307, chunk 12/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 2 (~0.53 deg), radial times 00:37:13.329-00:37:16.222Z, azimuth 52.19-111.7 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:18.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-013-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-013-I"]
+sha256 = "bee4525971a62bf0dca8db08479bd32bc7b9f6036ce9264687c4e9d0ecf7ad0c"
+size = 100323
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:2"]
+description = "KIWA real-time chunk volume 307, chunk 13/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 2 (~0.53 deg), radial times 00:37:16.246-00:37:19.140Z, azimuth 112.2-171.71 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:37:21.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-014-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-014-I"]
+sha256 = "656b917200fff592cefa715982ba49e67476179242ab3170212149b122dbbd9d"
+size = 253598
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:3"]
+description = "KIWA real-time chunk volume 307, chunk 14/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 3 (~0.92 deg), radial times 00:37:20.279-00:37:24.662Z, azimuth 192.23-251.76 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:37:26.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-015-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-015-I"]
+sha256 = "a86f3fc2cc965814086c265de8bf8846d1d8041e9d3ffed5ab791e39d250f72b"
+size = 341611
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:3"]
+description = "KIWA real-time chunk volume 307, chunk 15/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 3 (~0.92 deg), radial times 00:37:24.700-00:37:29.096Z, azimuth 252.24-311.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:31.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-016-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-016-I"]
+sha256 = "ea6037f2f26013cef9f9d20dbba7c1fdb15af90a537c96a6978abc5376d1e56b"
+size = 377442
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:3"]
+description = "KIWA real-time chunk volume 307, chunk 16/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 3 (~0.92 deg), radial times 00:37:29.133-00:37:33.532Z, azimuth 312.25-11.76 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:35.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-017-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-017-I"]
+sha256 = "3da9504020172cfad127417cbc9244353e65bfdc090b039d070d343ea62fc86e"
+size = 164123
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:3"]
+description = "KIWA real-time chunk volume 307, chunk 17/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 3 (~0.92 deg), radial times 00:37:33.566-00:37:37.962Z, azimuth 12.25-71.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:40.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-018-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-018-I"]
+sha256 = "805f0f96c5e649b942d7679afbd5454cc33651c83e48785e5427282184eed9ef"
+size = 370055
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:3"]
+description = "KIWA real-time chunk volume 307, chunk 18/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 3 (~0.92 deg), radial times 00:37:37.999-00:37:42.392Z, azimuth 72.25-131.73 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:44.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-019-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-019-I"]
+sha256 = "c6c8cd37803685d296c4a64c36ef7305e1f47c78e12d2a356c9a5d8f5f47d509"
+size = 269376
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:3"]
+description = "KIWA real-time chunk volume 307, chunk 19/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 3 (~0.92 deg), radial times 00:37:42.432-00:37:46.828Z, azimuth 132.25-191.75 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:37:49.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-020-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-020-I"]
+sha256 = "86dda053a3fc0d4630f7075ae39ae58b7cd4bffa54e5e040c27f3b6fc4774e40"
+size = 119115
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:4"]
+description = "KIWA real-time chunk volume 307, chunk 20/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 4 (~0.92 deg), radial times 00:37:47.982-00:37:50.863Z, azimuth 209.22-268.71 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:37:53.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-021-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-021-I"]
+sha256 = "42fa547059317b88923e8f6951b8635fc6dac7ef2322f6f5c890518b9e9c7a23"
+size = 134224
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:4"]
+description = "KIWA real-time chunk volume 307, chunk 21/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 4 (~0.92 deg), radial times 00:37:50.888-00:37:53.782Z, azimuth 269.21-328.7 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:55.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-022-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-022-I"]
+sha256 = "067a462bd87e4d3cbb77ab2decbc1cc752990369ea58f96922f9e105663196fc"
+size = 117914
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:4"]
+description = "KIWA real-time chunk volume 307, chunk 22/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 4 (~0.92 deg), radial times 00:37:53.806-00:37:56.704Z, azimuth 329.2-28.7 deg, radial status [1]. S3 LastModified 2026-09-17T00:37:58.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-023-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-023-I"]
+sha256 = "4314278a63570feff5849b10bb1d035c65141b62743e8dab7e496f804c67e0a1"
+size = 65284
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:4"]
+description = "KIWA real-time chunk volume 307, chunk 23/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 4 (~0.92 deg), radial times 00:37:56.729-00:37:59.623Z, azimuth 29.22-88.7 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:02.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-024-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-024-I"]
+sha256 = "5e2a532a8e1b887a42f9beb6974ac2982b1f64be70250d649e4e4b8dfecf267c"
+size = 135034
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:4"]
+description = "KIWA real-time chunk volume 307, chunk 24/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 4 (~0.92 deg), radial times 00:37:59.647-00:38:02.541Z, azimuth 89.19-148.72 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:05.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-025-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-025-I"]
+sha256 = "6d404e6902634e85ed04ed5f9229088579d7c30d328bb6bdb0d0a06d0c176239"
+size = 77602
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:4"]
+description = "KIWA real-time chunk volume 307, chunk 25/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 4 (~0.92 deg), radial times 00:38:02.566-00:38:05.459Z, azimuth 149.22-208.73 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:38:07.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-026-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-026-I"]
+sha256 = "96c5ce110f3fffa1e24a25aa3b6ce267881c733620f9cfcb4c7dcc3911e9cbc1"
+size = 323424
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:5"]
+description = "KIWA real-time chunk volume 307, chunk 26/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 5 (~1.32 deg), radial times 00:38:06.329-00:38:09.999Z, azimuth 225.24-284.76 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:38:12.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-027-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-027-I"]
+sha256 = "194c7c35b672210e24126a7acf95d80ccd3a727b014c4def7c905c4373a91ba1"
+size = 334679
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:5"]
+description = "KIWA real-time chunk volume 307, chunk 27/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 5 (~1.32 deg), radial times 00:38:10.030-00:38:13.705Z, azimuth 285.27-344.76 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:15.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-028-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-028-I"]
+sha256 = "051c3f7612cd1c921da29e161660ea79cfd9fff263f282cf16f061d0a25d5733"
+size = 297346
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:5"]
+description = "KIWA real-time chunk volume 307, chunk 28/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 5 (~1.32 deg), radial times 00:38:13.734-00:38:17.412Z, azimuth 345.25-44.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:20.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-029-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-029-I"]
+sha256 = "866ce030449e19baa699d142c8f2b98714c92b13082bfca893e325f8d224ac06"
+size = 255521
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:5"]
+description = "KIWA real-time chunk volume 307, chunk 29/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 5 (~1.32 deg), radial times 00:38:17.443-00:38:21.124Z, azimuth 45.26-104.76 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:24.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-030-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-030-I"]
+sha256 = "7f9be408b76b77f4140edb5c307c2ff002a14ed955c9915268c5d7ac5bebf415"
+size = 343146
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:5"]
+description = "KIWA real-time chunk volume 307, chunk 30/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 5 (~1.32 deg), radial times 00:38:21.153-00:38:24.836Z, azimuth 105.24-164.74 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:27.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-031-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-031-I"]
+sha256 = "20294941802faa381dabe7e2b4794a551680cde1a72f30910745809311627284"
+size = 212012
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:5"]
+description = "KIWA real-time chunk volume 307, chunk 31/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 5 (~1.32 deg), radial times 00:38:24.868-00:38:28.554Z, azimuth 165.24-224.77 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:38:32.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-032-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-032-I"]
+sha256 = "ba0d1f47705b6ef84c9d8cf4ec462b1afe2d6e96179e31b83443a00387f396c1"
+size = 135914
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:6"]
+description = "KIWA real-time chunk volume 307, chunk 32/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 6 (~1.32 deg), radial times 00:38:29.532-00:38:32.400Z, azimuth 241.22-300.69 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:38:35.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-033-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-033-I"]
+sha256 = "a5e878c5e3ed90b25323269190ebab499faa068fc5ab2cf8e6739f0ed68c1fa5"
+size = 138239
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:6"]
+description = "KIWA real-time chunk volume 307, chunk 33/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 6 (~1.32 deg), radial times 00:38:32.426-00:38:35.325Z, azimuth 301.21-0.72 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:39.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-034-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-034-I"]
+sha256 = "cabcc54ce76b5b9fcc3ea35db57170dac1de2ee8c443267a91489fcfc085e8f3"
+size = 77381
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:6"]
+description = "KIWA real-time chunk volume 307, chunk 34/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 6 (~1.32 deg), radial times 00:38:35.350-00:38:38.243Z, azimuth 1.22-60.72 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:41.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-035-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-035-I"]
+sha256 = "02876b5a72112e516d29fddc295254e6b2906c573e8e4c0f34acd7d188a7fbfa"
+size = 132871
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:6"]
+description = "KIWA real-time chunk volume 307, chunk 35/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 6 (~1.32 deg), radial times 00:38:38.267-00:38:41.160Z, azimuth 61.21-120.7 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:43.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-036-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-036-I"]
+sha256 = "3897e65ddb61b4ead689d2b0cc6468b065bf14c245778149266cb6a175ff47c9"
+size = 118310
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:6"]
+description = "KIWA real-time chunk volume 307, chunk 36/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 6 (~1.32 deg), radial times 00:38:41.184-00:38:44.079Z, azimuth 121.2-180.72 deg, radial status [1]. S3 LastModified 2026-09-17T00:38:46.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-037-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-037-I"]
+sha256 = "fe6faf53c3c3013ddc0f3db2ac7cc7e7ae7a4e48ee7c516fdbf5f779792b5bfa"
+size = 84753
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:6"]
+description = "KIWA real-time chunk volume 307, chunk 37/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 6 (~1.32 deg), radial times 00:38:44.104-00:38:46.999Z, azimuth 181.22-240.71 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:38:49.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-038-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-038-I"]
+sha256 = "7c8471f1677427e93143cb12198053a8bff6de38b024a2605a8fea5617452422"
+size = 249168
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:7"]
+description = "KIWA real-time chunk volume 307, chunk 38/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 7 (~1.85 deg), radial times 00:38:48.310-00:38:55.266Z, azimuth 265.54-24.54 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:38:57.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-039-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-039-I"]
+sha256 = "34ee17364e327e57fbdeccbea293fadc0550bf970d7daf136efab9d64e589e1a"
+size = 216307
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:7"]
+description = "KIWA real-time chunk volume 307, chunk 39/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 7 (~1.85 deg), radial times 00:38:55.324-00:39:02.278Z, azimuth 25.54-144.54 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:08.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-040-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-040-I"]
+sha256 = "ff603f8103a4c6b8b07a67c938653d697e0d1a4898f8d9e007b40781c8f34821"
+size = 194402
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:7"]
+description = "KIWA real-time chunk volume 307, chunk 40/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 7 (~1.85 deg), radial times 00:39:02.338-00:39:09.295Z, azimuth 145.54-264.55 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:39:20.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-041-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-041-I"]
+sha256 = "89b6ff73fac08ed8868ff0b83e1e831cd60e952252b8426d867353fb4acaf7b3"
+size = 371754
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:8"]
+description = "KIWA real-time chunk volume 307, chunk 41/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 8 (~0.53 deg), radial times 00:39:10.407-00:39:15.533Z, azimuth 281.24-340.76 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:39:31.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-042-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-042-I"]
+sha256 = "ace81f33a236b1770140d972198f69fadf6bb705601712bc2af284204361d83e"
+size = 254609
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:8"]
+description = "KIWA real-time chunk volume 307, chunk 42/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 8 (~0.53 deg), radial times 00:39:15.574-00:39:20.709Z, azimuth 341.24-40.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:32.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-043-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-043-I"]
+sha256 = "94ff8dfc6597a13b6bbf38b4f6754b0aac5d414641f3ca16a1592e3ca16bac52"
+size = 197436
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:8"]
+description = "KIWA real-time chunk volume 307, chunk 43/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 8 (~0.53 deg), radial times 00:39:20.753-00:39:25.882Z, azimuth 41.25-100.75 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:34.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-044-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-044-I"]
+sha256 = "034d1acd1d9012615e034a564394db397855089178ed16b3a464156ddca63677"
+size = 370586
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:8"]
+description = "KIWA real-time chunk volume 307, chunk 44/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 8 (~0.53 deg), radial times 00:39:25.922-00:39:31.051Z, azimuth 101.26-160.77 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:35.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-045-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-045-I"]
+sha256 = "1a86d846a1e757d88da1fcfce1a2cb56b86b2bd5f81a2ab45872913d4231ad44"
+size = 162309
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:8"]
+description = "KIWA real-time chunk volume 307, chunk 45/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 8 (~0.53 deg), radial times 00:39:31.095-00:39:36.224Z, azimuth 161.25-220.73 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:38.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-046-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-046-I"]
+sha256 = "1db13b6dbdf8ad716010588a2ad281ba8df662f70d6ff8dceed2281904ccfbad"
+size = 336508
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:8"]
+description = "KIWA real-time chunk volume 307, chunk 46/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 8 (~0.53 deg), radial times 00:39:36.270-00:39:41.396Z, azimuth 221.26-280.75 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:39:43.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-047-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-047-I"]
+sha256 = "a95de7d50336214911a4ab93fbcae16534707075225956bbfab9bebe2a718ca3"
+size = 123258
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:9"]
+description = "KIWA real-time chunk volume 307, chunk 47/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 9 (~0.53 deg), radial times 00:39:42.752-00:39:45.638Z, azimuth 299.22-358.71 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:39:47.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-048-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-048-I"]
+sha256 = "424a7a5fb6721e51497dbceba53d76283217e2fd6879dc29051c7275ee89e08d"
+size = 51518
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:9"]
+description = "KIWA real-time chunk volume 307, chunk 48/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 9 (~0.53 deg), radial times 00:39:45.663-00:39:48.563Z, azimuth 359.22-58.71 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:50.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-049-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-049-I"]
+sha256 = "481dc6b18fcd397ec9574f5cdcc2c8372a7cc9494da8c3a23553814aff9a9da7"
+size = 91116
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:9"]
+description = "KIWA real-time chunk volume 307, chunk 49/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 9 (~0.53 deg), radial times 00:39:48.587-00:39:51.481Z, azimuth 59.2-118.71 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:53.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-050-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-050-I"]
+sha256 = "376b026f9879c2d2ecafd191334eca2626f28b355dc5fe1c3984a105f22ec718"
+size = 92113
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:9"]
+description = "KIWA real-time chunk volume 307, chunk 50/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 9 (~0.53 deg), radial times 00:39:51.505-00:39:54.401Z, azimuth 119.2-178.71 deg, radial status [1]. S3 LastModified 2026-09-17T00:39:56.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-051-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-051-I"]
+sha256 = "8a83dddc5cd167d7bf1efc3168db6b3cfe70b1bc3d869fdcc91ce041763ffec8"
+size = 72425
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:9"]
+description = "KIWA real-time chunk volume 307, chunk 51/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 9 (~0.53 deg), radial times 00:39:54.425-00:39:57.324Z, azimuth 179.21-238.72 deg, radial status [1]. S3 LastModified 2026-09-17T00:40:02.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-052-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-052-I"]
+sha256 = "054ebe02df54693b924f5c91c2e00f0973f83964e0cf683f29b79b75371a60a4"
+size = 127664
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:9"]
+description = "KIWA real-time chunk volume 307, chunk 52/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 9 (~0.53 deg), radial times 00:39:57.347-00:40:00.238Z, azimuth 239.2-298.7 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:40:05.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-053-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-053-I"]
+sha256 = "a5c5183b80f2d2ccb1cb76c5671ce68c286d5969aeae97f2ec25cfbdd37b7c1f"
+size = 183525
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:10"]
+description = "KIWA real-time chunk volume 307, chunk 53/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 10 (~2.46 deg), radial times 00:40:01.659-00:40:07.263Z, azimuth 328.55-87.55 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:40:18.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-054-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-054-I"]
+sha256 = "6310f2b0780c9d65c1bed7d03b762a0083472b8ef9a766512b4856811fad6c66"
+size = 190813
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:10"]
+description = "KIWA real-time chunk volume 307, chunk 54/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 10 (~2.46 deg), radial times 00:40:07.311-00:40:12.910Z, azimuth 88.55-207.55 deg, radial status [1]. S3 LastModified 2026-09-17T00:40:22.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-055-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-055-I"]
+sha256 = "bff06ffb071663e4015de37a956ad2bbe95ec61f816474ae95bdde18e8d7f58c"
+size = 233064
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:10"]
+description = "KIWA real-time chunk volume 307, chunk 55/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 10 (~2.46 deg), radial times 00:40:12.958-00:40:18.558Z, azimuth 208.54-327.55 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:40:29.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-056-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-056-I"]
+sha256 = "b5bd9d4d822c0dde1f0bff4f5691a4c4c8ae6e68fce97dd587da33ab15583bb2"
+size = 163034
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:11"]
+description = "KIWA real-time chunk volume 307, chunk 56/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 11 (~3.12 deg), radial times 00:40:19.468-00:40:25.396Z, azimuth 346.54-105.54 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:40:33.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-057-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-057-I"]
+sha256 = "cd5482596c8f239ce657eb1d47ac59b216ffc7e14036d2fdd8bda3ead31feae8"
+size = 142902
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:11"]
+description = "KIWA real-time chunk volume 307, chunk 57/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 11 (~3.12 deg), radial times 00:40:25.446-00:40:31.377Z, azimuth 106.54-225.55 deg, radial status [1]. S3 LastModified 2026-09-17T00:40:36.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-058-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-058-I"]
+sha256 = "01e0d2779bc0185e7dc5c59c1b2681eea6095b2b0eaaa47138bc109a79669dc0"
+size = 219137
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:11"]
+description = "KIWA real-time chunk volume 307, chunk 58/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 11 (~3.12 deg), radial times 00:40:31.425-00:40:37.354Z, azimuth 226.55-345.55 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:40:40.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-059-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-059-I"]
+sha256 = "d8c752617a141c93dba8f21fa9d171a342b62a4abebac8e34892711abe218136"
+size = 137838
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:12"]
+description = "KIWA real-time chunk volume 307, chunk 59/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 12 (~4.04 deg), plus 3 Message 2, radial times 00:40:38.339-00:40:44.056Z, azimuth 5.55-124.55 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:40:46.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-060-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-060-I"]
+sha256 = "18d961eff4a27aa8734b039fb9ce0bbbec294d9f3b976a908f2326d5f2b85d67"
+size = 120720
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:12"]
+description = "KIWA real-time chunk volume 307, chunk 60/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 12 (~4.04 deg), radial times 00:40:44.104-00:40:49.825Z, azimuth 125.54-244.55 deg, radial status [1]. S3 LastModified 2026-09-17T00:40:51.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-061-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-061-I"]
+sha256 = "ed699e04a3b8074b043ad485c726f82d8eada6588c81f3af52cad126ad47a1b1"
+size = 187777
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:12"]
+description = "KIWA real-time chunk volume 307, chunk 61/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 12 (~4.04 deg), radial times 00:40:49.873-00:40:55.591Z, azimuth 245.54-4.54 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:40:58.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-062-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-062-I"]
+sha256 = "e6a9ba5e5f30dbd600c53f847dc971cdda0df46a2a3f16e6256192b12231ca7d"
+size = 116933
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:13"]
+description = "KIWA real-time chunk volume 307, chunk 62/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 13 (~5.14 deg), radial times 00:40:56.648-00:41:02.365Z, azimuth 26.54-145.54 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:41:06.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-063-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-063-I"]
+sha256 = "1c7ebfe86aebcf7f77c450df74703703616d87386a385377917206333a7d5b07"
+size = 107349
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:13"]
+description = "KIWA real-time chunk volume 307, chunk 63/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 13 (~5.14 deg), radial times 00:41:02.413-00:41:08.130Z, azimuth 146.54-265.55 deg, radial status [1]. S3 LastModified 2026-09-17T00:41:11.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-064-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-064-I"]
+sha256 = "1d8af595a787429158820dbfe9a4c982ba1cb7cc94bc109fd4f662a6be4a58cc"
+size = 120317
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:13"]
+description = "KIWA real-time chunk volume 307, chunk 64/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 13 (~5.14 deg), radial times 00:41:08.178-00:41:13.896Z, azimuth 266.54-25.55 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:41:16.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-065-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-065-I"]
+sha256 = "f8723a76d268d3a8f6d1ee4f8b93b5dc621733463119ec4b2aa087bc9e8a9929"
+size = 101669
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:14"]
+description = "KIWA real-time chunk volume 307, chunk 65/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 14 (~6.46 deg), radial times 00:41:15.001-00:41:20.719Z, azimuth 48.55-167.54 deg, radial status [0, 1]. S3 LastModified 2026-09-17T00:41:22.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-066-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-066-I"]
+sha256 = "2613cfa76d4827ff68b7f50bf154aed44da38108c8828b15bc80e42c591257a7"
+size = 103265
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:14"]
+description = "KIWA real-time chunk volume 307, chunk 66/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 14 (~6.46 deg), radial times 00:41:20.767-00:41:26.484Z, azimuth 168.54-287.54 deg, radial status [1]. S3 LastModified 2026-09-17T00:41:29.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-067-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-067-I"]
+sha256 = "0931b2c3dd7f72303f620f5365645b44186c6d36a94eab90b0b1fc325263f3ef"
+size = 80991
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:14"]
+description = "KIWA real-time chunk volume 307, chunk 67/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 14 (~6.46 deg), radial times 00:41:26.531-00:41:32.251Z, azimuth 288.54-47.54 deg, radial status [1, 2]. S3 LastModified 2026-09-17T00:41:34.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-068-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-068-I"]
+sha256 = "b78897dd7faacd564e71e0be1a7d629a5e7f019ef1e8ac15979be8b359432a11"
+size = 120857
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:15", "radial-status:5"]
+description = "KIWA real-time chunk volume 307, chunk 68/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 15 (~8.0 deg), radial times 00:41:33.267-00:41:37.884Z, azimuth 70.5-189.5 deg, radial status [1, 5]. S3 LastModified 2026-09-17T00:41:40.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-069-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-069-I"]
+sha256 = "7b3fad00f7677dfade2d7022cb6f78780a0f8b5660bea64972bfb984e8803c3d"
+size = 152619
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:intermediate", "build:24.1", "vcp:215", "elev:15"]
+description = "KIWA real-time chunk volume 307, chunk 69/70 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 15 (~8.0 deg), radial times 00:41:37.922-00:41:42.551Z, azimuth 190.49-309.5 deg, radial status [1]. S3 LastModified 2026-09-17T00:41:45.000Z."
+
+[[file]]
+id = "l2chunk-kiwa-307-20260917-003629-070-e"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/KIWA/307/20260917-003629-070-E"]
+sha256 = "dde1f23702e4bbbf0c00a4f91afe2bd7706b3bec2c61a283370dca61398164cc"
+size = 112078
+ephemeral = true
+tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:end", "build:24.1", "vcp:215", "elev:15", "radial-status:4"]
+description = "KIWA real-time chunk volume 307, chunk 70/70 (End): one LDM bzip2 record, 120 Message 31 radials of elevation 15 (~8.0 deg), radial times 00:41:42.589-00:41:47.217Z, azimuth 310.5-69.5 deg, radial status [1, 4]. S3 LastModified 2026-09-17T00:41:50.000Z."
