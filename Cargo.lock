@@ -933,7 +933,13 @@ name = "recast-radar-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
+ "recast-radar-io-odim",
+ "recast-radar-testdata",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1083,6 +1089,7 @@ dependencies = [
 name = "recast-radar-scattering"
 version = "0.1.0"
 dependencies = [
+ "recast-radar-testdata",
  "serde",
  "serde_json",
  "sha2",

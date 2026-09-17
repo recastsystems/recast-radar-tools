@@ -803,169 +803,123 @@ Tests build cuts with linear rotational or divergent velocity fields and degrade
 
 ## core-data-scattering
 
-### `crates/recast-radar-core/src/lib.rs`
+**Converted in C.2** (branch `real-tests-core-data-scattering`): all 87 entries are gone from the
+allowlist and the group keeps no exception (the counts table above is the C.1 snapshot). The 68
+synthetic tests and 19 helpers were deleted or rewritten:
 
-Model unit tests build `MomentGrid`s from hand-written u8/u16 rows and `ElevationCut`/`RadarVolume` parts (`merge_radial`, `merge_cut`, `merge_volume`) with chosen azimuths, gate layouts, times and ray metadata.
+- `recast-radar-core`: the model and merge tests moved out of `src/lib.rs` into the integration tests
+  `tests/real_model.rs` and `tests/real_merge.rs` (the crate now has dev-dependencies on the io crates
+  and the testdata crate; unit tests in `src/` cannot share model types with the io crates through a
+  dev-dependency cycle). They decode corpus files with the workspace readers and compare against
+  `testdata/golden/core/model.json`, written by `tools/core_golden.py` from Py-ART 2.2.5 (raw moment
+  codes, data-block headers), MetPy 1.7.1 (sweep layouts, azimuths, elevations), h5py 3.16.0 (ODIM
+  parts), netCDF4 1.7.4 (per-ray instrument variables) and a GRIB2 section walker (JMA). The expected
+  outcomes of `merge_radar_volumes` come from a reference implementation of its documented rules in the
+  script, fed only with that independent metadata (float32 comparisons as in Rust).
+- `recast-radar-data`: the provider-contract tests run a provider over two complete ORD archive-bucket
+  hour listings of RMI Jabbeke (`src/international/fixtures/ord_archive_bejab_2026061{2,3}T14_hour.xml`,
+  captured 2026-09-17); the tropical merge tests use captured NHC and GDACS feeds under
+  `tests/fixtures/tropical/` (see below).
+- `recast-radar-scattering`: the LUT, P3 table, PSD and runtime tests load the committed PyTMatrix
+  0.3.3 tables and the WRF P3 v5.4 tables (`testdata/scattering/manifest.toml`; `src/test_corpus.rs`
+  loads them) and compare against `testdata/golden/scattering/{tmatrix_luts,p3_tables}.json`, written
+  by `tools/scattering_golden.py` from the LUT bytes (schema-1 layout), the post-freeze held-out
+  PyTMatrix report and the P3 table text.
+
+Corpus additions made for this group: five ODIM per-quantity parts of two scans from the permanent
+ORD archive bucket (`odim-bejab-20260612-1450-{dbzh,vrad}`, `odim-nohur-20260612-1445-{dbzh,th}`,
+`odim-nohur-20260612-1446-vradh`), the two small conventional PyTMatrix tables with their exact
+generator configs and manifests, the held-out interpolation report and node request, the two official
+WRF P3 tables as downloads and their first blocks as committed prefixes (all in
+`testdata/scattering/manifest.toml`). A decoder gap surfaced while converting: the Level II reader
+takes the Message 1 Nyquist velocity from halfword 24 (unused) instead of halfword 31, so legacy
+radials carry `nyquist_velocity_mps = None` (MetPy: 26.1 m/s on the KTLX 1999 batch cuts); the merge
+test that fills Nyquist velocities therefore uses a Message 31 cut. That is `recast-radar-io-nexrad`'s
+to fix.
+
+### `crates/recast-radar-core/tests/real_model.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::ray_instrument_metadata_is_optional_but_must_align` | cut decoded from `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` (per-ray prt/nyquist/n_samples); misalignment by dropping one ray's metadata | alignment error; values from netCDF4-python |
-| `tests::moment_grid_scales_compact_u8_rows` | u8 REF data blocks of `l2-ktlx-20240315-000217-trim` | raw codes, scale and offset from MetPy data-block headers |
-| `tests::moment_grid_expands_and_pads_variable_gate_rows` | rows of different gate counts from `odim-bejab-20190606-0000-pvol` (598 and 300 gates) | h5py raw rows and gate counts |
-| `tests::moment_grid_pushes_u8_slice_without_row_allocation` | u8 REF data blocks of `l2-ktlx-20240315-000217-trim` | MetPy raw codes |
-| `tests::moment_grid_pushes_u16_be_bytes_without_row_allocation` | u16 PHI data blocks of `l2-ktlx-20130520-201643-trim` | MetPy raw codes |
-| `tests::moment_grid_reserves_rows_and_gate_storage` | dimensions of `l2-ktlx-20240315-000217-trim` sweep 1 | radial and gate counts from MetPy |
-| `tests::cut_tracks_available_moments` | `l2-ktlx-20240315-000217-trim` sweeps 1 and 2 | moment lists from MetPy (REF/ZDR/PHI/RHO/CFP; REF/VEL/SW) |
-| `tests::merge_single_part_is_identity_with_sorted_cuts` | `l2-kiwa-20260917-003629` | merge of one part equals the part with cuts sorted |
-| `tests::merge_rejects_mismatched_site_ids` | a KIWA chunk part and `l2-ktlx-20240315-000217-trim` | site mismatch error |
-| `tests::merge_keeps_earliest_volume_time` | the committed KIWA chunks `l2chunk-kiwa-307-20260917-003629-001-s`..`-003-i` (and the cached rest of the 70) decoded as separate parts; `l2-kiwa-20260917-003629` is the same bytes as one archive | earliest part time (chunk radial times per the manifest) |
-| `tests::merge_unions_moments_of_elevation_matched_cuts` | `jma-n5-20191012-090000-rs47773` (REF) and `jma-n6-20191012-090000-rs47773` (VEL) of the same scan | merged cuts carry both moments; sweep angles from the GRIB2 walker |
-| `tests::merge_fills_aligned_ray_instrument_metadata_without_overwriting_source_values` | `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` split into a DBZ part and a VEL part (both real) | per-ray values from netCDF4-python kept |
-| `tests::merge_ignores_malformed_incoming_ray_instrument_metadata` | the Irene parts with one part's ray metadata truncated (edit of real values) | malformed metadata ignored |
-| `tests::merge_collision_keeps_first_part_grid` | the JMA N5 member decoded twice (same moment in both parts) | first part's grid kept |
-| `tests::merge_unions_unmatched_cuts_sorted_by_elevation` | the committed KIWA chunks `l2chunk-kiwa-307-20260917-003629-001-s`..`-003-i` (and the cached rest of the 70) decoded as separate parts; `l2-kiwa-20260917-003629` is the same bytes as one archive | all cuts present, sorted by elevation |
-| `tests::merge_skips_matched_cut_with_different_radial_count` | the lowest cuts of `l2-ktlx-20240315-000217-trim` (480 radials) and `l2-ktlx-19990504-002218-trim` (367 radials), both KTLX near 0.5 deg | cut skipped; radial counts from Py-ART |
-| `tests::merge_skips_matched_cut_with_shifted_azimuths` | sweep 1 of `l2-ktlx-20240315-000217-trim` (480 radials from 167.3 deg) and of `l2-ktlx-20130520-201643-trim` (480 radials from 123.2 deg) | cut skipped; azimuths from Py-ART |
-| `tests::merge_accepts_azimuths_equal_across_the_north_wrap` | `jma-n5-20191012-090000-rs47773` and `jma-n6-20191012-090000-rs47773` (512 radials each; azimuths from the GRIB2 walker) | matched across 0/360 |
-| `tests::merge_accepts_matched_cut_with_different_gate_layout` | `odim-iesha-20260305-0115-pvol` DBZH and VRADH as separate parts if their gate layouts differ (check with h5py), else a corpus addition | merged; gate layouts from h5py |
-| `tests::merge_three_product_parts_assembles_full_dual_pol_cut` | needs corpus addition: one scan delivered as per-quantity files (e.g. MeteoRomania `TIM_*dBZ/V/ZDR/KDP.hdf` or DWD per-moment sweep files listed by `recast-radar-data`) | merged cut carries every quantity; values from h5py |
-| `tests::merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber` | `jma-n5-20191012-090000-rs47773` (repeated elevations) and `jma-n6-20191012-090000-rs47773` | repetitions kept with velocity, sequential numbering; ladder order from the GRIB2 walker |
-| `tests::volume_can_keep_repeated_elevation_cuts_separate` | `jma-n5-20191012-090000-rs47773` (26 sweeps with repeated angles) | 26 cuts from the GRIB2 walker |
+| `ray_instrument_metadata_is_optional_but_must_align` | `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` (per-ray `prt`, `unambiguous_range`, `n_samples`); `l2-ktlx-20240315-000217-trim` (none) | netCDF4 values per sweep; sidecar edits (one entry popped, one duplicated) give the alignment error with the file's counts |
+| `decoded_u8_reflectivity_grid_scales_real_codes` (was `moment_grid_scales_compact_u8_rows`) | `l2-ktlx-20240315-000217-trim` sweep 1 REF (480 x 1832, scale 2, offset 66) | Py-ART raw codes: per-row code sums, probes, no-data cells = code 0 + code 1 cells; storage exactly rows x gates (folds the old `reserve_rows` check) |
+| `decoded_grid_pads_rows_with_fewer_gates` (was `moment_grid_expands_and_pads_variable_gate_rows`) | `l2-kdmx-20080525-205148` sweep 11 VEL (836 gates on the first radial, down to 816 later) | Py-ART per-radial `ngates`: short rows padded with code 0, probes at the last echo gate and the first padded gate. No corpus sweep has its longest radial after a shorter one, so the expansion path has no real sample |
+| `decoded_u8_velocity_grid_reports_range_folded_gates` (was `moment_grid_pushes_u8_slice_without_row_allocation`) | `l2-ktlx-20240315-000217-trim` sweep 2 VEL (342 range-folded gates) | Py-ART raw codes, sums, probes |
+| `decoded_u16_differential_phase_grid_matches_big_endian_codes` (was `moment_grid_pushes_u16_be_bytes_without_row_allocation`) | `l2-ktlx-20130520-201643-trim` sweep 1 PHI (16-bit) | Py-ART raw u16 codes and header (scale 2.8361, offset 2) |
+| `cut_tracks_available_moments` | KTLX 2024 and 2013 trims, both sweeps | MetPy data-block names (REF/ZDR/PHI/RHO/CFP; REF/VEL/SW), radial counts, first azimuths |
+| `volume_can_keep_repeated_elevation_cuts_separate` | `jma-n5-20191012-090000-rs47773` (26 sweeps, repeated 0.0/0.3/0.7/1.2/1.8/2.5/5.0 deg tilts) | GRIB2 walker elevations: 26 cuts sorted lowest first, scan order kept among equals, numbered 1..=26 |
 
-| helper | builds | used by |
+`moment_grid_reserves_rows_and_gate_storage` was deleted: capacity is not observable in real data; the
+storage-length invariant it served is asserted on every decoded grid.
+
+### `crates/recast-radar-core/tests/real_merge.rs`
+
+| test | real input | assertion source |
 |---|---|---|
-| `tests::merge_radial` | hand-built radial | `tests::merge_cut` |
-| `tests::merge_cut` | hand-built cut | `tests::merge_single_part_is_identity_with_sorted_cuts`, `tests::merge_unions_moments_of_elevation_matched_cuts`, `tests::merge_fills_aligned_ray_instrument_metadata_without_overwriting_source_values`, `tests::merge_ignores_malformed_incoming_ray_instrument_metadata`, `tests::merge_collision_keeps_first_part_grid`, `tests::merge_unions_unmatched_cuts_sorted_by_elevation`, `tests::merge_skips_matched_cut_with_different_radial_count`, `tests::merge_skips_matched_cut_with_shifted_azimuths`, `tests::merge_accepts_azimuths_equal_across_the_north_wrap`, `tests::merge_accepts_matched_cut_with_different_gate_layout`, `tests::merge_three_product_parts_assembles_full_dual_pol_cut`, `tests::merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber` |
-| `tests::merge_volume` | hand-built volume | `tests::merge_single_part_is_identity_with_sorted_cuts`, `tests::merge_rejects_mismatched_site_ids`, `tests::merge_keeps_earliest_volume_time`, `tests::merge_unions_moments_of_elevation_matched_cuts`, `tests::merge_fills_aligned_ray_instrument_metadata_without_overwriting_source_values`, `tests::merge_ignores_malformed_incoming_ray_instrument_metadata`, `tests::merge_collision_keeps_first_part_grid`, `tests::merge_unions_unmatched_cuts_sorted_by_elevation`, `tests::merge_skips_matched_cut_with_different_radial_count`, `tests::merge_skips_matched_cut_with_shifted_azimuths`, `tests::merge_accepts_azimuths_equal_across_the_north_wrap`, `tests::merge_accepts_matched_cut_with_different_gate_layout`, `tests::merge_three_product_parts_assembles_full_dual_pol_cut`, `tests::merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber` |
-
+| `merge_single_part_is_identity_with_sorted_cuts` | `l2-ktlx-20240315-000217-trim` (0.58 deg surveillance sweep before the 0.48 deg Doppler sweep) | reference merge: sorted, renumbered, otherwise equal |
+| `merge_rejects_mismatched_site_ids` | KIWA start chunk + chunk 002 vs the KTLX 2024 trim | error names KIWA and KTLX |
+| `merge_keeps_earliest_volume_time` | Hurum DBZH/TH (14:45:13Z) + VRADH (14:46:48Z) in both orders | h5py `/what` times; the merge takes the earliest |
+| `merge_unions_moments_of_elevation_matched_cuts` | Jabbeke DBZH + VRAD parts (9 sweeps each) | reference merge: 9 merged moments, identical grids |
+| `merge_fills_aligned_ray_instrument_metadata_without_overwriting_source_values` | Irene split into DBZ and VEL parts; DBZ part's unambiguous range cleared, VEL part's ray-0 prt doubled (edits) | netCDF4 prt / range: filled from the VEL part, first part wins |
+| `merge_ignores_malformed_incoming_ray_instrument_metadata` | Irene parts with one sidecar shortened by one entry | the aligned sidecar is kept / replaces the malformed one |
+| `merge_collision_keeps_first_part_grid` | Hurum DBZH + TH (both map to reflectivity) | 10 collisions, DBZH grids kept; h5py raw probes of both planes as physical values |
+| `merge_unions_unmatched_cuts_sorted_by_elevation` | KIWA chunks 026, 002, 014 as parts (1.33, 0.27, 1.01 deg) | reference merge: 3 cuts sorted, numbered |
+| `merge_skips_matched_cut_with_different_radial_count` | KIWA sweep 1 as one chunk (120 radials) vs two chunks (240) | skipped_geometry 1 |
+| `merge_skips_matched_cut_with_shifted_azimuths` | KTLX 2013 + 2024 trims (elevations within 0.05 deg, 480 radials, azimuth grids 44-58 deg apart) | MetPy azimuths: both cuts skipped |
+| `merge_accepts_azimuths_equal_across_the_north_wrap` | Jabbeke parts with radial 0 rewritten to 359.99 / 0.01 deg (edit of the real 0.5 deg bin centre) | merged as the unedited parts |
+| `merge_accepts_matched_cut_with_different_gate_layout` | `l2-ktlx-19990504-002218` sweep 5 (REF 356 x 1 km, VEL/SW 920 x 250 m on the same 367 radials) split by moment; KTLX 2024 Doppler cut for the Nyquist fill | Py-ART message header gate geometry; Nyquist velocities restored from the VEL part |
+| `merge_three_product_parts_assembles_one_scan` (was `..._assembles_full_dual_pol_cut`) | Hurum DBZH + VRADH + TH | reference merge: 8 merged, 10 collisions, earliest time |
+| `merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber` | JMA N5 + N6 members (and N6 twice) | GRIB2 walker start azimuths: 11 velocity sweeps land on their repetition, the two 0.3 deg sweeps with no matching azimuth grid are skipped, numbering 1..=26; the repeated member collides 11 times |
 
 ### `crates/recast-radar-data/src/international.rs`
 
-`FakeProvider`, `FakeLoopProvider` and `FakeArchiveProvider` implement the provider traits with invented sites and frame plans (no radar bytes).
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::default_recent_is_a_single_frame_and_reports_no_loop_support` | a real provider parsing a committed listing capture (`src/international/fixtures/fmi_fianj_listing.xml` or `geosphere_listing_recent.xml`) | frames and site ids from the captured listing |
-| `tests::recent_source_routes_recent_and_flips_supports_recent_together` | a real provider with recent-frame support over `src/international/fixtures/ord_*_hour.xml` | frame count from the listing |
-| `tests::default_archive_source_is_absent_and_reports_no_archive_support` | a real provider without archive support | trait defaults |
-| `tests::archive_source_routes_day_plans_and_flips_supports_archive_together` | a real archive-capable provider over committed day listings (ORD `ord_*_hour.xml`) | day plans from the listing |
-| `tests::default_archive_progress_is_object_safe_and_honors_precancel` | the same real archive-capable provider | pre-cancel honoured |
-| `tests::default_window_plans_folds_days_oldest_first_and_caps_to_the_newest` | the same provider over two captured day listings | oldest-first fold and cap from listing timestamps |
-| `tests::trait_contract_round_trips_through_a_boxed_provider` | a real provider behind `Box<dyn IntlProvider>` | listing-derived values round-trip; candidate `exception` (trait contract, no radar data) if no provider fits |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::FakeProvider` | provider with an invented site and plan | `tests::FakeLoopProvider::list_sites`, `tests::FakeLoopProvider::latest`, `tests::FakeArchiveProvider::list_sites`, `tests::FakeArchiveProvider::latest`, `tests::default_recent_is_a_single_frame_and_reports_no_loop_support`, `tests::default_archive_source_is_absent_and_reports_no_archive_support`, `tests::trait_contract_round_trips_through_a_boxed_provider` |
-| `tests::FakeLoopProvider` | provider with invented recent frames | `tests::recent_source_routes_recent_and_flips_supports_recent_together` |
-| `tests::FakeLoopProvider::list_sites` | delegates to FakeProvider | `tests::recent_source_routes_recent_and_flips_supports_recent_together` |
-| `tests::FakeLoopProvider::latest` | delegates to FakeProvider | `tests::recent_source_routes_recent_and_flips_supports_recent_together` |
-| `tests::FakeArchiveProvider` | provider with invented archive plans | `tests::archive_source_routes_day_plans_and_flips_supports_archive_together`, `tests::default_archive_progress_is_object_safe_and_honors_precancel`, `tests::default_window_plans_folds_days_oldest_first_and_caps_to_the_newest` |
-| `tests::FakeArchiveProvider::list_sites` | delegates to FakeProvider | `tests::archive_source_routes_day_plans_and_flips_supports_archive_together`, `tests::default_archive_progress_is_object_safe_and_honors_precancel`, `tests::default_window_plans_folds_days_oldest_first_and_caps_to_the_newest` |
-| `tests::FakeArchiveProvider::latest` | delegates to FakeProvider | `tests::archive_source_routes_day_plans_and_flips_supports_archive_together`, `tests::default_archive_progress_is_object_safe_and_honors_precancel`, `tests::default_window_plans_folds_days_oldest_first_and_caps_to_the_newest` |
-
+`ArchivedBejab`, `ArchivedBejabLoop` and `ArchivedBejabArchive` build frame plans from the two
+committed ORD archive listings (24 split scans per hour: DBZH + TH on the 0.3 deg ladder, DBZH + VRAD on
+the 0.5 deg ladder). The seven contract tests keep their names; `captured_bejab_listings_hold_twenty_four_split_scans_per_hour`
+pins what the captures hold. Expected identities and URLs are the listed object keys.
 
 ### `crates/recast-radar-data/src/tropical.rs`
 
-`synthetic_storm` builds `TropicalCyclone` records with invented ids, names and positions for merge/failover tests (the committed feed captures have no GDACS storm inside an NHC basin).
-
 | test | real input | assertion source |
 |---|---|---|
-| `tests::merge_dedupes_per_storm_not_per_basin` | needs corpus addition: same-time captures of NHC `CurrentStorms.json` and the GDACS event list that share an Atlantic/East Pacific storm, committed under `tests/fixtures/tropical/` | storm ids, names and positions from the captured JSON |
-| `tests::merge_drops_gdacs_duplicate_by_name` | the same-time NHC + GDACS captures | duplicate dropped by name |
-| `tests::merge_drops_gdacs_duplicate_by_position` | the same-time NHC + GDACS captures | duplicate dropped by position |
-| `tests::combine_keeps_all_gdacs_storms_when_nhc_is_down` | committed `tests/fixtures/tropical/gdacs_tc_list.json` with an NHC error | all GDACS storms kept |
-| `tests::empty_nhc_feed_does_not_hide_gdacs_atlantic_storm` | the same-time captures with the NHC list emptied (edit of a real capture) | GDACS Atlantic storm kept |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_storm` | invented tropical cyclone record | `tests::merge_dedupes_per_storm_not_per_basin`, `tests::merge_drops_gdacs_duplicate_by_name`, `tests::merge_drops_gdacs_duplicate_by_position`, `tests::combine_keeps_all_gdacs_storms_when_nhc_is_down`, `tests::empty_nhc_feed_does_not_hide_gdacs_atlantic_storm` |
-
+| `captured_feeds_parse_to_the_storms_they_list` (new) | `nhc_current_storms_20260618T0211Z.json` (Internet Archive capture of NHC `CurrentStorms.json`: TS Arthur), `gdacs_tc_search_20260610_20260630.json` (GDACS SEARCH list: MEKKHALA-26, HIGOS-26, ARTHUR-26, CRISTINA-26), `nhc_current_storms_20260917T0538Z.json` (no active storm) and `gdacs_events4app_20260917T0538Z.json` (DUJUAN-26, FIFTEEN-E-26 among 98 other events), the last two captured in the same minute | names and positions read from the JSON with serde_json |
+| `merge_dedupes_per_storm_not_per_basin` | Arthur capture + June GDACS list | CRISTINA-26 (NHC basin, no NHC counterpart) survives; ARTHUR-26 (55 km from the NHC fix) is dropped |
+| `merge_drops_gdacs_duplicate_by_name` | ARTHUR-26 moved 10 deg of longitude (edit) | dropped by name |
+| `merge_drops_gdacs_duplicate_by_position` | ARTHUR-26 and CRISTINA-26 renamed `Unnamed` (edit) | the near one dropped, the far one kept |
+| `combine_keeps_all_gdacs_storms_when_nhc_is_down` | September GDACS list with an NHC error | FIFTEEN-E-26 (East Pacific) survives; strongest first |
+| `empty_nhc_feed_does_not_hide_gdacs_nhc_basin_storm` (was `..._atlantic_storm`) | the same-minute empty NHC and September GDACS captures | FIFTEEN-E-26 kept |
 
 ### `crates/recast-radar-scattering/src/lut.rs`
 
-`synthetic_node`/`synthetic_fixture` build an `OfflineLut` of analytic affine scattering values (labelled `SyntheticFixtureOnly`); `singleton_axis_fixture` builds a one-point axis variant.
-
 | test | real input | assertion source |
 |---|---|---|
-| `tests::synthetic_fixture_round_trip_is_byte_deterministic` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | serialized bytes equal the committed LUT |
-| `tests::synthetic_affine_fixture_interpolates_exactly_in_declared_axis_order` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | interpolated values vs pyTMatrix evaluated at the query points (tolerance) |
-| `tests::prepared_plan_has_fixed_serializable_axis_ordered_layout` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | layout per PACK_FORMAT.md |
-| `tests::prepared_execution_is_bit_identical_to_legacy_corner_order` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | prepared vs legacy interpolation bit-identical |
-| `tests::prepared_plan_handles_singletons_and_exact_boundaries` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config (with a singleton axis) | exact at grid nodes |
-| `tests::plan_preparation_preserves_outside_axis_failures` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | outside-axis errors |
-| `tests::interpolation_refuses_extrapolation_and_nonfinite_coordinates` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | errors outside the axes and for non-finite coordinates |
-| `tests::payload_and_external_config_hash_mismatches_fail_closed` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | hash mismatch errors after mutating the real payload/config |
-| `tests::embedded_config_hash_is_recomputed_not_trusted` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config | mutated embedded hash rejected |
-| `tests::digest_cannot_hide_an_invalid_additive_grid_node` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config, a node value mutated to non-physical | rejected despite a recomputed digest |
-| `tests::file_magic_and_schema_are_never_guessed` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config, magic/schema bytes mutated | rejected |
-| `tests::redundant_header_contract_rejects_mislabeled_schema_axes_and_outputs` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config, header fields mutated | rejected |
-| `tests::singleton_axis_is_exact_and_does_not_duplicate_corner_weight` | needs corpus addition: a small real T-matrix LUT generated by `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` (pyTMatrix 0.3.3), committed with its generator config (with a singleton axis) | exact node values |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_node` | analytic affine scattering node | `tests::synthetic_fixture`, `tests::singleton_axis_fixture`, `tests::synthetic_affine_fixture_interpolates_exactly_in_declared_axis_order`, `tests::singleton_axis_is_exact_and_does_not_duplicate_corner_weight` |
-| `tests::synthetic_fixture` | 2x2 analytic LUT | `tests::synthetic_fixture_round_trip_is_byte_deterministic`, `tests::synthetic_affine_fixture_interpolates_exactly_in_declared_axis_order`, `tests::prepared_execution_is_bit_identical_to_legacy_corner_order`, `tests::interpolation_refuses_extrapolation_and_nonfinite_coordinates`, `tests::payload_and_external_config_hash_mismatches_fail_closed`, `tests::embedded_config_hash_is_recomputed_not_trusted`, `tests::digest_cannot_hide_an_invalid_additive_grid_node`, `tests::file_magic_and_schema_are_never_guessed`, `tests::redundant_header_contract_rejects_mislabeled_schema_axes_and_outputs` |
-| `tests::singleton_axis_fixture` | analytic LUT with a singleton axis | `tests::prepared_plan_has_fixed_serializable_axis_ordered_layout`, `tests::prepared_plan_handles_singletons_and_exact_boundaries`, `tests::plan_preparation_preserves_outside_axis_failures` |
-
+| `committed_pytmatrix_tables_round_trip_byte_exactly` (was `synthetic_fixture_round_trip_is_byte_deterministic`) | rain and dry-ice tables with their configs | generator manifests (sha256, counts), header fields and payload nodes read from the bytes |
+| `held_out_nodes_match_the_validator_and_direct_pytmatrix` (was `synthetic_affine_fixture_interpolates_exactly_in_declared_axis_order`) | the 12 held-out nodes of both tables | the report's multilinear interpolation (1e-9 relative) and its per-node threshold verdict against direct PyTMatrix |
+| `prepared_plan_has_fixed_serializable_axis_ordered_layout` | rain table, query between diameter and ratio nodes | layout computed from the axis coordinates in the golden script |
+| `prepared_execution_is_bit_identical_to_legacy_corner_order` | held-out and golden queries on both tables | frozen legacy corner walk |
+| `prepared_plan_handles_singletons_and_exact_boundaries` | first and last nodes of both tables | stored nodes |
+| `plan_preparation_preserves_outside_axis_failures`, `interpolation_refuses_extrapolation_and_nonfinite_coordinates` | dry-ice / rain axis limits | `OutsideAxis` with the file's axis bounds |
+| `payload_and_external_config_hash_mismatches_fail_closed`, `embedded_config_hash_is_recomputed_not_trusted`, `digest_cannot_hide_an_invalid_additive_grid_node`, `file_magic_and_schema_are_never_guessed`, `redundant_header_contract_rejects_mislabeled_schema_axes_and_outputs` | the committed rain bytes with one bit flipped, the dry-ice config swapped in, a node's covariance raised above sqrt(ZH ZV), magic/schema/header fields rewritten | rejected |
+| `singleton_axis_is_exact_and_does_not_duplicate_corner_weight` | grid nodes of both tables (singleton frequency and elevation axes) | stored nodes, one corner |
 
 ### `crates/recast-radar-scattering/src/p3_table.rs`
 
-`synthetic_table` writes a P3 lookup table in the official text layout with formula values; `parse_synthetic` parses it.
-
 | test | real input | assertion source |
 |---|---|---|
-| `tests::parser_accepts_exact_two_and_three_moment_record_layouts` | needs corpus addition: the WRF `run/p3_lookupTable_1.dat-v5.4_2momI` and `_3momI` tables the crate targets (or record excerpts derived from them with provenance) | record counts and sample values read from the table text |
-| `tests::parser_rejects_truncation_extra_content_nonfinite_values_and_wrong_indices` | the WRF P3 tables above, truncated / with appended content / a value set to NaN / an index changed (edits of real text) | parse errors |
+| `parser_accepts_exact_two_and_three_moment_record_layouts` | the committed first blocks of both official tables (reduced layout) | records read from the text by the golden script (float32) |
+| `official_tables_load_and_retain_every_golden_record` (new) | the full 2momI/3momI downloads (skipped offline) | byte length and sha256 gate, 1000/11000 retained records, the committed prefixes |
+| `parser_rejects_truncation_extra_content_nonfinite_values_and_wrong_indices` | edits of the two-moment first block | parse errors |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_table` | P3 table text with formula values | `tests::parser_accepts_exact_two_and_three_moment_record_layouts`, `tests::parser_rejects_truncation_extra_content_nonfinite_values_and_wrong_indices` |
-| `tests::parse_synthetic` | parses the synthetic table | `tests::parser_accepts_exact_two_and_three_moment_record_layouts`, `tests::parser_rejects_truncation_extra_content_nonfinite_values_and_wrong_indices` |
+### `crates/recast-radar-scattering/src/scheme_psd.rs` and `tmatrix_runtime.rs`
 
-
-### `crates/recast-radar-scattering/src/scheme_psd.rs`
-
-`synthetic_per_particle` returns analytic scattering per particle; `synthetic_fall_speed_provenance` labels an invented size-speed relation `SyntheticTestOnly`.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::node_habit_comes_from_geometry_not_category_label` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | habit from node geometry |
-| `tests::authenticated_solid_ice_closure_preserves_mass_and_shape_at_918_for_both_habits` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | mass and shape closure at 918 kg m-3 |
-| `tests::solid_ice_closure_rejects_an_unauthenticated_material_endpoint` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | rejection |
-| `tests::equal_native_axes_produce_spherical_nodes` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | spherical nodes |
-| `tests::exact_sphere_policy_represents_sub_floor_nodes_with_an_audited_route` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | audited route |
-| `tests::small_sphere_policy_does_not_bridge_nonspheres_or_other_domain_misses` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | no bridging |
-| `tests::refined_integration_closes_number_mass_d6_and_preserves_tail_audit` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | moment closure against analytic PSD integrals |
-| `tests::size_dependent_fall_moments_produce_nonzero_variance` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | non-zero variance |
-| `tests::narrow_particle_domain_fails_instead_of_clamping_nodes` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | error |
-| `tests::sub_node_width_supported_sliver_cannot_hide_domain_omission` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | error |
-| `tests::wrf_two_micron_mass_gap_is_typed_before_quadrature` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | typed gap error |
-| `tests::qnsmall_qasmall_two_micron_mass_gap_is_typed_before_quadrature` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | typed gap error |
-| `tests::unrelated_geometry_mass_gap_is_not_typed_as_wrf_two_micron_gap` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | untyped gap |
-| `tests::callback_error_retains_quadrature_level_and_node` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | error context |
-| `tests::node_budget_and_tail_limit_are_fail_closed` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | fail closed |
-| `tests::prepared_workload_preserves_level_index_and_callback_order` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | callback order |
-| `tests::prepared_cpu_finish_is_bit_identical_to_frozen_pre_refactor_result` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | re-freeze the pinned result on the real inputs |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_per_particle` | analytic per-particle scattering | `tests::node_habit_comes_from_geometry_not_category_label`, `tests::authenticated_solid_ice_closure_preserves_mass_and_shape_at_918_for_both_habits`, `tests::equal_native_axes_produce_spherical_nodes`, `tests::exact_sphere_policy_represents_sub_floor_nodes_with_an_audited_route`, `tests::small_sphere_policy_does_not_bridge_nonspheres_or_other_domain_misses`, `tests::refined_integration_closes_number_mass_d6_and_preserves_tail_audit`, `tests::size_dependent_fall_moments_produce_nonzero_variance`, `tests::narrow_particle_domain_fails_instead_of_clamping_nodes`, `tests::sub_node_width_supported_sliver_cannot_hide_domain_omission`, `tests::node_budget_and_tail_limit_are_fail_closed`, `tests::prepared_workload_preserves_level_index_and_callback_order`, `tests::prepared_cpu_finish_is_bit_identical_to_frozen_pre_refactor_result` |
-| `tests::synthetic_fall_speed_provenance` | invented fall-speed provenance | `tests::node_habit_comes_from_geometry_not_category_label`, `tests::authenticated_solid_ice_closure_preserves_mass_and_shape_at_918_for_both_habits`, `tests::solid_ice_closure_rejects_an_unauthenticated_material_endpoint`, `tests::equal_native_axes_produce_spherical_nodes`, `tests::exact_sphere_policy_represents_sub_floor_nodes_with_an_audited_route`, `tests::small_sphere_policy_does_not_bridge_nonspheres_or_other_domain_misses`, `tests::refined_integration_closes_number_mass_d6_and_preserves_tail_audit`, `tests::size_dependent_fall_moments_produce_nonzero_variance`, `tests::narrow_particle_domain_fails_instead_of_clamping_nodes`, `tests::sub_node_width_supported_sliver_cannot_hide_domain_omission`, `tests::wrf_two_micron_mass_gap_is_typed_before_quadrature`, `tests::qnsmall_qasmall_two_micron_mass_gap_is_typed_before_quadrature`, `tests::unrelated_geometry_mass_gap_is_not_typed_as_wrf_two_micron_gap`, `tests::callback_error_retains_quadrature_level_and_node`, `tests::node_budget_and_tail_limit_are_fail_closed`, `tests::prepared_workload_preserves_level_index_and_callback_order`, `tests::prepared_cpu_finish_is_bit_identical_to_frozen_pre_refactor_result` |
-
-
-### `crates/recast-radar-scattering/src/tmatrix_runtime.rs`
-
-`synthetic_speed_provenance` labels an invented size-speed relation `SyntheticTestOnly`.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::malformed_external_particle_node_still_fails_closed_after_preparation_seam` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | fails closed |
-| `tests::particle_node_query_rejects_habit_frequency_and_wrong_table_role` | needs corpus addition: per-particle scattering from the pyTMatrix 0.3.3 generator and an authenticated fall-speed relation (e.g. the P3 table fall speeds), replacing the `SyntheticTestOnly` provenance | rejections |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_speed_provenance` | invented fall-speed provenance | `tests::malformed_external_particle_node_still_fails_closed_after_preparation_seam`, `tests::particle_node_query_rejects_habit_frequency_and_wrong_table_role` |
-
+The per-particle callback of every PSD test is the committed dry-ice table looked up at the node's
+diameter and axis ratio (sub-floor spheres at the floor sphere scaled by `(D/D_floor)^6`); the
+fall-speed provenance is the SHA-256 of the table config's `terminal_velocity` object (Schiller-Naumann)
+as an `ExternalVersionedResearch` token; distributions were resized to 0.5 mm semi-axes at 200 per kg so
+their nodes sit inside the 0.1-50 mm table, with the convergence budget at 2e-2 (a 29-node table is
+piecewise linear in D^6) and the omission budgets at 1e-4 (the sub-0.1 mm tail). The frozen CPU result
+was re-pinned on those inputs. The runtime tests reject a real but wrong law: the rain table's Atlas
+provenance.
 
 ## Corpus additions needed
 
@@ -979,10 +933,9 @@ Inputs proposed above that are not in the corpus yet:
 | io-formats | one Australia NCI THREDDS `{site}_{date}.pvol.zip/{member}.pvol.h5` response | `unwraps_zip_local_member_stream_without_central_directory` |
 | correct | the KLIX volume before `l2-klix-20210829-180425` (about 17:58Z) and one 30 min or more earlier | v4 temporal-reference tests |
 | track | 30-60 min sequences of consecutive WSR-88D volumes (crossing, splitting, merging cells; a QLCS) with the Level III Storm Tracking Information product for the same volumes | `tracking.rs` |
-| core-data-scattering | one scan delivered as per-quantity files (MeteoRomania or DWD) | `merge_three_product_parts_assembles_full_dual_pol_cut` |
-| core-data-scattering | same-time NHC `CurrentStorms.json` and GDACS event-list captures sharing a storm | `tropical.rs` merge tests |
-| core-data-scattering | WRF `p3_lookupTable_1.dat-v5.4_2momI` / `_3momI` (or derived record excerpts) | `p3_table.rs` |
-| core-data-scattering | a small pyTMatrix 0.3.3 LUT and per-particle outputs from `tools/pytmatrix-0.3.3`, with an authenticated fall-speed relation | `lut.rs`, `scheme_psd.rs`, `tmatrix_runtime.rs` |
+
+The core-data-scattering additions (per-quantity ODIM parts of one scan, NHC/GDACS captures, the WRF P3
+tables, the PyTMatrix 0.3.3 tables with the held-out report) were made in C.2; see that group's section.
 
 Three proposals depend on checking a corpus file first and need an addition only if the check fails: a
 real volume without wavelength metadata (`unknown_band_blocks_band_sensitive_products_but_keeps_phif`),

@@ -46,11 +46,15 @@ and archives are downloaded on first use, checked against their sha256 and cache
 | `testdata/manifest.toml` | schema comment only, no entries |
 | `testdata/level2/manifest.toml` | Level II archive volumes, the KIWA real-time chunk volume, trimmed fixtures |
 | `testdata/other/manifest.toml` | ODIM_H5, CfRadial 1 and 2, DORADE, JMA GRIB2 tars, one Level III VWP, and the archives some of them came from |
+| `testdata/scattering/manifest.toml` | scattering inputs: PyTMatrix 0.3.3 lookup tables with their generator configs and held-out report, WRF P3 v5.4 lookup tables (see Scattering inputs below) |
 | `testdata/files/level2/` | 16 trimmed Level II fixtures, `<SITE><YYYYMMDD>_<HHMMSS>.trim.V06` |
 | `testdata/files/level2-chunks/` | the first three chunks of KIWA volume 307 |
 | `testdata/files/other/` | committed files for the other formats (layout under Other formats below) |
+| `testdata/files/scattering/` | committed scattering inputs |
+| `testdata/golden/` | JSON goldens the real-data tests compare against, written by the `tools/*_golden.py` scripts from independent readers |
 | `crates/recast-radar-testdata/` | manifest loader, download and cache, `trim-level2` tool, tests |
 | `tools/validate_trimmed.py` | checks the trimmed Level II fixtures against their sources with Py-ART and MetPy |
+| `tools/core_golden.py`, `tools/scattering_golden.py` | goldens for `recast-radar-core` (model and merge tests) and `recast-radar-scattering` |
 
 ## Verification
 
@@ -502,6 +506,7 @@ Checked when the files were curated (2026-09-16):
 | Directory | Contents |
 |---|---|
 | `files/other/odim/` | ODIM_H5 polar volumes (PVOL) |
+| `files/other/odim/ord-parts/` | per-quantity ODIM_H5 parts of one scan (ORD archive objects, named as listed) |
 | `files/other/odim/imgw_polrad/` | ODIM_H5 Cartesian IMAGE products (IMGW CMAX) |
 | `files/other/cfradial/` | CfRadial 1.x in classic netCDF and netCDF-4 containers |
 | `files/other/dorade/` | DORADE sweep files |
@@ -525,6 +530,8 @@ Derivation recipes section below.
 | `odim-imgw-ram-20260711-0015-{kdp,phidp,rhohv,zdr}-max` | C | 33775, 32534, 61984, 59793 | ODIM IMAGE (Cartesian MAX with side projections), `what` on `dataset1`, version string `H5rd 2.3`, source has only a WMO number | IMGW-PIB datastore (attribution required), URL expired |
 | `odim-iesha-20260305-0115-pvol` | C | 1667065 | **new** H5rad 2.3, 10 sweeps DBZH+TH+VRADH up to a 90 deg vertical sweep, widespread echo | OPERA ORD archive (CC BY 4.0) |
 | `odim-dkrom-20260820-1130-pvol` | C | 1695131 | **new** H5rad 2.0 dual-pol, 10 sweeps x 8 quantities (VRAD/WRAD names, LDR all nodata), elevations not whole degrees | OPERA ORD archive (CC BY 4.0) |
+| `odim-bejab-20260612-1450-{dbzh,vrad}` | C | 243054, 219191 | **new** one Doppler-task scan of RMI Jabbeke delivered as one PVOL per quantity: 9 sweeps 0.5-25 deg x 360 rays x 300 gates in both files, identical per-sweep times (`merge_radar_volumes` inputs) | OPERA ORD archive (CC BY 4.0) |
+| `odim-nohur-20260612-1445-{dbzh,th}`, `odim-nohur-20260612-1446-vradh` | C | 773343, 1478472, 197553 | **new** one scan of MET Norway Hurum as three per-quantity PVOLs: DBZH and TH over 10 sweeps 0.5-90 deg (720 rays on the lowest, tiered gate counts, a 30 m vertical sweep), VRADH over the 8 sweeps from 2.6 deg with a later `/what` time | OPERA ORD archive (CC BY 4.0) |
 
 #### CfRadial
 
@@ -871,6 +878,26 @@ hard links to the same files. For the Level III file, run
 4. **ureq's rustls feature pulls in `ring`,** which has a C build step. The plan's rustls exception
    covers this, but a scan for C dependencies will list it.
 
+## Scattering inputs
+
+These entries are in `testdata/scattering/manifest.toml`, committed under `testdata/files/scattering/`.
+They are not radar observations: they are the generator and model artifacts
+`crates/recast-radar-scattering` consumes, added in plan task C.2 (group core-data-scattering) so that
+its lookup-table, PSD-integration and P3-table tests read real inputs instead of analytic fixtures.
+
+| id | C/D | bytes | what it covers | source |
+|---|---|---|---|---|
+| `tmatrix-lut-rain-sband-pytmatrix-0.3.3` (+ `-config`, `-manifest`) | C | 9108 (+ 3151, 4595) | schema-1 LUT `conventional-liquid-rain-sband-pytmatrix-0.3.3-unvalidated-v1`: 16 diameters 0.3-7 mm x 3 axis ratios x singleton 2.7008 GHz x singleton 0 deg, 48 nodes; the exact generator config its header hashes; the generator manifest with every SHA-256 | `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` run (`run_all.ps1`, locked Docker image) recorded in radar-bow `research_only_assets/tmatrix/pytmatrix-0.3.3` |
+| `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3` (+ `-config`, `-manifest`) | C | 12947 (+ 3882, 5000) | LUT `conventional-dry-ice-spheroids-sband-pytmatrix-0.3.3-unvalidated-v1`: 29 diameters 0.1-50 mm x 3 axis ratios, 87 nodes, Gaussian 20-degree canting, Schiller-Naumann fall speeds | same run |
+| `tmatrix-held-out-interpolation-report-v10`, `tmatrix-held-out-nodes-v10` | C | 186036, 17067 | the post-freeze held-out check of all 8 generated tables: nodes absent from the grids (public seed), direct PyTMatrix recomputation, the validator's multilinear interpolation and per-component errors; the node request it answers | radar-bow `validation/tmatrix/refined_grid_v10_post_freeze_held_out_*.json` |
+| `wrf-p3-lookup-table-1-v5.4-2momI`, `-3momI` | D | 1606038, 17886038 | the official WRF P3 v5.4 lookup tables at commit f52c197 (the bytes the crate pins by length and SHA-256) | github.com/wrf-model/WRF (public domain) |
+| `wrf-p3-lookup-table-1-v5.4-{2,3}momI-first-block` | C, derived | 80338, 81338 | the byte prefix through the 1552nd line feed of each table: header, separator, the first (density 1, rime 1[, shape 1]) block of 50 main records and 1500 collision records | `head -n 1552` of the download |
+
+The tables above are `research_only_unvalidated` by their own headers; committing them makes them test
+inputs, not validated science. The golden script `tools/scattering_golden.py` reads the LUT bytes with
+`struct`, cross-checks the report's interpolation with numpy on the payload, and reads the P3 records
+from the text.
+
 ## Tag vocabulary
 
 Tags are free-form strings, usually `namespace:value`. They are case-sensitive, and site tags are
@@ -924,10 +951,18 @@ Tags used in this manifest:
 - `quirk:*` marks writer oddities that decoders must handle.
 - `replaces:cfrad_synth|odim_pvol_synth` marks the real replacements for the
   synthetic fixtures.
-- `derived` and `derivation:container-conversion|subset|head-trim|archive-member`
+- `derived` and `derivation:container-conversion|subset|head-trim|archive-member|prefix`
   mark derived files.
 - `archive` and `contains:*` mark source archives.
 - `sweepset:*` groups consecutive DORADE sweeps.
+- `part-of-scan` and `split-scan:*` group the per-quantity ODIM files of one scan.
+
+### Scattering inputs
+
+- `generator:pytmatrix-0.3.3`, `lut:schema-1|generator-config|generator-manifest`, `table:*`,
+  `band:s` and `status:research-only-unvalidated` describe the PyTMatrix tables.
+- `validation:held-out-interpolation|held-out-nodes` and `golden-source` mark the held-out check.
+- `provider:wrf-model`, `p3:v5.4`, `p3:two-moment|three-moment` and `text` describe the P3 tables.
 
 ## Manifest index
 
@@ -943,21 +978,25 @@ Everything below the marker is generated from the manifests by
 |---|---:|---:|---:|---:|---:|
 | `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 |
 | `testdata/level2/manifest.toml` | 115 | 19 | 10,394,101 | 96 | 247,881,182 |
-| `testdata/other/manifest.toml` | 30 | 22 | 15,181,236 | 8 | 123,175,908 |
-| **all** | **145** | **41** | **25,575,337** | **104** | **371,057,090** |
+| `testdata/other/manifest.toml` | 35 | 27 | 18,092,849 | 8 | 123,175,908 |
+| `testdata/scattering/manifest.toml` | 12 | 10 | 403,462 | 2 | 19,492,076 |
+| **all** | **162** | **56** | **28,890,412** | **106** | **390,549,166** |
 
 | format | committed | download |
 |---|---:|---:|
+| `brslut-v1` | 2 | 0 |
 | `cfradial1` | 4 | 2 |
 | `cfradial2` | 0 | 1 |
 | `dorade` | 5 | 0 |
 | `jma-grib2-tar` | 2 | 2 |
+| `json` | 6 | 0 |
 | `nexrad-level2` | 16 | 29 |
 | `nexrad-level2-chunk` | 3 | 67 |
 | `nexrad-level3` | 1 | 0 |
-| `odim-h5` | 10 | 0 |
+| `odim-h5` | 15 | 0 |
 | `tar-gz` | 0 | 2 |
 | `tar-z` | 0 | 1 |
+| `wrf-p3-lookup-table` | 2 | 2 |
 
 ### Entries
 
@@ -1117,8 +1156,30 @@ No entries.
 | `jma-n6-20191012-090000` | `jma-grib2-tar` | download | 13,209,600 |  |
 | `jma-n5-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N5_grib2.RS47773.tar` | 1,761,280 | `jma-n5-20191012-090000` |
 | `jma-n6-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N6_grib2.RS47773.tar` | 624,640 | `jma-n6-20191012-090000` |
+| `odim-bejab-20260612-1450-dbzh` | `odim-h5` | committed `files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@DBZH.h5` | 243,054 |  |
+| `odim-bejab-20260612-1450-vrad` | `odim-h5` | committed `files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@VRAD.h5` | 219,191 |  |
+| `odim-nohur-20260612-1445-dbzh` | `odim-h5` | committed `files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@DBZH.h5` | 773,343 |  |
+| `odim-nohur-20260612-1445-th` | `odim-h5` | committed `files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@TH.h5` | 1,478,472 |  |
+| `odim-nohur-20260612-1446-vradh` | `odim-h5` | committed `files/other/odim/ord-parts/nohur@20260612T1446@2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@VRADH.h5` | 197,553 |  |
 | `l3-kbmx-19980416-archive-tarz` | `tar-z` | download | 32,132,224 |  |
 | `l3-kbmx-19980416-0006-nvw` | `nexrad-level3` | committed `files/other/nexrad-level3/KBMX_SDUS54_NVWBMX_199804160006` | 7,090 | `l3-kbmx-19980416-archive-tarz` |
+
+#### `testdata/scattering/manifest.toml`
+
+| id | format | where | bytes | derived from |
+|---|---|---|---:|---|
+| `tmatrix-lut-rain-sband-pytmatrix-0.3.3` | `brslut-v1` | committed `files/scattering/pytmatrix-0.3.3/conventional_liquid_rain_sband_unvalidated/table.lut` | 9,108 |  |
+| `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config` | `json` | committed `files/scattering/pytmatrix-0.3.3/conventional_liquid_rain_sband_unvalidated/config.json` | 3,151 |  |
+| `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest` | `json` | committed `files/scattering/pytmatrix-0.3.3/conventional_liquid_rain_sband_unvalidated/manifest.json` | 4,595 |  |
+| `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3` | `brslut-v1` | committed `files/scattering/pytmatrix-0.3.3/conventional_dry_ice_spheroids_sband_unvalidated/table.lut` | 12,947 |  |
+| `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config` | `json` | committed `files/scattering/pytmatrix-0.3.3/conventional_dry_ice_spheroids_sband_unvalidated/config.json` | 3,882 |  |
+| `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest` | `json` | committed `files/scattering/pytmatrix-0.3.3/conventional_dry_ice_spheroids_sband_unvalidated/manifest.json` | 5,000 |  |
+| `tmatrix-held-out-interpolation-report-v10` | `json` | committed `files/scattering/pytmatrix-0.3.3/refined_grid_v10_post_freeze_held_out_interpolation_report.json` | 186,036 |  |
+| `tmatrix-held-out-nodes-v10` | `json` | committed `files/scattering/pytmatrix-0.3.3/refined_grid_v10_post_freeze_held_out_nodes.json` | 17,067 |  |
+| `wrf-p3-lookup-table-1-v5.4-2momI` | `wrf-p3-lookup-table` | download | 1,606,038 |  |
+| `wrf-p3-lookup-table-1-v5.4-3momI` | `wrf-p3-lookup-table` | download | 17,886,038 |  |
+| `wrf-p3-lookup-table-1-v5.4-2momI-first-block` | `wrf-p3-lookup-table` | committed `files/scattering/wrf-p3/p3_lookupTable_1.dat-v5.4_2momI.first-block` | 80,338 | `wrf-p3-lookup-table-1-v5.4-2momI` |
+| `wrf-p3-lookup-table-1-v5.4-3momI-first-block` | `wrf-p3-lookup-table` | committed `files/scattering/wrf-p3/p3_lookupTable_1.dat-v5.4_3momI.first-block` | 81,338 | `wrf-p3-lookup-table-1-v5.4-3momI` |
 
 ### Index by tag
 
@@ -1129,17 +1190,24 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `archive` (3): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `l3-kbmx-19980416-archive-tarz`
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
-- `derived` (11): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
+- `derived` (13): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `dualpol` (28): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `golden-source` (1): `tmatrix-held-out-interpolation-report-v10`
 - `long-pulse` (1): `l2-kmaf-20230331-230843`
 - `mpda` (2): `l2-klix-20210829-180425`, `l2-klix-20210829-180425-trim`
 - `no-metadata-record` (2): `l2-ktlx-19910605-162126`, `l2-ktlx-19910605-162126-trim`
 - `no-msg5` (1): `l2-kvwx-20080415-235337`
+- `part-of-scan` (5): `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `partial-sweeps` (10): `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `sails` (8): `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-klix-20210829-180425`, `l2-tjua-20220918-190621`, `l2-kiwa-20260917-003629`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-klix-20210829-180425-trim`
 - `split-cut` (16): `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `text` (4): `wrf-p3-lookup-table-1-v5.4-2momI`, `wrf-p3-lookup-table-1-v5.4-3momI`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `trim` (16): `l2-ktlx-19910605-162126`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-klix-20050829-130035`, `l2-kdmx-20080525-205148`, `l2-ktlx-20130520-201643`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
 - `trimmed` (16): `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+
+#### `band:`
+
+- `band:s` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`
 
 #### `base-tilt:`
 
@@ -1206,12 +1274,12 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `country:`
 
-- `country:BE` (2): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`
+- `country:BE` (4): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`
 - `country:DK` (1): `odim-dkrom-20260820-1130-pvol`
 - `country:ES` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `country:IE` (1): `odim-iesha-20260305-0115-pvol`
 - `country:JP` (4): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
-- `country:NO` (1): `odim-norst-20170421-0908-pvol`
+- `country:NO` (4): `odim-norst-20170421-0908-pvol`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `country:PL` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 
 #### `derivation:`
@@ -1219,6 +1287,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `derivation:archive-member` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
 - `derivation:container-conversion` (2): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`
 - `derivation:head-trim` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
+- `derivation:prefix` (2): `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `derivation:subset` (1): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
 
 #### `dorade:`
@@ -1290,7 +1359,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `era:2023` (7): `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`
 - `era:2024` (5): `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`
 - `era:2025` (1): `l2-pahg-20250909-212549`
-- `era:2026` (81): `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2-kilx-20260418-013553-trim`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `dorade-cow2-20260521-225514-sur-head24`
+- `era:2026` (86): `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2-kilx-20260418-013553-trim`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `dorade-cow2-20260521-225514-sur-head24`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 
 #### `file:`
 
@@ -1300,10 +1369,14 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 - `first-gate:125m` (1): `l2-kgwx-20130601-235640`
 
+#### `generator:`
+
+- `generator:pytmatrix-0.3.3` (8): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`, `tmatrix-held-out-interpolation-report-v10`, `tmatrix-held-out-nodes-v10`
+
 #### `hdf5:`
 
-- `hdf5:gzip-chunked` (6): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
-- `hdf5:superblock-v0` (5): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
+- `hdf5:gzip-chunked` (11): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
+- `hdf5:superblock-v0` (10): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `hdf5:superblock-v1` (1): `odim-norst-20170421-0908-pvol`
 - `hdf5:v2-object-headers` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `hdf5:vlen-strings` (1): `odim-bewid-20130429-0430-pvol-dbzh-scan1`
@@ -1326,11 +1399,18 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `license:`
 
 - `license:BSD-3-Clause` (2): `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`
-- `license:CC-BY-4.0` (10): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
+- `license:CC-BY-4.0` (15): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `license:MIT` (7): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 - `license:imgw-attribution` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `license:public-domain` (2): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`
 - `license:unknown` (5): `dorade-cow2-20260521-225514-sur-head24`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
+- `license:wrf-public-domain` (4): `wrf-p3-lookup-table-1-v5.4-2momI`, `wrf-p3-lookup-table-1-v5.4-3momI`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
+
+#### `lut:`
+
+- `lut:generator-config` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`
+- `lut:generator-manifest` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`
+- `lut:schema-1` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`
 
 #### `meso-sails:`
 
@@ -1343,7 +1423,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `moments:`
 
-- `moments:dbzh` (3): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`
+- `moments:dbzh` (5): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-nohur-20260612-1445-dbzh`
 - `moments:dbzh-th-vradh` (1): `odim-iesha-20260305-0115-pvol`
 - `moments:dbzh-vradh` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `moments:dualpol` (3): `odim-dkrom-20260820-1130-pvol`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
@@ -1351,7 +1431,10 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `moments:phidp` (1): `odim-imgw-ram-20260711-0015-phidp-max`
 - `moments:reflectivity` (2): `jma-n5-20191012-090000`, `jma-n5-20191012-090000-rs47773`
 - `moments:rhohv` (1): `odim-imgw-ram-20260711-0015-rhohv-max`
+- `moments:th` (1): `odim-nohur-20260612-1445-th`
 - `moments:velocity` (2): `jma-n6-20191012-090000`, `jma-n6-20191012-090000-rs47773`
+- `moments:vrad` (1): `odim-bejab-20260612-1450-vrad`
+- `moments:vradh` (1): `odim-nohur-20260612-1446-vradh`
 - `moments:zdr` (1): `odim-imgw-ram-20260711-0015-zdr-max`
 
 #### `mrle:`
@@ -1379,15 +1462,21 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `object:`
 
 - `object:image` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
-- `object:pvol` (6): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
+- `object:pvol` (11): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 
 #### `odim:`
 
-- `odim:h5rad-2.0` (2): `odim-bejab-20190606-0000-pvol`, `odim-dkrom-20260820-1130-pvol`
+- `odim:h5rad-2.0` (4): `odim-bejab-20190606-0000-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`
 - `odim:h5rad-2.1` (1): `odim-bewid-20130429-0430-pvol-dbzh-scan1`
-- `odim:h5rad-2.2` (1): `odim-norst-20170421-0908-pvol`
+- `odim:h5rad-2.2` (4): `odim-norst-20170421-0908-pvol`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `odim:h5rad-2.3` (5): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`
 - `odim:h5rad-2.4` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
+
+#### `p3:`
+
+- `p3:three-moment` (2): `wrf-p3-lookup-table-1-v5.4-3momI`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
+- `p3:two-moment` (2): `wrf-p3-lookup-table-1-v5.4-2momI`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`
+- `p3:v5.4` (4): `wrf-p3-lookup-table-1-v5.4-2momI`, `wrf-p3-lookup-table-1-v5.4-3momI`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 
 #### `platform:`
 
@@ -1411,9 +1500,10 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `provider:imgw-pib` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `provider:nict-jma` (4): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
 - `provider:open-radar-data` (5): `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
-- `provider:opera-ord` (3): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
+- `provider:opera-ord` (8): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `provider:pyart` (2): `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`
 - `provider:wradlib-data` (2): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`
+- `provider:wrf-model` (4): `wrf-p3-lookup-table-1-v5.4-2momI`, `wrf-p3-lookup-table-1-v5.4-3momI`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `provider:zenodo` (7): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
 
 #### `quirk:`
@@ -1428,7 +1518,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `quirk:transition-rays` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
 - `quirk:version-string-h5rd` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `quirk:vertical-sweep` (1): `odim-iesha-20260305-0115-pvol`
-- `quirk:vrad-not-vradh` (1): `odim-dkrom-20260820-1130-pvol`
+- `quirk:vrad-not-vradh` (2): `odim-dkrom-20260820-1130-pvol`, `odim-bejab-20260612-1450-vrad`
 - `quirk:vradh-fill-offset` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `quirk:what-on-dataset` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `quirk:wmo-only-source` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
@@ -1482,10 +1572,11 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `scan:`
 
-- `scan:ppi` (13): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`
+- `scan:ppi` (18): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `scan:rhi` (3): `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-dow6-20211230-222139-rhi-head41`
 - `scan:sector` (1): `dorade-noxp-20090525-203211-sector`
 - `scan:sur` (1): `dorade-cow2-20260521-225514-sur-head24`
+- `scan:vertical-pointing` (3): `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 
 #### `segmented:`
 
@@ -1494,7 +1585,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `site:`
 
-- `site:bejab` (1): `odim-bejab-20190606-0000-pvol`
+- `site:bejab` (3): `odim-bejab-20190606-0000-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`
 - `site:bewid` (1): `odim-bewid-20130429-0430-pvol-dbzh-scan1`
 - `site:cow2` (1): `dorade-cow2-20260521-225514-sur-head24`
 - `site:dkrom` (1): `odim-dkrom-20260820-1130-pvol`
@@ -1519,6 +1610,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `site:ktlx` (12): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-ktlx-20130520-201643-trim`, `l2-ktlx-20240315-000217-trim`
 - `site:kvnx` (1): `l2-kvnx-20110315-000203`
 - `site:kvwx` (1): `l2-kvwx-20080415-235337`
+- `site:nohur` (3): `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `site:norst` (1): `odim-norst-20170421-0908-pvol`
 - `site:noxp` (5): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`
 - `site:pahg` (1): `l2-pahg-20250909-212549`
@@ -1532,9 +1624,28 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `site:tstl` (2): `l2-tstl-20230331-230314`, `l2-tstl-20230331-230314-trim`
 - `site:xsapr-sgp` (2): `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`
 
+#### `split-scan:`
+
+- `split-scan:bejab-20260612-1450-doppler` (2): `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`
+- `split-scan:nohur-20260612-1445` (3): `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
+
+#### `status:`
+
+- `status:research-only-unvalidated` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`
+
 #### `sweepset:`
 
 - `sweepset:noxp-20090501` (2): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`
+
+#### `table:`
+
+- `table:conventional-dry-ice-spheroids` (3): `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`
+- `table:conventional-liquid-rain` (3): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`
+
+#### `validation:`
+
+- `validation:held-out-interpolation` (1): `tmatrix-held-out-interpolation-report-v10`
+- `validation:held-out-nodes` (1): `tmatrix-held-out-nodes-v10`
 
 #### `vcp:`
 

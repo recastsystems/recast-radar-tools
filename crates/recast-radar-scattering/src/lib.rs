@@ -19,6 +19,8 @@ mod p3_table;
 mod particle;
 mod scheme_psd;
 mod science;
+#[cfg(test)]
+pub(crate) mod test_corpus;
 mod tmatrix_runtime;
 
 pub use closure::{
