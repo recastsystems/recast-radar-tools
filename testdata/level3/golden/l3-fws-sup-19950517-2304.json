@@ -1,0 +1,138 @@
+{
+ "id": "l3-fws-sup-19950517-2304",
+ "sha256": "d2cf6821329b2bcb4a515cad5026b3ff1f0f6aad088748e54647409d86b505b0",
+ "size": 1470,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS54 KFWS 172304",
+  "awips_id": "SUPFWS",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 1440
+ },
+ "message_header": {
+  "code": 82,
+  "date": 0,
+  "time": 0,
+  "length": 1440,
+  "source_id": 345,
+  "destination_id": 0,
+  "num_blocks": 3
+ },
+ "halfwords": [
+  82,
+  0,
+  0,
+  0,
+  0,
+  1440,
+  345,
+  0,
+  3,
+  65535,
+  0,
+  32573,
+  65534,
+  33769,
+  764,
+  82,
+  2,
+  21,
+  0,
+  52,
+  9268,
+  1,
+  17549,
+  9268,
+  1,
+  17784,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  60,
+  0,
+  0,
+  0,
+  0
+ ],
+ "product_code": 82,
+ "compression": {
+  "hw51": 0,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 1320,
+   "num_layers": 2,
+   "layers": [
+    {
+     "length": 90,
+     "packets": [
+      18
+     ]
+    },
+    {
+     "length": 1208,
+     "packets": [
+      1
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": null,
+  "tabular": null,
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  1,
+  18
+ ],
+ "data": null,
+ "metpy": "unsupported",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": "UnicodeDecodeError: 'ascii' codec can't decode byte 0xff in position 2: ordinal not in range(128)",
+  "crosscheck": null
+ }
+}

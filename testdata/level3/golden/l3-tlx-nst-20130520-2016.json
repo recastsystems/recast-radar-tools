@@ -1,0 +1,843 @@
+{
+ "id": "l3-tlx-nst-20130520-2016",
+ "sha256": "6093414970436dbae3df3e9f337dd45d4e17d75449d42008b876952e85e6db33",
+ "size": 10552,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS34 KOUN 202016",
+  "awips_id": "NSTTLX",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 10522
+ },
+ "message_header": {
+  "code": 58,
+  "date": 15846,
+  "time": 73258,
+  "length": 10522,
+  "source_id": 1,
+  "destination_id": 0,
+  "num_blocks": 5
+ },
+ "halfwords": [
+  58,
+  15846,
+  1,
+  7722,
+  0,
+  10522,
+  1,
+  0,
+  5,
+  65535,
+  0,
+  35333,
+  65534,
+  33794,
+  1277,
+  58,
+  2,
+  12,
+  1427,
+  28,
+  15846,
+  1,
+  7467,
+  15846,
+  1,
+  7722,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  22,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  256,
+  0,
+  60,
+  0,
+  1652,
+  0,
+  2813
+ ],
+ "product_code": 58,
+ "compression": {
+  "hw51": 0,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 3184,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 3168,
+     "packets": [
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15
+     ]
+    }
+   ],
+   "nested": [
+    {
+     "layer": 0,
+     "index": 2,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 3,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 6,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 7,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 10,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 11,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 14,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 15,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 18,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 19,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 22,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 23,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 26,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 27,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 30,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 31,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 34,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 35,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 38,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 39,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 44,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 45,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 48,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 49,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 54,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 55,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 58,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 59,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 62,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 63,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 66,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 67,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 72,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 73,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 76,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 77,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    }
+   ]
+  },
+  "graphic": {
+   "length": 2322,
+   "num_pages": 4,
+   "pages": [
+    {
+     "page": 1,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 2,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 3,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 4,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": {
+   "length": 4896,
+   "message_code": 101,
+   "product_code": 101,
+   "num_pages": 4,
+   "lines_per_page": [
+    16,
+    16,
+    13,
+    13
+   ],
+   "text_sha256": "f5f81e35d1a180546f184f8d0da8b6d040a4cd508b705735ecf9e631c3155e32"
+  },
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  2,
+  6,
+  8,
+  10,
+  15,
+  23,
+  24
+ ],
+ "data": [],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Storm Tracking Information",
+  "max_range": 460.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 58,
+   "date": 15846,
+   "time": 73258,
+   "msg_len": 10522,
+   "src_id": 1,
+   "dest_id": 0,
+   "num_blks": 5
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 35333,
+   "lon": -97278,
+   "height": 1277,
+   "prod_code": 58,
+   "op_mode": 2,
+   "vcp": 12,
+   "seq_num": 1427,
+   "vol_num": 28,
+   "vol_date": 15846,
+   "vol_start_time": 73003,
+   "prod_gen_date": 15846,
+   "prod_gen_time": 73258,
+   "dep1": 0,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 0,
+   "thr1": 0,
+   "thr2": 0,
+   "thr3": 0,
+   "thr4": 0,
+   "thr5": 0,
+   "thr6": 0,
+   "thr7": 0,
+   "thr8": 0,
+   "thr9": 0,
+   "thr10": 0,
+   "thr11": 0,
+   "thr12": 0,
+   "thr13": 0,
+   "thr14": 0,
+   "thr15": 0,
+   "thr16": 0,
+   "dep4": 22,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": 0,
+   "dep9": 0,
+   "dep10": 0,
+   "version": 1,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 1652,
+   "tab_off": 2813
+  },
+  "thresholds": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "dep_vals": [
+   0,
+   0,
+   0,
+   22,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "metadata": {
+   "msg_time": "2013-05-20T20:20:58.000000Z",
+   "vol_time": "2013-05-20T20:16:43.000000Z",
+   "prod_time": "2013-05-20T20:20:58.000000Z",
+   "num_storms": 22
+  },
+  "sym_layer_packet_counts": [
+   80
+  ],
+  "graph_page_packet_counts": [
+   7,
+   7,
+   7,
+   7
+  ],
+  "tab_pages": 4,
+  "crosscheck": true
+ }
+}

@@ -1,0 +1,302 @@
+{
+ "id": "l3-fws-ncz-19950517-2304",
+ "sha256": "3dae6d407924f4035e21a63af64cb7dd0474110190a93fd15b588849fff6cac1",
+ "size": 7512,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS54 KFWS 172304",
+  "awips_id": "NCZFWS",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 7482
+ },
+ "message_header": {
+  "code": 38,
+  "date": 0,
+  "time": 0,
+  "length": 7482,
+  "source_id": 345,
+  "destination_id": 0,
+  "num_blocks": 4
+ },
+ "halfwords": [
+  38,
+  0,
+  0,
+  0,
+  0,
+  7482,
+  345,
+  0,
+  4,
+  65535,
+  0,
+  32573,
+  65534,
+  33769,
+  764,
+  38,
+  2,
+  21,
+  0,
+  52,
+  9268,
+  1,
+  17549,
+  9268,
+  1,
+  17920,
+  0,
+  0,
+  0,
+  0,
+  32770,
+  5,
+  10,
+  15,
+  20,
+  25,
+  30,
+  35,
+  40,
+  45,
+  50,
+  55,
+  60,
+  65,
+  70,
+  75,
+  66,
+  0,
+  0,
+  0,
+  16794,
+  28456,
+  0,
+  0,
+  0,
+  60,
+  0,
+  3465,
+  0,
+  0
+ ],
+ "product_code": 38,
+ "compression": {
+  "hw51": 16794,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 1864892416
+ },
+ "blocks": {
+  "symbology": {
+   "length": 6810,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 6794,
+     "packets": [
+      47623
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": {
+   "length": 552,
+   "num_pages": 1,
+   "pages": [
+    {
+     "page": 1,
+     "length": 538,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": null,
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  8,
+  10,
+  47623
+ ],
+ "data": [
+  {
+   "layer": 0,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 1,
+    "j_start": 1,
+    "x_scale_int": 2,
+    "x_scale_frac": 0,
+    "y_scale_int": 2,
+    "y_scale_frac": 0,
+    "num_rows": 232,
+    "packing": 2
+   },
+   "rows": 232,
+   "cols": 232,
+   "dtype": "u8",
+   "raw_sha256": "f04625cb4e0762829bc76229b6d3cfa225babd72ee3703a65230de1455a88a95",
+   "histogram": {
+    "0": 49493,
+    "1": 758,
+    "2": 1156,
+    "3": 1062,
+    "4": 555,
+    "5": 305,
+    "6": 128,
+    "7": 96,
+    "8": 64,
+    "9": 82,
+    "10": 75,
+    "11": 42,
+    "12": 6,
+    "13": 2
+   },
+   "physical": {
+    "finite": 4331,
+    "masked": 49493,
+    "min": 5.0,
+    "max": 65.0,
+    "mean": 16.163703532671438
+   }
+  }
+ ],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Composite Reflectivity",
+  "max_range": 460.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 38,
+   "date": 0,
+   "time": 0,
+   "msg_len": 7482,
+   "src_id": 345,
+   "dest_id": 0,
+   "num_blks": 4
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 32573,
+   "lon": -97303,
+   "height": 764,
+   "prod_code": 38,
+   "op_mode": 2,
+   "vcp": 21,
+   "seq_num": 0,
+   "vol_num": 52,
+   "vol_date": 9268,
+   "vol_start_time": 83085,
+   "prod_gen_date": 9268,
+   "prod_gen_time": 83456,
+   "dep1": 0,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 0,
+   "thr1": -32766,
+   "thr2": 5,
+   "thr3": 10,
+   "thr4": 15,
+   "thr5": 20,
+   "thr6": 25,
+   "thr7": 30,
+   "thr8": 35,
+   "thr9": 40,
+   "thr10": 45,
+   "thr11": 50,
+   "thr12": 55,
+   "thr13": 60,
+   "thr14": 65,
+   "thr15": 70,
+   "thr16": 75,
+   "dep4": 66,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": 16794,
+   "dep9": 28456,
+   "dep10": 0,
+   "version": 0,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 3465,
+   "tab_off": 0
+  },
+  "thresholds": [
+   -32766,
+   5,
+   10,
+   15,
+   20,
+   25,
+   30,
+   35,
+   40,
+   45,
+   50,
+   55,
+   60,
+   65,
+   70,
+   75
+  ],
+  "dep_vals": [
+   0,
+   0,
+   0,
+   66,
+   0,
+   0,
+   0,
+   16794,
+   28456,
+   0
+  ],
+  "metadata": {
+   "msg_time": "1969-12-31T00:00:00.000000Z",
+   "vol_time": "1995-05-17T23:04:45.000000Z",
+   "prod_time": "1995-05-17T23:10:56.000000Z",
+   "el_angle": 0.0,
+   "max": 66,
+   "calib_const": 19.304275512695312
+  },
+  "sym_layer_packet_counts": [
+   1
+  ],
+  "graph_page_packet_counts": [
+   7
+  ],
+  "tab_pages": null,
+  "crosscheck": true
+ }
+}
