@@ -2,7 +2,12 @@
 name = "recast-radar-render"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "CPU raster rendering of weather radar sweeps to PNG with color tables and GR .pal palettes"
+readme.workspace = true
+keywords = ["radar", "weather", "png", "colormap", "rendering"]
+categories = ["science::geo", "rendering", "visualization"]
 
 [dependencies]
 image.workspace = true

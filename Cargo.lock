@@ -1084,6 +1084,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-radar-tools"
+version = "0.1.0"
+dependencies = [
+ "recast-radar-core",
+ "recast-radar-correct",
+ "recast-radar-data",
+ "recast-radar-filters",
+ "recast-radar-io",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-dorade",
+ "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
+ "recast-radar-io-odim",
+ "recast-radar-map",
+ "recast-radar-render",
+ "recast-radar-retrieve",
+ "recast-radar-scattering",
+ "recast-radar-track",
+]
+
+[[package]]
 name = "recast-radar-track"
 version = "0.1.0"
 dependencies = [

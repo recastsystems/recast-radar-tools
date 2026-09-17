@@ -2,7 +2,12 @@
 name = "recast-radar-io"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Format-sniffing weather radar reader that routes bytes to the recast-radar-io-* decoders"
+readme.workspace = true
+keywords = ["radar", "weather", "nexrad", "odim", "cfradial"]
+categories = ["science::geo", "parser-implementations"]
 
 [dependencies]
 flate2.workspace = true
