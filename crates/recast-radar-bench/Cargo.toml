@@ -13,5 +13,9 @@ recast-radar-render = { path = "../recast-radar-render" }
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+# Real-data tests: corpus files decoded with the bench's own byte router, goldens as JSON.
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+
 [lints]
 workspace = true

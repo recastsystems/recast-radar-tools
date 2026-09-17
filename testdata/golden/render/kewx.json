@@ -1,0 +1,24 @@
+{
+ "source": "tools/render_bench_golden.py render: pyart.io.read_nexrad_archive 2.2.5",
+ "id": "l2-kewx-20160413-022531",
+ "sweeps": 19,
+ "lowest_sweep": {
+  "rows": 720,
+  "gates": 1832,
+  "first_gate_m": 2125.0,
+  "gate_spacing_m": 250.0,
+  "max_dbz": 70.5,
+  "max_azimuth_deg": 254.6630859375,
+  "max_range_m": 57625.0
+ },
+ "volume_max": {
+  "dbz": 76.5,
+  "count": 1,
+  "sweep": 11,
+  "elevation_deg": 4.04296875,
+  "azimuth_deg": 251.5155029296875,
+  "slant_range_m": 55875.0,
+  "ground_range_m": 55709.31808604233,
+  "height_above_radar_m": 4122.206127237529
+ }
+}

@@ -1333,63 +1333,189 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
-    fn field(values: Vec<f32>, nyq: f32, rows: usize, gates: usize) -> Field {
-        Field {
-            rows,
-            gates,
-            wraps: false,
-            values,
-            nyq: vec![nyq; rows],
+    /// `testdata/golden/bench/dealias_eval.json`, written by
+    /// `tools/render_bench_golden.py bench`: Py-ART 2.2.5 raw codes and
+    /// `dealias_region_based`, MetPy 1.7.1 values, and the metrics recomputed
+    /// in numpy from the documented rules (spec §10.2).
+    fn golden_case(id: &str) -> Value {
+        let path = recast_radar_testdata::testdata_dir()
+            .join("golden")
+            .join("bench")
+            .join("dealias_eval.json");
+        let text =
+            fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let golden: Value = serde_json::from_str(&text)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        golden["cases"]
+            .as_array()
+            .expect("cases")
+            .iter()
+            .find(|case| case["id"] == id)
+            .cloned()
+            .unwrap_or_else(|| panic!("no golden case for {id}"))
+    }
+
+    fn as_usize(value: &Value) -> usize {
+        value
+            .as_u64()
+            .unwrap_or_else(|| panic!("expected an unsigned integer, got {value}")) as usize
+    }
+
+    fn as_f64(value: &Value) -> f64 {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("expected a number, got {value}"))
+    }
+
+    /// Decode a corpus Level II file through the bench's own byte router and
+    /// return the velocity tilt the golden case describes, checked against the
+    /// golden geometry (rows, gates, azimuth span, Nyquist, finite gates).
+    fn velocity_field(path: &Path, case: &Value) -> Field {
+        let raw = fs::read(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let volume = recast_radar_io::decode_supported_volume_bytes(&raw)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let cut = &volume.cuts[as_usize(&case["sweep"])];
+        let grid = cut
+            .moments
+            .get(&MomentType::Velocity)
+            .expect("velocity moment");
+        let field = decode_field(cut, grid);
+        assert_eq!(field.rows, as_usize(&case["rows"]));
+        assert_eq!(field.gates, as_usize(&case["gates"]));
+        assert_eq!(field.wraps, case["wraps"].as_bool().expect("wraps"));
+        let first = cut.radials[grid.radial_indices[0]].azimuth_deg;
+        let last = cut.radials[grid.radial_indices[field.rows - 1]].azimuth_deg;
+        assert_eq!(first, as_f64(&case["first_azimuth_deg"]) as f32);
+        assert_eq!(last, as_f64(&case["last_azimuth_deg"]) as f32);
+        let nyquist: Vec<f32> = case["nyquist_mps"]
+            .as_array()
+            .expect("nyquist_mps")
+            .iter()
+            .map(|value| as_f64(value) as f32)
+            .collect();
+        assert!(
+            field.nyq.iter().all(|nyq| nyquist.contains(nyq)),
+            "per-row Nyquist velocities {:?} are not the file's {nyquist:?}",
+            field.nyq
+        );
+        let finite = field
+            .values
+            .iter()
+            .filter(|value| value.is_finite())
+            .count();
+        assert_eq!(finite, as_usize(&case["finite_gates"]));
+        field
+    }
+
+    /// Apply Py-ART's region-based fold numbers (run-length encoded per row
+    /// in the golden file) to a raw field: the dealiased output is
+    /// `raw + 2·N·k` gate by gate, exactly as `dealias_region_based` forms it.
+    fn unfold_like_pyart(field: &mut Field, region: &Value) {
+        let runs = region["unwrap_runs"].as_array().expect("unwrap_runs");
+        assert_eq!(runs.len(), field.rows);
+        for (row, row_runs) in runs.iter().enumerate() {
+            let interval = 2.0 * field.nyq[row];
+            let mut gate = 0usize;
+            for run in row_runs.as_array().expect("row runs") {
+                let fold = run[0].as_i64().expect("fold") as f32;
+                let length = as_usize(&run[1]);
+                if fold != 0.0 {
+                    for value in &mut field.values[row * field.gates + gate..][..length] {
+                        if value.is_finite() {
+                            *value += interval * fold;
+                        }
+                    }
+                }
+                gate += length;
+            }
+            assert_eq!(gate, field.gates, "row {row} runs cover the row");
         }
     }
 
-    /// A known 2-fold ramp yields exact boundary counts (spec Stage 0 test).
+    /// Fold-boundary pairs of a real aliased sweep and of Py-ART's unfolding
+    /// of it: the KDVN 2020-08-10 derecho Doppler cut (Nyquist 21.03 m/s,
+    /// 84,964 finite gates) carries 7,486 boundary pairs raw; the region-based
+    /// output (38,656 gates moved by whole folds) keeps 409.
     #[test]
-    fn boundary_metric_counts_a_two_fold_ramp_exactly() {
-        // 1 row, 8 gates: −15, −15, 15, 15, −15, −15, 15, 15 at N = 10:
-        // |Δ| = 30 > 12 at gates 1|2, 3|4, 5|6 → exactly 3 pairs.
-        let f = field(
-            vec![-15.0, -15.0, 15.0, 15.0, -15.0, -15.0, 15.0, 15.0],
-            10.0,
-            1,
-            8,
-        );
-        assert_eq!(boundary_pairs(&f), 3);
+    fn boundary_metric_counts_real_fold_boundaries_before_and_after_unfolding() {
+        let case = golden_case("l2-kdvn-20200810-180401-trim");
+        let path = recast_radar_testdata::require_file!("l2-kdvn-20200810-180401-trim");
+        let raw = velocity_field(&path, &case);
+        assert!(!raw.wraps);
+        assert_eq!(boundary_pairs(&raw), as_usize(&case["boundary_pairs"]));
+
+        let region = &case["pyart_region"];
+        let mut unfolded = velocity_field(&path, &case);
+        unfold_like_pyart(&mut unfolded, region);
+        let unfolded_pairs = boundary_pairs(&unfolded);
+        assert_eq!(unfolded_pairs, as_usize(&region["boundary_pairs"]));
+        assert!(unfolded_pairs * 10 < boundary_pairs(&raw));
     }
 
+    /// The azimuth wrap seam counts when the sweep closes the circle: the
+    /// full KDVN 2020-08-10 Doppler cut (720 super-resolution radials, 286.2
+    /// deg round to 285.7 deg) starts inside the aliased derecho, so 31 of its
+    /// fold-boundary pairs sit between the last and the first radial and only
+    /// the wrapped count includes them.
     #[test]
     fn boundary_metric_counts_the_wrap_seam() {
-        // 8 rows × 1 gate, wrapping: alternating branches → every vertical
-        // pair including the seam row7|row0.
-        let mut f = field(
-            vec![-15.0, 15.0, -15.0, 15.0, -15.0, 15.0, -15.0, 15.0],
-            10.0,
-            8,
-            1,
+        let case = golden_case("l2-kdvn-20200810-180401");
+        let path = recast_radar_testdata::require_file!("l2-kdvn-20200810-180401");
+        let mut field = velocity_field(&path, &case);
+        assert!(field.wraps);
+        let with_seam = as_usize(&case["boundary_pairs"]);
+        let without_seam = as_usize(&case["boundary_pairs_without_seam"]);
+        assert!(with_seam > without_seam);
+        assert_eq!(boundary_pairs(&field), with_seam);
+        assert_eq!(speck_count(&field), as_usize(&case["speck_count"]));
+        field.wraps = false;
+        assert_eq!(boundary_pairs(&field), without_seam);
+        assert_eq!(
+            speck_count(&field),
+            as_usize(&case["speck_count_without_seam"])
         );
-        f.wraps = true;
-        assert_eq!(boundary_pairs(&f), 8);
-        f.wraps = false;
-        assert_eq!(boundary_pairs(&f), 7);
     }
 
+    /// Percent modified counts the gates Py-ART moved by a whole fold (2·N
+    /// or 4·N here) and nothing else: 38,656 of 84,964 finite KDVN gates.
     #[test]
-    fn percent_modified_flags_whole_fold_moves_only() {
-        let raw = field(vec![10.0, -10.0, 5.0, 5.0], 12.0, 1, 4);
-        let out = field(vec![10.0, 14.0, 5.0, 5.0], 12.0, 1, 4);
-        // Gate 1 moved by 2N = 24 (> N); the rest unchanged.
-        assert!((percent_modified(&out, &raw) - 25.0).abs() < 1e-9);
+    fn percent_modified_counts_whole_fold_moves_only() {
+        let case = golden_case("l2-kdvn-20200810-180401-trim");
+        let path = recast_radar_testdata::require_file!("l2-kdvn-20200810-180401-trim");
+        let raw = velocity_field(&path, &case);
+        assert_eq!(percent_modified(&raw, &raw), 0.0);
+
+        let region = &case["pyart_region"];
+        let mut unfolded = velocity_field(&path, &case);
+        unfold_like_pyart(&mut unfolded, region);
+        let expected = 100.0 * as_f64(&region["unfolded_gates"]) / as_f64(&region["finite_gates"]);
+        assert!((expected - as_f64(&region["percent_modified"])).abs() < 1e-9);
+        assert!((percent_modified(&unfolded, &raw) - expected).abs() < 1e-9);
+        assert!(region["max_abs_fold"].as_i64().expect("max_abs_fold") >= 1);
     }
 
+    /// Isolated specks on real sweeps: the PGUA 2023-05-24 Typhoon Mawar
+    /// Doppler cut (Nyquist 35.55 m/s) and the KDVN derecho cut, where
+    /// Py-ART's unfolding removes most of the raw specks (1,212 to 164).
     #[test]
     fn speck_count_finds_isolated_outliers_only() {
-        let rows = 9;
-        let gates = 9;
-        let mut values = vec![0.0f32; rows * gates];
-        values[4 * gates + 4] = 50.0; // isolated 1-gate speck at N=20
-        let f = field(values, 20.0, rows, gates);
-        assert_eq!(speck_count(&f), 1);
+        let case = golden_case("l2-pgua-20230524-030945-trim");
+        let path = recast_radar_testdata::require_file!("l2-pgua-20230524-030945-trim");
+        let field = velocity_field(&path, &case);
+        assert_eq!(speck_count(&field), as_usize(&case["speck_count"]));
+
+        let case = golden_case("l2-kdvn-20200810-180401-trim");
+        let path = recast_radar_testdata::require_file!("l2-kdvn-20200810-180401-trim");
+        let raw = velocity_field(&path, &case);
+        assert_eq!(speck_count(&raw), as_usize(&case["speck_count"]));
+        let region = &case["pyart_region"];
+        let mut unfolded = velocity_field(&path, &case);
+        unfold_like_pyart(&mut unfolded, region);
+        let unfolded_specks = speck_count(&unfolded);
+        assert_eq!(unfolded_specks, as_usize(&region["speck_count"]));
+        assert!(unfolded_specks * 5 < speck_count(&raw));
     }
 
     #[test]
