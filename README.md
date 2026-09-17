@@ -216,6 +216,7 @@ the centre to the edge.
 | `recast-radar-tools` | | The facade: re-exports the crates below as modules behind features |
 | `recast-radar-core` | `core` | Data model: volumes, sweeps, radials, moment grids, beam geometry, field names |
 | `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2; the Level III VAD Wind Profile product |
+| `recast-radar-bzip2` | | bzip2 decompressor without unsafe code or dependencies, written for LDM records: about a quarter of the instructions of C libbzip2 |
 | `recast-radar-io-level3` | `level3` | NEXRAD and TDWR Level III products: NOAAPort/WMO framing, message and product description headers, symbology, graphic and tabular blocks, display packets, data levels |
 | `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through an HDF5 reader written in Rust |
 | `recast-radar-io-cfradial` | `cfradial` | CfRadial 1, through a classic netCDF (CDF-1, CDF-2) reader written in Rust |

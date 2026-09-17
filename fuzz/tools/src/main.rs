@@ -52,6 +52,9 @@ enum Derivation {
     /// LDM block-bzip2 Level II as published: the volume header and the
     /// leading whole bzip2 blocks, as many as fit in 256 KiB (at least one).
     L2BlockHead,
+    /// The bzip2 stream of LDM record `n` of a block-bzip2 Level II file (or
+    /// real-time chunk), byte for byte, without its control word.
+    LdmRecord(usize),
     /// This file followed by the real-time chunk(s) named here, as a
     /// real-time client assembles a volume.
     ConcatChunks(&'static [&'static str]),
@@ -67,6 +70,7 @@ impl Derivation {
             Self::L2Sparse => ".l2-sparse".to_owned(),
             Self::L2Head => ".l2-head".to_owned(),
             Self::L2BlockHead => ".l2-block-head".to_owned(),
+            Self::LdmRecord(n) => format!(".ldm-record{n}"),
             Self::ConcatChunks(ids) => format!(".plus-{}-chunks", ids.len()),
             Self::DoradeHead(rays) => format!(".head{rays}"),
         }
@@ -76,7 +80,7 @@ impl Derivation {
 /// One seed: target, testdata manifest id, derivation.
 type Seed = (&'static str, &'static str, Derivation);
 
-use Derivation::{ConcatChunks, DoradeHead, L2BlockHead, L2Head, L2Sparse, Verbatim};
+use Derivation::{ConcatChunks, DoradeHead, L2BlockHead, L2Head, L2Sparse, LdmRecord, Verbatim};
 
 const KIWA_CHUNK_S: &str = "l2chunk-kiwa-307-20260917-003629-001-s";
 const KIWA_CHUNK_I2: &str = "l2chunk-kiwa-307-20260917-003629-002-i";
@@ -200,6 +204,16 @@ const SEEDS: &[Seed] = &[
     // jma: both committed single-station tars.
     ("jma", "jma-n6-20191012-090000-rs47773", Verbatim),
     ("jma", "jma-n5-20191012-090000-rs47773", Verbatim),
+    // bzip2: single LDM records, each one bzip2 stream: a status-only
+    // record under 100 bytes, the committed KIWA metadata record and a
+    // committed 120-radial record, the smallest and the last TDWR records,
+    // and a build 20.1 metadata record.
+    ("bzip2", "l2-tbwi-20230601-175101-stub", LdmRecord(0)),
+    ("bzip2", KIWA_CHUNK_S, LdmRecord(0)),
+    ("bzip2", KIWA_CHUNK_I2, LdmRecord(0)),
+    ("bzip2", "l2-tstl-20230331-230314", LdmRecord(1)),
+    ("bzip2", "l2-tstl-20230331-230314", LdmRecord(69)),
+    ("bzip2", "l2-kbox-20220129-150537", LdmRecord(0)),
 ];
 
 fn main() -> ExitCode {
@@ -280,6 +294,7 @@ fn derive(id: &str, derivation: Derivation) -> io::Result<Vec<u8>> {
             l2_head(&normalized)
         }
         Derivation::L2BlockHead => l2_block_head(&source),
+        Derivation::LdmRecord(n) => ldm_record(&source, n),
         Derivation::ConcatChunks(more) => {
             let mut bytes = source;
             for id in more {
@@ -421,6 +436,38 @@ fn l2_block_head(bytes: &[u8]) -> io::Result<Vec<u8>> {
     }
     end.map(|end| bytes[..end].to_vec())
         .ok_or_else(|| other_error("no whole bzip2 block after the volume header".to_owned()))
+}
+
+fn ldm_record(bytes: &[u8], n: usize) -> io::Result<Vec<u8>> {
+    // Archive files start with the volume header; intermediate real-time
+    // chunks start with the first control word.
+    let mut cursor = if bytes.starts_with(b"AR2V") || bytes.starts_with(b"ARCH") {
+        L2_VOLUME_HEADER_LEN
+    } else {
+        0
+    };
+    let mut index = 0;
+    while let Some(word) = bytes.get(cursor..cursor + 4) {
+        let control = i32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        let size = control.unsigned_abs() as usize;
+        let Some(record) = bytes.get(cursor + 4..cursor + 4 + size) else {
+            break;
+        };
+        if size == 0 || !record.starts_with(b"BZh") {
+            break;
+        }
+        if index == n {
+            return Ok(record.to_vec());
+        }
+        if control < 0 {
+            break;
+        }
+        index += 1;
+        cursor += 4 + size;
+    }
+    Err(other_error(format!(
+        "no LDM record {n} ({index} whole bzip2 records found)"
+    )))
 }
 
 fn dorade_head(bytes: &[u8], rays: usize) -> io::Result<Vec<u8>> {

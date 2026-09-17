@@ -888,6 +888,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-radar-bzip2"
+version = "0.1.0"
+dependencies = [
+ "bzip2",
+ "recast-radar-testdata",
+]
+
+[[package]]
 name = "recast-radar-core"
 version = "0.1.0"
 dependencies = [

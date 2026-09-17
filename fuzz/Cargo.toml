@@ -18,6 +18,7 @@ libfuzzer = ["dep:libfuzzer-sys"]
 
 [dependencies]
 libfuzzer-sys = { version = "0.4", optional = true }
+recast-radar-bzip2 = { path = "../crates/recast-radar-bzip2" }
 recast-radar-io = { path = "../crates/recast-radar-io" }
 recast-radar-io-cfradial = { path = "../crates/recast-radar-io-cfradial" }
 recast-radar-io-dorade = { path = "../crates/recast-radar-io-dorade" }
@@ -71,6 +72,14 @@ required-features = ["libfuzzer"]
 [[bin]]
 name = "jma"
 path = "fuzz_targets/jma.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "bzip2"
+path = "fuzz_targets/bzip2.rs"
 test = false
 doc = false
 bench = false
