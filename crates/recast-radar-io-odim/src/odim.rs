@@ -31,6 +31,13 @@
 //!   large `rstart` values are reinterpreted as metres — see
 //!   `first_gate_m_from_rstart` for the writer quirk that requires it.
 //! - `nyquist_velocity(time)` broadcasts `how/NI` (dataset, else root).
+//! - Every `how` attribute a coordinate or a typed slot does not take is
+//!   kept verbatim (`Volume::attrs.other` for the root group,
+//!   `Sweep::other` for a dataset group), whatever its length: only the
+//!   arrays a ray coordinate is actually built from are held back, so a
+//!   per-ray array this decoder has no slot for (`TXpower`,
+//!   `startelT`/`stopelT`) reaches the model instead of being dropped for
+//!   having one entry per ray.
 //! - Planes are stored verbatim (design note 7.2): no rewrite pass, so the
 //!   raw arrays hash equal to xradar's. Some IRIS exporters (AEMET Spain,
 //!   IRIS 10.3) copy the REFLECTIVITY `what` group onto the velocity plane —
@@ -155,7 +162,7 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
     }
     // The root `what/object` (PVOL or SCAN) and the root `how` attributes no
     // typed slot holds, verbatim. `what/version` is `source_version`.
-    volume.attrs.other = root_how.unused(&root_used, None);
+    volume.attrs.other = root_how.unused(&root_used);
     volume.attrs.other.insert(
         0,
         ("object".into(), AttrValue::Text(object.as_str().into())),
@@ -284,24 +291,11 @@ fn decode_sweep(
     let mut sweep = Sweep::new(index as u32, SweepMode::AzimuthSurveillance, elangle);
     sweep.follow_mode = Some(FollowMode::None);
     sweep.target_scan_rate_deg_per_s = scan_rate;
-    // The dataset's other `how` attributes, verbatim; per-ray arrays the
-    // decoder does not read into ray coordinates are left out.
     let SweepHow {
         dataset_used,
         root_used,
         ..
     } = settings;
-    // The dataset's `what/product` (SCAN) and the `how` attributes no typed
-    // slot holds, verbatim.
-    sweep.other = how.unused(&dataset_used, Some(nrays));
-    if let Some(product) = file
-        .attr(&what_path, "product")
-        .and_then(|attr| attr.as_str().map(str::to_owned))
-    {
-        sweep
-            .other
-            .insert(0, ("product".into(), AttrValue::Text(product.into())));
-    }
     sweep.range = RangeCoord::Uniform {
         first_center_m,
         spacing_m,
@@ -311,7 +305,11 @@ fn decode_sweep(
         .charge(nrays, 4 * size_of::<f64>(), "ODIM_H5 sweep rays")
         .map_err(OdimError::LimitExceeded)?;
 
-    // Ray coordinates (xradar's rules; module docs).
+    // Ray coordinates (xradar's rules; module docs). `ray_used` collects the
+    // `how` arrays a coordinate is actually read from, so the rest of the
+    // group - including a per-ray array this decoder has no slot for - still
+    // reaches `sweep.other`.
+    let mut ray_used: BTreeSet<&'static str> = BTreeSet::new();
     sweep.rays.azimuth_deg = match (
         attr_array(file, &how_path, "startazA"),
         attr_array(file, &how_path, "stopazA"),
@@ -319,6 +317,10 @@ fn decode_sweep(
         (Some(start), stop)
             if start.len() == nrays && stop.as_ref().is_none_or(|s| s.len() == nrays) =>
         {
+            ray_used.insert("startazA");
+            if stop.is_some() {
+                ray_used.insert("stopazA");
+            }
             let stop = stop.unwrap_or_else(|| {
                 let mut next: Vec<f64> = start[1..].to_vec();
                 next.push(start[0] + 360.0);
@@ -345,13 +347,18 @@ fn decode_sweep(
         attr_array(file, &how_path, "startelA"),
         attr_array(file, &how_path, "stopelA"),
     ) {
-        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => start
-            .iter()
-            .zip(&stop)
-            .map(|(start, stop)| ((start + stop) / 2.0) as f32)
-            .collect(),
+        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => {
+            ray_used.insert("startelA");
+            ray_used.insert("stopelA");
+            start
+                .iter()
+                .zip(&stop)
+                .map(|(start, stop)| ((start + stop) / 2.0) as f32)
+                .collect()
+        }
         _ => match attr_array(file, &how_path, "elangles") {
             Some(angles) if angles.len() == nrays => {
+                ray_used.insert("elangles");
                 angles.iter().map(|angle| *angle as f32).collect()
             }
             _ => vec![elangle; nrays],
@@ -361,13 +368,32 @@ fn decode_sweep(
         attr_array(file, &how_path, "startazT"),
         attr_array(file, &how_path, "stopazT"),
     ) {
-        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => start
-            .iter()
-            .zip(&stop)
-            .map(|(start, stop)| (start + stop) / 2.0)
-            .collect(),
+        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => {
+            ray_used.insert("startazT");
+            ray_used.insert("stopazT");
+            start
+                .iter()
+                .zip(&stop)
+                .map(|(start, stop)| (start + stop) / 2.0)
+                .collect()
+        }
         _ => ray_times_from_what(file, &what_path, &where_path, nrays),
     };
+
+    // The dataset's `what/product` (SCAN) and every `how` attribute no typed
+    // slot and no ray coordinate holds, verbatim - a per-ray array this
+    // decoder does not read included.
+    let mut sweep_used = dataset_used;
+    sweep_used.extend(ray_used);
+    sweep.other = how.unused(&sweep_used);
+    if let Some(product) = file
+        .attr(&what_path, "product")
+        .and_then(|attr| attr.as_str().map(str::to_owned))
+    {
+        sweep
+            .other
+            .insert(0, ("product".into(), AttrValue::Text(product.into())));
+    }
     sweep.rays.time_s = vec![0.0; nrays];
     if let Some(nyquist) = nyquist {
         sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyquist; nrays]);
@@ -930,13 +956,11 @@ impl How {
             .filter(|value| value.is_finite())
     }
 
-    /// The attributes not named in `used`, verbatim. With `nrays`, arrays
-    /// with one entry per ray are left out too.
-    fn unused(&self, used: &BTreeSet<&str>, nrays: Option<usize>) -> Vec<(Box<str>, AttrValue)> {
+    /// The attributes not named in `used`, verbatim.
+    fn unused(&self, used: &BTreeSet<&str>) -> Vec<(Box<str>, AttrValue)> {
         self.0
             .iter()
             .filter(|(name, _)| !used.contains(name.as_str()))
-            .filter(|(_, value)| nrays.is_none_or(|nrays| !is_per_ray(value, nrays)))
             .map(|(name, value)| (Box::from(name.as_str()), attr_value(value.clone())))
             .collect()
     }
@@ -1104,16 +1128,6 @@ fn calibration_index(calibration: &mut Vec<RadarCalibration>, entry: RadarCalibr
         ..entry
     });
     index
-}
-
-/// An array attribute with one entry per ray (a per-ray `how` array).
-fn is_per_ray(value: &H5Attr, nrays: usize) -> bool {
-    nrays > 1
-        && match value {
-            H5Attr::F64Array(values) => values.len() == nrays,
-            H5Attr::I64Array(values) => values.len() == nrays,
-            _ => false,
-        }
 }
 
 fn attr_value(value: H5Attr) -> AttrValue {

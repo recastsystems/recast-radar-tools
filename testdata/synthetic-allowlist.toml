@@ -102,23 +102,12 @@
 # corpus file has (a scan of all 48 cached Level II files with Py-ART found no
 # sweep where a moment is missing on some radials or where a later radial has
 # more gates than the first) are built from mutated real Message 31 records in
-# crates/recast-radar-core/tests/real_rows.rs. What remains: the reflectivity
-# name preference, which needs a volume with horizontal, unspecified and
-# vertical reflectivity together (none in the corpus; renaming variables of a
-# real file keeps their standard_name, which classification reads first), and
-# the 16-bit row API's own checks, which no decoder can reach.
-
-[[core-data-scattering]]
-path = "crates/recast-radar-core/src/model/sweep.rs"
-name = "tests::u8_field"
-status = "pending"
-justification = "helper of find_prefers_horizontal_then_unspecified_then_vertical; goes with it"
-
-[[core-data-scattering]]
-path = "crates/recast-radar-core/src/model/sweep.rs"
-name = "tests::find_prefers_horizontal_then_unspecified_then_vertical"
-status = "pending"
-justification = "replace with a real volume carrying DBZH, DBZ and DBZV (none in the corpus)"
+# crates/recast-radar-core/tests/real_rows.rs. The reflectivity name
+# preference moved too: no corpus file carries DBZH, DBZ and DBZV at once, so
+# real_model.rs re-spells one real IESHA DBZH field under each of the three
+# names (Field::new derives quantity and polarization from the name alone,
+# which is what Sweep::find ranks). What remains is the 16-bit row API's own
+# checks, which no decoder can reach.
 
 [[core-data-scattering]]
 path = "crates/recast-radar-core/tests/real_rows.rs"

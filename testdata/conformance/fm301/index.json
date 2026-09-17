@@ -140,7 +140,8 @@
    "xradar_status": "ok",
    "pyart": "pyart/cfrad1-xsapr-sgp-20110520-ppi-netcdf4.json",
    "pyart_status": "ok",
-   "note": "ARM X-SAPR CfRadial 1.2 PPI (netCDF-4), 1 sweep of 40 rays x 42 gates, float32 reflectivity_horizontal with _FillValue -9999 (design note 7.3)."
+   "note": "ARM X-SAPR CfRadial 1.2 PPI (netCDF-4), 1 sweep of 40 rays x 42 gates, float32 reflectivity_horizontal with _FillValue -9999 (design note 7.3). These goldens are made from the netCDF-4 container; the Rust side decodes the committed classic-netCDF twin named in decoded_id (a raw variable-for-variable copy, testdata/other/manifest.toml derived_from), because no netCDF-4 file is decoded natively yet (design note, open items). It is the one case whose two sides do not read the same container.",
+   "decoded_id": "cfrad1-xsapr-sgp-20110520-ppi-classic"
   }
  ]
 }

@@ -218,6 +218,9 @@ fn expected(key: &'static str) -> &'static str {
 struct Case {
     id: String,
     kind: String,
+    /// The file the Rust side decodes. Equal to `id` except where the index
+    /// declares a `decoded_id` (see [`decoded_id`]).
+    decoded_id: String,
     xradar: Option<Value>,
     pyart: Option<Value>,
 }
@@ -242,8 +245,12 @@ fn cases() -> Vec<Case> {
             let golden = |key: &str, status: &str| {
                 (entry[status] == "ok").then(|| read_json(&dir.join(entry[key].as_str().unwrap())))
             };
+            let id = entry["id"].as_str().unwrap().to_owned();
             Case {
-                id: entry["id"].as_str().unwrap().to_owned(),
+                decoded_id: entry["decoded_id"]
+                    .as_str()
+                    .map_or_else(|| id.clone(), str::to_owned),
+                id,
                 kind: entry["reader_kind"].as_str().unwrap().to_owned(),
                 xradar: golden("xradar", "xradar_status"),
                 pyart: golden("pyart", "pyart_status"),
@@ -259,16 +266,35 @@ struct Decoded {
     nexrad: Option<recast_radar_io_nexrad::NexradVolume>,
 }
 
-/// The file the Rust side decodes for a case: the case's file, except that
-/// the netCDF-4 X-SAPR case (an HDF5 container the classic netCDF reader
-/// cannot open) decodes its committed classic-container twin, a raw
-/// variable-for-variable copy with identical data
-/// (`testdata/other/manifest.toml`, `derived_from`).
+/// The file the Rust side decodes for a case: the case's own file unless
+/// `index.json` declares a `decoded_id`, which only the netCDF-4 X-SAPR case
+/// does (an HDF5 container the classic netCDF reader cannot open; it decodes
+/// the committed classic-container twin, a raw variable-for-variable copy
+/// with identical data — `testdata/other/manifest.toml`, `derived_from`).
+/// `every_substituted_case_is_declared` pins the list.
 fn decoded_id(case: &Case) -> &str {
-    match case.id.as_str() {
-        "cfrad1-xsapr-sgp-20110520-ppi-netcdf4" => "cfrad1-xsapr-sgp-20110520-ppi-classic",
-        id => id,
-    }
+    &case.decoded_id
+}
+
+/// The goldens of a case are made from the file the Rust side decodes,
+/// except where `index.json` says otherwise — today exactly one case, the
+/// netCDF-4 X-SAPR PPI. A new substitution has to be declared there, beside
+/// the goldens, before this test accepts it.
+#[test]
+fn every_substituted_case_is_declared() {
+    let substituted: Vec<(String, String)> = cases()
+        .into_iter()
+        .filter(|case| case.decoded_id != case.id)
+        .map(|case| (case.id, case.decoded_id))
+        .collect();
+    assert_eq!(
+        substituted,
+        vec![(
+            "cfrad1-xsapr-sgp-20110520-ppi-netcdf4".to_owned(),
+            "cfrad1-xsapr-sgp-20110520-ppi-classic".to_owned()
+        )],
+        "cases whose Rust side reads a different file than the goldens were made from"
+    );
 }
 
 fn decode(case: &Case) -> Option<Decoded> {

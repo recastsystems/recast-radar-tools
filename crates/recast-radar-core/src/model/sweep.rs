@@ -510,6 +510,12 @@ impl Sweep {
     /// 0.483, 0.409 and 0.478 deg on 0.4834 deg cuts. For every other source,
     /// and for a Level II sweep without rays, it is `fixed_angle_deg`
     /// (design note `docs/design/fm301-model.md` section 5.2).
+    ///
+    /// `source` is the whole volume's `provenance.source_format`, so every
+    /// sweep of a volume is read under one format. That holds after a merge
+    /// too: [`merge_volumes`](crate::merge_volumes) rejects parts whose
+    /// source formats differ, so no volume mixes sweeps whose tilt elevation
+    /// follows different rules.
     pub fn tilt_elevation_deg(&self, source: SourceFormat) -> f32 {
         match source {
             SourceFormat::NexradLevel2 => self
@@ -824,41 +830,6 @@ impl Sweep {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::model::field::{FieldData, IntCoding};
-
-    fn u8_field(name: FieldName, gates: GateMapping, ngates: u32) -> Field {
-        Field::new(
-            name,
-            gates,
-            ngates,
-            FieldData::U8 {
-                values: Vec::new(),
-                coding: IntCoding::nexrad(2.0, 66.0),
-            },
-        )
-    }
-
-    #[test]
-    fn find_prefers_horizontal_then_unspecified_then_vertical() {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep
-            .add_field(u8_field(FieldName::Dbzv, GateMapping::IDENTITY, 1))
-            .unwrap();
-        sweep
-            .add_field(u8_field(FieldName::Dbz, GateMapping::IDENTITY, 1))
-            .unwrap();
-        assert_eq!(
-            sweep.find(Quantity::Reflectivity).map(|f| &f.name),
-            Some(&FieldName::Dbz)
-        );
-        sweep
-            .add_field(u8_field(FieldName::Dbzh, GateMapping::IDENTITY, 1))
-            .unwrap();
-        assert_eq!(
-            sweep.find(Quantity::Reflectivity).map(|f| &f.name),
-            Some(&FieldName::Dbzh)
-        );
-    }
 
     #[test]
     fn mode_strings_parse_and_keep_unknown_spellings() {

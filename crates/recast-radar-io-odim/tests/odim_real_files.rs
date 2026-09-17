@@ -351,3 +351,70 @@ fn real_espdg_pvol_decodes_v2_object_headers_end_to_end() {
     assert_eq!(vradh.value(0, 0), None, "vel[0,0] fill");
     assert_close(vradh.value(1, 20).unwrap(), 0.0, 1e-6, "vel[1,20] real 0");
 }
+
+/// Every `how` attribute of a real dataset group is accounted for: the
+/// decoder either reads it into a ray coordinate or a typed model slot, or
+/// leaves it verbatim in `Sweep::other`. Nothing is dropped for being one
+/// value per ray.
+///
+/// The `how` names of each file come from `hdf5lite` (the same bytes the
+/// decoder reads, listed independently of it); the expected splits were
+/// read with h5py. `ray` is the arrays the ray coordinates are built from
+/// (`odim` module docs), `typed` the names a typed slot takes from this
+/// dataset group. Everything else must appear in `Sweep::other`, a per-ray
+/// array included: a producer's `TXpower` or `startelT`/`stopelT` array
+/// reaches the model instead of being filtered out by its length.
+#[test]
+fn every_dataset_how_attribute_reaches_a_ray_coordinate_a_slot_or_sweep_other() {
+    use std::collections::BTreeSet;
+
+    use recast_radar_io_odim::hdf5lite::H5File;
+
+    let set = |names: &[&str]| -> BTreeSet<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    };
+    for (label, bytes, dataset, sweep_index, ray, typed) in [
+        (
+            "espdg",
+            ESPDG,
+            "/dataset1",
+            0usize,
+            &["startazA", "startelA", "stopazA", "stopelA"][..],
+            &[][..],
+        ),
+        (
+            "bewid",
+            BEWID,
+            "/dataset1",
+            0usize,
+            &[][..],
+            &["NI", "pulsewidth", "rpm"][..],
+        ),
+        ("norst", NORST, "/dataset1", 0usize, &[][..], &["rpm"][..]),
+    ] {
+        let volume = recast_radar_io_odim::odim::read_odim_h5_volume(bytes)
+            .unwrap_or_else(|e| panic!("decode {label}: {e}"));
+        let file = H5File::open(bytes).unwrap_or_else(|e| panic!("open {label}: {e}"));
+        let how: BTreeSet<String> = file
+            .attrs(&format!("{dataset}/how"))
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert!(!how.is_empty(), "{label} {dataset}: no `how` attributes");
+        let other: BTreeSet<String> = volume.sweeps[sweep_index]
+            .other
+            .iter()
+            .map(|(name, _)| name.to_string())
+            .collect();
+
+        // The names the decoder holds back are exactly the ray arrays it
+        // read plus the typed slots it filled from this group; every other
+        // `how` attribute, whatever its length, is in `Sweep::other`.
+        let held: BTreeSet<String> = how.difference(&other).cloned().collect();
+        let expected: BTreeSet<String> = set(ray).union(&set(typed)).cloned().collect();
+        assert_eq!(
+            held, expected,
+            "{label} {dataset}: `how` attributes the decoder does not pass through"
+        );
+    }
+}

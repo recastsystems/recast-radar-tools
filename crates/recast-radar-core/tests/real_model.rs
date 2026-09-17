@@ -14,7 +14,8 @@ use common::{
 };
 use recast_radar_core::model::{Coding, SweepError};
 use recast_radar_core::{
-    ArrayBuf, Field, FieldData, FieldName, Gate, GateMapping, LinearTransform, Quantity, RangeCoord,
+    ArrayBuf, Field, FieldData, FieldName, Gate, GateMapping, LinearTransform, Polarization,
+    Quantity, RangeCoord,
 };
 use serde_json::Value;
 
@@ -760,4 +761,65 @@ fn seal_pads_trailing_absent_rows_and_checks_invariants() {
             nrays,
         })
     );
+}
+
+/// `Sweep::find` prefers horizontal, then unspecified, then vertical, on
+/// real gates: IESHA's DBZH sweep, its decoded field re-spelled DBZ and DBZV
+/// so the same real rows sit under each of the three reflectivity names. No
+/// corpus file carries all three at once, and a decoder's `standard_name`
+/// would decide the classification before the name does, so the re-spelling
+/// runs the name through `Quantity::classify` the way a decoder would.
+#[test]
+fn find_prefers_horizontal_then_unspecified_then_vertical() {
+    let volume = common::odim(&recast_radar_testdata::require_file!(
+        "odim-iesha-20260305-0115-pvol"
+    ));
+    let source = volume.sweeps[0]
+        .field(&FieldName::Dbzh)
+        .expect("IESHA sweep 0 DBZH")
+        .clone();
+    assert_eq!(source.polarization, Polarization::H);
+    assert_eq!(source.quantity, Quantity::Reflectivity);
+
+    // The same real rows under another name, classified from the name alone.
+    let respelled = |name: FieldName| {
+        let mut field = source.clone();
+        let (quantity, polarization) = Quantity::classify(name.as_str(), None);
+        field.name = name;
+        field.quantity = quantity;
+        field.polarization = polarization;
+        field.attrs = Default::default();
+        field
+    };
+    assert_eq!(
+        respelled(FieldName::Dbz).polarization,
+        Polarization::Unspecified
+    );
+    assert_eq!(respelled(FieldName::Dbzv).polarization, Polarization::V);
+
+    let mut sweep = volume.sweeps[0].clone();
+    sweep.fields.clear();
+    sweep.fields.push(respelled(FieldName::Dbzv));
+    assert_eq!(
+        sweep.find(Quantity::Reflectivity).map(|f| &f.name),
+        Some(&FieldName::Dbzv),
+        "vertical alone"
+    );
+    sweep.fields.push(respelled(FieldName::Dbz));
+    assert_eq!(
+        sweep.find(Quantity::Reflectivity).map(|f| &f.name),
+        Some(&FieldName::Dbz),
+        "unspecified beats vertical"
+    );
+    sweep.fields.push(respelled(FieldName::Dbzh));
+    assert_eq!(
+        sweep.find(Quantity::Reflectivity).map(|f| &f.name),
+        Some(&FieldName::Dbzh),
+        "horizontal beats both"
+    );
+    assert_eq!(sweep.seal(), Ok(()));
+    // The winner is the real field, gates and all.
+    let found = sweep.find(Quantity::Reflectivity).expect("reflectivity");
+    assert_eq!(found.data, source.data);
+    assert_eq!((found.nrays, found.ngates), (source.nrays, source.ngates));
 }

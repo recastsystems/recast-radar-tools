@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::sweep::{PrtSequence, RayVariables, Sweep};
-use super::volume::{TimeCoverage, Volume};
+use super::volume::{SourceFormat, TimeCoverage, Volume};
 
 /// Tolerance used to treat two fixed angles or two ray azimuths as the same.
 pub const ANGLE_MATCH_TOLERANCE_DEG: f32 = 0.05;
@@ -30,13 +30,22 @@ pub enum MergeError {
     NoParts,
     #[error("cannot merge radar volumes from different sites: '{first}' vs '{other}'")]
     SiteMismatch { first: String, other: String },
+    #[error("cannot merge radar volumes from different source formats: {first:?} vs {other:?}")]
+    SourceMismatch {
+        first: SourceFormat,
+        other: SourceFormat,
+    },
 }
 
 /// Merge per-product / per-sweep partial volumes of one scan into one volume.
 ///
 /// Semantics:
-/// - All parts share `attrs.instrument_name`; the first part supplies every
-///   volume-level item.
+/// - All parts share `attrs.instrument_name` and `provenance.source_format`;
+///   the first part supplies every volume-level item, its provenance
+///   included. Parts of different source formats are rejected rather than
+///   merged: the merged volume carries one `source_format`, and the readings
+///   that depend on it — [`Sweep::tilt_elevation_deg`] above all — would then
+///   be taken under the first part's format for every sweep.
 /// - `time_reference` becomes the earliest part's; ray times of the other parts
 ///   are rebased onto it. `time_coverage` is the union.
 /// - Sweeps match by `fixed_angle_deg` within [`ANGLE_MATCH_TOLERANCE_DEG`] and
@@ -64,6 +73,12 @@ pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeE
             return Err(MergeError::SiteMismatch {
                 first: base.attrs.instrument_name.clone(),
                 other: part.attrs.instrument_name.clone(),
+            });
+        }
+        if part.provenance.source_format != base.provenance.source_format {
+            return Err(MergeError::SourceMismatch {
+                first: base.provenance.source_format,
+                other: part.provenance.source_format,
             });
         }
         if part.time_reference < base.time_reference {

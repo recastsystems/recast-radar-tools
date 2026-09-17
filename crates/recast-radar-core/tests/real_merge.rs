@@ -191,6 +191,51 @@ fn merge_rejects_mismatched_site_ids() {
     assert!(expected["merges"]["kiwa_002_vs_ktlx_2024"]["error"].is_string());
 }
 
+/// Two real volumes of different source formats, made to agree on the site
+/// name: the merge is refused. `Sweep::tilt_elevation_deg` reads a Level II
+/// sweep's first-ray elevation and every other format's fixed angle, and a
+/// merged volume carries one `provenance.source_format`, so merging across
+/// formats would evaluate every sweep under the first part's format (a
+/// Level II part's rule applied to ODIM sweeps, or the reverse).
+#[test]
+fn merge_rejects_mismatched_source_formats() {
+    let path = recast_radar_testdata::require_file!("l2-ktlx-20240315-000217-trim");
+    let ktlx = level2(&path);
+    let mut nohur = odim(&recast_radar_testdata::require_file!(
+        "odim-nohur-20260612-1445-dbzh"
+    ));
+    assert_ne!(
+        ktlx.provenance.source_format,
+        nohur.provenance.source_format
+    );
+    // Same site name, so only the format check can reject the pair.
+    nohur.attrs.instrument_name = ktlx.attrs.instrument_name.clone();
+    let err = merge_volumes(vec![ktlx.clone(), nohur.clone()]).unwrap_err();
+    assert_eq!(
+        err,
+        MergeError::SourceMismatch {
+            first: ktlx.provenance.source_format,
+            other: nohur.provenance.source_format,
+        }
+    );
+    // Either order, and the message names both formats.
+    let reversed = merge_volumes(vec![nohur.clone(), ktlx.clone()]).unwrap_err();
+    assert_eq!(
+        reversed,
+        MergeError::SourceMismatch {
+            first: nohur.provenance.source_format,
+            other: ktlx.provenance.source_format,
+        }
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("NexradLevel2") && message.contains("OdimH5"),
+        "{message}"
+    );
+    // Parts of one format still merge.
+    assert!(merge_volumes(vec![nohur.clone(), nohur]).is_ok());
+}
+
 /// Hurum's 14:45 scan as three ORD files: the VRADH part is stamped 14:46:48
 /// (its last sweep is a later vertical scan), the DBZH and TH parts 14:45:13.
 /// Whatever the part order, the merged volume takes the earliest time, and ray

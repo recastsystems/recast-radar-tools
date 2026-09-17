@@ -52,6 +52,55 @@ model and view (F.2), native decoding and every crate on the model (F.3), the le
 removed, and the conformance tests (F.4). The code is authoritative where it differs from the
 design text (sections 0 to 17). Section 17 and this section record the differences.
 
+### One decision needs sign-off before the merge
+
+`fm301` changes one shipped product golden against `main`, on purpose. It is the only
+behaviour change on the branch that is not forced by the model, and it is the one item to
+decide before merging.
+
+**What changed.** A DORADE sweepfile's `Volume::time_reference` was the SSWB start. It is now
+the earlier of the SSWB start and the earliest RYIB ray, floored to the second
+(`crates/recast-radar-io-dorade/src/dorade.rs`). `testdata/golden/track/temporal.json` moves
+with it — trend, accumulation, duration and the exceedance values — and
+`testdata/golden/track/swath.json` gains a `reference_unix` key. No other golden, checksum or
+product changes.
+
+**Why.** These NOXP sector sweeps store their rays sorted by azimuth, so every second sweepfile
+holds them in *decreasing* time, and its SSWB start is the time of the ray acquired last. Under
+`main`'s rule those rays carry negative `time` values, which FM301, xradar and Py-ART do not
+allow (`time` is `seconds since <time_reference>` with the reference at or before the volume),
+and the sweep starts come out unevenly spaced.
+
+The numbers below are from an independent block walker written for this check — not
+`tools/track_golden.py` (which this branch also changed), not the Rust decoder. It reads the
+SSWB `start_time` and every RYIB day/hour/minute/second of each member of
+`dorade-noxp-20090525-sweeps-tgz`:
+
+| member (`swp.1090525…`) | SSWB start | first ray in storage | earliest ray | ray order | SSWB − earliest | gap SSWB | gap earliest |
+|---|---|---|---|---|---|---|---|
+| 203529 | 1243283729 | 1243283729 | 1243283723 | decreasing | 6 s | — | — |
+| 203659 | 1243283819 | 1243283819 | 1243283819 | increasing | 0 s | +90 | +96 |
+| 203840 | 1243283920 | 1243283920 | 1243283914 | decreasing | 6 s | +101 | +95 |
+| 204010 | 1243284010 | 1243284010 | 1243284010 | increasing | 0 s | +90 | +96 |
+| 204152 | 1243284112 | 1243284112 | 1243284106 | decreasing | 6 s | +102 | +96 |
+| 204322 | 1243284202 | 1243284202 | 1243284202 | increasing | 0 s | +90 | +96 |
+| 204504 | 1243284304 | 1243284304 | 1243284298 | decreasing | 6 s | +102 | +96 |
+| 204634 | 1243284394 | 1243284394 | 1243284394 | increasing | 0 s | +90 | +96 |
+| 204815 | 1243284495 | 1243284495 | 1243284489 | decreasing | 6 s | +101 | +95 |
+| 204945 | 1243284585 | 1243284585 | 1243284585 | increasing | 0 s | +90 | +96 |
+| 205127 | 1243284687 | 1243284687 | 1243284681 | decreasing | 6 s | +102 | +96 |
+
+The SSWB start is always the *first ray in storage order*, so it is 6 s late on every
+decreasing sweep (the sector takes 6 s). Its spacing alternates 90 and 101–102 s; the earliest
+ray gives a steady 95–96 s, the antenna's real repeat interval. `track/temporal.json`'s
+`elapsed_s` moves from 90 to 96 for that reason, and the per-hour trend values scale by 90/96.
+
+**What sign-off decides.** Keep the new reference (products read a 95–96 s frame spacing and no
+ray time is negative), or restore `main`'s SSWB-start reference and accept negative ray times
+plus the alternating spacing. Reverting means `dorade.rs`, the two track goldens and
+`tools/track_golden.py`; nothing else on the branch depends on it. Reproduce the table with the
+walker described above, or with `python tools/track_golden.py --check`.
+
 ### What landed
 
 | Step | Commits | Content |
@@ -324,9 +373,26 @@ run 2 shows no cost from the Message 18 read added since then, within that run's
 
 ### Open items
 
-- **User review:** the two `pending` allowlist entries (`Sweep::find` name preference).
+- **User sign-off:** the DORADE time reference (above). Nothing else on the branch waits on a
+  decision. `testdata/synthetic-allowlist.toml` no longer has a `pending` entry: the
+  reflectivity name preference moved to `real_model.rs` on real IESHA gates, and the one
+  remaining entry is the `exception` for the 16-bit row API's own checks.
 - No CfRadial netCDF-4 file is decoded natively (F.4 conformance above). Supporting it means
-  extending `hdf5lite` to superblock v2/v3 and the structures netCDF-4 uses.
+  extending `hdf5lite` to superblock v2/v3 and the structures netCDF-4 uses. Until then the
+  X-SAPR case decodes the committed classic twin; `index.json` declares that with
+  `decoded_id`, and `fm301_conformance::every_substituted_case_is_declared` fails if another
+  case starts reading a file its goldens did not come from.
+- `hdf5lite` fails a whole ODIM file on dense attribute storage or an attribute datatype it
+  cannot parse, rather than reading it partially (section 16, ODIM). No corpus file trips it;
+  a producer using HDF5's latest-format object headers would be rejected with a message naming
+  the object.
+- `l2-ktlx-19990504-002218` compares against Py-ART only: xradar 0.12 raises
+  `ValueError: conflicting sizes for dimension 'azimuth' (366 vs 367)` on it, so its xradar
+  golden is an error stub (`xradar_status = "error"` in `index.json`). The other four Level II
+  cases compare against both readers.
+- A binding that mirrors the xradar 0.12 default (`Flavor::Xradar012` with `FirstDim::Auto`)
+  gets no zero-copy field on NEXRAD, CfRadial or JMA files, and copies packed values once per
+  field on first read; nothing is copied at decode. By design, with the counts in 12.2.
 - The open questions of section 15 remain open. The 30 `EXPECTED` reader differences are
   deliberate and documented.
 - Branches `fm301-io`, `fm301-algo`, `fm301-render` and `fm301-golden` can be deleted after
@@ -375,6 +441,22 @@ resolutions (all in the commit that adds this section):
 | minor: the NOXP DORADE time reference sat after the volume start | the reference is the earlier of the SSWB start and the earliest ray, truncated to the second, so no ray time is negative and `time_coverage.start` is the reference (`dorade.rs`; pinned in `fm301_view.rs` and the io-dorade unit tests). These NOXP sector sweeps store their rays sorted by azimuth, so every second sweep holds them in decreasing time and its SSWB start is the time of the last ray acquired. `track_golden.py` now walks the RYIB times and writes that reference as `reference_unix`, which `swath_real` and `temporal_real` compare; the sweep starts it gives are 95 to 96 s apart, where the SSWB starts alternate 90 and 101 s, so `track/temporal.json`'s trend, accumulation and duration move with it |
 | minor: stale documentation after the shim removal | `fm301-f3-algo.md` opens with a historical banner; 13.4 and the reproduction commands say which files were deleted and at which commit (`2a7e805` is the last checkout that has them); `ref_odim.py` says it is a historical script no test runs |
 | minor: disclosed open items, confirmed | unchanged, except that the `MobileDecode` one-implementation shim leftover is folded away (13.4) |
+
+### Verifier findings (third verification, 2026-09-17)
+
+A third independent verification, of `0018403`, reported 1 major and 7 minor findings. Their
+resolutions (all in the commit that adds this section):
+
+| Finding | Resolution |
+|---|---|
+| major: the DORADE time reference changes a shipped product golden against `main` and is still unsigned; the tool that reproduced the goldens was changed in the same commit, so it cross-validates the arithmetic, not the decision | no code change. "One decision needs sign-off before the merge" above states the change, what it costs to revert, and the per-member SSWB-vs-RYIB table from a block walker written for this check alone — independent of `track_golden.py` and of the decoder. The SSWB start is the first ray *in storage order*, so it is 6 s late on every sweep stored in decreasing time; its spacing alternates 90 and 101–102 s where the earliest ray gives a steady 95–96 s |
+| minor: `merge_volumes` does not reconcile `provenance.source_format`, so a volume merged from parts of different formats would read every sweep's `tilt_elevation_deg` under the first part's format | `MergeError::SourceMismatch`: parts whose `provenance.source_format` differs are rejected, as a site mismatch already was, so a volume never mixes sweeps whose tilt elevation follows different rules. `real_merge::merge_rejects_mismatched_source_formats` merges a real Level II volume with a real ODIM volume renamed to the same site, both orders. The accessor keeps its `source` argument (the second verification's fix) |
+| minor: io-odim discarded any per-ray `how` array it does not consume | only the arrays a ray coordinate was actually built from are held back now; everything else is verbatim in `Sweep::other`, whatever its length (section 16, ODIM). No corpus file carries an unconsumed per-ray array, so `odim_real_files::every_dataset_how_attribute_reaches_a_ray_coordinate_a_slot_or_sweep_other` pins the accounting from the other side on ESPDG, BEWID and NORST |
+| minor: two `pending` allowlist entries remained, so stream C's target was unmet | `find_prefers_horizontal_then_unspecified_then_vertical` moved to `real_model.rs`: one real IESHA DBZH field re-spelled DBZ and DBZV through `Quantity::classify`, which is what `Sweep::find` ranks. Both entries are gone; the allowlist holds one `exception` and no `pending` entry |
+| minor: the netCDF-4 X-SAPR golden is compared against the classic twin, and only the Rust source said so | `index.json` declares it with `decoded_id` and says so in the case note; the test reads that field instead of hard-coding the substitution, and `every_substituted_case_is_declared` fails if another case acquires one. The limitation itself is unchanged and stays an open item |
+| minor: `hdf5lite` turns a partial ODIM read into a total failure, with no fallback or opt-out | no code change (it is the second verification's fix for silent attribute loss). Recorded as a deliberate choice in section 16 and in the open items: the error names the object, no corpus file trips it, and no fallback could be tested against a real file |
+| minor: a binding on the xradar 0.12 default gets no zero-copy NEXRAD field | no code change (12.2 is the design). Listed in the open items so it is visible beside the other disclosures |
+| minor: `l2-ktlx-19990504-002218` compares against Py-ART only | unchanged and already in `index.json`; listed in the open items with the xradar error it raises |
 
 ---
 
@@ -2705,11 +2787,25 @@ for every source. What each decoder fills:
   - Every other `how` attribute stays verbatim: the root's in `attrs.other`, a dataset's in
     `Sweep::other` (iesha keeps 25 per dataset; dkrom keeps its per-ray angle and time
     strings).
-  - Still dropped: per-ray `how` arrays other than the ray coordinates (none in the corpus;
-    of `startazA`/`stopazA`, `startelA`/`stopelA` and `startazT`/`stopazT` only the midpoints
-    are kept), `what`/`where` attributes the decoder does not read, and `dataM/how` groups.
+  - A per-ray `how` array the decoder has no slot for is kept verbatim in `Sweep::other`.
+    Only the arrays a ray coordinate is actually built from are held back — of
+    `startazA`/`stopazA`, `startelA`/`stopelA`, `elangles` and `startazT`/`stopazT` only the
+    midpoints are kept, and only when that branch was taken — so a producer's `TXpower` or
+    `startelT`/`stopelT` reaches the model instead of being filtered out by having one entry
+    per ray. (Before the third verification the decoder dropped *every* array whose length
+    equalled the ray count.) No corpus file carries such an array, so the rule is pinned from
+    the other side: `odim_real_files::every_dataset_how_attribute_reaches_a_ray_coordinate_a_slot_or_sweep_other`
+    checks, for ESPDG, BEWID and NORST, that the only `how` names missing from `Sweep::other`
+    are the ray arrays the decoder read and the names a typed slot took.
+  - Still dropped: `what`/`where` attributes the decoder does not read, and `dataM/how` groups.
     `hdf5lite` widens numeric attributes to 64 bits and reads compact attribute storage only.
-    In the four checked files it reads every attribute h5py reports.
+    In the four checked files it reads every attribute h5py reports. Dense attribute storage
+    (an 0x0015 message pointing at a fractal heap) and an attribute datatype `hdf5lite` cannot
+    parse fail the whole file, by choice: a partial read would drop metadata silently, which is
+    what the second verification asked to end, and the error names the object. No corpus file
+    trips it and no fallback path could be tested against a real file, so none was added; an
+    ODIM producer using HDF5's latest-format object headers would be rejected outright and is
+    an open item.
   - xradar 0.12 drops all of this beyond `NI`, so `Flavor` views do not write the verbatim
     part.
 - **DORADE:**
