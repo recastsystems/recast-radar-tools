@@ -206,13 +206,8 @@ fn decode_entry(entry: &Entry) -> FileOutcome {
                     product.description.product_code
                 ));
             }
-            let found: Vec<i64> = summary.packets.keys().map(|&c| i64::from(c)).collect();
-            let golden_codes: Vec<i64> = golden
-                .get("packet_codes")
-                .items()
-                .iter()
-                .map(|c| c.int("packet code"))
-                .collect();
+            let found: Vec<u16> = summary.packets.keys().copied().collect();
+            let golden_codes = common::golden_packet_codes(&golden);
             if found != golden_codes {
                 summary.golden_mismatches.push(format!(
                     "packet codes found (including nested) {found:?}, golden {golden_codes:?}"

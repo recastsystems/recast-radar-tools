@@ -99,12 +99,7 @@ fn radial_and_generic_packets_match_golden() {
     let mut failures = Vec::new();
     for entry in common::level3_manifest() {
         let golden = entry.golden();
-        let codes: Vec<u16> = golden
-            .get("packet_codes")
-            .items()
-            .iter()
-            .map(|c| u16::try_from(c.int("packet code")).unwrap())
-            .collect();
+        let codes = common::golden_packet_codes(&golden);
         if !codes.iter().any(|c| FAMILY_CODES.contains(c)) {
             continue;
         }
@@ -623,7 +618,7 @@ fn check_grid(grid: &Grid, data: &Json, what: &str, problems: &mut Vec<String>) 
         grid.cols as i64,
         data.get("cols").int("cols")
     );
-    let digest = sha256_hex(&grid.bytes);
+    let digest = common::sha256_hex(&grid.bytes);
     check_eq!(
         problems,
         format!("{what} raw levels sha256"),
@@ -973,9 +968,8 @@ fn threshold_halfwords_decode_per_icd() {
         ("l3-tlx-ntp-20130520-2016", 33, Some(0.3), None, "0.3"),
         ("l3-tlx-n0v-20130520-2016", 46, None, Some(3), "RF"),
     ];
-    let manifest = common::level3_manifest();
     for (id, n, value, code, label) in cases {
-        let entry = manifest.iter().find(|e| e.id == id).unwrap();
+        let entry = common::entry(id);
         let product = decode_product(&entry.bytes()).unwrap();
         let t = Threshold {
             raw: product.description.halfword(n).unwrap(),
@@ -1020,9 +1014,8 @@ fn product_138_follows_the_icd_and_differs_from_metpy_as_documented() {
         ("l3-tlx-dsp-20130520-2016", 2, 33265, 2494, 145, 289),
         ("l3-tlx-dsp-20260629-173638", 1, 41760, 0, 0, 0),
     ];
-    let manifest = common::level3_manifest();
     for (id, hw32, level0, level1, highest, hw47) in FILES {
-        let entry = manifest.iter().find(|e| e.id == id).unwrap();
+        let entry = common::entry(id);
         let golden = entry.golden();
         let product = decode_product(&entry.bytes()).unwrap();
         let d = &product.description;
@@ -1111,11 +1104,8 @@ fn product_138_follows_the_icd_and_differs_from_metpy_as_documented() {
 /// well-formed result, allocates nothing unbounded and never panics.
 #[test]
 fn corrupted_radial_and_generic_packets() {
-    let manifest = common::level3_manifest();
-    let find = |id: &str| manifest.iter().find(|e| e.id == id).unwrap();
-
     // KFWS 1995 N0R: uncompressed, 30-byte WMO/AWIPS heading, one 0xAF1F packet.
-    let entry = find("l3-fws-n0r-19950517-2304");
+    let entry = common::entry("l3-fws-n0r-19950517-2304");
     let bytes = entry.bytes();
     let original = decode_product(&bytes).unwrap();
     let Packet::Radial(radial) = &original.symbology.as_ref().unwrap().layers[0][0] else {
@@ -1152,18 +1142,13 @@ fn corrupted_radial_and_generic_packets() {
     // KTLX 2013 DPR and ASP: bzip2 products. Decompress, corrupt the XDR data
     // and hand the decoder the uncompressed message.
     let unpacked = |id: &str| {
-        let entry = find(id);
+        let entry = common::entry(id);
         let golden = entry.golden();
         let bytes = entry.bytes();
-        let framing = golden.get("framing");
-        let trailer = if framing.get("trailer").is_null() {
-            0
-        } else {
-            4
-        };
-        let start =
-            bytes.len() - trailer - framing.get("message_bytes").int("message_bytes") as usize;
-        let message = &bytes[start..bytes.len() - trailer];
+        assert!(common::is_bzip2(&golden), "{id}");
+        let range = common::message_range(&golden, bytes.len());
+        let start = range.start;
+        let message = &bytes[range];
         let mut out = bytes[..start + 120].to_vec();
         std::io::Read::read_to_end(&mut bzip2::read::BzDecoder::new(&message[120..]), &mut out)
             .unwrap();
@@ -1246,85 +1231,4 @@ fn corrupted_radial_and_generic_packets() {
             assert!(decode_product(&message[..cut]).is_err(), "cut at {cut}");
         }
     }
-}
-
-#[test]
-fn sha256_known_answers() {
-    // FIPS 180-4 examples (one and two blocks) and the empty message.
-    assert_eq!(
-        sha256_hex(b"abc"),
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    );
-    assert_eq!(
-        sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
-        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
-    );
-    assert_eq!(
-        sha256_hex(b""),
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    );
-}
-
-/// SHA-256 (FIPS 180-4), hex encoded. The crate has no dev-dependencies.
-fn sha256_hex(data: &[u8]) -> String {
-    const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
-    ];
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let mut message = data.to_vec();
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
-    }
-    message.extend_from_slice(&((data.len() as u64) * 8).to_be_bytes());
-    for block in message.chunks_exact(64) {
-        let mut w = [0u32; 80];
-        for (i, word) in block.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes(word.try_into().unwrap());
-        }
-        for i in 16..64 {
-            w[i] = w[i - 16]
-                .wrapping_add(
-                    w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3),
-                )
-                .wrapping_add(w[i - 7])
-                .wrapping_add(
-                    w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10),
-                );
-        }
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
-        for i in 0..64 {
-            let t1 = hh
-                .wrapping_add(e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25))
-                .wrapping_add((e & f) ^ (!e & g))
-                .wrapping_add(K[i])
-                .wrapping_add(w[i]);
-            let t2 = (a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22))
-                .wrapping_add((a & b) ^ (a & c) ^ (b & c));
-            hh = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
-        }
-        for (x, y) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
-            *x = x.wrapping_add(y);
-        }
-    }
-    h.iter().map(|x| format!("{x:08x}")).collect()
 }
