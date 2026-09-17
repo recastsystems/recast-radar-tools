@@ -51,6 +51,9 @@ The KILX20260418 volume (106 records, 87 MB decoded) gives the same
 ordering (2.29 G against 10.95 G). Pinned wall-clock runs put the decoder at
 roughly half the time of `libbz2-rs-sys`; the memory-latency-bound
 inverse-BWT chase dominates, which is what `decode_two_into` overlaps.
+The whole-volume effect inside `recast-radar-io-nexrad` (instructions,
+pinned wall clock, multi-core, page faults, and the Windows bench) is in
+the repository's `docs/perf/single-core.md`.
 
 ## Design
 
