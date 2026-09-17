@@ -1,0 +1,2167 @@
+# NEXRAD and TDWR Level III real product corpus (recast-radar-tools Task L3.1).
+# Schema: see Task TD.2 of docs/superpowers/plans/2026-09-16-wave1.md.
+# Every file is committed byte-for-byte as obtained under testdata/files/level3/<id>
+# (`committed` is relative to testdata/). `urls` is the direct public download of the
+# same bytes; NCEI archive members have no direct URL, their tarball is named in
+# `derivation`. Golden values: testdata/level3/golden/<id>.json (tools/level3_golden.py).
+# Provenance and packet coverage: docs/level3/reference.md section 7.
+
+[[file]]
+id = "l3-abr-ftm-20110428-1331"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KABR_NOUS63_FTMABR_201104281331"]
+sha256 = "98854ad65a5b5c3f065d5b422447b3886757eec4adce68a9b52619238ef40866"
+size = 151
+committed = "files/level3/l3-abr-ftm-20110428-1331"
+tags = ["provider:metpy-staticdata", "awips:FTMABR", "era:2011", "radar:nexrad", "framing:text-only", "product:75", "mnemonic:FTM"]
+description = "KABR FTM 2011-04-28 13:31Z: Free Text Message (text only); MetPy test data (staticdata/nids/KABR_NOUS63_FTMABR_201104281331)"
+
+[[file]]
+id = "l3-akc-nc1-20210730-055033"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/AKC_NC1_2021_07_30_05_50_33"]
+sha256 = "a436f36342882c2e67ae99a9b45a7d105654123df968ba3e0242a2585732cc20"
+size = 14860
+committed = "files/level3/l3-akc-nc1-20210730-055033"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NC1AKC", "era:2021", "radar:nexrad", "product:34", "vcp:35", "version:1", "block:symbology", "packet:0xaf1f"]
+description = "PAKC NC1 2021-07-30 05:50Z: product 34 Clutter Filter Control; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-byx-n0q-20150124-2106"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/sn.last"]
+sha256 = "e086870fe5b4c441f613e62004ffe9b96c56819b1eefbcb05dc98b63f4aa4163"
+size = 10673
+committed = "files/level3/l3-byx-n0q-20150124-2106"
+tags = ["provider:metpy-staticdata", "awips:N0QBYX", "era:2015", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KBYX N0Q 2015-01-24 21:06Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/sn.last)"
+
+[[file]]
+id = "l3-ddc-gsm-20200817-1000"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KDDC-gsm.nids"]
+sha256 = "0ea3229e881eecf9a8e915c4628dac03ff2e2e31f980c4043c31136996b1db8c"
+size = 230
+committed = "files/level3/l3-ddc-gsm-20200817-1000"
+tags = ["provider:metpy-staticdata", "awips:GSMDDC", "era:2020", "radar:nexrad", "message:gsm"]
+description = "KDDC GSM 2020-08-17 10:00Z: General Status Message; MetPy test data (staticdata/nids/KDDC-gsm.nids)"
+
+[[file]]
+id = "l3-ddc-n0q-20200817-0501"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KDDC_N0Q_20200817_0501.nids"]
+sha256 = "ceca0f6d2bbb140d34ec3e04e7798a9adaf9c2631e252201b8f26a286e6f622b"
+size = 43024
+committed = "files/level3/l3-ddc-n0q-20200817-0501"
+tags = ["provider:metpy-staticdata", "awips:N0QDDC", "era:2020", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "KDDC N0Q 2020-08-17 05:01Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KDDC_N0Q_20200817_0501.nids)"
+
+[[file]]
+id = "l3-ddc-n0q-20200817-0503"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KDDC_N0Q_20200817_0503.nids"]
+sha256 = "491c657f0328acaf8bfc8a96b5f34fca0f75e6592e6629658a4c93e3f2d5ed39"
+size = 42428
+committed = "files/level3/l3-ddc-n0q-20200817-0503"
+tags = ["provider:metpy-staticdata", "awips:N0QDDC", "era:2020", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "KDDC N0Q 2020-08-17 05:03Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KDDC_N0Q_20200817_0503.nids)"
+
+[[file]]
+id = "l3-den-tz0-20200804-2226"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_DEN_TZ0_20200804_2226.nids"]
+sha256 = "7691f46454fd005da5de38d8a1117dcde2b1bac0a65a052eaa9f86dc996a7d05"
+size = 119104
+committed = "files/level3/l3-den-tz0-20200804-2226"
+tags = ["provider:metpy-staticdata", "awips:TZ0DEN", "era:2020", "radar:tdwr", "product:180", "mnemonic:DR", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TDEN TZ0 2020-08-04 22:26Z: product 180 DR TDWR Base Reflectivity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_DEN_TZ0_20200804_2226.nids)"
+
+[[file]]
+id = "l3-den-tz1-20200804-2226"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_DEN_TZ1_20200804_2226.nids"]
+sha256 = "c75e19bf7060ce2d1fb6e7ec31395f8076c89bda8e22bfe8cfa45809d89a34c0"
+size = 113537
+committed = "files/level3/l3-den-tz1-20200804-2226"
+tags = ["provider:metpy-staticdata", "awips:TZ1DEN", "era:2020", "radar:tdwr", "product:180", "mnemonic:DR", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TDEN TZ1 2020-08-04 22:26Z: product 180 DR TDWR Base Reflectivity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_DEN_TZ1_20200804_2226.nids)"
+
+[[file]]
+id = "l3-den-tz2-20200804-2227"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_DEN_TZ2_20200804_2227.nids"]
+sha256 = "775950a2e5a98765c75d9e6a395c51e1ef8ae8d948350b09911e74cd40dd7956"
+size = 97690
+committed = "files/level3/l3-den-tz2-20200804-2227"
+tags = ["provider:metpy-staticdata", "awips:TZ2DEN", "era:2020", "radar:tdwr", "product:180", "mnemonic:DR", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TDEN TZ2 2020-08-04 22:27Z: product 180 DR TDWR Base Reflectivity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_DEN_TZ2_20200804_2227.nids)"
+
+[[file]]
+id = "l3-eax-gsm-20200817-0933"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KEAX-gsm.nids"]
+sha256 = "279065275c00c36508c013fc28d62d83ef5565539edb11303c5459dc3017be9d"
+size = 230
+committed = "files/level3/l3-eax-gsm-20200817-0933"
+tags = ["provider:metpy-staticdata", "awips:GSMEAX", "era:2020", "radar:nexrad", "message:gsm"]
+description = "KEAX GSM 2020-08-17 09:33Z: General Status Message; MetPy test data (staticdata/nids/KEAX-gsm.nids)"
+
+[[file]]
+id = "l3-eax-n0q-20200817-0401"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KEAX_N0Q_20200817_0401.nids"]
+sha256 = "365929627818cbfe588554103c497b78ce988ac5a1d4a57b2e7587321ef5e44e"
+size = 60202
+committed = "files/level3/l3-eax-n0q-20200817-0401"
+tags = ["provider:metpy-staticdata", "awips:N0QEAX", "era:2020", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:215", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "KEAX N0Q 2020-08-17 04:01Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KEAX_N0Q_20200817_0401.nids)"
+
+[[file]]
+id = "l3-eax-n0q-20200817-0405"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KEAX_N0Q_20200817_0405.nids"]
+sha256 = "43e07ec25d8b8f87d3cfa42735fe946c1aae38d4f318b40ec5341a2f2bb1bdd4"
+size = 61139
+committed = "files/level3/l3-eax-n0q-20200817-0405"
+tags = ["provider:metpy-staticdata", "awips:N0QEAX", "era:2020", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:215", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "KEAX N0Q 2020-08-17 04:05Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KEAX_N0Q_20200817_0405.nids)"
+
+[[file]]
+id = "l3-ffc-n0q-20140407-1805"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_FFC_N0Q_20140407_1805.nids"]
+sha256 = "2136983638939449c20bf43cb5bb5d007a20d15cb258a72f011a9188609dc775"
+size = 29142
+committed = "files/level3/l3-ffc-n0q-20140407-1805"
+tags = ["provider:metpy-staticdata", "awips:N0QFFC", "era:2014", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:21", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "KFFC N0Q 2014-04-07 18:05Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/Level3_FFC_N0Q_20140407_1805.nids)"
+
+[[file]]
+id = "l3-ftg-n0b-20220304-1820"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_FTG_N0B_20220304_1820.nids"]
+sha256 = "3d89d2befffdc87e7606ef2397abf9482645a13f198200a96eb35363af334562"
+size = 149921
+committed = "files/level3/l3-ftg-n0b-20220304-1820"
+tags = ["provider:metpy-staticdata", "awips:N0BFTG", "era:2022", "radar:nexrad", "product:153", "mnemonic:SDR", "vcp:215", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "KFTG N0B 2022-03-04 18:20Z: product 153 SDR Super Resolution Reflectivity Data Array; MetPy test data (staticdata/nids/Level3_FTG_N0B_20220304_1820.nids)"
+
+[[file]]
+id = "l3-fws-dpa-19950517-2304"
+format = "nexrad-level3"
+sha256 = "814c59266df1be741d99b852f20882d21b1ee9394d8d541bc29aece2e8b31501"
+size = 5576
+committed = "files/level3/l3-fws-dpa-19950517-2304"
+derivation = "unmodified member KFWS_SDUS84_DPAFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:DPAFWS", "era:1995", "radar:nexrad", "product:81", "mnemonic:DPA", "vcp:21", "version:0", "block:symbology", "packet:1", "packet:17", "packet:18"]
+description = "KFWS DPA 1995-05-17 23:04Z: product 81 DPA Hourly Digital Precipitation Array; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-n0r-19950517-2304"
+format = "nexrad-level3"
+sha256 = "85202a294161ee57d8e03531f427dbbbf9a5a5f546355101beeeb63d075b7580"
+size = 19090
+committed = "files/level3/l3-fws-n0r-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_N0RFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:N0RFWS", "era:1995", "radar:nexrad", "product:19", "mnemonic:R", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFWS N0R 1995-05-17 23:04Z: product 19 R Base Reflectivity 0.54 nm x 1 deg, 124 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-n1p-19950517-2304"
+format = "nexrad-level3"
+sha256 = "30e3f4c32a4c233e3c2f32a29bcd135c847a7299b72b7e79196c3b887195dabe"
+size = 9866
+committed = "files/level3/l3-fws-n1p-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_N1PFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:N1PFWS", "era:1995", "radar:nexrad", "product:78", "mnemonic:OHP", "vcp:21", "version:0", "block:symbology", "block:tabular", "packet:0xba07"]
+description = "KFWS N1P 1995-05-17 23:04Z: product 78 OHP Surface Rainfall Accumulation (1 hr); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-ncz-19950517-2304"
+format = "nexrad-level3"
+sha256 = "3dae6d407924f4035e21a63af64cb7dd0474110190a93fd15b588849fff6cac1"
+size = 7512
+committed = "files/level3/l3-fws-ncz-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_NCZFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NCZFWS", "era:1995", "radar:nexrad", "product:38", "mnemonic:CR", "vcp:21", "version:0", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "KFWS NCZ 1995-05-17 23:04Z: product 38 CR Composite Reflectivity 2.2 nm, 248 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-nhi-19950517-1323"
+format = "nexrad-level3"
+sha256 = "477b84f9c953bebdf6c05f15a4143454e17d13287ca483a49628cd6cdc2dd7f5"
+size = 3714
+committed = "files/level3/l3-fws-nhi-19950517-1323"
+derivation = "unmodified member KFWS_SDUS54_NHIFWS_199505171323 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NHIFWS", "era:1995", "radar:nexrad", "product:59", "mnemonic:HI", "vcp:21", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:13", "packet:14", "packet:15"]
+description = "KFWS NHI 1995-05-17 13:23Z: product 59 HI Hail Index; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-nme-19950517-2316"
+format = "nexrad-level3"
+sha256 = "493e3032ef169846d850a83b8148248083af631071275e63a5a58e2f4d0b6463"
+size = 3420
+committed = "files/level3/l3-fws-nme-19950517-2316"
+derivation = "unmodified member KFWS_SDUS54_NMEFWS_199505172316 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NMEFWS", "era:1995", "radar:nexrad", "product:60", "mnemonic:M", "vcp:21", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:3", "packet:8", "packet:10", "packet:11", "packet:15"]
+description = "KFWS NME 1995-05-17 23:16Z: product 60 M Mesocyclone; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-now-19950517-2304"
+format = "nexrad-level3"
+sha256 = "d85e0eb2c2ce5b545657fa52582dfc4581a9dc1804b79502ce224106b80683ed"
+size = 32358
+committed = "files/level3/l3-fws-now-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_NOWFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NOWFWS", "era:1995", "radar:nexrad", "product:25", "mnemonic:V", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFWS NOW 1995-05-17 23:04Z: product 25 V Base Velocity 0.13 nm x 1 deg, 32 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-nss-19950517-2304"
+format = "nexrad-level3"
+sha256 = "5bdcf569c3a9439f87ecfb27d1096d6901bbce5ff54213661b802568f7e236c4"
+size = 2290
+committed = "files/level3/l3-fws-nss-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_NSSFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NSSFWS", "era:1995", "radar:nexrad", "product:62", "mnemonic:SS", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KFWS NSS 1995-05-17 23:04Z: product 62 SS Storm Structure; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-nst-19950517-2304"
+format = "nexrad-level3"
+sha256 = "407a5245f6862b9b131e98b7dce119a8b8c2658ca552ba5d80625b93486a96f9"
+size = 3588
+committed = "files/level3/l3-fws-nst-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_NSTFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NSTFWS", "era:1995", "radar:nexrad", "product:58", "mnemonic:STI", "vcp:21", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:15"]
+description = "KFWS NST 1995-05-17 23:04Z: product 58 STI Storm Tracking Information; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-ntp-19950517-2304"
+format = "nexrad-level3"
+sha256 = "fe6fac938bdbec99fd1087779a8f5640344c1fb40437e8abcf22824a67d4b99a"
+size = 14674
+committed = "files/level3/l3-fws-ntp-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_NTPFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NTPFWS", "era:1995", "radar:nexrad", "product:80", "mnemonic:STP", "vcp:21", "version:0", "block:symbology", "block:tabular", "packet:0xba07"]
+description = "KFWS NTP 1995-05-17 23:04Z: product 80 STP Storm Total Rainfall Accumulation; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-nvw-19950517-2322"
+format = "nexrad-level3"
+sha256 = "5bc5bd77a456df6b34934a71b138bf485fa36c86b7f5625718a26efa82b54817"
+size = 7168
+committed = "files/level3/l3-fws-nvw-19950517-2322"
+derivation = "unmodified member KFWS_SDUS54_NVWFWS_199505172322 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NVWFWS", "era:1995", "radar:nexrad", "product:48", "mnemonic:VWP", "vcp:21", "version:0", "block:symbology", "block:tabular", "packet:4", "packet:8", "packet:10"]
+description = "KFWS NVW 1995-05-17 23:22Z: product 48 VWP VAD Wind Profile; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-nwp-19950517-2304"
+format = "nexrad-level3"
+sha256 = "732aa640a8a400f6f16c8b7494a17fcfb7871879f7de69f89d945167bd57dd87"
+size = 306
+committed = "files/level3/l3-fws-nwp-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_NWPFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NWPFWS", "era:1995", "radar:nexrad", "product:47", "vcp:21", "version:0", "block:symbology", "packet:8"]
+description = "KFWS NWP 1995-05-17 23:04Z: product 47 Severe Weather Probability; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-rcm-19950517-2310"
+format = "nexrad-level3"
+sha256 = "76c02d06740ddae00c18bf50daa20091d663d1b6468acfe628f7631ea0929e06"
+size = 2040
+committed = "files/level3/l3-fws-rcm-19950517-2310"
+derivation = "unmodified member KFWS_SDUS44_RCMFWS_199505172310 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:RCMFWS", "era:1995", "radar:nexrad", "product:74", "mnemonic:RCM", "vcp:21", "version:0", "block:rcm"]
+description = "KFWS RCM 1995-05-17 23:10Z: product 74 RCM Radar Coded Message; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-fws-sup-19950517-2304"
+format = "nexrad-level3"
+sha256 = "d2cf6821329b2bcb4a515cad5026b3ff1f0f6aad088748e54647409d86b505b0"
+size = 1470
+committed = "files/level3/l3-fws-sup-19950517-2304"
+derivation = "unmodified member KFWS_SDUS54_SUPFWS_199505172304 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/05/17/KFWS/NWS_NEXRAD_NXL3_KFWS_19950517000000_19950517235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:SUPFWS", "era:1995", "radar:nexrad", "product:82", "mnemonic:SPD", "vcp:21", "version:0", "block:symbology", "packet:1", "packet:18"]
+description = "KFWS SUP 1995-05-17 23:04Z: product 82 SPD Supplemental Precipitation Data; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-gjx-n0f-20200817-0551"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KGJX_N0F_20200817_0551.nids"]
+sha256 = "aa143f8164898d640dc00629a2277519bc92069797a55c01167f99bb0a92c0c1"
+size = 49327
+committed = "files/level3/l3-gjx-n0f-20200817-0551"
+tags = ["provider:metpy-staticdata", "awips:N0FGJX", "era:2020", "radar:nexrad", "product:113", "mnemonic:PRC", "vcp:35", "version:1", "compression:bzip2", "block:symbology", "packet:0xaf1f", "framing:noaaport"]
+description = "KGJX N0F 2020-08-17 05:51Z: product 113 PRC Power Removed Control; MetPy test data (staticdata/nids/KGJX_N0F_20200817_0551.nids)"
+
+[[file]]
+id = "l3-gjx-naf-20200817-0551"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KGJX_NAF_20200817_0551.nids"]
+sha256 = "2b6f895bbfbcb78fa62a7e03da0e7b0f34bd1f7bf4a51649ce74f57851e22d65"
+size = 45661
+committed = "files/level3/l3-gjx-naf-20200817-0551"
+tags = ["provider:metpy-staticdata", "awips:NAFGJX", "era:2020", "radar:nexrad", "product:113", "mnemonic:PRC", "vcp:35", "version:1", "compression:bzip2", "block:symbology", "packet:0xaf1f", "framing:noaaport"]
+description = "KGJX NAF 2020-08-17 05:51Z: product 113 PRC Power Removed Control; MetPy test data (staticdata/nids/KGJX_NAF_20200817_0551.nids)"
+
+[[file]]
+id = "l3-gjx-nbf-20200817-0551"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KGJX_NBF_20200817_0551.nids"]
+sha256 = "27459d74bc9a2db26537f708494a38432e8ce67e9a3a89fac6279d0f33d1106f"
+size = 22292
+committed = "files/level3/l3-gjx-nbf-20200817-0551"
+tags = ["provider:metpy-staticdata", "awips:NBFGJX", "era:2020", "radar:nexrad", "product:113", "mnemonic:PRC", "vcp:35", "version:1", "compression:bzip2", "block:symbology", "packet:0xaf1f", "framing:noaaport"]
+description = "KGJX NBF 2020-08-17 05:51Z: product 113 PRC Power Removed Control; MetPy test data (staticdata/nids/KGJX_NBF_20200817_0551.nids)"
+
+[[file]]
+id = "l3-gjx-nxf-20200817-0600"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KGJX_NXF_20200817_0600.nids"]
+sha256 = "0cd125c71efec1b6e521898b16e145fa3a26be24186ab29481de532afb4018ad"
+size = 54126
+committed = "files/level3/l3-gjx-nxf-20200817-0600"
+tags = ["provider:metpy-staticdata", "awips:NXFGJX", "era:2020", "radar:nexrad", "product:113", "mnemonic:PRC", "vcp:35", "version:1", "compression:bzip2", "block:symbology", "packet:0xaf1f", "framing:noaaport"]
+description = "KGJX NXF 2020-08-17 06:00Z: product 113 PRC Power Removed Control; MetPy test data (staticdata/nids/KGJX_NXF_20200817_0600.nids)"
+
+[[file]]
+id = "l3-gjx-nyq-20220503-005356"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/GJX_NYQ_2022_05_03_00_53_56"]
+sha256 = "489f46c5469b9f6ce829d35e679d3dc4b1b7ad4af8970ba50e1881146355afe4"
+size = 12002
+committed = "files/level3/l3-gjx-nyq-20220503-005356"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NYQGJX", "era:2022", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:215", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KGJX NYQ 2022-05-03 00:53Z: product 94 DR Base Reflectivity Data Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-jfk-tr0-20210120-154051"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/JFK_TR0_2021_01_20_15_40_51"]
+sha256 = "2b947995876d055c481ca9bdb50465c8088b546501416f2badffd0162273674b"
+size = 19702
+committed = "files/level3/l3-jfk-tr0-20210120-154051"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:TR0JFK", "era:2021", "radar:tdwr", "product:181", "vcp:90", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "TJFK TR0 2021-01-20 15:40Z: product 181 TDWR Base Reflectivity (16 levels); NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-lzk-h0c-20200814-0417"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KLZK_H0C_20200814_0417"]
+sha256 = "2a1f8378eb9ba3bf74cca936b33e73ef72211d33b90b449f0c18899ccd26d544"
+size = 514319
+committed = "files/level3/l3-lzk-h0c-20200814-0417"
+tags = ["provider:metpy-staticdata", "awips:H0CLZK", "era:2020", "radar:nexrad", "product:167", "mnemonic:SDC", "vcp:35", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KLZK H0C 2020-08-14 04:17Z: product 167 SDC Super Res Digital Correlation Coefficient; MetPy test data (staticdata/nids/KLZK_H0C_20200814_0417)"
+
+[[file]]
+id = "l3-lzk-h0v-20200812-1309"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KLZK_H0V_20200812_1309"]
+sha256 = "91b762ef12e78e9e8bc49845355fbc0a8892f81b4007e6a42072f9c056028a50"
+size = 160362
+committed = "files/level3/l3-lzk-h0v-20200812-1309"
+tags = ["provider:metpy-staticdata", "awips:H0VLZK", "era:2020", "radar:nexrad", "product:154", "mnemonic:SDV", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KLZK H0V 2020-08-12 13:09Z: product 154 SDV Super Resolution Velocity Data Array; MetPy test data (staticdata/nids/KLZK_H0V_20200812_1309)"
+
+[[file]]
+id = "l3-lzk-h0w-20200812-1305"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KLZK_H0W_20200812_1305"]
+sha256 = "4b6a6042eab44b1e6efed6d2952f269f25a8b6321a4821971b356e586ff91261"
+size = 142943
+committed = "files/level3/l3-lzk-h0w-20200812-1305"
+tags = ["provider:metpy-staticdata", "awips:H0WLZK", "era:2020", "radar:nexrad", "product:155", "mnemonic:SDW", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KLZK H0W 2020-08-12 13:05Z: product 155 SDW Super Resolution Spectrum Width Data Array; MetPy test data (staticdata/nids/KLZK_H0W_20200812_1305)"
+
+[[file]]
+id = "l3-lzk-h0z-20200812-1318"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KLZK_H0Z_20200812_1318"]
+sha256 = "c2dc9b5473a2aef2c50f3f884c568fa2a64330331f216de899c09ef1e984f869"
+size = 258527
+committed = "files/level3/l3-lzk-h0z-20200812-1318"
+tags = ["provider:metpy-staticdata", "awips:H0ZLZK", "era:2020", "radar:nexrad", "product:153", "mnemonic:SDR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KLZK H0Z 2020-08-12 13:18Z: product 153 SDR Super Resolution Reflectivity Data Array; MetPy test data (staticdata/nids/KLZK_H0Z_20200812_1318)"
+
+[[file]]
+id = "l3-mci-dhr-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_DHR_20160526_2154.nids"]
+sha256 = "5b13169c46a288427d47f8810b94f426aff7b7eec4fb9fbcbec626619d17d414"
+size = 45317
+committed = "files/level3/l3-mci-dhr-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:DHRMCI", "era:2016", "radar:tdwr", "product:32", "mnemonic:DHR", "vcp:80", "version:2", "compression:bzip2", "block:symbology", "packet:1", "packet:16", "framing:noaaport"]
+description = "TMCI DHR 2016-05-26 21:54Z: product 32 DHR Digital Hybrid Scan Reflectivity; MetPy test data (staticdata/nids/Level3_MCI_DHR_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-dpa-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_DPA_20160526_2154.nids"]
+sha256 = "7840a4e469c4538763122991bf203734bf3ce8f757b211a4e4739dddf12ecb3c"
+size = 5597
+committed = "files/level3/l3-mci-dpa-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:DPAMCI", "era:2016", "radar:tdwr", "product:81", "mnemonic:DPA", "vcp:80", "version:2", "block:symbology", "packet:1", "packet:17", "packet:18", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI DPA 2016-05-26 21:54Z: product 81 DPA Hourly Digital Precipitation Array; MetPy test data (staticdata/nids/Level3_MCI_DPA_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-dsp-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_DSP_20160526_2154.nids"]
+sha256 = "bedc6764be3156bda510162e72059ae9ff214029bbcd7a654062afd36be66bdf"
+size = 32483
+committed = "files/level3/l3-mci-dsp-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:DSPMCI", "era:2016", "radar:tdwr", "product:138", "mnemonic:DSP", "vcp:80", "version:2", "block:symbology", "packet:1", "packet:16", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI DSP 2016-05-26 21:54Z: product 138 DSP Digital Storm Total Precipitation; MetPy test data (staticdata/nids/Level3_MCI_DSP_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-n1p-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_N1P_20160526_2154.nids"]
+sha256 = "6c1f332d85ead72cd9833b18ece6f44780f05bd8130cfe4511f55fcf0773e49f"
+size = 6919
+committed = "files/level3/l3-mci-n1p-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:N1PMCI", "era:2016", "radar:tdwr", "product:78", "mnemonic:OHP", "vcp:80", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI N1P 2016-05-26 21:54Z: product 78 OHP Surface Rainfall Accumulation (1 hr); MetPy test data (staticdata/nids/Level3_MCI_N1P_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-ncr-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_NCR_20160526_2154.nids"]
+sha256 = "9e1678e9ecd446d272476ddd63edd09746b0e143812b8dfeb4723fbd65dbdc71"
+size = 9511
+committed = "files/level3/l3-mci-ncr-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:NCRMCI", "era:2016", "radar:tdwr", "product:37", "mnemonic:CR", "vcp:80", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI NCR 2016-05-26 21:54Z: product 37 CR Composite Reflectivity 0.54 nm, 124 nm, 16 levels; MetPy test data (staticdata/nids/Level3_MCI_NCR_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-net-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_NET_20160526_2154.nids"]
+sha256 = "12809036606b0af57ad98a0da0c427ef8a8958df87bc0991a723ee2118f205f0"
+size = 942
+committed = "files/level3/l3-mci-net-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:NETMCI", "era:2016", "radar:tdwr", "product:41", "mnemonic:ET", "vcp:80", "version:0", "block:symbology", "packet:0xba07", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI NET 2016-05-26 21:54Z: product 41 ET Echo Tops; MetPy test data (staticdata/nids/Level3_MCI_NET_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-nmd-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_NMD_20160526_2154.nids"]
+sha256 = "04ecffde253fb24fea0e7305f5c41cc52613774e60dd0d34a96903cacd3f3a39"
+size = 1400
+committed = "files/level3/l3-mci-nmd-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:NMDMCI", "era:2016", "radar:tdwr", "product:141", "mnemonic:MD", "vcp:80", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:20", "packet:23", "packet:24", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI NMD 2016-05-26 21:54Z: product 141 MD Mesocyclone Detection; MetPy test data (staticdata/nids/Level3_MCI_NMD_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-nst-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_NST_20160526_2154.nids"]
+sha256 = "c1c00e3a19c4a086e85367e9d5a0df32f24e11e077d71d352448fb34dfe6de76"
+size = 4836
+committed = "files/level3/l3-mci-nst-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:NSTMCI", "era:2016", "radar:tdwr", "product:58", "mnemonic:STI", "vcp:80", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:15", "packet:23", "packet:24", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI NST 2016-05-26 21:54Z: product 58 STI Storm Tracking Information; MetPy test data (staticdata/nids/Level3_MCI_NST_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-ntp-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_NTP_20160526_2154.nids"]
+sha256 = "d8d3da8b2ebf219e8200e1aa8cb761990ba00e8fd7310d9269724b5586d4a002"
+size = 11404
+committed = "files/level3/l3-mci-ntp-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:NTPMCI", "era:2016", "radar:tdwr", "product:80", "mnemonic:STP", "vcp:80", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI NTP 2016-05-26 21:54Z: product 80 STP Storm Total Rainfall Accumulation; MetPy test data (staticdata/nids/Level3_MCI_NTP_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-nvl-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_NVL_20160526_2154.nids"]
+sha256 = "ec125b431c0ac434b085958eb5d1f2c1beff2a32e1c86c0c224cef1161dbd4ea"
+size = 979
+committed = "files/level3/l3-mci-nvl-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:NVLMCI", "era:2016", "radar:tdwr", "product:57", "mnemonic:VIL", "vcp:80", "version:0", "block:symbology", "packet:0xba07", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI NVL 2016-05-26 21:54Z: product 57 VIL Vertically Integrated Liquid; MetPy test data (staticdata/nids/Level3_MCI_NVL_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-nvw-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_NVW_20160526_2154.nids"]
+sha256 = "86dc39fe8256e1c7631988cb81d6e414c1cfdecffac6067aa13de6dd2e829588"
+size = 2839
+committed = "files/level3/l3-mci-nvw-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:NVWMCI", "era:2016", "radar:tdwr", "product:48", "mnemonic:VWP", "vcp:80", "version:0", "block:symbology", "block:tabular", "packet:4", "packet:8", "packet:10", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI NVW 2016-05-26 21:54Z: product 48 VWP VAD Wind Profile; MetPy test data (staticdata/nids/Level3_MCI_NVW_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-tr0-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_TR0_20160526_2154.nids"]
+sha256 = "29498932592dd82dba10100a8cb76ce7145503afd6c26ce266c41c70f561cb88"
+size = 44583
+committed = "files/level3/l3-mci-tr0-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:TR0MCI", "era:2016", "radar:tdwr", "product:181", "vcp:80", "version:0", "block:symbology", "packet:0xaf1f", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI TR0 2016-05-26 21:54Z: product 181 TDWR Base Reflectivity (16 levels); MetPy test data (staticdata/nids/Level3_MCI_TR0_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-tr1-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_TR1_20160526_2154.nids"]
+sha256 = "0e8c8fa9aa297565d7436a48b18a56c1ee07a12bad38e3dcb07f9e1ff9cfa6e0"
+size = 46043
+committed = "files/level3/l3-mci-tr1-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:TR1MCI", "era:2016", "radar:tdwr", "product:181", "vcp:80", "version:0", "block:symbology", "packet:0xaf1f", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI TR1 2016-05-26 21:54Z: product 181 TDWR Base Reflectivity (16 levels); MetPy test data (staticdata/nids/Level3_MCI_TR1_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-tr2-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_TR2_20160526_2154.nids"]
+sha256 = "a1faea84828e15d30a322aae59d57b5ff9f25709496ec654d9f893856aee6d65"
+size = 48616
+committed = "files/level3/l3-mci-tr2-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:TR2MCI", "era:2016", "radar:tdwr", "product:181", "vcp:80", "version:0", "block:symbology", "packet:0xaf1f", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "TMCI TR2 2016-05-26 21:54Z: product 181 TDWR Base Reflectivity (16 levels); MetPy test data (staticdata/nids/Level3_MCI_TR2_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-tv0-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_TV0_20160526_2154.nids"]
+sha256 = "65eee8eb19c215d173721c45835bf291195fdb83ddc833bd666acc41a25335b1"
+size = 70071
+committed = "files/level3/l3-mci-tv0-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:TV0MCI", "era:2016", "radar:tdwr", "product:182", "mnemonic:DV", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TMCI TV0 2016-05-26 21:54Z: product 182 DV TDWR Base Velocity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_MCI_TV0_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-tv1-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_TV1_20160526_2154.nids"]
+sha256 = "24898fc178d46faba60da2820c63e62297e581170ff9cfa3935c3304ae8f6348"
+size = 70832
+committed = "files/level3/l3-mci-tv1-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:TV1MCI", "era:2016", "radar:tdwr", "product:182", "mnemonic:DV", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TMCI TV1 2016-05-26 21:54Z: product 182 DV TDWR Base Velocity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_MCI_TV1_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-tv2-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_TV2_20160526_2154.nids"]
+sha256 = "58f03a6707624cf3d6c08e88cf6a0303bf1fc55da794d0ab0d7907152eb167ba"
+size = 72109
+committed = "files/level3/l3-mci-tv2-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:TV2MCI", "era:2016", "radar:tdwr", "product:182", "mnemonic:DV", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TMCI TV2 2016-05-26 21:54Z: product 182 DV TDWR Base Velocity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_MCI_TV2_20160526_2154.nids)"
+
+[[file]]
+id = "l3-mci-tzl-20160526-2154"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_MCI_TZL_20160526_2154.nids"]
+sha256 = "7f4676864c698e4c1d8ce6f5eb2de93f196285f52cb7ab184e6c800208582508"
+size = 158498
+committed = "files/level3/l3-mci-tzl-20160526-2154"
+tags = ["provider:metpy-staticdata", "awips:TZLMCI", "era:2016", "radar:tdwr", "product:186", "mnemonic:DR", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TMCI TZL 2016-05-26 21:54Z: product 186 DR TDWR Long Range Base Reflectivity 0.16 nm x 1 deg, 225 nm; MetPy test data (staticdata/nids/Level3_MCI_TZL_20160526_2154.nids)"
+
+[[file]]
+id = "l3-okc-ncr-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NCR_2026_06_22_08_06_23"]
+sha256 = "3fe29a085715c5cddd17a313e700e2f21f5dc4efa95d429de042517c11295292"
+size = 27254
+committed = "files/level3/l3-okc-ncr-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NCROKC", "era:2026", "radar:tdwr", "product:37", "mnemonic:CR", "vcp:80", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "TOKC NCR 2026-06-22 08:06Z: product 37 CR Composite Reflectivity 0.54 nm, 124 nm, 16 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-net-20220503-005210"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NET_2022_05_03_00_52_10"]
+sha256 = "bcd8f9180232b83b8bc11b4d6ff2943433ead320aa0a5eadbfbd702604dc8d49"
+size = 1774
+committed = "files/level3/l3-okc-net-20220503-005210"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NETOKC", "era:2022", "radar:tdwr", "product:41", "mnemonic:ET", "vcp:80", "version:0", "block:symbology", "packet:0xba07"]
+description = "TOKC NET 2022-05-03 00:52Z: product 41 ET Echo Tops; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-nhi-20220503-005210"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NHI_2022_05_03_00_52_10"]
+sha256 = "907dae19484ec7def2677e3609c3c95f7f4787a8b86b0fefa11e8bbdae717b88"
+size = 6322
+committed = "files/level3/l3-okc-nhi-20220503-005210"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NHIOKC", "era:2022", "radar:tdwr", "product:59", "mnemonic:HI", "vcp:80", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:15", "packet:19"]
+description = "TOKC NHI 2022-05-03 00:52Z: product 59 HI Hail Index; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-nmd-20260622-080640"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NMD_2026_06_22_08_06_40"]
+sha256 = "f094afdeaf6cffd0d80dc0f10254cecd3d49590346aa8a871774204b6a137ef0"
+size = 1686
+committed = "files/level3/l3-okc-nmd-20260622-080640"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NMDOKC", "era:2026", "radar:tdwr", "product:141", "mnemonic:MD", "vcp:80", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:20", "packet:23", "packet:24"]
+description = "TOKC NMD 2026-06-22 08:06Z: product 141 MD Mesocyclone Detection; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-nst-20260622-080640"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NST_2026_06_22_08_06_40"]
+sha256 = "0bf88cedd6c830e7bd4847d60d34a5129dcfcc2ea797e2191d08188d4c88386f"
+size = 13008
+committed = "files/level3/l3-okc-nst-20260622-080640"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NSTOKC", "era:2026", "radar:tdwr", "product:58", "mnemonic:STI", "vcp:80", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:15", "packet:23", "packet:24"]
+description = "TOKC NST 2026-06-22 08:06Z: product 58 STI Storm Tracking Information; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-ntv-20220503-005210"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NTV_2022_05_03_00_52_10"]
+sha256 = "40fa7ed041fc3016674c41eb015e2dc121c7293938c554089bdb0b19eaff138f"
+size = 3458
+committed = "files/level3/l3-okc-ntv-20220503-005210"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NTVOKC", "era:2022", "radar:tdwr", "product:61", "mnemonic:TVS", "vcp:80", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:12", "packet:15"]
+description = "TOKC NTV 2022-05-03 00:52Z: product 61 TVS Tornado Vortex Signature; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-nvl-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NVL_2026_06_22_08_06_23"]
+sha256 = "2b32221a4c47b493fc111ece3a399c819c1559c7f890df25ffc02e3072799efd"
+size = 1740
+committed = "files/level3/l3-okc-nvl-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NVLOKC", "era:2026", "radar:tdwr", "product:57", "mnemonic:VIL", "vcp:80", "version:0", "block:symbology", "packet:0xba07"]
+description = "TOKC NVL 2026-06-22 08:06Z: product 57 VIL Vertically Integrated Liquid; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-nvw-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NVW_2026_06_22_08_06_23"]
+sha256 = "d54637d966c357abfa5baeff50fa5c7d3c33b4c4c15095c2ee40934c7427e7c4"
+size = 12348
+committed = "files/level3/l3-okc-nvw-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NVWOKC", "era:2026", "radar:tdwr", "product:48", "mnemonic:VWP", "vcp:80", "version:0", "block:symbology", "block:tabular", "packet:4", "packet:8", "packet:10"]
+description = "TOKC NVW 2026-06-22 08:06Z: product 48 VWP VAD Wind Profile; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-rsl-20220517-085551"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_RSL_2022_05_17_08_55_51"]
+sha256 = "6b4cf364fc78df08f1f8e0ff517e230d659579d648496ce9c86680d41d88bf1c"
+size = 1706
+committed = "files/level3/l3-okc-rsl-20220517-085551"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:RSLOKC", "era:2022", "radar:tdwr", "product:152", "mnemonic:ASP", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:28"]
+description = "TOKC RSL 2022-05-17 08:55Z: product 152 ASP Archive III Status Product; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-tv0-20260622-080547"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_TV0_2026_06_22_08_05_47"]
+sha256 = "ac31afce66422de4ca4dfd7960c54723504a2aaada7210b110f620aa6c995afb"
+size = 93715
+committed = "files/level3/l3-okc-tv0-20260622-080547"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:TV0OKC", "era:2026", "radar:tdwr", "product:182", "mnemonic:DV", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "TOKC TV0 2026-06-22 08:05Z: product 182 DV TDWR Base Velocity 0.08 nm x 1 deg, 48 nm; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-tz0-20260622-080547"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_TZ0_2026_06_22_08_05_47"]
+sha256 = "27783935f728d47758c1c1e4477004e84c787bdb2de8558e956d6402b6805f40"
+size = 118794
+committed = "files/level3/l3-okc-tz0-20260622-080547"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:TZ0OKC", "era:2026", "radar:tdwr", "product:180", "mnemonic:DR", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "TOKC TZ0 2026-06-22 08:05Z: product 180 DR TDWR Base Reflectivity 0.08 nm x 1 deg, 48 nm; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-okc-tzl-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_TZL_2026_06_22_08_06_23"]
+sha256 = "69513d1a37419396de94dd4c93b9ed3a6ebf4c5e9f410733d0e9284c449f872e"
+size = 122317
+committed = "files/level3/l3-okc-tzl-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:TZLOKC", "era:2026", "radar:tdwr", "product:186", "mnemonic:DR", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "TOKC TZL 2026-06-22 08:06Z: product 186 DR TDWR Long Range Base Reflectivity 0.16 nm x 1 deg, 225 nm; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-rax-dta-20200818-0454"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KRAX_DTA_20200818_0454.nids"]
+sha256 = "8e85ae656c934827f6d435a7fa3f430071da866fc1d6ef8969f75e8cb2b22250"
+size = 104033
+committed = "files/level3/l3-rax-dta-20200818-0454"
+tags = ["provider:metpy-staticdata", "awips:DTARAX", "era:2020", "radar:nexrad", "product:172", "mnemonic:DSA", "vcp:215", "version:2", "compression:bzip2", "block:symbology", "block:tabular", "packet:1", "packet:16", "framing:noaaport"]
+description = "KRAX DTA 2020-08-18 04:54Z: product 172 DSA Digital Storm Total Accumulation; MetPy test data (staticdata/nids/KRAX_DTA_20200818_0454.nids)"
+
+[[file]]
+id = "l3-rax-nll-20220510-155126"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/RAX_NLL_2022_05_10_15_51_26"]
+sha256 = "8436c7b840688cb3e52b8035db0ef3531bdfdb23a6d655a8b34b2393e3be655f"
+size = 1606
+committed = "files/level3/l3-rax-nll-20220510-155126"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NLLRAX", "era:2022", "radar:nexrad", "product:65", "mnemonic:LRM", "vcp:212", "version:0", "block:symbology", "packet:0xba07"]
+description = "KRAX NLL 2022-05-10 15:51Z: product 65 LRM Layer Composite Reflectivity Layer 1 Maximum; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-rax-nyf-20200818-0001"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KRAX_NYF_20200818_0001.nids"]
+sha256 = "4712eacf4fed0b79cf3ddd7d06a91054a81a508ed4770e7d0bbb9193ae61f4a2"
+size = 74611
+committed = "files/level3/l3-rax-nyf-20200818-0001"
+tags = ["provider:metpy-staticdata", "awips:NYFRAX", "era:2020", "radar:nexrad", "product:113", "mnemonic:PRC", "vcp:212", "version:1", "compression:bzip2", "block:symbology", "packet:0xaf1f", "framing:noaaport"]
+description = "KRAX NYF 2020-08-18 00:01Z: product 113 PRC Power Removed Control; MetPy test data (staticdata/nids/KRAX_NYF_20200818_0001.nids)"
+
+[[file]]
+id = "l3-shv-nzq-20220503-005452"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/SHV_NZQ_2022_05_03_00_54_52"]
+sha256 = "233dbc2ec74742a56b85d566cc28b0c72ba770a2ac2a9f36f5c8861b2c97c374"
+size = 39543
+committed = "files/level3/l3-shv-nzq-20220503-005452"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NZQSHV", "era:2022", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:35", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KSHV NZQ 2022-05-03 00:54Z: product 94 DR Base Reflectivity Data Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-slc-tv0-20160516-2359"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/Level3_SLC_TV0_20160516_2359.nids"]
+sha256 = "3083ed0c3b19ef22e4fe0becff961065239ed919ebffb81505ace2511fbd13c8"
+size = 39764
+committed = "files/level3/l3-slc-tv0-20160516-2359"
+tags = ["provider:metpy-staticdata", "awips:TV0SLC", "era:2016", "radar:tdwr", "product:182", "mnemonic:DV", "vcp:80", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
+description = "TSLC TV0 2016-05-16 23:59Z: product 182 DV TDWR Base Velocity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_SLC_TV0_20160516_2359.nids)"
+
+[[file]]
+id = "l3-tlx-102-19990504-0052"
+format = "nexrad-level3"
+sha256 = "0241069ccf8e5f16a42771d977fa00a38165d5958a6c79e0c02fcb582f16db37"
+size = 4096
+committed = "files/level3/l3-tlx-102-19990504-0052"
+derivation = "unmodified member KTLX_SDUS54_102TLX_199905040052 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1999/05/04/KTLX/NWS_NEXRAD_NXL3_KTLX_19990504000000_19990504235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:102TLX", "era:1999", "radar:nexrad", "product:102", "vcp:11", "version:1", "block:standalone_tabular"]
+description = "KTLX 102 1999-05-04 00:52Z: product 102 Hail Index Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-tlx-daa-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_DAATLX_201305202016"]
+sha256 = "5e035d3978acd2e70f3dda427cb43cd56ab861f23898e24958b106fc75445fb5"
+size = 30437
+committed = "files/level3/l3-tlx-daa-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DAATLX", "era:2013", "radar:nexrad", "product:170", "mnemonic:DAA", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX DAA 2013-05-20 20:16Z: product 170 DAA Digital Accumulation Array; MetPy test data (staticdata/nids/KOUN_SDUS84_DAATLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-daa-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DAA_2026_06_22_08_06_23"]
+sha256 = "357aefcb8c34bf4d3e67655c628392d4252257c88f7c5f922e96d99b96e3327a"
+size = 109115
+committed = "files/level3/l3-tlx-daa-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DAATLX", "era:2026", "radar:nexrad", "product:170", "mnemonic:DAA", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX DAA 2026-06-22 08:06Z: product 170 DAA Digital Accumulation Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dhr-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_DHRTLX_201305202016"]
+sha256 = "e9a2609a7ae8b46c309d8f8e31f8cf376124af9630bc861fd75b7eefc16d18a3"
+size = 21590
+committed = "files/level3/l3-tlx-dhr-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DHRTLX", "era:2013", "radar:nexrad", "product:32", "mnemonic:DHR", "vcp:12", "version:2", "compression:bzip2", "block:symbology", "packet:1", "packet:16", "regime:tornado"]
+description = "KTLX DHR 2013-05-20 20:16Z: product 32 DHR Digital Hybrid Scan Reflectivity; MetPy test data (staticdata/nids/KOUN_SDUS54_DHRTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dhr-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DHR_2026_06_22_08_06_23"]
+sha256 = "a5d1bd2fc8adf2d4dacd924c6f354846d85b550c79f9e2b3e932985ed6dd04d3"
+size = 33992
+committed = "files/level3/l3-tlx-dhr-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DHRTLX", "era:2026", "radar:nexrad", "product:32", "mnemonic:DHR", "vcp:212", "version:2", "compression:bzip2", "block:symbology", "packet:1", "packet:16"]
+description = "KTLX DHR 2026-06-22 08:06Z: product 32 DHR Digital Hybrid Scan Reflectivity; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dod-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_DODTLX_201305202016"]
+sha256 = "f4ff0249516cd53ec7de6d66f703a76638e00f70d96a1f5a3792adb2bd29d148"
+size = 8092
+committed = "files/level3/l3-tlx-dod-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DODTLX", "era:2013", "radar:nexrad", "product:174", "mnemonic:DOD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX DOD 2013-05-20 20:16Z: product 174 DOD Digital One-Hour Difference Accumulation; MetPy test data (staticdata/nids/KOUN_SDUS84_DODTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dod-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DOD_2022_05_03_00_52_31"]
+sha256 = "80021e5f14fe32c9853d0e050c5d8eaa66639ed018d1a8e49de06ca03ea45460"
+size = 16888
+committed = "files/level3/l3-tlx-dod-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DODTLX", "era:2022", "radar:nexrad", "product:174", "mnemonic:DOD", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX DOD 2022-05-03 00:52Z: product 174 DOD Digital One-Hour Difference Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dpa-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_DPATLX_201305202016"]
+sha256 = "40a0ae0aa53586bfb906566d023b254fd66f7906a2f4a73a62e30df0b97731e7"
+size = 8406
+committed = "files/level3/l3-tlx-dpa-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DPATLX", "era:2013", "radar:nexrad", "product:81", "mnemonic:DPA", "vcp:12", "version:2", "block:symbology", "packet:1", "packet:17", "packet:18", "regime:tornado"]
+description = "KTLX DPA 2013-05-20 20:16Z: product 81 DPA Hourly Digital Precipitation Array; MetPy test data (staticdata/nids/KOUN_SDUS54_DPATLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dpa-20260629-173638"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DPA_2026_06_29_17_36_38"]
+sha256 = "02f607f76d9ca7598014925a933b2767a5340d9809fc692e46f77275c47baf3e"
+size = 2618
+committed = "files/level3/l3-tlx-dpa-20260629-173638"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DPATLX", "era:2026", "radar:nexrad", "product:81", "mnemonic:DPA", "vcp:35", "version:2", "block:symbology", "packet:1", "packet:17"]
+description = "KTLX DPA 2026-06-29 17:36Z: product 81 DPA Hourly Digital Precipitation Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dpr-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_DPRTLX_201305202016"]
+sha256 = "99b246b13712133beea70c752d2ab5094549b3784b178167681e907a72205fdf"
+size = 47894
+committed = "files/level3/l3-tlx-dpr-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DPRTLX", "era:2013", "radar:nexrad", "product:176", "mnemonic:DPR", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:28", "regime:tornado"]
+description = "KTLX DPR 2013-05-20 20:16Z: product 176 DPR Digital Instantaneous Precipitation Rate; MetPy test data (staticdata/nids/KOUN_SDUS84_DPRTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dpr-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DPR_2026_06_22_08_06_23"]
+sha256 = "4707632f6bb29b37272282d88f8d1dcc4ddc7d6a175db67d6215d4540a16eec7"
+size = 178664
+committed = "files/level3/l3-tlx-dpr-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DPRTLX", "era:2026", "radar:nexrad", "product:176", "mnemonic:DPR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:28"]
+description = "KTLX DPR 2026-06-22 08:06Z: product 176 DPR Digital Instantaneous Precipitation Rate; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dsd-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_DSDTLX_201305202016"]
+sha256 = "a3ba9672b172eb1d6aabf3f4895ad4d86e7bbe170831c6fb9528b9923aa8f45e"
+size = 8288
+committed = "files/level3/l3-tlx-dsd-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DSDTLX", "era:2013", "radar:nexrad", "product:175", "mnemonic:DSD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX DSD 2013-05-20 20:16Z: product 175 DSD Digital Storm Total Difference Accumulation; MetPy test data (staticdata/nids/KOUN_SDUS84_DSDTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dsd-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DSD_2022_05_03_00_52_31"]
+sha256 = "8bd434b53f65f7c7944a292d52c9563c08e6092818c856abeaa6e9273373d8e7"
+size = 25857
+committed = "files/level3/l3-tlx-dsd-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DSDTLX", "era:2022", "radar:nexrad", "product:175", "mnemonic:DSD", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX DSD 2022-05-03 00:52Z: product 175 DSD Digital Storm Total Difference Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dsp-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_DSPTLX_201305202016"]
+sha256 = "e9e281afe4fdfe60be1e886d6363e4b6eedf515b80fca974b4701a071a873bf6"
+size = 6556
+committed = "files/level3/l3-tlx-dsp-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DSPTLX", "era:2013", "radar:nexrad", "product:138", "mnemonic:DSP", "vcp:12", "version:2", "compression:bzip2", "block:symbology", "packet:1", "packet:16", "regime:tornado"]
+description = "KTLX DSP 2013-05-20 20:16Z: product 138 DSP Digital Storm Total Precipitation; MetPy test data (staticdata/nids/KOUN_SDUS54_DSPTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dsp-20260629-173638"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DSP_2026_06_29_17_36_38"]
+sha256 = "5c5ecfc1b516646d0dc2363b57aa66e5c2fae6b6590d6f6ad8f40bef3fba7b65"
+size = 990
+committed = "files/level3/l3-tlx-dsp-20260629-173638"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DSPTLX", "era:2026", "radar:nexrad", "product:138", "mnemonic:DSP", "vcp:35", "version:2", "compression:bzip2", "block:symbology", "packet:1", "packet:16"]
+description = "KTLX DSP 2026-06-29 17:36Z: product 138 DSP Digital Storm Total Precipitation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dta-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_DTATLX_201305202016"]
+sha256 = "f3c0a60d27eae7a844f0bff0ce159df79e67065b87605fad2a38740f0ef23113"
+size = 25744
+committed = "files/level3/l3-tlx-dta-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DTATLX", "era:2013", "radar:nexrad", "product:172", "mnemonic:DSA", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:1", "packet:16", "regime:tornado"]
+description = "KTLX DTA 2013-05-20 20:16Z: product 172 DSA Digital Storm Total Accumulation; MetPy test data (staticdata/nids/KOUN_SDUS84_DTATLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dta-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DTA_2026_06_22_08_06_23"]
+sha256 = "1d3c9d29bf85f5b37339df87b385d895c1195411e691c1dd4e824b5ba8e1e2cb"
+size = 130408
+committed = "files/level3/l3-tlx-dta-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DTATLX", "era:2026", "radar:nexrad", "product:172", "mnemonic:DSA", "vcp:212", "version:3", "compression:bzip2", "block:symbology", "block:tabular", "packet:1", "packet:16"]
+description = "KTLX DTA 2026-06-22 08:06Z: product 172 DSA Digital Storm Total Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-du3-20130520-2008"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_DU3TLX_201305202008"]
+sha256 = "c8c8ca3fbb5e79455e1ccad1a73d0d6e4eb78d31e4ff0e17fe753b6c7ea6bdfc"
+size = 26906
+committed = "files/level3/l3-tlx-du3-20130520-2008"
+tags = ["provider:metpy-staticdata", "awips:DU3TLX", "era:2013", "radar:nexrad", "product:173", "mnemonic:DUA", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX DU3 2013-05-20 20:08Z: product 173 DUA Digital User-Selectable Accumulation; MetPy test data (staticdata/nids/KOUN_SDUS84_DU3TLX_201305202008)"
+
+[[file]]
+id = "l3-tlx-du3-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DU3_2026_06_22_08_06_23"]
+sha256 = "afc3318da8d1cccc8497de1f6fb20fe263b09f7edbd4e83b87196cc6f2912d54"
+size = 124521
+committed = "files/level3/l3-tlx-du3-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DU3TLX", "era:2026", "radar:nexrad", "product:173", "mnemonic:DUA", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX DU3 2026-06-22 08:06Z: product 173 DUA Digital User-Selectable Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-du6-20260622-120608"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DU6_2026_06_22_12_06_08"]
+sha256 = "b3f9b89c2644ca9b27bd9ec1adcd18268ce3b40091d4ff973b386e36d0a65892"
+size = 163598
+committed = "files/level3/l3-tlx-du6-20260622-120608"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DU6TLX", "era:2026", "radar:nexrad", "product:173", "mnemonic:DUA", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX DU6 2026-06-22 12:06Z: product 173 DUA Digital User-Selectable Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-dvl-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_DVLTLX_201305202016"]
+sha256 = "aa36e73551d16907a654174038c93a58c3ab3498935173fe3c575e0dddc13bc0"
+size = 27053
+committed = "files/level3/l3-tlx-dvl-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:DVLTLX", "era:2013", "radar:nexrad", "product:134", "mnemonic:DVL", "vcp:12", "version:1", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX DVL 2013-05-20 20:16Z: product 134 DVL High Resolution VIL; MetPy test data (staticdata/nids/KOUN_SDUS54_DVLTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-dvl-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DVL_2026_06_22_08_06_23"]
+sha256 = "417d04ecd6e476f2dec8885c9df0b8dd1c9f01394eafdcc93054034f9d7460ab"
+size = 49713
+committed = "files/level3/l3-tlx-dvl-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:DVLTLX", "era:2026", "radar:nexrad", "product:134", "mnemonic:DVL", "vcp:212", "version:1", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX DVL 2026-06-22 08:06Z: product 134 DVL High Resolution VIL; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-eet-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS74_EETTLX_201305202016"]
+sha256 = "7fbde8aca50c242631eaf128270b8c2e00e861cc0096bd676c6f437d6cb5fb27"
+size = 14226
+committed = "files/level3/l3-tlx-eet-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:EETTLX", "era:2013", "radar:nexrad", "product:135", "mnemonic:EET", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX EET 2013-05-20 20:16Z: product 135 EET Enhanced Echo Tops; MetPy test data (staticdata/nids/KOUN_SDUS74_EETTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-eet-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_EET_2026_06_22_08_06_23"]
+sha256 = "996fb04e59c84b1fdeed080208eb211af87e609ef55fc43371089df77f288bc0"
+size = 26205
+committed = "files/level3/l3-tlx-eet-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:EETTLX", "era:2026", "radar:nexrad", "product:135", "mnemonic:EET", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX EET 2026-06-22 08:06Z: product 135 EET Enhanced Echo Tops; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-gsm-20130520-2100"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_NXUS64_GSMTLX_201305202100"]
+sha256 = "17ed288008309a4d632d965de0700ff21690d0c84b049f711fb4297fb98ec21f"
+size = 134
+committed = "files/level3/l3-tlx-gsm-20130520-2100"
+tags = ["provider:metpy-staticdata", "awips:GSMTLX", "era:2013", "radar:nexrad", "message:gsm", "regime:tornado"]
+description = "KTLX GSM 2013-05-20 21:00Z: General Status Message; MetPy test data (staticdata/nids/KOUN_NXUS64_GSMTLX_201305202100)"
+
+[[file]]
+id = "l3-tlx-hhc-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_HHCTLX_201305202016"]
+sha256 = "5d2a9b5db2f0c696f2bf42c88fdd45a7dadcde9d96eadd5e41bd21f96244775a"
+size = 9290
+committed = "files/level3/l3-tlx-hhc-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:HHCTLX", "era:2013", "radar:nexrad", "product:177", "mnemonic:HHC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX HHC 2013-05-20 20:16Z: product 177 HHC Hybrid Hydrometeor Classification; MetPy test data (staticdata/nids/KOUN_SDUS84_HHCTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-hhc-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_HHC_2026_06_22_08_06_23"]
+sha256 = "ad478b490f8a7a1b60eac912e5cb8bdbeb48b6e8993ff47795efa0be669879b9"
+size = 12659
+committed = "files/level3/l3-tlx-hhc-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:HHCTLX", "era:2026", "radar:nexrad", "product:177", "mnemonic:HHC", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX HHC 2026-06-22 08:06Z: product 177 HHC Hybrid Hydrometeor Classification; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0b-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0B_2026_06_22_08_06_23"]
+sha256 = "630f1da18a8c75b151ce58dfa2bcb15fd2dd28515e574e14891510e26462ca30"
+size = 320577
+committed = "files/level3/l3-tlx-n0b-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0BTLX", "era:2026", "radar:nexrad", "product:153", "mnemonic:SDR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0B 2026-06-22 08:06Z: product 153 SDR Super Resolution Reflectivity Data Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0c-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N0CTLX_201305202016"]
+sha256 = "b809f834bd3bc72a638864f1a6f05214a20bba2078681e2f76d949ba27848e36"
+size = 71233
+committed = "files/level3/l3-tlx-n0c-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0CTLX", "era:2013", "radar:nexrad", "product:161", "mnemonic:DCC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N0C 2013-05-20 20:16Z: product 161 DCC Digital Correlation Coefficient; MetPy test data (staticdata/nids/KOUN_SDUS84_N0CTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0c-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0C_2026_06_22_08_06_23"]
+sha256 = "ab7e872be36074056c5cc38a552be57362451f56080829c85ed0c2430ba2da1b"
+size = 92276
+committed = "files/level3/l3-tlx-n0c-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0CTLX", "era:2026", "radar:nexrad", "product:161", "mnemonic:DCC", "vcp:212", "version:1", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0C 2026-06-22 08:06Z: product 161 DCC Digital Correlation Coefficient; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0f-20220502-235926"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0F_2022_05_02_23_59_26"]
+sha256 = "3f86fcfd5f5947e0db3894ba486ba56d893eec1e5c894af85b30feb6e9f369bc"
+size = 37269
+committed = "files/level3/l3-tlx-n0f-20220502-235926"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0FTLX", "era:2022", "radar:nexrad", "product:113", "mnemonic:PRC", "vcp:212", "version:1", "compression:bzip2", "block:symbology", "packet:0xaf1f"]
+description = "KTLX N0F 2022-05-02 23:59Z: product 113 PRC Power Removed Control; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0g-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0G_2026_06_22_08_06_23"]
+sha256 = "c63a23cddbd805bc22807afa0636d01c98db88d041b32e89d27a72c5ec538c84"
+size = 254447
+committed = "files/level3/l3-tlx-n0g-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0GTLX", "era:2026", "radar:nexrad", "product:154", "mnemonic:SDV", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0G 2026-06-22 08:06Z: product 154 SDV Super Resolution Velocity Data Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0h-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N0HTLX_201305202016"]
+sha256 = "c72fad4f2bbe6f454c3dc45572a71b094def44522694fa06f3dab1189124d44d"
+size = 20319
+committed = "files/level3/l3-tlx-n0h-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0HTLX", "era:2013", "radar:nexrad", "product:165", "mnemonic:DHC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N0H 2013-05-20 20:16Z: product 165 DHC Digital Hydrometeor Classification; MetPy test data (staticdata/nids/KOUN_SDUS84_N0HTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0h-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0H_2026_06_22_08_06_23"]
+sha256 = "288f3696a260ae254473a969a77da34530a0f678d4285a999e19a4ff920191a1"
+size = 22943
+committed = "files/level3/l3-tlx-n0h-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0HTLX", "era:2026", "radar:nexrad", "product:165", "mnemonic:DHC", "vcp:212", "version:1", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0H 2026-06-22 08:06Z: product 165 DHC Digital Hydrometeor Classification; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0k-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N0KTLX_201305202016"]
+sha256 = "51e2a1153f4e092bae478bda2f9ae5f83e0ba54766d91a6ef61eb95bafe8d992"
+size = 26425
+committed = "files/level3/l3-tlx-n0k-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0KTLX", "era:2013", "radar:nexrad", "product:163", "mnemonic:DKD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N0K 2013-05-20 20:16Z: product 163 DKD Digital Specific Differential Phase; MetPy test data (staticdata/nids/KOUN_SDUS84_N0KTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0k-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0K_2026_06_22_08_06_23"]
+sha256 = "609bb202bdf08bbee2d367656aab3019791aa6e3202773f979c351dd398023e7"
+size = 41487
+committed = "files/level3/l3-tlx-n0k-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0KTLX", "era:2026", "radar:nexrad", "product:163", "mnemonic:DKD", "vcp:212", "version:1", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0K 2026-06-22 08:06Z: product 163 DKD Digital Specific Differential Phase; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0m-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N0MTLX_201305202016"]
+sha256 = "8b2460045d5548092fd5d9a2a81e5d1816961bc79a5c50af6eb77ee88e3e7877"
+size = 5990
+committed = "files/level3/l3-tlx-n0m-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0MTLX", "era:2013", "radar:nexrad", "product:166", "mnemonic:ML", "vcp:12", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03", "regime:tornado"]
+description = "KTLX N0M 2013-05-20 20:16Z: product 166 ML Melting Layer; MetPy test data (staticdata/nids/KOUN_SDUS84_N0MTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0m-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0M_2026_06_22_08_06_23"]
+sha256 = "e74a1e4a3e6a1464510dc5cec44a17892f3b329bc2caf174d7fce43227307856"
+size = 5990
+committed = "files/level3/l3-tlx-n0m-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0MTLX", "era:2026", "radar:nexrad", "product:166", "mnemonic:ML", "vcp:212", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03"]
+description = "KTLX N0M 2026-06-22 08:06Z: product 166 ML Melting Layer; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0q-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_N0QTLX_201305202016"]
+sha256 = "058aa3a5b354b8bf576a50850713589eff2b5c1b3802bbf03406c48b8d6df172"
+size = 22992
+committed = "files/level3/l3-tlx-n0q-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0QTLX", "era:2013", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N0Q 2013-05-20 20:16Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS54_N0QTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0q-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0Q_2022_05_03_00_52_31"]
+sha256 = "b4510a2acfef15d590106665ffcd65d245f6d0bcc90f555441451eaa401a20db"
+size = 28120
+committed = "files/level3/l3-tlx-n0q-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0QTLX", "era:2022", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0Q 2022-05-03 00:52Z: product 94 DR Base Reflectivity Data Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0r-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_N0RTLX_201305202016"]
+sha256 = "4a1bd852ac3fae23166afe38dbe59394cf56566dd50478f471a8068467ff804b"
+size = 17578
+committed = "files/level3/l3-tlx-n0r-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0RTLX", "era:2013", "radar:nexrad", "product:19", "mnemonic:R", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N0R 2013-05-20 20:16Z: product 19 R Base Reflectivity 0.54 nm x 1 deg, 124 nm, 16 levels; MetPy test data (staticdata/nids/KOUN_SDUS54_N0RTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0r-20220908-131957"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0R_2022_09_08_13_19_57"]
+sha256 = "ea802b55e48862d953463760b8b01be43ccb4a2fc4c5954ab365232548a33c52"
+size = 33432
+committed = "files/level3/l3-tlx-n0r-20220908-131957"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0RTLX", "era:2022", "radar:nexrad", "product:19", "mnemonic:R", "vcp:35", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KTLX N0R 2022-09-08 13:19Z: product 19 R Base Reflectivity 0.54 nm x 1 deg, 124 nm, 16 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0s-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_N0STLX_201305202016"]
+sha256 = "f8c8b7851ab0ba34719211486b71f1765b8aed3e0572f14b03a03a364ff9f5ce"
+size = 17058
+committed = "files/level3/l3-tlx-n0s-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0STLX", "era:2013", "radar:nexrad", "product:56", "mnemonic:SRM", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N0S 2013-05-20 20:16Z: product 56 SRM Storm Relative Mean Radial Velocity (Map); MetPy test data (staticdata/nids/KOUN_SDUS54_N0STLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0s-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0S_2026_06_22_08_06_23"]
+sha256 = "45c61178212d5da707bd83975541bae46560762b731ee4e1b17183080ed0aaf7"
+size = 19212
+committed = "files/level3/l3-tlx-n0s-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0STLX", "era:2026", "radar:nexrad", "product:56", "mnemonic:SRM", "vcp:212", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KTLX N0S 2026-06-22 08:06Z: product 56 SRM Storm Relative Mean Radial Velocity (Map); NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0u-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_N0UTLX_201305202016"]
+sha256 = "15000460b55fb0cf571078da41e905b3b1e667a2ce277ef00876ffc93a260032"
+size = 55129
+committed = "files/level3/l3-tlx-n0u-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0UTLX", "era:2013", "radar:nexrad", "product:99", "mnemonic:DV", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N0U 2013-05-20 20:16Z: product 99 DV Base Velocity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS54_N0UTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0u-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0U_2022_05_03_00_52_31"]
+sha256 = "4f6bb2b152f5842ef546f1b4162afeefa1936792a2a28c8b11cd90693c89d30a"
+size = 71080
+committed = "files/level3/l3-tlx-n0u-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0UTLX", "era:2022", "radar:nexrad", "product:99", "mnemonic:DV", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0U 2022-05-03 00:52Z: product 99 DV Base Velocity Data Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0v-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_N0VTLX_201305202016"]
+sha256 = "50dfc22173261b75b43319a4358f9c2a0014543ad20652780cbafc6558cf54b5"
+size = 17474
+committed = "files/level3/l3-tlx-n0v-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0VTLX", "era:2013", "radar:nexrad", "product:27", "mnemonic:V", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N0V 2013-05-20 20:16Z: product 27 V Base Velocity 0.54 nm x 1 deg, 124 nm, 16 levels; MetPy test data (staticdata/nids/KOUN_SDUS54_N0VTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0v-20220908-131957"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0V_2022_09_08_13_19_57"]
+sha256 = "aa66ead94a1c3d1efaf43e7b4e1b7cbbe6c92ecbd02e2e64b3b7ab4f540d73b5"
+size = 30688
+committed = "files/level3/l3-tlx-n0v-20220908-131957"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0VTLX", "era:2022", "radar:nexrad", "product:27", "mnemonic:V", "vcp:35", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KTLX N0V 2022-09-08 13:19Z: product 27 V Base Velocity 0.54 nm x 1 deg, 124 nm, 16 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0x-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N0XTLX_201305202016"]
+sha256 = "a084b17a01eb3150e53698be3e585d6cf9866455ad2bf39994f22de80ed1a605"
+size = 78242
+committed = "files/level3/l3-tlx-n0x-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0XTLX", "era:2013", "radar:nexrad", "product:159", "mnemonic:DZD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N0X 2013-05-20 20:16Z: product 159 DZD Digital Differential Reflectivity; MetPy test data (staticdata/nids/KOUN_SDUS84_N0XTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0x-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0X_2026_06_22_08_06_23"]
+sha256 = "087036b1105c023b4e5405991c91d8cb912249832de2ebd7f9161c6b25ec2746"
+size = 122885
+committed = "files/level3/l3-tlx-n0x-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0XTLX", "era:2026", "radar:nexrad", "product:159", "mnemonic:DZD", "vcp:212", "version:1", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX N0X 2026-06-22 08:06Z: product 159 DZD Digital Differential Reflectivity; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n0z-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS74_N0ZTLX_201305202016"]
+sha256 = "110d50d6fa155efb5ade3b3e960bddac55c959aea0bdb4a7953e861f2d3339e7"
+size = 14938
+committed = "files/level3/l3-tlx-n0z-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N0ZTLX", "era:2013", "radar:nexrad", "product:20", "mnemonic:R", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N0Z 2013-05-20 20:16Z: product 20 R Base Reflectivity 1.1 nm x 1 deg, 248 nm, 16 levels; MetPy test data (staticdata/nids/KOUN_SDUS74_N0ZTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n0z-20220908-131957"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0Z_2022_09_08_13_19_57"]
+sha256 = "8c6dc3d76f39acd9bc5742c466cab5e27717a57b15d5ade968b1784a16657629"
+size = 21484
+committed = "files/level3/l3-tlx-n0z-20220908-131957"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N0ZTLX", "era:2022", "radar:nexrad", "product:20", "mnemonic:R", "vcp:35", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KTLX N0Z 2022-09-08 13:19Z: product 20 R Base Reflectivity 1.1 nm x 1 deg, 248 nm, 16 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n1c-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N1CTLX_201305202016"]
+sha256 = "a3d651132db07ea2ae1840aee2c266bd54ef310ddb9bdd7ec00899199613bd06"
+size = 61451
+committed = "files/level3/l3-tlx-n1c-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1CTLX", "era:2013", "radar:nexrad", "product:161", "mnemonic:DCC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N1C 2013-05-20 20:16Z: product 161 DCC Digital Correlation Coefficient; MetPy test data (staticdata/nids/KOUN_SDUS84_N1CTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1h-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N1HTLX_201305202016"]
+sha256 = "b891f43f602c099c2db65678ac208fbde2263aad29a82cf49650fa35ea87e363"
+size = 17163
+committed = "files/level3/l3-tlx-n1h-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1HTLX", "era:2013", "radar:nexrad", "product:165", "mnemonic:DHC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N1H 2013-05-20 20:16Z: product 165 DHC Digital Hydrometeor Classification; MetPy test data (staticdata/nids/KOUN_SDUS84_N1HTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1k-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N1KTLX_201305202016"]
+sha256 = "4f47d7cab68307488e7c241fe5fa7070a9e5662a395bd6a21dd18476271a334e"
+size = 25889
+committed = "files/level3/l3-tlx-n1k-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1KTLX", "era:2013", "radar:nexrad", "product:163", "mnemonic:DKD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N1K 2013-05-20 20:16Z: product 163 DKD Digital Specific Differential Phase; MetPy test data (staticdata/nids/KOUN_SDUS84_N1KTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1m-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N1MTLX_201305202016"]
+sha256 = "9f8b8851f0e7a491e51bf857af5feb21719dc79a96bf73a8315d73bcc887e47f"
+size = 5990
+committed = "files/level3/l3-tlx-n1m-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1MTLX", "era:2013", "radar:nexrad", "product:166", "mnemonic:ML", "vcp:12", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03", "regime:tornado"]
+description = "KTLX N1M 2013-05-20 20:16Z: product 166 ML Melting Layer; MetPy test data (staticdata/nids/KOUN_SDUS84_N1MTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1p-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS34_N1PTLX_201305202016"]
+sha256 = "38f574cee28c2dd98c76e2ac9722f73519e98fa88b52d3f09b9d9d3caf219a63"
+size = 11756
+committed = "files/level3/l3-tlx-n1p-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1PTLX", "era:2013", "radar:nexrad", "product:78", "mnemonic:OHP", "vcp:12", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N1P 2013-05-20 20:16Z: product 78 OHP Surface Rainfall Accumulation (1 hr); MetPy test data (staticdata/nids/KOUN_SDUS34_N1PTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1p-20260629-173638"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N1P_2026_06_29_17_36_38"]
+sha256 = "c396a6f4a548ecfbea0fca1dab88ffacc4d670ef21a28a7328e3ae9c47230e7b"
+size = 8560
+committed = "files/level3/l3-tlx-n1p-20260629-173638"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N1PTLX", "era:2026", "radar:nexrad", "product:78", "mnemonic:OHP", "vcp:35", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f"]
+description = "KTLX N1P 2026-06-29 17:36Z: product 78 OHP Surface Rainfall Accumulation (1 hr); NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n1q-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N1QTLX_201305202016"]
+sha256 = "0239c505c2d581ac3fed306ce20230538957cda220b0a2f5b9ee8b15e55e6720"
+size = 20411
+committed = "files/level3/l3-tlx-n1q-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1QTLX", "era:2013", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N1Q 2013-05-20 20:16Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_N1QTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1s-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N1STLX_201305202016"]
+sha256 = "1c3b80de4f1d5103ee3a914f8972de8dc6e69258714b30fe931b0785355154d9"
+size = 14808
+committed = "files/level3/l3-tlx-n1s-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1STLX", "era:2013", "radar:nexrad", "product:56", "mnemonic:SRM", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N1S 2013-05-20 20:16Z: product 56 SRM Storm Relative Mean Radial Velocity (Map); MetPy test data (staticdata/nids/KOUN_SDUS24_N1STLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1u-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N1UTLX_201305202016"]
+sha256 = "82fa677d3fe136ce0ee8a7cfd70d1447a64200136304cfff2b9329f1dc48d527"
+size = 48527
+committed = "files/level3/l3-tlx-n1u-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1UTLX", "era:2013", "radar:nexrad", "product:99", "mnemonic:DV", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N1U 2013-05-20 20:16Z: product 99 DV Base Velocity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_N1UTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n1x-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N1XTLX_201305202016"]
+sha256 = "1816ef125a76d91a00cafeb8d171eea1e24bc232ecae27ac78b7e3f080752417"
+size = 69671
+committed = "files/level3/l3-tlx-n1x-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N1XTLX", "era:2013", "radar:nexrad", "product:159", "mnemonic:DZD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N1X 2013-05-20 20:16Z: product 159 DZD Digital Differential Reflectivity; MetPy test data (staticdata/nids/KOUN_SDUS84_N1XTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2c-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N2CTLX_201305202016"]
+sha256 = "589f2e689355856841e51dc1cb1b5c8ecfb90aed068240d7a53a04f3551c912c"
+size = 54659
+committed = "files/level3/l3-tlx-n2c-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2CTLX", "era:2013", "radar:nexrad", "product:161", "mnemonic:DCC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N2C 2013-05-20 20:16Z: product 161 DCC Digital Correlation Coefficient; MetPy test data (staticdata/nids/KOUN_SDUS84_N2CTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2h-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N2HTLX_201305202016"]
+sha256 = "f47b95791fd1f6ce0574043a2559e9317c8cf9c1e02a0f5e21ab8c019dcbdd58"
+size = 19408
+committed = "files/level3/l3-tlx-n2h-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2HTLX", "era:2013", "radar:nexrad", "product:165", "mnemonic:DHC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N2H 2013-05-20 20:16Z: product 165 DHC Digital Hydrometeor Classification; MetPy test data (staticdata/nids/KOUN_SDUS84_N2HTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2k-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N2KTLX_201305202016"]
+sha256 = "65d875e0331d352af4c068321c686ad600cb99caf2b46e3e8215314f0c0fa013"
+size = 28592
+committed = "files/level3/l3-tlx-n2k-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2KTLX", "era:2013", "radar:nexrad", "product:163", "mnemonic:DKD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N2K 2013-05-20 20:16Z: product 163 DKD Digital Specific Differential Phase; MetPy test data (staticdata/nids/KOUN_SDUS84_N2KTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2m-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N2MTLX_201305202016"]
+sha256 = "62d42b466a4a2d18c9d78815b6b05ba31136cc1fe49e117f50303b99f2b686b4"
+size = 5990
+committed = "files/level3/l3-tlx-n2m-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2MTLX", "era:2013", "radar:nexrad", "product:166", "mnemonic:ML", "vcp:12", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03", "regime:tornado"]
+description = "KTLX N2M 2013-05-20 20:16Z: product 166 ML Melting Layer; MetPy test data (staticdata/nids/KOUN_SDUS84_N2MTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2q-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N2QTLX_201305202016"]
+sha256 = "701639d202e6840a2f64122543c5796accbcbd5b5f9907474aff5f4036ef7b20"
+size = 22246
+committed = "files/level3/l3-tlx-n2q-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2QTLX", "era:2013", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N2Q 2013-05-20 20:16Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_N2QTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2s-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N2STLX_201305202016"]
+sha256 = "2c41e0eb86205a924f08ffbb7571dfefa5c4b5e23c1b329346952653b3851ae1"
+size = 15686
+committed = "files/level3/l3-tlx-n2s-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2STLX", "era:2013", "radar:nexrad", "product:56", "mnemonic:SRM", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N2S 2013-05-20 20:16Z: product 56 SRM Storm Relative Mean Radial Velocity (Map); MetPy test data (staticdata/nids/KOUN_SDUS24_N2STLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2u-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N2UTLX_201305202016"]
+sha256 = "5361c229dd5e7935e940859efef241fbc5127450b56e5d8ae3dece4fe8426d26"
+size = 51148
+committed = "files/level3/l3-tlx-n2u-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2UTLX", "era:2013", "radar:nexrad", "product:99", "mnemonic:DV", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N2U 2013-05-20 20:16Z: product 99 DV Base Velocity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_N2UTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n2x-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N2XTLX_201305202016"]
+sha256 = "3f24b2503c2793745dd3bf8e2685084b967cba80801d907f258d8dec4b597fa0"
+size = 62547
+committed = "files/level3/l3-tlx-n2x-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N2XTLX", "era:2013", "radar:nexrad", "product:159", "mnemonic:DZD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N2X 2013-05-20 20:16Z: product 159 DZD Digital Differential Reflectivity; MetPy test data (staticdata/nids/KOUN_SDUS84_N2XTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3c-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N3CTLX_201305202016"]
+sha256 = "d6f5f599e94b8bbfab75c79d211ae97ad08e9dcb29f907bc82c08f929be75216"
+size = 57702
+committed = "files/level3/l3-tlx-n3c-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3CTLX", "era:2013", "radar:nexrad", "product:161", "mnemonic:DCC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N3C 2013-05-20 20:16Z: product 161 DCC Digital Correlation Coefficient; MetPy test data (staticdata/nids/KOUN_SDUS84_N3CTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3h-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N3HTLX_201305202016"]
+sha256 = "e1b8d6f585c0f0dd5a5c77ba8c39da4d4c2b82c120536bf7c25ddfdbc2f83240"
+size = 20120
+committed = "files/level3/l3-tlx-n3h-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3HTLX", "era:2013", "radar:nexrad", "product:165", "mnemonic:DHC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N3H 2013-05-20 20:16Z: product 165 DHC Digital Hydrometeor Classification; MetPy test data (staticdata/nids/KOUN_SDUS84_N3HTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3k-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N3KTLX_201305202016"]
+sha256 = "7c676e395fb00084a9a4f9428a34ef6b95386e9cb1629ba98a623e5d0aea2a4d"
+size = 29336
+committed = "files/level3/l3-tlx-n3k-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3KTLX", "era:2013", "radar:nexrad", "product:163", "mnemonic:DKD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N3K 2013-05-20 20:16Z: product 163 DKD Digital Specific Differential Phase; MetPy test data (staticdata/nids/KOUN_SDUS84_N3KTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3m-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N3MTLX_201305202016"]
+sha256 = "a116ee12cc0f31f268e7008b1b80dea43087b362f1de030f99156d56580bfc5a"
+size = 5990
+committed = "files/level3/l3-tlx-n3m-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3MTLX", "era:2013", "radar:nexrad", "product:166", "mnemonic:ML", "vcp:12", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03", "regime:tornado"]
+description = "KTLX N3M 2013-05-20 20:16Z: product 166 ML Melting Layer; MetPy test data (staticdata/nids/KOUN_SDUS84_N3MTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3p-20130520-2012"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_N3PTLX_201305202012"]
+sha256 = "55cf4db4d8b114a8c9f6a71f18ba0f3753bb7604b72e80942e2b49a4b0f79ecf"
+size = 9312
+committed = "files/level3/l3-tlx-n3p-20130520-2012"
+tags = ["provider:metpy-staticdata", "awips:N3PTLX", "era:2013", "radar:nexrad", "product:79", "mnemonic:THP", "vcp:12", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N3P 2013-05-20 20:12Z: product 79 THP Surface Rainfall Accumulation (3 hr); MetPy test data (staticdata/nids/KOUN_SDUS64_N3PTLX_201305202012)"
+
+[[file]]
+id = "l3-tlx-n3p-20220503-011226"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N3P_2022_05_03_01_12_26"]
+sha256 = "feab5cc524d3e9c8d062a80ccc4de924736d6a42848c65983c3e867b8a543e5a"
+size = 15516
+committed = "files/level3/l3-tlx-n3p-20220503-011226"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:N3PTLX", "era:2022", "radar:nexrad", "product:79", "mnemonic:THP", "vcp:212", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f"]
+description = "KTLX N3P 2022-05-03 01:12Z: product 79 THP Surface Rainfall Accumulation (3 hr); NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-n3q-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N3QTLX_201305202016"]
+sha256 = "63afff8a26375f2e6ca3ef11003bccf881370a82e872bfbae42b3f16930148c1"
+size = 23416
+committed = "files/level3/l3-tlx-n3q-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3QTLX", "era:2013", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N3Q 2013-05-20 20:16Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_N3QTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3s-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS34_N3STLX_201305202016"]
+sha256 = "9fb1333f9e383beee753f41c0569a4655f623148de4b006aa7da74a63b5bf6d3"
+size = 16562
+committed = "files/level3/l3-tlx-n3s-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3STLX", "era:2013", "radar:nexrad", "product:56", "mnemonic:SRM", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX N3S 2013-05-20 20:16Z: product 56 SRM Storm Relative Mean Radial Velocity (Map); MetPy test data (staticdata/nids/KOUN_SDUS34_N3STLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3u-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_N3UTLX_201305202016"]
+sha256 = "9b4245079f5ce479b5ac8eb2c6b7330ae6f85448201715914925c018d8990153"
+size = 56204
+committed = "files/level3/l3-tlx-n3u-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3UTLX", "era:2013", "radar:nexrad", "product:99", "mnemonic:DV", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N3U 2013-05-20 20:16Z: product 99 DV Base Velocity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_N3UTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-n3x-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_N3XTLX_201305202016"]
+sha256 = "312f3d41e5f3fc3c659376c30388554081daf381cafd49c7cf366351eb2cc913"
+size = 66689
+committed = "files/level3/l3-tlx-n3x-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:N3XTLX", "era:2013", "radar:nexrad", "product:159", "mnemonic:DZD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX N3X 2013-05-20 20:16Z: product 159 DZD Digital Differential Reflectivity; MetPy test data (staticdata/nids/KOUN_SDUS84_N3XTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nac-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NACTLX_201305202016"]
+sha256 = "346757931bc940b0b7414b475deea0932fb8ad53efe35420afc149abc87832e5"
+size = 65840
+committed = "files/level3/l3-tlx-nac-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NACTLX", "era:2013", "radar:nexrad", "product:161", "mnemonic:DCC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NAC 2013-05-20 20:16Z: product 161 DCC Digital Correlation Coefficient; MetPy test data (staticdata/nids/KOUN_SDUS84_NACTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nah-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NAHTLX_201305202016"]
+sha256 = "6efe83c1b1279475229b49420f1e56dcc6f96b24a7324a076e817b3b6618b444"
+size = 18296
+committed = "files/level3/l3-tlx-nah-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NAHTLX", "era:2013", "radar:nexrad", "product:165", "mnemonic:DHC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NAH 2013-05-20 20:16Z: product 165 DHC Digital Hydrometeor Classification; MetPy test data (staticdata/nids/KOUN_SDUS84_NAHTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nak-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NAKTLX_201305202016"]
+sha256 = "b11f8929220671b5f15b73250fff6dcc11a47c1a466979ea0116451b559a84f5"
+size = 26851
+committed = "files/level3/l3-tlx-nak-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NAKTLX", "era:2013", "radar:nexrad", "product:163", "mnemonic:DKD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NAK 2013-05-20 20:16Z: product 163 DKD Digital Specific Differential Phase; MetPy test data (staticdata/nids/KOUN_SDUS84_NAKTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nam-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NAMTLX_201305202016"]
+sha256 = "173e1d6a0886d3e37a2290318052bca20c4e290a1b7aa0cba407a4e075fb5e74"
+size = 5990
+committed = "files/level3/l3-tlx-nam-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NAMTLX", "era:2013", "radar:nexrad", "product:166", "mnemonic:ML", "vcp:12", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03", "regime:tornado"]
+description = "KTLX NAM 2013-05-20 20:16Z: product 166 ML Melting Layer; MetPy test data (staticdata/nids/KOUN_SDUS84_NAMTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-naq-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_NAQTLX_201305202016"]
+sha256 = "0acf9552da57e0fe66856c18b47f3091d203e735306bbbff5dcc4271079b0e75"
+size = 21646
+committed = "files/level3/l3-tlx-naq-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NAQTLX", "era:2013", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NAQ 2013-05-20 20:16Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS54_NAQTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nau-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_NAUTLX_201305202016"]
+sha256 = "e14d7c037ce5dd01e9a8dd35d66538b0d87d7ab85a467b1cbd9dbf863194b715"
+size = 51904
+committed = "files/level3/l3-tlx-nau-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NAUTLX", "era:2013", "radar:nexrad", "product:99", "mnemonic:DV", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NAU 2013-05-20 20:16Z: product 99 DV Base Velocity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS54_NAUTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nax-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NAXTLX_201305202016"]
+sha256 = "d0491ced0c0b000d82212eec07a66579eb48968a66c5cad7c23cde7f2f333764"
+size = 73484
+committed = "files/level3/l3-tlx-nax-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NAXTLX", "era:2013", "radar:nexrad", "product:159", "mnemonic:DZD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NAX 2013-05-20 20:16Z: product 159 DZD Digital Differential Reflectivity; MetPy test data (staticdata/nids/KOUN_SDUS84_NAXTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nbc-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NBCTLX_201305202016"]
+sha256 = "5a832218d41016462092afb821afa9e8b770c5a4c83363e7cddc3d3b2639b297"
+size = 53131
+committed = "files/level3/l3-tlx-nbc-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NBCTLX", "era:2013", "radar:nexrad", "product:161", "mnemonic:DCC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NBC 2013-05-20 20:16Z: product 161 DCC Digital Correlation Coefficient; MetPy test data (staticdata/nids/KOUN_SDUS84_NBCTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nbh-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NBHTLX_201305202016"]
+sha256 = "4ae4769b52d72034a083a17e109226a5313f7f404c47aea008cb3ec3f39ed84e"
+size = 19213
+committed = "files/level3/l3-tlx-nbh-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NBHTLX", "era:2013", "radar:nexrad", "product:165", "mnemonic:DHC", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NBH 2013-05-20 20:16Z: product 165 DHC Digital Hydrometeor Classification; MetPy test data (staticdata/nids/KOUN_SDUS84_NBHTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nbk-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NBKTLX_201305202016"]
+sha256 = "2ee283755ca2e9ecb0e81de89c4c5b3d904edbc50c71d99a1e90241d0620837e"
+size = 28426
+committed = "files/level3/l3-tlx-nbk-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NBKTLX", "era:2013", "radar:nexrad", "product:163", "mnemonic:DKD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NBK 2013-05-20 20:16Z: product 163 DKD Digital Specific Differential Phase; MetPy test data (staticdata/nids/KOUN_SDUS84_NBKTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nbm-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NBMTLX_201305202016"]
+sha256 = "f4f52f17d55ddc088da733e17b96bb5312939c68618f1cfffec6994ef40f94b3"
+size = 5990
+committed = "files/level3/l3-tlx-nbm-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NBMTLX", "era:2013", "radar:nexrad", "product:166", "mnemonic:ML", "vcp:12", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03", "regime:tornado"]
+description = "KTLX NBM 2013-05-20 20:16Z: product 166 ML Melting Layer; MetPy test data (staticdata/nids/KOUN_SDUS84_NBMTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nbq-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_NBQTLX_201305202016"]
+sha256 = "507635ebea64e6f902697c7965e854136bab33c100975c16c08135b87e22411f"
+size = 21482
+committed = "files/level3/l3-tlx-nbq-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NBQTLX", "era:2013", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NBQ 2013-05-20 20:16Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_NBQTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nbu-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS24_NBUTLX_201305202016"]
+sha256 = "0ac1defd40124c564b83908d16a61237a8eeb0f9196474c4fca89c3e32d59d48"
+size = 48186
+committed = "files/level3/l3-tlx-nbu-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NBUTLX", "era:2013", "radar:nexrad", "product:99", "mnemonic:DV", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NBU 2013-05-20 20:16Z: product 99 DV Base Velocity Data Array; MetPy test data (staticdata/nids/KOUN_SDUS24_NBUTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nbx-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_NBXTLX_201305202016"]
+sha256 = "bdf8097d664f63c6c230c7b3bb614639bc05155a5b867f6c15e934f3c8dadd2e"
+size = 60672
+committed = "files/level3/l3-tlx-nbx-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NBXTLX", "era:2013", "radar:nexrad", "product:159", "mnemonic:DZD", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:16", "regime:tornado"]
+description = "KTLX NBX 2013-05-20 20:16Z: product 159 DZD Digital Differential Reflectivity; MetPy test data (staticdata/nids/KOUN_SDUS84_NBXTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nc1-20130520-2354"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NC1TLX_201305202354"]
+sha256 = "499ad24ba32cef78d4d255e954dfa650caa0ec07f70b0866608890067b493355"
+size = 9562
+committed = "files/level3/l3-tlx-nc1-20130520-2354"
+tags = ["provider:metpy-staticdata", "awips:NC1TLX", "era:2013", "radar:nexrad", "product:34", "vcp:212", "version:1", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NC1 2013-05-20 23:54Z: product 34 Clutter Filter Control; MetPy test data (staticdata/nids/KOUN_SDUS64_NC1TLX_201305202354)"
+
+[[file]]
+id = "l3-tlx-nc2-20130520-2354"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NC2TLX_201305202354"]
+sha256 = "459e87c2a8e2c6e1a23b74f2fa3b8d0f4ac762f3459ad215edfa5fb4a51c4e7a"
+size = 9062
+committed = "files/level3/l3-tlx-nc2-20130520-2354"
+tags = ["provider:metpy-staticdata", "awips:NC2TLX", "era:2013", "radar:nexrad", "product:34", "vcp:212", "version:1", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NC2 2013-05-20 23:54Z: product 34 Clutter Filter Control; MetPy test data (staticdata/nids/KOUN_SDUS64_NC2TLX_201305202354)"
+
+[[file]]
+id = "l3-tlx-nc3-20130520-2354"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NC3TLX_201305202354"]
+sha256 = "f62b7bcaad44de31b488c7b39a46bf87e5feb85e541d45f60877d51e46cbaff7"
+size = 8792
+committed = "files/level3/l3-tlx-nc3-20130520-2354"
+tags = ["provider:metpy-staticdata", "awips:NC3TLX", "era:2013", "radar:nexrad", "product:34", "vcp:212", "version:1", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NC3 2013-05-20 23:54Z: product 34 Clutter Filter Control; MetPy test data (staticdata/nids/KOUN_SDUS64_NC3TLX_201305202354)"
+
+[[file]]
+id = "l3-tlx-nc4-20130520-2354"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NC4TLX_201305202354"]
+sha256 = "fc7c5e4cee7e816c86d5db790dbda090fa7bf8305537c574d042291e92e1502f"
+size = 8812
+committed = "files/level3/l3-tlx-nc4-20130520-2354"
+tags = ["provider:metpy-staticdata", "awips:NC4TLX", "era:2013", "radar:nexrad", "product:34", "vcp:212", "version:1", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NC4 2013-05-20 23:54Z: product 34 Clutter Filter Control; MetPy test data (staticdata/nids/KOUN_SDUS64_NC4TLX_201305202354)"
+
+[[file]]
+id = "l3-tlx-nc5-20130520-2354"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NC5TLX_201305202354"]
+sha256 = "f7c28cc18243536f541fdce08bab98fa5fee438b09315fa429bd04282cd00e03"
+size = 8822
+committed = "files/level3/l3-tlx-nc5-20130520-2354"
+tags = ["provider:metpy-staticdata", "awips:NC5TLX", "era:2013", "radar:nexrad", "product:34", "vcp:212", "version:1", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NC5 2013-05-20 23:54Z: product 34 Clutter Filter Control; MetPy test data (staticdata/nids/KOUN_SDUS64_NC5TLX_201305202354)"
+
+[[file]]
+id = "l3-tlx-nco-20130520-1816"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NCOTLX_201305201816"]
+sha256 = "ed06e9faab55ca17417300bb1e18ac9e993ff787e848e54dae801202706bd0f1"
+size = 5476
+committed = "files/level3/l3-tlx-nco-20130520-1816"
+tags = ["provider:metpy-staticdata", "awips:NCOTLX", "era:2013", "radar:nexrad", "product:36", "mnemonic:CR", "vcp:32", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07", "regime:tornado"]
+description = "KTLX NCO 2013-05-20 18:16Z: product 36 CR Composite Reflectivity 2.2 nm, 248 nm, 8 levels; MetPy test data (staticdata/nids/KOUN_SDUS64_NCOTLX_201305201816)"
+
+[[file]]
+id = "l3-tlx-ncr-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_NCRTLX_201305202016"]
+sha256 = "104295bfe8e27440bf760fc3b7baf5a8a5453ec58a1f71185901e98e515ebc61"
+size = 32400
+committed = "files/level3/l3-tlx-ncr-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NCRTLX", "era:2013", "radar:nexrad", "product:37", "mnemonic:CR", "vcp:12", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07", "regime:tornado"]
+description = "KTLX NCR 2013-05-20 20:16Z: product 37 CR Composite Reflectivity 0.54 nm, 124 nm, 16 levels; MetPy test data (staticdata/nids/KOUN_SDUS54_NCRTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-ncr-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NCR_2026_06_22_08_06_23"]
+sha256 = "82f13381ee335302fa6874173a93086592aa876ab5396ac6b929a2b363ee9c77"
+size = 45300
+committed = "files/level3/l3-tlx-ncr-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NCRTLX", "era:2026", "radar:nexrad", "product:37", "mnemonic:CR", "vcp:212", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "KTLX NCR 2026-06-22 08:06Z: product 37 CR Composite Reflectivity 0.54 nm, 124 nm, 16 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-ncz-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NCZTLX_201305202016"]
+sha256 = "4b6805f3de1b85cac5a2d53dc5d6efe07400a74f25966e52a67604bfbcc59be4"
+size = 9780
+committed = "files/level3/l3-tlx-ncz-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NCZTLX", "era:2013", "radar:nexrad", "product:38", "mnemonic:CR", "vcp:12", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07", "regime:tornado"]
+description = "KTLX NCZ 2013-05-20 20:16Z: product 38 CR Composite Reflectivity 2.2 nm, 248 nm, 16 levels; MetPy test data (staticdata/nids/KOUN_SDUS64_NCZTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-ncz-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NCZ_2022_05_03_00_52_31"]
+sha256 = "f5e85d15827e71e773316d8c37b54a54e756cc068be6e7d873a75888ff339e34"
+size = 10114
+committed = "files/level3/l3-tlx-ncz-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NCZTLX", "era:2022", "radar:nexrad", "product:38", "mnemonic:CR", "vcp:212", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "KTLX NCZ 2022-05-03 00:52Z: product 38 CR Composite Reflectivity 2.2 nm, 248 nm, 16 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-net-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS74_NETTLX_201305202016"]
+sha256 = "df223be7ff44ed61ae1c5caed2432d1b09440f79c4c18a94d8e2a8e96f3b4e80"
+size = 2340
+committed = "files/level3/l3-tlx-net-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NETTLX", "era:2013", "radar:nexrad", "product:41", "mnemonic:ET", "vcp:12", "version:0", "block:symbology", "packet:0xba07", "regime:tornado"]
+description = "KTLX NET 2013-05-20 20:16Z: product 41 ET Echo Tops; MetPy test data (staticdata/nids/KOUN_SDUS74_NETTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-net-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NET_2022_05_03_00_52_31"]
+sha256 = "c914fcf5ff7e6a25d9b4cb54c7658b44ad08166b3715b328bd68b5d82a2791bf"
+size = 2678
+committed = "files/level3/l3-tlx-net-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NETTLX", "era:2022", "radar:nexrad", "product:41", "mnemonic:ET", "vcp:212", "version:0", "block:symbology", "packet:0xba07"]
+description = "KTLX NET 2022-05-03 00:52Z: product 41 ET Echo Tops; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nhi-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NHITLX_201305202016"]
+sha256 = "a61a945ed55090e2ac9fe2d92c0c9edeab62927169099a2a9943000263d4accd"
+size = 8294
+committed = "files/level3/l3-tlx-nhi-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NHITLX", "era:2013", "radar:nexrad", "product:59", "mnemonic:HI", "vcp:12", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:15", "packet:19", "regime:tornado"]
+description = "KTLX NHI 2013-05-20 20:16Z: product 59 HI Hail Index; MetPy test data (staticdata/nids/KOUN_SDUS64_NHITLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nhi-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NHI_2022_05_03_00_52_31"]
+sha256 = "ccfeecf7c1008a73bb59cb96d274629fb3a9dc8547785e3cc6c2c56bc2ad1ddd"
+size = 8304
+committed = "files/level3/l3-tlx-nhi-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NHITLX", "era:2022", "radar:nexrad", "product:59", "mnemonic:HI", "vcp:212", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:15", "packet:19"]
+description = "KTLX NHI 2022-05-03 00:52Z: product 59 HI Hail Index; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nhl-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NHLTLX_201305202016"]
+sha256 = "4a39c036cfb1ffa9ecaa43ad7891a3402521e46d35694a9d8f9586556454658e"
+size = 2296
+committed = "files/level3/l3-tlx-nhl-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NHLTLX", "era:2013", "radar:nexrad", "product:90", "mnemonic:LRM", "vcp:12", "version:0", "block:symbology", "packet:0xba07", "regime:tornado"]
+description = "KTLX NHL 2013-05-20 20:16Z: product 90 LRM Layer Composite Reflectivity Layer 3 Maximum; MetPy test data (staticdata/nids/KOUN_SDUS64_NHLTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nhl-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NHL_2022_05_03_00_52_31"]
+sha256 = "5cc6f8264b6ce2b0780e844eff2702ac141ab6e49439f634c7281db44551b117"
+size = 2540
+committed = "files/level3/l3-tlx-nhl-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NHLTLX", "era:2022", "radar:nexrad", "product:90", "mnemonic:LRM", "vcp:212", "version:0", "block:symbology", "packet:0xba07"]
+description = "KTLX NHL 2022-05-03 00:52Z: product 90 LRM Layer Composite Reflectivity Layer 3 Maximum; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nla-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NLATLX_201305202016"]
+sha256 = "dfbc7963eb49f8b273e16200b82456854fd9ab0318d60302e9d3879ac67dc370"
+size = 2378
+committed = "files/level3/l3-tlx-nla-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NLATLX", "era:2013", "radar:nexrad", "product:67", "mnemonic:APR", "vcp:12", "version:1", "block:symbology", "packet:0xba07", "regime:tornado"]
+description = "KTLX NLA 2013-05-20 20:16Z: product 67 APR Layer Composite Reflectivity - AP Removed; MetPy test data (staticdata/nids/KOUN_SDUS64_NLATLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nla-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NLA_2022_05_03_00_52_31"]
+sha256 = "b87aa46e5e1742118d88771d9395baa1e0fd85a2d00fea9b5731a403ba632ad4"
+size = 2542
+committed = "files/level3/l3-tlx-nla-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NLATLX", "era:2022", "radar:nexrad", "product:67", "mnemonic:APR", "vcp:212", "version:1", "block:symbology", "packet:0xba07"]
+description = "KTLX NLA 2022-05-03 00:52Z: product 67 APR Layer Composite Reflectivity - AP Removed; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nll-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NLLTLX_201305202016"]
+sha256 = "aa81d897d6684066267e60ca9debad88b4cad60582937049d938cd5ad8bb32a6"
+size = 2398
+committed = "files/level3/l3-tlx-nll-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NLLTLX", "era:2013", "radar:nexrad", "product:65", "mnemonic:LRM", "vcp:12", "version:0", "block:symbology", "packet:0xba07", "regime:tornado"]
+description = "KTLX NLL 2013-05-20 20:16Z: product 65 LRM Layer Composite Reflectivity Layer 1 Maximum; MetPy test data (staticdata/nids/KOUN_SDUS64_NLLTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nmd-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS34_NMDTLX_201305202016"]
+sha256 = "64b89ea2f67b53c9e60971cf774eaaf415dc9475b03d0de82e03151f08484e33"
+size = 2764
+committed = "files/level3/l3-tlx-nmd-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NMDTLX", "era:2013", "radar:nexrad", "product:141", "mnemonic:MD", "vcp:12", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:20", "packet:23", "packet:24", "regime:tornado"]
+description = "KTLX NMD 2013-05-20 20:16Z: product 141 MD Mesocyclone Detection; MetPy test data (staticdata/nids/KOUN_SDUS34_NMDTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nmd-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NMD_2026_06_22_08_06_23"]
+sha256 = "bfa68338a7635f0ad2e5407aa5a6ac662f6ba454f868488465f13451b6952404"
+size = 6038
+committed = "files/level3/l3-tlx-nmd-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NMDTLX", "era:2026", "radar:nexrad", "product:141", "mnemonic:MD", "vcp:212", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:20", "packet:23", "packet:24"]
+description = "KTLX NMD 2026-06-22 08:06Z: product 141 MD Mesocyclone Detection; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nml-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NMLTLX_201305202016"]
+sha256 = "b4ffffa2ff300f90d7af77941814cff97779b86a08c7455dc90cfff57079e70c"
+size = 2254
+committed = "files/level3/l3-tlx-nml-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NMLTLX", "era:2013", "radar:nexrad", "product:66", "mnemonic:LRM", "vcp:12", "version:0", "block:symbology", "packet:0xba07", "regime:tornado"]
+description = "KTLX NML 2013-05-20 20:16Z: product 66 LRM Layer Composite Reflectivity Layer 2 Maximum; MetPy test data (staticdata/nids/KOUN_SDUS64_NMLTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nml-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NML_2022_05_03_00_52_31"]
+sha256 = "dbf627c299080da90462c23628028c3e1662f048a6a3eb1b5cc73c0c73aee1d3"
+size = 2318
+committed = "files/level3/l3-tlx-nml-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NMLTLX", "era:2022", "radar:nexrad", "product:66", "mnemonic:LRM", "vcp:212", "version:0", "block:symbology", "packet:0xba07"]
+description = "KTLX NML 2022-05-03 00:52Z: product 66 LRM Layer Composite Reflectivity Layer 2 Maximum; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nrr-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NRR_2026_06_22_08_06_23"]
+sha256 = "af086ee223148d5f9bfccd463274aa8a32fe8a9d0f95b875f69ff812908921e6"
+size = 10301
+committed = "files/level3/l3-tlx-nrr-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NRRTLX", "era:2026", "radar:nexrad", "product:197", "mnemonic:RRC", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
+description = "KTLX NRR 2026-06-22 08:06Z: product 197 RRC Rain Rate Classification; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nsp-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NSPTLX_201305202016"]
+sha256 = "d62d9478fb571ca2800f7e533a2467af33608be3c1969a8ca7444d8383ece9fe"
+size = 31998
+committed = "files/level3/l3-tlx-nsp-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NSPTLX", "era:2013", "radar:nexrad", "product:28", "mnemonic:SW", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NSP 2013-05-20 20:16Z: product 28 SW Base Spectrum Width 0.13 nm x 1 deg, 32 nm, 8 levels; MetPy test data (staticdata/nids/KOUN_SDUS64_NSPTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nss-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NSSTLX_201305202016"]
+sha256 = "c9281d0c0e5f445c4fb9b4fb69da74ff8901fb977f16d6e17e8d71c6024d449c"
+size = 9968
+committed = "files/level3/l3-tlx-nss-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NSSTLX", "era:2013", "radar:nexrad", "product:62", "mnemonic:SS", "vcp:12", "version:1", "block:standalone_tabular", "block:cell_trend", "packet:21", "packet:22", "regime:tornado"]
+description = "KTLX NSS 2013-05-20 20:16Z: product 62 SS Storm Structure; MetPy test data (staticdata/nids/KOUN_SDUS64_NSSTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nss-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NSS_2022_05_03_00_52_31"]
+sha256 = "0d714ce4d3eac6ab95ef8e041bb3239856f10548525f0d78cc7477aa31a48524"
+size = 9712
+committed = "files/level3/l3-tlx-nss-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NSSTLX", "era:2022", "radar:nexrad", "product:62", "mnemonic:SS", "vcp:212", "version:1", "block:standalone_tabular", "block:cell_trend", "packet:21", "packet:22"]
+description = "KTLX NSS 2022-05-03 00:52Z: product 62 SS Storm Structure; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nst-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS34_NSTTLX_201305202016"]
+sha256 = "6093414970436dbae3df3e9f337dd45d4e17d75449d42008b876952e85e6db33"
+size = 10552
+committed = "files/level3/l3-tlx-nst-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NSTTLX", "era:2013", "radar:nexrad", "product:58", "mnemonic:STI", "vcp:12", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:15", "packet:23", "packet:24", "regime:tornado"]
+description = "KTLX NST 2013-05-20 20:16Z: product 58 STI Storm Tracking Information; MetPy test data (staticdata/nids/KOUN_SDUS34_NSTTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nst-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NST_2026_06_22_08_06_23"]
+sha256 = "02fc905372b07ab911210b68d32c6e5e644f126be34370100c229ad6ca5adef5"
+size = 16004
+committed = "files/level3/l3-tlx-nst-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NSTTLX", "era:2026", "radar:nexrad", "product:58", "mnemonic:STI", "vcp:212", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:15", "packet:23", "packet:24", "packet:25"]
+description = "KTLX NST 2026-06-22 08:06Z: product 58 STI Storm Tracking Information; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nsw-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NSWTLX_201305202016"]
+sha256 = "d294d3eeba794361f9efcb8659a4db83722ce34e96575d640435a29676df24cc"
+size = 18902
+committed = "files/level3/l3-tlx-nsw-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NSWTLX", "era:2013", "radar:nexrad", "product:30", "mnemonic:SW", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NSW 2013-05-20 20:16Z: product 30 SW Base Spectrum Width 0.54 nm x 1 deg, 124 nm, 8 levels; MetPy test data (staticdata/nids/KOUN_SDUS64_NSWTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nsw-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NSW_2022_05_03_00_52_31"]
+sha256 = "7c0be68ad8b60f536b930555d4c49a6128955702aa4aea0ff4400839b6748bbc"
+size = 20676
+committed = "files/level3/l3-tlx-nsw-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NSWTLX", "era:2022", "radar:nexrad", "product:30", "mnemonic:SW", "vcp:212", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KTLX NSW 2022-05-03 00:52Z: product 30 SW Base Spectrum Width 0.54 nm x 1 deg, 124 nm, 8 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-ntp-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_NTPTLX_201305202016"]
+sha256 = "e898ded66a490d00cc96b9dbb158d9d1ab1af009c7b69ad2dac282629fe94113"
+size = 11060
+committed = "files/level3/l3-tlx-ntp-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NTPTLX", "era:2013", "radar:nexrad", "product:80", "mnemonic:STP", "vcp:12", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX NTP 2013-05-20 20:16Z: product 80 STP Storm Total Rainfall Accumulation; MetPy test data (staticdata/nids/KOUN_SDUS54_NTPTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-ntp-20260629-173638"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NTP_2026_06_29_17_36_38"]
+sha256 = "9b7c5dfe6aee277f17a6ed89a47049ac68c57c77e6a0cd9628f922345ed290de"
+size = 8560
+committed = "files/level3/l3-tlx-ntp-20260629-173638"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NTPTLX", "era:2026", "radar:nexrad", "product:80", "mnemonic:STP", "vcp:35", "version:1", "block:symbology", "block:tabular", "packet:0xaf1f"]
+description = "KTLX NTP 2026-06-29 17:36Z: product 80 STP Storm Total Rainfall Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-ntv-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_NTVTLX_201305202016"]
+sha256 = "c173af3dc03600fc1c9c1fc793e5a5b891a4d6f1f9cb27aeef84608cedb164e4"
+size = 3258
+committed = "files/level3/l3-tlx-ntv-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NTVTLX", "era:2013", "radar:nexrad", "product:61", "mnemonic:TVS", "vcp:12", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:12", "packet:15", "regime:tornado"]
+description = "KTLX NTV 2013-05-20 20:16Z: product 61 TVS Tornado Vortex Signature; MetPy test data (staticdata/nids/KOUN_SDUS64_NTVTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-ntv-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NTV_2022_05_03_00_52_31"]
+sha256 = "bc42d2f62bfc4ad0b54f92fc4ed1e000d82041bec0aadc8ff8497e6e8cfee965"
+size = 4136
+committed = "files/level3/l3-tlx-ntv-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NTVTLX", "era:2022", "radar:nexrad", "product:61", "mnemonic:TVS", "vcp:212", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:12", "packet:15"]
+description = "KTLX NTV 2022-05-03 00:52Z: product 61 TVS Tornado Vortex Signature; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nvl-20130520-2012"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS54_NVLTLX_201305202012"]
+sha256 = "54544de9b569639b7ae48e9550f7813e2d29036b85af6d867ed73b183f072195"
+size = 1816
+committed = "files/level3/l3-tlx-nvl-20130520-2012"
+tags = ["provider:metpy-staticdata", "awips:NVLTLX", "era:2013", "radar:nexrad", "product:57", "mnemonic:VIL", "vcp:12", "version:0", "block:symbology", "packet:0xba07", "regime:tornado"]
+description = "KTLX NVL 2013-05-20 20:12Z: product 57 VIL Vertically Integrated Liquid; MetPy test data (staticdata/nids/KOUN_SDUS54_NVLTLX_201305202012)"
+
+[[file]]
+id = "l3-tlx-nvl-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NVL_2026_06_22_08_06_23"]
+sha256 = "cc9a4afb84e0291d4410f8d689e7f3c490697370e75192f1a4e3c7f43c61d5d8"
+size = 2714
+committed = "files/level3/l3-tlx-nvl-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NVLTLX", "era:2026", "radar:nexrad", "product:57", "mnemonic:VIL", "vcp:212", "version:0", "block:symbology", "packet:0xba07"]
+description = "KTLX NVL 2026-06-22 08:06Z: product 57 VIL Vertically Integrated Liquid; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-nvw-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS34_NVWTLX_201305202016"]
+sha256 = "76e4e49f0d12181890a0d55447a75e29c5a7a846f0c75de580275cba1b90c8bc"
+size = 11932
+committed = "files/level3/l3-tlx-nvw-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:NVWTLX", "era:2013", "radar:nexrad", "product:48", "mnemonic:VWP", "vcp:12", "version:0", "block:symbology", "block:tabular", "packet:4", "packet:8", "packet:10", "regime:tornado"]
+description = "KTLX NVW 2013-05-20 20:16Z: product 48 VWP VAD Wind Profile; MetPy test data (staticdata/nids/KOUN_SDUS34_NVWTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-nvw-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NVW_2026_06_22_08_06_23"]
+sha256 = "5f6f1d58b54538fa6213eeee61f65214fa5e8ef2234d2764d791b075c61f8145"
+size = 11910
+committed = "files/level3/l3-tlx-nvw-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:NVWTLX", "era:2026", "radar:nexrad", "product:48", "mnemonic:VWP", "vcp:212", "version:0", "block:symbology", "block:tabular", "packet:4", "packet:8", "packet:10"]
+description = "KTLX NVW 2026-06-22 08:06Z: product 48 VWP VAD Wind Profile; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-oha-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS84_OHATLX_201305202016"]
+sha256 = "66b15c84cb269f773926b02528a317e0f7d187463f70cc5e7ae2e67cc4c99dd7"
+size = 8108
+committed = "files/level3/l3-tlx-oha-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:OHATLX", "era:2013", "radar:nexrad", "product:169", "mnemonic:OHA", "vcp:12", "version:0", "block:symbology", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX OHA 2013-05-20 20:16Z: product 169 OHA One Hour Accumulation; MetPy test data (staticdata/nids/KOUN_SDUS84_OHATLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-oha-20260622-080623"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_OHA_2026_06_22_08_06_23"]
+sha256 = "47e7517fecabd26fc5e73916f9b7933db006b66e5029196ab01355d191dda915"
+size = 11266
+committed = "files/level3/l3-tlx-oha-20260622-080623"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:OHATLX", "era:2026", "radar:nexrad", "product:169", "mnemonic:OHA", "vcp:212", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KTLX OHA 2026-06-22 08:06Z: product 169 OHA One Hour Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-pta-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS34_PTATLX_201305202016"]
+sha256 = "fad0027f0067113b48e8f2ee1f5a1a05ff73c3ae2d6a945a07aaf184a8beffb4"
+size = 10886
+committed = "files/level3/l3-tlx-pta-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:PTATLX", "era:2013", "radar:nexrad", "product:171", "mnemonic:STA", "vcp:12", "version:0", "block:symbology", "block:tabular", "packet:0xaf1f", "regime:tornado"]
+description = "KTLX PTA 2013-05-20 20:16Z: product 171 STA Storm Total Accumulation; MetPy test data (staticdata/nids/KOUN_SDUS34_PTATLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-pta-20200501-000023"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_PTA_2020_05_01_00_00_23"]
+sha256 = "1cc585a5a6291f618eb6b8270d6d8d133ffe62bf0237de9d798dd0dc8bf72bc4"
+size = 1474
+committed = "files/level3/l3-tlx-pta-20200501-000023"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:PTATLX", "era:2020", "radar:nexrad", "product:171", "mnemonic:STA", "vcp:32", "version:0", "block:symbology", "block:tabular", "packet:1", "framing:noaaport", "framing:zlib", "framing:ccb"]
+description = "KTLX PTA 2020-05-01 00:00Z: product 171 STA Storm Total Accumulation; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-rcm-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS44_RCMTLX_201305202016"]
+sha256 = "a7da9ba81cb4a888e7f76f75fcd4c2b18a2da9d6c3d5d483f6567a29eecd3aa7"
+size = 2180
+committed = "files/level3/l3-tlx-rcm-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:RCMTLX", "era:2013", "radar:nexrad", "product:74", "mnemonic:RCM", "vcp:12", "version:0", "block:rcm", "regime:tornado"]
+description = "KTLX RCM 2013-05-20 20:16Z: product 74 RCM Radar Coded Message; MetPy test data (staticdata/nids/KOUN_SDUS44_RCMTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-rcm-20220503-004553"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_RCM_2022_05_03_00_45_53"]
+sha256 = "aa1c278b93a3dec60c724f3b35f6e51ef95dade7e2ff0db33c2143573b719f2c"
+size = 2250
+committed = "files/level3/l3-tlx-rcm-20220503-004553"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:RCMTLX", "era:2022", "radar:nexrad", "product:74", "mnemonic:RCM", "vcp:212", "version:0", "block:rcm"]
+description = "KTLX RCM 2022-05-03 00:45Z: product 74 RCM Radar Coded Message; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-rsl-20130520-2358"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS44_RSLTLX_201305202358"]
+sha256 = "4970d44151ab17a1e2aad581c312eba85889b32b4c25aab84c19f64e452cd1b2"
+size = 11319
+committed = "files/level3/l3-tlx-rsl-20130520-2358"
+tags = ["provider:metpy-staticdata", "awips:RSLTLX", "era:2013", "radar:nexrad", "product:152", "mnemonic:ASP", "vcp:12", "version:0", "compression:bzip2", "block:symbology", "packet:28", "regime:tornado"]
+description = "KTLX RSL 2013-05-20 23:58Z: product 152 ASP Archive III Status Product; MetPy test data (staticdata/nids/KOUN_SDUS44_RSLTLX_201305202358)"
+
+[[file]]
+id = "l3-tlx-rsl-20220502-235926"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_RSL_2022_05_02_23_59_26"]
+sha256 = "9a84ba61771f6e84e552114d2b0504239c1b5171fe508de7993d35edae0f8d22"
+size = 4024
+committed = "files/level3/l3-tlx-rsl-20220502-235926"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:RSLTLX", "era:2022", "radar:nexrad", "product:152", "mnemonic:ASP", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:28"]
+description = "KTLX RSL 2022-05-02 23:59Z: product 152 ASP Archive III Status Product; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-spd-20130520-2016"
+format = "nexrad-level3"
+urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/KOUN_SDUS64_SPDTLX_201305202016"]
+sha256 = "0ccec9a9ec29f2ad6d64c623392fcd82c16bff64aebdeccc99b6c7059898b18f"
+size = 2864
+committed = "files/level3/l3-tlx-spd-20130520-2016"
+tags = ["provider:metpy-staticdata", "awips:SPDTLX", "era:2013", "radar:nexrad", "product:82", "mnemonic:SPD", "vcp:12", "version:1", "block:standalone_tabular", "regime:tornado"]
+description = "KTLX SPD 2013-05-20 20:16Z: product 82 SPD Supplemental Precipitation Data; MetPy test data (staticdata/nids/KOUN_SDUS64_SPDTLX_201305202016)"
+
+[[file]]
+id = "l3-tlx-spd-20220503-005231"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_SPD_2022_05_03_00_52_31"]
+sha256 = "497a1636a8d14e98dc2422ddef6437e7be6ec434ad65a62710293f1162d901c0"
+size = 2864
+committed = "files/level3/l3-tlx-spd-20220503-005231"
+tags = ["provider:aws-unidata-nexrad-level3", "awips:SPDTLX", "era:2022", "radar:nexrad", "product:82", "mnemonic:SPD", "vcp:212", "version:1", "block:standalone_tabular"]
+description = "KTLX SPD 2022-05-03 00:52Z: product 82 SPD Supplemental Precipitation Data; NOAA Open Data AWS bucket unidata-nexrad-level3"

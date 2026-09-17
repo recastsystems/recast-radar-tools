@@ -1,0 +1,19 @@
+[package]
+name = "recast-radar-io-level3"
+description = "Pure-Rust decoder for NEXRAD and TDWR Level III products"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Versions and features match main's [workspace.dependencies]; switch to
+# `.workspace = true` when this branch merges into main.
+bzip2 = "0.6"
+chrono = { version = "0.4", default-features = false }
+# zlib-rs backend (pure Rust): NOAAPort distributions wrap products in zlib frames.
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+thiserror = "2.0"
+
+[lints]
+workspace = true
