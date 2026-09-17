@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Validate TEMPORAL-reference dealiasing: dealias volume A (plain region
 // engine), fit the range-band reference from its lowest tilt, then dealias
 // volume B's lowest tilt WITH that reference. Reports B's largest positive

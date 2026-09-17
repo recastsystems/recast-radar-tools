@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::io::Read;
 
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use flate2::read::ZlibDecoder;
 
 use crate::{NexradError, Result};
@@ -808,9 +808,7 @@ fn nexrad_datetime(julian_date: u16, seconds: u32) -> Result<DateTime<Utc>> {
             format!("invalid NEXRAD date/seconds pair {julian_date}/{seconds}"),
         );
     }
-    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)
-        .and_then(|date| date.and_hms_opt(0, 0, 0))
-        .expect("Unix epoch is valid");
+    let epoch = DateTime::<Utc>::UNIX_EPOCH.naive_utc();
     let naive = epoch
         .checked_add_signed(Duration::days(i64::from(julian_date) - 1))
         .and_then(|date| date.checked_add_signed(Duration::seconds(i64::from(seconds))))

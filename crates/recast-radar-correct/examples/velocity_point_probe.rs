@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Probe raw vs dealiased velocity at given az/range points on the lowest
 // velocity tilt — for debugging fold failures reported in the field.
 // usage: velocity_point_probe <l2-file> <az_deg> <range_km> [<az> <range> ...]

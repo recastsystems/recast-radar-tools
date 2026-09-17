@@ -732,9 +732,11 @@ pub fn track_circle_envelope(points_nm: &[(GeoPoint, f32)]) -> Vec<GeoPoint> {
     let left = side_chain(-1.0);
     let right = side_chain(1.0);
     let first_seg = &segs[0];
-    let last_seg = segs.last().expect("two discs make a segment");
+    // At least two discs remain here, so there is at least one segment.
+    let (Some(last_seg), Some(&(end_center, end_r))) = (segs.last(), discs.last()) else {
+        return Vec::new();
+    };
     let (start_center, start_r) = discs[0];
-    let (end_center, end_r) = *discs.last().expect("at least two discs");
     let mut ring = left;
     ring.extend(arc_interior_points(
         end_center,

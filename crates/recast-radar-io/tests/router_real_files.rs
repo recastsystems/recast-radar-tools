@@ -217,7 +217,8 @@ fn synthetic_archive_ii() -> Vec<u8> {
 
     bytes.extend_from_slice(&[0u8; CONTROL_WORD_LEN]);
     let body = synthetic_message_31_body();
-    let message_size = u16::try_from((MESSAGE_HEADER_LEN + body.len()) / 2).unwrap();
+    let message_size = u16::try_from((MESSAGE_HEADER_LEN + body.len()) / 2)
+        .unwrap_or_else(|e| panic!("message size fits u16: {e}"));
     bytes.extend_from_slice(&message_size.to_be_bytes());
     bytes.push(0);
     bytes.push(31);

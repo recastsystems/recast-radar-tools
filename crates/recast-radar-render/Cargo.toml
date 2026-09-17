@@ -23,3 +23,6 @@ recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-map = { path = "../recast-radar-map" }
 recast-radar-retrieve = { path = "../recast-radar-retrieve" }
 recast-radar-track = { path = "../recast-radar-track" }
+
+[lints]
+workspace = true

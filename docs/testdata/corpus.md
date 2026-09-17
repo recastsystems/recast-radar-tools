@@ -46,9 +46,11 @@ and archives are downloaded on first use, checked against their sha256 and cache
 | `testdata/manifest.toml` | schema comment only, no entries |
 | `testdata/level2/manifest.toml` | Level II archive volumes, the KIWA real-time chunk volume, trimmed fixtures |
 | `testdata/other/manifest.toml` | ODIM_H5, CfRadial 1 and 2, DORADE, JMA GRIB2 tars, one Level III VWP, and the archives some of them came from |
+| `testdata/fuzz/manifest.toml` | fuzz regression inputs: minimized libFuzzer mutations of real seeds, each with `derived_from` its seed (see `fuzz/README.md`) |
 | `testdata/files/level2/` | 16 trimmed Level II fixtures, `<SITE><YYYYMMDD>_<HHMMSS>.trim.V06` |
 | `testdata/files/level2-chunks/` | the first three chunks of KIWA volume 307 |
 | `testdata/files/other/` | committed files for the other formats (layout under Other formats below) |
+| `testdata/files/fuzz/<target>/` | committed fuzz regression inputs, named `<kind>-<description>` (kind: crash, oom or timeout) |
 | `crates/recast-radar-testdata/` | manifest loader, download and cache, `trim-level2` tool, tests |
 | `tools/validate_trimmed.py` | checks the trimmed Level II fixtures against their sources with Py-ART and MetPy |
 
@@ -942,21 +944,22 @@ Everything below the marker is generated from the manifests by
 | manifest | entries | committed files | committed bytes | download files | download bytes |
 |---|---:|---:|---:|---:|---:|
 | `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 |
+| `testdata/fuzz/manifest.toml` | 2 | 2 | 870,121 | 0 | 0 |
 | `testdata/level2/manifest.toml` | 115 | 19 | 10,394,101 | 96 | 247,881,182 |
 | `testdata/level3/manifest.toml` | 216 | 216 | 7,776,988 | 0 | 0 |
 | `testdata/other/manifest.toml` | 30 | 22 | 15,181,236 | 8 | 123,175,908 |
-| **all** | **361** | **257** | **33,352,325** | **104** | **371,057,090** |
+| **all** | **363** | **259** | **34,222,446** | **104** | **371,057,090** |
 
 | format | committed | download |
 |---|---:|---:|
-| `cfradial1` | 4 | 2 |
+| `cfradial1` | 5 | 2 |
 | `cfradial2` | 0 | 1 |
 | `dorade` | 5 | 0 |
 | `jma-grib2-tar` | 2 | 2 |
 | `nexrad-level2` | 16 | 29 |
 | `nexrad-level2-chunk` | 3 | 67 |
 | `nexrad-level3` | 217 | 0 |
-| `odim-h5` | 10 | 0 |
+| `odim-h5` | 11 | 0 |
 | `tar-gz` | 0 | 2 |
 | `tar-z` | 0 | 1 |
 
@@ -965,6 +968,13 @@ Everything below the marker is generated from the manifests by
 #### `testdata/manifest.toml`
 
 No entries.
+
+#### `testdata/fuzz/manifest.toml`
+
+| id | format | where | bytes | derived from |
+|---|---|---|---:|---|
+| `fuzz-odim-hdf5-local-heap-name-offset-overflow` | `odim-h5` | committed `files/fuzz/odim/crash-hdf5-local-heap-name-offset-overflow` | 1,640 | `odim-imgw-ram-20260711-0015-kdp-max` |
+| `fuzz-cfradial-overlapping-sweep-ray-ranges` | `cfradial1` | committed `files/fuzz/cfradial/oom-overlapping-sweep-ray-ranges` | 868,481 | `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` |
 
 #### `testdata/level2/manifest.toml`
 
@@ -1351,8 +1361,9 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `archive` (3): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `l3-kbmx-19980416-archive-tarz`
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
-- `derived` (11): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
+- `derived` (13): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
 - `dualpol` (28): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `fuzz-regression` (2): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`
 - `long-pulse` (1): `l2-kmaf-20230331-230843`
 - `mpda` (2): `l2-klix-20210829-180425`, `l2-klix-20210829-180425-trim`
 - `no-metadata-record` (2): `l2-ktlx-19910605-162126`, `l2-ktlx-19910605-162126-trim`
@@ -1600,7 +1611,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `container:`
 
-- `container:netcdf3-classic` (3): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
+- `container:netcdf3-classic` (4): `fuzz-cfradial-overlapping-sweep-ray-ranges`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
 - `container:netcdf4` (4): `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 
 #### `contains:`
@@ -1622,6 +1633,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 - `derivation:archive-member` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
 - `derivation:container-conversion` (2): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`
+- `derivation:fuzz-mutation` (2): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`
 - `derivation:head-trim` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
 - `derivation:subset` (1): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
 
@@ -1713,10 +1725,21 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `framing:text-only` (1): `l3-abr-ftm-20110428-1331`
 - `framing:zlib` (14): `l3-mci-dpa-20160526-2154`, `l3-mci-dsp-20160526-2154`, `l3-mci-n1p-20160526-2154`, `l3-mci-ncr-20160526-2154`, `l3-mci-net-20160526-2154`, `l3-mci-nmd-20160526-2154`, `l3-mci-nst-20160526-2154`, `l3-mci-ntp-20160526-2154`, `l3-mci-nvl-20160526-2154`, `l3-mci-nvw-20160526-2154`, `l3-mci-tr0-20160526-2154`, `l3-mci-tr1-20160526-2154`, `l3-mci-tr2-20160526-2154`, `l3-tlx-pta-20200501-000023`
 
+#### `fuzz-finding:`
+
+- `fuzz-finding:crash` (1): `fuzz-odim-hdf5-local-heap-name-offset-overflow`
+- `fuzz-finding:oom` (1): `fuzz-cfradial-overlapping-sweep-ray-ranges`
+
+#### `fuzz-target:`
+
+- `fuzz-target:cfradial` (1): `fuzz-cfradial-overlapping-sweep-ray-ranges`
+- `fuzz-target:odim` (1): `fuzz-odim-hdf5-local-heap-name-offset-overflow`
+
 #### `hdf5:`
 
 - `hdf5:gzip-chunked` (6): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
-- `hdf5:superblock-v0` (5): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
+- `hdf5:local-heap` (1): `fuzz-odim-hdf5-local-heap-name-offset-overflow`
+- `hdf5:superblock-v0` (6): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
 - `hdf5:superblock-v1` (1): `odim-norst-20170421-0908-pvol`
 - `hdf5:v2-object-headers` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `hdf5:vlen-strings` (1): `odim-bewid-20130429-0430-pvol-dbzh-scan1`

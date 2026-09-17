@@ -207,16 +207,17 @@ impl P3TMatrixIntegrationConfig {
 }
 
 impl Default for P3TMatrixIntegrationConfig {
+    /// The versioned configuration. Its fractions satisfy [`Self::new`]'s
+    /// checks (pinned by `default_config_passes_validation`).
     fn default() -> Self {
-        Self::new(
-            P3TMatrixShapePolicy::StrictShapeAuthoritativeSpheres,
-            P3SmallSphereScatteringPolicy::Disabled,
-            P3QuadratureConfig::default(),
-            0.999,
-            0.05,
-            0.001,
-        )
-        .expect("the versioned P3 T-matrix integration config is valid")
+        Self {
+            shape_policy: P3TMatrixShapePolicy::StrictShapeAuthoritativeSpheres,
+            small_sphere_policy: P3SmallSphereScatteringPolicy::Disabled,
+            quadrature: P3QuadratureConfig::default(),
+            maximum_omitted_number_fraction: 0.999,
+            maximum_omitted_mass_fraction: 0.05,
+            maximum_omitted_radar_weight_fraction: 0.001,
+        }
     }
 }
 
@@ -1432,5 +1433,18 @@ mod tests {
             nonspherical_mapped,
             support
         ));
+    }
+
+    #[test]
+    fn default_config_passes_validation() {
+        let validated = P3TMatrixIntegrationConfig::new(
+            P3TMatrixShapePolicy::StrictShapeAuthoritativeSpheres,
+            P3SmallSphereScatteringPolicy::Disabled,
+            P3QuadratureConfig::default(),
+            0.999,
+            0.05,
+            0.001,
+        );
+        assert_eq!(validated, Ok(P3TMatrixIntegrationConfig::default()));
     }
 }

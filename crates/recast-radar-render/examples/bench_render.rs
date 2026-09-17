@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
