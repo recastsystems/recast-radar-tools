@@ -18,6 +18,8 @@
 //! it. Its only real-byte test relabels a real Message 15 and checks that
 //! the decoder rejects it.
 
+mod common;
+
 use chrono::{DateTime, Datelike, Utc};
 use recast_radar_io_nexrad::NexradError;
 use recast_radar_io_nexrad::messages::bypass_map::{
@@ -30,6 +32,8 @@ use recast_radar_io_nexrad::messages::clutter_filter_map::{
 use recast_radar_io_nexrad::messages::{self, MessageBody, MessageWalker, RawMessages};
 use recast_radar_testdata::Format;
 use serde_json::{Value, json};
+
+use common::assert_checked_every_available;
 
 const FRAME: usize = 2432;
 const START_CHUNK: &str = "l2chunk-kiwa-307-20260917-003629-001-s";
@@ -170,9 +174,11 @@ fn azimuth_runs(map: &ClutterFilterMap) -> Value {
 #[test]
 fn clutter_filter_maps_match_metpy() {
     let goldens = goldens();
-    assert!(goldens.len() >= 20, "golden files: {}", goldens.len());
+    assert_eq!(goldens.len(), 22, "golden files");
+    let mut checked = 0;
     for (id, golden) in &goldens {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let record = messages::metadata_record(&raw).unwrap();
         let found = clutter(&record);
         let Some(expected) = golden.get("clutter_filter_map") else {
@@ -205,6 +211,12 @@ fn clutter_filter_maps_match_metpy() {
         assert_eq!(expected["azimuths_per_segment"], json!(azimuths), "{id}");
         assert_eq!(expected["azimuth_runs"], azimuth_runs(map), "{id}");
     }
+    assert_checked_every_available("clutter goldens", checked, &golden_sources(&goldens));
+}
+
+/// One source per golden, for [`assert_checked_every_available`].
+fn golden_sources(goldens: &[(String, Value)]) -> Vec<Vec<&str>> {
+    goldens.iter().map(|(id, _)| vec![id.as_str()]).collect()
 }
 
 /// Golden files with a bypass map that the walker can join: KLIX 2005
@@ -223,8 +235,10 @@ fn joinable_bypass_goldens(goldens: &[(String, Value)]) -> usize {
 fn bypass_maps_match_metpy_radial_0() {
     let goldens = goldens();
     assert_eq!(joinable_bypass_goldens(&goldens), 9);
+    let mut checked = 0;
     for (id, golden) in &goldens {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let record = messages::metadata_record(&raw).unwrap();
         let found = clutter(&record);
         let Some(expected) = golden.get("clutter_filter_bypass_map") else {
@@ -267,6 +281,7 @@ fn bypass_maps_match_metpy_radial_0() {
             map.segments.iter().map(|s| &s.radials[0]).collect();
         assert_eq!(expected["radial_0_halfwords"], json!(radial_0), "{id}");
     }
+    assert_checked_every_available("bypass map goldens", checked, &golden_sources(&goldens));
 }
 
 /// Level II volumes with no golden file: the 1991-2003 ARCHIVE2 files (no
@@ -299,14 +314,18 @@ fn files_without_golden_have_no_clutter_messages() {
             "l2-tbwi-20230601-175101-stub",
         ]
     );
-    for id in without {
+    let mut checked = 0;
+    for id in &without {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let found = clutter(&messages::metadata_record(&raw).unwrap());
         assert!(found.filter_maps.is_empty(), "{id}");
         assert!(found.bypass_maps.is_empty(), "{id}");
         assert!(found.censor_zones.is_empty(), "{id}");
         assert!(found.errors.is_empty(), "{id}: {:?}", found.errors);
     }
+    let sources: Vec<Vec<&str>> = without.iter().map(|id| vec![*id]).collect();
+    assert_checked_every_available("files without a clutter golden", checked, &sources);
 }
 
 /// Trimmed fixtures keep their source file's non-radial messages byte for
@@ -320,13 +339,15 @@ fn trimmed_fixtures_keep_the_source_clutter_messages() {
         .filter(|entry| entry.format == Format::NexradLevel2)
         .filter_map(|entry| Some((entry.id.as_str(), entry.derived_from.as_deref()?)))
         .collect();
-    assert!(!trimmed.is_empty());
+    assert_eq!(trimmed.len(), 16, "trimmed Level II fixtures");
     let mut with_maps = 0;
-    for (id, source) in trimmed {
+    let mut checked = 0;
+    for &(id, source) in &trimmed {
         let Some(trim) = load(id) else { continue };
         let Some(original) = load(source) else {
             continue;
         };
+        checked += 1;
         let found = clutter(&messages::metadata_record(&trim).unwrap());
         let expected = clutter(&messages::metadata_record(&original).unwrap());
         assert_eq!(found.filter_maps, expected.filter_maps, "{id}");
@@ -336,14 +357,32 @@ fn trimmed_fixtures_keep_the_source_clutter_messages() {
             with_maps += 1;
         }
     }
+    // The trimmed fixtures are committed; a pair is checked once its source
+    // (never committed) is available.
+    let sources: Vec<Vec<&str>> = trimmed
+        .iter()
+        .map(|&(id, source)| vec![id, source])
+        .collect();
+    assert_checked_every_available("trimmed fixtures", checked, &sources);
+    assert_eq!(
+        with_maps > 0,
+        checked > 0,
+        "{with_maps} of {checked} trimmed fixtures carry clutter filter maps"
+    );
+    if checked == trimmed.len() {
+        assert_eq!(with_maps, 11, "trimmed fixtures with clutter filter maps");
+    }
     eprintln!("{with_maps} trimmed fixtures carry clutter filter maps");
 }
 
 /// Table XIV and IX ranges and structure on every decoded map.
 #[test]
 fn decoded_maps_are_within_icd_ranges() {
-    for (id, _) in &goldens() {
+    let goldens = goldens();
+    let mut checked = 0;
+    for (id, _) in &goldens {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let record = messages::metadata_record(&raw).unwrap();
         let volume_time = status_time(&record).unwrap();
         let found = clutter(&record);
@@ -393,6 +432,7 @@ fn decoded_maps_are_within_icd_ranges() {
             assert_eq!(map.trailing_bytes, 0, "{id}");
         }
     }
+    assert_checked_every_available("ICD ranges", checked, &golden_sources(&goldens));
 }
 
 /// KLIX 2005-08-29 (legacy RDA). Message 15 is 62 segments of zeros:
@@ -557,9 +597,11 @@ const HEX_CASES: &[HexCase] = &[
 
 #[test]
 fn bypass_map_halfwords_match_file_bytes() {
+    let mut checked = 0;
     for case in HEX_CASES {
         let id = case.id;
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let record = messages::metadata_record(&raw).unwrap();
         let found = clutter(&record);
         let [map] = found.bypass_maps.as_slice() else {
@@ -593,6 +635,8 @@ fn bypass_map_halfwords_match_file_bytes() {
             );
         }
     }
+    let sources: Vec<Vec<&str>> = HEX_CASES.iter().map(|case| vec![case.id]).collect();
+    assert_checked_every_available("bypass map hex cases", checked, &sources);
 
     // Note 4, bin by bin: KTLX 2013 segment 1 radial 90 starts with 0x0007,
     // so bins 0-12 are filtered and bins 13-15 bypass the filters; 0x8100
@@ -627,13 +671,17 @@ fn bypass_map_halfwords_match_file_bytes() {
 fn bypass_map_bit_order_follows_icd_note_4() {
     let goldens = goldens();
     assert_eq!(joinable_bypass_goldens(&goldens), 9);
+    let mut checked = 0;
+    let mut sources = Vec::new();
     for (id, golden) in &goldens {
         if golden.get("clutter_filter_bypass_map").is_none()
             || METPY_ONLY_JOINS.contains(&id.as_str())
         {
             continue;
         }
+        sources.push(vec![id.as_str()]);
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let found = clutter(&messages::metadata_record(&raw).unwrap());
         let map = &found.bypass_maps[0];
         // [pairs with a filtered bin, pairs with both filtered] for inner
@@ -673,6 +721,7 @@ fn bypass_map_bit_order_follows_icd_note_4() {
         );
         assert!(msb >= 1.5 * lsb, "{id}: MSB-first {msb}, LSB-first {lsb}");
     }
+    assert_checked_every_available("bypass map bit order", checked, &sources);
 }
 
 /// The committed start chunk of the KIWA 2026 volume (Build 24.1) has the

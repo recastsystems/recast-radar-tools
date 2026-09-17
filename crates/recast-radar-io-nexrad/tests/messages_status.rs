@@ -12,6 +12,8 @@
 //! the KIWA 2026-09-17 volume (Build 24.1) and against ICD ranges in every
 //! Build 19+ file.
 
+mod common;
+
 use std::collections::BTreeMap;
 
 use recast_radar_io_nexrad::messages::adaptation::RdaAdaptationData;
@@ -800,8 +802,26 @@ fn icd_ranges_from_build_19() {
         "l2-kilx-20260418-013553",
         "l2-kiwa-20260917-003629",
     ];
+    // Every archive volume from Build 19.0 on: the manifest's build tags
+    // name these 12 and no other.
+    let tagged: Vec<&str> = recast_radar_testdata::manifest()
+        .files
+        .iter()
+        .filter(|entry| {
+            entry.tags.iter().any(|tag| {
+                tag.strip_prefix("build:")
+                    .and_then(|build| build.parse::<f32>().ok())
+                    .is_some_and(|build| build >= 19.0)
+            }) && entry.derived_from.is_none()
+                && !entry.id.starts_with("l2chunk-")
+        })
+        .map(|entry| entry.id.as_str())
+        .collect();
+    assert_eq!(tagged, ids, "manifest volumes tagged Build 19.0 or later");
+    let mut checked = 0;
     for id in ids {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let meta = metadata(&raw);
         let First::Decoded(_, RdaStatus::Orda(status)) = &meta.status else {
             panic!("{id}: no ORDA message 2");
@@ -982,6 +1002,8 @@ fn icd_ranges_from_build_19() {
             in_range(id, "COHO_FREQ", a.coho_freq, 0.0, 100.0);
         }
     }
+    let sources: Vec<Vec<&str>> = ids.iter().map(|id| vec![*id]).collect();
+    common::assert_checked_every_available("ICD ranges from Build 19", checked, &sources);
 }
 
 // --- layouts and walker behaviour ---------------------------------------------
@@ -990,8 +1012,11 @@ fn icd_ranges_from_build_19() {
 /// the same volume, and the site name matches the volume header.
 #[test]
 fn adaptation_site_matches_volume() {
-    for id in ["l2-ktlx-20240315-000217", "l2-pahg-20250909-212549"] {
+    const IDS: [&str; 2] = ["l2-ktlx-20240315-000217", "l2-pahg-20250909-212549"];
+    let mut checked = 0;
+    for id in IDS {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let meta = metadata(&raw);
         let First::Decoded(_, a) = &meta.adaptation else {
             panic!("{id}: no message 18");
@@ -1026,6 +1051,8 @@ fn adaptation_site_matches_volume() {
             219.99573,
         );
     }
+    let sources: Vec<Vec<&str>> = IDS.iter().map(|id| vec![*id]).collect();
+    common::assert_checked_every_available("adaptation site", checked, &sources);
 }
 
 /// KLIX 2005-08-29 (legacy RDA, channel byte 0). Message 2 values not read by

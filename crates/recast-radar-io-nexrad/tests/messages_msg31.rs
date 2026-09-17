@@ -890,8 +890,10 @@ fn rda_build_from_metadata_records() {
         ("l2-kiwa-20260917-003629", 2410, "24.1"),
         (CHUNK_START, 2410, "24.1"),
     ];
+    let mut checked = 0;
     for (id, raw_build, text) in expected {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let record = messages::metadata_record(&raw).unwrap();
         let build = RdaBuild::from_records(&record).unwrap();
         assert_eq!(build.raw(), *raw_build, "{id}");
@@ -902,6 +904,8 @@ fn rda_build_from_metadata_records() {
             assert_eq!(tag, *text, "{id}: manifest build tag");
         }
     }
+    let sources: Vec<Vec<&str>> = expected.iter().map(|(id, _, _)| vec![*id]).collect();
+    common::assert_checked_every_available("RDA builds", checked, &sources);
 }
 
 // Exact values from the committed chunk -------------------------------------------------

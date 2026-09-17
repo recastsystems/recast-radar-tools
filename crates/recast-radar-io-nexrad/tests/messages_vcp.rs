@@ -20,6 +20,8 @@
 //! relabels a real message 5 frame as type 7 to check that the walker routes
 //! it to the same decoder.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -346,10 +348,12 @@ fn every_vcp_golden_file_has_a_test() {
 #[test]
 fn message_5_supplemental_flags_agree_with_cuts_and_manifest() {
     let mut checked = 0;
+    let mut sources = Vec::new();
     for id in VCP_GOLDEN_IDS {
         if golden(id)["message_5"].is_null() {
             continue;
         }
+        sources.push(vec![*id]);
         let Some(metadata) = metadata_of(id) else {
             continue;
         };
@@ -454,7 +458,9 @@ fn message_5_supplemental_flags_agree_with_cuts_and_manifest() {
         }
         checked += 1;
     }
-    eprintln!("checked {checked} VCPs");
+    // 22 of the 23 VCP goldens have a message 5 (KLIX 2005's is zero-filled).
+    assert_eq!(sources.len(), 22, "VCP goldens with a message 5");
+    common::assert_checked_every_available("VCP flags", checked, &sources);
 }
 
 /// Message 7 has no real sample; a real message 5 frame relabelled as type 7

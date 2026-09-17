@@ -63,6 +63,13 @@ RECAST_RADAR_GOLDEN_PYTHON=/path/to/python bash tools/ci/level2-golden-check.sh
 The clutter group's default ids leave out trimmed fixtures (`derived_from` in the manifest). Their clutter messages
 are compared with their source files instead (see Message 15).
 
+Corpus coverage: every test that loops over corpus files pins the number of sources it applies to (from the
+golden directory or the manifest) and ends with `assert_checked_every_available` (`tests/common/mod.rs`), which
+requires that every source whose files are present locally after the loop was checked. A source is skipped only
+when it is neither committed nor cached and cannot be downloaded, and the skip is printed with the ids. With the
+cache filled (one `cargo test` online), every loop checks every source. Tests of one uncommitted file use
+`require_file!` (the out-of-order chunk test, for chunk 014) or the same `load` helper.
+
 ## Framing and reassembly
 
 `messages::RawMessages` walks decompressed record bytes; `messages::MessageWalker` also decodes the bodies.
