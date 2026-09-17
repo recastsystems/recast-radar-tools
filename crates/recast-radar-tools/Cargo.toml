@@ -74,5 +74,19 @@ recast-radar-track = { path = "../recast-radar-track", optional = true }
 name = "facade_real_files"
 required-features = ["io", "correct", "filters", "map"]
 
+# README examples. The README shows these files verbatim; tests/readme.rs
+# fails when the two drift apart.
+[[example]]
+name = "decode_level2"
+required-features = ["nexrad"]
+
+[[example]]
+name = "dealias_velocity"
+required-features = ["nexrad", "correct"]
+
+[[example]]
+name = "render_png"
+required-features = ["nexrad", "correct", "render"]
+
 [lints]
 workspace = true

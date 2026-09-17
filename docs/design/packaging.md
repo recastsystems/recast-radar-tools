@@ -77,6 +77,55 @@ Not in G.1: internal path dependencies have no `version`, so `cargo publish`
 of the library crates is not yet possible; that change touches every
 dependency line and waits until the other wave 2 streams have merged.
 
-## CI (G.2), WASM (G.3), README (G.4)
+## CI (G.2)
 
-Planned per the wave 2 plan; this note is extended as those tasks land.
+`.github/workflows/ci.yml` has five jobs on ubuntu-latest with stable Rust:
+
+- `rustfmt`: `cargo fmt --all --check`.
+- `clippy`: `cargo clippy --workspace --all-targets --all-features --locked`,
+  without `-D warnings` until D.3 lands (the comment in the workflow gives the
+  flags to add then). `--all-features` also builds the facade examples that
+  need `render`.
+- `test`: `cargo test --workspace --locked --no-fail-fast`, with a cache of
+  downloaded test files at `$RECAST_RADAR_TESTDATA`. The cache key starts with
+  the hash of `testdata/**/manifest.toml`, and a new entry is saved only when
+  a run downloaded new files. These steps are skipped until the testdata
+  manifests are in the tree.
+- `facade features`: `cargo hack check -p recast-radar-tools --each-feature
+  --no-dev-deps`.
+- `wasm32`: `tools/ci/wasm-check.sh` (see below).
+
+## WASM (G.3)
+
+See [wasm.md](wasm.md). Every non-`net` crate already passed
+`cargo check --target wasm32-unknown-unknown` without source changes, so no
+`parallel` feature was added: rayon falls back to the calling thread on that
+target. `tools/ci/wasm-check.sh` checks each workspace crate on its own
+(except `recast-radar-data`, which is checked with `--no-default-features` once
+E.1 gives it a `net` feature, and the dev-only `recast-radar-testdata`), and
+the facade with each feature except `net` and `full`.
+
+## README (G.4)
+
+The root `README.md` has the crate map, the feature table, three examples, and
+the pure-Rust, WebAssembly and no-unsafe statements.
+
+- The examples are `crates/recast-radar-tools/examples/{decode_level2,
+  dealias_velocity,render_png}.rs`, shown in the README verbatim, with
+  `required-features` in the facade manifest. They take a Level II path on the
+  command line. They were run with `--release` on the three corpus volumes
+  (`KTLX20240315_000217_V06`, `KILX20260418_013553_V06`,
+  `KTLX20130520_201643_V06.gz`); the README's output excerpts come from the
+  first.
+- `crates/recast-radar-tools/tests/readme.rs` keeps the README honest. Every
+  `rust` code block must be preceded by `<!-- example: <path> -->` and equal
+  that file, and every facade example must appear. The crate map
+  (`crate-map` markers) must list exactly the crates under `crates/`. The
+  feature table (`features` markers) must match `[features]` (crate, implied
+  features, default set) and the modules in `src/lib.rs`. The no-unsafe list
+  (`lint-exceptions` markers) must name exactly the crates without
+  `[lints] workspace = true`.
+- When a stream changes one of these (for example D.1 opts the last two
+  crates into the workspace lints, or Level III adds a crate and a feature),
+  the test fails with the mismatch, and the README is updated in the same
+  merge.
