@@ -952,6 +952,7 @@ name = "recast-radar-data"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures-core",
  "quick-xml",
  "recast-radar-io",
  "recast-radar-io-jma",

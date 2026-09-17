@@ -25,10 +25,7 @@ mod embedded_sites;
 pub mod gdex;
 pub mod grid_products;
 pub mod international;
-pub mod realtime {
-    pub mod timing;
-    pub mod vcp_catalog;
-}
+pub mod realtime;
 pub mod sites;
 pub mod tropical;
 

@@ -12,9 +12,14 @@ default = ["net"]
 # network-free code (types, site catalogs, key/listing parsers, selection
 # logic, local cache helpers) and builds for wasm32-unknown-unknown.
 net = ["dep:reqwest"]
+# `realtime::stream::ChunkStream`, a `futures_core::Stream` over the same
+# real-time chunk planner as the blocking `ChunkIterator`, generic over an
+# `AsyncChunkTransport`. Runtime-agnostic: it never sleeps or spawns.
+async = ["dep:futures-core"]
 
 [dependencies]
 chrono.workspace = true
+futures-core = { version = "0.3", optional = true }
 quick-xml.workspace = true
 reqwest = { workspace = true, optional = true }
 serde.workspace = true
