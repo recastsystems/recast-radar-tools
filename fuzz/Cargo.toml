@@ -1,0 +1,94 @@
+# cargo-fuzz project for the recast-radar decoders. Not a member of the main
+# workspace (it needs nightly and libFuzzer); see README.md.
+[package]
+name = "recast-radar-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[features]
+default = ["libfuzzer"]
+# The fuzz_targets binaries need libFuzzer; `tools` (stable replay and seed
+# generation) uses only the harness library and turns this off.
+libfuzzer = ["dep:libfuzzer-sys"]
+
+[dependencies]
+libfuzzer-sys = { version = "0.4", optional = true }
+recast-radar-io = { path = "../crates/recast-radar-io" }
+recast-radar-io-cfradial = { path = "../crates/recast-radar-io-cfradial" }
+recast-radar-io-dorade = { path = "../crates/recast-radar-io-dorade" }
+recast-radar-io-jma = { path = "../crates/recast-radar-io-jma" }
+recast-radar-io-nexrad = { path = "../crates/recast-radar-io-nexrad" }
+recast-radar-io-odim = { path = "../crates/recast-radar-io-odim" }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "level2_volume"
+path = "fuzz_targets/level2_volume.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "io_router"
+path = "fuzz_targets/io_router.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "odim"
+path = "fuzz_targets/odim.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "cfradial"
+path = "fuzz_targets/cfradial.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "dorade"
+path = "fuzz_targets/dorade.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "jma"
+path = "fuzz_targets/jma.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[workspace]
+members = [".", "tools"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[lints]
+workspace = true
+
+[profile.release]
+# Same checks as cargo-fuzz builds, so `fuzz-tools replay` panics wherever
+# the fuzzer did (arithmetic overflow, debug assertions).
+debug-assertions = true
+overflow-checks = true
+# Line tables for symbolized crash backtraces.
+debug = 1
