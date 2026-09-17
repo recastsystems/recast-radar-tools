@@ -172,17 +172,20 @@ pub fn dealias_volume_v4(
     let environment = environment.filter(|profile| profile.usable_for(volume.volume_time));
 
     // ---- per-tilt fields + v1 region solves (parallel, order-stable) ----
-    let velocity_cuts: Vec<usize> = (0..volume.cuts.len())
-        .filter(|&cut_index| {
-            volume.cuts[cut_index]
-                .moments
+    let velocity_cuts: Vec<(usize, &MomentGrid)> = volume
+        .cuts
+        .iter()
+        .enumerate()
+        .filter_map(|(cut_index, cut)| {
+            cut.moments
                 .get(&MomentType::Velocity)
-                .is_some_and(|grid| grid.radial_count() > 0 && grid.gate_range.gate_count > 0)
+                .filter(|grid| grid.radial_count() > 0 && grid.gate_range.gate_count > 0)
+                .map(|grid| (cut_index, grid))
         })
         .collect();
     let mut tilts: Vec<TiltField> = velocity_cuts
         .par_iter()
-        .map(|&cut_index| build_tilt_field(volume, cut_index))
+        .map(|&(cut_index, grid)| build_tilt_field(volume, cut_index, grid))
         .collect();
 
     // ---- global node assignment (deterministic: tilt order, super order) --
@@ -332,12 +335,8 @@ pub(crate) struct TiltField {
     pub(crate) node_of_super: Vec<usize>,
 }
 
-fn build_tilt_field(volume: &RadarVolume, cut_index: usize) -> TiltField {
+fn build_tilt_field(volume: &RadarVolume, cut_index: usize, grid: &MomentGrid) -> TiltField {
     let cut = &volume.cuts[cut_index];
-    let grid = cut
-        .moments
-        .get(&MomentType::Velocity)
-        .expect("caller filtered to velocity cuts");
     let rows = grid.radial_count();
     let gates = grid.gate_range.gate_count;
     let total = rows.saturating_mul(gates);

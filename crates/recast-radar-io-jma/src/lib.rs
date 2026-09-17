@@ -62,6 +62,8 @@
 //! error is returned when no station decodes. The aggregate output limit
 //! fails the whole call.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use chrono::{TimeZone, Utc};
 use recast_radar_core::bounded_read::{MAX_DECODED_BATCH_BYTES, volume_moment_capacity_bytes};
 use recast_radar_core::{

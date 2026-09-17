@@ -18,6 +18,8 @@
 //! so on). The mobile archive wrappers inherit the DORADE crate's archive
 //! limits.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use std::path::Path;
 
 use flate2::read::{DeflateDecoder, GzDecoder};

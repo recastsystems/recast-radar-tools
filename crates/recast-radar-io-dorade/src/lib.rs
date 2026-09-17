@@ -34,6 +34,8 @@
 //! errors; archive size violations are [`DoradeError::InvalidMessage`] or
 //! [`DoradeError::Compression`] errors.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod dorade;
 pub mod mobile_archive;
 

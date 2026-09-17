@@ -338,10 +338,9 @@ fn segment_volume_runs<T>(mut sweeps: Vec<GroupableSweep<T>>) -> Vec<Vec<Groupab
             };
             ascending && close_in_time
         });
-        if continues_run {
-            runs.last_mut().expect("run exists").push(sweep);
-        } else {
-            runs.push(vec![sweep]);
+        match runs.last_mut() {
+            Some(run) if continues_run => run.push(sweep),
+            _ => runs.push(vec![sweep]),
         }
     }
     runs
@@ -556,7 +555,12 @@ pub fn decode_dorade_volume_for_path(path: &Path) -> Result<RadarVolume> {
     let run = runs
         .into_iter()
         .find(|run| run.iter().any(|sweep| sweep.payload == *path))
-        .expect("opened sweep belongs to one run");
+        .ok_or_else(|| {
+            invalid_archive(format!(
+                "sweep {} is missing from its own volume run",
+                path.display()
+            ))
+        })?;
 
     if run.len() == 1 {
         let mut volume = decode_dorade_sweep_volume(&bytes)?;

@@ -6,6 +6,8 @@
 //! a typed raw microphysics tuple. In particular, no LUT shipped by this crate
 //! is represented as production T-matrix science.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod closure;
 mod digest;
 mod lut;

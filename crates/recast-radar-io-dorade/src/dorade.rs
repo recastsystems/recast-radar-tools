@@ -398,8 +398,11 @@ impl SweepParse {
 
     fn run(&mut self, bytes: &[u8], stop_at_first_ray: bool) -> Result<()> {
         let mut pos = 0usize;
-        while pos + BLOCK_HEADER_LEN <= bytes.len() {
-            let id: [u8; 4] = bytes[pos..pos + 4].try_into().expect("4-byte block id");
+        while let Some(&id) = bytes
+            .get(pos..)
+            .filter(|rest| rest.len() >= BLOCK_HEADER_LEN)
+            .and_then(|rest| rest.first_chunk::<4>())
+        {
             let nbytes = self.endian.i32(bytes, pos + 4);
             if nbytes < BLOCK_HEADER_LEN as i32 {
                 // NULL terminator blocks or padding: stop cleanly at a

@@ -1,5 +1,7 @@
 //! Public radar data-source helpers.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod community_feeds;
 mod embedded_sites;
 pub mod gdex;
@@ -327,7 +329,7 @@ pub fn list_recent_level2_sites(days_back: i64) -> Result<Vec<RadarSite>> {
 }
 
 pub fn fetch_weather_gov_radar_sites() -> Result<Vec<RadarSite>> {
-    let client = metadata_http_client();
+    let client = metadata_http_client()?;
     let text = client
         .get("https://api.weather.gov/radar/stations")
         .send()?
@@ -356,7 +358,7 @@ pub fn fetch_weather_gov_radar_sites() -> Result<Vec<RadarSite>> {
 }
 
 pub fn fetch_text(url: &str) -> Result<String> {
-    let response = send_with_retry(&metadata_http_client(), url)?.error_for_status()?;
+    let response = send_with_retry(&metadata_http_client()?, url)?.error_for_status()?;
     read_response_text_limited(response, MAX_METADATA_TEXT_BYTES, "text resource")
 }
 
@@ -368,7 +370,7 @@ pub fn fetch_text(url: &str) -> Result<String> {
 /// header. Keep those quirks in one place so callers can treat it as a normal
 /// public display feed.
 pub fn fetch_mping_reports_geojson() -> Result<String> {
-    let client = metadata_http_client();
+    let client = metadata_http_client()?;
     let display_response = client
         .get("https://mping.ou.edu/display/")
         .header(ACCEPT, "text/html,*/*")
@@ -417,7 +419,7 @@ fn send_with_retry(
 /// [`fetch_text`] on a slow link. Listings still must complete within the
 /// download-client budget.
 pub fn fetch_listing_text(url: &str) -> Result<String> {
-    let response = send_with_retry(&download_http_client(), url)?.error_for_status()?;
+    let response = send_with_retry(&download_http_client()?, url)?.error_for_status()?;
     read_response_text_limited(response, MAX_LISTING_TEXT_BYTES, "listing")
 }
 
@@ -426,7 +428,7 @@ pub fn fetch_listing_text(url: &str) -> Result<String> {
 /// existence probe for feeds whose newest file name must be guessed
 /// (e.g. the 5-minute-aligned JMA/NICT tar stamps).
 pub fn url_exists(url: &str) -> Result<bool> {
-    let response = metadata_http_client().head(url).send()?;
+    let response = metadata_http_client()?.head(url).send()?;
     let status = response.status();
     if status.is_success() {
         return Ok(true);
@@ -441,7 +443,10 @@ pub fn url_exists(url: &str) -> Result<bool> {
 /// Fetch a small binary resource (e.g. a placefile icon sheet). Capped at
 /// 4 MiB — these are sprite sheets, not data files.
 pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
-    let response = metadata_http_client().get(url).send()?.error_for_status()?;
+    let response = metadata_http_client()?
+        .get(url)
+        .send()?
+        .error_for_status()?;
     read_response_limited(response, MAX_SMALL_RESOURCE_BYTES, "resource")
 }
 
@@ -452,7 +457,7 @@ pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
 /// for sprite sheets on the metadata client and rejects anything over
 /// 4 MiB.
 pub fn fetch_volume_bytes(url: &str) -> Result<Vec<u8>> {
-    let client = download_http_client();
+    let client = download_http_client()?;
     let result = fetch_limited_bytes(&client, url, MAX_RADAR_VOLUME_BYTES, "volume");
     match result {
         Ok(bytes) => Ok(bytes),
@@ -1452,7 +1457,7 @@ fn list_s3_limited(
     max_keys: Option<usize>,
 ) -> Result<S3Listing> {
     let url = format!("https://{bucket}.s3.amazonaws.com/");
-    let client = metadata_http_client();
+    let client = metadata_http_client()?;
     let mut query = vec![("list-type", "2".to_owned()), ("prefix", prefix.to_owned())];
     if let Some(delimiter) = delimiter {
         query.push(("delimiter", delimiter.to_owned()));
@@ -1574,8 +1579,10 @@ fn realtime_volume_candidate_ids_from_active_ids(ids: &[u16]) -> Vec<u16> {
             candidates.push(current);
         }
     }
-    if candidates.is_empty() {
-        candidates.push(*ids.last().expect("non-empty ids"));
+    if candidates.is_empty()
+        && let Some(&last) = ids.last()
+    {
+        candidates.push(last);
     }
     candidates
 }
@@ -1687,7 +1694,7 @@ fn download_s3_object_to_path(bucket: &str, object: &S3Object, path: &Path) -> R
     }
 
     let url = format!("https://{bucket}.s3.amazonaws.com/{}", object.key);
-    let mut response = download_http_client()
+    let mut response = download_http_client()?
         .get(&url)
         .send()?
         .error_for_status()?;
@@ -1880,24 +1887,27 @@ fn remove_empty_cache_dirs(dir: &Path, depth: usize) -> io::Result<()> {
     Ok(())
 }
 
-fn metadata_http_client() -> reqwest::blocking::Client {
+fn metadata_http_client() -> Result<reqwest::blocking::Client> {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| {
-            build_http_client(HTTP_METADATA_TIMEOUT)
-                .expect("metadata HTTP client should be constructible")
-        })
-        .clone()
+    shared_http_client(&CLIENT, HTTP_METADATA_TIMEOUT)
 }
 
-fn download_http_client() -> reqwest::blocking::Client {
+fn download_http_client() -> Result<reqwest::blocking::Client> {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| {
-            build_http_client(HTTP_DOWNLOAD_TIMEOUT)
-                .expect("download HTTP client should be constructible")
-        })
-        .clone()
+    shared_http_client(&CLIENT, HTTP_DOWNLOAD_TIMEOUT)
+}
+
+/// The client cached in `cell`, built on first use. A build failure is
+/// returned to the caller (and retried on the next call) instead of cached.
+fn shared_http_client(
+    cell: &OnceLock<reqwest::blocking::Client>,
+    timeout: StdDuration,
+) -> Result<reqwest::blocking::Client> {
+    if let Some(client) = cell.get() {
+        return Ok(client.clone());
+    }
+    let client = build_http_client(timeout)?;
+    Ok(cell.get_or_init(|| client).clone())
 }
 
 /// Sectigo "Public Server Authentication CA DV R36" intermediate (valid to

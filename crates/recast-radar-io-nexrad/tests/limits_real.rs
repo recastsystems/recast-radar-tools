@@ -37,7 +37,8 @@ fn kiwa_normalized() -> Vec<u8> {
     ] {
         raw.extend(read_testdata(id));
     }
-    let (bytes, compression) = normalize_archive_bytes(&raw).expect("real chunks decompress");
+    let (bytes, compression) =
+        normalize_archive_bytes(&raw).unwrap_or_else(|e| panic!("real chunks decompress: {e}"));
     assert_eq!(compression, ArchiveCompression::Bzip2Blocks);
     bytes
 }

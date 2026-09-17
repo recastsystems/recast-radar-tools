@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Objective tracker comparison on a real multi-volume sequence
 // (Lakshmanan & Smith 2010, Wea. Forecasting 25(2), 721–729): identical
 // per-volume cell streams feed (a) the OLD greedy nearest-to-prediction

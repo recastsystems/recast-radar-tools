@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Verify volume-derived products on a real scan: render composite reflectivity
 // to PNG (REF palette) and print numeric stats for composite / echo-top / VIL.
 //

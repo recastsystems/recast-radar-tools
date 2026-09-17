@@ -37,6 +37,8 @@
 //! whole file first; callers choose which files to open. [`level3_vwp`]
 //! inflates at most 32 MiB and accepts blocks under 500,000 bytes.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod level3_vwp;
 
 use std::collections::btree_map::Entry;

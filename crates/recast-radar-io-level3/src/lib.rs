@@ -23,6 +23,8 @@
 //!
 //! The format reference with ICD section numbers is `docs/level3/reference.md`.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 mod blocks;
 mod decompress;
 mod error;

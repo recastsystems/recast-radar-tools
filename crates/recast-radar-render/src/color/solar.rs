@@ -84,7 +84,7 @@ fn interpolated_from_anchors(
             end_color: None,
         })
         .collect::<Vec<_>>();
-    ColorTable::new(name, stops).expect("solar palette has >= 2 valid stops")
+    ColorTable::new(name, stops).unwrap_or_else(super::invalid_table_fallback)
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ pub fn solar_reflectivity_table() -> ColorTable {
             }),
     );
     ColorTable::new_stepped("Solar PW Reflectivity", stops)
-        .expect("solar reflectivity palette is valid")
+        .unwrap_or_else(super::invalid_table_fallback)
 }
 
 // ---------------------------------------------------------------------------
@@ -908,7 +908,7 @@ fn rescaled_table(base: &ColorTable, name: &str, lo: f32, hi: f32) -> ColorTable
             ..*stop
         })
         .collect();
-    ColorTable::new(name, rescaled).expect("rescaling a valid table keeps it valid")
+    ColorTable::new(name, rescaled).unwrap_or_else(super::invalid_table_fallback)
 }
 
 #[cfg(test)]

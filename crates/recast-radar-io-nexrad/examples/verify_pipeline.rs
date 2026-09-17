@@ -3,6 +3,9 @@
 //!
 //! Usage: cargo run --release -p recast-radar-io-nexrad --example verify_pipeline -- <file>...
 
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use recast_radar_io_nexrad::{
     decode_volume_from_bytes, decode_volume_from_bytes_with_bzip_preview, normalize_archive_bytes,
 };

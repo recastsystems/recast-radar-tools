@@ -1,6 +1,8 @@
 //! Radar geometry products: volume column walks (composites, echo tops, VIL,
 //! hail), cross sections, volume box resampling, and native RHI panels.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 mod rhi;
 mod volumetric;
 

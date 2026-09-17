@@ -590,8 +590,7 @@ impl<'a> H5File<'a> {
             if chunk_start > end {
                 return Err(invalid(chunk_start, "invalid HDF5 v2 checksum span"));
             }
-            let stored = self.slice(end as u64, 4)?;
-            let stored = u32::from_le_bytes(stored.try_into().expect("4 bytes"));
+            let stored = u32::from_le_bytes(array_at(self.bytes, end)?);
             let computed = jenkins_lookup3(self.slice(chunk_start as u64, end - chunk_start)?);
             if stored != computed {
                 return Err(invalid(
@@ -783,10 +782,7 @@ impl<'a> H5File<'a> {
                         .checked_mul(4)
                         .and_then(|value| 3usize.checked_add(self.offset_size)?.checked_add(value))
                         .ok_or_else(|| invalid(3, "HDF5 chunk-dimension cursor overflow"))?;
-                    let dim = body
-                        .get(at..at + 4)
-                        .ok_or_else(|| truncated(at, 4, body.len()))?;
-                    let dim = u32::from_le_bytes(dim.try_into().expect("4 bytes")) as usize;
+                    let dim = u32::from_le_bytes(array_at(body, at)?) as usize;
                     if dim == 0 {
                         return Err(invalid(at, "invalid HDF5 chunk dimension"));
                     }
@@ -877,8 +873,7 @@ impl<'a> H5File<'a> {
                     .checked_mul(4)
                     .and_then(|value| at.checked_add(value))
                     .ok_or_else(|| invalid(at, "HDF5 filter value cursor overflow"))?;
-                let v = checked_range(body, value_at, 4)?;
-                client_values.push(u32::from_le_bytes(v.try_into().expect("4 bytes")));
+                client_values.push(u32::from_le_bytes(array_at(body, value_at)?));
             }
             at = value_count
                 .checked_mul(4)
@@ -984,11 +979,7 @@ impl<'a> H5File<'a> {
                     return Err(truncated(0, 4 + self.offset_size + 4, data.len()));
                 }
                 let collection = read_offset(data, 4, self.offset_size)?;
-                let index = u32::from_le_bytes(
-                    data[4 + self.offset_size..4 + self.offset_size + 4]
-                        .try_into()
-                        .expect("4 bytes"),
-                );
+                let index = u32::from_le_bytes(array_at(data, 4 + self.offset_size)?);
                 let object = self.global_heap_object(collection, index)?;
                 let text = object.split(|byte| *byte == 0).next().unwrap_or_default();
                 Ok(H5Attr::Str(String::from_utf8_lossy(text).into_owned()))
@@ -1172,12 +1163,12 @@ impl<'a> H5File<'a> {
             .ok_or_else(|| invalid(0, "HDF5 chunk B-tree cursor overflow"))?;
         for _ in 0..entries {
             let key = self.slice(cursor as u64, key_size)?;
-            let stored_size = u32::from_le_bytes(key[..4].try_into().expect("4 bytes")) as usize;
-            let filter_mask = u32::from_le_bytes(key[4..8].try_into().expect("4 bytes"));
+            let stored_size = u32::from_le_bytes(array_at(key, 0)?) as usize;
+            let filter_mask = u32::from_le_bytes(array_at(key, 4)?);
             let mut offsets = Vec::with_capacity(key_dims.saturating_sub(1));
             for dim in 0..key_dims.saturating_sub(1) {
                 let at = 8 + dim * 8;
-                let offset = u64::from_le_bytes(key[at..at + 8].try_into().expect("8 bytes"));
+                let offset = u64::from_le_bytes(array_at(key, at)?);
                 offsets.push(usize::try_from(offset).map_err(|_| {
                     invalid(
                         address_to_usize(node_address).unwrap_or(0),
@@ -1278,24 +1269,28 @@ impl Datatype {
                     .collect(),
             )),
             DtClass::Float if self.size == 4 => Ok(H5Data::F32(
-                raw.chunks_exact(4)
+                raw.as_chunks::<4>()
+                    .0
+                    .iter()
                     .map(|quad| {
                         let bits = if self.big_endian {
-                            u32::from_be_bytes(quad.try_into().expect("4 bytes"))
+                            u32::from_be_bytes(*quad)
                         } else {
-                            u32::from_le_bytes(quad.try_into().expect("4 bytes"))
+                            u32::from_le_bytes(*quad)
                         };
                         f32::from_bits(bits)
                     })
                     .collect(),
             )),
             DtClass::Float if self.size == 8 => Ok(H5Data::F64(
-                raw.chunks_exact(8)
+                raw.as_chunks::<8>()
+                    .0
+                    .iter()
                     .map(|oct| {
                         let bits = if self.big_endian {
-                            u64::from_be_bytes(oct.try_into().expect("8 bytes"))
+                            u64::from_be_bytes(*oct)
                         } else {
-                            u64::from_le_bytes(oct.try_into().expect("8 bytes"))
+                            u64::from_le_bytes(*oct)
                         };
                         f64::from_bits(bits)
                     })
@@ -1585,12 +1580,17 @@ fn read_uint(bytes: &[u8], at: usize, size: usize) -> Result<u64> {
 fn jenkins_lookup3(data: &[u8]) -> u32 {
     let init = 0xdead_beef_u32.wrapping_add(data.len() as u32);
     let (mut a, mut b, mut c) = (init, init, init);
-    let word = |chunk: &[u8]| u32::from_le_bytes(chunk.try_into().expect("4 bytes"));
+    let word = |block: &[u8; 12], at: usize| {
+        u32::from_le_bytes([block[at], block[at + 1], block[at + 2], block[at + 3]])
+    };
     let mut rest = data;
-    while rest.len() > 12 {
-        a = a.wrapping_add(word(&rest[0..4]));
-        b = b.wrapping_add(word(&rest[4..8]));
-        c = c.wrapping_add(word(&rest[8..12]));
+    // A final block of exactly 12 bytes goes through the tail path below.
+    while rest.len() > 12
+        && let Some((block, tail)) = rest.split_first_chunk::<12>()
+    {
+        a = a.wrapping_add(word(block, 0));
+        b = b.wrapping_add(word(block, 4));
+        c = c.wrapping_add(word(block, 8));
         // mix(a, b, c)
         a = a.wrapping_sub(c) ^ c.rotate_left(4);
         c = c.wrapping_add(b);
@@ -1604,7 +1604,7 @@ fn jenkins_lookup3(data: &[u8]) -> u32 {
         a = a.wrapping_add(c);
         c = c.wrapping_sub(b) ^ b.rotate_left(4);
         b = b.wrapping_add(a);
-        rest = &rest[12..];
+        rest = tail;
     }
     if rest.is_empty() {
         // hashlittle: a zero-length tail skips the final mix entirely.
@@ -1613,10 +1613,12 @@ fn jenkins_lookup3(data: &[u8]) -> u32 {
     // The 1..=12 byte tail reads as three zero-padded words (the C switch
     // adds only the bytes present, which is the same thing).
     let mut tail = [0u8; 12];
-    tail[..rest.len()].copy_from_slice(rest);
-    a = a.wrapping_add(word(&tail[0..4]));
-    b = b.wrapping_add(word(&tail[4..8]));
-    c = c.wrapping_add(word(&tail[8..12]));
+    for (slot, byte) in tail.iter_mut().zip(rest) {
+        *slot = *byte;
+    }
+    a = a.wrapping_add(word(&tail, 0));
+    b = b.wrapping_add(word(&tail, 4));
+    c = c.wrapping_add(word(&tail, 8));
     // final(a, b, c)
     c = (c ^ b).wrapping_sub(b.rotate_left(14));
     a = (a ^ c).wrapping_sub(c.rotate_left(11));
@@ -1649,25 +1651,32 @@ fn read_int(raw: &[u8], signed: bool, big_endian: bool) -> i64 {
 }
 
 fn read_float(raw: &[u8], big_endian: bool) -> Result<f64> {
-    match raw.len() {
-        4 => {
-            let bits = if big_endian {
-                u32::from_be_bytes(raw.try_into().expect("4 bytes"))
-            } else {
-                u32::from_le_bytes(raw.try_into().expect("4 bytes"))
-            };
-            Ok(f64::from(f32::from_bits(bits)))
-        }
-        8 => {
-            let bits = if big_endian {
-                u64::from_be_bytes(raw.try_into().expect("8 bytes"))
-            } else {
-                u64::from_le_bytes(raw.try_into().expect("8 bytes"))
-            };
-            Ok(f64::from_bits(bits))
-        }
-        other => Err(invalid(0, format!("float width {other} unsupported"))),
+    if let Ok(word) = <[u8; 4]>::try_from(raw) {
+        let bits = if big_endian {
+            u32::from_be_bytes(word)
+        } else {
+            u32::from_le_bytes(word)
+        };
+        return Ok(f64::from(f32::from_bits(bits)));
     }
+    if let Ok(word) = <[u8; 8]>::try_from(raw) {
+        let bits = if big_endian {
+            u64::from_be_bytes(word)
+        } else {
+            u64::from_le_bytes(word)
+        };
+        return Ok(f64::from_bits(bits));
+    }
+    Err(invalid(0, format!("float width {} unsupported", raw.len())))
+}
+
+/// The `N` bytes of `bytes` starting at `at`.
+fn array_at<const N: usize>(bytes: &[u8], at: usize) -> Result<[u8; N]> {
+    bytes
+        .get(at..)
+        .and_then(|tail| tail.first_chunk::<N>())
+        .copied()
+        .ok_or_else(|| truncated(at, N, bytes.len()))
 }
 
 fn limit(reason: String) -> OdimError {

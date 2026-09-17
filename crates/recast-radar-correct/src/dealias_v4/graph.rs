@@ -290,10 +290,9 @@ pub(crate) fn build_evidence(
             }
             entry.1 += LAMBDA_WK * weak.share;
         }
-        let mut keys: Vec<(usize, usize)> = merged.keys().copied().collect();
-        keys.sort_unstable();
-        for key in keys {
-            let (table, strength) = merged.remove(&key).expect("key from map");
+        let mut merged: Vec<_> = merged.into_iter().collect();
+        merged.sort_unstable_by_key(|(key, _)| *key);
+        for (key, (table, strength)) in merged {
             edges.push(PairwiseEdge {
                 a: key.0,
                 b: key.1,
@@ -514,11 +513,10 @@ fn pair_evidence(lower: &TiltField, upper: &TiltField, weight: f64) -> Vec<Pairw
         }
     }
 
-    let mut keys: Vec<(usize, usize)> = tables.keys().copied().collect();
-    keys.sort_unstable();
-    let mut edges = Vec::with_capacity(keys.len());
-    for key in keys {
-        let (sums, covered) = tables.remove(&key).expect("key from map");
+    let mut tables: Vec<_> = tables.into_iter().collect();
+    tables.sort_unstable_by_key(|(key, _)| *key);
+    let mut edges = Vec::with_capacity(tables.len());
+    for (key, (sums, covered)) in tables {
         let scale = weight * coverage_weight(covered) / covered as f64;
         let (a, b, flip) = if key.0 <= key.1 {
             (key.0, key.1, false)

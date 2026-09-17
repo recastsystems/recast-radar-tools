@@ -1785,20 +1785,24 @@ impl PsdIntegrationConfig {
 }
 
 impl Default for PsdIntegrationConfig {
+    /// The versioned built-in configuration. Its values satisfy
+    /// [`Self::new`]'s checks (pinned by `default_config_passes_validation`).
     fn default() -> Self {
-        Self::new(
-            8,
-            256,
-            96.0,
-            1.0e-10,
-            5.0e-8,
-            5.0e-3,
-            DEFAULT_ADDITIVE_ABSOLUTE_TOLERANCES,
-            1.0e-6,
-            1.0e-6,
-            1.0e-6,
-        )
-        .expect("the versioned built-in PSD integration config is valid")
+        Self {
+            revision: SchemePsdRevision::IshmaelGammaFinalCheckV3,
+            quadrature: PsdQuadratureRule::CompositeGaussLegendre8AdaptiveRefinedV2,
+            coarse_panels: 8,
+            maximum_refined_nodes: 256,
+            maximum_scaled_a: 96.0,
+            maximum_tail_fraction: 1.0e-10,
+            maximum_quadrature_closure_error: 5.0e-8,
+            maximum_additive_convergence_error: 5.0e-3,
+            additive_absolute_tolerances: DEFAULT_ADDITIVE_ABSOLUTE_TOLERANCES,
+            maximum_domain_omitted_number_fraction: 1.0e-6,
+            maximum_domain_omitted_mass_fraction: 1.0e-6,
+            maximum_domain_omitted_d6_fraction: 1.0e-6,
+            small_sphere_scattering_policy: IshmaelSmallSphereScatteringPolicy::Disabled,
+        }
     }
 }
 
@@ -4556,5 +4560,23 @@ mod tests {
         })
         .unwrap();
         assert_eq!(delegated, direct);
+    }
+
+    #[test]
+    fn default_config_passes_validation() {
+        let validated = PsdIntegrationConfig::new(
+            8,
+            256,
+            96.0,
+            1.0e-10,
+            5.0e-8,
+            5.0e-3,
+            DEFAULT_ADDITIVE_ABSOLUTE_TOLERANCES,
+            1.0e-6,
+            1.0e-6,
+            1.0e-6,
+        )
+        .expect("versioned PSD config validates");
+        assert_eq!(validated, PsdIntegrationConfig::default());
     }
 }

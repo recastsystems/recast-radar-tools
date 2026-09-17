@@ -25,6 +25,8 @@
 //! optional variable that is missing or malformed is ignored, but one that
 //! exceeds a limit fails the decode.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod cfradial;
 pub mod netcdf3;
 

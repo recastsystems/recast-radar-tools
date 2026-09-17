@@ -38,6 +38,8 @@
 //!
 //! Every limit violation is an [`OdimError::LimitExceeded`] error.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod hdf5lite;
 pub mod odim;
 pub mod odim_cartesian;
