@@ -16,7 +16,7 @@
 //! Each file is ONE sweep (single ODIM_H5 dataset; EUMETNET OPERA Data
 //! Information Model, Michelson et al., OPERA WP 2.1/2.2, v2.2-2.3) of one
 //! quantity, so a full volume is 10 sweeps x N products merged with
-//! `recast_radar_core::merge_radar_volumes`.
+//! `recast_radar_core::model::merge_volumes`.
 //!
 //! LATEST naming, confirmed against the live `sweep_vol_z/asb/unfiltered/`
 //! listing: for every unfiltered quantity and sweep index there is exactly

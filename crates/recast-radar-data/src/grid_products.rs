@@ -2,7 +2,7 @@
 //!
 //! This is deliberately separate from `international::IntlProvider`.
 //! International providers describe site-centered polar volumes that decode
-//! into `RadarVolume`; these entries describe time-indexed grids, rasters,
+//! into a radar `Volume`; these entries describe time-indexed grids, rasters,
 //! nowcasts, QPE products, and warning polygons. The catalog gives the UI and
 //! future decoders a typed target without pretending that every European
 //! product is a radar site.

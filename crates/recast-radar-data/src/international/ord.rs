@@ -2900,27 +2900,27 @@ mod tests {
             for part in &plan.parts {
                 let bytes = crate::fetch_volume_bytes(&part.url).expect("part download");
                 let volume =
-                    recast_radar_io::decode_supported_volume_bytes(&bytes).expect("ODIM decode");
+                    recast_radar_io::read_supported_volume_bytes(&bytes).expect("ODIM decode");
                 volumes.push(volume);
             }
-            let cuts: usize = volumes.iter().map(|volume| volume.cuts.len()).sum();
-            let moments: std::collections::BTreeSet<String> = volumes
+            let sweeps: usize = volumes.iter().map(|volume| volume.sweeps.len()).sum();
+            let fields: std::collections::BTreeSet<String> = volumes
                 .iter()
-                .flat_map(|volume| volume.cuts.iter())
-                .flat_map(|cut| cut.moments.keys())
-                .map(|moment| moment.short_name().to_owned())
+                .flat_map(|volume| volume.sweeps.iter())
+                .flat_map(|sweep| sweep.fields.iter())
+                .map(|field| field.name.to_string())
                 .collect();
             println!(
-                "  decoded {} part(s): site={} cuts={} moments=[{}]",
+                "  decoded {} part(s): site={} sweeps={} fields=[{}]",
                 volumes.len(),
                 volumes
                     .first()
-                    .map(|volume| volume.site.id.clone())
+                    .map(|volume| volume.attrs.instrument_name.clone())
                     .unwrap_or_default(),
-                cuts,
-                moments.into_iter().collect::<Vec<_>>().join(", ")
+                sweeps,
+                fields.into_iter().collect::<Vec<_>>().join(", ")
             );
-            assert!(cuts > 0, "{probe}: decoded no cuts");
+            assert!(sweeps > 0, "{probe}: decoded no sweeps");
         }
     }
 
@@ -2963,26 +2963,26 @@ mod tests {
                         continue;
                     }
                 };
-                match recast_radar_io::decode_supported_volume_bytes(&bytes) {
+                match recast_radar_io::read_supported_volume_bytes(&bytes) {
                     Ok(volume) => {
-                        cuts += volume.cuts.len();
-                        radials += volume.metadata.decoded_radial_count;
-                        let moments: std::collections::BTreeSet<String> = volume
-                            .cuts
+                        cuts += volume.sweeps.len();
+                        radials += volume.provenance.decode.decoded_ray_count;
+                        let fields: std::collections::BTreeSet<String> = volume
+                            .sweeps
                             .iter()
-                            .flat_map(|cut| cut.moments.keys())
-                            .map(|moment| moment.short_name().to_owned())
+                            .flat_map(|sweep| sweep.fields.iter())
+                            .map(|field| field.name.to_string())
                             .collect();
                         let elevations: Vec<String> = volume
-                            .cuts
+                            .sweeps
                             .iter()
-                            .map(|cut| format!("{:.1}", cut.elevation_deg))
+                            .map(|sweep| format!("{:.1}", sweep.fixed_angle_deg))
                             .collect();
                         part_summaries.push(format!(
-                            "{} el=[{}] moments=[{}]",
-                            volume.site.id,
+                            "{} el=[{}] fields=[{}]",
+                            volume.attrs.instrument_name,
                             elevations.join(","),
-                            moments.into_iter().collect::<Vec<_>>().join(",")
+                            fields.into_iter().collect::<Vec<_>>().join(",")
                         ));
                     }
                     Err(err) => {

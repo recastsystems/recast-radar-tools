@@ -3,7 +3,7 @@
 //! For every provider in `recast_radar_data::international::intl_providers()`:
 //! list sites, print the newest [`FramePlan`] for one site, then download
 //! each plan part with `fetch_volume_bytes` and decode it through the
-//! shared `recast_radar_io::decode_supported_volume_bytes` router (ODIM_H5 per
+//! shared `recast_radar_io::read_supported_volume_bytes` router (ODIM_H5 per
 //! EUMETNET OPERA Data Information Model; Michelson et al., OPERA WP
 //! 2.1/2.2, v2.2-2.3), printing site id, cut count, and moment names.
 //!
@@ -87,20 +87,20 @@ fn decode_plan(plan: &FramePlan) -> Result<(), String> {
         let bytes = recast_radar_data::fetch_volume_bytes(&part.url)
             .map_err(|err| format!("download {}: {err}", part.url))?;
         println!("  downloaded: {} bytes", bytes.len());
-        let volume = recast_radar_io::decode_supported_volume_bytes(&bytes)
+        let volume = recast_radar_io::read_supported_volume_bytes(&bytes)
             .map_err(|err| format!("decode {}: {err}", part.url))?;
-        let moments = volume
-            .cuts
+        let fields = volume
+            .sweeps
             .iter()
-            .flat_map(|cut| cut.moments.keys())
-            .map(|moment| moment.short_name().to_owned())
+            .flat_map(|sweep| sweep.fields.iter())
+            .map(|field| field.name.to_string())
             .collect::<BTreeSet<_>>();
         println!(
-            "  decoded: site={} name={} cuts={} moments=[{}]",
-            volume.site.id,
-            volume.site.name.as_deref().unwrap_or("-"),
-            volume.cuts.len(),
-            moments.into_iter().collect::<Vec<_>>().join(", ")
+            "  decoded: site={} name={} sweeps={} fields=[{}]",
+            volume.attrs.instrument_name,
+            volume.attrs.site_name.as_deref().unwrap_or("-"),
+            volume.sweeps.len(),
+            fields.into_iter().collect::<Vec<_>>().join(", ")
         );
     }
     Ok(())

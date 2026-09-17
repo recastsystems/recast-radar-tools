@@ -22,9 +22,9 @@
 //!    installed, the poller does nothing — no part is downloaded.
 //! 4. Otherwise every [`PlanPart::url`] is fetched with
 //!    `crate::fetch_volume_bytes` and decoded with
-//!    `recast_radar_io::decode_supported_volume_bytes`; multi-part plans with
+//!    `recast_radar_io::read_supported_volume_bytes`; multi-part plans with
 //!    [`FramePlan::merge`] set are then assembled with
-//!    `recast_radar_core::merge_radar_volumes`.
+//!    `recast_radar_core::model::merge_volumes`.
 //!
 //! Providers therefore never download data themselves: `latest` does the
 //! (cheap) catalog probe — via `crate::fetch_text` or an equivalent
@@ -32,7 +32,7 @@
 //! bytes, retries, decode, and merge.
 //!
 //! One provider-specific decode exception: JMA tars are multi-station
-//! archives, and `recast_radar_io::decode_supported_volume_bytes` decodes only
+//! archives, and `recast_radar_io::read_supported_volume_bytes` decodes only
 //! the FIRST station of such a tar. The poll consumer must therefore pass
 //! the selected site as a `site_filter` to
 //! `recast_radar_io_jma::decode_jma_tar_volumes` when the plan came from
@@ -106,7 +106,7 @@ pub struct IntlSite {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlanPart {
     /// Absolute URL, fetched with `crate::fetch_volume_bytes` and decoded
-    /// with `recast_radar_io::decode_supported_volume_bytes`.
+    /// with `recast_radar_io::read_supported_volume_bytes`.
     pub url: String,
 }
 
@@ -130,7 +130,7 @@ pub struct FramePlan {
     /// Parts to download, in decode-and-merge order.
     ///
     /// Ordering contract when [`Self::merge`] is set: parts are decoded and
-    /// passed to `recast_radar_core::merge_radar_volumes` in vector order, and the
+    /// passed to `recast_radar_core::model::merge_volumes` in vector order, and the
     /// FIRST part is the merge base — it supplies the site record, VCP, and
     /// metadata, and wins moment-type collisions. Providers must put the
     /// most authoritative part first (conventionally the reflectivity
@@ -385,7 +385,7 @@ pub trait IntlProvider: Send + Sync {
 /// Single-file ODIM PVOL feeds (one HDF5 download per frame): SMHI Sweden,
 /// DMI Denmark, GeoSphere Austria, FMI Finland. Split-volume assembly
 /// feeds (one frame = several ODIM files merged with
-/// `recast_radar_core::merge_radar_volumes`): SHMU Slovakia, DWD Germany (REF+VEL
+/// `recast_radar_core::model::merge_volumes`): SHMU Slovakia, DWD Germany (REF+VEL
 /// by default), CHMI Czechia, ANM Romania (dual-pol per-moment PVOLs, see
 /// [`MeteoRomaniaProvider`]). Multi-station tar feed (site-filtered decode, see
 /// [`JmaProvider`]): JMA Japan. Single-site KAIA bridge for Estonia's Harku
@@ -1896,17 +1896,17 @@ mod tests {
         for part in &plan.parts {
             println!("downloading {}", part.url);
             let bytes = crate::fetch_volume_bytes(&part.url).expect("live tar download");
-            let volumes = recast_radar_io_jma::decode_jma_tar_volumes(&bytes, Some(&site.site_id))
+            let volumes = recast_radar_io_jma::read_jma_tar_volumes(&bytes, Some(&site.site_id))
                 .expect("site-filtered decode");
             assert_eq!(volumes.len(), 1, "filter must select exactly one station");
-            assert_eq!(volumes[0].site.id, site.site_id);
-            assert!(!volumes[0].cuts.is_empty());
+            assert_eq!(volumes[0].attrs.instrument_name, site.site_id);
+            assert!(!volumes[0].sweeps.is_empty());
             println!(
-                "decoded {} at {}: {} cuts, {} radials",
-                volumes[0].site.id,
-                volumes[0].volume_time,
-                volumes[0].cuts.len(),
-                volumes[0].metadata.decoded_radial_count
+                "decoded {} at {}: {} sweeps, {} rays",
+                volumes[0].attrs.instrument_name,
+                volumes[0].time_reference,
+                volumes[0].sweeps.len(),
+                volumes[0].provenance.decode.decoded_ray_count
             );
         }
     }

@@ -326,11 +326,10 @@ mod tests {
         let provider = LombardiaProvider::new();
         let plan = provider.latest("des").expect("latest DES frame");
         let raw = crate::fetch_volume_bytes(&plan.parts[0].url).expect("download DBZH");
-        let volume =
-            recast_radar_io::decode_supported_volume_bytes(&raw).expect("gzip ODIM decode");
+        let volume = recast_radar_io::read_supported_volume_bytes(&raw).expect("gzip ODIM decode");
         assert!(
-            volume.cuts.iter().any(|cut| !cut.moments.is_empty()),
-            "decoded volume should contain at least one moment"
+            volume.sweeps.iter().any(|sweep| !sweep.fields.is_empty()),
+            "decoded volume should contain at least one field"
         );
     }
 }

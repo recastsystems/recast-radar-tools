@@ -33,7 +33,7 @@
 //! 12-cut reflectivity PVOL is the merge base, then `B`, then `A`. The
 //! supplemental cuts either union in as new elevations (0.3°) or collide
 //! with a same-elevation full-volume cut of different gate geometry
-//! (1.5°), which `recast_radar_core::merge_radar_volumes` reports as
+//! (1.5°), which `recast_radar_core::model::merge_volumes` reports as
 //! `skipped_geometry` rather than mixing geometries.
 
 use chrono::NaiveDateTime;

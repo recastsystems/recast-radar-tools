@@ -17,7 +17,7 @@
 //! confirmed live: `skjav` dBZ and V each decode to 12 PPI cuts of 360
 //! radials. A complete multi-moment volume is therefore assembled by
 //! downloading one PVOL per product at a common timestamp and merging them
-//! (`recast_radar_core::merge_radar_volumes`), which is exactly what the
+//! (`recast_radar_core::model::merge_volumes`), which is exactly what the
 //! [`FramePlan`] returned by [`ShmuProvider::latest`] describes: dBZ first
 //! (merge base), V second, then W/ZDR/RhoHV/PhiDP/KDP/dBuZ when present at
 //! that timestamp.

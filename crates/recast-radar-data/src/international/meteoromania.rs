@@ -21,7 +21,7 @@
 //! 920 bins @ 250 m) — confirmed by live decode of every station's dBZ and
 //! BUC's full moment set. A multi-moment volume is assembled SHMU-style:
 //! one PVOL per moment at a common timestamp, merged with
-//! `recast_radar_core::merge_radar_volumes`, dBZ first (merge base), V second,
+//! `recast_radar_core::model::merge_volumes`, dBZ first (merge base), V second,
 //! then ZDR/KDP/RhoHV when present at that stamp. ODIM quantities inside
 //! the files are the canonical codes (`DBZH`, `VRADH`, `ZDR`, `KDP`,
 //! `RHOHV`), so the existing `recast_radar_io_odim` ODIM decode path handles every
@@ -603,16 +603,19 @@ mod tests {
             println!("downloading {}", part.url);
             let bytes = crate::fetch_volume_bytes(&part.url).expect("live download");
             let volume =
-                recast_radar_io::decode_supported_volume_bytes(&bytes).expect("ODIM PVOL decode");
+                recast_radar_io::read_supported_volume_bytes(&bytes).expect("ODIM PVOL decode");
             println!(
-                "decoded {}: {} cuts, {} radials",
-                volume.site.id,
-                volume.cuts.len(),
-                volume.metadata.decoded_radial_count
+                "decoded {}: {} sweeps, {} rays",
+                volume.attrs.instrument_name,
+                volume.sweeps.len(),
+                volume.provenance.decode.decoded_ray_count
             );
             // The shared ODIM decode uppercases the NOD source code.
-            assert_eq!(volume.site.id, "ROBUC", "ODIM NOD source for BUC");
-            assert!(!volume.cuts.is_empty());
+            assert_eq!(
+                volume.attrs.instrument_name, "ROBUC",
+                "ODIM NOD source for BUC"
+            );
+            assert!(!volume.sweeps.is_empty());
         }
     }
 }

@@ -20,6 +20,8 @@
 // being gated one by one; they and their imports are unused in that build.
 #![cfg_attr(not(feature = "net"), allow(dead_code, unused_imports))]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+// Migrated to the FM301 model (F.3): this crate names no legacy model items.
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 pub mod community_feeds;
 mod embedded_sites;

@@ -4,7 +4,7 @@
 //!
 //! 1. Archive: find the site's newest volume in the `unidata-nexrad-level2`
 //!    bucket (today or yesterday, UTC), download it and decode it with
-//!    `recast_radar_io::decode_supported_volume_bytes`.
+//!    `recast_radar_io::read_supported_volume_bytes`.
 //! 2. Real time: join the site's newest volume in the
 //!    `unidata-nexrad-level2-chunks` bucket with the blocking
 //!    [`ChunkIterator`] (from its Start chunk). When the iterator first
@@ -554,69 +554,68 @@ fn decode_and_check(
     key_time: DateTime<Utc>,
 ) -> Result<VolumeSummary, String> {
     let decode_started = Instant::now();
-    let volume = recast_radar_io::decode_supported_volume_bytes(bytes)
+    let volume = recast_radar_io::read_supported_volume_bytes(bytes)
         .map_err(|err| format!("decode failed: {err}"))?;
     let decode = decode_started.elapsed();
 
-    if !volume.site.id.trim().eq_ignore_ascii_case(site) {
+    if !volume
+        .attrs
+        .instrument_name
+        .trim()
+        .eq_ignore_ascii_case(site)
+    {
         return Err(format!(
             "decoded site is {:?}, expected {site}",
-            volume.site.id
+            volume.attrs.instrument_name
         ));
     }
-    let Some(vcp) = volume.vcp.as_ref().map(|vcp| vcp.pattern) else {
+    let Some(vcp) = volume.scan.vcp_pattern else {
         return Err("decoded volume has no VCP".to_owned());
     };
-    let key_time_difference_secs = volume
-        .volume_time
-        .signed_duration_since(key_time)
-        .num_seconds();
+    // The first ray's collection time (the time reference is that instant
+    // floored to the second).
+    let volume_time = volume.ray_time(0, 0).unwrap_or(volume.time_reference);
+    let key_time_difference_secs = volume_time.signed_duration_since(key_time).num_seconds();
     if key_time_difference_secs.abs() > MAX_KEY_TIME_DIFFERENCE_SECS {
         return Err(format!(
             "decoded volume time {} is {key_time_difference_secs} s from the key time {}",
-            volume
-                .volume_time
-                .to_rfc3339_opts(SecondsFormat::Secs, true),
+            volume_time.to_rfc3339_opts(SecondsFormat::Secs, true),
             key_time.to_rfc3339_opts(SecondsFormat::Secs, true)
         ));
     }
-    if volume.cuts.is_empty() {
-        return Err("decoded volume has no cuts".to_owned());
+    if volume.sweeps.is_empty() {
+        return Err("decoded volume has no sweeps".to_owned());
     }
 
     let mut radials = 0usize;
     let mut moments = BTreeSet::new();
     let mut elevations = (f32::INFINITY, f32::NEG_INFINITY);
-    for (index, cut) in volume.cuts.iter().enumerate() {
-        if cut.radials.is_empty() {
+    for sweep in &volume.sweeps {
+        if sweep.nrays() == 0 {
             return Err(format!(
-                "cut {index} ({:.2} deg) has no radials",
-                cut.elevation_deg
+                "sweep {} ({:.2} deg) has no rays",
+                sweep.sweep_number, sweep.fixed_angle_deg
             ));
         }
-        if cut.moments.is_empty() {
+        if sweep.fields.is_empty() {
             return Err(format!(
-                "cut {index} ({:.2} deg) has no moments",
-                cut.elevation_deg
+                "sweep {} ({:.2} deg) has no fields",
+                sweep.sweep_number, sweep.fixed_angle_deg
             ));
         }
-        radials += cut.radials.len();
-        moments.extend(
-            cut.moments
-                .keys()
-                .map(|moment| moment.short_name().to_owned()),
-        );
-        elevations.0 = elevations.0.min(cut.elevation_deg);
-        elevations.1 = elevations.1.max(cut.elevation_deg);
+        radials += sweep.nrays();
+        moments.extend(sweep.fields.iter().map(|field| field.name.to_string()));
+        elevations.0 = elevations.0.min(sweep.fixed_angle_deg);
+        elevations.1 = elevations.1.max(sweep.fixed_angle_deg);
     }
 
     Ok(VolumeSummary {
         vcp,
-        cuts: volume.cuts.len(),
+        cuts: volume.sweeps.len(),
         radials,
         elevations,
         moments,
-        volume_time: volume.volume_time,
+        volume_time,
         key_time_difference_secs,
         decode,
     })
