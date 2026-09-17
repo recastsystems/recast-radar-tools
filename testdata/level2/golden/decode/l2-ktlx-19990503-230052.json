@@ -1,0 +1,96 @@
+{
+ "name": "l2-ktlx-19990503-230052",
+ "ids": ["l2-ktlx-19990503-230052"],
+ "generator": "tools/level2_decode_golden.py (MetPy 1.7.1 Level2File, Py-ART 2.2.5 NEXRADLevel2File, byte walker)",
+ "outer_compression": "gzip",
+ "ldm_records": null,
+ "stream_len": 172672,
+ "volume_header": {
+  "tape": "ARCHIVE2.",
+  "extension": "022",
+  "icao_hex": "00000000",
+  "metpy_stid": "\u0000\u0000\u0000\u0000",
+  "julian_date": 10715,
+  "time_ms": 82852000,
+  "metpy_epoch_ms": 925772452000
+ },
+ "message_count": 71,
+ "messages_by_type": {
+  "1": 68,
+  "2": 3
+ },
+ "messages_before_first_radial": [
+  [0, 1208, 0, 1, 17585, 10715, 82852996, 1, 1]
+ ],
+ "first_radial": {
+  "message_type": 1,
+  "body_offset": 28,
+  "time_ms": 82852539,
+  "date": 10715,
+  "azimuth_number": 1,
+  "azimuth_deg": 187.5146484375,
+  "status": 3,
+  "elevation_number": 1,
+  "cut_sector": 1,
+  "elevation_deg": 0.4833984375,
+  "vcp": 11,
+  "nyquist_offset_46_raw": 0
+ },
+ "site": null,
+ "message1_vcp": 11,
+ "message5_vcp": null,
+ "metpy_sweep_radials": [68],
+ "pyart_sweep_rays": [68],
+ "sweeps": [
+  {
+   "radials": 68,
+   "message_type": 1,
+   "elevation_number": 1,
+   "first_status": 3,
+   "last_status": 1,
+   "first_elevation_deg": 0.4833984375,
+   "first_azimuth_deg": 187.5146484375,
+   "last_azimuth_deg": 253.7841796875,
+   "azimuth_sum_deg": 15005.9619140625,
+   "elevation_sum_deg": 30.6298828125,
+   "first_epoch_ms": 925772452539,
+   "nyquist_count": 0,
+   "nyquist_sum_mps": 0.0,
+   "nyquist_min_mps": null,
+   "nyquist_max_mps": null,
+   "moments": {
+    "REF": {
+     "rows": 68,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 460,
+     "first_gate_m": 0,
+     "gate_width_m": 1000,
+     "scale": 2.0,
+     "offset": 66.0,
+     "valid_count": 5416,
+     "raw_valid_sum": 433459,
+     "scaled_sum": 38001.5,
+     "scaled_min": -19.5,
+     "scaled_max": 61.0,
+     "samples": [
+      [65, 141, 188, 61.0],
+      [18, 6, 27, -19.5],
+      [0, 1, 57, -4.5],
+      [0, 184, 97, 15.5],
+      [13, 1, 67, 0.5],
+      [13, 184, 79, 6.5],
+      [26, 1, 87, 10.5],
+      [26, 184, 0, null],
+      [40, 1, 74, 4.0],
+      [40, 184, 0, null],
+      [53, 1, 66, 0.0],
+      [53, 184, 0, null],
+      [67, 1, 66, 0.0],
+      [67, 184, 0, null]
+     ]
+    }
+   }
+  }
+ ]
+}

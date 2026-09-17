@@ -112,45 +112,53 @@ so a row names the full volume when the feature is outside the trimmed sector.
 
 ### `crates/recast-radar-io-nexrad/src/lib.rs`
 
-A hand-assembled Archive II volume: `AR2V00000.1` header plus one or more fixed-length records, each holding a Message 31 radial built field by field (VOL/RAD blocks, 3-gate DREF/DVEL/DPHI moments), optionally wrapped in hand-made gzip or LDM bzip2 framing; Message 1 bodies written byte by byte; GR2-style back-to-back Message 31 records.
+**Converted (C.2, branch `real-tests-io-nexrad`); no allowlist entries remain.** The hand-assembled
+Archive II volumes and all 11 helpers are deleted. The tests in `tests` read real corpus files and compare
+the decode with `testdata/level2/golden/decode/<name>.json`, written by `tools/level2_decode_golden.py`
+(a byte walker, MetPy 1.7.1 `Level2File` and Py-ART 2.2.5 `NEXRADLevel2File`; the script exits with an
+error unless the three agree, and `--check` reproduces the committed JSON). Each golden holds the volume
+header, LDM record framing, message headers before the first radial, the first radial's header and block
+pointers, site and VCP, and per sweep the radial count, statuses, angles, Nyquist velocities and, per
+moment, the gate layout, scaling, count and sum of valid raw codes, scaled sum, minimum, maximum and
+sampled gates.
 
-| test | real input | assertion source |
+| test (new name) | real input | what is compared |
 |---|---|---|
-| `tests::parses_archive_volume_header` | `l2-ktlx-20240315-000217-trim` (AR2V0006, KTLX) and `l2-ktlx-19910605-162126-trim` (ARCHIVE2.001, blank ICAO) | the 24-byte volume header read from the file bytes; MetPy `Level2File` station id and volume time |
-| `tests::parses_message_header` | `l2-ktlx-20240315-000217-trim` | first message header of the decompressed metadata record read from the file bytes; message type and count sequence from the corpus inspector (docs/testdata/corpus.md) |
-| `tests::parses_message_31_header` | `l2-ktlx-20240315-000217-trim` (first Message 31 radial) | MetPy `Level2File.sweeps[0][0]` radial header (azimuth number and angle, elevation, radial status) and data-block pointers read from the message bytes |
-| `tests::decodes_synthetic_message_31_volume` | `l2-ktlx-20240315-000217-trim` | MetPy VOL block (site latitude/longitude), VCP 212, sweep and radial counts (480/720 radials per the manifest), reflectivity gate values from Py-ART `read_nexrad_archive` |
-| `tests::decodes_legacy_message_1_reflectivity_and_velocity` | `l2-ktlx-19990504-002218-trim` (Message 1, VCP 11): the first REF and VEL radial bodies passed to `parse_message_1` | gate values and Nyquist from MetPy `Level2File` and Py-ART |
-| `tests::decodes_legacy_message_1_spectrum_width_with_velocity_offset` | `l2-ktlx-19990504-002218-trim` | spectrum width gates from MetPy and Py-ART (pins SW = (code - 129) / 2) |
-| `tests::decodes_gzip_stream_without_normalized_buffer` | `l2-kvwx-20080415-235337` (175 KB gzip archive object, Message 31) | MetPy/Py-ART sweep and radial counts (7 sweeps, 2500 radials); compression reported as gzip |
-| `tests::gzip_preview_waits_for_complete_displayable_cut` | `l2-ktlx-19990503-230052` (9 KB gzip, first cut truncated after 68 radials) | no preview; Py-ART and MetPy read 1 sweep of 68 rays (manifest) |
-| `tests::gzip_preview_returns_completed_displayable_cut` | `l2-kvwx-20080415-235337` | preview equals the first cut of the full decode; radial count of MetPy sweep 0 |
-| `tests::gzip_preview_callback_continues_to_full_volume` | `l2-kvwx-20080415-235337` | callback radial count equals MetPy sweep 0; full volume has 2500 radials |
-| `tests::decodes_bzip_blocks_without_concatenated_normalized_buffer` | `l2-ktlx-20240315-000217-trim` (LDM bzip2 records) | compression `bzip2-blocks`; radial counts from MetPy |
-| `tests::bzip_preview_waits_for_complete_displayable_cut` | `l2chunk-kiwa-307-20260917-003629-001-s` + `-002-i` (a real archive prefix: start chunk and 120 radials of the first cut) | no preview (the first cut is incomplete); chunk contents per the manifest |
-| `tests::bzip_preview_returns_completed_displayable_cut` | `l2-ktlx-20240315-000217-trim` | preview cut equals the first cut of the full decode; radial count from MetPy sweep 0 |
-| `tests::bzip_preview_full_decode_reuses_path_and_returns_full_volume` | `l2-ktlx-20240315-000217-trim` | callback count equals MetPy sweep 0; full decode equals the non-preview decode |
-| `tests::multi_block_bzip_decode_matches_uncompressed_reference` | `l2-ktlx-20240315-000217-trim` | decode of the LDM records equals decode of the same records decompressed and framed uncompressed (both from the file); radial counts from MetPy |
-| `tests::bzip_preview_fires_past_legacy_block_window` | `l2-ktlx-20240315-000217-trim` re-framed into 40-radial LDM records (real Message 31 bytes, recompressed like the trim tool) so the first cut completes after record 16 | preview radial count equals MetPy sweep 0; full decode equals the original file's decode |
-| `tests::corrupt_trailing_bzip_block_yields_partial_volume` | `l2-ktlx-20240315-000217-trim` with the last LDM record's bzip2 payload zeroed (mutated real bytes) | partial volume: radial count equals MetPy on the file truncated before that record; skipped messages reported |
-| `tests::corrupt_first_bzip_block_is_a_hard_error` | `l2-ktlx-20240315-000217-trim` with the first (metadata) record's payload zeroed | decode error |
-| `tests::pipelined_decode_works_on_single_thread_rayon_pool` | `l2-ktlx-20240315-000217-trim` | 1-thread pool decode equals default-pool decode; radial count from MetPy |
-| `tests::decodes_synthetic_16_bit_moment` | `l2-ktlx-20130520-201643-trim` (PHI 16-bit, ZDR 8-bit) and `l2-ktlx-20240315-000217-trim` (ZDR 16-bit) | word sizes from the data-block headers; PHI and ZDR gates from Py-ART `differential_phase` / `differential_reflectivity` |
-| `tests::decodes_gr2_style_variable_framed_msg31_records` | needs corpus addition: a real GR2 `.msg31` export (e.g. the `GR2 MSG31/COW2/nexrad.*.msg31` member of a CSWR deployment zip) | independent Python walker over the back-to-back Message 31 records (site, radial count, azimuths) |
+| `tests::parses_archive_volume_header` | `l2-ktlx-20240315-000217-trim`, `l2-ktlx-19910605-162126-trim` (blank ICAO), `l2-ktlx-19990504-002218-trim` (NUL ICAO) | version, ICAO and time against the header bytes and MetPy |
+| `tests::parses_message_header` | `l2-ktlx-20240315-000217-trim`, `l2-ktlx-20130520-201643-trim`, `l2-ktlx-19910605-162126-trim` | every non-empty message header up to the first radial (walker); a header cut off by the end of the data is an error |
+| `tests::parses_message_31_header` | `l2-ktlx-20240315-000217-trim` (72-byte header), `l2-ktlx-20130520-201643-trim` (68-byte header) | first radial header and the ten pointer words (walker, MetPy) |
+| `tests::decodes_message_31_volume` (was `decodes_synthetic_message_31_volume`) | `l2-ktlx-20240315-000217-trim` | whole volume against the golden |
+| `tests::decodes_legacy_message_1_reflectivity_and_velocity` | `l2-ktlx-19990504-002218-trim` | whole volume; Nyquist 26.1 m/s on the Doppler cut |
+| `tests::decodes_legacy_message_1_spectrum_width_with_velocity_offset` | `l2-ktlx-19990504-002218-trim` | SW = (code - 129) / 2 on sampled gates and the full SW summary |
+| `tests::decodes_16_bit_moments` (was `decodes_synthetic_16_bit_moment`) | `l2-ktlx-20130520-201643-trim` (PHI 16-bit, ZDR 8-bit), `l2-ktlx-20240315-000217-trim` (both 16-bit) | word sizes and PHI/ZDR summaries |
+| `tests::decodes_every_trimmed_fixture` (replaces the environment-gated `decodes_real_public_level2_file_from_env`) | the 16 `trimmed` fixtures | whole volume against the golden |
+| `tests::decodes_gzip_stream_without_normalized_buffer` | `l2-kpah-20080415-235014` (gzip; see note) | streaming reader equals the buffered decode; whole volume against the golden |
+| `tests::gzip_preview_waits_for_complete_displayable_cut` | `l2-ktlx-19990503-230052` (ends 68 radials into its first cut) | no preview; 1 cut of 68 radials |
+| `tests::gzip_preview_returns_completed_displayable_cut` | `l2-kpah-20080415-235014` | preview is the first cut (360 radials, ends with status 2); none when more radials are required |
+| `tests::gzip_preview_callback_continues_to_full_volume` | `l2-kpah-20080415-235014` | one callback with sweep 0; full volume (2520 radials) against the golden |
+| `tests::decodes_bzip_blocks_without_concatenated_normalized_buffer` | `l2-ktlx-20240315-000217-trim` | whole volume against the golden |
+| `tests::bzip_preview_waits_for_complete_displayable_cut` | `l2chunk-kiwa-307-20260917-003629-001-s` + `-002-i` | no preview; 120 radials against the golden |
+| `tests::bzip_preview_returns_completed_displayable_cut` | `l2-ktlx-20240315-000217-trim`; `l2-ktlx-20240315-000217` (downloaded) | trim: preview when sweep 2 starts; full volume: preview at the end-of-elevation radial (720) |
+| `tests::bzip_preview_full_decode_reuses_path_and_returns_full_volume` | `l2-ktlx-20240315-000217-trim` | one callback (480 radials); result equals the plain decode |
+| `tests::multi_block_bzip_decode_matches_uncompressed_reference` | `l2-ktlx-20240315-000217-trim` | LDM decode equals the decode of the records decompressed in the test and framed uncompressed, and of the same stream re-blocked every 1,000,003 bytes (records and messages split across blocks) |
+| `tests::bzip_preview_fires_past_legacy_block_window` | `l2-ktlx-20240315-000217-trim` with record 1 split into 20 records of 6 radials (28 records) | preview fires once (480 radials); decode equals the original file's |
+| `tests::corrupt_trailing_bzip_block_yields_partial_volume` | `l2-ktlx-20240315-000217-trim` with the last record's bzip2 data zeroed after its magic | 480 + 360 radials, as MetPy reads the file without that record; one more skipped message |
+| `tests::corrupt_first_bzip_block_is_a_hard_error` | `l2-ktlx-20240315-000217-trim` with the metadata record's bzip2 data zeroed | compression error |
+| `tests::pipelined_decode_works_on_single_thread_rayon_pool` | `l2-ktlx-20240315-000217-trim` | 1-thread decode equals the default decode and the golden |
+| `tests::decodes_gr2_style_variable_framed_msg31_records` | `l2-ktlx-20240315-000217-trim` cut to the GR2 layout: volume header, the Message 2 and 5 records, then every Message 31 back to back (see note) | 480 + 480 radials as MetPy reads that layout; cuts equal the original decode; with the header date zeroed the time comes from the first radial |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_archive` | single-radial Archive II volume | `tests::parses_archive_volume_header`, `tests::parses_message_header`, `tests::decodes_synthetic_message_31_volume`, `tests::decodes_gzip_stream_without_normalized_buffer`, `tests::gzip_preview_waits_for_complete_displayable_cut`, `tests::gzip_preview_returns_completed_displayable_cut`, `tests::gzip_preview_callback_continues_to_full_volume`, `tests::decodes_bzip_blocks_without_concatenated_normalized_buffer`, `tests::bzip_preview_waits_for_complete_displayable_cut`, `tests::bzip_preview_returns_completed_displayable_cut`, `tests::bzip_preview_full_decode_reuses_path_and_returns_full_volume`, `tests::corrupt_first_bzip_block_is_a_hard_error`, `tests::decodes_synthetic_16_bit_moment` |
-| `tests::set_first_synthetic_radial_status` | rewrites the radial status of the synthetic radial | `tests::gzip_preview_returns_completed_displayable_cut`, `tests::gzip_preview_callback_continues_to_full_volume`, `tests::bzip_preview_returns_completed_displayable_cut`, `tests::bzip_preview_full_decode_reuses_path_and_returns_full_volume` |
-| `tests::synthetic_multi_radial_archive` | multi-radial Archive II volume with chosen azimuths and statuses | `tests::multi_block_bzip_decode_matches_uncompressed_reference`, `tests::bzip_preview_fires_past_legacy_block_window`, `tests::corrupt_trailing_bzip_block_yields_partial_volume`, `tests::pipelined_decode_works_on_single_thread_rayon_pool` |
-| `tests::synthetic_bzip_blocks_from_chunks` | LDM bzip2 framing around synthetic payload chunks | `tests::multi_block_bzip_decode_matches_uncompressed_reference`, `tests::bzip_preview_fires_past_legacy_block_window`, `tests::pipelined_decode_works_on_single_thread_rayon_pool` |
-| `tests::synthetic_bzip_block_archive` | one-block LDM bzip2 archive around the synthetic payload | `tests::decodes_bzip_blocks_without_concatenated_normalized_buffer`, `tests::bzip_preview_waits_for_complete_displayable_cut`, `tests::bzip_preview_returns_completed_displayable_cut`, `tests::bzip_preview_full_decode_reuses_path_and_returns_full_volume` |
-| `tests::synthetic_message_31_body` | Message 31 body with VOL/RAD blocks and 3-gate moments | `tests::parses_message_31_header`, `tests::decodes_gr2_style_variable_framed_msg31_records`, `tests::synthetic_archive`, `tests::synthetic_multi_radial_archive` |
-| `tests::push_volume_block` | RVOL block bytes | `tests::synthetic_message_31_body` |
-| `tests::push_radial_block` | RRAD block bytes | `tests::synthetic_message_31_body` |
-| `tests::push_u8_moment` | 8-bit moment data block | `tests::synthetic_message_31_body` |
-| `tests::push_u16_moment` | 16-bit moment data block | `tests::synthetic_message_31_body` |
-| `tests::set_pointer` | Message 31 data-block pointer | `tests::synthetic_message_31_body` |
+Notes:
+
+- The conversion found that Message 1 radials took the Nyquist velocity from bytes 46-47 (spare) instead
+  of halfword 31 (bytes 60-61, ICD 2620002, as MetPy and Py-ART read it); the synthetic test had encoded the
+  wrong offset. `parse_message_1` now reads bytes 60-61. Message 31 decoding is unchanged, and the bench
+  checksums are identical.
+- `l2-kvwx-20080415-235337`, proposed for the gzip tests, does not decode: its Message 31 radials carry a
+  blank radar id, and `parse_message_31_header` rejects it ("empty message 31 id"), while MetPy and Py-ART
+  read 2500 radials. The gzip tests use `l2-kpah-20080415-235014` (gzip, Message 31, 7 sweeps) instead;
+  the KVWX decode failure is left to the Level II stream.
+- There is still no real GR2 `.msg31` export in the corpus; the GR2 test uses real Message 31 bytes in the
+  GR2 layout.
 
 
 ## io-formats

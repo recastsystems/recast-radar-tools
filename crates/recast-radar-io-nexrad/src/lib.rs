@@ -1511,7 +1511,9 @@ fn parse_message_1(
     if vcp != 0 {
         volume.vcp = Some(VcpInfo { pattern: vcp });
     }
-    let nyquist_velocity_mps = match be_i16(body, 46) {
+    // ICD 2620002 Table III: Nyquist velocity is halfword 31 (bytes 60-61),
+    // after the spare halfwords 24-30 (MetPy and Py-ART read it there too).
+    let nyquist_velocity_mps = match be_i16(body, 60) {
         raw if raw > 0 => Some(raw as f32 / 100.0),
         _ => None,
     };
@@ -2009,430 +2011,1101 @@ fn i32_at(bytes: &[u8], offset: usize) -> Result<i32> {
 
 #[cfg(test)]
 mod tests {
+    //! Decoder tests on real Level II files from the corpus
+    //! (`recast-radar-testdata`, ids from `testdata/level2/manifest.toml`).
+    //!
+    //! Expected values come from `testdata/level2/golden/decode/<name>.json`,
+    //! written by `tools/level2_decode_golden.py`: a byte walker written for the
+    //! script (volume header, LDM record framing, message headers, Message 1
+    //! and Message 31 radial headers and raw gate codes), MetPy 1.7.1
+    //! `Level2File` (station, times, sweeps, radial headers, VOL block, Nyquist,
+    //! VCP, scaled moments) and Py-ART 2.2.5 `NEXRADLevel2File` (rays per
+    //! sweep, raw codes, Nyquist). The script fails unless the readers agree.
+    //!
+    //! Edge and corruption cases change bytes of the real files; each test
+    //! shows the change. Inputs that are not committed are downloaded on first
+    //! use, and their tests are skipped when that is not possible.
+
     use super::*;
-    use bzip2::write::BzEncoder;
-    use flate2::Compression;
-    use flate2::write::GzEncoder;
+    use recast_radar_core::{ElevationCut, MomentStorage};
+    use serde_json::Value;
+    use std::collections::BTreeSet;
     use std::io::Write;
+
+    /// Build 22.0 (VOL 52, RAD 28, ZDR and PHI 16-bit, CFP), LDM bzip2
+    /// records: the metadata record and 480 + 480 radials of the split cut.
+    const KTLX_2024_TRIM: &str = "l2-ktlx-20240315-000217-trim";
+    /// The full volume the trim was cut from (downloaded).
+    const KTLX_2024_FULL: &str = "l2-ktlx-20240315-000217";
+    /// Build 13.2 (68-byte Message 31 header, PHI 16-bit, ZDR 8-bit).
+    const KTLX_2013_TRIM: &str = "l2-ktlx-20130520-201643-trim";
+    /// ARCHIVE2.001 with a blank ICAO, Message 1 radials.
+    const KTLX_1991_TRIM: &str = "l2-ktlx-19910605-162126-trim";
+    /// ARCHIVE2.036 with a NUL ICAO, Message 1 radials, VCP 11.
+    const KTLX_1999_TRIM: &str = "l2-ktlx-19990504-002218-trim";
+    /// gzip archive object, Message 31 at 1 degree, 7 sweeps (downloaded).
+    const KPAH_2008_GZIP: &str = "l2-kpah-20080415-235014";
+    /// gzip archive object that ends 68 radials into its first cut (downloaded).
+    const KTLX_1999_TRUNCATED_GZIP: &str = "l2-ktlx-19990503-230052";
+    /// Committed real-time chunks of KIWA volume 307: the Start chunk and the
+    /// first intermediate chunk (the first 120 radials of a 720-radial cut).
+    const KIWA_CHUNK_START: &str = "l2chunk-kiwa-307-20260917-003629-001-s";
+    const KIWA_CHUNK_002: &str = "l2chunk-kiwa-307-20260917-003629-002-i";
+    const KIWA_CHUNKS_GOLDEN: &str = "l2chunk-kiwa-307-20260917-003629-001-s+002-i";
+
+    // ------------------------------------------------------------ inputs ---
+
+    /// Bytes of a corpus file, or `None` (with a message) when it is not
+    /// committed and cannot be downloaded right now.
+    fn corpus_bytes(id: &str) -> Option<Vec<u8>> {
+        match recast_radar_testdata::bytes(id) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.is_offline() => {
+                eprintln!("skipping: {error}");
+                None
+            }
+            Err(error) => panic!("{error}"),
+        }
+    }
+
+    /// Golden values for a corpus input (see the module docs).
+    fn golden(name: &str) -> Value {
+        let path = recast_radar_testdata::testdata_dir()
+            .join("level2")
+            .join("golden")
+            .join("decode")
+            .join(format!("{name}.json"));
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+        serde_json::from_str(&text)
+            .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
+    }
+
+    fn int(value: &Value) -> i64 {
+        value
+            .as_i64()
+            .unwrap_or_else(|| panic!("expected an integer, found {value}"))
+    }
+
+    fn count(value: &Value) -> usize {
+        usize::try_from(int(value)).unwrap_or_else(|_| panic!("expected a count, found {value}"))
+    }
+
+    fn num(value: &Value) -> f64 {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("expected a number, found {value}"))
+    }
+
+    fn text(value: &Value) -> &str {
+        value
+            .as_str()
+            .unwrap_or_else(|| panic!("expected a string, found {value}"))
+    }
+
+    fn list(value: &Value) -> &[Value] {
+        value
+            .as_array()
+            .unwrap_or_else(|| panic!("expected an array, found {value}"))
+    }
+
+    /// Header text as the decoder reports it: NUL padding and blanks trimmed.
+    fn trimmed(text: &str) -> &str {
+        text.trim_matches(|c: char| c == '\0' || c.is_whitespace())
+    }
+
+    fn hex_text(hex: &str) -> String {
+        let bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex byte"))
+            .collect();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    fn assert_close(actual: f64, expected: f64, tolerance: f64, what: &str) {
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "{what}: {actual} vs {expected} (tolerance {tolerance})"
+        );
+    }
+
+    /// `(control word offset, compressed payload)` of each LDM record after
+    /// the volume header, read from the file's control words.
+    fn ldm_records(file: &[u8]) -> Vec<(usize, &[u8])> {
+        let mut records = Vec::new();
+        let mut offset = VOLUME_HEADER_LEN;
+        while offset + 4 <= file.len() {
+            let control = i32::from_be_bytes(file[offset..offset + 4].try_into().unwrap());
+            let len = control.unsigned_abs() as usize;
+            records.push((offset, &file[offset + 4..offset + 4 + len]));
+            offset += 4 + len;
+            if control < 0 {
+                break;
+            }
+        }
+        records
+    }
+
+    fn bzip2_decompress(block: &[u8]) -> Vec<u8> {
+        let mut decoded = Vec::new();
+        BzDecoder::new(block)
+            .read_to_end(&mut decoded)
+            .expect("real LDM record decompresses");
+        decoded
+    }
+
+    fn bzip2_compress(payload: &[u8]) -> Vec<u8> {
+        let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
+        encoder.write_all(payload).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    /// Stream offsets of the messages in an uncompressed Message 31 run
+    /// (control word + message, back to back), plus the end offset.
+    fn message31_bounds(stream: &[u8]) -> Vec<usize> {
+        let mut bounds = vec![0];
+        let mut offset = 0;
+        while offset < stream.len() {
+            let header = parse_message_header(stream, offset + CONTROL_WORD_LEN).unwrap();
+            assert_eq!(header.message_type, 31, "message at {offset}");
+            offset += CONTROL_WORD_LEN + usize::from(header.size_halfwords) * 2;
+            bounds.push(offset);
+        }
+        assert_eq!(offset, stream.len());
+        bounds
+    }
+
+    // ------------------------------------------------------ golden checks ---
+
+    fn code_at(grid: &MomentGrid, row: usize, gate: usize) -> u16 {
+        let index = row * grid.gate_range.gate_count + gate;
+        match &grid.storage {
+            MomentStorage::U8(values) => u16::from(values[index]),
+            MomentStorage::U16(values) => values[index],
+            MomentStorage::F32(_) => panic!("Level II moments are stored as integer codes"),
+        }
+    }
+
+    /// One moment against its golden summary: rows, word size, gate layout,
+    /// scaling, the count and sum of valid raw codes, the scaled sum, minimum
+    /// and maximum, and sampled gates (raw code and scaled value).
+    fn assert_moment_matches_golden(grid: &MomentGrid, golden: &Value, label: &str) {
+        let rows = count(&golden["rows"]);
+        assert_eq!(grid.radial_count(), rows, "{label}: rows");
+        let radial_indices: Vec<usize> = match golden["row_radials"].as_array() {
+            Some(indices) => indices.iter().map(count).collect(),
+            None => (0..rows).collect(),
+        };
+        assert_eq!(
+            grid.radial_indices, radial_indices,
+            "{label}: radial indices"
+        );
+        assert_eq!(
+            i64::from(grid.storage.word_size_bits()),
+            int(&golden["word_size"]),
+            "{label}: word size"
+        );
+        assert_eq!(
+            i64::from(grid.gate_range.first_gate_m),
+            int(&golden["first_gate_m"]),
+            "{label}: first gate"
+        );
+        assert_eq!(
+            i64::from(grid.gate_range.gate_spacing_m),
+            int(&golden["gate_width_m"]),
+            "{label}: gate spacing"
+        );
+        assert_eq!(
+            grid.gate_range.gate_count,
+            count(&golden["gates_max"]),
+            "{label}: gates"
+        );
+        assert_eq!(grid.scale, num(&golden["scale"]) as f32, "{label}: scale");
+        assert_eq!(
+            grid.offset,
+            num(&golden["offset"]) as f32,
+            "{label}: offset"
+        );
+
+        let mut valid = 0usize;
+        let mut raw_sum = 0u64;
+        let mut scaled_sum = 0.0f64;
+        let mut abs_sum = 0.0f64;
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        for row in 0..rows {
+            for gate in 0..grid.gate_range.gate_count {
+                let code = code_at(grid, row, gate);
+                match grid.scaled_value(row, gate) {
+                    Some(value) => {
+                        assert!(
+                            code >= 2,
+                            "{label}: code {code} at {row}/{gate} has a value"
+                        );
+                        let value = f64::from(value);
+                        valid += 1;
+                        raw_sum += u64::from(code);
+                        scaled_sum += value;
+                        abs_sum += value.abs();
+                        min = min.min(value);
+                        max = max.max(value);
+                    }
+                    None => assert!(code < 2, "{label}: code {code} at {row}/{gate} is missing"),
+                }
+            }
+        }
+        assert_eq!(valid, count(&golden["valid_count"]), "{label}: valid gates");
+        assert_eq!(
+            raw_sum,
+            u64::try_from(int(&golden["raw_valid_sum"])).unwrap(),
+            "{label}: raw code sum"
+        );
+        // Scaled values are f32 here and float64 in MetPy: allow the f32
+        // rounding of each value.
+        assert_close(
+            scaled_sum,
+            num(&golden["scaled_sum"]),
+            2e-7 * abs_sum + 1e-9,
+            &format!("{label}: scaled sum"),
+        );
+        if valid > 0 {
+            assert_close(
+                min,
+                num(&golden["scaled_min"]),
+                1e-4,
+                &format!("{label}: min"),
+            );
+            assert_close(
+                max,
+                num(&golden["scaled_max"]),
+                1e-4,
+                &format!("{label}: max"),
+            );
+        }
+        for sample in list(&golden["samples"]) {
+            let sample = list(sample);
+            let (row, gate) = (count(&sample[0]), count(&sample[1]));
+            assert_eq!(
+                i64::from(code_at(grid, row, gate)),
+                int(&sample[2]),
+                "{label}: code at {row}/{gate}"
+            );
+            match sample[3].as_f64() {
+                Some(expected) => assert_close(
+                    f64::from(grid.scaled_value(row, gate).expect("valid gate")),
+                    expected,
+                    1e-4,
+                    &format!("{label}: value at {row}/{gate}"),
+                ),
+                None => assert_eq!(grid.scaled_value(row, gate), None, "{label}: {row}/{gate}"),
+            }
+        }
+    }
+
+    /// One elevation cut against a golden sweep: radial count, elevation
+    /// number, first and last radial status, angles, Nyquist velocities and
+    /// every moment.
+    fn assert_cut_matches_golden(cut: &ElevationCut, sweep: &Value, label: &str) {
+        let radials = count(&sweep["radials"]);
+        assert_eq!(cut.radials.len(), radials, "{label}: radials");
+        assert_eq!(
+            cut.elevation_number.map(i64::from),
+            Some(int(&sweep["elevation_number"])),
+            "{label}: elevation number"
+        );
+        let status = |value: &Value| Some(RadialStatus::from(u8::try_from(int(value)).unwrap()));
+        assert_eq!(
+            cut.radials[0].radial_status,
+            status(&sweep["first_status"]),
+            "{label}: first status"
+        );
+        assert_eq!(
+            cut.radials[radials - 1].radial_status,
+            status(&sweep["last_status"]),
+            "{label}: last status"
+        );
+        assert_close(
+            f64::from(cut.elevation_deg),
+            num(&sweep["first_elevation_deg"]),
+            1e-4,
+            &format!("{label}: elevation"),
+        );
+        assert_close(
+            f64::from(cut.radials[0].azimuth_deg),
+            num(&sweep["first_azimuth_deg"]),
+            1e-4,
+            &format!("{label}: first azimuth"),
+        );
+        assert_close(
+            f64::from(cut.radials[radials - 1].azimuth_deg),
+            num(&sweep["last_azimuth_deg"]),
+            1e-4,
+            &format!("{label}: last azimuth"),
+        );
+        let tolerance = 1e-4 * radials as f64;
+        let azimuth_sum: f64 = cut.radials.iter().map(|r| f64::from(r.azimuth_deg)).sum();
+        assert_close(
+            azimuth_sum,
+            num(&sweep["azimuth_sum_deg"]),
+            tolerance,
+            &format!("{label}: azimuth sum"),
+        );
+        let elevation_sum: f64 = cut.radials.iter().map(|r| f64::from(r.elevation_deg)).sum();
+        assert_close(
+            elevation_sum,
+            num(&sweep["elevation_sum_deg"]),
+            tolerance,
+            &format!("{label}: elevation sum"),
+        );
+
+        let nyquist: Vec<f64> = cut
+            .radials
+            .iter()
+            .filter_map(|r| r.nyquist_velocity_mps.map(f64::from))
+            .collect();
+        assert_eq!(
+            nyquist.len(),
+            count(&sweep["nyquist_count"]),
+            "{label}: radials with a Nyquist velocity"
+        );
+        assert_close(
+            nyquist.iter().sum(),
+            num(&sweep["nyquist_sum_mps"]),
+            tolerance,
+            &format!("{label}: Nyquist sum"),
+        );
+        if !nyquist.is_empty() {
+            let min = nyquist.iter().copied().fold(f64::INFINITY, f64::min);
+            let max = nyquist.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            assert_close(
+                min,
+                num(&sweep["nyquist_min_mps"]),
+                1e-4,
+                &format!("{label}: Nyquist min"),
+            );
+            assert_close(
+                max,
+                num(&sweep["nyquist_max_mps"]),
+                1e-4,
+                &format!("{label}: Nyquist max"),
+            );
+        }
+
+        let moments = sweep["moments"]
+            .as_object()
+            .unwrap_or_else(|| panic!("{label}: moments"));
+        let names: BTreeSet<&str> = cut.moments.keys().map(MomentType::short_name).collect();
+        let expected: BTreeSet<&str> = moments.keys().map(String::as_str).collect();
+        assert_eq!(names, expected, "{label}: moments");
+        for (moment, grid) in &cut.moments {
+            let name = moment.short_name();
+            assert_moment_matches_golden(grid, &moments[name], &format!("{label} {name}"));
+        }
+    }
+
+    /// A decoded volume against its golden file: station id, archive version,
+    /// volume time, VCP, site, radial count and every sweep.
+    fn assert_volume_matches_golden(volume: &RadarVolume, golden: &Value) {
+        let name = text(&golden["name"]);
+        let header = &golden["volume_header"];
+        assert_eq!(
+            volume.site.id,
+            trimmed(&hex_text(text(&header["icao_hex"]))),
+            "{name}: station id"
+        );
+        let version = format!(
+            "{}{}",
+            trimmed(text(&header["tape"])),
+            trimmed(text(&header["extension"]))
+        );
+        assert_eq!(
+            volume.metadata.archive_version.as_deref(),
+            Some(version.as_str()),
+            "{name}: archive version"
+        );
+        let sweeps = list(&golden["sweeps"]);
+        // Message 1 volumes take their time from the first radial; Message
+        // 31 volumes from the volume header.
+        let expected_time = if int(&golden["first_radial"]["message_type"]) == 1 {
+            int(&sweeps[0]["first_epoch_ms"])
+        } else {
+            int(&header["metpy_epoch_ms"])
+        };
+        assert_eq!(
+            volume.volume_time.timestamp_millis(),
+            expected_time,
+            "{name}: volume time"
+        );
+        // The decoder keeps the Message 1 VCP, else the VOL block VCP, else
+        // the Message 5 pattern, ignoring zero.
+        let expected_vcp = [
+            &golden["message1_vcp"],
+            &golden["site"]["vol_block_vcp"],
+            &golden["message5_vcp"],
+        ]
+        .into_iter()
+        .filter_map(Value::as_i64)
+        .find(|pattern| *pattern != 0);
+        assert_eq!(
+            volume.vcp.as_ref().map(|vcp| i64::from(vcp.pattern)),
+            expected_vcp,
+            "{name}: VCP"
+        );
+        match golden["site"].as_object() {
+            Some(site) => {
+                assert_eq!(
+                    volume.site.latitude_deg,
+                    Some(num(&site["latitude_deg"]) as f32),
+                    "{name}: latitude"
+                );
+                assert_eq!(
+                    volume.site.longitude_deg,
+                    Some(num(&site["longitude_deg"]) as f32),
+                    "{name}: longitude"
+                );
+                assert_eq!(
+                    volume.site.elevation_m,
+                    Some((int(&site["site_amsl_m"]) + int(&site["feedhorn_agl_m"])) as f32),
+                    "{name}: site height"
+                );
+            }
+            None => {
+                assert_eq!(volume.site.latitude_deg, None, "{name}: latitude");
+                assert_eq!(volume.site.longitude_deg, None, "{name}: longitude");
+                assert_eq!(volume.site.elevation_m, None, "{name}: site height");
+            }
+        }
+        let radials: usize = sweeps.iter().map(|sweep| count(&sweep["radials"])).sum();
+        assert_eq!(
+            volume.metadata.decoded_radial_count, radials,
+            "{name}: decoded radials"
+        );
+        assert_eq!(volume.cuts.len(), sweeps.len(), "{name}: cuts");
+        for (index, (cut, sweep)) in volume.cuts.iter().zip(sweeps).enumerate() {
+            assert_cut_matches_golden(cut, sweep, &format!("{name} sweep {index}"));
+        }
+    }
+
+    // ------------------------------------------------ headers and messages ---
 
     #[test]
     fn parses_archive_volume_header() {
-        let bytes = synthetic_archive(false);
-        let header = parse_volume_header(&bytes).unwrap();
+        for id in [KTLX_2024_TRIM, KTLX_1991_TRIM, KTLX_1999_TRIM] {
+            let Some(bytes) = corpus_bytes(id) else {
+                return;
+            };
+            let expected = &golden(id)["volume_header"];
 
-        assert_eq!(header.archive_version, "AR2V000001");
-        assert_eq!(header.icao, "KTLX");
-        assert_eq!(
-            header.volume_time,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 1).unwrap()
-        );
+            let header = parse_volume_header(&bytes).unwrap();
+
+            assert_eq!(
+                header.archive_version,
+                format!(
+                    "{}{}",
+                    trimmed(text(&expected["tape"])),
+                    trimmed(text(&expected["extension"]))
+                ),
+                "{id}"
+            );
+            // KTLX; blank (1991) and NUL (1999) ICAO fields decode as empty.
+            assert_eq!(header.icao, trimmed(text(&expected["metpy_stid"])), "{id}");
+            assert_eq!(
+                header.volume_time.timestamp_millis(),
+                int(&expected["metpy_epoch_ms"]),
+                "{id}"
+            );
+        }
+        assert!(parse_volume_header(&[0; VOLUME_HEADER_LEN - 1]).is_err());
     }
 
     #[test]
     fn parses_message_header() {
-        let bytes = synthetic_archive(false);
-        let header = parse_message_header(&bytes, VOLUME_HEADER_LEN + CONTROL_WORD_LEN).unwrap();
+        for id in [KTLX_2024_TRIM, KTLX_2013_TRIM, KTLX_1991_TRIM] {
+            let Some(bytes) = corpus_bytes(id) else {
+                return;
+            };
+            let golden = golden(id);
+            let (normalized, compression) = normalize_archive_bytes(&bytes).unwrap();
+            assert_eq!(compression, ArchiveCompression::Bzip2Blocks, "{id}");
+            assert_eq!(
+                normalized.len(),
+                VOLUME_HEADER_LEN + count(&golden["stream_len"]),
+                "{id}: decompressed length"
+            );
 
-        assert_eq!(header.message_type, 31);
-        assert_eq!(header.sequence_id, 7);
-        assert!(usize::from(header.size_halfwords) * 2 >= MESSAGE_HEADER_LEN + MSG_31_HEADER_LEN);
+            // Every metadata message header up to and including the first radial.
+            let expected = list(&golden["messages_before_first_radial"]);
+            assert!(!expected.is_empty());
+            for message in expected {
+                let fields: Vec<i64> = list(message).iter().map(int).collect();
+                let offset = VOLUME_HEADER_LEN + usize::try_from(fields[0]).unwrap();
+                let header = parse_message_header(&normalized, offset + CONTROL_WORD_LEN).unwrap();
+                assert_eq!(
+                    header,
+                    MessageHeader {
+                        size_halfwords: u16::try_from(fields[1]).unwrap(),
+                        channels: u8::try_from(fields[2]).unwrap(),
+                        message_type: u8::try_from(fields[3]).unwrap(),
+                        sequence_id: u16::try_from(fields[4]).unwrap(),
+                        date: u16::try_from(fields[5]).unwrap(),
+                        milliseconds: u32::try_from(fields[6]).unwrap(),
+                        segments: u16::try_from(fields[7]).unwrap(),
+                        segment_number: u16::try_from(fields[8]).unwrap(),
+                    },
+                    "{id}: message at stream offset {}",
+                    fields[0]
+                );
+            }
+
+            // A header cut off by the end of the real data is an error.
+            let end = normalized.len();
+            assert!(matches!(
+                parse_message_header(&normalized, end - MESSAGE_HEADER_LEN + 1),
+                Err(NexradError::Truncated { .. })
+            ));
+        }
     }
 
     #[test]
     fn parses_message_31_header() {
-        let body = synthetic_message_31_body(false);
-        let header = parse_message_31_header(&body, 0).unwrap();
+        // Build 22.0 (72-byte header, ten pointers) and Build 13.2 (68-byte
+        // header: the tenth "pointer" is the first word of the VOL block).
+        for id in [KTLX_2024_TRIM, KTLX_2013_TRIM] {
+            let Some(bytes) = corpus_bytes(id) else {
+                return;
+            };
+            let expected = &golden(id)["first_radial"];
+            assert_eq!(int(&expected["message_type"]), 31);
+            let (normalized, _) = normalize_archive_bytes(&bytes).unwrap();
+            let offset = VOLUME_HEADER_LEN + count(&expected["body_offset"]);
 
-        assert_eq!(header.azimuth_number, 1);
-        assert_eq!(header.azimuth_angle, 180.5);
-        assert_eq!(header.elevation_angle, 0.5);
-        assert_eq!(header.radial_status, RadialStatus::StartVolume);
-        assert_eq!(header.block_pointers[0], 72);
-        assert_eq!(header.block_pointers[3], 136);
+            let header = parse_message_31_header(&normalized, offset).unwrap();
+
+            assert_eq!(
+                i64::from(header.collect_ms),
+                int(&expected["time_ms"]),
+                "{id}"
+            );
+            assert_eq!(
+                i64::from(header.collect_date),
+                int(&expected["date"]),
+                "{id}"
+            );
+            assert_eq!(
+                i64::from(header.azimuth_number),
+                int(&expected["azimuth_number"]),
+                "{id}"
+            );
+            assert_eq!(
+                header.azimuth_angle,
+                num(&expected["azimuth_deg"]) as f32,
+                "{id}"
+            );
+            assert_eq!(
+                i64::from(header.radial_length),
+                int(&expected["radial_length"]),
+                "{id}"
+            );
+            assert_eq!(
+                i64::from(header.azimuth_resolution),
+                int(&expected["azimuth_spacing_code"]),
+                "{id}"
+            );
+            assert_eq!(
+                header.radial_status,
+                RadialStatus::from(u8::try_from(int(&expected["status"])).unwrap()),
+                "{id}"
+            );
+            assert_eq!(header.radial_status, RadialStatus::StartVolume, "{id}");
+            assert_eq!(
+                i64::from(header.elevation_number),
+                int(&expected["elevation_number"]),
+                "{id}"
+            );
+            assert_eq!(
+                i64::from(header.cut_sector),
+                int(&expected["cut_sector"]),
+                "{id}"
+            );
+            assert_eq!(
+                header.elevation_angle,
+                num(&expected["elevation_deg"]) as f32,
+                "{id}"
+            );
+            let pointers: Vec<usize> = list(&expected["block_pointers"])
+                .iter()
+                .map(count)
+                .collect();
+            assert_eq!(header.block_pointers.to_vec(), pointers, "{id}");
+        }
     }
 
+    // --------------------------------------------------- volume decoding ---
+
     #[test]
-    fn decodes_synthetic_message_31_volume() {
-        let bytes = synthetic_archive(false);
+    fn decodes_message_31_volume() {
+        let Some(bytes) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+
         let volume = decode_volume_from_bytes(&bytes).unwrap();
 
         assert_eq!(volume.site.id, "KTLX");
-        assert_eq!(volume.site.latitude_deg, Some(35.333));
         assert_eq!(volume.vcp, Some(VcpInfo { pattern: 212 }));
-        assert_eq!(volume.cuts.len(), 1);
-        assert_eq!(volume.cuts[0].radials.len(), 1);
-
-        let reflectivity = volume.cuts[0]
-            .moments
-            .get(&MomentType::Reflectivity)
-            .unwrap();
-        assert_eq!(reflectivity.radial_count(), 1);
-        assert_eq!(reflectivity.scaled_value(0, 1), Some(0.0));
-        assert_eq!(reflectivity.scaled_value(0, 2), Some(7.0));
+        assert_eq!(volume.cuts.len(), 2);
+        assert_eq!(volume.cuts[0].radials.len(), 480);
+        assert_eq!(
+            volume.metadata.message_count,
+            count(&golden["message_count"])
+        );
+        assert_volume_matches_golden(&volume, &golden);
     }
 
     #[test]
     fn decodes_legacy_message_1_reflectivity_and_velocity() {
-        let mut body = vec![0u8; 106];
-        body[0..4].copy_from_slice(&1_000u32.to_be_bytes());
-        body[4..6].copy_from_slice(&19_724u16.to_be_bytes());
-        body[8..10].copy_from_slice(&0u16.to_be_bytes());
-        body[12..14].copy_from_slice(&3u16.to_be_bytes());
-        body[14..16].copy_from_slice(&91u16.to_be_bytes());
-        body[16..18].copy_from_slice(&1u16.to_be_bytes());
-        body[18..20].copy_from_slice(&0i16.to_be_bytes());
-        body[20..22].copy_from_slice(&0i16.to_be_bytes());
-        body[22..24].copy_from_slice(&1000u16.to_be_bytes());
-        body[24..26].copy_from_slice(&250u16.to_be_bytes());
-        body[26..28].copy_from_slice(&3u16.to_be_bytes());
-        body[28..30].copy_from_slice(&3u16.to_be_bytes());
-        body[36..38].copy_from_slice(&100u16.to_be_bytes());
-        body[38..40].copy_from_slice(&103u16.to_be_bytes());
-        body[42..44].copy_from_slice(&2u16.to_be_bytes());
-        body[44..46].copy_from_slice(&31u16.to_be_bytes());
-        body[46..48].copy_from_slice(&1500i16.to_be_bytes());
-        body[100..103].copy_from_slice(&[0, 66, 86]);
-        body[103..106].copy_from_slice(&[129, 131, 127]);
-        let header = MessageHeader {
-            size_halfwords: ((MESSAGE_HEADER_LEN + body.len()) / 2) as u16,
-            channels: 0,
-            message_type: 1,
-            sequence_id: 1,
-            date: 19_724,
-            milliseconds: 1_000,
-            segments: 1,
-            segment_number: 1,
+        let Some(bytes) = corpus_bytes(KTLX_1999_TRIM) else {
+            return;
         };
-        let mut volume = RadarVolume::new(RadarSite::new("KBPP"), DateTime::<Utc>::UNIX_EPOCH);
+        let golden = golden(KTLX_1999_TRIM);
 
-        parse_message_1(&body, &header, &mut volume).unwrap();
+        let volume = decode_volume_from_bytes(&bytes).unwrap();
 
-        assert_eq!(
-            volume.volume_time,
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 1).unwrap()
+        // REF-only surveillance cut, then the Doppler cut (VEL/SW at 250 m)
+        // whose radials carry the Nyquist velocity (Message 1 halfword 31).
+        assert_eq!(volume.vcp, Some(VcpInfo { pattern: 11 }));
+        let surveillance = &volume.cuts[0];
+        let doppler = &volume.cuts[1];
+        assert!(surveillance.moments.contains_key(&MomentType::Reflectivity));
+        assert!(!surveillance.moments.contains_key(&MomentType::Velocity));
+        assert!(doppler.moments.contains_key(&MomentType::Velocity));
+        assert!(
+            surveillance
+                .radials
+                .iter()
+                .all(|r| r.nyquist_velocity_mps.is_none())
         );
-        assert_eq!(volume.vcp, Some(VcpInfo { pattern: 31 }));
-        assert_eq!(volume.metadata.decoded_radial_count, 1);
-        assert_eq!(volume.cuts.len(), 1);
-        assert_eq!(volume.cuts[0].radials.len(), 1);
-        assert_eq!(volume.cuts[0].radials[0].nyquist_velocity_mps, Some(15.0));
-
-        let reflectivity = volume.cuts[0]
-            .moments
-            .get(&MomentType::Reflectivity)
-            .unwrap();
-        assert_eq!(reflectivity.scaled_value(0, 0), None);
-        assert_eq!(reflectivity.scaled_value(0, 1), Some(0.0));
-        assert_eq!(reflectivity.scaled_value(0, 2), Some(10.0));
-
-        let velocity = volume.cuts[0].moments.get(&MomentType::Velocity).unwrap();
-        assert_eq!(velocity.scaled_value(0, 0), Some(0.0));
-        assert_eq!(velocity.scaled_value(0, 1), Some(1.0));
-        assert_eq!(velocity.scaled_value(0, 2), Some(-1.0));
+        assert_eq!(
+            doppler.radials[0].nyquist_velocity_mps,
+            Some(num(&golden["sweeps"][1]["nyquist_min_mps"]) as f32)
+        );
+        assert_volume_matches_golden(&volume, &golden);
     }
 
     #[test]
     fn decodes_legacy_message_1_spectrum_width_with_velocity_offset() {
-        let mut body = vec![0u8; 103];
-        body[12..14].copy_from_slice(&3u16.to_be_bytes());
-        body[24..26].copy_from_slice(&250u16.to_be_bytes());
-        body[28..30].copy_from_slice(&3u16.to_be_bytes());
-        body[40..42].copy_from_slice(&100u16.to_be_bytes());
-        body[100..103].copy_from_slice(&[0, 133, 129]);
-        let header = MessageHeader {
-            size_halfwords: ((MESSAGE_HEADER_LEN + body.len()) / 2) as u16,
-            channels: 0,
-            message_type: 1,
-            sequence_id: 1,
-            date: 19_724,
-            milliseconds: 1_000,
-            segments: 1,
-            segment_number: 1,
+        let Some(bytes) = corpus_bytes(KTLX_1999_TRIM) else {
+            return;
         };
-        let mut volume = RadarVolume::new(RadarSite::new("KCRI"), DateTime::<Utc>::UNIX_EPOCH);
+        let expected = &golden(KTLX_1999_TRIM)["sweeps"][1]["moments"]["SW"];
 
-        parse_message_1(&body, &header, &mut volume).unwrap();
+        let volume = decode_volume_from_bytes(&bytes).unwrap();
 
-        assert_eq!(volume.metadata.decoded_radial_count, 1);
-        let spectrum_width = volume.cuts[0]
-            .moments
-            .get(&MomentType::SpectrumWidth)
-            .unwrap();
-        // ICD 2620002: SW = (code - 129) / 2, so code 133 -> 2.0 m/s and code
-        // 129 -> 0.0 m/s. The old offset of 2.0 biased both by +63.5 m/s.
-        assert_eq!(spectrum_width.scaled_value(0, 0), None);
-        assert_eq!(spectrum_width.scaled_value(0, 1), Some(2.0));
-        assert_eq!(spectrum_width.scaled_value(0, 2), Some(0.0));
+        // ICD 2620002: SW = (code - 129) / 2, as MetPy and Py-ART decode it.
+        let spectrum_width = &volume.cuts[1].moments[&MomentType::SpectrumWidth];
+        assert_eq!((spectrum_width.scale, spectrum_width.offset), (2.0, 129.0));
+        for sample in list(&expected["samples"]) {
+            let sample = list(sample);
+            let (row, gate, code) = (count(&sample[0]), count(&sample[1]), int(&sample[2]));
+            if code >= 2 {
+                assert_eq!(
+                    spectrum_width.scaled_value(row, gate),
+                    Some((code as f32 - 129.0) / 2.0)
+                );
+            }
+        }
+        assert_moment_matches_golden(spectrum_width, expected, "KTLX 1999 SW");
     }
 
     #[test]
+    fn decodes_16_bit_moments() {
+        // KTLX 2013: PHI 16-bit, ZDR 8-bit. KTLX 2024: PHI and ZDR 16-bit.
+        for (id, zdr_bits) in [(KTLX_2013_TRIM, 8), (KTLX_2024_TRIM, 16)] {
+            let Some(bytes) = corpus_bytes(id) else {
+                return;
+            };
+            let golden = golden(id);
+            let volume = decode_volume_from_bytes(&bytes).unwrap();
+            let cut = &volume.cuts[0];
+            let moments = &golden["sweeps"][0]["moments"];
+
+            let phi = &cut.moments[&MomentType::DifferentialPhase];
+            let zdr = &cut.moments[&MomentType::DifferentialReflectivity];
+            assert_eq!(phi.storage.word_size_bits(), 16, "{id}");
+            assert_eq!(zdr.storage.word_size_bits(), zdr_bits, "{id}");
+            assert_moment_matches_golden(phi, &moments["PHI"], &format!("{id} PHI"));
+            assert_moment_matches_golden(zdr, &moments["ZDR"], &format!("{id} ZDR"));
+        }
+    }
+
+    #[test]
+    fn decodes_every_trimmed_fixture() {
+        let ids = recast_radar_testdata::ids_with_tag("trimmed");
+        assert!(ids.len() >= 16, "trimmed fixtures: {ids:?}");
+        for id in ids {
+            let Some(bytes) = corpus_bytes(id) else {
+                return;
+            };
+            let volume =
+                decode_volume_from_bytes(&bytes).unwrap_or_else(|error| panic!("{id}: {error}"));
+            assert_eq!(volume.metadata.compression.as_deref(), Some("bzip2-blocks"));
+            assert_volume_matches_golden(&volume, &golden(id));
+        }
+    }
+
+    // --------------------------------------------------------------- gzip ---
+
+    #[test]
     fn decodes_gzip_stream_without_normalized_buffer() {
-        let bytes = synthetic_archive(false);
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&bytes).unwrap();
-        let compressed = encoder.finish().unwrap();
+        let Some(bytes) = corpus_bytes(KPAH_2008_GZIP) else {
+            return;
+        };
+        let golden = golden(KPAH_2008_GZIP);
+        assert_eq!(text(&golden["outer_compression"]), "gzip");
 
-        let volume = decode_volume_from_bytes(&compressed).unwrap();
+        let streamed = decode_gzip_volume_from_reader(bytes.as_slice()).unwrap();
+        let buffered = decode_volume_from_bytes(&bytes).unwrap();
 
-        assert_eq!(volume.site.id, "KTLX");
-        assert_eq!(volume.metadata.compression, Some("gzip".to_owned()));
-        assert_eq!(volume.metadata.decoded_radial_count, 1);
-        assert!(volume.cuts[0].moments.contains_key(&MomentType::Velocity));
+        assert_eq!(streamed.metadata.compression.as_deref(), Some("gzip"));
+        assert_eq!(streamed, buffered);
+        assert_volume_matches_golden(&streamed, &golden);
     }
 
     #[test]
     fn gzip_preview_waits_for_complete_displayable_cut() {
-        let bytes = synthetic_archive(false);
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&bytes).unwrap();
-        let compressed = encoder.finish().unwrap();
+        let Some(bytes) = corpus_bytes(KTLX_1999_TRUNCATED_GZIP) else {
+            return;
+        };
+        let golden = golden(KTLX_1999_TRUNCATED_GZIP);
 
-        let preview = decode_gzip_preview_from_bytes(&compressed, 1).unwrap();
+        // The object ends 68 radials into its first cut: no cut completes.
+        let preview = decode_gzip_preview_from_bytes(&bytes, 1).unwrap();
 
         assert!(preview.is_none());
+        let volume = decode_volume_from_bytes(&bytes).unwrap();
+        assert_eq!(volume.metadata.compression.as_deref(), Some("gzip"));
+        assert_eq!(volume.cuts.len(), 1);
+        assert_eq!(volume.cuts[0].radials.len(), 68);
+        assert_volume_matches_golden(&volume, &golden);
     }
 
     #[test]
     fn gzip_preview_returns_completed_displayable_cut() {
-        let mut bytes = synthetic_archive(false);
-        set_first_synthetic_radial_status(&mut bytes, RadialStatus::EndElevation);
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&bytes).unwrap();
-        let compressed = encoder.finish().unwrap();
+        let Some(bytes) = corpus_bytes(KPAH_2008_GZIP) else {
+            return;
+        };
+        let golden = golden(KPAH_2008_GZIP);
+        let first = &golden["sweeps"][0];
+        let radials = count(&first["radials"]);
 
-        let preview = decode_gzip_preview_from_bytes(&compressed, 1)
+        let preview = decode_gzip_preview_from_bytes(&bytes, radials)
             .unwrap()
             .expect("completed first cut preview");
 
-        assert_eq!(preview.site.id, "KTLX");
-        assert_eq!(preview.metadata.compression, Some("gzip".to_owned()));
+        assert_eq!(preview.site.id, "KPAH");
+        assert_eq!(preview.metadata.compression.as_deref(), Some("gzip"));
+        // The first cut ends with an end-of-elevation radial (status 2), so
+        // the preview stops right there.
         assert_eq!(preview.cuts.len(), 1);
-        assert_eq!(preview.cuts[0].radials.len(), 1);
-        assert!(preview.cuts[0].moments.contains_key(&MomentType::Velocity));
+        assert_cut_matches_golden(&preview.cuts[0], first, "KPAH preview sweep 0");
+        let full = decode_volume_from_bytes(&bytes).unwrap();
+        assert_eq!(preview.cuts[0], full.cuts[0]);
+
+        // No cut of this volume has more radials than the first.
+        assert!(
+            list(&golden["sweeps"])
+                .iter()
+                .all(|sweep| count(&sweep["radials"]) <= radials)
+        );
+        assert!(
+            decode_gzip_preview_from_bytes(&bytes, radials + 1)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
     fn gzip_preview_callback_continues_to_full_volume() {
-        let mut bytes = synthetic_archive(false);
-        set_first_synthetic_radial_status(&mut bytes, RadialStatus::EndElevation);
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&bytes).unwrap();
-        let compressed = encoder.finish().unwrap();
-        let mut preview_radials = None;
+        let Some(bytes) = corpus_bytes(KPAH_2008_GZIP) else {
+            return;
+        };
+        let golden = golden(KPAH_2008_GZIP);
+        let mut previews = Vec::new();
 
-        let volume = decode_gzip_volume_from_bytes_with_preview(&compressed, 1, |preview| {
-            preview_radials = Some(preview.metadata.decoded_radial_count);
+        let volume = decode_gzip_volume_from_bytes_with_preview(&bytes, 1, |preview| {
+            previews.push(preview);
         })
         .unwrap();
 
-        assert_eq!(preview_radials, Some(1));
-        assert_eq!(volume.site.id, "KTLX");
-        assert_eq!(volume.metadata.compression, Some("gzip".to_owned()));
-        assert_eq!(volume.metadata.decoded_radial_count, 1);
-        assert!(volume.cuts[0].moments.contains_key(&MomentType::Velocity));
+        assert_eq!(previews.len(), 1);
+        assert_eq!(
+            previews[0].metadata.decoded_radial_count,
+            count(&golden["sweeps"][0]["radials"])
+        );
+        assert_eq!(volume, decode_volume_from_bytes(&bytes).unwrap());
+        assert_eq!(volume.metadata.decoded_radial_count, 2520);
+        assert_volume_matches_golden(&volume, &golden);
     }
+
+    // ------------------------------------------------------ LDM bzip2 ---
 
     #[test]
     fn decodes_bzip_blocks_without_concatenated_normalized_buffer() {
-        let bytes = synthetic_archive(false);
-        let compressed = synthetic_bzip_block_archive(&bytes);
+        let Some(bytes) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        assert_eq!(list(&golden["ldm_records"]).len(), 9);
 
-        let volume = decode_volume_from_bytes(&compressed).unwrap();
+        let volume = decode_volume_from_bytes(&bytes).unwrap();
 
-        assert_eq!(volume.site.id, "KTLX");
-        assert_eq!(volume.metadata.compression, Some("bzip2-blocks".to_owned()));
-        assert_eq!(volume.metadata.decoded_radial_count, 1);
-        assert!(volume.cuts[0].moments.contains_key(&MomentType::Velocity));
+        assert_eq!(volume.metadata.compression.as_deref(), Some("bzip2-blocks"));
+        assert_eq!(volume.metadata.decoded_radial_count, 960);
+        assert_volume_matches_golden(&volume, &golden);
     }
 
     #[test]
     fn bzip_preview_waits_for_complete_displayable_cut() {
-        let bytes = synthetic_archive(false);
-        let compressed = synthetic_bzip_block_archive(&bytes);
+        let (Some(start), Some(chunk)) =
+            (corpus_bytes(KIWA_CHUNK_START), corpus_bytes(KIWA_CHUNK_002))
+        else {
+            return;
+        };
+        // A real archive prefix: the Start chunk (volume header + metadata
+        // record) and the first 120 radials of a 720-radial cut.
+        let mut bytes = start;
+        bytes.extend_from_slice(&chunk);
 
-        let preview = decode_bzip_block_preview_from_bytes(&compressed, 1).unwrap();
+        let preview = decode_bzip_block_preview_from_bytes(&bytes, 1).unwrap();
 
         assert!(preview.is_none());
+        let volume = decode_volume_from_bytes(&bytes).unwrap();
+        assert_eq!(volume.cuts[0].radials.len(), 120);
+        assert_volume_matches_golden(&volume, &golden(KIWA_CHUNKS_GOLDEN));
     }
 
     #[test]
     fn bzip_preview_returns_completed_displayable_cut() {
-        let mut bytes = synthetic_archive(false);
-        set_first_synthetic_radial_status(&mut bytes, RadialStatus::EndElevation);
-        let compressed = synthetic_bzip_block_archive(&bytes);
+        let Some(bytes) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let trim_golden = golden(KTLX_2024_TRIM);
+        let full = decode_volume_from_bytes(&bytes).unwrap();
 
-        let preview = decode_bzip_block_preview_from_bytes(&compressed, 1)
+        // The trim keeps 480 of sweep 1's radials: the cut counts as complete
+        // once the first radial of sweep 2 arrives.
+        let preview = decode_bzip_block_preview_from_bytes(&bytes, 1)
             .unwrap()
             .expect("completed first cut preview");
 
         assert_eq!(preview.site.id, "KTLX");
         assert_eq!(
-            preview.metadata.compression,
-            Some("bzip2-blocks".to_owned())
+            preview.metadata.compression.as_deref(),
+            Some("bzip2-blocks")
         );
+        assert_eq!(preview.cuts[0], full.cuts[0]);
+        assert_cut_matches_golden(&preview.cuts[0], &trim_golden["sweeps"][0], "trim preview");
+        assert_eq!(preview.cuts.len(), 2);
+        assert_eq!(preview.cuts[1].radials.len(), 1);
+
+        // The full volume's first cut ends with an end-of-elevation radial.
+        let Some(bytes) = corpus_bytes(KTLX_2024_FULL) else {
+            return;
+        };
+        let full_golden = golden(KTLX_2024_FULL);
+        let preview = decode_bzip_block_preview_from_bytes(&bytes, 1)
+            .unwrap()
+            .expect("completed first cut preview");
         assert_eq!(preview.cuts.len(), 1);
-        assert_eq!(preview.cuts[0].radials.len(), 1);
-        assert!(
-            preview.cuts[0]
-                .moments
-                .contains_key(&MomentType::Reflectivity)
-        );
+        assert_eq!(preview.metadata.decoded_radial_count, 720);
+        assert_cut_matches_golden(&preview.cuts[0], &full_golden["sweeps"][0], "full preview");
     }
 
     #[test]
     fn bzip_preview_full_decode_reuses_path_and_returns_full_volume() {
-        let mut bytes = synthetic_archive(false);
-        set_first_synthetic_radial_status(&mut bytes, RadialStatus::EndElevation);
-        let compressed = synthetic_bzip_block_archive(&bytes);
-        let mut preview_radials = None;
+        let Some(bytes) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        let mut previews = Vec::new();
 
-        let volume = decode_volume_from_bytes_with_bzip_preview(&compressed, 1, |preview| {
-            preview_radials = Some(preview.metadata.decoded_radial_count);
+        let volume = decode_volume_from_bytes_with_bzip_preview(&bytes, 1, |preview| {
+            previews.push(preview);
         })
         .unwrap();
 
-        assert_eq!(preview_radials, Some(1));
-        assert_eq!(volume.site.id, "KTLX");
-        assert_eq!(volume.metadata.compression, Some("bzip2-blocks".to_owned()));
-        assert_eq!(volume.metadata.decoded_radial_count, 1);
-        assert!(volume.cuts[0].moments.contains_key(&MomentType::Velocity));
+        assert_eq!(previews.len(), 1);
+        assert_eq!(
+            previews[0].cuts[0].radials.len(),
+            count(&golden["sweeps"][0]["radials"])
+        );
+        assert_eq!(volume, decode_volume_from_bytes(&bytes).unwrap());
+        assert_volume_matches_golden(&volume, &golden);
     }
 
     #[test]
     fn multi_block_bzip_decode_matches_uncompressed_reference() {
-        let radials = [
-            (1, 1, RadialStatus::StartVolume),
-            (2, 1, RadialStatus::Intermediate),
-            (3, 1, RadialStatus::EndElevation),
-            (1, 2, RadialStatus::StartElevation),
-            (2, 2, RadialStatus::Intermediate),
-            (3, 2, RadialStatus::EndVolume),
-        ];
-        let archive = synthetic_multi_radial_archive(&radials);
-        let reference = decode_volume_from_bytes(&archive).unwrap();
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        let expected_records = list(&golden["ldm_records"]);
 
-        let payload = &archive[VOLUME_HEADER_LEN..];
-        let chunks: Vec<&[u8]> = payload.chunks(RECORD_BYTES * 2).collect();
-        let compressed = synthetic_bzip_blocks_from_chunks(&archive, &chunks);
-        let volume = decode_volume_from_bytes(&compressed).unwrap();
-
-        assert_eq!(volume.site, reference.site);
-        assert_eq!(volume.cuts, reference.cuts);
+        // Decompress each real LDM record on its own and frame the payloads
+        // as an uncompressed Archive II file.
+        let records = ldm_records(&file);
+        assert_eq!(records.len(), expected_records.len());
+        let mut uncompressed = file[..VOLUME_HEADER_LEN].to_vec();
+        for ((offset, block), expected) in records.iter().zip(expected_records) {
+            assert_eq!(*offset, count(&expected["offset"]));
+            let payload = bzip2_decompress(block);
+            assert_eq!(payload.len(), count(&expected["decompressed_len"]));
+            uncompressed.extend_from_slice(&payload);
+        }
+        let reference = decode_volume_from_bytes(&uncompressed).unwrap();
         assert_eq!(
-            volume.metadata.decoded_radial_count,
-            reference.metadata.decoded_radial_count
+            reference.metadata.compression.as_deref(),
+            Some("uncompressed")
         );
+
+        let volume = decode_volume_from_bytes(&file).unwrap();
+
+        assert_eq!(volume.metadata.compression.as_deref(), Some("bzip2-blocks"));
+        let mut same = reference.clone();
+        same.metadata.compression = volume.metadata.compression.clone();
+        assert_eq!(volume, same);
+        assert_volume_matches_golden(&volume, &golden);
+
+        // Re-block the same message stream every 1,000,003 bytes, so records
+        // and messages are split across bzip2 blocks.
+        let stream = &uncompressed[VOLUME_HEADER_LEN..];
+        let chunks: Vec<&[u8]> = stream.chunks(1_000_003).collect();
+        let mut reblocked = file[..VOLUME_HEADER_LEN].to_vec();
+        for (index, chunk) in chunks.iter().enumerate() {
+            let block = bzip2_compress(chunk);
+            let len = i32::try_from(block.len()).unwrap();
+            let control = if index + 1 == chunks.len() { -len } else { len };
+            reblocked.extend_from_slice(&control.to_be_bytes());
+            reblocked.extend_from_slice(&block);
+        }
+        assert_eq!(decode_volume_from_bytes(&reblocked).unwrap(), volume);
     }
 
     #[test]
     fn bzip_preview_fires_past_legacy_block_window() {
-        // First cut only completes at the 16th record, one bzip block per
-        // record: more blocks than the old fixed preview scan window, so the
-        // preview must come from the streaming parse, not a block prefix.
-        let mut radials: Vec<(u16, u8, RadialStatus)> = vec![(1, 1, RadialStatus::StartVolume)];
-        for az in 2..=15 {
-            radials.push((az, 1, RadialStatus::Intermediate));
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        let sweep_radials = count(&golden["sweeps"][0]["radials"]);
+        let records = ldm_records(&file);
+        assert_eq!(count(&golden["ldm_records"][1]["radials"]), 120);
+
+        // Split record 1 (the first 120 radials of sweep 1) into 20 records
+        // of 6 radials each and keep every other record byte for byte. Sweep
+        // 1 then ends in the 24th record and sweep 2 starts in the 25th, past
+        // the 16 records the old fixed preview scan window covered.
+        let radials = bzip2_decompress(records[1].1);
+        let bounds = message31_bounds(&radials);
+        assert_eq!(bounds.len(), 121);
+        let mut blocks = vec![records[0].1.to_vec()];
+        for first in (0..120).step_by(6) {
+            blocks.push(bzip2_compress(&radials[bounds[first]..bounds[first + 6]]));
         }
-        radials.push((16, 1, RadialStatus::EndElevation));
-        radials.push((1, 2, RadialStatus::StartElevation));
-        radials.push((2, 2, RadialStatus::EndVolume));
-        let archive = synthetic_multi_radial_archive(&radials);
-        let payload = &archive[VOLUME_HEADER_LEN..];
-        let chunks: Vec<&[u8]> = payload.chunks(RECORD_BYTES).collect();
-        let compressed = synthetic_bzip_blocks_from_chunks(&archive, &chunks);
+        blocks.extend(records[2..].iter().map(|(_, block)| block.to_vec()));
+        assert_eq!(blocks.len(), 1 + 20 + 7);
+        let mut reframed = file[..VOLUME_HEADER_LEN].to_vec();
+        for (index, block) in blocks.iter().enumerate() {
+            let len = i32::try_from(block.len()).unwrap();
+            let control = if index + 1 == blocks.len() { -len } else { len };
+            reframed.extend_from_slice(&control.to_be_bytes());
+            reframed.extend_from_slice(block);
+        }
+        let original = decode_volume_from_bytes(&file).unwrap();
 
-        let mut preview_radials = None;
-        let volume = decode_volume_from_bytes_with_bzip_preview(&compressed, 16, |preview| {
-            preview_radials = Some(preview.metadata.decoded_radial_count);
-        })
-        .unwrap();
+        let mut previews = Vec::new();
+        let volume =
+            decode_volume_from_bytes_with_bzip_preview(&reframed, sweep_radials, |preview| {
+                previews.push(preview);
+            })
+            .unwrap();
 
-        assert_eq!(preview_radials, Some(16));
-        assert_eq!(volume.metadata.decoded_radial_count, 18);
-        assert_eq!(volume.cuts.len(), 2);
+        assert_eq!(previews.len(), 1);
+        assert_eq!(previews[0].cuts[0].radials.len(), sweep_radials);
+        assert_eq!(previews[0].cuts[0], original.cuts[0]);
+        assert_eq!(volume, original);
     }
 
     #[test]
     fn corrupt_trailing_bzip_block_yields_partial_volume() {
-        let radials = [
-            (1, 1, RadialStatus::StartVolume),
-            (2, 1, RadialStatus::Intermediate),
-            (3, 1, RadialStatus::Intermediate),
-            (4, 1, RadialStatus::EndVolume),
-        ];
-        let archive = synthetic_multi_radial_archive(&radials);
-        let payload = &archive[VOLUME_HEADER_LEN..];
-        // Records 1-2 plus the third record's prefix land in the good block;
-        // the third radial's message body crosses into the corrupted block.
-        let split = 2 * RECORD_BYTES + CONTROL_WORD_LEN + MESSAGE_HEADER_LEN + 2;
-        let good = bzip_compress(&payload[..split]);
-        let mut bad = bzip_compress(&payload[split..]);
-        for byte in bad.iter_mut().skip(8) {
-            *byte = 0;
-        }
-        let mut compressed = archive[..VOLUME_HEADER_LEN].to_vec();
-        compressed.extend_from_slice(&i32::try_from(good.len()).unwrap().to_be_bytes());
-        compressed.extend_from_slice(&good);
-        compressed.extend_from_slice(&(-i32::try_from(bad.len()).unwrap()).to_be_bytes());
-        compressed.extend_from_slice(&bad);
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        let clean = decode_volume_from_bytes(&file).unwrap();
 
-        let volume = decode_volume_from_bytes(&compressed).unwrap();
+        // Zero the last LDM record's bzip2 data after its stream and block
+        // magic ("BZh9" + "1AY&"), so it still frames as bzip2 but fails.
+        let (offset, block) = *ldm_records(&file).last().unwrap();
+        let start = offset + 4;
+        let mut corrupt = file.clone();
+        corrupt[start + 8..start + block.len()].fill(0);
 
-        assert_eq!(volume.metadata.decoded_radial_count, 2);
-        assert!(volume.metadata.skipped_message_count >= 1);
+        let volume = decode_volume_from_bytes(&corrupt).unwrap();
+
+        // What MetPy reads from the file without that record: 480 + 360.
+        let expected: Vec<usize> =
+            list(&golden["layout_checks"]["without_last_record_sweep_radials"])
+                .iter()
+                .map(count)
+                .collect();
+        assert_eq!(expected, vec![480, 360]);
+        let radials: Vec<usize> = volume.cuts.iter().map(|cut| cut.radials.len()).collect();
+        assert_eq!(radials, expected);
+        assert_eq!(volume.metadata.decoded_radial_count, 840);
+        assert_eq!(volume.cuts[0], clean.cuts[0]);
+        assert_eq!(
+            volume.metadata.skipped_message_count,
+            clean.metadata.skipped_message_count + 1
+        );
     }
 
     #[test]
     fn corrupt_first_bzip_block_is_a_hard_error() {
-        let archive = synthetic_archive(false);
-        let payload = &archive[VOLUME_HEADER_LEN..];
-        let mut bad = bzip_compress(payload);
-        for byte in bad.iter_mut().skip(8) {
-            *byte = 0;
-        }
-        let mut compressed = archive[..VOLUME_HEADER_LEN].to_vec();
-        compressed.extend_from_slice(&(-i32::try_from(bad.len()).unwrap()).to_be_bytes());
-        compressed.extend_from_slice(&bad);
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        // Zero the metadata record's bzip2 data after its magic.
+        let (offset, block) = ldm_records(&file)[0];
+        let start = offset + 4;
+        let mut corrupt = file.clone();
+        corrupt[start + 8..start + block.len()].fill(0);
 
-        assert!(decode_volume_from_bytes(&compressed).is_err());
+        assert!(matches!(
+            decode_volume_from_bytes(&corrupt),
+            Err(NexradError::Compression(_))
+        ));
+        assert!(decode_bzip_block_preview_from_bytes(&corrupt, 1).is_err());
     }
 
     #[test]
     fn pipelined_decode_works_on_single_thread_rayon_pool() {
-        let radials = [
-            (1, 1, RadialStatus::StartVolume),
-            (2, 1, RadialStatus::Intermediate),
-            (3, 1, RadialStatus::Intermediate),
-            (4, 1, RadialStatus::EndVolume),
-        ];
-        let archive = synthetic_multi_radial_archive(&radials);
-        let payload = &archive[VOLUME_HEADER_LEN..];
-        let chunks: Vec<&[u8]> = payload.chunks(RECORD_BYTES).collect();
-        let compressed = synthetic_bzip_blocks_from_chunks(&archive, &chunks);
-
+        let Some(bytes) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(1)
             .build()
             .unwrap();
-        let volume = pool
-            .install(|| decode_volume_from_bytes(&compressed))
-            .unwrap();
 
-        assert_eq!(volume.metadata.decoded_radial_count, 4);
+        let volume = pool.install(|| decode_volume_from_bytes(&bytes)).unwrap();
+
+        assert_eq!(volume, decode_volume_from_bytes(&bytes).unwrap());
+        assert_volume_matches_golden(&volume, &golden);
     }
 
-    #[test]
-    fn decodes_synthetic_16_bit_moment() {
-        let bytes = synthetic_archive(true);
-        let volume = decode_volume_from_bytes(&bytes).unwrap();
-        let phi = volume.cuts[0]
-            .moments
-            .get(&MomentType::DifferentialPhase)
-            .unwrap();
-
-        assert_eq!(phi.storage.word_size_bits(), 16);
-        assert_eq!(phi.scaled_value(0, 1), Some(20.0));
-    }
+    // ----------------------------------------------------------- layouts ---
 
     #[test]
     fn expected_radials_follow_message31_azimuth_resolution_code() {
@@ -2446,270 +3119,62 @@ mod tests {
 
     #[test]
     fn decodes_gr2_style_variable_framed_msg31_records() {
-        // GR2 ".msg31" exports: AR2V header, then message 31 records packed
-        // back to back (no 2432-byte fixed-record padding, no 134 metadata
-        // records).
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"AR2V00000");
-        bytes.extend_from_slice(b"1  ");
-        bytes.extend_from_slice(&19_724u32.to_be_bytes());
-        bytes.extend_from_slice(&1_000u32.to_be_bytes());
-        bytes.extend_from_slice(b"COW2");
-        for (azimuth_number, status) in [
-            (1u16, RadialStatus::StartVolume),
-            (2, RadialStatus::Intermediate),
-            (3, RadialStatus::EndVolume),
-        ] {
-            bytes.extend_from_slice(&[0u8; CONTROL_WORD_LEN]);
-            let mut body = synthetic_message_31_body(false);
-            body[10..12].copy_from_slice(&azimuth_number.to_be_bytes());
-            body[21] = radial_status_code(status);
-            let message_size = u16::try_from((MESSAGE_HEADER_LEN + body.len()) / 2).unwrap();
-            bytes.extend_from_slice(&message_size.to_be_bytes());
-            bytes.push(0);
-            bytes.push(31);
-            bytes.extend_from_slice(&7u16.to_be_bytes());
-            bytes.extend_from_slice(&19_724u16.to_be_bytes());
-            bytes.extend_from_slice(&1_000u32.to_be_bytes());
-            bytes.extend_from_slice(&1u16.to_be_bytes());
-            bytes.extend_from_slice(&1u16.to_be_bytes());
-            bytes.extend_from_slice(&body);
+        // GR2 ".msg31" exports keep the AR2V volume header but carry only a
+        // few fixed-size metadata records, then Message 31 records back to
+        // back, uncompressed. The corpus has no GR2 export, so the layout is
+        // cut from the real KTLX 2024 trim: its volume header, its Message 2
+        // and 5 records, then all its Message 31 records. MetPy reads that
+        // layout as the same two sweeps (golden `layout_checks`).
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        let checks = &golden["layout_checks"];
+        let keep: Vec<u8> = list(&checks["gr2_metadata_types"])
+            .iter()
+            .map(|t| u8::try_from(int(t)).unwrap())
+            .collect();
+        let (normalized, _) = normalize_archive_bytes(&file).unwrap();
+        let mut gr2 = normalized[..VOLUME_HEADER_LEN].to_vec();
+        let mut cursor = VOLUME_HEADER_LEN;
+        loop {
+            let header = parse_message_header(&normalized, cursor + CONTROL_WORD_LEN).unwrap();
+            if header.message_type == 31 {
+                break;
+            }
+            if header.size_halfwords != 0 && keep.contains(&header.message_type) {
+                gr2.extend_from_slice(&normalized[cursor..cursor + RECORD_BYTES]);
+            }
+            cursor += RECORD_BYTES;
         }
+        message31_bounds(&normalized[cursor..]);
+        gr2.extend_from_slice(&normalized[cursor..]);
+        assert_eq!(gr2.len(), count(&checks["gr2_len"]));
+        let original = decode_volume_from_bytes(&file).unwrap();
 
-        let volume = decode_volume_from_bytes(&bytes).unwrap();
+        let volume = decode_volume_from_bytes(&gr2).unwrap();
 
-        assert_eq!(volume.site.id, "COW2");
-        assert_eq!(volume.metadata.decoded_radial_count, 3);
-        assert_eq!(volume.cuts[0].radials.len(), 3);
-    }
+        assert_eq!(volume.metadata.compression.as_deref(), Some("uncompressed"));
+        let radials: Vec<usize> = volume.cuts.iter().map(|cut| cut.radials.len()).collect();
+        let expected: Vec<usize> = list(&checks["gr2_sweep_radials"])
+            .iter()
+            .map(count)
+            .collect();
+        assert_eq!(radials, expected);
+        assert_eq!(volume.cuts, original.cuts);
+        assert_eq!(volume.site, original.site);
+        assert_eq!(volume.vcp, original.vcp);
+        assert_eq!(volume.volume_time, original.volume_time);
+        assert_eq!(volume.metadata.message_count, keep.len() + 960);
 
-    #[ignore = "set NEXRAD_LEVEL2_SAMPLE to a public Archive II file path to run manually"]
-    #[test]
-    fn decodes_real_public_level2_file_from_env() {
-        let path = std::env::var("NEXRAD_LEVEL2_SAMPLE").expect("NEXRAD_LEVEL2_SAMPLE is not set");
-        let volume = decode_volume_from_path(Path::new(&path)).unwrap();
-
-        assert!(!volume.site.id.is_empty());
-        assert!(
-            !volume.cuts.is_empty(),
-            "expected at least one decoded elevation cut"
+        // GR2 exports write a nonstandard volume header date: with the date
+        // and time zeroed, the volume time comes from the first radial.
+        gr2[12..20].fill(0);
+        let volume = decode_volume_from_bytes(&gr2).unwrap();
+        assert_eq!(
+            volume.volume_time.timestamp_millis(),
+            int(&golden["sweeps"][0]["first_epoch_ms"])
         );
-    }
-
-    fn synthetic_archive(include_phi_16: bool) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"AR2V00000");
-        bytes.extend_from_slice(b"1  ");
-        bytes.extend_from_slice(&19_724u32.to_be_bytes());
-        bytes.extend_from_slice(&1_000u32.to_be_bytes());
-        bytes.extend_from_slice(b"KTLX");
-
-        bytes.extend_from_slice(&[0u8; CONTROL_WORD_LEN]);
-        let body = synthetic_message_31_body(include_phi_16);
-        let message_size = u16::try_from((MESSAGE_HEADER_LEN + body.len()) / 2).unwrap();
-        bytes.extend_from_slice(&message_size.to_be_bytes());
-        bytes.push(0);
-        bytes.push(31);
-        bytes.extend_from_slice(&7u16.to_be_bytes());
-        bytes.extend_from_slice(&19_724u16.to_be_bytes());
-        bytes.extend_from_slice(&1_000u32.to_be_bytes());
-        bytes.extend_from_slice(&1u16.to_be_bytes());
-        bytes.extend_from_slice(&1u16.to_be_bytes());
-        bytes.extend_from_slice(&body);
-        bytes.resize(VOLUME_HEADER_LEN + RECORD_BYTES, 0);
-        bytes
-    }
-
-    fn radial_status_code(status: RadialStatus) -> u8 {
-        match status {
-            RadialStatus::StartElevation => 0,
-            RadialStatus::Intermediate => 1,
-            RadialStatus::EndElevation => 2,
-            RadialStatus::StartVolume => 3,
-            RadialStatus::EndVolume => 4,
-            RadialStatus::StartElevationLastCut => 5,
-            RadialStatus::Unknown(value) => value,
-        }
-    }
-
-    fn set_first_synthetic_radial_status(bytes: &mut [u8], status: RadialStatus) {
-        let offset = VOLUME_HEADER_LEN + CONTROL_WORD_LEN + MESSAGE_HEADER_LEN + 21;
-        bytes[offset] = radial_status_code(status);
-    }
-
-    /// One fixed-length record per radial: (azimuth_number, elevation_number, status).
-    fn synthetic_multi_radial_archive(radials: &[(u16, u8, RadialStatus)]) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"AR2V00000");
-        bytes.extend_from_slice(b"1  ");
-        bytes.extend_from_slice(&19_724u32.to_be_bytes());
-        bytes.extend_from_slice(&1_000u32.to_be_bytes());
-        bytes.extend_from_slice(b"KTLX");
-
-        for (azimuth_number, elevation_number, status) in radials {
-            let record_start = bytes.len();
-            bytes.extend_from_slice(&[0u8; CONTROL_WORD_LEN]);
-            let mut body = synthetic_message_31_body(false);
-            body[10..12].copy_from_slice(&azimuth_number.to_be_bytes());
-            let azimuth_deg = f32::from(*azimuth_number) * 0.5;
-            body[12..16].copy_from_slice(&azimuth_deg.to_bits().to_be_bytes());
-            body[21] = radial_status_code(*status);
-            body[22] = *elevation_number;
-            let message_size = u16::try_from((MESSAGE_HEADER_LEN + body.len()) / 2).unwrap();
-            bytes.extend_from_slice(&message_size.to_be_bytes());
-            bytes.push(0);
-            bytes.push(31);
-            bytes.extend_from_slice(&7u16.to_be_bytes());
-            bytes.extend_from_slice(&19_724u16.to_be_bytes());
-            bytes.extend_from_slice(&1_000u32.to_be_bytes());
-            bytes.extend_from_slice(&1u16.to_be_bytes());
-            bytes.extend_from_slice(&1u16.to_be_bytes());
-            bytes.extend_from_slice(&body);
-            bytes.resize(record_start + RECORD_BYTES, 0);
-        }
-        bytes
-    }
-
-    fn bzip_compress(payload: &[u8]) -> Vec<u8> {
-        let mut encoder = BzEncoder::new(Vec::new(), bzip2::Compression::default());
-        encoder.write_all(payload).unwrap();
-        encoder.finish().unwrap()
-    }
-
-    /// Assemble an LDM block-bzip archive from pre-split payload chunks, with
-    /// the real-file convention of a negative size on the final block.
-    fn synthetic_bzip_blocks_from_chunks(archive: &[u8], chunks: &[&[u8]]) -> Vec<u8> {
-        let mut bytes = archive[..VOLUME_HEADER_LEN].to_vec();
-        for (index, chunk) in chunks.iter().enumerate() {
-            let compressed = bzip_compress(chunk);
-            let len = i32::try_from(compressed.len()).expect("compressed block length fits");
-            let signed = if index + 1 == chunks.len() { -len } else { len };
-            bytes.extend_from_slice(&signed.to_be_bytes());
-            bytes.extend_from_slice(&compressed);
-        }
-        bytes
-    }
-
-    fn synthetic_bzip_block_archive(normalized: &[u8]) -> Vec<u8> {
-        let mut encoder = BzEncoder::new(Vec::new(), bzip2::Compression::default());
-        encoder.write_all(&normalized[VOLUME_HEADER_LEN..]).unwrap();
-        let compressed_block = encoder.finish().unwrap();
-
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&normalized[..VOLUME_HEADER_LEN]);
-        bytes.extend_from_slice(
-            &i32::try_from(compressed_block.len())
-                .expect("compressed block length fits")
-                .to_be_bytes(),
-        );
-        bytes.extend_from_slice(&compressed_block);
-        bytes.extend_from_slice(&(-1_i32).to_be_bytes());
-        bytes
-    }
-
-    fn synthetic_message_31_body(include_phi_16: bool) -> Vec<u8> {
-        let mut body = vec![0u8; MSG_31_HEADER_LEN];
-        body[0..4].copy_from_slice(b"AR2V");
-        body[4..8].copy_from_slice(&1_000u32.to_be_bytes());
-        body[8..10].copy_from_slice(&19_724u16.to_be_bytes());
-        body[10..12].copy_from_slice(&1u16.to_be_bytes());
-        body[12..16].copy_from_slice(&180.5f32.to_bits().to_be_bytes());
-        body[18..20].copy_from_slice(&1u16.to_be_bytes());
-        body[20] = 2;
-        body[21] = 3;
-        body[22] = 1;
-        body[23] = 1;
-        body[24..28].copy_from_slice(&0.5f32.to_bits().to_be_bytes());
-        body[30..32].copy_from_slice(&(if include_phi_16 { 5u16 } else { 4u16 }).to_be_bytes());
-
-        let vol_pointer = body.len();
-        push_volume_block(&mut body);
-        let rad_pointer = body.len();
-        push_radial_block(&mut body);
-        let ref_pointer = body.len();
-        push_u8_moment(&mut body, b"DREF", &[0, 66, 80]);
-        let vel_pointer = body.len();
-        push_u8_moment(&mut body, b"DVEL", &[129, 139, 119]);
-        let phi_pointer = body.len();
-        if include_phi_16 {
-            push_u16_moment(&mut body, b"DPHI", &[0, 20, 40]);
-        }
-
-        set_pointer(&mut body, 0, vol_pointer);
-        set_pointer(&mut body, 2, rad_pointer);
-        set_pointer(&mut body, 3, ref_pointer);
-        set_pointer(&mut body, 4, vel_pointer);
-        if include_phi_16 {
-            set_pointer(&mut body, 7, phi_pointer);
-        }
-        body
-    }
-
-    fn push_volume_block(body: &mut Vec<u8>) {
-        body.extend_from_slice(b"RVOL");
-        body.extend_from_slice(&1u16.to_be_bytes());
-        body.push(1);
-        body.push(0);
-        body.extend_from_slice(&35.333f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&(-97.277f32).to_bits().to_be_bytes());
-        body.extend_from_slice(&370i16.to_be_bytes());
-        body.extend_from_slice(&20u16.to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&212u16.to_be_bytes());
-        body.extend_from_slice(&0u16.to_be_bytes());
-    }
-
-    fn push_radial_block(body: &mut Vec<u8>) {
-        body.extend_from_slice(b"RRAD");
-        body.extend_from_slice(&1u16.to_be_bytes());
-        body.extend_from_slice(&0i16.to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&2_500i16.to_be_bytes());
-        body.extend_from_slice(&0u16.to_be_bytes());
-    }
-
-    fn push_u8_moment(body: &mut Vec<u8>, id: &[u8; 4], gates: &[u8]) {
-        body.extend_from_slice(id);
-        body.extend_from_slice(&0u32.to_be_bytes());
-        body.extend_from_slice(&(gates.len() as u16).to_be_bytes());
-        body.extend_from_slice(&0i16.to_be_bytes());
-        body.extend_from_slice(&250i16.to_be_bytes());
-        body.extend_from_slice(&0i16.to_be_bytes());
-        body.extend_from_slice(&0i16.to_be_bytes());
-        body.push(0);
-        body.push(8);
-        body.extend_from_slice(&2.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&66.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(gates);
-        if !body.len().is_multiple_of(2) {
-            body.push(0);
-        }
-    }
-
-    fn push_u16_moment(body: &mut Vec<u8>, id: &[u8; 4], gates: &[u16]) {
-        body.extend_from_slice(id);
-        body.extend_from_slice(&0u32.to_be_bytes());
-        body.extend_from_slice(&(gates.len() as u16).to_be_bytes());
-        body.extend_from_slice(&0i16.to_be_bytes());
-        body.extend_from_slice(&250i16.to_be_bytes());
-        body.extend_from_slice(&0i16.to_be_bytes());
-        body.extend_from_slice(&0i16.to_be_bytes());
-        body.push(0);
-        body.push(16);
-        body.extend_from_slice(&1.0f32.to_bits().to_be_bytes());
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-        for gate in gates {
-            body.extend_from_slice(&gate.to_be_bytes());
-        }
-    }
-
-    fn set_pointer(body: &mut [u8], pointer_index: usize, value: usize) {
-        let offset = 32 + pointer_index * 4;
-        body[offset..offset + 4].copy_from_slice(&(value as u32).to_be_bytes());
+        assert_eq!(volume.cuts, original.cuts);
     }
 }
