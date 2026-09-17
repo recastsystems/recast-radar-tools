@@ -9,12 +9,12 @@ Linux. Run them there, or in the `nexbench` container (see below).
 
 | Target | Crate | Entry points |
 |---|---|---|
-| `level2_volume` | `recast-radar-io-nexrad` | `decode_volume_from_bytes`, `decode_gzip_volume_from_bytes_with_preview`, `decode_volume_from_bytes_with_bzip_preview`, `decode_gzip_preview_from_bytes`, `decode_bzip_block_preview_from_bytes` (one per input, by length mod 4; the preview threshold is the last byte) |
-| `io_router` | `recast-radar-io` | `sniff_supported_volume_format`, `decode_supported_volume_bytes` (zip/gzip unwrapping, then Level II, ODIM, CfRadial, DORADE or JMA) |
-| `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `decode_odim_h5_volume`, `decode_odim_h5_cartesian_max` |
-| `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `decode_cfradial1_volume` |
-| `dorade` | `recast-radar-io-dorade` | `looks_like_dorade_bytes`, `peek_dorade_sweep`, then `decode_dorade_sweep_volume` (even lengths) or `decode_dorade_volume_from_slices` with the input twice (odd lengths) |
-| `jma` | `recast-radar-io-jma` | `looks_like_jma_tar_bytes`, then by length mod 3: `decode_jma_tar_volumes(None)`, `decode_jma_tar_first_station`, or `jma_tar_station_headers` plus a site-filtered `decode_jma_tar_volumes` |
+| `level2_volume` | `recast-radar-io-nexrad` | `read_volume_from_bytes`, `read_gzip_volume_from_bytes_with_preview`, `read_volume_from_bytes_with_bzip_preview`, `read_gzip_preview_from_bytes`, `read_bzip_block_preview_from_bytes` (one per input, by length mod 4; the preview threshold is the last byte) |
+| `io_router` | `recast-radar-io` | `sniff_supported_volume_format`, `read_supported_volume_bytes` (zip/gzip unwrapping, then Level II, ODIM, CfRadial, DORADE or JMA) |
+| `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `read_odim_h5_volume`, `decode_odim_h5_cartesian_max` |
+| `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `read_cfradial1_volume` |
+| `dorade` | `recast-radar-io-dorade` | `looks_like_dorade_bytes`, `peek_dorade_sweep`, then `read_dorade_sweep_volume` (even lengths) or `read_dorade_volume_from_slices` with the input twice (odd lengths) |
+| `jma` | `recast-radar-io-jma` | `looks_like_jma_tar_bytes`, then by length mod 3: `read_jma_tar_volumes(None)`, `read_jma_tar_first_station`, or `jma_tar_station_headers` plus a site-filtered `read_jma_tar_volumes` |
 | `bzip2` | `recast-radar-bzip2` | `Decoder::decode_stream_into` on the input, then `Decoder::decode_two_into` on the input paired with its own first half, with a 64 MiB output limit |
 
 The harness bodies live in `src/lib.rs`; each `fuzz_targets/<target>.rs` is a
@@ -76,12 +76,19 @@ To check a seed directory, run `fuzz-tools replay <target> fuzz/seeds/<target>`.
 It prints `decoded` when an entry point returned `Ok` for the input's mode, and
 `rejected` otherwise. Some seeds are rejected on purpose:
 
-- The netCDF-4 CfRadial file tests the netCDF-3 reader's rejection path.
+- The netCDF-4 CfRadial file tests the netCDF-3 reader's rejection path
+  (`cfradial`, `odim` and `io_router`).
 - Level II seeds whose length is 3 mod 4 go through the preview-only mode.
   That mode reports `rejected` unless a preview cut is completed.
-- `l2-kvwx-20080415-235337` (AR2V0001 header with Message 31 radials) is
-  rejected by the current Level II decoder. It stays as a seed for that edge
-  case.
+- A real-time intermediate chunk on its own (`...-002-i`) has no volume
+  header.
+- `io_router` rejects the ODIM Cartesian composite, which only the `odim`
+  target decodes.
+
+`l2-kvwx-20080415-235337` (AR2V0001 header with Message 31 radials) was
+rejected until the Level II decoder accepted a blank Message 31 radar
+identifier (`09c8d1e`). It now decodes and stays as a seed for that edge
+case.
 
 ## Running
 

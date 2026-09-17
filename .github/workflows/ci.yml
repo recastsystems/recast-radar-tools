@@ -125,6 +125,22 @@ jobs:
       # No C or C++ build without `net`, for any target; see the script header.
       - run: bash tools/ci/pure-rust-check.sh
 
+  fuzz:
+    name: fuzz harness compiles (stable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      # `fuzz/` is its own workspace, so the jobs above never build it, and a
+      # renamed decoder entry point would break it unnoticed. Without the
+      # `libfuzzer` feature this checks the harness library and `fuzz-tools`
+      # on stable (the libFuzzer binaries need nightly; see fuzz/README.md).
+      - run: cargo check --manifest-path fuzz/Cargo.toml --workspace --all-targets --no-default-features --locked
+
   wasm:
     name: wasm32
     runs-on: ubuntu-latest

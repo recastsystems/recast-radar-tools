@@ -55,12 +55,12 @@ pub fn level2_volume(data: &[u8]) -> bool {
     // Preview threshold from the last byte: 0..=255 radials.
     let min_radials = usize::from(data.last().copied().unwrap_or(0));
     match data.len() % 4 {
-        0 => nexrad::decode_volume_from_bytes(data).is_ok(),
-        1 => nexrad::decode_gzip_volume_from_bytes_with_preview(data, min_radials, |_| {}).is_ok(),
-        2 => nexrad::decode_volume_from_bytes_with_bzip_preview(data, min_radials, |_| {}).is_ok(),
+        0 => nexrad::read_volume_from_bytes(data).is_ok(),
+        1 => nexrad::read_gzip_volume_from_bytes_with_preview(data, min_radials, |_| {}).is_ok(),
+        2 => nexrad::read_volume_from_bytes_with_bzip_preview(data, min_radials, |_| {}).is_ok(),
         _ => {
-            let gzip = nexrad::decode_gzip_preview_from_bytes(data, min_radials);
-            let bzip = nexrad::decode_bzip_block_preview_from_bytes(data, min_radials);
+            let gzip = nexrad::read_gzip_preview_from_bytes(data, min_radials);
+            let bzip = nexrad::read_bzip_block_preview_from_bytes(data, min_radials);
             matches!(gzip, Ok(Some(_))) || matches!(bzip, Ok(Some(_)))
         }
     }
@@ -85,14 +85,14 @@ pub fn bzip2(data: &[u8]) -> bool {
 /// sniffing, and dispatch to every volume decoder.
 pub fn io_router(data: &[u8]) -> bool {
     let _ = recast_radar_io::sniff_supported_volume_format(data);
-    recast_radar_io::decode_supported_volume_bytes(data).is_ok()
+    recast_radar_io::read_supported_volume_bytes(data).is_ok()
 }
 
 /// ODIM_H5 polar volumes and Cartesian composites over the pure-Rust HDF5
 /// reader (`recast-radar-io-odim`).
 pub fn odim(data: &[u8]) -> bool {
     let _ = odim_io::looks_like_hdf5_bytes(data);
-    let polar = odim_io::decode_odim_h5_volume(data).is_ok();
+    let polar = odim_io::read_odim_h5_volume(data).is_ok();
     let cartesian = odim_io::decode_odim_h5_cartesian_max(data).is_ok();
     polar || cartesian
 }
@@ -100,7 +100,7 @@ pub fn odim(data: &[u8]) -> bool {
 /// CfRadial 1.x over the classic netCDF reader (`recast-radar-io-cfradial`).
 pub fn cfradial(data: &[u8]) -> bool {
     let _ = cfradial_io::looks_like_netcdf3_bytes(data);
-    cfradial_io::decode_cfradial1_volume(data).is_ok()
+    cfradial_io::read_cfradial1_volume(data).is_ok()
 }
 
 /// DORADE sweepfiles (`recast-radar-io-dorade`): header peek, then a
@@ -110,9 +110,9 @@ pub fn dorade(data: &[u8]) -> bool {
     let _ = dorade_io::looks_like_dorade_bytes(data);
     let peek = dorade_io::peek_dorade_sweep(data).is_ok();
     let decoded = if data.len().is_multiple_of(2) {
-        dorade_io::decode_dorade_sweep_volume(data).is_ok()
+        dorade_io::read_dorade_sweep_volume(data).is_ok()
     } else {
-        dorade_io::decode_dorade_volume_from_slices(&[data, data]).is_ok()
+        dorade_io::read_dorade_volume_from_slices(&[data, data]).is_ok()
     };
     peek || decoded
 }
@@ -123,12 +123,12 @@ pub fn dorade(data: &[u8]) -> bool {
 pub fn jma(data: &[u8]) -> bool {
     let _ = jma_io::looks_like_jma_tar_bytes(data);
     match data.len() % 3 {
-        0 => jma_io::decode_jma_tar_volumes(data, None).is_ok(),
-        1 => jma_io::decode_jma_tar_first_station(data).is_ok(),
+        0 => jma_io::read_jma_tar_volumes(data, None).is_ok(),
+        1 => jma_io::read_jma_tar_first_station(data).is_ok(),
         _ => match jma_io::jma_tar_station_headers(data) {
             Ok(stations) => stations.last().is_some_and(|station| {
                 let filter = format!("RS{}", station.number);
-                jma_io::decode_jma_tar_volumes(data, Some(&filter)).is_ok()
+                jma_io::read_jma_tar_volumes(data, Some(&filter)).is_ok()
             }),
             Err(_) => false,
         },

@@ -357,6 +357,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -429,10 +430,10 @@ dependencies = [
 name = "recast-radar-io-nexrad"
 version = "0.1.0"
 dependencies = [
- "bzip2",
  "chrono",
  "flate2",
  "rayon",
+ "recast-radar-bzip2",
  "recast-radar-core",
  "thiserror",
 ]
