@@ -5,14 +5,16 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-chrono.workspace = true
-recast-radar-color-tables = { path = "../recast-radar-color-tables" }
 image.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-correct = { path = "../recast-radar-correct" }
 rayon.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 chrono.workspace = true
-recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
+recast-radar-filters = { path = "../recast-radar-filters" }
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-map = { path = "../recast-radar-map" }
+recast-radar-retrieve = { path = "../recast-radar-retrieve" }
+recast-radar-track = { path = "../recast-radar-track" }

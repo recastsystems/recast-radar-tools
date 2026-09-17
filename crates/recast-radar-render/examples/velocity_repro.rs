@@ -8,7 +8,8 @@ use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
 use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_render::{RasterOptions, dealias_velocity_grid, render_moment_image};
+use recast_radar_correct::dealias_velocity_grid;
+use recast_radar_render::{RasterOptions, render_moment_image};
 
 /// Composite an RGBA image over a dark background (radar displays are black)
 /// and save, so near-white strong velocities are visible.

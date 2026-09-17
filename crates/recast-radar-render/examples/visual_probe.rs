@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use recast_radar_color_tables::ColorTableSet;
 use image::{ImageBuffer, Rgba};
 use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_render::{ViewportMomentCache, ViewportRasterOptions, viewport_rgba_buffer_len};
+use recast_radar_render::{
+    ColorTableSet, ViewportMomentCache, ViewportRasterOptions, viewport_rgba_buffer_len,
+};
 
 const DEFAULT_KM_PER_PX: f32 = 0.16;
 

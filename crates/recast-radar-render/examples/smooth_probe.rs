@@ -1,10 +1,11 @@
 // Render native vs smoothed reflectivity PNGs for visual comparison.
 // usage: smooth_probe <l2-file> <out-dir>
-use recast_radar_color_tables::{ColorTableFamily, ColorTableSet};
 use image::{ImageBuffer, Rgba};
 use recast_radar_core::{MomentType, RadarVolume};
+use recast_radar_filters::smooth_moment_grid;
 use recast_radar_render::{
-    ViewportMomentCache, ViewportRasterOptions, smooth_moment_grid, viewport_rgba_buffer_len,
+    ColorTableFamily, ColorTableSet, ViewportMomentCache, ViewportRasterOptions,
+    viewport_rgba_buffer_len,
 };
 use std::time::Instant;
 

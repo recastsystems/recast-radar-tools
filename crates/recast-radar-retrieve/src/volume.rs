@@ -1,10 +1,10 @@
 //! Volume/column products built from multiple elevation cuts.
 //!
 //! BowEcho already has optimized implementations of CREF, echo tops, VIL,
-//! VIL density, SHI/MESH/POSH/POH, and cross sections in `recast_radar_render`. This
+//! VIL density, SHI/MESH/POSH/POH, and cross sections in `recast_radar_map`. This
 //! module adds generic CAPPI/column statistics plus echo-base/depth and height
-//! of maximum reflectivity without coupling `recast_radar_retrieve` back to the
-//! renderer.
+//! of maximum reflectivity without coupling `recast_radar_retrieve` to that
+//! crate.
 
 use recast_radar_core::{
     MomentGrid, MomentStorage, MomentType, RadarVolume, beam_ground_range_m,

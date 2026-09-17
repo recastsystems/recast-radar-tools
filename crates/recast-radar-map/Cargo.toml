@@ -1,19 +1,17 @@
 [package]
-name = "recast-radar-retrieve"
+name = "recast-radar-map"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-chrono.workspace = true
 rayon.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 recast-radar-correct = { path = "../recast-radar-correct" }
-thiserror.workspace = true
+recast-radar-filters = { path = "../recast-radar-filters" }
 
 [dev-dependencies]
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
-recast-radar-map = { path = "../recast-radar-map" }
+recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
 
 [lints]
 workspace = true

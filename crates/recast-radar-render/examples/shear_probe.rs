@@ -6,7 +6,8 @@ use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
 use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_render::{RasterOptions, azimuthal_shear_grid, render_moment_image};
+use recast_radar_render::{RasterOptions, render_moment_image};
+use recast_radar_retrieve::azimuthal_shear_grid;
 
 fn save_on_black(img: &ImageBuffer<Rgba<u8>, Vec<u8>>, path: &str) {
     let (w, h) = img.dimensions();

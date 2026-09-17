@@ -13,10 +13,10 @@ use std::time::Instant;
 
 mod dealias_eval;
 
-use recast_radar_color_tables::ColorTableSet;
 use recast_radar_core::{MomentType, RadarVolume};
 use recast_radar_render::{
-    ViewportMomentCache, ViewportRasterOptions, color_family_for_moment, viewport_rgba_buffer_len,
+    ColorTableSet, ViewportMomentCache, ViewportRasterOptions, color_family_for_moment,
+    viewport_rgba_buffer_len,
 };
 
 const USAGE: &str = "usage: recast-radar-bench <path-to-level2-file> [--iters N] [--json]

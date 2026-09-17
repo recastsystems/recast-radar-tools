@@ -1,14 +1,20 @@
 //! Radar product derivation and registry support.
 //!
-//! The engine has three deliberately separate layers:
+//! The engine has deliberately separate layers:
 //! - [`sweep`] derives products that live on one elevation cut and can therefore
 //!   be inserted into `ElevationCut::moments`.
 //! - [`volume`] derives products that require the vertical column from multiple
 //!   elevation cuts.
-//! - [`temporal`] combines already co-registered grids from multiple volumes.
+//! - temporal products (combining already co-registered grids from multiple
+//!   volumes) live in `recast_radar_track`.
 //!
 //! Keeping these layers separate prevents a volume product such as composite
 //! reflectivity or VIL from being mislabeled as a native single-sweep moment.
+//!
+//! Velocity retrievals sit alongside them: azimuthal shear and radial
+//! divergence, rotation (MDA-style) detection, GBVTD tropical-cyclone
+//! circulation, the VAD wind profile ([`compute_vwp`]) and damaging-wind
+//! products ([`wind`]).
 //!
 //! [`availability`] sits alongside them and answers the question a UI asks
 //! *before* deriving anything: which elevation cuts can show a given moment,
@@ -16,28 +22,47 @@
 //! could derive from them on demand.
 
 mod availability;
+mod detect;
+mod gbvtd;
+mod shear;
 mod sweep;
-mod temporal;
 mod volume;
+mod vwp;
+pub mod wind;
 
 pub use availability::{
     MIN_DISPLAYABLE_RADIALS, advanced_derived_product_for_moment, cut_can_materialize_moment,
     cut_has_advanced_product_sources, cut_has_moment_source, displayable_radial_threshold,
     volume_has_advanced_product_sources,
 };
+pub use detect::{
+    RotationSite, RotationStrength, detect_rotation_sites, detect_rotation_sites_from_dealiased,
+    rotation_features_per_tilt, rotation_features_per_tilt_from_dealiased,
+    rotation_velocity_cut_indices,
+};
+pub use gbvtd::{
+    PolarVelocityField, RingFit, TcCirculation, find_center_and_retrieve, retrieve_axisymmetric,
+};
+pub use shear::{
+    azimuthal_shear_grid, azimuthal_shear_grid_from_dealiased, radial_divergence_grid,
+    radial_divergence_grid_from_dealiased,
+};
 pub use sweep::{
     AttenuationConfig, CutDerivationReport, DerivationConfig, DerivationReport,
     DerivedSweepProduct, DiagnosticConfig, KdpConfig, MeteoMaskConfig, QpeConfig, RadarBand,
     TextureConfig, derive_cut_in_place, derive_product, derive_volume_in_place,
 };
-pub use temporal::{
-    accumulate_rate_grids, difference_grid, exceedance_duration_grid, exceedance_probability_grid,
-    maximum_swath_grid, mean_grid, minimum_swath_grid, trend_grid,
-};
 pub use volume::{
     CappiInterpolation, cappi_grid, column_max_grid, column_mean_grid, column_min_grid,
     echo_base_grid, echo_depth_grid, echo_top_height_grid, height_of_max_reflectivity_grid,
     low_level_composite_reflectivity_grid,
+};
+pub use vwp::{
+    VwpCandidateDiagnostics, VwpConfig, VwpError, VwpLevel, VwpLevelOutcome, VwpProfile,
+    VwpQuality, VwpRejectedLevel, VwpRejectionReason, VwpWindLevel, compute_vwp,
+};
+pub use wind::{
+    gust_proxy_grid, gust_proxy_grid_from_dealiased, marc_grid, marc_grid_from_dealiased,
 };
 
 use recast_radar_core::{MomentType, ProductId};
@@ -98,7 +123,7 @@ pub fn derived_products() -> Vec<ProductDescriptor> {
 
 /// Volume products already implemented by BowEcho or provided by [`volume`].
 ///
-/// The first eight IDs match BowEcho's existing `recast_radar_render::volumetric` paths;
+/// The first eight IDs match the volume products in `recast_radar_map` (volumetric);
 /// the remaining products are implemented in this crate.
 pub fn volume_products() -> Vec<ProductDescriptor> {
     [
@@ -128,7 +153,7 @@ pub fn volume_products() -> Vec<ProductDescriptor> {
     .collect()
 }
 
-/// Temporal/grid-combination products implemented by [`temporal`].
+/// Temporal/grid-combination products implemented in `recast_radar_track`.
 pub fn temporal_products() -> Vec<ProductDescriptor> {
     [
         ("DIFF", "Volume-to-Volume Difference"),
