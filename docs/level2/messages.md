@@ -93,9 +93,39 @@ Both are operator messages (4 from the RDA, 10 from the RPG). Neither appears in
 
 ## Messages 5 and 7: Volume Coverage Pattern (Table XI)
 
-Module: `vcp.rs`. Status: placeholder; the walker yields the body unparsed.
-Real samples: Message 5 in metadata records from 2005 on (not in KVWX 2008). No Message 7 (it goes from the
-RPG to the RDA).
+Module: `vcp.rs` (`VolumeCoveragePattern`, one `VcpCut` per elevation cut). Status: message 5 **verified**;
+message 7 shares the decoder and has **no real sample** (it goes from the RPG to the RDA).
+Real samples: Message 5 in metadata records from 2005 on (not in KVWX 2008), including TDWR.
+
+- Verified: `tests/messages_vcp.rs` compares every field with MetPy 1.7.1 `Level2File.vcp_info` on 22 metadata
+  records (Build 10.0 to 24.1, TDWR VCP 80, the KIWA real-time start chunk). The goldens are
+  `testdata/level2/golden/vcp/<id>.json`, written by `tools/level2_golden.py vcp`. The script maps MetPy's decoded
+  names back to codes with MetPy's own tables. A second test checks the halfword 10 SAILS, MRLE, MPDA and base tilt
+  flags against the per-cut E15 flags and elevations, and against the manifest tags. The message 7 test relabels
+  a real message 5 frame, so it checks the dispatch only, not a real message 7.
+- Layout: halfword 1 counts the body only (11 + 23 per cut in every sample; the message header size is 8 more).
+  Cuts are read with a stride of (halfword 1 - 11) / cuts, which must be a whole number of at least 23.
+- Angles: elevation (E1) and EBC (E19) codes above 90 degrees are negative, per the Table III-A note. Angle and
+  azimuth rate codes are decoded from all 16 bits, like MetPy, Py-ART and xradar; the ICD marks bits 0-2 not
+  applicable, and they are clear in every sample.
+- Super resolution (E3) bits follow Build 24.0: bit 0 0.5 degree azimuth, bit 1 1/4 km reflectivity, bit 2 Doppler
+  to 300 km, bit 3 dual polarization to 300 km. MetPy 1.7.1 names bits 1 and 2 differently. In dual-polarization
+  volumes, split-cut surveillance cuts carry 11 and their Doppler partners 7, which fits the Build 24.0 names.
+- Halfword 10 bit 10 is "MPDA cuts added" in the Table XI body, while note 16 calls bits 8-10 spare. It is exposed
+  as `mpda_cuts_added()` and is clear in every sample.
+
+Quirks found in the real corpus:
+
+- **KLIX 2005-08-29.** The Message 5 frame declares 1208 halfwords, but every body byte is zero. The decoder returns
+  an error (`VCP message size is 0`). MetPy skips the message.
+- **Builds 10.0 to 16.1** (2008-2016 files). The VCP version is 0, and halfword 10 is 0 even in SAILS volumes
+  (KOAX 2014, KEWX 2016). The per-cut E15 word is 0 as well.
+- **KDGX 2023-03-25.** Halfword 10 is 0x5005: SAILS x2, base tilt VCP, and 2 base tilts in bits 13-15, although
+  note 16 says only one base tilt is supported. The base tilt flag (E15 bit 10) is set on 3 split-cut pairs at
+  0.31 degrees, 2 of them SAILS. EBC angles are -0.088 and -0.132 degrees (codes 65520 and 65512).
+- **KDVN 2020-08-10.** Halfword 9 (sequencing) is 0x47: 7 elevations and up to 2 SAILS cuts, with the sequence
+  not active.
+- **KMTX 2024-03-01.** The base tilt split cut is commanded at 0.0 degrees.
 
 ## Message 6: RDA Control Commands (Table X)
 
@@ -166,9 +196,22 @@ Real samples: every volume from 2008 on (not the status-only stub or the `_MDM` 
 
 ## Message 32: RDA PRF Data (Table XVIII)
 
-Module: `prf.rs`. Status: placeholder; the walker yields the body unparsed.
+Module: `prf.rs` (`RdaPrfData`; `surveillance_prf_hz` and `doppler_prf_hz` resolve a `VcpCut`'s PRF numbers).
+Status: **verified**.
 Real samples: PAHG 2025 (Build 23.1), KILX 2026, KIWA 2026 (Build 24.1, including the committed start
 chunk).
+
+- Layout: each waveform section is variable length. It holds the waveform type, a count N, then N 32-bit PRFs in
+  mHz. Every sample has 3 sections of 8 PRFs, for waveforms 1, 2 and 5 (56 body halfwords). The PAHG and KILX
+  waveform 5 tables are identical; KIWA's differs.
+- Verified: MetPy, Py-ART and xradar do not decode this message. `tests/messages_vcp.rs` checks exact values against
+  the message bytes, which are quoted in the tests. It also takes, for every sweep of the three volumes, the PRF
+  that messages 5 and 32 select (waveform 1 table for surveillance; waveform 2 table for waveforms 2, 3 and 4, per
+  note 1). It checks that PRF against the unambiguous range MetPy reads from the Message 31 radial blocks: c / (2
+  PRF) must be within 0.5%, and every other PRF in the table must be more than 3% off. The radial blocks hold whole
+  km. For Doppler sweeps they equal c / (2 PRF) rounded up; for surveillance sweeps they are 1.30-1.33 km above it.
+- The waveform 5 (staggered pulse pair) table is verified against the bytes only, because no corpus VCP has an SPP
+  cut.
 
 ## Message 33: RDA Log Data (Table XVIV)
 

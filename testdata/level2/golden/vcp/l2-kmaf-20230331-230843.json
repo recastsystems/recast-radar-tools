@@ -1,0 +1,27 @@
+{
+  "id": "l2-kmaf-20230331-230843",
+  "generator": "tools/level2_golden.py vcp",
+  "metpy": "1.7.1",
+  "message_5": {
+    "size_hw": 195,
+    "pattern_type": 2,
+    "num": 31,
+    "num_el_cuts": 8,
+    "vcp_version": 1,
+    "clutter_map_group": 1,
+    "dop_res_code": 2,
+    "pulse_width_code": 4,
+    "vcp_sequencing": 0,
+    "vcp_supplemental_info": 0,
+    "els": [
+      {"el_angle": 0.4833984375, "channel_config": 0, "waveform": 1, "super_res": 11, "surv_prf_num": 1, "surv_pulse_count": 63, "az_rate": 5.042724609375, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 0.0, "sector1_doppler_prf_num": 0, "sector1_pulse_count": 0, "supplemental_data": 0, "sector2_edge": 0.0, "sector2_doppler_prf_num": 0, "sector2_pulse_count": 0, "ebc_angle": 0.0, "sector3_edge": 0.0, "sector3_doppler_prf_num": 0, "sector3_pulse_count": 0},
+      {"el_angle": 0.4833984375, "channel_config": 0, "waveform": 2, "super_res": 7, "surv_prf_num": 0, "surv_pulse_count": 0, "az_rate": 5.064697265625, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 30.0146484375, "sector1_doppler_prf_num": 1, "sector1_pulse_count": 87, "supplemental_data": 0, "sector2_edge": 210.0146484375, "sector2_doppler_prf_num": 1, "sector2_pulse_count": 87, "ebc_angle": 0.0, "sector3_edge": 334.9951171875, "sector3_doppler_prf_num": 1, "sector3_pulse_count": 87},
+      {"el_angle": 1.494140625, "channel_config": 0, "waveform": 1, "super_res": 11, "surv_prf_num": 1, "surv_pulse_count": 63, "az_rate": 5.042724609375, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 0.0, "sector1_doppler_prf_num": 0, "sector1_pulse_count": 0, "supplemental_data": 0, "sector2_edge": 0.0, "sector2_doppler_prf_num": 0, "sector2_pulse_count": 0, "ebc_angle": 0.0, "sector3_edge": 0.0, "sector3_doppler_prf_num": 0, "sector3_pulse_count": 0},
+      {"el_angle": 1.494140625, "channel_config": 0, "waveform": 2, "super_res": 7, "surv_prf_num": 0, "surv_pulse_count": 0, "az_rate": 5.064697265625, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 30.0146484375, "sector1_doppler_prf_num": 1, "sector1_pulse_count": 87, "supplemental_data": 0, "sector2_edge": 210.0146484375, "sector2_doppler_prf_num": 1, "sector2_pulse_count": 87, "ebc_angle": 0.0, "sector3_edge": 334.9951171875, "sector3_doppler_prf_num": 1, "sector3_pulse_count": 87},
+      {"el_angle": 2.5048828125, "channel_config": 0, "waveform": 1, "super_res": 11, "surv_prf_num": 1, "surv_pulse_count": 63, "az_rate": 5.042724609375, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 0.0, "sector1_doppler_prf_num": 0, "sector1_pulse_count": 0, "supplemental_data": 0, "sector2_edge": 0.0, "sector2_doppler_prf_num": 0, "sector2_pulse_count": 0, "ebc_angle": 0.0, "sector3_edge": 0.0, "sector3_doppler_prf_num": 0, "sector3_pulse_count": 0},
+      {"el_angle": 2.5048828125, "channel_config": 0, "waveform": 2, "super_res": 7, "surv_prf_num": 0, "surv_pulse_count": 0, "az_rate": 5.064697265625, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 30.0146484375, "sector1_doppler_prf_num": 1, "sector1_pulse_count": 87, "supplemental_data": 0, "sector2_edge": 210.0146484375, "sector2_doppler_prf_num": 1, "sector2_pulse_count": 87, "ebc_angle": 0.0, "sector3_edge": 334.9951171875, "sector3_doppler_prf_num": 1, "sector3_pulse_count": 87},
+      {"el_angle": 3.515625, "channel_config": 0, "waveform": 3, "super_res": 10, "surv_prf_num": 0, "surv_pulse_count": 0, "az_rate": 5.064697265625, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 30.0146484375, "sector1_doppler_prf_num": 1, "sector1_pulse_count": 87, "supplemental_data": 0, "sector2_edge": 210.0146484375, "sector2_doppler_prf_num": 1, "sector2_pulse_count": 87, "ebc_angle": 0.0, "sector3_edge": 334.9951171875, "sector3_doppler_prf_num": 1, "sector3_pulse_count": 87},
+      {"el_angle": 4.482421875, "channel_config": 0, "waveform": 3, "super_res": 10, "surv_prf_num": 0, "surv_pulse_count": 0, "az_rate": 5.064697265625, "ref_thresh": 0.0, "vel_thresh": 0.0, "sw_thresh": 0.0, "zdr_thresh": 0.0, "phidp_thresh": 0.0, "rhohv_thresh": 0.0, "sector1_edge": 30.0146484375, "sector1_doppler_prf_num": 1, "sector1_pulse_count": 87, "supplemental_data": 0, "sector2_edge": 210.0146484375, "sector2_doppler_prf_num": 1, "sector2_pulse_count": 87, "ebc_angle": 0.0, "sector3_edge": 334.9951171875, "sector3_doppler_prf_num": 1, "sector3_pulse_count": 87}
+    ]
+  }
+}
