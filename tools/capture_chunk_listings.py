@@ -15,7 +15,7 @@ Subcommands:
   capture SITE[:FIRST-LAST] [...] [--volumes N] [--out DIR] [--metpy]
       For each site, take the N newest consecutive complete volumes (every
       chunk id 1..E present, one Start, one End), or exactly the volume ids
-      FIRST..LAST (modulo 1000) when given. For each volume write
+      FIRST..LAST when given (ids wrap from 999 to 1). For each volume write
 
         DIR/SITE/VOLID-YYYYMMDD-HHMMSS.xml          raw ListObjectsV2 response
                                                      for prefix SITE/VOLID/,
@@ -55,6 +55,19 @@ tilt and SAILS, VCP 34, VCP 12, VCP 212 with and without AVSET, VCP 215, and
 TDWR VCP 90. KIWA 306-308 includes volume 307, which TD.1 captured chunk by
 chunk.
 
+The held-out fixtures (crates/recast-radar-data/tests/fixtures/chunks-holdout),
+which were not used to build or tune the timing model, were produced on
+2026-09-17 with the same tools, from sites outside the fitted set picked from a
+`survey` at about 02:45Z for what the fitted set lacks (TDWR VCP 80, VCP 34 with
+a base tilt, VCP 215 with MESO-SAILS, the 999 -> 1 id wrap), by:
+
+  python tools/capture_chunk_listings.py capture TLAS:998-1 --metpy --out <dir A>
+  python tools/capture_chunk_listings.py capture KTLX KMUX KHNX KMSX KDMX KGJX KBUF PAHG TDEN \
+      --volumes 3 --metpy --out <dir B>
+
+(02:46Z and 03:09Z); both output directories were copied into the fixtures
+directory unchanged, with the TLAS manifest entries appended after dir B's.
+
 In the survey output, "inserted" counts Message 5 cuts with nonzero
 supplemental data (SAILS, MESO-SAILS, MRLE, base tilt).
 """
@@ -78,7 +91,12 @@ import xml.etree.ElementTree as ET
 BUCKET_URL = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/"
 NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 USER_AGENT = "recast-radar-tools capture_chunk_listings.py"
-VOLUME_ID_MODULUS = 1000
+# Volume ids run 1..=999 and the id after 999 is 1 (there is no id 0).
+MAX_VOLUME_ID = 999
+
+
+def next_volume_id(volume_id: int) -> int:
+    return 1 if volume_id >= MAX_VOLUME_ID else volume_id + 1
 
 
 # ---------------------------------------------------------------- HTTP / S3
@@ -159,8 +177,8 @@ def parse_time(value: str) -> dt.datetime:
 def volume_ids_newest_first(site: str) -> list[int]:
     """Volume ids present under SITE/, newest first.
 
-    Ids count up modulo 1000; the newest id is the one just before the largest
-    circular gap in the set of present ids.
+    Ids count up 1..=999 and wrap to 1; the newest id is the one just before
+    the largest circular gap in the set of present ids.
     """
     _, prefixes, _ = list_all(site + "/", "/")
     ids = sorted({int(p.rstrip("/").split("/")[1]) for p in prefixes if p.rstrip("/").split("/")[1].isdigit()})
@@ -168,7 +186,7 @@ def volume_ids_newest_first(site: str) -> list[int]:
         return []
     largest_gap, newest_index = -1, len(ids) - 1
     for index, current in enumerate(ids):
-        following = ids[(index + 1) % len(ids)] + (VOLUME_ID_MODULUS if index + 1 == len(ids) else 0)
+        following = ids[(index + 1) % len(ids)] + (MAX_VOLUME_ID if index + 1 == len(ids) else 0)
         if following - current > largest_gap:
             largest_gap, newest_index = following - current, index
     return [ids[(newest_index - k) % len(ids)] for k in range(len(ids))]
@@ -510,7 +528,9 @@ def command_capture(args):
         volumes = []
         if id_range:
             first, _, last = id_range.partition("-")
-            wanted = [(int(first) + k) % VOLUME_ID_MODULUS for k in range((int(last) - int(first)) % VOLUME_ID_MODULUS + 1)]
+            wanted = [int(first)]
+            while wanted[-1] != int(last) and len(wanted) < MAX_VOLUME_ID:
+                wanted.append(next_volume_id(wanted[-1]))
             for volume_id in reversed(wanted):
                 found = complete_volume(site, volume_id)
                 if found is None:
@@ -532,7 +552,7 @@ def command_capture(args):
         if len(volumes) < args_volumes:
             raise SystemExit(f"{site}: only {len(volumes)} consecutive complete volumes")
         newest_first = [volume_id for volume_id, _ in volumes]
-        if any((a - b) % VOLUME_ID_MODULUS != 1 for a, b in zip(newest_first, newest_first[1:])):
+        if any(next_volume_id(b) != a for a, b in zip(newest_first, newest_first[1:])):
             raise SystemExit(f"{site}: volume ids {newest_first} are not consecutive")
         print(f"{site}: volumes {[v for v, _ in reversed(volumes)]}", flush=True)
         for _, (listing, rows) in reversed(volumes):

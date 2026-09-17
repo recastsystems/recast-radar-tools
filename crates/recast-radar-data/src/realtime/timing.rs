@@ -15,6 +15,15 @@
 //! collected. With AVSET that can come before the plan's last cut. The only
 //! clock the listing offers is S3 `LastModified`, which is whole seconds.
 //!
+//! Some radars also publish status-only chunks between cuts: one LDM record
+//! holding a single Message 2 (RDA status) and no radials, about 130 bytes
+//! (KMUX, 2026-09-17: one to three per volume). Each shifts the ids of the
+//! chunks after it by one. The model therefore counts *plan chunk numbers*:
+//! the Start chunk is 1 and radial chunks are numbered as the plan lays them
+//! out. [`VolumeObservation::plan_chunk_number`] maps a listed id to its plan
+//! number, recognizing status-only chunks by size
+//! ([`MIN_RADIAL_CHUNK_BYTES`]).
+//!
 //! # Model
 //!
 //! For radial chunk `k` in cut `i`, where the cut has `N` radials, commanded
@@ -33,13 +42,23 @@
 //! A sweep lasts `rotation_scale * R_i` and starts
 //! `rotation_scale * (R_0 + ... + R_(i-1)) + inter_cut_gap * i` after `V`.
 //!
-//! The rotation times come from a [`ScanPlan`]. The best source is the
-//! Message 5 in the volume's own Start chunk, decoded by the caller (for
-//! example with `recast-radar-io-nexrad`). That plan already includes SAILS,
-//! MESO-SAILS, MRLE and base-tilt insertions and the Doppler PRF actually in
-//! use. [`ScanPlan::from_build24`] builds an approximate plan from the Build 24
-//! Appendix C table in [`super::vcp_catalog`] when only the VCP number is
-//! known.
+//! The rotation times come from a [`ScanPlan`]. Two sources:
+//!
+//! - [`ScanPlan::new`] with the cut table of the Message 5 in the volume's
+//!   own Start chunk (elevation, azimuth rate and super-resolution flag per
+//!   cut). That table already includes SAILS, MESO-SAILS, MRLE and base-tilt
+//!   insertions and the azimuth rates the radar actually runs. This crate
+//!   does not decode Level II messages, and at this commit no Rust code in
+//!   the workspace decodes the Message 5 cut table either
+//!   (`recast-radar-io-nexrad` reads only the VCP number from Message 5; the
+//!   full decoder is stream A's work). The tests take their tables from
+//!   `tools/capture_chunk_listings.py`, a Python decoder checked against
+//!   MetPy's `Level2File`.
+//! - [`ScanPlan::from_build24`], an approximate plan from the Build 24
+//!   Appendix C table in [`super::vcp_catalog`] when only the VCP number is
+//!   known. It lacks inserted cuts and staggered-PRT batch cuts: its cut
+//!   layout matched the executed one in 6 of 21 NEXRAD volumes of the fitted
+//!   captures and 12 of 24 of the held-out ones (see `tests/timing.rs`).
 //!
 //! # Learned statistics and projection
 //!
@@ -47,7 +66,8 @@
 //! (the TD.1 live capture), plus its rollover to 308. Real sites differ. In
 //! the committed captures, WSR-88D rotations take 0.93 to 0.99 of the
 //! commanded time depending on the site, and TDWR publishes about 25 s after
-//! collection instead of about 3 s.
+//! collection instead of about 3 s. The inter-cut gap is never learned (see
+//! [`TimingStatistics`]); it stays at the 1.1 s measured on KIWA 307.
 //! [`TimingStatistics`] fits `rotation_scale` and `publish_offset` to each
 //! completed volume's `LastModified` times. It uses a Theil-Sen estimator, so
 //! late-published chunks (up to 15 s late in the captures) do not bias it. It
@@ -57,6 +77,20 @@
 //! in-progress volume: every chunk's expected `LastModified`, when each cut
 //! completes, the End chunk, and the next volume. It anchors on the lower
 //! quartile of the latest observed residuals.
+//!
+//! # Known limits
+//!
+//! Found on captures held out from building the model (`tests/timing.rs`
+//! runs every claim on them and pins each deviation):
+//!
+//! - The End chunk is predicted from the previous volume's top elevation.
+//!   When AVSET changes the top between volumes (KBUF 54 -> 55), the
+//!   prediction misses by a cut until chunks past it appear.
+//! - TDWR Start chunks trail the key time by a varying 27-34 s (TLAS), so the
+//!   next Start chunk can be several seconds off even when the key time is
+//!   right.
+//! - TDWR VCP 80 (TDEN) reports azimuth rates for some cuts that differ from
+//!   the rotation it executes, which displaces the chunks after those cuts.
 
 use std::collections::VecDeque;
 use std::ops::RangeInclusive;
@@ -76,7 +110,13 @@ pub const START_CHUNK_ID: u16 = 1;
 /// Largest chunk id the three-digit key field can carry.
 pub const MAX_CHUNK_ID: u16 = 999;
 
-const VOLUME_ID_MODULUS: u16 = 1000;
+/// Intermediate and End chunks smaller than this hold no radials: they are
+/// status-only chunks (one bzip2 record of a single Message 2, 127-130 bytes
+/// at KMUX). The smallest radial chunk in the committed captures is 7404
+/// bytes (TLAS, a TDWR); 120 compressed Message 31 radials do not fit in
+/// 1 KiB.
+pub const MIN_RADIAL_CHUNK_BYTES: u64 = 1024;
+
 /// Chunk pairs closer than this (in commanded rotation seconds) are left out
 /// of the slope fit: whole-second `LastModified` noise dominates them.
 const MIN_SLOPE_PAIR_SECONDS: f64 = 30.0;
@@ -254,7 +294,7 @@ impl ScanPlan {
         }
     }
 
-    /// Chunk id of the End chunk if every cut is collected.
+    /// Plan chunk number of the End chunk if every cut is collected.
     pub fn full_end_chunk_id(&self) -> u32 {
         u32::from(START_CHUNK_ID)
             + self
@@ -264,8 +304,9 @@ impl ScanPlan {
                 .sum::<u32>()
     }
 
-    /// Cut and part of a radial chunk. `None` for the Start chunk and for
-    /// ids past the plan.
+    /// Cut and part of the radial chunk with plan chunk number `chunk_id`
+    /// (see the module documentation). `None` for the Start chunk and for
+    /// numbers past the plan.
     pub fn chunk_position(&self, chunk_id: u16) -> Option<ChunkPosition> {
         let mut first = START_CHUNK_ID.checked_add(1)?;
         for (cut_index, cut) in self.cuts.iter().enumerate() {
@@ -282,7 +323,7 @@ impl ScanPlan {
         None
     }
 
-    /// Chunk ids a cut fills.
+    /// Plan chunk numbers a cut fills.
     pub fn cut_chunk_ids(&self, cut_index: usize) -> Option<RangeInclusive<u16>> {
         let mut first = START_CHUNK_ID.checked_add(1)?;
         for (index, cut) in self.cuts.iter().enumerate() {
@@ -352,7 +393,8 @@ impl Default for TimingParameters {
     }
 }
 
-/// Modeled timing of one cut, in seconds after the volume key time.
+/// Modeled timing of one cut, in seconds after the volume key time. Chunk
+/// numbers are plan chunk numbers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CutTiming {
     pub cut_index: usize,
@@ -444,14 +486,14 @@ impl ScanTimingModel {
         }
     }
 
-    /// End chunk id if every cut is collected.
+    /// Plan chunk number of the End chunk if every cut is collected.
     pub fn full_end_chunk_id(&self) -> u16 {
         self.spans.last().map_or(START_CHUNK_ID, |span| {
             span.first_chunk_id + span.chunk_count - 1
         })
     }
 
-    /// Cut and part of a radial chunk.
+    /// Cut and part of the radial chunk with plan chunk number `chunk_id`.
     pub fn chunk_position(&self, chunk_id: u16) -> Option<ChunkPosition> {
         self.plan.chunk_position(chunk_id)
     }
@@ -470,15 +512,15 @@ impl ScanTimingModel {
         ))
     }
 
-    /// Modeled seconds from the volume key time to the last radial of a
-    /// radial chunk.
+    /// Modeled seconds from the volume key time to the last radial of the
+    /// radial chunk with plan chunk number `chunk_id`.
     pub fn chunk_radials_end_seconds(&self, chunk_id: u16) -> Option<f64> {
         let (commanded, cut_index) = self.commanded_terms(chunk_id)?;
         Some(self.elapsed(commanded, cut_index))
     }
 
-    /// Expected `LastModified` of a chunk, in seconds after the volume key
-    /// time.
+    /// Expected `LastModified` of the chunk with plan chunk number
+    /// `chunk_id`, in seconds after the volume key time.
     pub fn chunk_last_modified_seconds(&self, chunk_id: u16) -> Option<f64> {
         if chunk_id == START_CHUNK_ID {
             return Some(self.parameters.start_chunk_offset_seconds);
@@ -516,7 +558,7 @@ impl ScanTimingModel {
     }
 
     /// Modeled seconds from this volume's key time to the next volume's key
-    /// time, if the volume ends with `end_chunk_id`.
+    /// time, if the volume ends with plan chunk number `end_chunk_id`.
     pub fn next_volume_seconds(&self, end_chunk_id: u16) -> Option<f64> {
         let position = self.plan.chunk_position(end_chunk_id)?;
         let span = self.spans.get(position.cut_index)?;
@@ -535,9 +577,9 @@ impl ScanTimingModel {
 
     /// Projects the rest of `volume` from the chunks observed so far.
     ///
-    /// Choosing the End chunk:
+    /// Choosing the End chunk (as a plan chunk number):
     /// - an observed End chunk wins;
-    /// - otherwise `expected_end_chunk_id` (for example
+    /// - otherwise `expected_end_chunk_id` (a plan chunk number, for example
     ///   [`TimingStatistics::expected_end_chunk_id`]), if it closes a cut;
     /// - otherwise the plan's last chunk.
     ///
@@ -547,62 +589,100 @@ impl ScanTimingModel {
     /// last 9 observed radial chunks. Late publishing only adds delay, so the
     /// lower quartile tracks the timing and ignores backlogs. An unobserved
     /// chunk is never expected before the newest observed `LastModified`.
+    ///
+    /// Observed chunks keep their ids. An unobserved chunk's id is its plan
+    /// number plus the status-only chunks observed so far: status-only chunks
+    /// still to come cannot be foreseen.
     pub fn project(
         &self,
         volume: &VolumeObservation,
         expected_end_chunk_id: Option<u16>,
     ) -> ScanTimingProjection {
         let full_end = self.full_end_chunk_id();
+        let status_only_chunks = volume.status_only_chunks();
+        let status_offset = u16::try_from(status_only_chunks).unwrap_or(u16::MAX);
+        let plan_chunks = volume.plan_chunks();
         let observed_end = volume
             .end_chunk_id()
-            .filter(|id| self.closing_chunk(*id).is_some());
-        let latest_observed_id = volume.chunks.iter().map(|chunk| chunk.chunk_id).max();
+            .and_then(|id| volume.closing_plan_chunk_number(id))
+            .filter(|number| self.closing_chunk(*number).is_some());
+        let latest_observed_number = plan_chunks.iter().map(|(number, _)| *number).max();
         let mut end = observed_end
             .or_else(|| expected_end_chunk_id.filter(|id| self.closing_chunk(*id).is_some()))
             .unwrap_or(full_end);
         if observed_end.is_none()
-            && let Some(latest) = latest_observed_id
+            && let Some(latest) = latest_observed_number
             && latest > end
         {
             end = self.closing_chunk_at_or_after(latest).unwrap_or(full_end);
         }
 
-        let residuals: Vec<f64> = volume
-            .chunks
+        let residuals: Vec<f64> = plan_chunks
             .iter()
-            .filter(|chunk| chunk.chunk_id > START_CHUNK_ID)
-            .filter_map(|chunk| {
-                let modeled = self.chunk_last_modified_seconds(chunk.chunk_id)?;
+            .filter(|(number, _)| *number > START_CHUNK_ID)
+            .filter_map(|(number, chunk)| {
+                let modeled = self.chunk_last_modified_seconds(*number)?;
                 Some(seconds_between(chunk.last_modified, volume.volume_time) - modeled)
             })
             .collect();
         let anchor = &residuals[residuals.len().saturating_sub(ANCHOR_RESIDUALS)..];
         let anchor_correction_seconds = lower_quartile(anchor).unwrap_or(0.0);
         let latest_observed = volume.chunks.iter().map(|chunk| chunk.last_modified).max();
+        let observed_by_number = |number: u16| {
+            plan_chunks
+                .iter()
+                .find(|(listed, _)| *listed == number)
+                .map(|(_, chunk)| *chunk)
+        };
+        let actual_id = |number: u16| {
+            observed_by_number(number)
+                .map_or(number.saturating_add(status_offset), |chunk| chunk.chunk_id)
+        };
 
-        let chunks: Vec<ProjectedChunk> = (START_CHUNK_ID..=end)
-            .filter_map(|chunk_id| {
-                let modeled = self.chunk_last_modified_seconds(chunk_id)?;
-                let correction = if chunk_id == START_CHUNK_ID {
+        let mut chunks: Vec<ProjectedChunk> = (START_CHUNK_ID..=end)
+            .filter_map(|number| {
+                let modeled = self.chunk_last_modified_seconds(number)?;
+                let correction = if number == START_CHUNK_ID {
                     0.0
                 } else {
                     anchor_correction_seconds
                 };
                 let mut expected = offset_time(volume.volume_time, modeled + correction);
-                let observed = volume.chunk(chunk_id).map(|chunk| chunk.last_modified);
+                let observed = observed_by_number(number).map(|chunk| chunk.last_modified);
                 if observed.is_none()
                     && let Some(latest) = latest_observed
                 {
                     expected = expected.max(latest);
                 }
                 Some(ProjectedChunk {
-                    chunk_id,
-                    cut_index: self.plan.chunk_position(chunk_id).map(|p| p.cut_index),
+                    chunk_id: actual_id(number),
+                    plan_chunk_number: Some(number),
+                    cut_index: self.plan.chunk_position(number).map(|p| p.cut_index),
                     expected_last_modified: expected,
                     observed_last_modified: observed,
                 })
             })
             .collect();
+        for chunk in volume.chunks.iter().filter(|chunk| chunk.is_status_only()) {
+            if chunks
+                .iter()
+                .all(|listed| listed.chunk_id != chunk.chunk_id)
+            {
+                chunks.push(ProjectedChunk {
+                    chunk_id: chunk.chunk_id,
+                    plan_chunk_number: None,
+                    cut_index: None,
+                    expected_last_modified: chunk.last_modified,
+                    observed_last_modified: Some(chunk.last_modified),
+                });
+            }
+        }
+        chunks.sort_by_key(|chunk| chunk.chunk_id);
+        let expected_end_id = match (observed_end, volume.end_chunk_id()) {
+            (Some(_), Some(id)) => id,
+            _ => actual_id(end),
+        };
+        chunks.retain(|chunk| chunk.chunk_id <= expected_end_id);
 
         let last_cut = self
             .plan
@@ -613,12 +693,12 @@ impl ScanTimingModel {
                 let timing = self.cut_timing(cut_index)?;
                 let closing = chunks
                     .iter()
-                    .find(|chunk| chunk.chunk_id == timing.last_chunk_id)?;
+                    .find(|chunk| chunk.plan_chunk_number == Some(timing.last_chunk_id))?;
                 Some(ProjectedCut {
                     cut_index,
                     elevation_deg: timing.elevation_deg,
-                    first_chunk_id: timing.first_chunk_id,
-                    last_chunk_id: timing.last_chunk_id,
+                    first_chunk_id: actual_id(timing.first_chunk_id),
+                    last_chunk_id: closing.chunk_id,
                     sweep_seconds: timing.sweep_seconds,
                     expected_complete: closing.expected_last_modified,
                     observed_complete: closing.observed_last_modified,
@@ -640,7 +720,9 @@ impl ScanTimingModel {
             vcp: self.plan.vcp,
             parameters: self.parameters,
             anchor_correction_seconds,
-            expected_end_chunk_id: end,
+            expected_end_chunk_id: expected_end_id,
+            expected_end_plan_chunk_number: end,
+            status_only_chunks,
             complete: observed_end.is_some() && volume.is_complete(),
             chunks,
             cuts,
@@ -667,12 +749,22 @@ impl ScanTimingModel {
     }
 }
 
-/// One chunk's `LastModified`.
+/// One listed chunk: id, type, `LastModified` and size.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChunkTimestamp {
     pub chunk_id: u16,
     pub chunk_type: RealtimeChunkType,
     pub last_modified: DateTime<Utc>,
+    /// Object size in bytes, from the listing.
+    pub size: u64,
+}
+
+impl ChunkTimestamp {
+    /// An Intermediate or End chunk smaller than [`MIN_RADIAL_CHUNK_BYTES`]:
+    /// a status-only chunk that holds no radials.
+    pub fn is_status_only(&self) -> bool {
+        self.chunk_type != RealtimeChunkType::Start && self.size < MIN_RADIAL_CHUNK_BYTES
+    }
 }
 
 /// The timestamped chunks of one volume, as a listing showed them.
@@ -700,6 +792,7 @@ impl VolumeObservation {
                 chunk_id: chunk.chunk_id,
                 chunk_type: chunk.chunk_type,
                 last_modified,
+                size: chunk.object.size,
             };
             match volumes.iter_mut().find(|volume| {
                 volume.site == chunk.site
@@ -732,6 +825,65 @@ impl VolumeObservation {
             .binary_search_by_key(&chunk_id, |chunk| chunk.chunk_id)
             .ok()
             .and_then(|index| self.chunks.get(index))
+    }
+
+    /// Status-only chunks listed (see [`ChunkTimestamp::is_status_only`]).
+    pub fn status_only_chunks(&self) -> usize {
+        self.chunks
+            .iter()
+            .filter(|chunk| chunk.is_status_only())
+            .count()
+    }
+
+    /// Plan chunk number of listed chunk `chunk_id`: the id minus the
+    /// status-only chunks listed before it. `None` for a status-only chunk
+    /// or an id that is not listed.
+    pub fn plan_chunk_number(&self, chunk_id: u16) -> Option<u16> {
+        let chunk = self.chunk(chunk_id)?;
+        if chunk.is_status_only() {
+            return None;
+        }
+        let before = self
+            .chunks
+            .iter()
+            .take_while(|listed| listed.chunk_id < chunk_id)
+            .filter(|listed| listed.is_status_only())
+            .count();
+        chunk_id.checked_sub(u16::try_from(before).ok()?)
+    }
+
+    /// The listed chunk with plan chunk number `number`.
+    pub fn chunk_by_plan_number(&self, number: u16) -> Option<&ChunkTimestamp> {
+        self.plan_chunks()
+            .into_iter()
+            .find(|(listed, _)| *listed == number)
+            .map(|(_, chunk)| chunk)
+    }
+
+    /// Every listed chunk that is not status-only, with its plan chunk
+    /// number, in id order.
+    fn plan_chunks(&self) -> Vec<(u16, &ChunkTimestamp)> {
+        let mut status_only = 0u16;
+        let mut numbered = Vec::with_capacity(self.chunks.len());
+        for chunk in &self.chunks {
+            if chunk.is_status_only() {
+                status_only = status_only.saturating_add(1);
+            } else if let Some(number) = chunk.chunk_id.checked_sub(status_only) {
+                numbered.push((number, chunk));
+            }
+        }
+        numbered
+    }
+
+    /// Plan chunk number of the last radial chunk listed at or before
+    /// `chunk_id`: the chunk that closes the volume's last cut when
+    /// `chunk_id` is the End chunk.
+    pub fn closing_plan_chunk_number(&self, chunk_id: u16) -> Option<u16> {
+        self.plan_chunks()
+            .into_iter()
+            .filter(|(number, chunk)| *number > START_CHUNK_ID && chunk.chunk_id <= chunk_id)
+            .map(|(number, _)| number)
+            .max()
     }
 
     /// Id of the End chunk, if listed.
@@ -777,8 +929,12 @@ impl VolumeObservation {
 /// One chunk in a [`ScanTimingProjection`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProjectedChunk {
+    /// Key chunk id: observed, or expected (plan number plus the status-only
+    /// chunks observed so far).
     pub chunk_id: u16,
-    /// `None` for the Start chunk.
+    /// `None` for an observed status-only chunk.
+    pub plan_chunk_number: Option<u16>,
+    /// `None` for the Start chunk and status-only chunks.
     pub cut_index: Option<usize>,
     pub expected_last_modified: DateTime<Utc>,
     pub observed_last_modified: Option<DateTime<Utc>>,
@@ -789,6 +945,7 @@ pub struct ProjectedChunk {
 pub struct ProjectedCut {
     pub cut_index: usize,
     pub elevation_deg: f32,
+    /// Key chunk ids, as in [`ProjectedChunk::chunk_id`].
     pub first_chunk_id: u16,
     pub last_chunk_id: u16,
     pub sweep_seconds: f64,
@@ -807,11 +964,15 @@ pub struct ScanTimingProjection {
     pub parameters: TimingParameters,
     /// Seconds added to the model from the latest observations.
     pub anchor_correction_seconds: f64,
-    /// Observed End chunk, else the expected one.
+    /// Key id of the observed End chunk, else of the expected one.
     pub expected_end_chunk_id: u16,
+    /// Plan chunk number of the chunk that closes the last cut.
+    pub expected_end_plan_chunk_number: u16,
+    /// Status-only chunks observed so far.
+    pub status_only_chunks: usize,
     /// Every chunk through the End chunk has been observed.
     pub complete: bool,
-    /// Chunks `1..=expected_end_chunk_id`.
+    /// Chunks `1..=expected_end_chunk_id`, status-only ones included.
     pub chunks: Vec<ProjectedChunk>,
     /// Cuts through the one holding the End chunk.
     pub cuts: Vec<ProjectedCut>,
@@ -850,9 +1011,15 @@ pub struct VolumeFit {
     pub rotation_scale: f64,
     pub publish_offset_seconds: f64,
     pub start_chunk_offset_seconds: Option<f64>,
-    /// Present when the previous observed volume at the site came right before this one.
+    /// Present when the previous observed volume at the site came right
+    /// before this one (the next volume id, with 999 followed by 1).
     pub inter_volume_gap_seconds: Option<f64>,
+    /// Key id of the End chunk.
     pub end_chunk_id: u16,
+    /// Plan chunk number of the chunk that closes the last cut.
+    pub end_plan_chunk_number: u16,
+    /// Status-only chunks in the volume.
+    pub status_only_chunks: usize,
     /// Highest elevation collected (the AVSET cutoff when the volume ends early).
     pub top_elevation_deg: f32,
     pub radial_chunks: usize,
@@ -939,10 +1106,10 @@ impl TimingStatistics {
         }
     }
 
-    /// Expected End chunk for a volume running `plan`: the last chunk of the
-    /// last cut at or below the top elevation learned from the most recent
-    /// volume. If nothing was learned, or that volume ran a different VCP,
-    /// it is the plan's last chunk.
+    /// Expected End chunk, as a plan chunk number, for a volume running
+    /// `plan`: the last chunk of the last cut at or below the top elevation
+    /// learned from the most recent volume. If nothing was learned, or that
+    /// volume ran a different VCP, it is the plan's last chunk.
     pub fn expected_end_chunk_id(&self, plan: &ScanPlan) -> Option<u16> {
         let last_cut = match self.top_elevation {
             Some((vcp, top)) if vcp == plan.vcp => plan.last_cut_at_or_below(top)?,
@@ -971,10 +1138,11 @@ impl TimingStatistics {
     ///
     /// With `g` the default inter-cut gap, `rotation_scale` is the Theil-Sen
     /// slope of `LastModified - V - g * cut_index` against commanded elapsed
-    /// rotation time. Pairs less than 30 commanded seconds apart are left
-    /// out. `publish_offset` is the median residual. Volumes whose End chunk
-    /// does not close a plan cut, or whose fit is implausible, are rejected
-    /// without changing the statistics.
+    /// rotation time, over the radial chunks (status-only chunks are left
+    /// out). Pairs less than 30 commanded seconds apart are left out.
+    /// `publish_offset` is the median residual. Volumes whose last radial
+    /// chunk does not close a plan cut, or whose fit is implausible, are
+    /// rejected without changing the statistics.
     pub fn observe_volume(
         &mut self,
         plan: &ScanPlan,
@@ -985,20 +1153,26 @@ impl TimingStatistics {
             .end_chunk_id()
             .ok_or(TimingError::IncompleteVolume { volume_id })?;
         let model = ScanTimingModel::new(plan.clone(), self.defaults)?;
-        let end_position = model
-            .closing_chunk(end_chunk_id)
-            .ok_or(TimingError::PlanMismatch {
-                volume_id,
-                end_chunk_id,
-            })?;
+        let mismatch = TimingError::PlanMismatch {
+            volume_id,
+            end_chunk_id,
+        };
+        let end_plan_chunk_number = volume
+            .closing_plan_chunk_number(end_chunk_id)
+            .ok_or(mismatch.clone())?;
+        let end_position = model.closing_chunk(end_plan_chunk_number).ok_or(mismatch)?;
 
         let gap = self.defaults.inter_cut_gap_seconds;
         let points: Vec<(f64, f64)> = volume
-            .chunks
-            .iter()
-            .filter(|chunk| chunk.chunk_id > START_CHUNK_ID && chunk.chunk_id <= end_chunk_id)
-            .filter_map(|chunk| {
-                let (commanded, cut_index) = model.commanded_terms(chunk.chunk_id)?;
+            .plan_chunks()
+            .into_iter()
+            .filter(|(number, chunk)| {
+                *number > START_CHUNK_ID
+                    && *number <= end_plan_chunk_number
+                    && chunk.chunk_id <= end_chunk_id
+            })
+            .filter_map(|(number, chunk)| {
+                let (commanded, cut_index) = model.commanded_terms(number)?;
                 let observed = seconds_between(chunk.last_modified, volume.volume_time);
                 Some((commanded, observed - gap * cut_index as f64))
             })
@@ -1041,8 +1215,9 @@ impl TimingStatistics {
                 + gap * end_position.cut_index as f64
         });
         let inter_volume_gap_seconds = self.previous.as_ref().and_then(|previous| {
+            // Ids run 1..=999 and 999 is followed by 1.
             let consecutive = previous.site == volume.site
-                && (previous.volume_id + 1) % VOLUME_ID_MODULUS == volume_id;
+                && super::iterator::next_volume_id(previous.volume_id) == volume_id;
             let between = seconds_between(volume.volume_time, previous.volume_time);
             (consecutive && between > 0.0 && between < MAX_ROLLOVER_SECONDS)
                 .then_some(between - previous.radials_end_seconds)
@@ -1082,6 +1257,8 @@ impl TimingStatistics {
             start_chunk_offset_seconds,
             inter_volume_gap_seconds,
             end_chunk_id,
+            end_plan_chunk_number,
+            status_only_chunks: volume.status_only_chunks(),
             top_elevation_deg,
             radial_chunks: points.len(),
             median_abs_residual_seconds,
