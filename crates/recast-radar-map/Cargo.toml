@@ -16,6 +16,7 @@ recast-radar-correct = { path = "../recast-radar-correct" }
 recast-radar-filters = { path = "../recast-radar-filters" }
 
 [dev-dependencies]
+chrono.workspace = true
 recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
 
 [lints]

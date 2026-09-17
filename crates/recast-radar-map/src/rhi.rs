@@ -17,7 +17,7 @@
 //! for (vault/BWER edges, descending reflectivity cores, TVS columns).
 
 use rayon::prelude::*;
-use recast_radar_core::{EFFECTIVE_EARTH_RADIUS_M, ElevationCut, MomentGrid};
+use recast_radar_core::{EFFECTIVE_EARTH_RADIUS_M, Field, Sweep};
 
 use crate::volumetric::CrossSection;
 
@@ -27,68 +27,77 @@ use crate::volumetric::CrossSection;
 /// beams without smearing data into the unscanned wedge above the top beam.
 const MAX_BEAM_GAP_DEG: f32 = 1.0;
 
-/// `true` when the cut's radials look like an elevation sweep at a fixed
+/// `true` when the sweep's rays look like an elevation sweep at a fixed
 /// azimuth — the geometric signature of an RHI. Used as a fallback when the
-/// source format did not declare a scan mode.
-pub fn cut_looks_like_rhi(cut: &ElevationCut) -> bool {
-    if cut.radials.len() < 8 {
+/// source format did not declare a sweep mode.
+pub fn sweep_looks_like_rhi(sweep: &Sweep) -> bool {
+    let rays = sweep.nrays();
+    if rays < 8 {
         return false;
     }
     let mut elev_min = f32::INFINITY;
     let mut elev_max = f32::NEG_INFINITY;
     // Circular spread of azimuths via resultant-vector length.
     let (mut sin_sum, mut cos_sum) = (0.0f64, 0.0f64);
-    for radial in &cut.radials {
-        elev_min = elev_min.min(radial.elevation_deg);
-        elev_max = elev_max.max(radial.elevation_deg);
-        let az = f64::from(radial.azimuth_deg).to_radians();
+    for (azimuth, elevation) in sweep.rays.azimuth_deg.iter().zip(&sweep.rays.elevation_deg) {
+        elev_min = elev_min.min(*elevation);
+        elev_max = elev_max.max(*elevation);
+        let az = f64::from(*azimuth).to_radians();
         sin_sum += az.sin();
         cos_sum += az.cos();
     }
-    let resultant = (sin_sum.hypot(cos_sum) / cut.radials.len() as f64).clamp(0.0, 1.0);
+    let resultant = (sin_sum.hypot(cos_sum) / rays as f64).clamp(0.0, 1.0);
     // Mean angular deviation ~ sqrt(2(1-R)) rad; require < ~3° azimuth spread
     // and > 10° of elevation sweep.
     let azimuth_spread_deg = (2.0 * (1.0 - resultant)).sqrt().to_degrees();
     elev_max - elev_min > 10.0 && azimuth_spread_deg < 3.0
 }
 
-/// Circular-mean azimuth of the cut's radials (degrees, [0, 360)). For an
-/// RHI this is the fixed pointing azimuth of the whole sweep.
-pub fn rhi_fixed_azimuth_deg(cut: &ElevationCut) -> f32 {
+/// Circular-mean azimuth of the sweep's rays (degrees, [0, 360)). For an RHI
+/// this is the fixed pointing azimuth of the whole sweep.
+pub fn rhi_fixed_azimuth(sweep: &Sweep) -> f32 {
     let (mut sin_sum, mut cos_sum) = (0.0f64, 0.0f64);
-    for radial in &cut.radials {
-        let az = f64::from(radial.azimuth_deg).to_radians();
+    for azimuth in &sweep.rays.azimuth_deg {
+        let az = f64::from(*azimuth).to_radians();
         sin_sum += az.sin();
         cos_sum += az.cos();
     }
     (sin_sum.atan2(cos_sum).to_degrees().rem_euclid(360.0)) as f32
 }
 
+/// One native gate past the field's last gate centre, in metres of slant
+/// range: the extent the coverage helpers use.
+fn max_slant_m(sweep: &Sweep, field: &Field) -> f64 {
+    field
+        .native_geometry(&sweep.range)
+        .map_or(0.0, |(first_m, spacing_m)| {
+            first_m + spacing_m * f64::from(field.ngates)
+        })
+}
+
 /// Highest beam height (m, above the radar) reached anywhere in the sweep —
 /// the natural top of the RHI panel.
-pub fn rhi_coverage_top_m(cut: &ElevationCut, grid: &MomentGrid) -> f32 {
-    let max_slant_m = f64::from(grid.gate_range.first_gate_m)
-        + f64::from(grid.gate_range.gate_spacing_m) * grid.gate_range.gate_count as f64;
-    cut.radials
+pub fn rhi_coverage_top(sweep: &Sweep, field: &Field) -> f32 {
+    let max_slant_m = max_slant_m(sweep, field);
+    sweep
+        .rays
+        .elevation_deg
         .iter()
-        .map(|radial| {
-            recast_radar_core::beam_height_above_radar_m(
-                max_slant_m,
-                f64::from(radial.elevation_deg),
-            ) as f32
+        .map(|elevation| {
+            recast_radar_core::beam_height_above_radar_m(max_slant_m, f64::from(*elevation)) as f32
         })
         .fold(0.0f32, f32::max)
 }
 
 /// Furthest ground range (m) reached by any gate in the sweep.
-pub fn rhi_coverage_range_m(cut: &ElevationCut, grid: &MomentGrid) -> f32 {
-    let max_slant_m = f64::from(grid.gate_range.first_gate_m)
-        + f64::from(grid.gate_range.gate_spacing_m) * grid.gate_range.gate_count as f64;
-    cut.radials
+pub fn rhi_coverage_range(sweep: &Sweep, field: &Field) -> f32 {
+    let max_slant_m = max_slant_m(sweep, field);
+    sweep
+        .rays
+        .elevation_deg
         .iter()
-        .map(|radial| {
-            recast_radar_core::beam_ground_range_m(max_slant_m, f64::from(radial.elevation_deg))
-                as f32
+        .map(|elevation| {
+            recast_radar_core::beam_ground_range_m(max_slant_m, f64::from(*elevation)) as f32
         })
         .fold(0.0f32, f32::max)
 }
@@ -113,17 +122,17 @@ fn invert_beam_geometry(ground_range_m: f64, height_m: f64) -> (f64, f64) {
     (slant, elevation_rad.to_degrees())
 }
 
-/// Resample one native RHI sweep onto a range-height panel.
+/// Resample one native RHI sweep's field onto a range-height panel.
 ///
-/// `values[y * width + x]` holds the moment value at ground range
+/// `values[y * width + x]` holds the field value at ground range
 /// `x/(width-1) * max_range_m` and height `top_m * (1 - y/(height-1))`
 /// above the radar (NaN = no data) — the same layout as
 /// [`CrossSection`], so panels can share rendering code. Each pixel is
 /// inverse-mapped to (slant range, elevation) and filled from the nearest
 /// recorded beam within [`MAX_BEAM_GAP_DEG`] and the nearest gate.
-pub fn rhi_section(
-    cut: &ElevationCut,
-    grid: &MomentGrid,
+pub fn rhi_panel(
+    sweep: &Sweep,
+    field: &Field,
     width: usize,
     height: usize,
     top_m: f32,
@@ -132,30 +141,22 @@ pub fn rhi_section(
     if width < 2 || height < 2 || top_m <= 0.0 || max_range_m <= 0.0 {
         return None;
     }
-    if grid.gate_range.gate_spacing_m <= 0 || grid.gate_range.gate_count == 0 {
+    let (first_gate_m, spacing_m) = field.native_geometry(&sweep.range)?;
+    let gate_count = field.ngates as usize;
+    if spacing_m <= 0.0 || gate_count == 0 {
         return None;
     }
-    // (elevation, grid row) sorted by elevation for nearest-beam lookup.
-    let mut beams: Vec<(f32, usize)> = grid
-        .radial_indices
-        .iter()
-        .enumerate()
-        .filter_map(|(row, radial_index)| {
-            let radial = cut.radials.get(*radial_index)?;
-            radial
-                .elevation_deg
-                .is_finite()
-                .then_some((radial.elevation_deg, row))
+    // (elevation, field row) sorted by elevation for nearest-beam lookup.
+    let mut beams: Vec<(f32, usize)> = (0..field.nrays as usize)
+        .filter_map(|row| {
+            let elevation = *sweep.rays.elevation_deg.get(row)?;
+            elevation.is_finite().then_some((elevation, row))
         })
         .collect();
     if beams.is_empty() {
         return None;
     }
     beams.sort_by(|a, b| a.0.total_cmp(&b.0));
-
-    let first_gate_m = f64::from(grid.gate_range.first_gate_m);
-    let spacing_m = f64::from(grid.gate_range.gate_spacing_m);
-    let gate_count = grid.gate_range.gate_count;
 
     let rows: Vec<Vec<f32>> = (0..height)
         .into_par_iter()
@@ -176,7 +177,7 @@ pub fn rhi_section(
                 if (beam_elev - elevation_deg as f32).abs() > MAX_BEAM_GAP_DEG {
                     continue;
                 }
-                if let Some(value) = grid.scaled_value(beam_row, gate) {
+                if let Some(value) = field.value(beam_row, gate) {
                     *cell = value;
                 }
             }
@@ -219,44 +220,35 @@ fn nearest_beam(beams: &[(f32, usize)], elevation_deg: f32) -> Option<(f32, usiz
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, MomentStorage, MomentType, Radial};
+    use crate::test_support::sweep_with_rays;
+    use recast_radar_core::{FieldName, SweepMode};
 
     /// Synthetic RHI: beams every 0.5° from 0.5° to 30° at azimuth 271°,
     /// each beam filled with its own elevation index so samples are
     /// attributable to a specific beam.
-    fn rhi_cut(gates: usize, spacing_m: i32) -> (ElevationCut, MomentGrid) {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: spacing_m,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(271.0, None);
+    fn rhi_cut(gates: usize, spacing_m: i32) -> Sweep {
         let mut storage = Vec::new();
-        let mut radial_indices = Vec::new();
-        for k in 0..60usize {
-            let elevation = 0.5 + k as f32 * 0.5;
-            cut.radials.push(Radial {
-                azimuth_deg: 271.0,
-                elevation_deg: elevation,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
-            storage.extend(std::iter::repeat_n(k as f32, gates));
-            radial_indices.push(k);
-        }
-        let grid = MomentGrid {
-            moment: MomentType::Reflectivity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices,
-            storage: MomentStorage::F32(storage),
-        };
-        (cut, grid)
+        let rays: Vec<(f32, f32)> = (0..60usize)
+            .map(|k| {
+                storage.extend(std::iter::repeat_n(k as f32, gates));
+                (271.0, 0.5 + k as f32 * 0.5)
+            })
+            .collect();
+        sweep_with_rays(
+            SweepMode::Rhi,
+            271.0,
+            &rays,
+            None,
+            FieldName::Dbzh,
+            0.0,
+            f64::from(spacing_m),
+            gates,
+            storage,
+        )
+    }
+
+    fn field(sweep: &Sweep) -> &Field {
+        &sweep.fields[0]
     }
 
     #[test]
@@ -284,11 +276,11 @@ mod tests {
 
     #[test]
     fn rhi_section_samples_the_matching_beam() {
-        let (cut, grid) = rhi_cut(400, 150); // 60 km of gates
+        let cut = rhi_cut(400, 150); // 60 km of gates
         let top_m = 12_000.0f32;
         let max_range_m = 50_000.0f32;
         let (w, h) = (200usize, 100usize);
-        let section = rhi_section(&cut, &grid, w, h, top_m, max_range_m).expect("section");
+        let section = rhi_panel(&cut, field(&cut), w, h, top_m, max_range_m).expect("section");
 
         // Pick a beam (k = 20 → 10.5° elevation) and a slant range, project
         // to panel coordinates, and verify the sampled value is that beam's.
@@ -307,8 +299,8 @@ mod tests {
 
     #[test]
     fn rhi_section_is_empty_above_the_top_beam() {
-        let (cut, grid) = rhi_cut(400, 150);
-        let section = rhi_section(&cut, &grid, 200, 100, 12_000.0, 50_000.0).expect("section");
+        let cut = rhi_cut(400, 150);
+        let section = rhi_panel(&cut, field(&cut), 200, 100, 12_000.0, 50_000.0).expect("section");
         // 10 km up at 45 km out needs ~12.5° of elevation — covered. But at
         // 8 km out, 10 km up needs ~51°, far above the 30° top beam: empty.
         let x = (8_000.0f32 / 50_000.0 * 199.0).round() as usize;
@@ -318,8 +310,8 @@ mod tests {
 
     #[test]
     fn rhi_section_is_empty_beyond_gate_coverage() {
-        let (cut, grid) = rhi_cut(100, 150); // only 15 km of gates
-        let section = rhi_section(&cut, &grid, 200, 100, 12_000.0, 50_000.0).expect("section");
+        let cut = rhi_cut(100, 150); // only 15 km of gates
+        let section = rhi_panel(&cut, field(&cut), 200, 100, 12_000.0, 50_000.0).expect("section");
         // 40 km out is far past the last gate on every beam.
         let x = (40_000.0f32 / 50_000.0 * 199.0).round() as usize;
         let y = 99; // near the surface
@@ -328,60 +320,52 @@ mod tests {
 
     #[test]
     fn rhi_heuristic_accepts_elevation_sweeps_and_rejects_ppi() {
-        let (rhi, _) = rhi_cut(64, 250);
-        assert!(cut_looks_like_rhi(&rhi));
-        assert!((rhi_fixed_azimuth_deg(&rhi) - 271.0).abs() < 1e-3);
+        let rhi = rhi_cut(64, 250);
+        assert!(sweep_looks_like_rhi(&rhi));
+        assert!((rhi_fixed_azimuth(&rhi) - 271.0).abs() < 1e-3);
 
-        // A PPI cut: fixed elevation, azimuth sweep.
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 250,
-            gate_count: 16,
-        };
-        let mut ppi = ElevationCut::new(0.5, None);
-        for k in 0..360 {
-            ppi.radials.push(Radial {
-                azimuth_deg: k as f32,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
-        }
-        assert!(!cut_looks_like_rhi(&ppi));
+        // A PPI sweep: fixed elevation, azimuth sweep.
+        let rays: Vec<(f32, f32)> = (0..360).map(|k| (k as f32, 0.5)).collect();
+        let ppi = sweep_with_rays(
+            SweepMode::AzimuthSurveillance,
+            0.5,
+            &rays,
+            None,
+            FieldName::Dbzh,
+            0.0,
+            250.0,
+            16,
+            vec![0.0; 360 * 16],
+        );
+        assert!(!sweep_looks_like_rhi(&ppi));
     }
 
     #[test]
     fn rhi_coverage_extents_track_the_sweep() {
-        let (cut, grid) = rhi_cut(400, 150); // 60 km, up to 30°
-        let top = rhi_coverage_top_m(&cut, &grid);
+        let cut = rhi_cut(400, 150); // 60 km, up to 30°
+        let top = rhi_coverage_top(&cut, field(&cut));
         // 60 km at 30° elevation is ~30.2 km high.
         assert!((29_000.0..32_500.0).contains(&top), "top was {top}");
-        let range = rhi_coverage_range_m(&cut, &grid);
+        let range = rhi_coverage_range(&cut, field(&cut));
         // Lowest beam carries gates nearly the full 60 km downrange.
         assert!((58_000.0..60_500.0).contains(&range), "range was {range}");
     }
 
     #[test]
     fn azimuth_circular_mean_handles_north_wrap() {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 250,
-            gate_count: 4,
-        };
-        let mut cut = ElevationCut::new(359.0, None);
-        for (az, elev) in [(359.0f32, 1.0f32), (1.0, 2.0), (0.0, 3.0)] {
-            cut.radials.push(Radial {
-                azimuth_deg: az,
-                elevation_deg: elev,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
-        }
-        let mean = rhi_fixed_azimuth_deg(&cut);
+        let rays = [(359.0f32, 1.0f32), (1.0, 2.0), (0.0, 3.0)];
+        let cut = sweep_with_rays(
+            SweepMode::Rhi,
+            359.0,
+            &rays,
+            None,
+            FieldName::Dbzh,
+            0.0,
+            250.0,
+            4,
+            vec![0.0; 12],
+        );
+        let mean = rhi_fixed_azimuth(&cut);
         assert!(!(0.5..=359.5).contains(&mean), "mean was {mean}");
     }
 }

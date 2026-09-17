@@ -1,52 +1,49 @@
-//! Operations across already co-registered moment grids.
+//! Operations across already co-registered fields.
 //!
-//! These functions intentionally require identical polar geometry. Motion
+//! These functions intentionally require identical polar geometry: the same
+//! shape, the same mapping onto the sweep range and the same absent rows
+//! (the caller guarantees the sweeps' range coordinates agree). Motion
 //! compensation, Cartesian mosaicking, and multi-radar blending belong in a
 //! separate geospatial layer; silently combining mismatched polar gates would
 //! produce plausible-looking but incorrect products.
 
-use recast_radar_core::{MomentGrid, MomentStorage, MomentType};
+use recast_radar_core::{Field, FieldName};
 
-pub fn difference_grid(
-    newer: &MomentGrid,
-    older: &MomentGrid,
-    output_moment: MomentType,
-) -> Option<MomentGrid> {
-    binary_grid(newer, older, output_moment, |new, old| new - old)
+use crate::physical_field_like;
+
+pub fn difference(newer: &Field, older: &Field, output: FieldName) -> Option<Field> {
+    binary_field(newer, older, output, |new, old| new - old)
 }
 
 /// Difference normalized to units per hour.
-pub fn trend_grid(
-    newer: &MomentGrid,
-    older: &MomentGrid,
+pub fn trend(
+    newer: &Field,
+    older: &Field,
     elapsed_seconds: f64,
-    output_moment: MomentType,
-) -> Option<MomentGrid> {
+    output: FieldName,
+) -> Option<Field> {
     if !elapsed_seconds.is_finite() || elapsed_seconds <= 0.0 {
         return None;
     }
     let hours = (elapsed_seconds / 3600.0) as f32;
-    binary_grid(newer, older, output_moment, |new, old| (new - old) / hours)
+    binary_field(newer, older, output, |new, old| (new - old) / hours)
 }
 
-pub fn maximum_swath_grid(grids: &[&MomentGrid], output_moment: MomentType) -> Option<MomentGrid> {
-    aggregate_grid(grids, output_moment, Aggregate::Maximum)
+pub fn maximum_swath(fields: &[&Field], output: FieldName) -> Option<Field> {
+    aggregate_field(fields, output, Aggregate::Maximum)
 }
 
-pub fn minimum_swath_grid(grids: &[&MomentGrid], output_moment: MomentType) -> Option<MomentGrid> {
-    aggregate_grid(grids, output_moment, Aggregate::Minimum)
+pub fn minimum_swath(fields: &[&Field], output: FieldName) -> Option<Field> {
+    aggregate_field(fields, output, Aggregate::Minimum)
 }
 
-pub fn mean_grid(grids: &[&MomentGrid], output_moment: MomentType) -> Option<MomentGrid> {
-    aggregate_grid(grids, output_moment, Aggregate::Mean)
+pub fn mean(fields: &[&Field], output: FieldName) -> Option<Field> {
+    aggregate_field(fields, output, Aggregate::Mean)
 }
 
-/// Integrate rate grids (for example mm/h) using trapezoids between frame
+/// Integrate rate fields (for example mm/h) using trapezoids between frame
 /// timestamps. Timestamps are arbitrary monotonically increasing seconds.
-pub fn accumulate_rate_grids(
-    frames: &[(&MomentGrid, f64)],
-    output_moment: MomentType,
-) -> Option<MomentGrid> {
+pub fn accumulate_rates(frames: &[(&Field, f64)], output: FieldName) -> Option<Field> {
     let (first, _) = *frames.first()?;
     if frames.len() < 2
         || frames
@@ -87,15 +84,15 @@ pub fn accumulate_rate_grids(
             *value = f32::NAN;
         }
     }
-    Some(f32_grid_like(first, output_moment, accumulated))
+    Some(physical_field_like(first, output, accumulated))
 }
 
 /// Time above a threshold, in minutes, using linear occupancy between frames.
-pub fn exceedance_duration_grid(
-    frames: &[(&MomentGrid, f64)],
+pub fn exceedance_duration(
+    frames: &[(&Field, f64)],
     threshold: f32,
-    output_moment: MomentType,
-) -> Option<MomentGrid> {
+    output: FieldName,
+) -> Option<Field> {
     let (first, _) = *frames.first()?;
     if frames.len() < 2
         || frames
@@ -141,17 +138,17 @@ pub fn exceedance_duration_grid(
             *value = f32::NAN;
         }
     }
-    Some(f32_grid_like(first, output_moment, minutes))
+    Some(physical_field_like(first, output, minutes))
 }
 
-/// Fraction of grids meeting a threshold, expressed as 0-100 percent.
-pub fn exceedance_probability_grid(
-    grids: &[&MomentGrid],
+/// Fraction of fields meeting a threshold, expressed as 0-100 percent.
+pub fn exceedance_probability(
+    fields: &[&Field],
     threshold: f32,
-    output_moment: MomentType,
-) -> Option<MomentGrid> {
-    let first = *grids.first()?;
-    if grids.iter().any(|grid| !geometry_matches(first, grid)) {
+    output: FieldName,
+) -> Option<Field> {
+    let first = *fields.first()?;
+    if fields.iter().any(|field| !geometry_matches(first, field)) {
         return None;
     }
     let len = value_len(first);
@@ -159,8 +156,8 @@ pub fn exceedance_probability_grid(
     for (index, cell) in out.iter_mut().enumerate() {
         let mut valid = 0usize;
         let mut exceeded = 0usize;
-        for grid in grids {
-            if let Some(value) = flat_value(grid, index)
+        for field in fields {
+            if let Some(value) = flat_value(field, index)
                 && value.is_finite()
             {
                 valid += 1;
@@ -171,7 +168,7 @@ pub fn exceedance_probability_grid(
             *cell = 100.0 * exceeded as f32 / valid as f32;
         }
     }
-    Some(f32_grid_like(first, output_moment, out))
+    Some(physical_field_like(first, output, out))
 }
 
 enum Aggregate {
@@ -180,21 +177,17 @@ enum Aggregate {
     Mean,
 }
 
-fn aggregate_grid(
-    grids: &[&MomentGrid],
-    output_moment: MomentType,
-    aggregate: Aggregate,
-) -> Option<MomentGrid> {
-    let first = *grids.first()?;
-    if grids.iter().any(|grid| !geometry_matches(first, grid)) {
+fn aggregate_field(fields: &[&Field], output: FieldName, aggregate: Aggregate) -> Option<Field> {
+    let first = *fields.first()?;
+    if fields.iter().any(|field| !geometry_matches(first, field)) {
         return None;
     }
     let len = value_len(first);
     let mut out = vec![f32::NAN; len];
     for (index, cell) in out.iter_mut().enumerate() {
-        let values = grids
+        let values = fields
             .iter()
-            .filter_map(|grid| flat_value(grid, index))
+            .filter_map(|field| flat_value(field, index))
             .filter(|value| value.is_finite())
             .collect::<Vec<_>>();
         if values.is_empty() {
@@ -206,15 +199,15 @@ fn aggregate_grid(
             Aggregate::Mean => values.iter().sum::<f32>() / values.len() as f32,
         };
     }
-    Some(f32_grid_like(first, output_moment, out))
+    Some(physical_field_like(first, output, out))
 }
 
-fn binary_grid(
-    left: &MomentGrid,
-    right: &MomentGrid,
-    output_moment: MomentType,
+fn binary_field(
+    left: &Field,
+    right: &Field,
+    output: FieldName,
     operation: impl Fn(f32, f32) -> f32,
-) -> Option<MomentGrid> {
+) -> Option<Field> {
     if !geometry_matches(left, right) {
         return None;
     }
@@ -231,98 +224,72 @@ fn binary_grid(
             *cell = operation(left_value, right_value);
         }
     }
-    Some(f32_grid_like(left, output_moment, out))
+    Some(physical_field_like(left, output, out))
 }
 
-fn geometry_matches(left: &MomentGrid, right: &MomentGrid) -> bool {
-    left.gate_range == right.gate_range && left.radial_indices == right.radial_indices
+fn geometry_matches(left: &Field, right: &Field) -> bool {
+    left.shape() == right.shape()
+        && left.gates == right.gates
+        && left.absent_rows == right.absent_rows
 }
 
-fn value_len(grid: &MomentGrid) -> usize {
-    grid.radial_count() * grid.gate_range.gate_count
+fn value_len(field: &Field) -> usize {
+    field.nrays as usize * field.ngates as usize
 }
 
-fn flat_value(grid: &MomentGrid, index: usize) -> Option<f32> {
-    let gates = grid.gate_range.gate_count;
+fn flat_value(field: &Field, index: usize) -> Option<f32> {
+    let gates = field.ngates as usize;
     (gates > 0).then_some(())?;
-    grid.scaled_value(index / gates, index % gates)
-}
-
-fn f32_grid_like(base: &MomentGrid, moment: MomentType, values: Vec<f32>) -> MomentGrid {
-    MomentGrid {
-        moment,
-        gate_range: base.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: base.radial_indices.clone(),
-        storage: MomentStorage::F32(values),
-    }
+    field.value(index / gates, index % gates)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::GateRange;
+    use recast_radar_core::{FieldData, FloatCoding, GateMapping};
 
-    fn grid(values: &[f32]) -> MomentGrid {
-        MomentGrid {
-            moment: MomentType::Reflectivity,
-            gate_range: GateRange {
-                first_gate_m: 0,
-                gate_spacing_m: 1000,
-                gate_count: values.len(),
+    fn field(values: &[f32]) -> Field {
+        Field::new(
+            FieldName::Dbzh,
+            GateMapping::IDENTITY,
+            values.len() as u32,
+            FieldData::F32 {
+                values: values.to_vec(),
+                coding: FloatCoding::default(),
             },
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: vec![0],
-            storage: MomentStorage::F32(values.to_vec()),
-        }
+        )
     }
 
     #[test]
     fn difference_and_trend() {
-        let older = grid(&[1.0, 2.0]);
-        let newer = grid(&[3.0, 6.0]);
-        let difference =
-            difference_grid(&newer, &older, MomentType::Unknown("DIFF".to_owned())).unwrap();
-        assert_eq!(difference.scaled_value(0, 0), Some(2.0));
-        let trend = trend_grid(
-            &newer,
-            &older,
-            1800.0,
-            MomentType::Unknown("TREND".to_owned()),
-        )
-        .unwrap();
-        assert_eq!(trend.scaled_value(0, 1), Some(8.0));
+        let older = field(&[1.0, 2.0]);
+        let newer = field(&[3.0, 6.0]);
+        let diff = difference(&newer, &older, FieldName::parse("DIFF")).unwrap();
+        assert_eq!(diff.name, FieldName::parse("DIFF"));
+        assert_eq!(diff.value(0, 0), Some(2.0));
+        let trend = trend(&newer, &older, 1800.0, FieldName::parse("TREND")).unwrap();
+        assert_eq!(trend.value(0, 1), Some(8.0));
     }
 
     #[test]
     fn rate_accumulation_uses_trapezoids() {
-        let first = grid(&[10.0]);
-        let second = grid(&[20.0]);
-        let accumulation = accumulate_rate_grids(
+        let first = field(&[10.0]);
+        let second = field(&[20.0]);
+        let accumulation = accumulate_rates(
             &[(&first, 0.0), (&second, 3600.0)],
-            MomentType::Unknown("ACCUM".to_owned()),
+            FieldName::parse("ACCUM"),
         )
         .unwrap();
-        assert_eq!(accumulation.scaled_value(0, 0), Some(15.0));
+        assert_eq!(accumulation.value(0, 0), Some(15.0));
     }
 
     #[test]
     fn probability_ignores_missing_values() {
-        let first = grid(&[1.0, f32::NAN]);
-        let second = grid(&[3.0, 4.0]);
-        let probability = exceedance_probability_grid(
-            &[&first, &second],
-            2.0,
-            MomentType::Unknown("PROB".to_owned()),
-        )
-        .unwrap();
-        assert_eq!(probability.scaled_value(0, 0), Some(50.0));
-        assert_eq!(probability.scaled_value(0, 1), Some(100.0));
+        let first = field(&[1.0, f32::NAN]);
+        let second = field(&[3.0, 4.0]);
+        let probability =
+            exceedance_probability(&[&first, &second], 2.0, FieldName::parse("PROB")).unwrap();
+        assert_eq!(probability.value(0, 0), Some(50.0));
+        assert_eq!(probability.value(0, 1), Some(100.0));
     }
 }

@@ -1,9 +1,25 @@
 //! Rotation-marker diagnostic: dump every detection with full per-site
 //! numbers (field report: false markers on the tail of the KMKX line).
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
+use recast_radar_core::Volume;
+
+/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
+/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
+#[allow(deprecated)]
+mod legacy_bridge {
+    use super::Volume;
+
+    pub fn decode_level2(bytes: &[u8]) -> Result<Volume, Box<dyn std::error::Error>> {
+        let legacy = recast_radar_io_nexrad::decode_volume_from_bytes(bytes)?;
+        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     for arg in std::env::args().skip(1) {
         let raw = std::fs::read(&arg)?;
-        let volume = recast_radar_io_nexrad::decode_volume_from_bytes(&raw)?;
+        let volume = legacy_bridge::decode_level2(&raw)?;
         let sites = recast_radar_retrieve::detect_rotation_sites(&volume);
         println!("=== {arg}: {} sites", sites.len());
         let mut sorted = sites.clone();

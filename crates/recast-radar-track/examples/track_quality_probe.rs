@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-
 // Objective tracker comparison on a real multi-volume sequence
 // (Lakshmanan & Smith 2010, Wea. Forecasting 25(2), 721–729): identical
 // per-volume cell streams feed (a) the OLD greedy nearest-to-prediction
@@ -8,9 +7,23 @@
 // StormTracker. Metrics: median track duration, mismatch error mean(σ_Z)
 // over the longest 50%, linearity error mean(e_xy) over the longest 50%.
 // usage: track_quality_probe <l2-file> <l2-file> ...
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
 use chrono::{DateTime, Utc};
-use recast_radar_core::RadarVolume;
 use recast_radar_track::{StormCell, StormTracker, identify_storm_cells};
+
+/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
+/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
+#[allow(deprecated)]
+mod legacy_bridge {
+    use recast_radar_core::Volume;
+    use std::path::Path;
+
+    pub fn decode_level2(path: &Path) -> Result<Volume, Box<dyn std::error::Error>> {
+        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path)?;
+        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
+    }
+}
 
 // ---- replicated OLD tracker (greedy nearest, flat 16 km gate, LSQ<=6,
 // null motion on >60 m/s, drop at 2 missed) ----
@@ -227,15 +240,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // protocol: vary only association).
     let mut streams: Vec<(DateTime<Utc>, Vec<StormCell>)> = Vec::new();
     for path in &paths {
-        let volume: RadarVolume =
-            recast_radar_io_nexrad::decode_volume_from_path(path.as_ref() as &std::path::Path)?;
+        let volume = legacy_bridge::decode_level2(path.as_ref() as &std::path::Path)?;
         let cells = identify_storm_cells(&volume);
         println!(
             "{}: {} cells",
             path.rsplit(['/', '\\']).next().unwrap_or(path),
             cells.len()
         );
-        streams.push((volume.volume_time, cells));
+        let volume_time = volume
+            .time_coverage
+            .map_or(volume.time_reference, |coverage| coverage.start);
+        streams.push((volume_time, cells));
     }
     streams.sort_by_key(|s| s.0);
 

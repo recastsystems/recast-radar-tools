@@ -20,7 +20,7 @@
 //! the local beam direction and least-squares fit for the ring-constant VT and
 //! VR. Wavenumber-1+ asymmetry retrieval is a documented follow-up.
 
-use recast_radar_core::{ElevationCut, MomentGrid};
+use recast_radar_core::{Field, Sweep};
 
 /// A dealiased radial-velocity PPI in polar form, radar at the origin.
 /// `x` is east, `y` is north; azimuth is degrees from north, clockwise.
@@ -80,21 +80,23 @@ pub struct TcCirculation {
 }
 
 impl PolarVelocityField {
-    /// Build the polar field from a dealiased velocity moment grid.
-    pub fn from_dealiased_velocity(cut: &ElevationCut, grid: &MomentGrid) -> Self {
-        let rows = grid.radial_count();
-        let gates = grid.gate_range.gate_count;
-        let azimuths_deg = recast_radar_correct::legacy_api::radial_azimuths(cut, grid);
+    /// Build the polar field from a dealiased velocity field of `sweep` (on
+    /// its rays and range).
+    pub fn from_dealiased_velocity(sweep: &Sweep, field: &Field) -> Self {
+        let (rows, gates) = field.shape();
+        let azimuths_deg = recast_radar_correct::radial_azimuths(sweep, field);
         let mut values = vec![f32::NAN; rows.saturating_mul(gates)];
         let mut row_buf = vec![f32::NAN; gates];
         for row in 0..rows {
-            recast_radar_correct::legacy_api::copy_scaled_velocity_row(grid, row, &mut row_buf);
+            recast_radar_correct::copy_scaled_velocity_row(field, row, &mut row_buf);
             values[row * gates..(row + 1) * gates].copy_from_slice(&row_buf);
         }
+        let (first_gate_m, gate_spacing_m) =
+            field.native_geometry(&sweep.range).unwrap_or((0.0, 0.0));
         Self {
             azimuths_deg,
-            first_gate_m: grid.gate_range.first_gate_m as f32,
-            gate_spacing_m: (grid.gate_range.gate_spacing_m.max(1)) as f32,
+            first_gate_m: first_gate_m as f32,
+            gate_spacing_m: gate_spacing_m.max(1.0) as f32,
             gate_count: gates,
             values,
         }
@@ -673,24 +675,23 @@ mod tests {
         let Some(path) = std::env::var_os("BOWECHO_GBVTD_VOLUME") else {
             return;
         };
-        let volume = recast_radar_io_nexrad::decode_volume_from_path(std::path::Path::new(&path))
+        let volume = crate::legacy_bridge::decode_level2(std::path::Path::new(&path))
             .expect("decode volume");
-        let (cut_index, cut) = volume
-            .cuts
+        let (sweep_index, sweep) = volume
+            .sweeps
             .iter()
             .enumerate()
-            .filter(|(_, c)| {
-                c.moments
-                    .contains_key(&recast_radar_core::MomentType::Velocity)
+            .filter(|(_, s)| {
+                s.find(recast_radar_core::Quantity::RadialVelocity)
+                    .is_some()
             })
-            .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
-            .expect("a velocity cut");
-        let velocity = cut
-            .moments
-            .get(&recast_radar_core::MomentType::Velocity)
+            .min_by(|a, b| a.1.fixed_angle_deg.total_cmp(&b.1.fixed_angle_deg))
+            .expect("a velocity sweep");
+        let velocity = sweep
+            .find(recast_radar_core::Quantity::RadialVelocity)
             .unwrap();
-        let dealiased = recast_radar_correct::dealias_velocity_grid(cut, velocity);
-        let field = PolarVelocityField::from_dealiased_velocity(cut, &dealiased);
+        let dealiased = recast_radar_correct::dealias_velocity(sweep, velocity);
+        let field = PolarVelocityField::from_dealiased_velocity(sweep, &dealiased);
 
         let guess_x: f32 = std::env::var("BOWECHO_GBVTD_GUESS_X")
             .ok()
@@ -717,8 +718,8 @@ mod tests {
                 .expect("a circulation");
 
         eprintln!(
-            "GBVTD real: cut {cut_index} ({:.2} deg) wind=({um:.1},{vm:.1}) m/s center=({:.1},{:.1}) km RMW={:?} VT_max={:?} m/s",
-            cut.elevation_deg, circ.center_km.0, circ.center_km.1, circ.rmw_km, circ.vt_max
+            "GBVTD real: sweep {sweep_index} ({:.2} deg) wind=({um:.1},{vm:.1}) m/s center=({:.1},{:.1}) km RMW={:?} VT_max={:?} m/s",
+            sweep.fixed_angle_deg, circ.center_km.0, circ.center_km.1, circ.rmw_km, circ.vt_max
         );
         for ring in &circ.rings {
             eprintln!(
@@ -762,7 +763,7 @@ mod tests {
         let Some(dir) = std::env::var_os("BOWECHO_PGUA_DIR") else {
             return;
         };
-        use recast_radar_core::MomentType;
+        use recast_radar_core::{FieldData, Quantity};
         let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
             .expect("read dir")
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -773,15 +774,21 @@ mod tests {
         // Replica of ui_core::loop_engine::policy::estimated_volume_bytes,
         // to test the 8 GiB primary byte-budget hypothesis for the 200->93
         // frame drop without adding a ui_core dependency to recast_radar_retrieve.
-        fn est_volume_bytes(volume: &recast_radar_core::RadarVolume) -> usize {
-            let mut bytes = std::mem::size_of::<recast_radar_core::RadarVolume>();
-            for cut in &volume.cuts {
-                bytes += std::mem::size_of_val(cut);
-                bytes += cut.radials.len() * std::mem::size_of::<recast_radar_core::Radial>();
-                for grid in cut.moments.values() {
-                    bytes += std::mem::size_of_val(grid);
-                    bytes += grid.radial_indices.len() * std::mem::size_of::<usize>();
-                    bytes += grid.storage.len() * usize::from(grid.storage.word_size_bits() / 8);
+        fn est_volume_bytes(volume: &recast_radar_core::Volume) -> usize {
+            let mut bytes = std::mem::size_of::<recast_radar_core::Volume>();
+            for sweep in &volume.sweeps {
+                bytes += std::mem::size_of_val(sweep);
+                // time (f64), azimuth and elevation (f32) per ray.
+                bytes += sweep.nrays() * 16;
+                for field in &sweep.fields {
+                    bytes += std::mem::size_of_val(field);
+                    let width = match &field.data {
+                        FieldData::U8 { .. } | FieldData::I8 { .. } => 1,
+                        FieldData::U16 { .. } | FieldData::I16 { .. } => 2,
+                        FieldData::F32 { .. } => 4,
+                        FieldData::F64 { .. } => 8,
+                    };
+                    bytes += field.data.len() * width;
                 }
             }
             bytes
@@ -796,7 +803,7 @@ mod tests {
 
         for path in &entries {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            let volume = match recast_radar_io_nexrad::decode_volume_from_path(path) {
+            let volume = match crate::legacy_bridge::decode_level2(path) {
                 Ok(v) => v,
                 Err(_) => {
                     decode_fail += 1;
@@ -804,20 +811,20 @@ mod tests {
                 }
             };
             total += 1;
-            let ts = volume.volume_time.timestamp();
+            let ts = volume.time_reference.timestamp();
             times.insert(ts);
             sizes.push((ts, est_volume_bytes(&volume)));
             let n_ref = volume
-                .cuts
+                .sweeps
                 .iter()
-                .filter(|c| c.moments.contains_key(&MomentType::Reflectivity))
+                .filter(|s| s.find(Quantity::Reflectivity).is_some())
                 .count();
             let n_vel = volume
-                .cuts
+                .sweeps
                 .iter()
-                .filter(|c| c.moments.contains_key(&MomentType::Velocity))
+                .filter(|s| s.find(Quantity::RadialVelocity).is_some())
                 .count();
-            if volume.cuts.is_empty() {
+            if volume.sweeps.is_empty() {
                 empty_cuts += 1;
             }
             if n_vel > 0 {
@@ -826,8 +833,8 @@ mod tests {
                 without_vel += 1;
                 if velless.len() < 50 {
                     velless.push(format!(
-                        "{name}  cuts={} ref={} vel={}",
-                        volume.cuts.len(),
+                        "{name}  sweeps={} ref={} vel={}",
+                        volume.sweeps.len(),
                         n_ref,
                         n_vel
                     ));

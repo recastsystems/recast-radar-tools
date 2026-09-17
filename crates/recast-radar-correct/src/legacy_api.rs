@@ -231,6 +231,10 @@ impl V4VolumeSolution {
 /// CfRadial gates to their true centres). Values keep their legacy
 /// semantics: integer codes are `(raw - offset) / scale` with `nodata` and
 /// `range_folded` as no value, `F32` grids are physical.
+///
+/// Names: a [`Naming`] maps each legacy moment to its field name. The
+/// default is the design note's 5.4 table ([`field_name`]); the retrieve
+/// crate adds its derived-product ids on top.
 #[doc(hidden)]
 pub mod convert {
     use chrono::{DateTime, Utc};
@@ -242,7 +246,11 @@ pub mod convert {
         Sweep, SweepMode, Volume,
     };
 
-    /// The FM301 field name the wrappers give a legacy moment.
+    /// A legacy moment to field name mapping.
+    pub type Naming<'a> = &'a dyn Fn(&MomentType) -> FieldName;
+
+    /// The FM301 field name the wrappers give a legacy moment (design note
+    /// 5.4).
     pub fn field_name(moment: &MomentType) -> FieldName {
         moment.to_field_name(LegacyConvention::Generic)
     }
@@ -261,7 +269,9 @@ pub mod convert {
         }
     }
 
-    fn sweep_mode(scan_mode: Option<ScanMode>) -> SweepMode {
+    /// The sweep mode of a legacy scan mode (`None` and PPI both map to
+    /// azimuth surveillance).
+    pub fn sweep_mode(scan_mode: Option<ScanMode>) -> SweepMode {
         match scan_mode {
             None | Some(ScanMode::Ppi) => SweepMode::AzimuthSurveillance,
             Some(ScanMode::Rhi) => SweepMode::Rhi,
@@ -300,11 +310,16 @@ pub mod convert {
     }
 
     /// A field over `storage` rows (already in ray order) with `grid`'s
-    /// coding and name.
-    fn field_with(grid: &MomentGrid, storage: MomentStorage, nrays: usize) -> Field {
+    /// coding, named by `naming`.
+    fn field_with(
+        grid: &MomentGrid,
+        storage: MomentStorage,
+        nrays: usize,
+        naming: Naming<'_>,
+    ) -> Field {
         let ngates = u32::try_from(grid.gate_range.gate_count).unwrap_or(u32::MAX);
         let mut field = Field::new(
-            field_name(&grid.moment),
+            naming(&grid.moment),
             GateMapping::IDENTITY,
             ngates,
             coding_data(grid, storage),
@@ -317,7 +332,7 @@ pub mod convert {
     /// field), with the exact legacy value semantics and an identity gate
     /// mapping.
     pub fn field_for_grid(grid: &MomentGrid) -> Field {
-        field_with(grid, grid.storage.clone(), grid.radial_count())
+        field_with(grid, grid.storage.clone(), grid.radial_count(), &field_name)
     }
 
     /// A sweep whose rays are `grid`'s rows (row `r` is the cut's radial
@@ -358,35 +373,57 @@ pub mod convert {
             .then(|| nyquist.iter().map(|v| v.unwrap_or(f32::NAN)).collect());
     }
 
-    /// Add another grid of the same cut to a sweep whose rays are the cut's
-    /// radials `ray_radials` (`ray_radials[r]` is ray `r`'s radial). Rows are
-    /// placed by radial; rays the grid lacks become absent rows. Returns
-    /// `false` (and leaves the sweep unchanged) when the grid's geometry does
-    /// not align with the sweep's range.
-    pub fn add_grid(sweep: &mut Sweep, ray_radials: &[usize], grid: &MomentGrid) -> bool {
+    /// The field a grid of a cut becomes on a sweep whose rays are the cut's
+    /// radials `ray_radials` (`ray_radials[r]` is ray `r`'s radial): rows are
+    /// placed by radial, rays the grid lacks become absent rows, and the
+    /// grid's geometry is attached to the sweep's range (which may grow or
+    /// refine). `None` when the geometry does not align with the range. The
+    /// field is not added to the sweep.
+    pub fn field_for_sweep(
+        sweep: &mut Sweep,
+        ray_radials: &[usize],
+        grid: &MomentGrid,
+        naming: Naming<'_>,
+    ) -> Option<Field> {
         let spacing = f64::from(grid.gate_range.gate_spacing_m);
         let ngates = u32::try_from(grid.gate_range.gate_count).unwrap_or(u32::MAX);
         let unset =
             matches!(sweep.range, RangeCoord::Uniform { spacing_m, .. } if spacing_m <= 0.0);
         let gates = if unset || spacing <= 0.0 {
             if !unset && sweep.range != range_of(&grid.gate_range) {
-                return false;
+                return None;
             }
             sweep.range = range_of(&grid.gate_range);
             GateMapping::IDENTITY
         } else {
-            match sweep.attach_geometry(f64::from(grid.gate_range.first_gate_m), spacing, ngates) {
-                Ok(gates) => gates,
-                Err(_) => return false,
-            }
+            sweep
+                .attach_geometry(f64::from(grid.gate_range.first_gate_m), spacing, ngates)
+                .ok()?
         };
         let nrays = ray_radials.len();
         let mut field = if grid.radial_indices == ray_radials {
-            field_with(grid, grid.storage.clone(), nrays)
+            field_with(grid, grid.storage.clone(), nrays, naming)
         } else {
-            scattered_field(grid, ray_radials)
+            scattered_field(grid, ray_radials, naming)
         };
         field.gates = gates;
+        Some(field)
+    }
+
+    /// Add another grid of the same cut to a sweep whose rays are the cut's
+    /// radials `ray_radials` ([`field_for_sweep`]). A name the sweep already
+    /// has becomes `Other("<Variant>")` with the quantity kept. Returns
+    /// `false` (and leaves the sweep unchanged) when the grid's geometry does
+    /// not align with the sweep's range.
+    pub fn add_grid(
+        sweep: &mut Sweep,
+        ray_radials: &[usize],
+        grid: &MomentGrid,
+        naming: Naming<'_>,
+    ) -> bool {
+        let Some(mut field) = field_for_sweep(sweep, ray_radials, grid, naming) else {
+            return false;
+        };
         if sweep.field(&field.name).is_some() {
             let (quantity, polarization) = (field.quantity, field.polarization);
             field.name = FieldName::Other(format!("{:?}", grid.moment).into());
@@ -397,7 +434,7 @@ pub mod convert {
         true
     }
 
-    fn scattered_field(grid: &MomentGrid, ray_radials: &[usize]) -> Field {
+    fn scattered_field(grid: &MomentGrid, ray_radials: &[usize], naming: Naming<'_>) -> Field {
         let gates = grid.gate_range.gate_count;
         let nrays = ray_radials.len();
         let mut row_of_radial = std::collections::HashMap::new();
@@ -434,7 +471,7 @@ pub mod convert {
                 MomentStorage::F32(gather(values, &rows, gates, f32::NAN))
             }
         };
-        let mut field = field_with(grid, storage, nrays);
+        let mut field = field_with(grid, storage, nrays, naming);
         field.absent_rows = rows
             .iter()
             .enumerate()
@@ -444,12 +481,40 @@ pub mod convert {
         field
     }
 
+    /// A sweep with the cut's radials as rays and the moments `wanted`
+    /// selects as fields, named by `naming` (grids that do not align with
+    /// the sweep's first grid are left out).
+    pub fn sweep_for_cut(
+        cut: &ElevationCut,
+        number: u32,
+        mode: SweepMode,
+        wanted: &dyn Fn(&MomentType) -> bool,
+        naming: Naming<'_>,
+    ) -> Sweep {
+        let mut sweep = Sweep::new(number, mode, cut.elevation_deg);
+        sweep.elevation_number = cut.elevation_number.map(u16::from);
+        let radials: Vec<usize> = (0..cut.radials.len()).collect();
+        push_rays(&mut sweep, cut, &radials);
+        for grid in cut.moments.values().filter(|grid| wanted(&grid.moment)) {
+            add_grid(&mut sweep, &radials, grid, naming);
+        }
+        sweep
+    }
+
     /// A volume holding, for every cut, a sweep with the cut's radials as
-    /// rays and the moments `wanted` selects as fields (grids that do not
-    /// align with the sweep's first grid are left out). Sweep indices equal
-    /// cut indices. The volume time is exact: `time_coverage` starts at the
-    /// legacy `volume_time`.
+    /// rays and the moments `wanted` selects as fields ([`sweep_for_cut`]).
+    /// Sweep indices equal cut indices. The volume time is exact:
+    /// `time_coverage` starts at the legacy `volume_time`.
     pub fn volume_with(volume: &RadarVolume, wanted: impl Fn(&MomentType) -> bool) -> Volume {
+        volume_with_naming(volume, &wanted, &field_name)
+    }
+
+    /// [`volume_with`] with a custom naming.
+    pub fn volume_with_naming(
+        volume: &RadarVolume,
+        wanted: &dyn Fn(&MomentType) -> bool,
+        naming: Naming<'_>,
+    ) -> Volume {
         let mut converted = Volume::new(volume.site.id.clone(), volume.volume_time);
         converted.attrs.site_name = volume.site.name.clone();
         converted.location = Location {
@@ -464,18 +529,13 @@ pub mod convert {
         });
         let mode = sweep_mode(volume.metadata.scan_mode);
         for (index, cut) in volume.cuts.iter().enumerate() {
-            let mut sweep = Sweep::new(
+            converted.sweeps.push(sweep_for_cut(
+                cut,
                 u32::try_from(index).unwrap_or(u32::MAX),
                 mode.clone(),
-                cut.elevation_deg,
-            );
-            sweep.elevation_number = cut.elevation_number.map(u16::from);
-            let radials: Vec<usize> = (0..cut.radials.len()).collect();
-            push_rays(&mut sweep, cut, &radials);
-            for grid in cut.moments.values().filter(|grid| wanted(&grid.moment)) {
-                add_grid(&mut sweep, &radials, grid);
-            }
-            converted.sweeps.push(sweep);
+                wanted,
+                naming,
+            ));
         }
         converted
     }
@@ -492,7 +552,71 @@ pub mod convert {
         sweep: Option<&Sweep>,
     ) -> MomentGrid {
         let ngates = field.ngates as usize;
-        let (scale, offset, nodata, range_folded, storage) = match field.data {
+        let (scale, offset, nodata, range_folded, storage) = storage_of(field.data);
+        let storage = match sweep {
+            Some(_)
+                if template
+                    .radial_indices
+                    .iter()
+                    .enumerate()
+                    .all(|(i, r)| i == *r) =>
+            {
+                truncate(storage, template.radial_indices.len() * ngates)
+            }
+            Some(_) => reorder(storage, &template.radial_indices, ngates),
+            None => storage,
+        };
+        MomentGrid {
+            moment,
+            gate_range: GateRange {
+                gate_count: ngates,
+                ..template.gate_range.clone()
+            },
+            scale,
+            offset,
+            nodata,
+            range_folded,
+            radial_indices: template.radial_indices.clone(),
+            storage,
+        }
+    }
+
+    /// The legacy grid of an output field of `sweep` (a converted sweep whose
+    /// rays are the cut's radials) without a template: the rows the field
+    /// provides, in ray order, keyed by their radial index; the gate range
+    /// from the field's native geometry, rounded to the metre.
+    pub fn grid_from_field(field: Field, moment: MomentType, sweep: &Sweep) -> MomentGrid {
+        let ngates = field.ngates as usize;
+        let (first_m, spacing_m) = field.native_geometry(&sweep.range).unwrap_or((0.0, 0.0));
+        let radial_indices: Vec<usize> = (0..field.nrays as usize)
+            .filter(|&row| !field.is_absent(row))
+            .collect();
+        let compact = radial_indices.len() != field.nrays as usize;
+        let (scale, offset, nodata, range_folded, storage) = storage_of(field.data);
+        let storage = if compact {
+            reorder(storage, &radial_indices, ngates)
+        } else {
+            storage
+        };
+        MomentGrid {
+            moment,
+            gate_range: GateRange {
+                first_gate_m: first_m.round() as i32,
+                gate_spacing_m: spacing_m.round() as i32,
+                gate_count: ngates,
+            },
+            scale,
+            offset,
+            nodata,
+            range_folded,
+            radial_indices,
+            storage,
+        }
+    }
+
+    /// The legacy coding and storage of field data.
+    fn storage_of(data: FieldData) -> (f32, f32, Option<u16>, Option<u16>, MomentStorage) {
+        match data {
             FieldData::U8 { values, coding } => {
                 let (scale, offset) = icd(coding.transform);
                 (
@@ -527,32 +651,6 @@ pub mod convert {
                     MomentStorage::F32(physical.to_physical()),
                 )
             }
-        };
-        let storage = match sweep {
-            Some(_)
-                if template
-                    .radial_indices
-                    .iter()
-                    .enumerate()
-                    .all(|(i, r)| i == *r) =>
-            {
-                truncate(storage, template.radial_indices.len() * ngates)
-            }
-            Some(_) => reorder(storage, &template.radial_indices, ngates),
-            None => storage,
-        };
-        MomentGrid {
-            moment,
-            gate_range: GateRange {
-                gate_count: ngates,
-                ..template.gate_range.clone()
-            },
-            scale,
-            offset,
-            nodata,
-            range_folded,
-            radial_indices: template.radial_indices.clone(),
-            storage,
         }
     }
 

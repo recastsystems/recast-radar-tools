@@ -10,7 +10,9 @@
 //! window. Computed on the DEALIASED velocity field so range folds never
 //! manufacture spurious shear.
 
-use recast_radar_core::{ElevationCut, MomentGrid, MomentStorage, MomentType};
+use recast_radar_core::{Field, FieldName, Quantity, Sweep};
+
+use crate::sweep::physical_field;
 
 /// Half-width of the LLSD window in azimuth (radials) and range (gates).
 const AZ_HALF: isize = 1; // ±1 radial (3 beams)
@@ -21,39 +23,40 @@ const RG_HALF: isize = 1; // ±1 gate
 /// down-range beam) — the cyclonic sense in the Northern Hemisphere.
 const SHEAR_DISPLAY_SCALE: f32 = 1000.0;
 
+/// Name of the azimuthal-shear field.
+pub const AZIMUTHAL_SHEAR_NAME: &str = "AZSHEAR";
+/// Name of the radial-divergence field.
+pub const RADIAL_DIVERGENCE_NAME: &str = "DIVSHEAR";
+
 /// Azimuthal shear (×10^-3 s^-1): ∂Vr across the radial. Mesocyclone/TVS
-/// rotation detector. NaN = no data.
-pub fn azimuthal_shear_grid(cut: &ElevationCut, velocity: &MomentGrid) -> MomentGrid {
-    let dealiased = recast_radar_correct::dealias_velocity_grid(cut, velocity);
-    azimuthal_shear_grid_from_dealiased(cut, &dealiased)
+/// rotation detector. `velocity` is a field of `sweep`; the result
+/// (`AZSHEAR`) is on its rays and native gates, NaN = no data.
+pub fn azimuthal_shear(sweep: &Sweep, velocity: &Field) -> Field {
+    let dealiased = recast_radar_correct::dealias_velocity(sweep, velocity);
+    azimuthal_shear_from_dealiased(sweep, &dealiased)
 }
 
-/// Azimuthal shear from a velocity grid the caller has already dealiased.
+/// Azimuthal shear from a velocity field the caller has already dealiased.
 /// This function performs no dealiasing: engine and model/temporal-anchor
 /// ownership stay with the caller. Application pipelines should prefer this
 /// entry point after resolving their selected engine.
-pub fn azimuthal_shear_grid_from_dealiased(
-    cut: &ElevationCut,
-    dealiased_velocity: &MomentGrid,
-) -> MomentGrid {
-    llsd_velocity_derivative(cut, dealiased_velocity, Axis::Azimuthal)
+pub fn azimuthal_shear_from_dealiased(sweep: &Sweep, dealiased_velocity: &Field) -> Field {
+    llsd_velocity_derivative(sweep, dealiased_velocity, Axis::Azimuthal)
 }
 
 /// Radial divergence (×10^-3 s^-1): ∂Vr along the radial. Positive = divergence
 /// (e.g. downburst outflow / DCZ), negative = convergence (gust front / boundary)
-/// — the defining derecho signature. Smith & Elmore (2004). NaN = no data.
-pub fn radial_divergence_grid(cut: &ElevationCut, velocity: &MomentGrid) -> MomentGrid {
-    let dealiased = recast_radar_correct::dealias_velocity_grid(cut, velocity);
-    radial_divergence_grid_from_dealiased(cut, &dealiased)
+/// — the defining derecho signature. Smith & Elmore (2004). The result
+/// (`DIVSHEAR`) is on the field's rays and native gates, NaN = no data.
+pub fn radial_divergence(sweep: &Sweep, velocity: &Field) -> Field {
+    let dealiased = recast_radar_correct::dealias_velocity(sweep, velocity);
+    radial_divergence_from_dealiased(sweep, &dealiased)
 }
 
-/// Radial divergence from a velocity grid the caller has already dealiased.
+/// Radial divergence from a velocity field the caller has already dealiased.
 /// This function performs no dealiasing.
-pub fn radial_divergence_grid_from_dealiased(
-    cut: &ElevationCut,
-    dealiased_velocity: &MomentGrid,
-) -> MomentGrid {
-    llsd_velocity_derivative(cut, dealiased_velocity, Axis::Radial)
+pub fn radial_divergence_from_dealiased(sweep: &Sweep, dealiased_velocity: &Field) -> Field {
+    llsd_velocity_derivative(sweep, dealiased_velocity, Axis::Radial)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -67,23 +70,20 @@ enum Axis {
 /// Shared LLSD core: fit v = a + b·x over a small azimuth×range window, where x
 /// is cross-radial arc distance (Azimuthal) or along-radial distance (Radial).
 /// b is the velocity derivative (s^-1), output scaled to ×10^-3 s^-1.
-fn llsd_velocity_derivative(
-    cut: &ElevationCut,
-    dealiased_velocity: &MomentGrid,
-    axis: Axis,
-) -> MomentGrid {
-    let rows = dealiased_velocity.radial_count();
-    let gates = dealiased_velocity.gate_range.gate_count;
-    let gr = &dealiased_velocity.gate_range;
-    let spacing = gr.gate_spacing_m as f32;
+fn llsd_velocity_derivative(sweep: &Sweep, dealiased_velocity: &Field, axis: Axis) -> Field {
+    let (rows, gates) = dealiased_velocity.shape();
+    let (first_gate_m, spacing_m) = dealiased_velocity
+        .native_geometry(&sweep.range)
+        .unwrap_or((f64::NAN, f64::NAN));
+    let spacing = spacing_m as f32;
 
     let az_deg: Vec<f32> = (0..rows)
         .map(|r| {
-            dealiased_velocity
-                .radial_indices
+            sweep
+                .rays
+                .azimuth_deg
                 .get(r)
-                .and_then(|ri| cut.radials.get(*ri))
-                .map(|radial| radial.azimuth_deg.rem_euclid(360.0))
+                .map(|azimuth| azimuth.rem_euclid(360.0))
                 .unwrap_or(f32::NAN)
         })
         .collect();
@@ -95,7 +95,7 @@ fn llsd_velocity_derivative(
             continue;
         }
         for gate in 0..gates {
-            let r_m = gr.first_gate_m as f32 + gate as f32 * spacing;
+            let r_m = first_gate_m as f32 + gate as f32 * spacing;
             if r_m <= 0.0 {
                 continue;
             }
@@ -126,7 +126,7 @@ fn llsd_velocity_derivative(
                     if gg >= gates {
                         continue;
                     }
-                    let Some(v) = dealiased_velocity.scaled_value(rr, gg) else {
+                    let Some(v) = dealiased_velocity.value(rr, gg) else {
                         continue;
                     };
                     if !v.is_finite() {
@@ -157,22 +157,45 @@ fn llsd_velocity_derivative(
         }
     }
 
-    MomentGrid {
-        moment: MomentType::Velocity,
-        gate_range: gr.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: dealiased_velocity.radial_indices.clone(),
-        storage: MomentStorage::F32(out),
-    }
+    let (name, long_name) = match axis {
+        Axis::Azimuthal => (AZIMUTHAL_SHEAR_NAME, "Azimuthal shear"),
+        Axis::Radial => (RADIAL_DIVERGENCE_NAME, "Radial divergence"),
+    };
+    physical_field(
+        dealiased_velocity,
+        FieldName::parse(name),
+        Quantity::Other,
+        Some("10^-3 s^-1"),
+        Some(long_name),
+        out,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, Radial};
+    use crate::test_support::{add_f32_field, sweep_with_azimuths};
+
+    /// A velocity sweep of `rows` rays `az_step` degrees apart, Nyquist
+    /// `nyquist`, gates from 250 m every 250 m, with `value_at(row, gate)`.
+    fn velocity_sweep(
+        rows: usize,
+        az_step: f32,
+        nyquist: f32,
+        gates: usize,
+        value_at: impl Fn(usize, usize) -> f32,
+    ) -> Sweep {
+        let azimuths: Vec<f32> = (0..rows).map(|r| r as f32 * az_step).collect();
+        let mut sweep = sweep_with_azimuths(&azimuths, 0.5, Some(nyquist));
+        let mut values = vec![0.0f32; rows * gates];
+        for r in 0..rows {
+            for g in 0..gates {
+                values[r * gates + g] = value_at(r, g);
+            }
+        }
+        add_f32_field(&mut sweep, FieldName::Vradh, 250.0, 250.0, gates, values);
+        sweep
+    }
 
     /// A pure rotational couplet (Vr increasing linearly across azimuth) must
     /// yield a constant positive azimuthal shear of the expected magnitude.
@@ -180,49 +203,20 @@ mod tests {
     fn detects_linear_rotational_shear() {
         let rows = 8usize;
         let gates = 20usize;
-        let spacing = 250i32;
-        let gate_range = GateRange {
-            first_gate_m: 250,
-            gate_spacing_m: spacing,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(0.5, None);
         let az_step = 1.0f32; // degrees per radial
-        for r in 0..rows {
-            cut.radials.push(Radial {
-                azimuth_deg: r as f32 * az_step,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(60.0),
-                radial_status: None,
-            });
-        }
         // Vr varies with azimuth only: Vr = K * (arc distance). Pick K so shear
         // is a clean value. arc = r_m * d_az_rad; set Vr(row,gate) = SHEAR * r_m * az_rad.
         let shear_true = 0.01f32; // s^-1
-        let mut vals = vec![0.0f32; rows * gates];
-        for r in 0..rows {
+        let sweep = velocity_sweep(rows, az_step, 60.0, gates, |r, g| {
             let az_rad = (r as f32 * az_step).to_radians();
-            for g in 0..gates {
-                let r_m = 250.0 + g as f32 * spacing as f32;
-                vals[r * gates + g] = shear_true * r_m * az_rad;
-            }
-        }
-        let grid = MomentGrid {
-            moment: MomentType::Velocity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..rows).collect(),
-            storage: MomentStorage::F32(vals),
-        };
+            let r_m = 250.0 + g as f32 * 250.0;
+            shear_true * r_m * az_rad
+        });
 
-        let shear = azimuthal_shear_grid(&cut, &grid);
+        let shear = azimuthal_shear(&sweep, &sweep.fields[0]);
+        assert_eq!(shear.name, FieldName::parse(AZIMUTHAL_SHEAR_NAME));
         // interior gate/row should read ~ shear_true * 1000 (×10^-3 s^-1).
-        let v = shear.scaled_value(4, 10).expect("shear value");
+        let v = shear.value(4, 10).expect("shear value");
         assert!(
             (v - shear_true * 1000.0).abs() < 1.0,
             "expected ~{} got {v}",
@@ -232,97 +226,35 @@ mod tests {
 
     #[test]
     fn shear_handles_degraded_velocity_without_panicking() {
-        let make = |gates: usize, fill: f32| {
-            let gate_range = GateRange {
-                first_gate_m: 250,
-                gate_spacing_m: 250,
-                gate_count: gates,
-            };
-            let mut cut = ElevationCut::new(0.5, None);
-            for r in 0..4 {
-                cut.radials.push(Radial {
-                    azimuth_deg: r as f32,
-                    elevation_deg: 0.5,
-                    time_offset_ms: 0,
-                    gate_range: gate_range.clone(),
-                    nyquist_velocity_mps: Some(30.0),
-                    radial_status: None,
-                });
-            }
-            let grid = MomentGrid {
-                moment: MomentType::Velocity,
-                gate_range,
-                scale: 1.0,
-                offset: 0.0,
-                nodata: None,
-                range_folded: None,
-                radial_indices: (0..4).collect(),
-                storage: MomentStorage::F32(vec![fill; 4 * gates]),
-            };
-            (cut, grid)
-        };
-
         // All-NaN velocity → all-NaN shear/divergence, no panic.
-        let (cut, grid) = make(12, f32::NAN);
-        let shear = azimuthal_shear_grid(&cut, &grid);
-        let div = radial_divergence_grid(&cut, &grid);
-        for r in 0..shear.radial_count() {
-            for g in 0..shear.gate_range.gate_count {
-                // no-data F32 cells read back as None or NaN, never finite.
-                assert!(shear.scaled_value(r, g).is_none_or(|v| v.is_nan()));
-                assert!(div.scaled_value(r, g).is_none_or(|v| v.is_nan()));
+        let sweep = velocity_sweep(4, 1.0, 30.0, 12, |_, _| f32::NAN);
+        let shear = azimuthal_shear(&sweep, &sweep.fields[0]);
+        let div = radial_divergence(&sweep, &sweep.fields[0]);
+        for r in 0..shear.nrays as usize {
+            for g in 0..shear.ngates as usize {
+                assert_eq!(shear.value(r, g), None);
+                assert_eq!(div.value(r, g), None);
             }
         }
 
-        // Zero-gate grid → empty output, no panic.
-        let (cut, grid) = make(0, 5.0);
-        assert_eq!(azimuthal_shear_grid(&cut, &grid).gate_range.gate_count, 0);
-        assert_eq!(radial_divergence_grid(&cut, &grid).gate_range.gate_count, 0);
+        // Zero-gate field → empty output, no panic.
+        let sweep = velocity_sweep(4, 1.0, 30.0, 0, |_, _| 5.0);
+        assert_eq!(azimuthal_shear(&sweep, &sweep.fields[0]).ngates, 0);
+        assert_eq!(radial_divergence(&sweep, &sweep.fields[0]).ngates, 0);
     }
 
     /// Vr increasing linearly with range yields a constant positive divergence
     /// of the expected magnitude.
     #[test]
     fn detects_linear_radial_divergence() {
-        let rows = 6usize;
-        let gates = 24usize;
-        let spacing = 250i32;
-        let gate_range = GateRange {
-            first_gate_m: 250,
-            gate_spacing_m: spacing,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(0.5, None);
-        for r in 0..rows {
-            cut.radials.push(Radial {
-                azimuth_deg: r as f32,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(80.0),
-                radial_status: None,
-            });
-        }
         let div_true = 0.008f32; // s^-1
-        let mut vals = vec![0.0f32; rows * gates];
-        for r in 0..rows {
-            for g in 0..gates {
-                let r_m = 250.0 + g as f32 * spacing as f32;
-                vals[r * gates + g] = div_true * r_m; // Vr ∝ range
-            }
-        }
-        let grid = MomentGrid {
-            moment: MomentType::Velocity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..rows).collect(),
-            storage: MomentStorage::F32(vals),
-        };
-        let div = radial_divergence_grid(&cut, &grid);
-        let v = div.scaled_value(3, 12).expect("divergence value");
+        let sweep = velocity_sweep(6, 1.0, 80.0, 24, |_, g| {
+            let r_m = 250.0 + g as f32 * 250.0;
+            div_true * r_m // Vr ∝ range
+        });
+        let div = radial_divergence(&sweep, &sweep.fields[0]);
+        assert_eq!(div.name, FieldName::parse(RADIAL_DIVERGENCE_NAME));
+        let v = div.value(3, 12).expect("divergence value");
         assert!(
             (v - div_true * 1000.0).abs() < 1.0,
             "expected ~{} got {v}",
@@ -330,52 +262,19 @@ mod tests {
         );
     }
 
-    /// The explicit downstream API consumes the caller's selected-engine grid
-    /// verbatim. Values intentionally exceed the cut's tiny Nyquist velocity;
+    /// The explicit downstream API consumes the caller's selected-engine field
+    /// verbatim. Values intentionally exceed the sweep's tiny Nyquist velocity;
     /// an accidental internal Region pass would rebranch them and destroy the
     /// pinned linear derivative.
     #[test]
     fn from_dealiased_derivative_does_not_run_a_second_engine() {
-        let rows = 6usize;
-        let gates = 20usize;
-        let spacing = 250i32;
-        let gate_range = GateRange {
-            first_gate_m: 250,
-            gate_spacing_m: spacing,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(0.5, None);
-        for row in 0..rows {
-            cut.radials.push(Radial {
-                azimuth_deg: row as f32,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(5.0),
-                radial_status: None,
-            });
-        }
         let slope = 0.04f32;
-        let mut values = vec![0.0; rows * gates];
-        for row in 0..rows {
-            for gate in 0..gates {
-                let range_m = 250.0 + gate as f32 * spacing as f32;
-                values[row * gates + gate] = slope * range_m;
-            }
-        }
-        let selected_engine_grid = MomentGrid {
-            moment: MomentType::Velocity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..rows).collect(),
-            storage: MomentStorage::F32(values),
-        };
-
-        let divergence = radial_divergence_grid_from_dealiased(&cut, &selected_engine_grid);
-        let value = divergence.scaled_value(3, 10).expect("derivative");
+        let sweep = velocity_sweep(6, 1.0, 5.0, 20, |_, g| {
+            let range_m = 250.0 + g as f32 * 250.0;
+            slope * range_m
+        });
+        let divergence = radial_divergence_from_dealiased(&sweep, &sweep.fields[0]);
+        let value = divergence.value(3, 10).expect("derivative");
         assert!((value - slope * 1000.0).abs() < 1.0, "got {value}");
     }
 }

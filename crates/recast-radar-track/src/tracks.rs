@@ -41,10 +41,10 @@
 
 use std::collections::HashSet;
 
-use recast_radar_core::{MomentGrid, MomentType, RadarVolume, beam_height_above_radar_m};
+use recast_radar_core::{Field, Quantity, Sweep, Volume, beam_height_above_radar_m};
 
-use recast_radar_correct::dealias_velocity_grid;
-use recast_radar_retrieve::{RotationSite, RotationStrength, azimuthal_shear_grid_from_dealiased};
+use recast_radar_correct::dealias_velocity;
+use recast_radar_retrieve::{RotationSite, RotationStrength, azimuthal_shear_from_dealiased};
 
 /// Top of the "low-level" layer (m above radar level, used as the AGL proxy —
 /// the WSR-88D feedhorn sits only tens of meters above ground). Mahalik et
@@ -173,49 +173,49 @@ struct TiltShearField {
     max_gate: usize,
 }
 
-/// Ordered, bounded cut set consumed by the low-level track composite.
-pub fn low_level_azshear_cut_indices(volume: &RadarVolume) -> Vec<usize> {
-    let mut velocity_cuts: Vec<usize> = volume
-        .cuts
+/// Ordered, bounded sweep set consumed by the low-level track composite.
+pub fn low_level_azshear_sweep_indices(volume: &Volume) -> Vec<usize> {
+    let mut velocity_sweeps: Vec<usize> = volume
+        .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, cut)| {
-            cut.moments.contains_key(&MomentType::Velocity)
-                && cut.elevation_deg <= LOW_LEVEL_MAX_TILT_DEG
+        .filter(|(_, sweep)| {
+            sweep.find(Quantity::RadialVelocity).is_some()
+                && sweep.fixed_angle_deg <= LOW_LEVEL_MAX_TILT_DEG
         })
         .map(|(index, _)| index)
         .collect();
-    velocity_cuts.sort_by(|left, right| {
-        volume.cuts[*left]
-            .elevation_deg
-            .total_cmp(&volume.cuts[*right].elevation_deg)
+    velocity_sweeps.sort_by(|left, right| {
+        volume.sweeps[*left]
+            .fixed_angle_deg
+            .total_cmp(&volume.sweeps[*right].fixed_angle_deg)
     });
-    velocity_cuts.truncate(MAX_LOW_TILTS);
-    velocity_cuts
+    velocity_sweeps.truncate(MAX_LOW_TILTS);
+    velocity_sweeps
 }
 
 /// Resample one volume's low-level (0–2 km ARL) cyclonic azimuthal shear onto
 /// a radar-centered Cartesian grid (×10⁻³ s⁻¹; NaN = no coverage). Each cell
 /// pull-samples its nearest gate on every contributing tilt and keeps the
 /// maximum — one frame of the rotation-tracks accumulation.
-pub fn low_level_azshear_cartesian(volume: &RadarVolume, spec: &TracksGridSpec) -> Vec<f32> {
-    let mut owned = vec![None; volume.cuts.len()];
-    for cut_index in low_level_azshear_cut_indices(volume) {
-        let cut = &volume.cuts[cut_index];
-        owned[cut_index] = cut
-            .moments
-            .get(&MomentType::Velocity)
-            .map(|velocity| dealias_velocity_grid(cut, velocity));
+pub fn low_level_azshear_cartesian(volume: &Volume, spec: &TracksGridSpec) -> Vec<f32> {
+    let mut owned = vec![None; volume.sweeps.len()];
+    for sweep_index in low_level_azshear_sweep_indices(volume) {
+        let sweep = &volume.sweeps[sweep_index];
+        owned[sweep_index] = sweep
+            .find(Quantity::RadialVelocity)
+            .map(|velocity| dealias_velocity(sweep, velocity));
     }
-    let borrowed: Vec<Option<&MomentGrid>> = owned.iter().map(Option::as_ref).collect();
+    let borrowed: Vec<Option<&Field>> = owned.iter().map(Option::as_ref).collect();
     low_level_azshear_cartesian_from_dealiased(volume, &borrowed, spec)
 }
 
-/// Resample low-level shear from caller-provided dealiased velocity grids.
-/// The slice is indexed like `volume.cuts`; no dealias engine runs here.
+/// Resample low-level shear from caller-provided dealiased velocity fields.
+/// The slice is indexed like `volume.sweeps`, each entry a field on that
+/// sweep's rays and range; no dealias engine runs here.
 pub fn low_level_azshear_cartesian_from_dealiased(
-    volume: &RadarVolume,
-    dealiased_velocity: &[Option<&MomentGrid>],
+    volume: &Volume,
+    dealiased_velocity: &[Option<&Field>],
     spec: &TracksGridSpec,
 ) -> Vec<f32> {
     let fields = low_level_tilt_fields_from_dealiased(volume, dealiased_velocity);
@@ -329,7 +329,7 @@ pub fn tds_anchor(site: &RotationSite) -> bool {
 /// Per-gate TDS flags on the lowest dual-pol tilt: every gate within
 /// [`TDS_ANCHOR_RADIUS_KM`] of an anchoring circulation that satisfies
 /// [`tds_gate_criteria`]. Deterministic physics flag — never a probability.
-pub fn detect_tds_gates(volume: &RadarVolume, sites: &[RotationSite]) -> Vec<TdsGate> {
+pub fn detect_tds_gates(volume: &Volume, sites: &[RotationSite]) -> Vec<TdsGate> {
     let anchors: Vec<(f64, f64)> = sites
         .iter()
         .filter(|site| tds_anchor(site))
@@ -344,41 +344,41 @@ pub fn detect_tds_gates(volume: &RadarVolume, sites: &[RotationSite]) -> Vec<Tds
     }
 
     // Lowest tilt carrying both ρhv and Z (the split-cut surveillance tilt).
-    let Some((cut_index, _)) = volume
-        .cuts
+    let Some(sweep) = volume
+        .sweeps
         .iter()
-        .enumerate()
-        .filter(|(_, cut)| {
-            cut.elevation_deg <= LOW_LEVEL_MAX_TILT_DEG
-                && cut
-                    .moments
-                    .contains_key(&MomentType::CorrelationCoefficient)
-                && cut.moments.contains_key(&MomentType::Reflectivity)
+        .filter(|sweep| {
+            sweep.fixed_angle_deg <= LOW_LEVEL_MAX_TILT_DEG
+                && sweep.find(Quantity::CorrelationCoefficient).is_some()
+                && sweep.find(Quantity::Reflectivity).is_some()
         })
-        .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
+        .min_by(|a, b| a.fixed_angle_deg.total_cmp(&b.fixed_angle_deg))
     else {
         return Vec::new();
     };
-    let cut = &volume.cuts[cut_index];
-    let Some(cc_grid) = cut.moments.get(&MomentType::CorrelationCoefficient) else {
+    let Some(cc_field) = sweep.find(Quantity::CorrelationCoefficient) else {
         return Vec::new();
     };
-    let Some(ref_grid) = cut.moments.get(&MomentType::Reflectivity) else {
+    let Some(ref_field) = sweep.find(Quantity::Reflectivity) else {
         return Vec::new();
     };
-    let ref_row_by_radial = row_by_radial(ref_grid, cut.radials.len());
-    let elevation = cut.elevation_deg as f64;
-    let spacing_m = cc_grid.gate_range.gate_spacing_m.max(1) as f64;
-    let first_gate_m = cc_grid.gate_range.first_gate_m as f64;
-    let gate_count = cc_grid.gate_range.gate_count;
+    let Some(ref_sampler) = RangeSampler::new(sweep, ref_field) else {
+        return Vec::new();
+    };
+    let elevation = sweep.fixed_angle_deg as f64;
+    let Some((first_gate_m, spacing_m)) = cc_field.native_geometry(&sweep.range) else {
+        return Vec::new();
+    };
+    let spacing_m = spacing_m.max(1.0);
+    let gate_count = cc_field.ngates as usize;
 
     let mut seen: HashSet<(usize, usize)> = HashSet::new();
     let mut out = Vec::new();
-    'rows: for (row, &radial_index) in cc_grid.radial_indices.iter().enumerate() {
-        let Some(radial) = cut.radials.get(radial_index) else {
+    'rows: for row in 0..cc_field.nrays as usize {
+        let Some(azimuth) = sweep.rays.azimuth_deg.get(row) else {
             continue;
         };
-        let az = (radial.azimuth_deg as f64).to_radians();
+        let az = (*azimuth as f64).to_radians();
         let (ux, uy) = (az.sin(), az.cos());
         for &(anchor_east, anchor_north) in &anchors {
             // Closest approach of this ray to the anchor; the ray intersects
@@ -406,12 +406,10 @@ pub fn detect_tds_gates(volume: &RadarVolume, sites: &[RotationSite]) -> Vec<Tds
                 if beam_height_above_radar_m(range_m, elevation) > TDS_MAX_BEAM_HEIGHT_M {
                     break;
                 }
-                let Some(cc) = cc_grid.scaled_value(row, gate).filter(|v| v.is_finite()) else {
+                let Some(cc) = cc_field.value(row, gate).filter(|v| v.is_finite()) else {
                     continue;
                 };
-                let dbz =
-                    sample_by_radial_range(ref_grid, &ref_row_by_radial, radial_index, range_m);
-                let Some(dbz) = dbz else {
+                let Some(dbz) = ref_sampler.sample(row, range_m) else {
                     continue;
                 };
                 if !tds_gate_criteria(cc, dbz) {
@@ -435,26 +433,27 @@ pub fn detect_tds_gates(volume: &RadarVolume, sites: &[RotationSite]) -> Vec<Tds
 
 /// Build the QC'd per-tilt shear fields feeding the Cartesian resample.
 fn low_level_tilt_fields_from_dealiased(
-    volume: &RadarVolume,
-    dealiased_velocity: &[Option<&MomentGrid>],
+    volume: &Volume,
+    dealiased_velocity: &[Option<&Field>],
 ) -> Vec<TiltShearField> {
-    let velocity_cuts = low_level_azshear_cut_indices(volume);
+    let velocity_sweeps = low_level_azshear_sweep_indices(volume);
 
     let mut fields = Vec::new();
-    for cut_index in velocity_cuts {
-        let cut = &volume.cuts[cut_index];
-        let Some(velocity) = dealiased_velocity.get(cut_index).copied().flatten() else {
+    for sweep_index in velocity_sweeps {
+        let sweep = &volume.sweeps[sweep_index];
+        let Some(velocity) = dealiased_velocity.get(sweep_index).copied().flatten() else {
             continue;
         };
-        let shear = azimuthal_shear_grid_from_dealiased(cut, velocity);
-        let rows = shear.radial_count();
-        let gates = shear.gate_range.gate_count;
+        let shear = azimuthal_shear_from_dealiased(sweep, velocity);
+        let (rows, gates) = shear.shape();
         if rows == 0 || gates == 0 {
             continue;
         }
-        let spacing_m = shear.gate_range.gate_spacing_m.max(1) as f64;
-        let first_gate_m = shear.gate_range.first_gate_m as f64;
-        let elevation = cut.elevation_deg as f64;
+        let Some((first_gate_m, spacing_m)) = shear.native_geometry(&sweep.range) else {
+            continue;
+        };
+        let spacing_m = spacing_m.max(1.0);
+        let elevation = sweep.fixed_angle_deg as f64;
 
         // Range window: clutter floor up to where the beam exits 0–2 km.
         let min_gate = ((TRACKS_MIN_RANGE_M - first_gate_m) / spacing_m)
@@ -475,13 +474,12 @@ fn low_level_tilt_fields_from_dealiased(
             continue;
         }
 
-        let reflectivity = cut.moments.get(&MomentType::Reflectivity);
-        let ref_row_by_radial = reflectivity
-            .map(|grid| row_by_radial(grid, cut.radials.len()))
-            .unwrap_or_default();
+        let reflectivity = sweep
+            .find(Quantity::Reflectivity)
+            .and_then(|field| RangeSampler::new(sweep, field));
 
         let shear_at = |row: usize, gate: usize| -> Option<f32> {
-            shear.scaled_value(row, gate).filter(|v| v.is_finite())
+            shear.value(row, gate).filter(|v| v.is_finite())
         };
         let mut qc = vec![f32::NAN; rows * gates];
         for row in 0..rows {
@@ -499,10 +497,9 @@ fn low_level_tilt_fields_from_dealiased(
                 }
                 // Reflectivity QC: shear only accumulates inside real echo.
                 let range_m = first_gate_m + gate as f64 * spacing_m;
-                let dbz = reflectivity.and_then(|grid| {
-                    let radial_index = *shear.radial_indices.get(row)?;
-                    sample_by_radial_range(grid, &ref_row_by_radial, radial_index, range_m)
-                });
+                let dbz = reflectivity
+                    .as_ref()
+                    .and_then(|sampler| sampler.sample(row, range_m));
                 if !dbz.is_some_and(|v| v >= TRACKS_REFLECTIVITY_FLOOR_DBZ) {
                     continue;
                 }
@@ -536,11 +533,10 @@ fn low_level_tilt_fields_from_dealiased(
 
         // Azimuth → row lookup with nearest-fill (the detect.rs pattern).
         let mut az_row = vec![usize::MAX; AZ_BINS];
-        for (row, &radial_index) in shear.radial_indices.iter().enumerate() {
-            if let Some(radial) = cut.radials.get(radial_index) {
-                let bin = ((radial.azimuth_deg.rem_euclid(360.0)) * (AZ_BINS as f32 / 360.0))
-                    as usize
-                    % AZ_BINS;
+        for row in 0..rows {
+            if let Some(azimuth) = sweep.rays.azimuth_deg.get(row) {
+                let bin =
+                    ((azimuth.rem_euclid(360.0)) * (AZ_BINS as f32 / 360.0)) as usize % AZ_BINS;
                 az_row[bin] = row;
             }
         }
@@ -567,42 +563,41 @@ fn low_level_tilt_fields_from_dealiased(
     fields
 }
 
-/// Map radial index → grid row for grids whose row order differs (the REF
-/// alignment fix from `recast_radar_retrieve`'s rotation detection).
-fn row_by_radial(grid: &MomentGrid, radial_count: usize) -> Vec<usize> {
-    let mut map = vec![usize::MAX; radial_count];
-    for (row, &radial_index) in grid.radial_indices.iter().enumerate() {
-        if let Some(slot) = map.get_mut(radial_index) {
-            *slot = row;
-        }
-    }
-    map
+/// Samples a field of a sweep by (ray, physical range) at the nearest native
+/// gate. Every field of a sweep is on the sweep's rays, so row `r` of the
+/// shear field and row `r` of the reflectivity are the same ray.
+struct RangeSampler<'a> {
+    field: &'a Field,
+    first_gate_m: f64,
+    spacing_m: f64,
 }
 
-fn sample_by_radial_range(
-    grid: &MomentGrid,
-    row_by_radial: &[usize],
-    radial_index: usize,
-    range_m: f64,
-) -> Option<f32> {
-    let row = *row_by_radial.get(radial_index)?;
-    if row == usize::MAX {
-        return None;
+impl<'a> RangeSampler<'a> {
+    fn new(sweep: &Sweep, field: &'a Field) -> Option<Self> {
+        let (first_gate_m, spacing_m) = field.native_geometry(&sweep.range)?;
+        Some(Self {
+            field,
+            first_gate_m,
+            spacing_m: spacing_m.max(1.0),
+        })
     }
-    let gate = ((range_m - grid.gate_range.first_gate_m as f64)
-        / grid.gate_range.gate_spacing_m.max(1) as f64)
-        .round();
-    if gate < 0.0 || gate as usize >= grid.gate_range.gate_count {
-        return None;
+
+    fn sample(&self, row: usize, range_m: f64) -> Option<f32> {
+        let gate = ((range_m - self.first_gate_m) / self.spacing_m).round();
+        if gate < 0.0 || gate as usize >= self.field.ngates as usize {
+            return None;
+        }
+        self.field
+            .value(row, gate as usize)
+            .filter(|v| v.is_finite())
     }
-    grid.scaled_value(row, gate as usize)
-        .filter(|v| v.is_finite())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{ElevationCut, GateRange, MomentStorage, Radial};
+    use crate::test_support::{sweep_with_f32_field, volume_with};
+    use recast_radar_core::FieldName;
 
     #[test]
     fn max_composite_keeps_running_maximum() {
@@ -658,53 +653,25 @@ mod tests {
 
     // ---- synthetic-volume helpers (the detect.rs test pattern) ----
 
-    fn gate_range(gates: usize) -> GateRange {
-        GateRange {
-            first_gate_m: 250,
-            gate_spacing_m: 250,
-            gate_count: gates,
-        }
-    }
-
-    fn f32_grid(moment: MomentType, range: &GateRange, rows: usize, data: Vec<f32>) -> MomentGrid {
-        MomentGrid {
-            moment,
-            gate_range: range.clone(),
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..rows).collect(),
-            storage: MomentStorage::F32(data),
-        }
-    }
-
-    fn full_circle_cut(elevation: f32, rows: usize, gates: usize) -> ElevationCut {
-        let range = gate_range(gates);
-        let mut cut = ElevationCut::new(elevation, None);
-        for r in 0..rows {
-            cut.radials.push(Radial {
-                azimuth_deg: r as f32 * (360.0 / rows as f32),
-                elevation_deg: elevation,
-                time_offset_ms: 0,
-                gate_range: range.clone(),
-                nyquist_velocity_mps: Some(60.0),
-                radial_status: None,
-            });
-        }
-        cut
+    /// Add a physical field on 250 m gates from 250 m to a sweep.
+    fn add_field(sweep: &mut Sweep, name: FieldName, gates: usize, data: Vec<f32>) {
+        let mapping = sweep.attach_geometry(250.0, 250.0, gates as u32).unwrap();
+        let field = Field::new(
+            name,
+            mapping,
+            gates as u32,
+            recast_radar_core::FieldData::F32 {
+                values: data,
+                coding: recast_radar_core::FloatCoding::default(),
+            },
+        );
+        sweep.add_field(field).unwrap();
     }
 
     /// Full-circle tilt with a cyclonic Rankine-style couplet centered at
     /// az ~90° and the given gate span, inside 50 dBZ echo.
-    fn couplet_tilt(
-        elevation: f32,
-        gates: usize,
-        couplet_gates: std::ops::Range<usize>,
-    ) -> ElevationCut {
+    fn couplet_tilt(elevation: f32, gates: usize, couplet_gates: std::ops::Range<usize>) -> Sweep {
         let rows = 720usize;
-        let mut cut = full_circle_cut(elevation, rows, gates);
-        let range = gate_range(gates);
         let mut velocity = vec![0.0f32; rows * gates];
         for row in 166..=198usize {
             let v = if row < 174 {
@@ -718,9 +685,15 @@ mod tests {
                 velocity[row * gates + gate] = v;
             }
         }
-        cut.moments.insert(
-            MomentType::Velocity,
-            f32_grid(MomentType::Velocity, &range, rows, velocity),
+        let mut sweep = sweep_with_f32_field(
+            elevation,
+            rows,
+            Some(60.0),
+            FieldName::Vradh,
+            250.0,
+            250.0,
+            gates,
+            velocity,
         );
         let mut dbz = vec![f32::NAN; rows * gates];
         for row in 150..210 {
@@ -728,20 +701,12 @@ mod tests {
                 dbz[row * gates + gate] = 50.0;
             }
         }
-        cut.moments.insert(
-            MomentType::Reflectivity,
-            f32_grid(MomentType::Reflectivity, &range, rows, dbz),
-        );
-        cut
+        add_field(&mut sweep, FieldName::Dbzh, gates, dbz);
+        sweep
     }
 
-    fn volume_of(cuts: Vec<ElevationCut>) -> RadarVolume {
-        let mut volume = RadarVolume::new(
-            recast_radar_core::RadarSite::new("TEST"),
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        );
-        volume.cuts = cuts;
-        volume
+    fn volume_of(sweeps: Vec<Sweep>) -> Volume {
+        volume_with(sweeps)
     }
 
     /// The couplet sits at az 90°, gates 80..100 (20–25 km). The Cartesian
@@ -846,8 +811,6 @@ mod tests {
     fn tds_gates_require_anchor_proximity_and_criteria() {
         let rows = 720usize;
         let gates = 200usize;
-        let range = gate_range(gates);
-        let mut cut = full_circle_cut(0.5, rows, gates);
         // 50 dBZ echo everywhere; ρhv 0.99 except a debris patch at
         // az 88°–92° (rows 176..184), gates 76..84 (~19–21 km) and a far
         // low-CC patch at az 268°–272° with NO circulation nearby.
@@ -863,14 +826,17 @@ mod tests {
                 cc[row * gates + gate] = 0.55;
             }
         }
-        cut.moments.insert(
-            MomentType::Reflectivity,
-            f32_grid(MomentType::Reflectivity, &range, rows, dbz),
+        let mut cut = sweep_with_f32_field(
+            0.5,
+            rows,
+            Some(60.0),
+            FieldName::Dbzh,
+            250.0,
+            250.0,
+            gates,
+            dbz,
         );
-        cut.moments.insert(
-            MomentType::CorrelationCoefficient,
-            f32_grid(MomentType::CorrelationCoefficient, &range, rows, cc),
-        );
+        add_field(&mut cut, FieldName::Rhohv, gates, cc);
         let volume = volume_of(vec![cut]);
         let anchor = RotationSite {
             azimuth_deg: 90.0,

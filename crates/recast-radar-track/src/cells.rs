@@ -15,9 +15,9 @@
 //! (1972) liquid-water relation used by SCIT (Johnson et al. 1998, Wea.
 //! Forecasting 13(2), 263–276, App. B Eq. B1).
 
-use recast_radar_core::{MomentType, RadarVolume};
+use recast_radar_core::{Quantity, Volume};
 
-use recast_radar_map::composite_reflectivity_grid;
+use recast_radar_map::composite_reflectivity;
 
 /// Quantization (Lakshmanan et al. 2009 Eq. 2): a=30 dBZ floor (the SCIT
 /// ladder's bottom rung, Johnson et al. 1998 App. A #12, and the cell
@@ -57,25 +57,26 @@ pub struct StormCell {
 /// Identify storm cells on the volume's composite reflectivity (enhanced
 /// watershed). Runs in a few ms on a dense composite (plus the composite
 /// build itself, which is rayon-parallel); callers keep it off the UI thread.
-pub fn identify_storm_cells(volume: &RadarVolume) -> Vec<StormCell> {
-    let Some(composite) = composite_reflectivity_grid(volume) else {
+pub fn identify_storm_cells(volume: &Volume) -> Vec<StormCell> {
+    let Some(composite) = composite_reflectivity(volume) else {
         return Vec::new();
     };
-    let Some(base_cut) = volume
-        .cuts
+    let Some(base_sweep) = volume
+        .sweeps
         .iter()
-        .filter(|c| c.moments.contains_key(&MomentType::Reflectivity))
-        .min_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg))
+        .filter(|s| s.find(Quantity::Reflectivity).is_some())
+        .min_by(|a, b| a.fixed_angle_deg.total_cmp(&b.fixed_angle_deg))
     else {
         return Vec::new();
     };
-    let rows = composite.radial_count();
-    let gates = composite.gate_range.gate_count;
+    let (rows, gates) = composite.shape();
     if rows == 0 || gates == 0 {
         return Vec::new();
     }
-    let spacing_m = composite.gate_range.gate_spacing_m.max(1) as f64;
-    let first_gate_m = composite.gate_range.first_gate_m as f64;
+    let Some((first_gate_m, spacing_m)) = composite.native_geometry(&base_sweep.range) else {
+        return Vec::new();
+    };
+    let spacing_m = spacing_m.max(1.0);
     let az_step_rad = (360.0 / rows as f64).to_radians();
     let max_gate = (((MAX_RANGE_M - first_gate_m) / spacing_m) as usize).min(gates);
 
@@ -83,7 +84,7 @@ pub fn identify_storm_cells(volume: &RadarVolume) -> Vec<StormCell> {
     let mut field = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..max_gate {
-            if let Some(v) = composite.scaled_value(row, gate).filter(|v| v.is_finite()) {
+            if let Some(v) = composite.value(row, gate).filter(|v| v.is_finite()) {
                 field[row * gates + gate] = v;
             }
         }
@@ -256,11 +257,11 @@ pub fn identify_storm_cells(volume: &RadarVolume) -> Vec<StormCell> {
                 let z_lin = 10.0f64.powf(dbz as f64 / 10.0);
                 let cell_area = gate_area_km2(idx);
                 let w = cell_area * z_lin.powf(4.0 / 7.0);
-                let azimuth = composite
-                    .radial_indices
+                let azimuth = base_sweep
+                    .rays
+                    .azimuth_deg
                     .get(row)
-                    .and_then(|&i| base_cut.radials.get(i))
-                    .map(|r| r.azimuth_deg as f64)
+                    .map(|azimuth| *azimuth as f64)
                     .unwrap_or((row as f64) * 360.0 / rows as f64)
                     .to_radians();
                 let range_km = (first_gate_m + gate as f64 * spacing_m) / 1000.0;
@@ -350,30 +351,15 @@ fn smooth_field(field: &[f32], rows: usize, gates: usize, sigma: f32) -> Vec<f32
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{
-        ElevationCut, GateRange, MomentGrid, MomentStorage, RadarSite, Radial,
-    };
+    use crate::test_support::{sweep_with_f32_field, volume_with};
+    use recast_radar_core::FieldName;
 
     /// Synthetic volume with one REF tilt whose field is given by a closure
     /// of (east_km, north_km).
-    fn volume_with_field(rows: usize, gates: usize, f: impl Fn(f64, f64) -> f32) -> RadarVolume {
-        let gate_range = GateRange {
-            first_gate_m: 1000,
-            gate_spacing_m: 500,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(0.5, None);
+    fn volume_with_field(rows: usize, gates: usize, f: impl Fn(f64, f64) -> f32) -> Volume {
         let mut data = vec![f32::NAN; rows * gates];
         for row in 0..rows {
             let az = (row as f64) * 360.0 / rows as f64;
-            cut.radials.push(Radial {
-                azimuth_deg: az as f32,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
             for gate in 0..gates {
                 let range_km = (1000.0 + gate as f64 * 500.0) / 1000.0;
                 let east = range_km * az.to_radians().sin();
@@ -381,25 +367,9 @@ mod tests {
                 data[row * gates + gate] = f(east, north);
             }
         }
-        cut.moments.insert(
-            MomentType::Reflectivity,
-            MomentGrid {
-                moment: MomentType::Reflectivity,
-                gate_range,
-                scale: 1.0,
-                offset: 0.0,
-                nodata: None,
-                range_folded: None,
-                radial_indices: (0..rows).collect(),
-                storage: MomentStorage::F32(data),
-            },
-        );
-        let mut volume = RadarVolume::new(
-            RadarSite::new("TEST"),
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        );
-        volume.cuts = vec![cut];
-        volume
+        let sweep =
+            sweep_with_f32_field(0.5, rows, None, FieldName::Dbzh, 1000.0, 500.0, gates, data);
+        volume_with(vec![sweep])
     }
 
     fn gaussian_core(east: f64, north: f64, cx: f64, cy: f64, peak: f32, sigma_km: f64) -> f32 {

@@ -19,6 +19,9 @@ recast-radar-retrieve = { path = "../recast-radar-retrieve" }
 [dev-dependencies]
 image.workspace = true
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-io = { path = "../recast-radar-io" }
+recast-radar-filters = { path = "../recast-radar-filters" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]
 workspace = true

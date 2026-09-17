@@ -18,12 +18,10 @@
 //! elevations at the same location.
 
 use rayon::prelude::*;
-use recast_radar_core::{
-    ElevationCut, MomentGrid, MomentType, RadarVolume, beam_height_above_radar_m,
-};
+use recast_radar_core::{Field, Quantity, Volume, beam_height_above_radar_m};
 
-use crate::shear::azimuthal_shear_grid_from_dealiased;
-use recast_radar_correct::dealias_velocity_grid;
+use crate::shear::azimuthal_shear_from_dealiased;
+use recast_radar_correct::dealias_velocity;
 
 /// Reflectivity floor for the display QC mask. The MDA's adaptable parameter
 /// runs 0–20 dBZ (Stumpf 1998); a viewer wants the top of that bracket so an
@@ -184,63 +182,70 @@ fn rank_2d(delta_v_mps: f32, shear_ms_km: f32, gtg_dv_mps: f32, range_km: f64) -
     rank_dv(gtg_dv_mps).max(rank_dv(delta_v_mps).min(rank_shear))
 }
 
-/// Ordered, bounded cut set consumed by rotation detection. Callers that own
-/// dealiasing use this to resolve only grids the detector will inspect.
-pub fn rotation_velocity_cut_indices(volume: &RadarVolume) -> Vec<usize> {
-    let mut velocity_cuts: Vec<usize> = volume
-        .cuts
+/// Ordered, bounded sweep set consumed by rotation detection. Callers that
+/// own dealiasing use this to resolve only fields the detector will inspect.
+pub fn rotation_velocity_sweep_indices(volume: &Volume) -> Vec<usize> {
+    let mut velocity_sweeps: Vec<usize> = volume
+        .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, cut)| {
-            cut.moments.contains_key(&MomentType::Velocity)
-                && cut.elevation_deg <= MAX_TILT_ELEVATION_DEG
+        .filter(|(_, sweep)| {
+            sweep.find(Quantity::RadialVelocity).is_some()
+                && sweep.fixed_angle_deg <= MAX_TILT_ELEVATION_DEG
         })
         .map(|(index, _)| index)
         .collect();
-    velocity_cuts.sort_by(|left, right| {
-        volume.cuts[*left]
-            .elevation_deg
-            .total_cmp(&volume.cuts[*right].elevation_deg)
+    velocity_sweeps.sort_by(|left, right| {
+        volume.sweeps[*left]
+            .fixed_angle_deg
+            .total_cmp(&volume.sweeps[*right].fixed_angle_deg)
     });
-    velocity_cuts.truncate(MAX_TILTS);
-    velocity_cuts
+    velocity_sweeps.truncate(MAX_TILTS);
+    velocity_sweeps
+}
+
+/// The detector's sweeps' velocity fields, dealiased with the region engine;
+/// indexed like `volume.sweeps`.
+fn dealias_detector_sweeps(volume: &Volume) -> Vec<Option<Field>> {
+    let mut owned = vec![None; volume.sweeps.len()];
+    for sweep_index in rotation_velocity_sweep_indices(volume) {
+        let sweep = &volume.sweeps[sweep_index];
+        owned[sweep_index] = sweep
+            .find(Quantity::RadialVelocity)
+            .map(|velocity| dealias_velocity(sweep, velocity));
+    }
+    owned
 }
 
 /// Detect vertically-continuous rotation in a volume (background-thread
 /// work: ~100–300 ms on a dense super-res volume; tilts run in parallel).
-pub fn detect_rotation_sites(volume: &RadarVolume) -> Vec<RotationSite> {
-    let mut owned = vec![None; volume.cuts.len()];
-    for cut_index in rotation_velocity_cut_indices(volume) {
-        let cut = &volume.cuts[cut_index];
-        owned[cut_index] = cut
-            .moments
-            .get(&MomentType::Velocity)
-            .map(|velocity| dealias_velocity_grid(cut, velocity));
-    }
-    let borrowed: Vec<Option<&MomentGrid>> = owned.iter().map(Option::as_ref).collect();
+pub fn detect_rotation_sites(volume: &Volume) -> Vec<RotationSite> {
+    let owned = dealias_detector_sweeps(volume);
+    let borrowed: Vec<Option<&Field>> = owned.iter().map(Option::as_ref).collect();
     detect_rotation_sites_from_dealiased(volume, &borrowed)
 }
 
 /// Detect vertically-continuous rotation from caller-provided dealiased
-/// velocity grids. The slice is indexed like `volume.cuts`; this function and
-/// its LLSD path perform no implicit second dealias solve.
+/// velocity fields. The slice is indexed like `volume.sweeps`, each entry a
+/// field on that sweep's rays and range; this function and its LLSD path
+/// perform no implicit second dealias solve.
 pub fn detect_rotation_sites_from_dealiased(
-    volume: &RadarVolume,
-    dealiased_velocity: &[Option<&MomentGrid>],
+    volume: &Volume,
+    dealiased_velocity: &[Option<&Field>],
 ) -> Vec<RotationSite> {
-    let velocity_cuts = rotation_velocity_cut_indices(volume);
-    if velocity_cuts.len() < 2 {
+    let velocity_sweeps = rotation_velocity_sweep_indices(volume);
+    if velocity_sweeps.len() < 2 {
         return Vec::new();
     }
 
-    let per_tilt: Vec<Vec<Feature2D>> = velocity_cuts
+    let per_tilt: Vec<Vec<Feature2D>> = velocity_sweeps
         .par_iter()
-        .map(|&cut_index| {
+        .map(|&sweep_index| {
             dealiased_velocity
-                .get(cut_index)
+                .get(sweep_index)
                 .copied()
                 .flatten()
-                .map_or_else(Vec::new, |grid| tilt_features(volume, cut_index, grid))
+                .map_or_else(Vec::new, |field| tilt_features(volume, sweep_index, field))
         })
         .collect();
 
@@ -249,35 +254,32 @@ pub fn detect_rotation_sites_from_dealiased(
 
 /// Diagnostic: per-tilt (elevation, 2D feature count, best rank) — for
 /// threshold tuning against real volumes.
-pub fn rotation_features_per_tilt(volume: &RadarVolume) -> Vec<(f32, usize, u8)> {
-    let mut owned = vec![None; volume.cuts.len()];
-    for cut_index in rotation_velocity_cut_indices(volume) {
-        let cut = &volume.cuts[cut_index];
-        owned[cut_index] = cut
-            .moments
-            .get(&MomentType::Velocity)
-            .map(|velocity| dealias_velocity_grid(cut, velocity));
-    }
-    let borrowed: Vec<Option<&MomentGrid>> = owned.iter().map(Option::as_ref).collect();
+pub fn rotation_features_per_tilt(volume: &Volume) -> Vec<(f32, usize, u8)> {
+    let owned = dealias_detector_sweeps(volume);
+    let borrowed: Vec<Option<&Field>> = owned.iter().map(Option::as_ref).collect();
     rotation_features_per_tilt_from_dealiased(volume, &borrowed)
 }
 
-/// Per-tilt rotation diagnostics from caller-provided dealiased grids.
+/// Per-tilt rotation diagnostics from caller-provided dealiased fields.
 pub fn rotation_features_per_tilt_from_dealiased(
-    volume: &RadarVolume,
-    dealiased_velocity: &[Option<&MomentGrid>],
+    volume: &Volume,
+    dealiased_velocity: &[Option<&Field>],
 ) -> Vec<(f32, usize, u8)> {
-    let velocity_cuts = rotation_velocity_cut_indices(volume);
-    velocity_cuts
+    let velocity_sweeps = rotation_velocity_sweep_indices(volume);
+    velocity_sweeps
         .iter()
-        .map(|&cut_index| {
+        .map(|&sweep_index| {
             let features = dealiased_velocity
-                .get(cut_index)
+                .get(sweep_index)
                 .copied()
                 .flatten()
-                .map_or_else(Vec::new, |grid| tilt_features(volume, cut_index, grid));
+                .map_or_else(Vec::new, |field| tilt_features(volume, sweep_index, field));
             let best = features.iter().map(|f| f.rank).max().unwrap_or(0);
-            (volume.cuts[cut_index].elevation_deg, features.len(), best)
+            (
+                volume.sweeps[sweep_index].fixed_angle_deg,
+                features.len(),
+                best,
+            )
         })
         .collect()
 }
@@ -448,44 +450,38 @@ fn associate_vertically(per_tilt: &[Vec<Feature2D>]) -> Vec<RotationSite> {
 
 /// Per-tilt: QC mask → multi-level core extraction → attribute measurement.
 fn tilt_features(
-    volume: &RadarVolume,
-    cut_index: usize,
-    dealiased_velocity: &MomentGrid,
+    volume: &Volume,
+    sweep_index: usize,
+    dealiased_velocity: &Field,
 ) -> Vec<Feature2D> {
-    let cut = &volume.cuts[cut_index];
-    let shear = azimuthal_shear_grid_from_dealiased(cut, dealiased_velocity);
-    let rows = shear.radial_count();
-    let gates = shear.gate_range.gate_count;
+    let sweep = &volume.sweeps[sweep_index];
+    let shear = azimuthal_shear_from_dealiased(sweep, dealiased_velocity);
+    let (rows, gates) = shear.shape();
     if rows == 0 || gates == 0 {
         return Vec::new();
     }
-    let spacing_m = shear.gate_range.gate_spacing_m.max(1) as f64;
-    let first_gate_m = shear.gate_range.first_gate_m as f64;
-    let elevation = cut.elevation_deg as f64;
-    let reflectivity = cut.moments.get(&MomentType::Reflectivity);
-    // Row orderings differ between grids on the same cut: map shear rows to
-    // REF rows through the radial indices, and ranges through REF's own gate
-    // geometry (sampling by raw row index misaligns the mask).
-    let ref_row_by_radial: Vec<usize> = if let Some(grid) = reflectivity {
-        let mut map = vec![usize::MAX; cut.radials.len()];
-        for (row, &radial_index) in grid.radial_indices.iter().enumerate() {
-            if let Some(slot) = map.get_mut(radial_index) {
-                *slot = row;
-            }
-        }
-        map
-    } else {
-        Vec::new()
+    let Some((first_gate_m, spacing_m)) = shear.native_geometry(&sweep.range) else {
+        return Vec::new();
     };
-    let cc_source = correlation_source(volume, cut_index);
+    let spacing_m = spacing_m.max(1.0);
+    let elevation = sweep.fixed_angle_deg as f64;
+    // Every field of a sweep is on the sweep's rays, so shear row `r` and
+    // reflectivity row `r` are the same ray; ranges go through the
+    // reflectivity's own gate geometry.
+    let reflectivity = sweep
+        .find(Quantity::Reflectivity)
+        .and_then(|field| Some((field, field.native_geometry(&sweep.range)?)));
+    let cc_source = correlation_source(volume, sweep_index);
+    let azimuth_of =
+        |row: usize| -> f32 { sweep.rays.azimuth_deg.get(row).copied().unwrap_or(0.0) };
 
-    // The display shear grid is ×1000 ≡ m/s/km — the unit the rank tables use.
+    // The display shear field is ×1000 ≡ m/s/km — the unit the rank tables use.
     let shear_at = |row: usize, gate: usize| -> Option<f32> {
-        shear.scaled_value(row, gate).filter(|v| v.is_finite())
+        shear.value(row, gate).filter(|v| v.is_finite())
     };
     let vel_at = |row: usize, gate: usize| -> Option<f32> {
         dealiased_velocity
-            .scaled_value(row, gate)
+            .value(row, gate)
             .filter(|v| v.is_finite())
     };
 
@@ -515,19 +511,16 @@ fn tilt_features(
             }
             n_shear += 1;
             // Reflectivity floor: rotation markers only inside actual echo.
-            let dbz = reflectivity.and_then(|grid| {
-                let radial_index = *shear.radial_indices.get(row)?;
-                let ref_row = *ref_row_by_radial.get(radial_index)?;
-                if ref_row == usize::MAX {
+            let dbz = reflectivity.and_then(|(field, (ref_first_m, ref_spacing_m))| {
+                if row >= field.nrays as usize {
                     return None;
                 }
-                let ref_gate = ((range - grid.gate_range.first_gate_m as f64)
-                    / grid.gate_range.gate_spacing_m.max(1) as f64)
-                    .round();
-                if ref_gate < 0.0 || ref_gate as usize >= grid.gate_range.gate_count {
+                let ref_gate = ((range - ref_first_m) / ref_spacing_m.max(1.0)).round();
+                if ref_gate < 0.0 || ref_gate as usize >= field.ngates as usize {
                     return None;
                 }
-                grid.scaled_value(ref_row, ref_gate as usize)
+                field
+                    .value(row, ref_gate as usize)
                     .filter(|v| v.is_finite())
             });
             if !dbz.is_some_and(|v| v >= REFLECTIVITY_FLOOR_DBZ) {
@@ -536,14 +529,10 @@ fn tilt_features(
             n_ref += 1;
             // CC mask only in weak echo (never erases a debris signature).
             if dbz.is_some_and(|v| v < CC_MASK_MAX_DBZ)
-                && let Some((cc_cut, cc_grid, az_lookup)) = &cc_source
+                && let Some(cc_source) = &cc_source
             {
-                let az = cut
-                    .radials
-                    .get(*shear.radial_indices.get(row).unwrap_or(&0))
-                    .map(|r| r.azimuth_deg)
-                    .unwrap_or(0.0);
-                if let Some(cc) = sample_by_az_range(cc_cut, cc_grid, az_lookup, az, range)
+                let az = azimuth_of(row);
+                if let Some(cc) = cc_source.sample_by_az_range(az, range)
                     && cc < CC_FLOOR
                 {
                     continue;
@@ -624,7 +613,7 @@ fn tilt_features(
     if debug {
         eprintln!(
             "tilt {:.2}: shear-pass {} -> ref-pass {} -> median-pass {} -> {} components",
-            cut.elevation_deg,
+            sweep.fixed_angle_deg,
             n_shear,
             n_ref,
             n_median,
@@ -744,13 +733,7 @@ fn tilt_features(
         // Couplet diameter = distance between the velocity extrema
         // (1–10 km vortex scale; floor relaxed for TVS-scale cores).
         let to_xy = |(row, gate): (usize, usize)| -> (f64, f64) {
-            let az = shear
-                .radial_indices
-                .get(row)
-                .and_then(|&i| cut.radials.get(i))
-                .map(|r| r.azimuth_deg as f64)
-                .unwrap_or(0.0)
-                .to_radians();
+            let az = (azimuth_of(row) as f64).to_radians();
             let r = (first_gate_m + gate as f64 * spacing_m) / 1000.0;
             (r * az.sin(), r * az.cos())
         };
@@ -789,22 +772,18 @@ fn tilt_features(
             rej[5] += 1;
             continue;
         }
-        let Some(radial) = shear
-            .radial_indices
-            .get(peak_row)
-            .and_then(|&index| cut.radials.get(index))
-        else {
+        let Some(peak_azimuth) = sweep.rays.azimuth_deg.get(peak_row).copied() else {
             continue;
         };
-        let az_rad = (radial.azimuth_deg as f64).to_radians();
+        let az_rad = (peak_azimuth as f64).to_radians();
         // Half-power beam depth ≈ range × half the 1° beamwidth.
         let half_beam_depth_m = range_m * (1.0_f64.to_radians() / 2.0).tan();
         out.push(Feature2D {
             east_km: range_m / 1000.0 * az_rad.sin(),
             north_km: range_m / 1000.0 * az_rad.cos(),
-            azimuth_deg: radial.azimuth_deg,
+            azimuth_deg: peak_azimuth,
             ground_range_m: range_m,
-            elevation_deg: cut.elevation_deg,
+            elevation_deg: sweep.fixed_angle_deg,
             height_m,
             half_beam_depth_m,
             delta_v_mps: delta_v,
@@ -816,7 +795,7 @@ fn tilt_features(
     if debug {
         eprintln!(
             "tilt {:.2}: rejections size {} height {} validity {} diameter {} aspect {} rank {} -> kept {}",
-            cut.elevation_deg,
+            sweep.fixed_angle_deg,
             rej[0],
             rej[1],
             rej[2],
@@ -873,30 +852,39 @@ fn connected_components(
     components
 }
 
-type CcSource<'a> = (&'a ElevationCut, &'a MomentGrid, Vec<usize>);
+/// Correlation coefficient of the sweep paired with a velocity sweep, with an
+/// azimuth-bin (0.5°) row lookup.
+struct CcSource<'a> {
+    field: &'a Field,
+    first_gate_m: f64,
+    gate_spacing_m: f64,
+    az_lookup: Vec<usize>,
+}
 
-/// CC for a velocity cut: same cut when present, else the nearest-elevation
-/// cut carrying CC (the paired surveillance cut on split-cut VCPs).
-fn correlation_source(volume: &RadarVolume, cut_index: usize) -> Option<CcSource<'_>> {
-    let elevation = volume.cuts[cut_index].elevation_deg;
-    let (cc_cut_index, _) = volume
-        .cuts
+/// CC for a velocity sweep: same sweep when present, else the
+/// nearest-elevation sweep carrying CC (the paired surveillance sweep on
+/// split-cut VCPs).
+fn correlation_source(volume: &Volume, sweep_index: usize) -> Option<CcSource<'_>> {
+    let elevation = volume.sweeps[sweep_index].fixed_angle_deg;
+    let (cc_sweep_index, _) = volume
+        .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.moments.contains_key(&MomentType::CorrelationCoefficient))
-        .map(|(i, c)| (i, (c.elevation_deg - elevation).abs()))
+        .filter(|(_, s)| s.find(Quantity::CorrelationCoefficient).is_some())
+        .map(|(i, s)| (i, (s.fixed_angle_deg - elevation).abs()))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .filter(|(_, diff)| *diff <= 0.5)?;
-    let cc_cut = &volume.cuts[cc_cut_index];
-    let grid = cc_cut.moments.get(&MomentType::CorrelationCoefficient)?;
+    let cc_sweep = &volume.sweeps[cc_sweep_index];
+    let field = cc_sweep.find(Quantity::CorrelationCoefficient)?;
+    let (first_gate_m, gate_spacing_m) = field.native_geometry(&cc_sweep.range)?;
     let mut lookup = vec![usize::MAX; 720];
-    for (row, &radial_index) in grid.radial_indices.iter().enumerate() {
-        if let Some(radial) = cc_cut.radials.get(radial_index) {
-            let bin = ((radial.azimuth_deg.rem_euclid(360.0)) * 2.0) as usize % 720;
+    for row in 0..field.nrays as usize {
+        if let Some(azimuth) = cc_sweep.rays.azimuth_deg.get(row) {
+            let bin = ((azimuth.rem_euclid(360.0)) * 2.0) as usize % 720;
             lookup[bin] = row;
         }
     }
-    let filled: Vec<usize> = (0..720)
+    let az_lookup: Vec<usize> = (0..720)
         .map(|bin| {
             (0..8)
                 .flat_map(|step| [(bin + step) % 720, (bin + 720 - step) % 720])
@@ -905,35 +893,36 @@ fn correlation_source(volume: &RadarVolume, cut_index: usize) -> Option<CcSource
                 .unwrap_or(usize::MAX)
         })
         .collect();
-    Some((cc_cut, grid, filled))
+    Some(CcSource {
+        field,
+        first_gate_m,
+        gate_spacing_m,
+        az_lookup,
+    })
 }
 
-fn sample_by_az_range(
-    _cut: &ElevationCut,
-    grid: &MomentGrid,
-    az_lookup: &[usize],
-    azimuth_deg: f32,
-    range_m: f64,
-) -> Option<f32> {
-    let bin = ((azimuth_deg.rem_euclid(360.0)) * 2.0) as usize % 720;
-    let row = *az_lookup.get(bin)?;
-    if row == usize::MAX {
-        return None;
+impl CcSource<'_> {
+    fn sample_by_az_range(&self, azimuth_deg: f32, range_m: f64) -> Option<f32> {
+        let bin = ((azimuth_deg.rem_euclid(360.0)) * 2.0) as usize % 720;
+        let row = *self.az_lookup.get(bin)?;
+        if row == usize::MAX {
+            return None;
+        }
+        let gate = ((range_m - self.first_gate_m) / self.gate_spacing_m.max(1.0)).round();
+        if gate < 0.0 || gate as usize >= self.field.ngates as usize {
+            return None;
+        }
+        self.field
+            .value(row, gate as usize)
+            .filter(|v| v.is_finite())
     }
-    let gate = ((range_m - grid.gate_range.first_gate_m as f64)
-        / grid.gate_range.gate_spacing_m.max(1) as f64)
-        .round();
-    if gate < 0.0 || gate as usize >= grid.gate_range.gate_count {
-        return None;
-    }
-    grid.scaled_value(row, gate as usize)
-        .filter(|v| v.is_finite())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, MomentStorage, Radial};
+    use crate::test_support::{add_f32_field, sweep_with_rows, volume_with};
+    use recast_radar_core::{FieldName, Sweep};
 
     /// Stumpf et al. 1998 worked example: range 75 km, ΔV 22.3 m/s, shear
     /// 3.82 m/s/km, GTGVD 24.5 m/s → 2D rank 3.
@@ -974,53 +963,15 @@ mod tests {
         assert_eq!(sites[0].strength, RotationStrength::Mesocyclone);
     }
 
-    fn velocity_cut(elevation: f32, rows: usize, gates: usize) -> (ElevationCut, GateRange) {
-        let gate_range = GateRange {
-            first_gate_m: 250,
-            gate_spacing_m: 250,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(elevation, None);
-        for r in 0..rows {
-            cut.radials.push(Radial {
-                azimuth_deg: r as f32 * (360.0 / rows as f32),
-                elevation_deg: elevation,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(60.0),
-                radial_status: None,
-            });
-        }
-        (cut, gate_range)
-    }
-
-    fn f32_grid(
-        moment: MomentType,
-        gate_range: &GateRange,
-        rows: usize,
-        data: Vec<f32>,
-    ) -> MomentGrid {
-        MomentGrid {
-            moment,
-            gate_range: gate_range.clone(),
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..rows).collect(),
-            storage: MomentStorage::F32(data),
-        }
-    }
-
     /// A cyclonic couplet at az ~90°, gates 78..94 (~20 km), ±25 m/s,
     /// embedded in 50 dBZ echo.
     /// Couplet at az ~90 deg, ~60 km range (gates 230..250), +/-25 m/s,
     /// inside 50 dBZ echo - far enough out that a 0.5-3.5 deg column spans
     /// more than the 3 km core-depth floor.
-    fn tilt(elevation: f32, with_echo: bool, with_couplet: bool) -> ElevationCut {
-        let (mut cut, gate_range) = velocity_cut(elevation, 720, 300);
+    fn tilt(elevation: f32, with_echo: bool, with_couplet: bool) -> Sweep {
         let rows = 720;
         let gates = 300;
+        let mut sweep = sweep_with_rows(rows, elevation, Some(60.0));
         let mut velocity = vec![0.0f32; rows * gates];
         if with_couplet {
             // az 90 deg = row 180 at 0.5 deg spacing. Cyclonic seen from the
@@ -1041,10 +992,7 @@ mod tests {
                 }
             }
         }
-        cut.moments.insert(
-            MomentType::Velocity,
-            f32_grid(MomentType::Velocity, &gate_range, rows, velocity),
-        );
+        add_f32_field(&mut sweep, FieldName::Vradh, 250.0, 250.0, gates, velocity);
         if with_echo {
             let mut dbz = vec![f32::NAN; rows * gates];
             for row in 150..210 {
@@ -1052,21 +1000,13 @@ mod tests {
                     dbz[row * gates + gate] = 50.0;
                 }
             }
-            cut.moments.insert(
-                MomentType::Reflectivity,
-                f32_grid(MomentType::Reflectivity, &gate_range, rows, dbz),
-            );
+            add_f32_field(&mut sweep, FieldName::Dbzh, 250.0, 250.0, gates, dbz);
         }
-        cut
+        sweep
     }
 
-    fn volume_of(cuts: Vec<ElevationCut>) -> RadarVolume {
-        let mut volume = RadarVolume::new(
-            recast_radar_core::RadarSite::new("TEST"),
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-        );
-        volume.cuts = cuts;
-        volume
+    fn volume_of(sweeps: Vec<Sweep>) -> Volume {
+        volume_with(sweeps)
     }
 
     #[test]
@@ -1101,16 +1041,16 @@ mod tests {
             tilt(2.4, true, true),
             tilt(3.4, true, true),
         ]);
-        let missing = vec![None; volume.cuts.len()];
+        let missing = vec![None; volume.sweeps.len()];
         assert!(
             detect_rotation_sites_from_dealiased(&volume, &missing).is_empty(),
-            "missing caller-provided grids must not trigger a hidden Region solve"
+            "missing caller-provided fields must not trigger a hidden Region solve"
         );
 
-        let supplied: Vec<Option<&MomentGrid>> = volume
-            .cuts
+        let supplied: Vec<Option<&Field>> = volume
+            .sweeps
             .iter()
-            .map(|cut| cut.moments.get(&MomentType::Velocity))
+            .map(|sweep| sweep.find(Quantity::RadialVelocity))
             .collect();
         assert!(
             !detect_rotation_sites_from_dealiased(&volume, &supplied).is_empty(),
