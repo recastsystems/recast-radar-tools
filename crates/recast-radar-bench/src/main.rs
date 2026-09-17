@@ -225,7 +225,8 @@ fn run_iteration(
     // provider downloads); a Level-II buffer falls through to
     // decode_volume_from_bytes, the same entry the archive path uses.
     // No site hint is needed: Archive II embeds the ICAO in the header.
-    let volume = recast_radar_io::decode_supported_volume_bytes(raw).map_err(|err| err.to_string())?;
+    let volume =
+        recast_radar_io::decode_supported_volume_bytes(raw).map_err(|err| err.to_string())?;
     let decode_ms = elapsed_ms(started);
 
     let reflectivity_cut = lowest_cut_with_moment(&volume, &MomentType::Reflectivity)

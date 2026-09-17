@@ -16,7 +16,8 @@ const FIXTURE: &[u8] = include_bytes!("data/odim_pvol_synth.h5");
 #[test]
 fn decodes_synthetic_odim_pvol() {
     assert!(recast_radar_io_odim::odim::looks_like_hdf5_bytes(FIXTURE));
-    let volume = recast_radar_io_odim::odim::decode_odim_h5_volume(FIXTURE).expect("decode ODIM fixture");
+    let volume =
+        recast_radar_io_odim::odim::decode_odim_h5_volume(FIXTURE).expect("decode ODIM fixture");
 
     // /what + /where metadata.
     assert_eq!(volume.site.id, "TEST");

@@ -1605,13 +1605,19 @@ mod tests {
 
         let no_members = tar_archive(&[("notes.txt", b"hi".as_slice())]);
         let err = decode_jma_tar_volumes(&no_members, None).unwrap_err();
-        assert!(err.to_string().contains("no Z__C_RJTD"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("no Z__C_RJTD"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
     fn truncated_tar_member_is_an_error_not_a_panic() {
         let tar = two_station_tar();
         let err = decode_jma_tar_volumes(&tar[..TAR_BLOCK_LEN + 17], None).unwrap_err();
-        assert!(err.to_string().contains("overruns"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("overruns"),
+            "unexpected error: {err}"
+        );
     }
 }

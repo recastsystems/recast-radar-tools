@@ -350,7 +350,9 @@ fn smooth_field(field: &[f32], rows: usize, gates: usize, sigma: f32) -> Vec<f32
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{ElevationCut, GateRange, MomentGrid, MomentStorage, RadarSite, Radial};
+    use recast_radar_core::{
+        ElevationCut, GateRange, MomentGrid, MomentStorage, RadarSite, Radial,
+    };
 
     /// Synthetic volume with one REF tilt whose field is given by a closure
     /// of (east_km, north_km).

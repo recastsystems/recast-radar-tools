@@ -18,8 +18,8 @@ const FIXTURE: &[u8] = include_bytes!("data/cfrad_synth.nc");
 #[test]
 fn decodes_synthetic_cfradial1_volume() {
     assert!(recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(FIXTURE));
-    let volume =
-        recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(FIXTURE).expect("decode CfRadial fixture");
+    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(FIXTURE)
+        .expect("decode CfRadial fixture");
 
     assert_eq!(volume.site.id, "SYNTH1");
     assert_eq!(volume.site.name.as_deref(), Some("Synthetic Pad"));
@@ -88,5 +88,7 @@ fn level2_decoder_is_not_fooled_by_netcdf_magic() {
     // The router must send CDF files here, not to the Archive II path; the
     // sniffers must be mutually exclusive on this fixture.
     assert!(!recast_radar_io_odim::odim::looks_like_hdf5_bytes(FIXTURE));
-    assert!(!recast_radar_io_dorade::dorade::looks_like_dorade_bytes(FIXTURE));
+    assert!(!recast_radar_io_dorade::dorade::looks_like_dorade_bytes(
+        FIXTURE
+    ));
 }

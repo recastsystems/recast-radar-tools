@@ -10,8 +10,8 @@
 //! render transparent in smoothed mode — analysts who need the RF purple
 //! should use the native (unsmoothed) display.
 
-use recast_radar_core::{MomentGrid, MomentStorage};
 use rayon::prelude::*;
+use recast_radar_core::{MomentGrid, MomentStorage};
 
 /// Smooth a moment grid's values into a new F32 grid with identical
 /// geometry. Azimuth wraps; range is clamped at the ends.

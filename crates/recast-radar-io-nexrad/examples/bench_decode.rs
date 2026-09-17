@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Some(input) = std::env::args_os().nth(1).map(PathBuf::from) else {
-        eprintln!("usage: cargo run -p recast-radar-io-nexrad --example bench_decode -- <level2-file>");
+        eprintln!(
+            "usage: cargo run -p recast-radar-io-nexrad --example bench_decode -- <level2-file>"
+        );
         std::process::exit(2);
     };
 
@@ -66,7 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut summary = None;
     for _ in 0..10 {
         let parse_start = Instant::now();
-        let volume = recast_radar_io_nexrad::decode_normalized_volume_bytes(&normalized, compression)?;
+        let volume =
+            recast_radar_io_nexrad::decode_normalized_volume_bytes(&normalized, compression)?;
         let parse_elapsed = parse_start.elapsed();
         summary = Some((
             volume.site.id,

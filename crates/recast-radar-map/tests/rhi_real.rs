@@ -10,12 +10,14 @@
 
 use recast_radar_core::{MomentType, ScanMode};
 
-const DOW8_RHI: &[u8] =
-    include_bytes!("../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc");
+const DOW8_RHI: &[u8] = include_bytes!(
+    "../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc"
+);
 
 #[test]
 fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
-    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(DOW8_RHI).expect("decode DOW8 RHI");
+    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(DOW8_RHI)
+        .expect("decode DOW8 RHI");
     // The app's panel gate: declared scan mode wins (volume_is_rhi).
     assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Rhi));
     let cut = &volume.cuts[0];
@@ -48,8 +50,8 @@ fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
     // Resample the panel the way the app does (768x320 texture).
     let (width, height) = (768usize, 320usize);
     let (top_m, max_range_m) = (15_000.0f32, 60_000.0f32);
-    let section =
-        recast_radar_map::rhi_section(cut, grid, width, height, top_m, max_range_m).expect("section");
+    let section = recast_radar_map::rhi_section(cut, grid, width, height, top_m, max_range_m)
+        .expect("section");
     assert_eq!(section.values.len(), width * height);
 
     // Pixel-exact spot check: take a real echo on a known beam/gate, project

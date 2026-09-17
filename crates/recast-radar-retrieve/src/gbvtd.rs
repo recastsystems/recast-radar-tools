@@ -670,16 +670,22 @@ mod tests {
         let Some(path) = std::env::var_os("BOWECHO_GBVTD_VOLUME") else {
             return;
         };
-        let volume =
-            recast_radar_io_nexrad::decode_volume_from_path(std::path::Path::new(&path)).expect("decode volume");
+        let volume = recast_radar_io_nexrad::decode_volume_from_path(std::path::Path::new(&path))
+            .expect("decode volume");
         let (cut_index, cut) = volume
             .cuts
             .iter()
             .enumerate()
-            .filter(|(_, c)| c.moments.contains_key(&recast_radar_core::MomentType::Velocity))
+            .filter(|(_, c)| {
+                c.moments
+                    .contains_key(&recast_radar_core::MomentType::Velocity)
+            })
             .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
             .expect("a velocity cut");
-        let velocity = cut.moments.get(&recast_radar_core::MomentType::Velocity).unwrap();
+        let velocity = cut
+            .moments
+            .get(&recast_radar_core::MomentType::Velocity)
+            .unwrap();
         let dealiased = recast_radar_correct::dealias_velocity_grid(cut, velocity);
         let field = PolarVelocityField::from_dealiased_velocity(cut, &dealiased);
 

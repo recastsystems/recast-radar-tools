@@ -234,7 +234,9 @@ mod tests {
             DerivedSweepProduct::Kdp.moment_type(),
             MomentType::SpecificDifferentialPhase
         );
-        assert!(advanced_derived_product_for_moment(&MomentType::SpecificDifferentialPhase).is_none());
+        assert!(
+            advanced_derived_product_for_moment(&MomentType::SpecificDifferentialPhase).is_none()
+        );
         assert!(!cut_can_materialize_moment(
             &sweep,
             &MomentType::SpecificDifferentialPhase

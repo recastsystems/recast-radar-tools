@@ -14,7 +14,9 @@ use recast_radar_core::{ElevationCut, MomentStorage, MomentType};
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
-        eprintln!("usage: cargo run -p recast-radar-io-jma --example jma_inspect -- <jma-tar> [--samples]");
+        eprintln!(
+            "usage: cargo run -p recast-radar-io-jma --example jma_inspect -- <jma-tar> [--samples]"
+        );
         std::process::exit(2);
     };
     let samples = matches!(args.next().as_deref(), Some("--samples"));

@@ -8,8 +8,10 @@
 //! independent Python block walker + RLE decoder, not with this crate.
 
 use chrono::{TimeZone, Utc};
-use recast_radar_io_dorade::dorade::{decode_dorade_sweep_volume, looks_like_dorade_bytes, peek_dorade_sweep};
 use recast_radar_core::MomentType;
+use recast_radar_io_dorade::dorade::{
+    decode_dorade_sweep_volume, looks_like_dorade_bytes, peek_dorade_sweep,
+};
 
 const FIXTURE: &[u8] = include_bytes!("data/swp.1260521225514.COW2.229.1.0_SUR_v215.head24");
 

@@ -29,10 +29,10 @@ const NORST: &[u8] =
     include_bytes!("../../recast-radar-io-odim/tests/data/T_PAGZ35_C_ENMI_20170421090837.hdf");
 const ESPDG: &[u8] =
     include_bytes!("../../recast-radar-io-odim/tests/data/espdg.pvol.20260707.dbzh_vradh.h5");
-const ODIM_SYNTH: &[u8] = include_bytes!("../../recast-radar-io-odim/tests/data/odim_pvol_synth.h5");
-const IMGW_KDP_MAX: &[u8] = include_bytes!(
-    "../../recast-radar-io-odim/tests/data/imgw_polrad/2026071100150601KDP.max.h5"
-);
+const ODIM_SYNTH: &[u8] =
+    include_bytes!("../../recast-radar-io-odim/tests/data/odim_pvol_synth.h5");
+const IMGW_KDP_MAX: &[u8] =
+    include_bytes!("../../recast-radar-io-odim/tests/data/imgw_polrad/2026071100150601KDP.max.h5");
 const XSAPR_PPI: &[u8] = include_bytes!(
     "../../recast-radar-io-cfradial/tests/data/cfrad.xsapr_sgp_ppi_20110520.classic.nc"
 );
@@ -42,7 +42,8 @@ const XSAPR_PPI_NETCDF4: &[u8] = include_bytes!(
 const DOW8_RHI: &[u8] = include_bytes!(
     "../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc"
 );
-const CFRADIAL_SYNTH: &[u8] = include_bytes!("../../recast-radar-io-cfradial/tests/data/cfrad_synth.nc");
+const CFRADIAL_SYNTH: &[u8] =
+    include_bytes!("../../recast-radar-io-cfradial/tests/data/cfrad_synth.nc");
 const COW2_SWEEP: &[u8] = include_bytes!(
     "../../recast-radar-io-dorade/tests/data/swp.1260521225514.COW2.229.1.0_SUR_v215.head24"
 );
@@ -127,7 +128,8 @@ fn router_matches_direct_cfradial_decoder_on_classic_netcdf() {
     ] {
         assert_routed_matches_direct(
             bytes,
-            recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(bytes).map_err(|err| err.to_string()),
+            recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(bytes)
+                .map_err(|err| err.to_string()),
             site,
             what,
         );
@@ -138,7 +140,8 @@ fn router_matches_direct_cfradial_decoder_on_classic_netcdf() {
 fn router_matches_direct_dorade_decoder_on_real_cow2_sweep() {
     assert_routed_matches_direct(
         COW2_SWEEP,
-        recast_radar_io_dorade::dorade::decode_dorade_sweep_volume(COW2_SWEEP).map_err(|err| err.to_string()),
+        recast_radar_io_dorade::dorade::decode_dorade_sweep_volume(COW2_SWEEP)
+            .map_err(|err| err.to_string()),
         "COW2",
         "COW2 sweepfile head24",
     );
@@ -176,8 +179,8 @@ fn image_decoder_and_volume_router_remain_separate() {
 #[test]
 fn router_decodes_synthetic_archive_ii_same_as_direct_decoder() {
     let bytes = synthetic_archive_ii();
-    let direct = recast_radar_io_nexrad::decode_volume_from_bytes(&bytes)
-        .expect("direct Archive II decode");
+    let direct =
+        recast_radar_io_nexrad::decode_volume_from_bytes(&bytes).expect("direct Archive II decode");
     let routed = decode_supported_volume_bytes(&bytes).expect("routed Archive II decode");
     assert_eq!(routed, direct);
 }

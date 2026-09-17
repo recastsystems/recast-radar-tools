@@ -50,8 +50,8 @@
 //! (sector-scan edges keep their native hole).
 
 use crate::InterpPolicy;
-use recast_radar_core::{ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType};
 use rayon::prelude::*;
+use recast_radar_core::{ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType};
 
 /// Display target: no coarser than 0.25° between rendered radials.
 pub const INTERP_TARGET_AZIMUTH_DEG: f32 = 0.25;

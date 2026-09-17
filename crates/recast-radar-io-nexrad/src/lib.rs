@@ -23,11 +23,11 @@ use std::sync::{Condvar, Mutex};
 use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, TimeZone, Utc};
 use flate2::read::GzDecoder;
+use rayon::prelude::*;
 use recast_radar_core::bounded_read::{self, MAX_DECODED_RADAR_BYTES};
 use recast_radar_core::{
     GateRange, MomentGrid, MomentType, RadarSite, RadarVolume, Radial, RadialStatus, VcpInfo,
 };
-use rayon::prelude::*;
 use thiserror::Error;
 
 const VOLUME_HEADER_LEN: usize = 24;

@@ -16,8 +16,8 @@
 //! beam lookup preserves the fine vertical structure mobile crews scan RHIs
 //! for (vault/BWER edges, descending reflectivity cores, TVS columns).
 
-use recast_radar_core::{EFFECTIVE_EARTH_RADIUS_M, ElevationCut, MomentGrid};
 use rayon::prelude::*;
+use recast_radar_core::{EFFECTIVE_EARTH_RADIUS_M, ElevationCut, MomentGrid};
 
 use crate::volumetric::CrossSection;
 
@@ -72,8 +72,10 @@ pub fn rhi_coverage_top_m(cut: &ElevationCut, grid: &MomentGrid) -> f32 {
     cut.radials
         .iter()
         .map(|radial| {
-            recast_radar_core::beam_height_above_radar_m(max_slant_m, f64::from(radial.elevation_deg))
-                as f32
+            recast_radar_core::beam_height_above_radar_m(
+                max_slant_m,
+                f64::from(radial.elevation_deg),
+            ) as f32
         })
         .fold(0.0f32, f32::max)
 }
@@ -85,7 +87,8 @@ pub fn rhi_coverage_range_m(cut: &ElevationCut, grid: &MomentGrid) -> f32 {
     cut.radials
         .iter()
         .map(|radial| {
-            recast_radar_core::beam_ground_range_m(max_slant_m, f64::from(radial.elevation_deg)) as f32
+            recast_radar_core::beam_ground_range_m(max_slant_m, f64::from(radial.elevation_deg))
+                as f32
         })
         .fold(0.0f32, f32::max)
 }

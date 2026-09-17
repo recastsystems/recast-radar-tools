@@ -22,10 +22,10 @@
 //! pass another ORD site, e.g. frtou, to probe the per-sweep SCAN shape).
 //! Exit code 1 when any requested probe fails.
 
+use recast_radar_core::RadarVolume;
 use recast_radar_data::international::{
     ChmiProvider, DwdProvider, IntlProvider, OrdProvider, ShmuProvider,
 };
-use recast_radar_core::RadarVolume;
 
 fn main() {
     let mut args = std::env::args().skip(1);

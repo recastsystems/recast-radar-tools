@@ -53,8 +53,8 @@ pub use confidence::ConfidenceGrid;
 pub use env_profile::{EnvWindLevel, EnvironmentalWindProfile, project_environmental_winds};
 
 use chrono::{DateTime, Utc};
-use recast_radar_core::{GateRange, MomentGrid, MomentStorage, MomentType, RadarVolume};
 use rayon::prelude::*;
+use recast_radar_core::{GateRange, MomentGrid, MomentStorage, MomentType, RadarVolume};
 
 use crate::region_core::{self, RegionSolve};
 use graph::MappedPrior;

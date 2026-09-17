@@ -47,8 +47,8 @@ fn assert_close(actual: f32, expected: f32, tolerance: f32, what: &str) {
 #[test]
 fn real_xsapr_ppi_decodes_site_geometry_and_gates() {
     assert!(recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(XSAPR_PPI));
-    let volume =
-        recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(XSAPR_PPI).expect("decode X-SAPR PPI");
+    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(XSAPR_PPI)
+        .expect("decode X-SAPR PPI");
 
     assert_eq!(volume.site.id, "xsapr-sgp");
     assert_close(volume.site.latitude_deg.unwrap(), 36.4908, 1e-4, "lat");
@@ -121,7 +121,8 @@ fn real_xsapr_ppi_decodes_site_geometry_and_gates() {
 #[test]
 fn real_dow8_rhi_decodes_scan_mode_geometry_and_gates() {
     assert!(recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(DOW8_RHI));
-    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(DOW8_RHI).expect("decode DOW8 RHI");
+    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(DOW8_RHI)
+        .expect("decode DOW8 RHI");
 
     // Mobile platform: latitude/longitude are (time) arrays; first sample.
     assert_eq!(volume.site.id, "DOW8");
@@ -233,12 +234,16 @@ const XSAPR_PPI_NETCDF4: &[u8] = include_bytes!("data/cfrad.xsapr_sgp_ppi_201105
 fn netcdf4_cfradial_routes_to_hdf5_and_gets_conversion_guidance() {
     // The HDF5 signature must never sniff as netCDF3 — netCDF-4 CfRadial
     // routes to the HDF5/ODIM side (same precedence as the app's sniffer).
-    assert!(!recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(
+    assert!(!recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(XSAPR_PPI_NETCDF4));
+    assert!(recast_radar_io_odim::odim::looks_like_hdf5_bytes(
         XSAPR_PPI_NETCDF4
     ));
-    assert!(recast_radar_io_odim::odim::looks_like_hdf5_bytes(XSAPR_PPI_NETCDF4));
-    assert!(!recast_radar_io_odim::odim::looks_like_hdf5_bytes(XSAPR_PPI));
-    assert!(!recast_radar_io_dorade::dorade::looks_like_dorade_bytes(DOW8_RHI));
+    assert!(!recast_radar_io_odim::odim::looks_like_hdf5_bytes(
+        XSAPR_PPI
+    ));
+    assert!(!recast_radar_io_dorade::dorade::looks_like_dorade_bytes(
+        DOW8_RHI
+    ));
 
     // The explicit error must tell a CfRadial user the fix that works.
     let err = recast_radar_io_odim::odim::decode_odim_h5_volume(XSAPR_PPI_NETCDF4).unwrap_err();

@@ -275,8 +275,10 @@ mod tests {
     /// each height level gets its own scaled ramp.
     #[test]
     fn slugs_hit_level_aware_tables() {
-        let t250 = crate::color::solar_model_field_table("temperature_250", "K").expect("250 table");
-        let t700 = crate::color::solar_model_field_table("temperature_700", "K").expect("700 table");
+        let t250 =
+            crate::color::solar_model_field_table("temperature_250", "K").expect("250 table");
+        let t700 =
+            crate::color::solar_model_field_table("temperature_700", "K").expect("700 table");
         // -30 °C sits at different positions in the 250 mb (-70..-20) and
         // 700 mb (-40..30) spans.
         assert_ne!(t250.sample(243.15), t700.sample(243.15));

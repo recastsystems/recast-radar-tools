@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_render::{StormMotion, ViewportMomentCache, ViewportRasterOptions, viewport_rgba_buffer_len};
+use recast_radar_render::{
+    StormMotion, ViewportMomentCache, ViewportRasterOptions, viewport_rgba_buffer_len,
+};
 
 const DEFAULT_RUNS: usize = 8;
 const DEFAULT_DECODE_RUNS: usize = 5;

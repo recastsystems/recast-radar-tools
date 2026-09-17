@@ -40,9 +40,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
+use rayon::prelude::*;
 use recast_radar_core::RadarVolume;
 use recast_radar_core::bounded_read::read_to_end_limited;
-use rayon::prelude::*;
 use zip::ZipArchive;
 
 use crate::dorade::{

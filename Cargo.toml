@@ -9,7 +9,6 @@ rust-version = "1.94"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-byteorder = "1.5"
 bzip2 = "0.6"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }

@@ -17,8 +17,10 @@
 //! speckle and residual dealias artifacts essentially never stack across
 //! elevations at the same location.
 
-use recast_radar_core::{ElevationCut, MomentGrid, MomentType, RadarVolume, beam_height_above_radar_m};
 use rayon::prelude::*;
+use recast_radar_core::{
+    ElevationCut, MomentGrid, MomentType, RadarVolume, beam_height_above_radar_m,
+};
 
 use crate::shear::azimuthal_shear_grid_from_dealiased;
 use recast_radar_correct::dealias_velocity_grid;

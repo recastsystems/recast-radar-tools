@@ -114,7 +114,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Derived volume products on the base reflectivity tilt.
     if let Some(base_idx) = ref_cut {
-        let derived: Vec<(&str, Option<recast_radar_core::MomentGrid>, ColorTableFamily)> = vec![
+        let derived: Vec<(
+            &str,
+            Option<recast_radar_core::MomentGrid>,
+            ColorTableFamily,
+        )> = vec![
             (
                 "CREF",
                 composite_reflectivity_grid(&volume),

@@ -1539,7 +1539,8 @@ mod tests {
         let stamp = jma_newest_stamp().expect("newest JMA stamp");
         let url = jma_tar_url(JMA_REFLECTIVITY_PRODUCT, stamp);
         let bytes = crate::fetch_volume_bytes(&url).expect("tar download");
-        let stations = recast_radar_io_jma::jma_tar_station_headers(&bytes).expect("station headers");
+        let stations =
+            recast_radar_io_jma::jma_tar_station_headers(&bytes).expect("station headers");
         assert_eq!(stations.len(), JMA_STATIONS.len(), "station count changed");
         for station in &stations {
             let (_, number, latitude, longitude) = JMA_STATIONS

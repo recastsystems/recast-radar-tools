@@ -847,7 +847,10 @@ fn geopotential_height_level_table(name: &str, unit: &str) -> Option<ColorTable>
 /// apply. Every ramp returned here already exists in BowEcho — the
 /// parameterized families only RESCALE existing ramps (colors verbatim), they
 /// never introduce a new palette.
-fn wrf_family_table(family: crate::color::wrf_fields::WrfColorFamily, units: &str) -> Option<ColorTable> {
+fn wrf_family_table(
+    family: crate::color::wrf_fields::WrfColorFamily,
+    units: &str,
+) -> Option<ColorTable> {
     use crate::color::wrf_fields::WrfColorFamily as F;
     match family {
         // Same unit-aware surface behavior as the temperature heuristic

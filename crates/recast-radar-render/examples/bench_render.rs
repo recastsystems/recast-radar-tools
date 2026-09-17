@@ -11,7 +11,9 @@ const DECODE_RUNS: usize = 5;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Some(input) = std::env::args_os().nth(1).map(PathBuf::from) else {
-        eprintln!("usage: cargo run -p recast-radar-render --example bench_render -- <level2-file>");
+        eprintln!(
+            "usage: cargo run -p recast-radar-render --example bench_render -- <level2-file>"
+        );
         std::process::exit(2);
     };
 
@@ -49,13 +51,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         raw_len = raw.len();
 
         let normalize_start = Instant::now();
-        let (normalized, archive_compression) = recast_radar_io_nexrad::normalize_archive_bytes(&raw)?;
+        let (normalized, archive_compression) =
+            recast_radar_io_nexrad::normalize_archive_bytes(&raw)?;
         normalize_timings.push(normalize_start.elapsed());
         normalized_len = normalized.len();
         compression = Some(archive_compression);
 
         let parse_start = Instant::now();
-        let decoded = recast_radar_io_nexrad::decode_normalized_volume_bytes(&normalized, archive_compression)?;
+        let decoded = recast_radar_io_nexrad::decode_normalized_volume_bytes(
+            &normalized,
+            archive_compression,
+        )?;
         parse_timings.push(parse_start.elapsed());
         parsed = Some(decoded);
     }

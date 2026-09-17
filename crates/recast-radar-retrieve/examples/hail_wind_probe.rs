@@ -39,7 +39,8 @@ fn main() {
         .expect("usage: hail_wind_probe <file> [h0_km] [hm20_km]");
     let h0_km: f32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(3.2);
     let hm20_km: f32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(6.2);
-    let volume = recast_radar_io_nexrad::decode_volume_from_path(std::path::Path::new(&path)).expect("decode");
+    let volume = recast_radar_io_nexrad::decode_volume_from_path(std::path::Path::new(&path))
+        .expect("decode");
     println!(
         "{} cuts, H0={h0_km} km, H-20={hm20_km} km",
         volume.cuts.len()
