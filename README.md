@@ -317,19 +317,14 @@ errors. rayon runs everything on the calling thread there. Details:
 ## No unsafe
 
 The workspace sets `unsafe_code = "forbid"`, and every crate opts in with
-`[lints] workspace = true` except these two:
+`[lints] workspace = true`. There are no exceptions:
 
 <!-- lint-exceptions:start -->
-- `recast-radar-io-nexrad`: the parallel bzip2 decode shares per-block output
-  buffers through `UnsafeCell`, and one reader fills a vector's spare capacity
-  through a raw slice.
-- `recast-radar-render`: the library has no `unsafe`, but the
-  `multisite_profile` example reads process memory usage through Windows FFI.
 <!-- lint-exceptions:end -->
 
-Both are being replaced with safe code, after which every crate forbids
-`unsafe`. `crates/recast-radar-tools/tests/readme.rs` checks this list against
-the crate manifests.
+Library code also denies `clippy::unwrap_used` and `clippy::expect_used`.
+`crates/recast-radar-tools/tests/readme.rs` checks the exception list above
+against the crate manifests.
 
 ## Tests and CI
 
