@@ -23,8 +23,9 @@
 //!   and yields the message once, and [`MessageWalker`] decodes it.
 //!
 //! The walker is for metadata and inspection. Radial decoding keeps its own
-//! fast path in [`crate::decode_volume_from_bytes`]; message 1, 29 and 31
-//! bodies are yielded as [`MessageBody::Unparsed`].
+//! fast path in [`crate::decode_volume_from_bytes`]; message 1 and 29 bodies
+//! are yielded as [`MessageBody::Unparsed`], and message 31 bodies are decoded
+//! completely by [`msg31_blocks`].
 
 pub mod adaptation;
 pub mod bypass_map;
@@ -33,6 +34,7 @@ pub mod clutter_filter_map;
 pub mod console;
 pub mod control;
 pub mod loopback;
+pub mod msg31_blocks;
 pub mod performance;
 pub mod prf;
 pub mod rda_log;
@@ -160,6 +162,9 @@ pub enum MessageBody<'a> {
     ClutterFilterMap(clutter_filter_map::ClutterFilterMap),
     /// Message 18, RDA Adaptation Data (Table XV).
     Adaptation(Box<adaptation::RdaAdaptationData>),
+    /// Message 31, Digital Radar Data Generic Format (Table XVII), boxed
+    /// because it is much larger than the other variants.
+    DigitalRadarDataGeneric(Box<msg31_blocks::DigitalRadarDataGeneric<'a>>),
     /// Message 32, RDA PRF Data (Table XVIII).
     Prf(prf::RdaPrfData),
     /// Message 33, RDA Log Data (Table XVIV).
@@ -185,6 +190,7 @@ fn decode_body<'a>(header: &MessageHeader, body: Cow<'a, [u8]>) -> Result<Messag
         13 => bypass_map::message_body(body),
         15 => clutter_filter_map::message_body(body),
         18 => adaptation::message_body(header, body),
+        31 => msg31_blocks::message_body(body),
         32 => prf::message_body(body),
         33 => rda_log::message_body(body),
         _ => Ok(MessageBody::Unparsed(body)),

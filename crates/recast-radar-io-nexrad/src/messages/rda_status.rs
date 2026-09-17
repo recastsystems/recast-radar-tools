@@ -560,20 +560,80 @@ impl ControlAuthorization {
     }
 }
 
-/// RDA build number (halfword 10, scaled Integer*2).
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// RDA build number (halfword 10, scaled Integer*2, note 6). Message 31
+/// layouts are selected from block sizes, but the build explains them; see
+/// [`super::msg31_blocks`].
+///
+/// Encoding: when the raw value divided by 100 is greater than 2, the build
+/// is the value divided by 100 (1320 is 13.2, 2410 is 24.1); otherwise it is
+/// the value divided by 10 (100 is Build 10.0; TDWR records 20, 2.0). The
+/// scale changed to 100 with ICD revision H (Build 11.2).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RdaBuild(pub u16);
 
 impl RdaBuild {
-    /// Build version per Table IV note 6: the value divided by 100 when that
-    /// exceeds 2, otherwise the value divided by 10 (so 2410 is 24.1 and 100
-    /// is 10.0).
-    pub fn version(self) -> f32 {
-        let hundredths = f32::from(self.0) / 100.0;
-        if hundredths > 2.0 {
-            hundredths
+    /// Wrap a raw halfword 10 value.
+    pub const fn from_raw(raw: u16) -> Self {
+        Self(raw)
+    }
+
+    /// Read halfword 10 from a message 2 body (bytes 18-19), or `None` when
+    /// the body is shorter. The halfword is read whatever the layout: in a
+    /// legacy RDA body (see [`RdaSystem`]) it is the interference detection
+    /// rate, not a build, and [`RdaStatus::rda_build`] returns `None`.
+    pub fn from_rda_status_body(body: &[u8]) -> Option<Self> {
+        (body.len() >= 20).then(|| Self::from_raw(crate::be_u16(body, 18)))
+    }
+
+    /// Halfword 10 of the first message 2 in record bytes that start at a
+    /// frame boundary (for example [`super::metadata_record`]), or `None`
+    /// when there is none. Like [`Self::from_rda_status_body`], this does not
+    /// check the layout.
+    pub fn from_records(records: &[u8]) -> Option<Self> {
+        super::RawMessages::new(records)
+            .flatten()
+            .find(|message| message.header.message_type == 2)
+            .and_then(|message| Self::from_rda_status_body(&message.body))
+    }
+
+    /// The raw halfword.
+    pub const fn raw(self) -> u16 {
+        self.0
+    }
+
+    /// Build number in hundredths (1320 for 13.2, 100 for 10.0).
+    pub fn hundredths(self) -> u32 {
+        if self.0 > 200 {
+            u32::from(self.0)
         } else {
-            f32::from(self.0) / 10.0
+            u32::from(self.0) * 10
+        }
+    }
+
+    /// Major build number (13 for 13.2).
+    pub fn major(self) -> u32 {
+        self.hundredths() / 100
+    }
+
+    /// Hundredths after the major number (20 for 13.2, 1 for 13.01).
+    pub fn minor_hundredths(self) -> u32 {
+        self.hundredths() % 100
+    }
+
+    /// Build number as a real value (13.2).
+    pub fn version(self) -> f32 {
+        self.hundredths() as f32 / 100.0
+    }
+}
+
+impl std::fmt::Display for RdaBuild {
+    /// "13.2", "10.0", "19.96".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let minor = self.minor_hundredths();
+        if minor.is_multiple_of(10) {
+            write!(f, "{}.{}", self.major(), minor / 10)
+        } else {
+            write!(f, "{}.{minor:02}", self.major())
         }
     }
 }
@@ -985,6 +1045,19 @@ mod tests {
         assert_eq!(RdaBuild(1820).version(), 18.2);
         assert_eq!(RdaBuild(100).version(), 10.0);
         assert_eq!(RdaBuild(20).version(), 2.0);
+    }
+
+    #[test]
+    fn rda_build_scales_follow_table_iv_note_6() {
+        assert_eq!(RdaBuild::from_raw(100).to_string(), "10.0");
+        assert_eq!(RdaBuild::from_raw(1320).to_string(), "13.2");
+        assert_eq!(RdaBuild::from_raw(1301).to_string(), "13.01");
+        assert_eq!(RdaBuild::from_raw(2410).major(), 24);
+        assert_eq!(RdaBuild::from_raw(2410).minor_hundredths(), 10);
+        assert_eq!(RdaBuild::from_raw(20).to_string(), "2.0");
+        assert_eq!(RdaBuild::from_raw(200).to_string(), "20.0");
+        assert_eq!(RdaBuild::from_raw(201).to_string(), "2.01");
+        assert_eq!(RdaBuild::from_raw(0).to_string(), "0.0");
     }
 
     #[test]
