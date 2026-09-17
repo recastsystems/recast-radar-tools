@@ -8,11 +8,12 @@
 //! |---|---|---|---|
 //! | (always) | [`core`] | `recast-radar-core` | data model, geometry, field names |
 //! | `nexrad` | `nexrad` | `recast-radar-io-nexrad` | NEXRAD Archive II (Level II) |
+//! | `level3` | `level3` | `recast-radar-io-level3` | NEXRAD and TDWR Level III products |
 //! | `odim` | `odim` | `recast-radar-io-odim` | ODIM_H5 |
 //! | `cfradial` | `cfradial` | `recast-radar-io-cfradial` | CfRadial 1 |
 //! | `dorade` | `dorade` | `recast-radar-io-dorade` | DORADE, mobile-radar archives |
 //! | `jma` | `jma` | `recast-radar-io-jma` | JMA polar GRIB2 tar |
-//! | `io` | `io` | `recast-radar-io` | format-sniffing router; enables every format feature |
+//! | `io` | `io` | `recast-radar-io` | format-sniffing router (not Level III); enables every format feature |
 //! | `net` | `data` | `recast-radar-data` | AWS archive and real-time chunks, feeds |
 //! | `correct` | `correct` | `recast-radar-correct` | velocity dealiasing |
 //! | `filters` | `filters` | `recast-radar-filters` | gate filters, smoothing, interpolation |
@@ -28,9 +29,11 @@
 //!
 //! A feature also enables the features of the member crates its crate
 //! depends on (for example `track` enables `correct`, `map` and `retrieve`),
-//! so every type a module's API names can be named through this crate. The
-//! exception is `net`, which does not enable `jma`: `recast-radar-data` uses
-//! `recast-radar-io-jma` only internally.
+//! so every type a module's API names can be named through this crate. Two
+//! exceptions: `net` does not enable `jma`, because `recast-radar-data` uses
+//! `recast-radar-io-jma` only internally; and `io` also enables `level3`, so
+//! that `io` means every format decoder, although the router does not read
+//! Level III products.
 
 pub use recast_radar_core as core;
 
@@ -42,6 +45,8 @@ pub use recast_radar_io_cfradial as cfradial;
 pub use recast_radar_io_dorade as dorade;
 #[cfg(feature = "jma")]
 pub use recast_radar_io_jma as jma;
+#[cfg(feature = "level3")]
+pub use recast_radar_io_level3 as level3;
 #[cfg(feature = "nexrad")]
 pub use recast_radar_io_nexrad as nexrad;
 #[cfg(feature = "odim")]

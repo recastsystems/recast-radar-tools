@@ -51,8 +51,9 @@ and with zero warnings:
 `core`, `io-nexrad`, `io-odim`, `io-cfradial`, `io-dorade`, `io-jma`, `io`,
 `correct`, `filters`, `retrieve`, `map`, `track`, `render`, `scattering`,
 `bench`, and the facade with `--no-default-features` and with each non-`net`
-feature on its own (16 cargo-hack runs). After `testdata` merged,
-`tools/ci/wasm-check.sh` passed as well (14 crates and 16 facade runs). The normal dependency graph is pure
+feature on its own (16 cargo-hack runs). After `testdata` and `level3`
+merged, `tools/ci/wasm-check.sh` passed as well (15 crates, including
+`recast-radar-io-level3`, and 17 facade runs). The normal dependency graph is pure
 Rust (bzip2 through libbz2-rs-sys, flate2 through zlib-rs, zip with deflate,
 image with png/jpeg/tiff, sha2, chrono, serde, thiserror, rayon), so no crate
 needs a C toolchain for wasm32.

@@ -1,7 +1,7 @@
 # recast-radar-tools
 
-Pure-Rust weather radar libraries. They decode NEXRAD Level II, ODIM_H5,
-CfRadial 1, DORADE and JMA radar GRIB2 files. They download NEXRAD Level II
+Pure-Rust weather radar libraries. They decode NEXRAD Level II, NEXRAD and
+TDWR Level III, ODIM_H5, CfRadial 1, DORADE and JMA radar GRIB2 files. They download NEXRAD Level II
 volumes and real-time chunks from AWS, and data from other public feeds. They
 also dealias Doppler velocity, filter gates, compute derived products, build
 composites and cross sections, track storm cells and render sweeps to PNG.
@@ -90,7 +90,9 @@ sweep  2:  0.78 deg, 720 radials, REF ZDR RHO PHI CFP
 For bytes of unknown format, `io::decode_supported_volume_bytes(&bytes)`
 (feature `io`) sniffs the format and calls the matching decoder: DORADE,
 ODIM_H5, CfRadial 1, JMA GRIB2 tar, or Level II. It also unwraps gzip and
-single-file ZIP archives.
+single-file ZIP archives. Level III products are not radar volumes and the
+router does not read them: use `level3::decode_product(&bytes)` (feature
+`level3`, part of `io`).
 
 ### Dealias velocity
 
@@ -214,6 +216,7 @@ the centre to the edge.
 | `recast-radar-tools` | | The facade: re-exports the crates below as modules behind features |
 | `recast-radar-core` | `core` | Data model: volumes, sweeps, radials, moment grids, beam geometry, field names |
 | `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2; the Level III VAD Wind Profile product |
+| `recast-radar-io-level3` | `level3` | NEXRAD and TDWR Level III products: NOAAPort/WMO framing, message and product description headers, symbology, graphic and tabular blocks, display packets, data levels |
 | `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through an HDF5 reader written in Rust |
 | `recast-radar-io-cfradial` | `cfradial` | CfRadial 1, through a classic netCDF (CDF-1, CDF-2) reader written in Rust |
 | `recast-radar-io-dorade` | `dorade` | DORADE sweepfiles and mobile-radar (DOW, COW, RaXPol) archives |
@@ -231,8 +234,7 @@ the centre to the edge.
 | `recast-radar-testdata` | | Real test files: manifests, committed fixtures, a SHA-256-verified download cache and the Level II trim tool (for tests only, not published) |
 <!-- crate-map:end -->
 
-Not in the workspace yet: `recast-radar-io-level3` (a complete Level III
-decoder) and `fuzz/` (cargo-fuzz targets).
+Not in the workspace yet: `fuzz/` (cargo-fuzz targets).
 
 `crates/recast-radar-tools/tests/readme.rs` checks that the map lists exactly
 the crates under `crates/` and that the Module column matches the facade's
@@ -246,11 +248,12 @@ keywords, categories and a readme.
 |---|---|---|---|---|
 | (always on) | `core` | `recast-radar-core` | | yes |
 | `nexrad` | `nexrad` | `recast-radar-io-nexrad` | | via `io` |
+| `level3` | `level3` | `recast-radar-io-level3` | | via `io` |
 | `odim` | `odim` | `recast-radar-io-odim` | | via `io` |
 | `cfradial` | `cfradial` | `recast-radar-io-cfradial` | | via `io` |
 | `dorade` | `dorade` | `recast-radar-io-dorade` | | via `io` |
 | `jma` | `jma` | `recast-radar-io-jma` | | via `io` |
-| `io` | `io` | `recast-radar-io` | `nexrad` `odim` `cfradial` `dorade` `jma` | yes |
+| `io` | `io` | `recast-radar-io` | `nexrad` `level3` `odim` `cfradial` `dorade` `jma` | yes |
 | `net` | `data` | `recast-radar-data` | | |
 | `correct` | `correct` | `recast-radar-correct` | | yes |
 | `filters` | `filters` | `recast-radar-filters` | | yes |
@@ -266,10 +269,11 @@ keywords, categories and a readme.
 - In the Default column, "yes" means the feature is listed in `default`, and
   "via `io`" means `io` turns it on.
 - A feature also enables the features of the member crates its crate depends
-  on, so the types a module's API uses can be named through the facade. The
-  one exception is `net`: `recast-radar-data` depends on
-  `recast-radar-io-jma` but uses it only internally, so `net` does not enable
-  `jma`.
+  on, so the types a module's API uses can be named through the facade. There
+  are two exceptions. `recast-radar-data` depends on `recast-radar-io-jma` but
+  uses it only internally, so `net` does not enable `jma`. `io` enables
+  `level3` although the router does not depend on it, so that `io` turns on
+  every format decoder.
 - `nexrad` alone gives the Level II decoder without the other formats or the
   router.
 - `net` (also part of `full`) is the only feature that makes HTTPS requests
@@ -278,10 +282,9 @@ keywords, categories and a readme.
   nothing yet. serde is always compiled, even with `default-features = false`:
   the data model derives `Serialize` and `Deserialize` unconditionally, and
   `recast-radar-data` and `recast-radar-scattering` use serde directly.
-- A `level3` feature will come with the Level III crate.
 - `crates/recast-radar-tools/tests/readme.rs` checks this table against the
   facade's `[features]` and `src/lib.rs`. It also checks the dependency rule,
-  and its `net` exception, against the member crates' manifests.
+  and its two exceptions, against the member crates' manifests.
 
 ## Pure Rust
 

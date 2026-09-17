@@ -12,7 +12,7 @@
 //!   including which features are on by default, directly or through another
 //!   default feature.
 //! - Each feature enables the features of the member crates its crate depends
-//!   on, except the exceptions listed here and in the README.
+//!   on, apart from the exceptions listed here and in the README.
 //! - The "No unsafe" list names exactly the crates that do not opt in to the
 //!   workspace lints, which forbid `unsafe`.
 //! - The minimum Rust version agrees between the workspace manifest, the
@@ -37,6 +37,13 @@ type TestResult = Result<(), Box<dyn Error>>;
 const NOT_IMPLIED: &[(&str, &str)] = &[
     // recast-radar-data uses recast-radar-io-jma only internally.
     ("net", "jma"),
+];
+
+/// Facade features that enable a feature whose crate their crate does not
+/// depend on: (feature, feature it also enables). Described in the same places.
+const ALSO_IMPLIED: &[(&str, &str)] = &[
+    // `io` turns on every format decoder; the router does not read Level III.
+    ("io", "level3"),
 ];
 
 fn crate_dir() -> PathBuf {
@@ -503,9 +510,23 @@ fn features_enable_the_features_of_member_dependencies() -> TestResult {
                  and in Cargo.toml"
             );
         }
+        for &(exception, also) in ALSO_IMPLIED.iter().filter(|(f, _)| *f == feature) {
+            assert!(
+                !depended_on.contains(also),
+                "ALSO_IMPLIED ({exception}, {also}) no longer applies: `{krate}` now \
+                 depends on that feature's crate. Remove the exception here, in the README \
+                 Features section, in src/lib.rs and in Cargo.toml"
+            );
+        }
         let expected: BTreeSet<&str> = depended_on
             .into_iter()
             .filter(|dependency| !NOT_IMPLIED.contains(&(feature, *dependency)))
+            .chain(
+                ALSO_IMPLIED
+                    .iter()
+                    .filter(|(f, _)| *f == feature)
+                    .map(|&(_, also)| also),
+            )
             .collect();
         assert_eq!(
             implied, expected,

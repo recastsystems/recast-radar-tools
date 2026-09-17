@@ -14,11 +14,12 @@ dependency re-exported as a module behind one feature:
 |---|---|---|---|
 | (always) | `core` | `recast-radar-core` | |
 | `nexrad` | `nexrad` | `recast-radar-io-nexrad` | |
+| `level3` | `level3` | `recast-radar-io-level3` | |
 | `odim` | `odim` | `recast-radar-io-odim` | |
 | `cfradial` | `cfradial` | `recast-radar-io-cfradial` | |
 | `dorade` | `dorade` | `recast-radar-io-dorade` | |
 | `jma` | `jma` | `recast-radar-io-jma` | |
-| `io` | `io` | `recast-radar-io` | all five format features |
+| `io` | `io` | `recast-radar-io` | all six format features |
 | `net` | `data` | `recast-radar-data` | |
 | `correct` | `correct` | `recast-radar-correct` | |
 | `filters` | `filters` | `recast-radar-filters` | |
@@ -34,22 +35,28 @@ Default: `io`, `correct`, `filters`, `retrieve`, `map` (spec 4.1).
 
 Rule: a feature enables the facade features of the member crates its crate
 normally depends on, so any type a module's API mentions can be named through
-the facade. The one exception is `net`, which does not enable `jma`:
+the facade. One exception is `net`, which does not enable `jma`:
 `recast-radar-data` uses `recast-radar-io-jma` only internally (station
-headers) and stream E.1 removes that dependency. Features never add compile
-cost beyond the crate itself, since the implied crates are its dependencies
-anyway. `tests/readme.rs` checks the rule against the member manifests. The
-`net` exception is its `NOT_IMPLIED` list, and the test fails once the
-exception no longer applies.
+headers) and stream E.1 removes that dependency. Apart from `io`, features
+never add compile cost beyond the crate itself, since the implied crates are
+its dependencies anyway. `io` is the other exception in the opposite
+direction: it also enables `level3`, whose crate `recast-radar-io` does not
+depend on, because spec 4.1 defines `io` as all formats and the router does
+not read Level III products (they are not radar volumes). `tests/readme.rs`
+checks the rule against the member manifests. The exceptions are its
+`NOT_IMPLIED` and `ALSO_IMPLIED` lists, and the test fails once an exception
+no longer applies.
 
 Module names are the crate names without the `recast-radar-` and `io-`
 prefixes; `recast-radar-data` is `data` (its feature is `net`, per the spec).
 No root-level item re-exports: stream F renames the model types, and module
 paths stay stable across that.
 
+`level3` was added when the `level3` branch merged into `main` (1da8d33).
+Moving `recast_radar_io_nexrad::level3_vwp` into `recast-radar-io-level3` is
+separate work (plan, "Waiting streams") and does not change the facade.
+
 Deferred until other streams land:
-- `level3`: added when the `level3` branch merges (`dep:recast-radar-io-level3`,
-  and `io` enables it).
 - `net`: when E.1 adds the `net` feature to `recast-radar-data`, the facade
   feature becomes `["dep:recast-radar-data", "recast-radar-data/net"]`; the
   dependency keeps default features until then so `net` keeps networking.
