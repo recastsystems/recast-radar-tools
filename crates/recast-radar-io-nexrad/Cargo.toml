@@ -2,7 +2,12 @@
 name = "recast-radar-io-nexrad"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Pure-Rust NEXRAD Archive II (Level II) weather radar decoder"
+readme.workspace = true
+keywords = ["nexrad", "radar", "weather", "level2", "wsr-88d"]
+categories = ["science::geo", "parser-implementations", "encoding"]
 
 [dependencies]
 bzip2.workspace = true
@@ -11,3 +16,10 @@ flate2.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 rayon.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

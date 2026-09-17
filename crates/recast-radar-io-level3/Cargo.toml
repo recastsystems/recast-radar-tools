@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme.workspace = true
+keywords = ["nexrad", "level3", "tdwr", "radar", "weather"]
+categories = ["science::geo", "parser-implementations", "encoding"]
 
 [dependencies]
 # Versions and features match main's [workspace.dependencies]; switch to

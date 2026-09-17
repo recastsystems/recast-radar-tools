@@ -79,7 +79,7 @@ still lints them.
   sleeps. `src/realtime/iterator.rs`: `ChunkPlanner` (sans-I/O request
   planning, rollover and failure handling) and `ChunkIterator` (generic over
   a blocking `ChunkTransport`) build without `net`, also for wasm32; only
-  `ReqwestTransport` and `ChunkIterator::{live, try_live}` need `net`.
+  `ReqwestTransport` and `ChunkIterator::live` need `net`.
   `src/realtime/stream.rs`: `ChunkStream` under `async`,
   `AsyncReqwestTransport` under `async-client`.
 - The older blocking helpers that retry (`fetch_volume_bytes`, the GDEX

@@ -462,7 +462,8 @@ fn request_italy_dpc_download_plan(
     product_time_millis: i64,
     period: Option<String>,
 ) -> Result<ItalyDpcDownloadPlan, String> {
-    let client = crate::metadata_http_client();
+    let client = crate::metadata_http_client()
+        .map_err(|err| format!("Italy DPC download {product_type}: {err}"))?;
     let request = ItalyDpcDownloadRequest {
         product_type,
         product_date: product_time_millis,

@@ -348,7 +348,7 @@ impl RealtimeReport {
 fn check_realtime(site: &str, timeout: Duration) -> Result<RealtimeReport, String> {
     let started = Instant::now();
     let deadline = started + timeout;
-    let mut iter = ChunkIterator::try_live(site, ChunkIteratorConfig::default())
+    let mut iter = ChunkIterator::live(site, ChunkIteratorConfig::default())
         .map_err(|err| format!("building the HTTPS client: {err}"))?;
 
     // The volume being assembled: id, start time, chunk count, bytes.

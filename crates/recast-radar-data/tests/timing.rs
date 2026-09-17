@@ -910,10 +910,13 @@ fn expect_violations(violations: &[Violation], known: &[(&str, &str, f64)]) -> T
     })
 }
 
+/// One cut: (capture, elevation number, modeled sweep seconds, decoded sweep
+/// seconds, start error beyond its tolerance).
+type CutSweep = (Capture, usize, f64, f64, f64);
+
 /// Per cut of every volume, the decoded rotation time and the one modeled
-/// with nominal parameters: (capture, elevation number, modeled, decoded,
-/// start error beyond its tolerance).
-fn sweep_timings(set: Set) -> TestResult<Vec<(Capture, usize, f64, f64, f64)>> {
+/// with nominal parameters.
+fn sweep_timings(set: Set) -> TestResult<Vec<CutSweep>> {
     let mut cuts = Vec::new();
     for capture in captures(set)?.into_iter().flatten() {
         let model = capture.model(TimingParameters::WSR88D)?;
@@ -1177,7 +1180,7 @@ fn learned_statistics_predict_the_next_volume(set: Set) -> TestResult<Vec<Violat
                     ("median chunk error", median, 2.0),
                     ("p90 chunk error", p90, 7.0),
                 ] {
-                    if !(value <= limit) {
+                    if value.is_nan() || value > limit {
                         violations.push(Violation {
                             listing: capture.listing.clone(),
                             claim,
@@ -1411,7 +1414,7 @@ fn projections_replay_real_listings(set: Set) -> TestResult<Vec<Violation>> {
                 }
             }
             let mut push = |claim, value: f64, limit: f64| {
-                if !(value <= limit) {
+                if value.is_nan() || value > limit {
                     violations.push(Violation {
                         listing: capture.listing.clone(),
                         claim,

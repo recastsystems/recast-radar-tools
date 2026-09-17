@@ -1695,10 +1695,11 @@ fn plan_collection(
     object_kind: ObjectKind,
     plans: Vec<OrdArchivePlan>,
 ) -> OrdPlanCollection {
+    // Callers build collections only from non-empty plan lists; an empty
+    // one sorts as oldest.
     let newest_stamp = plans
         .last()
-        .map(|plan| plan.stamp_utc)
-        .expect("plan collections are created only for non-empty plan lists");
+        .map_or(DateTime::<Utc>::UNIX_EPOCH, |plan| plan.stamp_utc);
     let quality = plans
         .last()
         .map(|plan| frame_plan_quality(site_id, &plan.frame))

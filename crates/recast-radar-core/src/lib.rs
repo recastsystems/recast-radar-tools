@@ -3,6 +3,16 @@
 //! The model is intentionally data-oriented: radial geometry lives beside compact
 //! moment arrays so decoders, product algorithms, and GPU upload code can share a
 //! stable contract without per-gate heap objects.
+//!
+//! # Limits
+//!
+//! [`bounded_read`] holds the resource limits every decoder crate shares
+//! (expanded input size, decoded volume and batch budgets, gates per radial,
+//! sweeps per volume) and the [`bounded_read::DecodeBudget`] that enforces
+//! them. Each decoder crate documents its format-specific limits in its own
+//! `# Limits` section.
+
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -86,18 +96,16 @@ impl RadarVolume {
         elevation_deg: f32,
         elevation_number: Option<u8>,
     ) -> &mut ElevationCut {
+        let index = self.cuts.len();
         self.cuts
             .push(ElevationCut::new(elevation_deg, elevation_number));
-        self.cuts.last_mut().expect("cut was just inserted")
+        &mut self.cuts[index]
     }
 }
 
 impl Default for RadarVolume {
     fn default() -> Self {
-        Self::new(
-            RadarSite::new(""),
-            DateTime::<Utc>::from_timestamp(0, 0).expect("unix epoch is a valid timestamp"),
-        )
+        Self::new(RadarSite::new(""), DateTime::<Utc>::UNIX_EPOCH)
     }
 }
 

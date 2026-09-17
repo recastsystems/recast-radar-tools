@@ -233,9 +233,12 @@ impl P3LookupTableV54 for P3OfficialTableV54 {
                 let number = number_after_nsmall;
                 let sixth = f32_checked(
                     "sixth ice moment",
-                    query
-                        .sixth_moment_per_kg
-                        .expect("triple-moment query validated above"),
+                    query.sixth_moment_per_kg.ok_or_else(|| {
+                        P3LookupFailure::OutsideDomain(
+                            "triple-moment P3 lookup requires a finite positive sixth moment"
+                                .to_owned(),
+                        )
+                    })?,
                 )?
                 .max(WRF_ZSMALL);
                 let mut third = 6.0 / (200.0 * WRF_PI) * total_ice;
@@ -673,9 +676,15 @@ fn parse_record<const FIELDS: usize>(
             actual: actual_tokens,
         });
     }
+    let token_count_error = || P3TableLoadError::TokenCount {
+        line: line_number,
+        record_kind,
+        expected: expected_tokens,
+        actual: actual_tokens,
+    };
     let mut tokens = line.split_whitespace();
     for (offset, expected) in expected_indices.iter().copied().enumerate() {
-        let token = tokens.next().expect("token count checked above");
+        let token = tokens.next().ok_or_else(token_count_error)?;
         let actual = token
             .parse::<usize>()
             .map_err(|source| P3TableLoadError::InvalidInteger {
@@ -696,7 +705,7 @@ fn parse_record<const FIELDS: usize>(
     }
     let mut values = [0.0_f32; FIELDS];
     for (offset, value) in values.iter_mut().enumerate() {
-        let token = tokens.next().expect("token count checked above");
+        let token = tokens.next().ok_or_else(token_count_error)?;
         let position = expected_indices.len() + offset + 1;
         let parsed = token
             .parse::<f32>()

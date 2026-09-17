@@ -6,6 +6,35 @@
 //!   sweeps into volume scans. Level II (`.msg31`/`AR2V`) members inside
 //!   those archives are decoded by a caller-supplied decoder, so this crate
 //!   depends only on `recast-radar-core`.
+//!
+//! # Limits
+//!
+//! Sweepfiles:
+//!
+//! - **Gates**: CELV, CSFD, and extended PARM gate counts, run-length decoded
+//!   rows, and uncompressed RDAT rows are limited to `MAX_GATES_PER_RADIAL`
+//!   (16,384); real sweeps reach 1,002.
+//! - **Cells per sweep**: at most 67,108,864 decoded cells are retained
+//!   while a sweep's rays are collected.
+//! - **Volume**: at most `MAX_SWEEPS_PER_VOLUME` (1,024) sweeps. The radial
+//!   tables and moment grids (rows padded to the widest row of their field)
+//!   of every appended sweep are charged to a `DecodeBudget` of
+//!   `MAX_DECODED_VOLUME_BYTES` (1 GiB) before the grids are built.
+//!
+//! Mobile-radar archives and folders:
+//!
+//! - At most 4,096 candidate members of at most 256 MiB each, 1 GiB of
+//!   member bytes in total, and folder recursion 4 levels deep.
+//! - The decoded volumes of one archive or folder may retain at most
+//!   `MAX_DECODED_BATCH_BYTES` (2 GiB). Members decode in parallel, so
+//!   volumes still in flight on other threads can briefly add to that.
+//!
+//! Shared constants live in [`recast_radar_core::bounded_read`]. Gate,
+//! cell, sweep, and budget violations are [`DoradeError::LimitExceeded`]
+//! errors; archive size violations are [`DoradeError::InvalidMessage`] or
+//! [`DoradeError::Compression`] errors.
+
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod dorade;
 pub mod mobile_archive;
@@ -62,4 +91,8 @@ pub enum DoradeError {
     /// Decoded gates did not fit the moment grid.
     #[error("moment grid error: {0}")]
     MomentGrid(#[from] recast_radar_core::MomentGridError),
+    /// The input declares more data than a documented resource limit allows
+    /// (see the crate-level `# Limits` section).
+    #[error("decode limit exceeded: {0}")]
+    LimitExceeded(String),
 }

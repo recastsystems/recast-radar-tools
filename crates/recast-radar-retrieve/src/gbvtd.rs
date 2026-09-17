@@ -421,12 +421,15 @@ pub fn find_center_and_retrieve(
                 continue;
             }
             if score > best_score {
-                best_score = score;
-                let best_ring = rings
+                // score > 0 implies a core candidate exists.
+                let Some(best_ring) = rings
                     .iter()
                     .filter(|ring| ring_is_core_candidate(ring))
                     .max_by(|a, b| a.vt.total_cmp(&b.vt))
-                    .expect("score>0 implies a core candidate exists");
+                else {
+                    continue;
+                };
+                best_score = score;
                 best = Some(TcCirculation {
                     center_km: center,
                     rmw_km: Some(best_ring.radius_km),

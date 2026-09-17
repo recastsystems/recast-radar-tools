@@ -243,88 +243,21 @@ fn fmt_mb(bytes: Option<u64>) -> String {
         .unwrap_or_else(|| "n/a".to_owned())
 }
 
-#[cfg(windows)]
+/// Resident and virtual size from `/proc/self/status`. Platforms without
+/// procfs (Windows, macOS) report `n/a`: the example stays free of FFI.
 fn process_memory() -> ProcessMemory {
-    use std::ffi::c_void;
-
-    #[repr(C)]
-    struct ProcessMemoryCounters {
-        cb: u32,
-        page_fault_count: u32,
-        peak_working_set_size: usize,
-        working_set_size: usize,
-        quota_peak_paged_pool_usage: usize,
-        quota_paged_pool_usage: usize,
-        quota_peak_non_paged_pool_usage: usize,
-        quota_non_paged_pool_usage: usize,
-        pagefile_usage: usize,
-        peak_pagefile_usage: usize,
-    }
-
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetCurrentProcess() -> *mut c_void;
-    }
-
-    #[link(name = "psapi")]
-    unsafe extern "system" {
-        fn GetProcessMemoryInfo(
-            process: *mut c_void,
-            counters: *mut ProcessMemoryCounters,
-            size: u32,
-        ) -> i32;
-    }
-
-    let mut counters = ProcessMemoryCounters {
-        cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
-        page_fault_count: 0,
-        peak_working_set_size: 0,
-        working_set_size: 0,
-        quota_peak_paged_pool_usage: 0,
-        quota_paged_pool_usage: 0,
-        quota_peak_non_paged_pool_usage: 0,
-        quota_non_paged_pool_usage: 0,
-        pagefile_usage: 0,
-        peak_pagefile_usage: 0,
-    };
-
-    let ok = unsafe {
-        GetProcessMemoryInfo(
-            GetCurrentProcess(),
-            &mut counters,
-            std::mem::size_of::<ProcessMemoryCounters>() as u32,
-        )
-    };
-    if ok == 0 {
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
         return ProcessMemory::default();
-    }
-
+    };
+    let kib_field = |name: &str| {
+        status.lines().find_map(|line| {
+            let value = line.strip_prefix(name)?.trim();
+            let kb = value.split_whitespace().next()?.parse::<u64>().ok()?;
+            Some(kb * 1024)
+        })
+    };
     ProcessMemory {
-        working_set_bytes: Some(counters.working_set_size as u64),
-        private_bytes: Some(counters.pagefile_usage as u64),
+        working_set_bytes: kib_field("VmRSS:"),
+        private_bytes: kib_field("VmSize:"),
     }
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn process_memory() -> ProcessMemory {
-    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-    let working_set_bytes = status.lines().find_map(|line| {
-        let value = line.strip_prefix("VmRSS:")?.trim();
-        let kb = value.split_whitespace().next()?.parse::<u64>().ok()?;
-        Some(kb * 1024)
-    });
-    let private_bytes = status.lines().find_map(|line| {
-        let value = line.strip_prefix("VmSize:")?.trim();
-        let kb = value.split_whitespace().next()?.parse::<u64>().ok()?;
-        Some(kb * 1024)
-    });
-    ProcessMemory {
-        working_set_bytes,
-        private_bytes,
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn process_memory() -> ProcessMemory {
-    ProcessMemory::default()
 }

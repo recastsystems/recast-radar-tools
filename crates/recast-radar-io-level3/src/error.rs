@@ -24,7 +24,9 @@ pub enum Level3Error {
     },
 
     /// The file is a plain-text message (WMO heading `NOUS..`, e.g. a free text
-    /// message) with no binary Level III message.
+    /// message) with no binary Level III message. Returned by
+    /// [`crate::decode_product`]; [`crate::decode_message`] decodes the text
+    /// into [`crate::Level3Message::Text`].
     #[error("plain-text message {heading:?} carries no binary product")]
     TextOnly {
         /// The WMO abbreviated heading, e.g. `NOUS63 KABR 281331`.
@@ -32,11 +34,34 @@ pub enum Level3Error {
     },
 
     /// The message has no Product Description Block, e.g. a General Status
-    /// Message (message code 2, ICD 2620001 Figure 3-17).
+    /// Message (message code 2, ICD 2620001 Figure 3-17). Returned by
+    /// [`crate::decode_product`]; [`crate::decode_message`] decodes a General
+    /// Status Message into [`crate::Level3Message::GeneralStatus`] and returns
+    /// this error only for other message codes.
     #[error("message code {code} carries no Product Description Block")]
     NotAProduct {
         /// Message code (Message Header Block halfword 1).
         code: i16,
+    },
+
+    /// A message block whose contents contradict its ICD layout, e.g. a General
+    /// Status Message block shorter than the 82 bytes of Figure 3-17.
+    #[error("message code {code}: {reason}")]
+    InvalidMessage {
+        /// Message code (Message Header Block halfword 1).
+        code: i16,
+        /// What is wrong.
+        reason: String,
+    },
+
+    /// A product-specific reader was given another product, e.g.
+    /// [`crate::vwp::VadWindProfile::from_product`] a product other than 48.
+    #[error("product code {found}, expected {expected}")]
+    UnexpectedProduct {
+        /// Product code the reader handles.
+        expected: i16,
+        /// Product code of the product given.
+        found: i16,
     },
 
     /// A block divider or block ID does not have the value the ICD requires.

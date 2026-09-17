@@ -2,7 +2,12 @@
 name = "recast-radar-data"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Weather radar data access: NEXRAD Level II archive and real-time chunks on AWS, site catalogs, international and community feeds"
+readme.workspace = true
+keywords = ["nexrad", "radar", "weather", "aws", "realtime"]
+categories = ["science::geo", "web-programming::http-client"]
 
 [features]
 default = ["net"]

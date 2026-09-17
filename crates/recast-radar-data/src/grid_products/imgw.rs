@@ -350,6 +350,7 @@ pub fn imgw_polrad_recent_cycles(
     }
     let path = site.cmax_path();
     let response = crate::metadata_http_client()
+        .map_err(|err| format!("IMGW POLRAD {} listing: {err}", site.code()))?
         .post(IMGW_DATASTORE_LIST_URL)
         .header(ACCEPT, "text/html,*/*")
         .header(REFERER, IMGW_DATASTORE_URL)
@@ -464,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn cmax_filename_parser_rejects_unsafe_or_unknown_names() {
+    fn cmax_filename_parser_rejects_path_like_or_unknown_names() {
         let site = ImgwPolradSite::Ramza;
         for invalid in [
             "../../2026071100150601KDP.max.h5",

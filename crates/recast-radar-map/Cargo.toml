@@ -2,7 +2,12 @@
 name = "recast-radar-map"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Weather radar geometry products: composites, echo tops, VIL, hail, cross sections, RHI panels and volume resampling"
+readme.workspace = true
+keywords = ["radar", "weather", "composite", "cross-section", "gridding"]
+categories = ["science::geo", "algorithms"]
 
 [dependencies]
 rayon.workspace = true

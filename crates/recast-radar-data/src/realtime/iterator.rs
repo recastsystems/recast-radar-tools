@@ -1263,22 +1263,11 @@ pub struct ReqwestTransport {
 
 #[cfg(feature = "net")]
 impl ReqwestTransport {
-    /// The crate's shared metadata client (25 s request timeout).
-    ///
-    /// # Panics
-    ///
-    /// If the shared client cannot be built (the TLS backend fails to
-    /// initialize). [`Self::try_new`] returns that as an error instead.
-    pub fn new() -> Self {
-        Self {
-            client: crate::metadata_http_client(),
-        }
-    }
-
-    /// A transport with its own client, configured like the shared metadata
-    /// client, or the error that kept it from being built.
-    pub fn try_new() -> Result<Self, TransportError> {
-        crate::build_http_client(crate::HTTP_METADATA_TIMEOUT)
+    /// A transport over the crate's shared metadata client (25 s request
+    /// timeout), or the error that kept the client from being built (the TLS
+    /// backend failing to initialize).
+    pub fn new() -> Result<Self, TransportError> {
+        crate::metadata_http_client()
             .map(Self::with_client)
             .map_err(|err| TransportError::new(TransportErrorKind::Other, err.to_string()))
     }
@@ -1286,13 +1275,6 @@ impl ReqwestTransport {
     /// A caller-configured client.
     pub fn with_client(client: reqwest::blocking::Client) -> Self {
         Self { client }
-    }
-}
-
-#[cfg(feature = "net")]
-impl Default for ReqwestTransport {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -1342,18 +1324,10 @@ fn reqwest_transport_error(err: reqwest::Error) -> TransportError {
 
 #[cfg(feature = "net")]
 impl ChunkIterator<ReqwestTransport> {
-    /// A live iterator over the public bucket with the crate's HTTPS client.
-    ///
-    /// # Panics
-    ///
-    /// As [`ReqwestTransport::new`]; [`Self::try_live`] does not panic.
-    pub fn live(site: &str, config: ChunkIteratorConfig) -> Self {
-        Self::new(site, config, ReqwestTransport::new())
-    }
-
-    /// [`Self::live`] with [`ReqwestTransport::try_new`].
-    pub fn try_live(site: &str, config: ChunkIteratorConfig) -> Result<Self, TransportError> {
-        Ok(Self::new(site, config, ReqwestTransport::try_new()?))
+    /// A live iterator over the public bucket with the crate's HTTPS client
+    /// ([`ReqwestTransport::new`], whose error it returns).
+    pub fn live(site: &str, config: ChunkIteratorConfig) -> Result<Self, TransportError> {
+        Ok(Self::new(site, config, ReqwestTransport::new()?))
     }
 }
 

@@ -445,7 +445,10 @@ fn gdex_error(message: impl Into<String>) -> DataSourceError {
 #[cfg(feature = "net")]
 fn gdex_fetch_text(url: &str, retry: GdexRetry<'_>) -> Result<String> {
     with_retry(retry, |_| {
-        let client = crate::download_http_client();
+        let client = match crate::download_http_client() {
+            Ok(client) => client,
+            Err(err) => return Attempt::Fatal(err),
+        };
         match client.get(url).send() {
             Err(err) => Attempt::Retry(DataSourceError::Http(err)),
             Ok(response) => {
@@ -948,7 +951,10 @@ pub fn download_to_path_with_retry(
         if cancel.load(Ordering::Relaxed) {
             return Attempt::Fatal(cancelled());
         }
-        let mut request = crate::download_http_client().get(url);
+        let mut request = match crate::download_http_client() {
+            Ok(client) => client.get(url),
+            Err(err) => return Attempt::Fatal(err),
+        };
         if want_resume {
             request = request.header(RANGE, format!("bytes={have}-"));
         }
@@ -1034,7 +1040,11 @@ fn head_content_length(url: &str, cancel: &AtomicBool, retry: GdexRetry<'_>) -> 
                 url: url.to_owned(),
             });
         }
-        match crate::metadata_http_client().head(url).send() {
+        let client = match crate::metadata_http_client() {
+            Ok(client) => client,
+            Err(err) => return Attempt::Fatal(err),
+        };
+        match client.head(url).send() {
             Err(err) => Attempt::Retry(DataSourceError::Http(err)),
             Ok(response) => {
                 let status = response.status().as_u16();
@@ -1925,6 +1935,7 @@ mod tests {
         let response = with_retry(
             GdexRetry::blocking(),
             |_| match crate::download_http_client()
+                .expect("HTTP client")
                 .get(url)
                 .header(RANGE, "bytes=0-1023")
                 .send()

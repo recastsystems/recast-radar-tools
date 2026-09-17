@@ -1,6 +1,9 @@
 //! Probe the hail + wind products on a real volume (KEAX derecho).
 //! Usage: hail_wind_probe <archive file> [h0_km] [hm20_km]
 
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use recast_radar_map::{MeshCalibration, hail_grids, poh_grid};
 use recast_radar_retrieve::{gust_proxy_grid, marc_grid};
 

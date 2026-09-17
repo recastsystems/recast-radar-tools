@@ -1868,7 +1868,7 @@ mod http {
         for name in SERVED {
             let cassette = Cassette::load(name);
             let server = Server::start(script(&cassette));
-            let transport = ReqwestTransport::try_new().expect("client");
+            let transport = ReqwestTransport::new().expect("client");
             let mut iter =
                 ChunkIterator::new(cassette.site(), config(&cassette, &server), transport);
             let events = take_events(&mut iter, cassette.events.len());
@@ -1887,7 +1887,7 @@ mod http {
 
         let cassette = Cassette::load("tlas-next-volume-bytes");
         let server = Server::start(not_found_script(&cassette));
-        let transport = ReqwestTransport::try_new().expect("client");
+        let transport = ReqwestTransport::new().expect("client");
         let mut iter = ChunkIterator::new(cassette.site(), config(&cassette, &server), transport);
         let events = take_events(&mut iter, cassette.events.len() + 2);
         assert!(events.iter().any(|event| matches!(
@@ -2083,7 +2083,8 @@ fn capture_cassette() {
         std::time::Instant::now() + Duration::from_secs(60 * parse("RECAST_CAPTURE_MINUTES", "15"));
 
     let recorder = Recorder {
-        inner: recast_radar_data::realtime::iterator::ReqwestTransport::new(),
+        inner: recast_radar_data::realtime::iterator::ReqwestTransport::new()
+            .expect("HTTPS client"),
         lines: vec![json!({
             "type": "header",
             "format": 1,
