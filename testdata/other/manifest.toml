@@ -356,6 +356,61 @@ tags = ["provider:nict-jma", "license:unknown", "era:2019", "country:JP", "netwo
 description = "JMA Osaka/Takayasu (TAKA, RS47773) radial-velocity member of the Hagibis N6 tar: 13 sweeps, 512 radials x 300 gates, 547108 of 2201600 gates non-missing"
 
 # ---------------------------------------------------------------------------
+# ODIM_H5 per-quantity parts of one scan (EUMETNET ORD archive): the inputs of
+# recast_radar_core::merge_radar_volumes in crates/recast-radar-core/tests
+# ---------------------------------------------------------------------------
+
+[[file]]
+id = "odim-bejab-20260612-1450-dbzh"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/BE/bejab/PVOL/bejab%4020260612T1450%400.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0%40DBZH.h5"]
+sha256 = "4db04d6a791a5e98d6b3c122377e3f080a5fbffaccb46f1a268127d961dfffd7"
+size = 243054
+committed = "files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@DBZH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:bejab", "country:BE", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:dbzh", "scan:ppi", "split-scan:bejab-20260612-1450-doppler", "part-of-scan"]
+description = "RMI Jabbeke Doppler-task PVOL 2026-06-12 14:50:05Z, DBZH part: 9 sweeps 0.5-25 deg x 360 rays x 300 gates (500 m); one scan delivered as one file per quantity (RAINBOW 5.59.10 task bejab_scan_v3_V.vol); unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-bejab-20260612-1450-vrad"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/BE/bejab/PVOL/bejab%4020260612T1450%400.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0%40VRAD.h5"]
+sha256 = "94ebfd5bbb83872e4be13141c760eaf57212b75c56fb6198b44ff1466beccbea"
+size = 219191
+committed = "files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@VRAD.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:bejab", "country:BE", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:vrad", "scan:ppi", "split-scan:bejab-20260612-1450-doppler", "part-of-scan", "quirk:vrad-not-vradh"]
+description = "RMI Jabbeke Doppler-task PVOL 2026-06-12 14:50:05Z, VRAD part: the same 9 sweeps and ray/gate geometry as the DBZH part (per-sweep start/end times identical); unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-nohur-20260612-1445-dbzh"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/NO/nohur/PVOL/nohur%4020260612T1445%400.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0%40DBZH.h5"]
+sha256 = "b537880ae7caf247d93380cdec6560f0bf83aefd4f5975a977a9722349a9175f"
+size = 773343
+committed = "files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@DBZH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:nohur", "country:NO", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:dbzh", "scan:ppi", "scan:vertical-pointing", "split-scan:nohur-20260612-1445", "part-of-scan"]
+description = "MET Norway Hurum PVOL 2026-06-12 14:45:13Z, DBZH part: 10 sweeps 0.5-90 deg (0.5 deg sweep 720 rays, others 360; 960/480/320/280 gates x 250 m by tier, 832 x 30 m vertical sweep); one scan delivered as one file per quantity; unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-nohur-20260612-1445-th"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/NO/nohur/PVOL/nohur%4020260612T1445%400.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0%40TH.h5"]
+sha256 = "ee2db644603f11e002c0fcf991cfb4083c6ac88c6ce6f2fc1c71baf02131db61"
+size = 1478472
+committed = "files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@TH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:nohur", "country:NO", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:th", "scan:ppi", "scan:vertical-pointing", "split-scan:nohur-20260612-1445", "part-of-scan"]
+description = "MET Norway Hurum PVOL 2026-06-12 14:45:13Z, TH (unfiltered reflectivity) part: the same 10 sweeps and geometry as the DBZH part; unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-nohur-20260612-1446-vradh"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/NO/nohur/PVOL/nohur%4020260612T1446%402.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0%40VRADH.h5"]
+sha256 = "4e03d90bfef8896db81fe80ccfcc7aa74374ec697179b3bbce72685a40818c0a"
+size = 197553
+committed = "files/other/odim/ord-parts/nohur@20260612T1446@2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@VRADH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:nohur", "country:NO", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:vradh", "scan:ppi", "scan:vertical-pointing", "split-scan:nohur-20260612-1445", "part-of-scan"]
+description = "MET Norway Hurum PVOL 2026-06-12 14:46:48Z, VRADH part of the 14:45 scan: only the 8 sweeps from 2.6 deg up (the 0.5 and 1.0 deg sweeps have no velocity), same ray/gate geometry as the DBZH sweeps they match, /what/time later than the DBZH/TH parts; unmodified OPERA ORD archive object"
+
+# ---------------------------------------------------------------------------
 # NEXRAD Level III (carried over with the other BowEcho fixtures)
 # ---------------------------------------------------------------------------
 

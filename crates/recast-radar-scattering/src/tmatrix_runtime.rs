@@ -3931,11 +3931,18 @@ mod tests {
         .unwrap()
     }
 
-    fn synthetic_speed_provenance() -> PsdFallSpeedProvenance {
-        PsdFallSpeedProvenance::new(
-            PsdFallSpeedAuthority::SyntheticTestOnly,
-            Sha256Digest::compute(b"tmatrix-particle-node-test-speed-v1"),
-        )
+    /// A real fall-speed law that is not this table's: the Atlas (1973)
+    /// exponential the committed PyTMatrix rain table's generator config
+    /// declares (corpus id `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`),
+    /// as a versioned external provenance token.
+    fn rain_atlas_fall_speed_provenance() -> PsdFallSpeedProvenance {
+        let provenance =
+            crate::test_corpus::config_fall_speed_provenance(&crate::test_corpus::rain().config);
+        assert_eq!(
+            provenance.authority(),
+            PsdFallSpeedAuthority::ExternalVersionedResearch
+        );
+        provenance
     }
 
     fn dry_property_runtime(spheroid: SpheroidConvention) -> ResearchTMatrixLut {
@@ -4371,7 +4378,7 @@ mod tests {
                 PsdSpheroidHabit::Oblate,
                 None,
                 None,
-                synthetic_speed_provenance(),
+                rain_atlas_fall_speed_provenance(),
                 gaussian20_odf().orientation_model(),
                 request(FREQUENCY_HZ, 1.0),
             ),
@@ -4540,7 +4547,7 @@ mod tests {
                 None,
                 None,
                 3.0,
-                synthetic_speed_provenance(),
+                rain_atlas_fall_speed_provenance(),
                 gaussian20_odf().orientation_model(),
                 request(FREQUENCY_HZ, 1.0),
             ),
@@ -4555,7 +4562,7 @@ mod tests {
             None,
             None,
             3.0,
-            synthetic_speed_provenance(),
+            rain_atlas_fall_speed_provenance(),
             gaussian20_odf().orientation_model(),
             request(FREQUENCY_HZ, 1.0),
         )
@@ -4574,7 +4581,7 @@ mod tests {
             None,
             None,
             3.0,
-            synthetic_speed_provenance(),
+            rain_atlas_fall_speed_provenance(),
             gaussian20_odf().orientation_model(),
             request(FREQUENCY_HZ, 1.0),
         )
