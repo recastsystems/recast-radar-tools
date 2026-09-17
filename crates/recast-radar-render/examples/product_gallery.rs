@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Render the full product set for a scan to PNGs through the SAME
 // ViewportMomentCache path the GUI uses — visual proof every product + palette
 // works end to end (base moments, dual-pol, dealiased velocity, the derived

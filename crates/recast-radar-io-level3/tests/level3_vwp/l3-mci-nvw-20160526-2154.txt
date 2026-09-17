@@ -1,0 +1,132 @@
+radar latitude_deg=39.498 longitude_deg=-94.742 height_ft=1090 vcp=80 mode=Precipitation
+scan volume_time=2016-05-26T21:54:08Z generation_time=2016-05-26T22:00:05Z
+source Symbology
+metadata rms_threshold_kts=None symmetry_threshold_kts=None data_points_threshold=None optimum_slant_range_nm=None
+profile label_hhmm=2154 valid_time=2016-05-26T21:54:00Z
+  level altitude_km_agl=1.496 altitude_ft_msl=Some(6000) direction_deg=175.0 speed_kts=17.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.801 altitude_ft_msl=Some(7000) direction_deg=188.0 speed_kts=23.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.106 altitude_ft_msl=Some(8000) direction_deg=193.0 speed_kts=31.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.849 altitude_ft_msl=Some(17000) direction_deg=203.0 speed_kts=42.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=215.0 speed_kts=49.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=216.0 speed_kts=50.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.592 altitude_ft_msl=Some(26000) direction_deg=216.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.202 altitude_ft_msl=Some(28000) direction_deg=216.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.811 altitude_ft_msl=Some(30000) direction_deg=217.0 speed_kts=46.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=10.335 altitude_ft_msl=Some(35000) direction_deg=230.0 speed_kts=45.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2148 valid_time=2016-05-26T21:48:00Z
+  level altitude_km_agl=5.154 altitude_ft_msl=Some(18000) direction_deg=205.0 speed_kts=46.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.459 altitude_ft_msl=Some(19000) direction_deg=206.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.763 altitude_ft_msl=Some(20000) direction_deg=207.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.373 altitude_ft_msl=Some(22000) direction_deg=206.0 speed_kts=46.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=211.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=211.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.592 altitude_ft_msl=Some(26000) direction_deg=212.0 speed_kts=47.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.202 altitude_ft_msl=Some(28000) direction_deg=214.0 speed_kts=48.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2142 valid_time=2016-05-26T21:42:00Z
+  level altitude_km_agl=1.496 altitude_ft_msl=Some(6000) direction_deg=176.0 speed_kts=19.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.801 altitude_ft_msl=Some(7000) direction_deg=186.0 speed_kts=22.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.106 altitude_ft_msl=Some(8000) direction_deg=191.0 speed_kts=26.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=208.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=207.0 speed_kts=46.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.592 altitude_ft_msl=Some(26000) direction_deg=206.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.202 altitude_ft_msl=Some(28000) direction_deg=213.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.811 altitude_ft_msl=Some(30000) direction_deg=218.0 speed_kts=45.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=10.335 altitude_ft_msl=Some(35000) direction_deg=232.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=11.859 altitude_ft_msl=Some(40000) direction_deg=234.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2136 valid_time=2016-05-26T21:36:00Z
+  level altitude_km_agl=0.277 altitude_ft_msl=Some(2000) direction_deg=41.0 speed_kts=77.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.496 altitude_ft_msl=Some(6000) direction_deg=181.0 speed_kts=18.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.801 altitude_ft_msl=Some(7000) direction_deg=190.0 speed_kts=19.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.106 altitude_ft_msl=Some(8000) direction_deg=186.0 speed_kts=24.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.459 altitude_ft_msl=Some(19000) direction_deg=199.0 speed_kts=43.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.763 altitude_ft_msl=Some(20000) direction_deg=201.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.373 altitude_ft_msl=Some(22000) direction_deg=203.0 speed_kts=49.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=209.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=209.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.592 altitude_ft_msl=Some(26000) direction_deg=212.0 speed_kts=47.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.202 altitude_ft_msl=Some(28000) direction_deg=220.0 speed_kts=45.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.811 altitude_ft_msl=Some(30000) direction_deg=222.0 speed_kts=46.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=10.335 altitude_ft_msl=Some(35000) direction_deg=232.0 speed_kts=50.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=11.859 altitude_ft_msl=Some(40000) direction_deg=246.0 speed_kts=56.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2130 valid_time=2016-05-26T21:30:00Z
+  level altitude_km_agl=0.582 altitude_ft_msl=Some(3000) direction_deg=17.0 speed_kts=13.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.192 altitude_ft_msl=Some(5000) direction_deg=154.0 speed_kts=15.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.496 altitude_ft_msl=Some(6000) direction_deg=167.0 speed_kts=17.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.801 altitude_ft_msl=Some(7000) direction_deg=176.0 speed_kts=20.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.106 altitude_ft_msl=Some(8000) direction_deg=180.0 speed_kts=23.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.411 altitude_ft_msl=Some(9000) direction_deg=198.0 speed_kts=30.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.716 altitude_ft_msl=Some(10000) direction_deg=194.0 speed_kts=32.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.020 altitude_ft_msl=Some(11000) direction_deg=197.0 speed_kts=34.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.325 altitude_ft_msl=Some(12000) direction_deg=197.0 speed_kts=35.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.630 altitude_ft_msl=Some(13000) direction_deg=204.0 speed_kts=38.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.935 altitude_ft_msl=Some(14000) direction_deg=202.0 speed_kts=39.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.240 altitude_ft_msl=Some(15000) direction_deg=203.0 speed_kts=39.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.544 altitude_ft_msl=Some(16000) direction_deg=204.0 speed_kts=41.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.849 altitude_ft_msl=Some(17000) direction_deg=204.0 speed_kts=42.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.154 altitude_ft_msl=Some(18000) direction_deg=201.0 speed_kts=44.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.459 altitude_ft_msl=Some(19000) direction_deg=200.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.763 altitude_ft_msl=Some(20000) direction_deg=201.0 speed_kts=50.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.373 altitude_ft_msl=Some(22000) direction_deg=204.0 speed_kts=50.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=204.0 speed_kts=49.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=205.0 speed_kts=48.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.592 altitude_ft_msl=Some(26000) direction_deg=210.0 speed_kts=45.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.202 altitude_ft_msl=Some(28000) direction_deg=215.0 speed_kts=44.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.811 altitude_ft_msl=Some(30000) direction_deg=221.0 speed_kts=45.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=10.335 altitude_ft_msl=Some(35000) direction_deg=236.0 speed_kts=46.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=11.859 altitude_ft_msl=Some(40000) direction_deg=250.0 speed_kts=55.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2118 valid_time=2016-05-26T21:18:00Z
+  level altitude_km_agl=0.277 altitude_ft_msl=Some(2000) direction_deg=118.0 speed_kts=13.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2106 valid_time=2016-05-26T21:06:00Z
+  level altitude_km_agl=0.277 altitude_ft_msl=Some(2000) direction_deg=109.0 speed_kts=28.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.411 altitude_ft_msl=Some(9000) direction_deg=199.0 speed_kts=27.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.716 altitude_ft_msl=Some(10000) direction_deg=206.0 speed_kts=30.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.020 altitude_ft_msl=Some(11000) direction_deg=208.0 speed_kts=33.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.325 altitude_ft_msl=Some(12000) direction_deg=207.0 speed_kts=32.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.630 altitude_ft_msl=Some(13000) direction_deg=211.0 speed_kts=38.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.935 altitude_ft_msl=Some(14000) direction_deg=212.0 speed_kts=41.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.240 altitude_ft_msl=Some(15000) direction_deg=210.0 speed_kts=39.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.544 altitude_ft_msl=Some(16000) direction_deg=211.0 speed_kts=39.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.849 altitude_ft_msl=Some(17000) direction_deg=211.0 speed_kts=39.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.154 altitude_ft_msl=Some(18000) direction_deg=210.0 speed_kts=43.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.459 altitude_ft_msl=Some(19000) direction_deg=207.0 speed_kts=45.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.763 altitude_ft_msl=Some(20000) direction_deg=207.0 speed_kts=45.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.373 altitude_ft_msl=Some(22000) direction_deg=205.0 speed_kts=49.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=205.0 speed_kts=51.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=208.0 speed_kts=49.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2100 valid_time=2016-05-26T21:00:00Z
+  level altitude_km_agl=0.277 altitude_ft_msl=Some(2000) direction_deg=117.0 speed_kts=34.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=0.582 altitude_ft_msl=Some(3000) direction_deg=101.0 speed_kts=26.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=0.887 altitude_ft_msl=Some(4000) direction_deg=154.0 speed_kts=14.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.192 altitude_ft_msl=Some(5000) direction_deg=149.0 speed_kts=20.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.411 altitude_ft_msl=Some(9000) direction_deg=195.0 speed_kts=23.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=2.716 altitude_ft_msl=Some(10000) direction_deg=216.0 speed_kts=27.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.630 altitude_ft_msl=Some(13000) direction_deg=214.0 speed_kts=39.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.935 altitude_ft_msl=Some(14000) direction_deg=214.0 speed_kts=39.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.240 altitude_ft_msl=Some(15000) direction_deg=214.0 speed_kts=42.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.544 altitude_ft_msl=Some(16000) direction_deg=215.0 speed_kts=46.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.849 altitude_ft_msl=Some(17000) direction_deg=216.0 speed_kts=44.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.154 altitude_ft_msl=Some(18000) direction_deg=210.0 speed_kts=42.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.459 altitude_ft_msl=Some(19000) direction_deg=209.0 speed_kts=45.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.763 altitude_ft_msl=Some(20000) direction_deg=209.0 speed_kts=46.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.373 altitude_ft_msl=Some(22000) direction_deg=206.0 speed_kts=48.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=206.0 speed_kts=48.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=207.0 speed_kts=48.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.592 altitude_ft_msl=Some(26000) direction_deg=209.0 speed_kts=48.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.202 altitude_ft_msl=Some(28000) direction_deg=212.0 speed_kts=50.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.811 altitude_ft_msl=Some(30000) direction_deg=213.0 speed_kts=54.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+profile label_hhmm=2054 valid_time=2016-05-26T20:54:00Z
+  level altitude_km_agl=0.277 altitude_ft_msl=Some(2000) direction_deg=117.0 speed_kts=29.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=0.887 altitude_ft_msl=Some(4000) direction_deg=137.0 speed_kts=20.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.192 altitude_ft_msl=Some(5000) direction_deg=153.0 speed_kts=18.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=1.801 altitude_ft_msl=Some(7000) direction_deg=184.0 speed_kts=14.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.630 altitude_ft_msl=Some(13000) direction_deg=220.0 speed_kts=35.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=3.935 altitude_ft_msl=Some(14000) direction_deg=220.0 speed_kts=38.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=4.240 altitude_ft_msl=Some(15000) direction_deg=219.0 speed_kts=41.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.154 altitude_ft_msl=Some(18000) direction_deg=214.0 speed_kts=41.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.459 altitude_ft_msl=Some(19000) direction_deg=214.0 speed_kts=43.0 rms_kts=Some(6.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=5.763 altitude_ft_msl=Some(20000) direction_deg=211.0 speed_kts=46.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=6.983 altitude_ft_msl=Some(24000) direction_deg=206.0 speed_kts=51.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.287 altitude_ft_msl=Some(25000) direction_deg=208.0 speed_kts=54.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=7.592 altitude_ft_msl=Some(26000) direction_deg=210.0 speed_kts=57.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.202 altitude_ft_msl=Some(28000) direction_deg=212.0 speed_kts=57.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None
+  level altitude_km_agl=8.811 altitude_ft_msl=Some(30000) direction_deg=212.0 speed_kts=59.0 rms_kts=Some(10.0) divergence=None slant_range_nm=None elevation_angle_deg=None

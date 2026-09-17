@@ -2,7 +2,12 @@
 name = "recast-radar-io-cfradial"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Pure-Rust CfRadial 1 weather radar decoder over a classic netCDF reader"
+readme.workspace = true
+keywords = ["cfradial", "netcdf", "radar", "weather", "meteorology"]
+categories = ["science::geo", "parser-implementations", "encoding"]
 
 [dependencies]
 chrono.workspace = true
@@ -13,6 +18,7 @@ thiserror.workspace = true
 # Cross-format sniffer and netCDF-4 rejection checks in the integration tests.
 recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
 recast-radar-io-odim = { path = "../recast-radar-io-odim" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]
 workspace = true

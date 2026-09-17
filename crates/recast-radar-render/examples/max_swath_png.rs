@@ -7,6 +7,9 @@
 //! The swath PNG should show a BROADER reflectivity footprint than the single
 //! newest frame — the union of where the storm has been across the loop.
 
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::PathBuf;
 
 use recast_radar_core::MomentType;

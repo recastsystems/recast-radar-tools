@@ -11,6 +11,16 @@
 //!   removes them.
 //! - Beam geometry, refractivity and bounded decompression helpers shared by
 //!   every crate.
+//!
+//! # Limits
+//!
+//! [`bounded_read`] holds the resource limits every decoder crate shares
+//! (expanded input size, decoded volume and batch budgets, gates per radial,
+//! sweeps per volume) and the [`bounded_read::DecodeBudget`] that enforces
+//! them. Each decoder crate documents its format-specific limits in its own
+//! `# Limits` section.
+
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod bounded_read;
 mod field_names;

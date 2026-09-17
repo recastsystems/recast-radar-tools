@@ -1,6 +1,8 @@
 //! Storm tracking over time: cell identification and tracking, rotation
 //! tracks, max-value swaths, and temporal grid combinations.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 mod cells;
 mod swath;
 mod temporal;

@@ -1,0 +1,21 @@
+# Stable-toolchain companion to the cargo-fuzz project: builds the seed
+# corpora from the real testdata manifest and replays inputs (regressions,
+# crash artifacts, corpora) through the harnesses without libFuzzer.
+[package]
+name = "recast-radar-fuzz-tools"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "fuzz-tools"
+path = "src/main.rs"
+
+[dependencies]
+recast-radar-fuzz = { path = "..", default-features = false }
+recast-radar-io-nexrad = { path = "../../crates/recast-radar-io-nexrad" }
+recast-radar-testdata = { path = "../../crates/recast-radar-testdata" }
+
+[lints]
+workspace = true

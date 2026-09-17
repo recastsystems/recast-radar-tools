@@ -289,14 +289,12 @@ fn forest_dp(
         );
         if ra != rb {
             forest_parent.insert(ra.max(rb), ra.min(rb));
-            tree_adjacency
-                .get_mut(&edge.a)
-                .expect("member")
-                .push(edge_index);
-            tree_adjacency
-                .get_mut(&edge.b)
-                .expect("member")
-                .push(edge_index);
+            // Both endpoints are members: `tree_adjacency` has every member.
+            for endpoint in [edge.a, edge.b] {
+                if let Some(adjacent) = tree_adjacency.get_mut(&endpoint) {
+                    adjacent.push(edge_index);
+                }
+            }
         }
     }
 
@@ -357,9 +355,11 @@ fn forest_dp(
                 *slot_cost = best_cost;
                 best_child_slot.insert((node, parent_slot), best_slot);
             }
-            let parent_dp = dp.get_mut(&parent).expect("parent in dp");
-            for parent_slot in 0..5 {
-                parent_dp[parent_slot] += addition[parent_slot];
+            // `parent` precedes `node` in `order`, so it has a dp entry.
+            if let Some(parent_dp) = dp.get_mut(&parent) {
+                for parent_slot in 0..5 {
+                    parent_dp[parent_slot] += addition[parent_slot];
+                }
             }
         }
         // Backtrack from the root down `order`.
