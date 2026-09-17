@@ -25,7 +25,7 @@ with `std::time::Instant` and checksummed for byte-identical output.
 ## Usage
 
 ```
-recast-radar-bench <path-to-level2-file> [--iters N] [--json]
+recast-radar-bench <path-to-level2-file> [--iters N] [--json] [--sweeps R,V]
 ```
 
 - `<path-to-level2-file>` — a NEXRAD Archive II / Level-II volume
@@ -38,6 +38,9 @@ recast-radar-bench <path-to-level2-file> [--iters N] [--json]
   (default 10).
 - `--json` — emit one machine-readable JSON summary line instead of
   the human table.
+- `--sweeps R,V` — render sweep index `R` for reflectivity and `V` for
+  velocity instead of the lowest sweeps. Use it to compare the render
+  pipeline of two builds that pick different sweeps (see below).
 
 Per iteration the harness:
 
@@ -45,6 +48,9 @@ Per iteration the harness:
 2. rasters the lowest reflectivity sweep (DBZH) and the lowest velocity
    sweep (VRADH dealiased, the app's DVEL display) at 1280x720, 1920x1080,
    and 2560x1440 — 0.25 km/px, radar slightly off-center, 20 mrad rotation.
+   "Lowest" is the smallest `Sweep::fixed_angle_deg`, then the smallest
+   sweep index. For Level II the fixed angle is the VCP cut angle, so a
+   split cut and its SAILS / MRLE repeats tie and the first one wins.
 
 It reports mean/min/max milliseconds per stage plus the per-iteration
 total, and an FNV-1a checksum over all rendered pixels (hashed outside
@@ -52,12 +58,17 @@ the timed sections). The JSON line names the sweeps it rendered
 (`sweeps`, `reflectivity_sweep`, `velocity_sweep`) and the volume's time
 reference (`volume_time`).
 
-Until `recast_radar_io` returns the FM301 model natively, the `decode`
-stage includes the shim conversion of the legacy volume into a `Volume`,
-which moves the decoded buffers and copies nothing (about 0.3 ms of a
-330 ms single-core KTLX decode). The process exits nonzero if the checksum varies
-across iterations, so scripted A/B runs fail loudly instead of quietly
-comparing nondeterministic output.
+The `decode` stage is `recast_radar_io::read_supported_volume_bytes`, which
+decodes straight into the FM301 `Volume`. The process exits nonzero if the
+checksum varies across iterations, so scripted A/B runs fail loudly instead of
+quietly comparing nondeterministic output.
+
+The baseline checksums are in `docs/baselines/import-checksums.txt`. The
+legacy model (and the BowEcho app) picked a Level II cut by its first
+radial's elevation, so the import baselines render other sweeps for the two
+KTLX files. `--sweeps` reproduces that selection: `--sweeps 4,9` for
+KTLX20240315_000217_V06 and `--sweeps 1,1` for KTLX20130520_201643_V06 print
+the import checksums.
 
 ## Getting a canonical volume
 
@@ -91,6 +102,9 @@ cargo run --release -p recast-radar-bench -- KTLX20130520_201643_V06 --iters 20
 
 # Machine-readable line for scripts
 cargo run --release -p recast-radar-bench -- KTLX20130520_201643_V06 --json
+
+# The sweeps the import baseline rendered
+cargo run --release -p recast-radar-bench -- KTLX20130520_201643_V06 --iters 1 --sweeps 1,1
 
 # Smoke test of the stage plumbing against a real file
 BOWECHO_BENCH_FILE=KTLX20130520_201643_V06 \

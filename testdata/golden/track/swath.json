@@ -42,11 +42,13 @@
   "entry": "l2-tstl-20230331-230314-trim",
   "sweeps": [
    {
+    "fixed_angle_deg": 0.3076172,
     "first_ray_elevation_deg": 0.26367188,
     "rays": 360,
     "moments": ["REF"]
    },
    {
+    "fixed_angle_deg": 0.3076172,
     "first_ray_elevation_deg": 0.26367188,
     "rays": 360,
     "moments": ["REF","VEL","SW"]
@@ -65,18 +67,20 @@
   "entry": "l2-ktlx-20240315-000217-trim",
   "sweeps": [
    {
+    "fixed_angle_deg": 0.48339844,
     "first_ray_elevation_deg": 0.5822754,
     "rays": 480,
     "moments": ["REF","ZDR","PHI","RHO","CFP"]
    },
    {
+    "fixed_angle_deg": 0.48339844,
     "first_ray_elevation_deg": 0.48339844,
     "rays": 480,
     "moments": ["REF","VEL","SW"]
    }
   ],
   "base_tilt": {
-   "REF": 1,
+   "REF": 0,
    "VEL": 1,
    "SW": 1,
    "ZDR": 0,

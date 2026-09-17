@@ -33,7 +33,10 @@ fn reflectivity(sweep: &Sweep) -> &Field {
 }
 
 /// Decode a Level II volume for a golden case and check its reflectivity
-/// tilts (sweep, first-radial elevation, rays, gate geometry) against MetPy.
+/// tilts (sweep, tilt elevation, rays, gate geometry) against MetPy. The tilt
+/// elevation is the fixed angle, the Message 5 cut angle, so the split cuts and
+/// SAILS repeats of one angle tie; the golden lists the tilts sorted by
+/// elevation with ties in acquisition order, as the products walk them.
 fn product_volume(key: &str) -> Option<(Value, Volume)> {
     let golden = golden("map/volumetric.json")[key].clone();
     let id = golden["id"].as_str().expect("id").to_owned();
@@ -53,10 +56,23 @@ fn product_volume(key: &str) -> Option<(Value, Volume)> {
         .filter(|cut| cut.find(Quantity::Reflectivity).is_some())
         .count();
     assert_eq!(reflectivity_cuts, tilts.len(), "{id} reflectivity tilts");
+    let mut by_elevation: Vec<usize> = volume
+        .sweeps
+        .iter()
+        .enumerate()
+        .filter(|(_, cut)| cut.find(Quantity::Reflectivity).is_some())
+        .map(|(index, _)| index)
+        .collect();
+    by_elevation.sort_by(|a, b| {
+        volume.sweeps[*a]
+            .fixed_angle_deg
+            .total_cmp(&volume.sweeps[*b].fixed_angle_deg)
+    });
+    let golden_order: Vec<usize> = tilts.iter().map(|tilt| as_usize(&tilt["sweep"])).collect();
+    assert_eq!(by_elevation, golden_order, "{id} tilt order");
     for tilt in tilts {
         let cut = &volume.sweeps[as_usize(&tilt["sweep"])];
         let grid = reflectivity(cut);
-        // `common::level2` set the fixed angle to the first ray's elevation.
         assert_close(
             f64::from(cut.fixed_angle_deg),
             as_f64(&tilt["elevation_deg"]),
@@ -147,7 +163,7 @@ fn composite_takes_column_max() {
 }
 
 /// KEWX: echo tops (18.3 dBZ) come from the highest tilt with echo; at most
-/// gates that is above the base beam (14.15 km maximum at 281 deg, 282 km).
+/// gates that is above the base beam (21.0 km maximum at 75 deg, 386 km).
 #[test]
 fn echo_top_rises_with_higher_tilt() {
     let Some((golden, volume)) = product_volume("hail") else {
@@ -395,7 +411,7 @@ fn derived_products_handle_degraded_inputs_without_panicking() {
 }
 
 /// KEWX: VIL over the whole volume equals the reference; the heaviest column
-/// holds 57.2 kg/m2.
+/// holds 56.4 kg/m2.
 #[test]
 fn vil_positive_for_deep_reflectivity() {
     let Some((golden, volume)) = product_volume("hail") else {
@@ -414,8 +430,8 @@ fn vil_positive_for_deep_reflectivity() {
     }
 }
 
-/// MEHS flags the San Antonio hail core (97 mm at 250 deg, 55.6 km, next to
-/// the 76.5 dBZ composite maximum) and nothing in KTLX clear air.
+/// MEHS flags the San Antonio hail core (111 mm at 250 deg, 55.4 km, one gate
+/// from the 76.5 dBZ composite maximum) and nothing in KTLX clear air.
 #[test]
 fn mehs_flags_deep_intense_cores_only() {
     let Some((golden, volume)) = product_volume("hail") else {
@@ -428,7 +444,7 @@ fn mehs_flags_deep_intense_cores_only() {
     let max = &golden["mehs"]["max"];
     assert!(as_f64(&max["value"]) > 25.0);
     let composite_max = &golden["composite"]["max"];
-    assert_eq!(max["gate"], composite_max["gate"]);
+    assert!((as_i64(&max["gate"]) - as_i64(&composite_max["gate"])).abs() <= 1);
     assert!((as_i64(&max["row"]) - as_i64(&composite_max["row"])).abs() <= 3);
     // hail_grids with the Witt calibration reports the same MESH.
     let hail = products::hail(&volume, freezing, minus20, MeshCalibration::Witt1998).expect("hail");

@@ -12,8 +12,9 @@ the filters and map products compute against the JSON files this script writes:
 
 Every input value comes from a reader that is independent of recast-radar-tools:
 
-- NEXRAD Level II: MetPy 1.7.1 ``metpy.io.Level2File`` (ray azimuth and elevation, moment
-  gate geometry and scaled gate values, Nyquist velocity). Py-ART 2.2.5 for
+- NEXRAD Level II: MetPy 1.7.1 ``metpy.io.Level2File`` (ray azimuth and elevation, the
+  Message 5 cut angle that is a sweep's fixed angle, moment gate geometry and scaled gate
+  values, Nyquist velocity). Py-ART 2.2.5 for
   ``pyart.filters.GateFilter`` and ``pyart.correct.dealias_region_based``.
 - CfRadial: netCDF4-python 1.7.4 (``elevation``, ``azimuth``, ``range``, packed fields with
   ``_FillValue``/``scale_factor``, ``sweep_mode``).
@@ -33,8 +34,8 @@ implementations of the documented algorithms (module docs of the Rust sources):
   (30 m/s spread) and correlation-coefficient (0.97 floor) guards;
 - RHI panels: 4/3-Earth beam geometry (Doviak and Zrnic 1993, eq. 2.28b/c) inverted per
   pixel, nearest beam within 1 degree and nearest gate;
-- volume products: column walk over every reflectivity tilt at the lowest tilt's azimuths and
-  ground ranges (nearest azimuth, nearest ground-range gate), composite = column maximum, echo
+- volume products: column walk over every reflectivity tilt (tilt elevation = the reader's
+  fixed angle, the Message 5 cut angle) at the lowest tilt's azimuths and ground ranges (nearest azimuth, nearest ground-range gate), composite = column maximum, echo
   top = highest beam with Z >= 18.3 dBZ, VIL (Greene and Clark 1972, 56 dBZ hail cap, surface
   layer from the lowest beam), SHI/MEHS (Witt et al. 1998), VIL density (VIL / echo top where
   the top is above 1.5 km), and MRMS-style vertical cross-sections (Zhang et al. 2005: linear
@@ -201,13 +202,28 @@ def last_le_search(sorted_values, targets):
 
 # --------------------------------------------------------- Level II (MetPy) ---
 
+
+def reader_fixed_angle(f, first):
+    """The Rust Level II reader's fixed angle for a sweep whose first radial header is `first`:
+    the Message 5 (MetPy ``vcp_info``) cut angle of the radial's elevation number, as xradar
+    and Py-ART report it, with angles above 90 degrees made negative; the first radial's
+    elevation when the file has no usable VCP message. The products use it as the tilt
+    elevation (design note docs/design/fm301-model.md 5.2)."""
+    vcp = getattr(f, "vcp_info", None)
+    number = int(first.el_num)
+    if vcp is not None and 1 <= number <= len(vcp.els):
+        angle = F32(vcp.els[number - 1].el_angle)
+        return F32(angle - F32(360.0)) if angle > 90.0 else angle
+    return F32(first.el_angle)
+
 MSG31_NAMES = {b"REF": "REF", b"VEL": "VEL", b"SW ": "SW", b"SW": "SW", b"ZDR": "ZDR",
                b"PHI": "PHI", b"RHO": "RHO", b"CFP": "CFP"}
 
 
 def level2_sweeps(entry_id):
     """Sweeps of a Level II file as read by MetPy: per sweep the ray azimuths and elevations
-    (f32 values of the file's angle fields), the Nyquist velocity of each ray, and per moment
+    (f32 values of the file's angle fields), the reader's fixed angle (``fixed``,
+    `reader_fixed_angle`), the Nyquist velocity of each ray, and per moment
     the rows (ray indices) carrying it, the gate geometry in metres and the scaled values
     (NaN below code 2, i.e. no data and range folded)."""
     import io
@@ -251,6 +267,7 @@ def level2_sweeps(entry_id):
                      gate_count=gates, values=grid, rows=np.asarray(m["rows"]))
             del m["data"], m["first"], m["spacing"]
         sweeps.append({"az": np.asarray(az, dtype=F32), "el": np.asarray(el, dtype=F32),
+                       "fixed": reader_fixed_angle(f, rays[0][0]),
                        "nyquist": np.asarray(nyq, dtype=np.float64), "moments": moments})
     return sweeps
 
@@ -1006,14 +1023,14 @@ HALF_BEAMWIDTH_RAD = 0.475 * math.pi / 180.0
 
 def volume_columns(sweeps, moment):
     """Every tilt carrying `moment`, sorted by tilt elevation (stable): the tilt elevation is
-    the sweep's first radial elevation, per-gate beam-centre ground range and height from the
+    the sweep's fixed angle (`reader_fixed_angle`), per-gate beam-centre ground range and height from the
     gate centres first_gate_m + i * spacing, and azimuth -> row lookup tables."""
     cols = []
     for index, s in enumerate(sweeps):
         m = s["moments"].get(moment)
         if m is None:
             continue
-        elevation = float(s["el"][0])
+        elevation = float(s["fixed"])
         slant = [float(m["first_gate_m"]) + g * float(m["gate_spacing_m"])
                  for g in range(m["gate_count"])]
         az = rem_euclid32(s["az"][m["rows"]])

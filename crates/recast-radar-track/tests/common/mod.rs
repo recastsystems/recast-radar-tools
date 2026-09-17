@@ -24,12 +24,12 @@ pub fn golden(name: &str) -> Value {
     serde_json::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-/// Decode a real Level II file with the NEXRAD reader.
+/// Decode a real Level II file with the NEXRAD reader, unmodified.
 ///
-/// The goldens take a tilt's elevation from its first radial (MetPy
-/// `Level2File`), while the decoder reports the VCP cut angle as
-/// `fixed_angle_deg` (design note 5.2), which the products use as the tilt
-/// elevation: each sweep's fixed angle is set to its first ray's elevation.
+/// `Sweep::fixed_angle_deg` is the VCP cut angle (Message 5, design note
+/// 5.2), which the products use as the tilt elevation; the goldens take the
+/// same angle from MetPy's `vcp_info`. The cuts of a split cut and the SAILS /
+/// MRLE repeats of one angle therefore have equal tilt elevations.
 pub fn level2(path: &Path) -> Volume {
     level2_with_time(path).0
 }
@@ -44,13 +44,22 @@ pub fn level2_with_time(path: &Path) -> (Volume, DateTime<Utc>) {
         .metadata
         .volume_header_time
         .unwrap_or_else(|| panic!("{}: no volume header time", path.display()));
-    let mut volume = decoded.volume;
+    (decoded.volume, time)
+}
+
+/// A real volume with each sweep's fixed angle replaced by its first ray's
+/// elevation: the tilt elevations of the legacy model, which took a Level II
+/// cut's elevation from its first radial while the antenna was still
+/// settling (KDVN 2020-08-10: 0.27 to 0.70 deg on 0.48 deg cuts). The
+/// perturbed column geometry is a real-data edge case for the tracker's merge
+/// path.
+pub fn with_first_ray_elevations(mut volume: Volume) -> Volume {
     for sweep in &mut volume.sweeps {
         if let Some(elevation) = sweep.rays.elevation_deg.first() {
             sweep.fixed_angle_deg = *elevation;
         }
     }
-    (volume, time)
+    volume
 }
 
 /// Decode one real DORADE sweep file (bytes of an archive member).

@@ -2,16 +2,32 @@ KTLX20240315_000217_V06  pixel checksum 0x818e0eff4fb8569e  deterministic across
 KILX20260418_013553_V06  pixel checksum 0xd5080047ae5dfeb5  deterministic across iterations: yes
 KTLX20130520_201643_V06.gz  pixel checksum 0x1df2b8849f9a2796  deterministic across iterations: yes
 
+# Import values, with the import's sweep selection (`--sweeps R,V`). They must
+# stay equal as well: they compare the decode and render pipeline alone.
+#
+#   recast-radar-bench KTLX20240315_000217_V06 --iters 1 --sweeps 4,9      0xc04a5e2dfecc4c1f
+#   recast-radar-bench KILX20260418_013553_V06 --iters 1 --sweeps 0,1      0xd5080047ae5dfeb5
+#   recast-radar-bench KTLX20130520_201643_V06.gz --iters 1 --sweeps 1,1   0x19e3735f42cdca4b
+#
 # History
 #
-# Re-recorded at the FM301 shim removal (stream F, F.3 last step). The two
-# KTLX values changed because the bench picks its sweeps by
-# Sweep::fixed_angle_deg, which the native Level II decoder fills with the
-# VCP cut angle (design note docs/design/fm301-model.md section 5.2), not
-# the first radial's elevation: KTLX 2024 now renders sweeps 0 (DBZH) and 1
-# (VRADH) instead of 4 and 9, KTLX 2013 sweep 0 instead of 1. The pixel
-# pipeline is unchanged: selecting the sweeps by the first ray's elevation on
-# the same build reproduces the previous values exactly
-# (0xc04a5e2dfecc4c1f, 0xd5080047ae5dfeb5, 0x19e3735f42cdca4b, recorded at
-# the import, 2417e32). KILX is unaffected because its lowest sweeps were
-# already 0 and 1.
+# 2417e32 (import): 0xc04a5e2dfecc4c1f, 0xd5080047ae5dfeb5, 0x19e3735f42cdca4b.
+#
+# b811f2d (FM301, stream F; pending user sign-off): the two KTLX values
+# changed because the bench picks its sweeps by Sweep::fixed_angle_deg, the
+# smallest angle first and then the smallest index. The native Level II
+# decoder fills that with the VCP cut angle (Message 5), as xradar and Py-ART
+# report it (design note docs/design/fm301-model.md section 5.2). The legacy
+# model used the cut's first radial elevation, which the antenna reports
+# while it is still settling onto the cut. The import build shows this:
+#   KTLX 2024: reflectivity sweep 4 at 0.41 deg, velocity sweep 9 at 0.48 deg
+#   KILX 2026: reflectivity sweep 0 at 0.15 deg, velocity sweep 1 at 0.53 deg
+#   KTLX 2013: reflectivity sweep 1 at 0.53 deg, velocity sweep 1 at 0.53 deg
+# Those sweeps, and sweeps 0 and 1 of each file, all have the VCP angle
+# 0.4834 deg; their first radials read 0.15 to 0.60 deg (MetPy 1.7.1). The
+# new selection takes the first sweep at the lowest VCP angle: reflectivity
+# from sweep 0 and velocity from sweep 1 in all three files. For KTLX 2013 that is the
+# long-range surveillance cut instead of the Doppler cut. The render
+# pipeline is unchanged: with the import's selection (the `--sweeps` lines
+# above), this build prints the import values exactly. KILX is unaffected,
+# because its selection was already 0 and 1.

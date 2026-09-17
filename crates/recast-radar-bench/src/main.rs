@@ -16,19 +16,21 @@ use std::time::Instant;
 
 mod dealias_eval;
 
-use recast_radar_core::{FieldName, Quantity, Volume};
+use recast_radar_core::{FieldName, Quantity, Sweep, Volume};
 use recast_radar_render::{
     ColorTableSet, ViewportFieldCache, ViewportRasterOptions, color_family_for_name,
     viewport_rgba_buffer_len,
 };
 
-const USAGE: &str = "usage: recast-radar-bench <path-to-level2-file> [--iters N] [--json]
+const USAGE: &str =
+    "usage: recast-radar-bench <path-to-level2-file> [--iters N] [--json] [--sweeps R,V]
 
 Decode the volume and raster its lowest reflectivity + velocity sweeps at
 three viewport shapes, once as warmup and then N timed iterations
-(default 10). --json emits one machine-readable summary line instead of
-the human table. Exits nonzero if the rendered pixels are not identical
-across iterations.";
+(default 10). --sweeps R,V renders sweep index R for reflectivity and V for
+velocity instead of the lowest ones. --json emits one machine-readable
+summary line instead of the human table. Exits nonzero if the rendered
+pixels are not identical across iterations.";
 
 const DEFAULT_ITERS: usize = 10;
 
@@ -71,6 +73,10 @@ struct BenchArgs {
     file: PathBuf,
     iters: usize,
     json: bool,
+    /// Explicit (reflectivity, velocity) sweep indices instead of the
+    /// lowest sweeps: reproduces a selection made by another build, so the
+    /// pixel checksum compares the render pipeline alone.
+    sweeps: Option<(usize, usize)>,
 }
 
 /// Parse CLI arguments (program name already stripped).
@@ -78,6 +84,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut file = None;
     let mut iters = DEFAULT_ITERS;
     let mut json = false;
+    let mut sweeps = None;
     let mut index = 0;
     while index < args.len() {
         let arg = args[index].as_str();
@@ -94,6 +101,16 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             _ if arg.starts_with("--iters=") => {
                 iters = parse_iters(&arg["--iters=".len()..])?;
             }
+            "--sweeps" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| "--sweeps requires a value".to_owned())?;
+                sweeps = Some(parse_sweeps(value)?);
+            }
+            _ if arg.starts_with("--sweeps=") => {
+                sweeps = Some(parse_sweeps(&arg["--sweeps=".len()..])?);
+            }
             _ if arg.starts_with('-') && arg.len() > 1 => {
                 return Err(format!("unknown option {arg}"));
             }
@@ -107,7 +124,25 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         index += 1;
     }
     let file = file.ok_or_else(|| "missing <path-to-level2-file> argument".to_owned())?;
-    Ok(Command::Run(BenchArgs { file, iters, json }))
+    Ok(Command::Run(BenchArgs {
+        file,
+        iters,
+        json,
+        sweeps,
+    }))
+}
+
+/// `R,V`: the reflectivity and velocity sweep indices.
+fn parse_sweeps(value: &str) -> Result<(usize, usize), String> {
+    value
+        .split_once(',')
+        .and_then(|(reflectivity, velocity)| {
+            Some((
+                reflectivity.trim().parse().ok()?,
+                velocity.trim().parse().ok()?,
+            ))
+        })
+        .ok_or_else(|| format!("--sweeps expects two sweep indices R,V, got {value:?}"))
 }
 
 fn parse_iters(value: &str) -> Result<usize, String> {
@@ -184,7 +219,7 @@ fn run_bench(args: &BenchArgs) -> Result<BenchReport, String> {
 
     // Warmup iteration: untimed; its pixel checksum is the reference the
     // timed iterations are compared against.
-    let warmup = run_iteration(&raw, &color_tables, &mut buffers)?;
+    let warmup = run_iteration(&raw, args.sweeps, &color_tables, &mut buffers)?;
 
     let mut stages = vec![
         StageSeries::new("decode", "decode", args.iters),
@@ -194,7 +229,7 @@ fn run_bench(args: &BenchArgs) -> Result<BenchReport, String> {
     let mut totals_ms = Vec::with_capacity(args.iters);
     let mut deterministic = true;
     for _ in 0..args.iters {
-        let sample = run_iteration(&raw, &color_tables, &mut buffers)?;
+        let sample = run_iteration(&raw, args.sweeps, &color_tables, &mut buffers)?;
         deterministic &= sample.checksum == warmup.checksum;
         stages[0].samples_ms.push(sample.decode_ms);
         stages[1].samples_ms.push(sample.reflectivity_ms);
@@ -221,6 +256,7 @@ fn run_bench(args: &BenchArgs) -> Result<BenchReport, String> {
 
 fn run_iteration(
     raw: &[u8],
+    sweeps: Option<(usize, usize)>,
     color_tables: &ColorTableSet,
     buffers: &mut [Vec<u8>],
 ) -> Result<IterationSample, String> {
@@ -229,16 +265,20 @@ fn run_iteration(
     // provider downloads); a Level-II buffer falls through to
     // read_volume_from_bytes, the same entry the archive path uses.
     // No site hint is needed: Archive II embeds the ICAO in the header.
-    // Until the router returns the FM301 model, the stage also includes the
-    // shim conversion, which moves the decoded buffers and copies nothing.
     let volume =
         recast_radar_io::read_supported_volume_bytes(raw).map_err(|err| err.to_string())?;
     let decode_ms = elapsed_ms(started);
 
-    let (reflectivity_sweep, reflectivity) = lowest_sweep_with(&volume, Quantity::Reflectivity)
-        .ok_or_else(|| "volume has no reflectivity sweep to benchmark".to_owned())?;
-    let (velocity_sweep, velocity) = lowest_sweep_with(&volume, Quantity::RadialVelocity)
-        .ok_or_else(|| "volume has no velocity sweep to benchmark".to_owned())?;
+    let (reflectivity_sweep, reflectivity) = match sweeps {
+        Some((index, _)) => sweep_field(&volume, index, Quantity::Reflectivity)?,
+        None => lowest_sweep_with(&volume, Quantity::Reflectivity)
+            .ok_or_else(|| "volume has no reflectivity sweep to benchmark".to_owned())?,
+    };
+    let (velocity_sweep, velocity) = match sweeps {
+        Some((_, index)) => sweep_field(&volume, index, Quantity::RadialVelocity)?,
+        None => lowest_sweep_with(&volume, Quantity::RadialVelocity)
+            .ok_or_else(|| "volume has no velocity sweep to benchmark".to_owned())?,
+    };
 
     let started = Instant::now();
     render_field_viewports(
@@ -286,19 +326,45 @@ fn run_iteration(
     })
 }
 
-/// Lowest-elevation sweep carrying rows of a `quantity` field, and that
-/// field's name — same semantics as the app's lowest-displayable-sweep
-/// selection (min by fixed angle, then sweep index).
+/// The `quantity` field of `sweep`, when it carries rows.
+fn displayable_field(sweep: &Sweep, quantity: Quantity) -> Option<&FieldName> {
+    sweep
+        .find(quantity)
+        .filter(|field| field.nrays as usize > field.absent_rows.len())
+        .map(|field| &field.name)
+}
+
+/// Sweep `index` and the name of its `quantity` field (`--sweeps`).
+fn sweep_field(
+    volume: &Volume,
+    index: usize,
+    quantity: Quantity,
+) -> Result<(usize, FieldName), String> {
+    let sweep = volume.sweeps.get(index).ok_or_else(|| {
+        format!(
+            "--sweeps: sweep {index} does not exist ({} sweeps)",
+            volume.sweeps.len()
+        )
+    })?;
+    displayable_field(sweep, quantity)
+        .map(|name| (index, name.clone()))
+        .ok_or_else(|| format!("--sweeps: sweep {index} has no {quantity:?} rows"))
+}
+
+/// Lowest sweep carrying rows of a `quantity` field, and that field's name:
+/// min by `Sweep::fixed_angle_deg`, then sweep index. The Level II fixed
+/// angle is the VCP cut angle (design note `docs/design/fm301-model.md`
+/// 5.2), so the cuts of a split cut and the SAILS / MRLE repeats of one
+/// angle tie, and the first of them in acquisition order wins. The legacy
+/// model used a Level II cut's first radial elevation here, which the
+/// BowEcho app still does (`docs/baselines/import-checksums.txt`).
 fn lowest_sweep_with(volume: &Volume, quantity: Quantity) -> Option<(usize, FieldName)> {
     volume
         .sweeps
         .iter()
         .enumerate()
         .filter_map(|(index, sweep)| {
-            sweep
-                .find(quantity)
-                .filter(|field| field.nrays as usize > field.absent_rows.len())
-                .map(|field| (index, sweep.fixed_angle_deg, &field.name))
+            displayable_field(sweep, quantity).map(|name| (index, sweep.fixed_angle_deg, name))
         })
         .min_by(
             |(left_index, left_angle, _), (right_index, right_angle, _)| {
@@ -586,6 +652,7 @@ mod tests {
                 file: PathBuf::from("KTLX20130520_201643_V06"),
                 iters: DEFAULT_ITERS,
                 json: false,
+                sweeps: None,
             })
         );
     }
@@ -599,6 +666,7 @@ mod tests {
                 file: PathBuf::from("vol.V06"),
                 iters: 3,
                 json: true,
+                sweeps: None,
             })
         );
     }
@@ -612,8 +680,32 @@ mod tests {
                 file: PathBuf::from("vol.V06"),
                 iters: 7,
                 json: false,
+                sweeps: None,
             })
         );
+    }
+
+    #[test]
+    fn parse_args_sweeps() {
+        let expected = Command::Run(BenchArgs {
+            file: PathBuf::from("vol.V06"),
+            iters: 1,
+            json: false,
+            sweeps: Some((4, 9)),
+        });
+        for form in [
+            &["vol.V06", "--iters", "1", "--sweeps", "4,9"][..],
+            &["--sweeps=4, 9", "vol.V06", "--iters=1"][..],
+        ] {
+            assert_eq!(parse_args(&args(form)).expect("parse"), expected);
+        }
+        for bad in ["4", "4,", ",9", "a,b", "4,9,1", "-1,2"] {
+            assert!(
+                parse_args(&args(&["vol.V06", "--sweeps", bad])).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(parse_args(&args(&["vol.V06", "--sweeps"])).is_err());
     }
 
     #[test]
@@ -730,6 +822,7 @@ mod tests {
             file: PathBuf::from(file),
             iters: 1,
             json: false,
+            sweeps: None,
         })
         .expect("bench run");
         assert!(report.deterministic, "warmup vs timed checksum mismatch");

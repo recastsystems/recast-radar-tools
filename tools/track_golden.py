@@ -14,8 +14,9 @@ Every input value comes from a reader that is independent of recast-radar-tools:
 
 - NEXRAD Level II: Py-ART 2.2.5 ``pyart.io.read_nexrad_archive`` (fields, azimuths, ranges,
   ``pyart.retrieve.composite_reflectivity``, ``pyart.correct.dealias_region_based``) and
-  MetPy 1.7.1 ``metpy.io.Level2File`` (per-sweep moment lists and ray elevations, volume
-  times).
+  MetPy 1.7.1 ``metpy.io.Level2File`` (per-sweep moment lists, Message 5 fixed angles and
+  ray elevations, volume times). A sweep's tilt elevation is its fixed angle, the Message 5
+  cut angle the Rust reader reports.
 - NEXRAD Level III Storm Tracking Information (product 58): MetPy ``metpy.io.Level3File``
   (storm-id symbology packets and the tabular STORM ID / FCST MVT / DBZM HGT pages).
 - DORADE: the block walker below (VOLD/SSWB/RADD/PARM/CELV/CSFD/CFAC/SWIB/RYIB/RDAT),
@@ -273,8 +274,23 @@ def metpy_file(entry_id):
     return Level2File(io.BytesIO(raw))
 
 
+def reader_fixed_angle(f, first):
+    """The Rust Level II reader's fixed angle for a sweep whose first radial header is `first`:
+    the Message 5 (MetPy ``vcp_info``) cut angle of the radial's elevation number, as xradar
+    and Py-ART report it, with angles above 90 degrees made negative; the first radial's
+    elevation when the file has no usable VCP message. The products use it as the tilt
+    elevation (design note docs/design/fm301-model.md 5.2)."""
+    vcp = getattr(f, "vcp_info", None)
+    number = int(first.el_num)
+    if vcp is not None and 1 <= number <= len(vcp.els):
+        angle = F32(vcp.els[number - 1].el_angle)
+        return F32(angle - F32(360.0)) if angle > 90.0 else angle
+    return F32(first.el_angle)
+
+
 def metpy_sweep_summary(entry_id):
-    """Per sweep: first-ray elevation and the moment names its rays carry."""
+    """Per sweep: the reader's fixed angle, the first ray's elevation and the moment names its
+    rays carry."""
     f = metpy_file(entry_id)
     sweeps = []
     for rays in f.sweeps:
@@ -287,18 +303,19 @@ def metpy_sweep_summary(entry_id):
             for name in names:
                 if name not in moments:
                     moments.append(name)
-        sweeps.append({"first_ray_elevation_deg": jf(F32(rays[0][0].el_angle)),
+        sweeps.append({"fixed_angle_deg": jf(reader_fixed_angle(f, rays[0][0])),
+                       "first_ray_elevation_deg": jf(F32(rays[0][0].el_angle)),
                        "rays": len(rays), "moments": moments})
     return f, sweeps
 
 
 def expected_base_tilt(sweeps, moment):
-    """Index of the lowest sweep (first-ray elevation, first on ties) carrying `moment`."""
+    """Index of the lowest sweep (fixed angle, first on ties) carrying `moment`."""
     best = None
     for index, sweep in enumerate(sweeps):
         if moment not in sweep["moments"]:
             continue
-        if best is None or sweep["first_ray_elevation_deg"] < sweeps[best]["first_ray_elevation_deg"]:
+        if best is None or sweep["fixed_angle_deg"] < sweeps[best]["fixed_angle_deg"]:
             best = index
     return best
 
@@ -835,7 +852,9 @@ def section_tracks():
 
     def sweep_fields(s):
         """Azimuth-sorted velocity, reflectivity, centred azimuthal shear (1e-3 s^-1,
-        cyclonic positive, both neighbours valid, rows wrap) and ENU of one sweep."""
+        cyclonic positive, both neighbours valid, rows wrap), ENU and tilt elevation of one
+        sweep. The tilt elevation is the sweep's fixed angle (Py-ART's, the Message 5 cut
+        angle), which is what the Rust reader reports and the products use."""
         sl = radar.get_slice(s)
         az = np.asarray(radar.azimuth["data"][sl], dtype=np.float64)
         order = np.argsort(az)
@@ -849,7 +868,7 @@ def section_tracks():
         shear[~(np.isfinite(up) & np.isfinite(down))] = np.nan
         east, north = polar_enu(az, rng)
         return {"az": az, "v": vs, "z": zs, "up": up, "down": down, "shear": shear,
-                "east": east, "north": north, "el": float(np.mean(radar.elevation["data"][sl]))}
+                "east": east, "north": north, "el": sweep_el[s]}
 
     # The low-level composite draws on the lowest velocity sweeps at or below 2 deg
     # (at most three: 0.5, 0.9 and 1.3 deg here).
@@ -923,7 +942,7 @@ def section_tracks():
     az_d = np.asarray(radar.azimuth["data"][sd], dtype=np.float64)
     rho_d = np.ma.filled(rho[sd].astype(np.float64), np.nan)
     ref_d = np.ma.filled(ref[sd].astype(np.float64), np.nan)
-    el_d = float(np.mean(radar.elevation["data"][sd]))
+    el_d = sweep_el[dualpol]
     east_d, north_d = polar_enu(az_d, rng)
     within = np.hypot(east_d - peak_e, north_d - peak_n) <= 5.0
     within &= (r_km[None, :] >= 5.0)

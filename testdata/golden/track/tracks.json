@@ -2,11 +2,11 @@
  "moore": {
   "entry": "l2-ktlx-20130520-201643",
   "doppler_sweep": 1,
-  "doppler_elevation_deg": 0.519,
+  "doppler_elevation_deg": 0.483,
   "low_level_sweeps": [1,3,5],
-  "low_level_elevations_deg": [0.519,0.916,1.353],
+  "low_level_elevations_deg": [0.483,0.879,1.318],
   "dualpol_sweep": 0,
-  "dualpol_elevation_deg": 0.512,
+  "dualpol_elevation_deg": 0.483,
   "nyquist_mps": 26.12,
   "circulation": {
    "east_km": -22.59,
@@ -18,7 +18,7 @@
    "dealiased_down_mps": -58.74
   },
   "low_level_top_m": 2000.0,
-  "beam_top_range_km": 122.75,
+  "beam_top_range_km": 126.0,
   "beyond_bound": {
    "east_km": 90.98,
    "north_km": 124.1,

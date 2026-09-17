@@ -21,22 +21,15 @@ pub fn golden(relative: &str) -> Value {
     serde_json::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-/// Decode a real Level II file with the NEXRAD reader.
+/// Decode a real Level II file with the NEXRAD reader, unmodified.
 ///
-/// The goldens take a tilt's elevation from its first radial (MetPy
-/// `Level2File`), while the decoder reports the VCP cut angle as
-/// `fixed_angle_deg` (design note 5.2) and the column products use it: each
-/// sweep's fixed angle is set to its first ray's elevation so products and
-/// references use the same tilt elevations.
+/// `Sweep::fixed_angle_deg` is the VCP cut angle (Message 5, design note
+/// 5.2), which the products use as the tilt elevation; the goldens take the
+/// same angle from MetPy's `vcp_info`. The cuts of a split cut and the SAILS /
+/// MRLE repeats of one angle therefore have equal tilt elevations.
 pub fn level2(path: &Path) -> Volume {
-    let mut volume = recast_radar_io_nexrad::read_volume_from_path(path)
-        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-    for sweep in &mut volume.sweeps {
-        if let Some(elevation) = sweep.rays.elevation_deg.first() {
-            sweep.fixed_angle_deg = *elevation;
-        }
-    }
-    volume
+    recast_radar_io_nexrad::read_volume_from_path(path)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
 /// Decode a real DORADE sweep file.

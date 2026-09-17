@@ -151,9 +151,9 @@ fn cartesian_frame_paints_couplet_location() {
     );
 }
 
-/// The 0.5 deg beam leaves the 0-2 km layer near 123 km (4/3-Earth): a 69 dBZ
-/// storm at 154 km stays empty while a 56 dBZ echo at 110 km accumulates, and
-/// no cell beyond the bound is ever finite.
+/// The 0.48 deg beam (the VCP cut angle) leaves the 0-2 km layer near 126 km
+/// (4/3-Earth): a 69 dBZ storm at 154 km stays empty while a 56 dBZ echo at
+/// 110 km accumulates, and no cell beyond the bound is ever finite.
 #[test]
 fn height_cap_bounds_range_coverage() {
     let golden = golden("tracks.json");
@@ -164,7 +164,7 @@ fn height_cap_bounds_range_coverage() {
     let frame = low_level_azshear_cartesian(&volume, &spec);
 
     let bound_km = as_f64(&expected["beam_top_range_km"]);
-    assert!((bound_km - 123.0).abs() < 3.0, "golden bound {bound_km}");
+    assert!((bound_km - 126.0).abs() < 3.0, "golden bound {bound_km}");
     let beyond = &expected["beyond_bound"];
     assert!(as_f64(&beyond["dbz"]) >= 40.0 && as_f64(&beyond["range_km"]) > bound_km + 10.0);
     assert!(
