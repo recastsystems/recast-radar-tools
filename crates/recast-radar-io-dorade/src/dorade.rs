@@ -67,8 +67,9 @@ use std::path::Path;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
 use recast_radar_core::model::{
-    Field, FieldData, FieldName, FloatCoding, FollowMode, GateMapping, IntCoding, LinearTransform,
-    RangeCoord, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
+    AttrValue, Field, FieldData, FieldName, FloatCoding, FollowMode, GateMapping, IntCoding,
+    LinearTransform, Monitoring, RadarCalibration, RangeCoord, Scalar, SourceFormat, Sweep,
+    SweepMode, Volume, floor_to_second,
 };
 
 use crate::{DoradeError, Result};
@@ -298,9 +299,10 @@ impl DoradeVolumeBuilder {
     }
 }
 
-/// Bytes a ray occupies in the model (three coordinates plus a Nyquist and
-/// a PRT value).
-const RAY_BYTES: usize = 3 * size_of::<f64>() + 2 * size_of::<f32>();
+/// Bytes a ray occupies in the model: three coordinates plus up to seven
+/// 4-byte ray variables (Nyquist velocity, PRT, unambiguous range, pulse
+/// width, sample count, calibration index, transmit power).
+const RAY_BYTES: usize = 3 * size_of::<f64>() + 7 * size_of::<f32>();
 
 /// Allocated bytes of every field's value buffer in a volume.
 fn volume_field_capacity_bytes(volume: &Volume) -> usize {
@@ -347,6 +349,14 @@ fn detect_endian(bytes: &[u8]) -> Result<Endian> {
 /// One PARM descriptor plus the field it feeds.
 struct ParamState {
     name: String,
+    /// PARM `param_description` and `param_units`, verbatim (empty when
+    /// blank); the field's `long_name` and `units`.
+    description: String,
+    units: String,
+    /// PARM `pulse_width` (m), `num_samples` and `recvr_bandwidth` (MHz).
+    pulse_width_m: i16,
+    num_samples: i16,
+    bandwidth_mhz: f32,
     scale: f32,
     bias: f32,
     bad_data: i32,
@@ -389,6 +399,31 @@ impl ParamRow {
     }
 }
 
+/// RADD radar constants (DORADE 1995 layout), `None` where the file writes
+/// a missing value.
+#[derive(Clone, Copy, Debug, Default)]
+struct RaddConstants {
+    /// `radar_const` (dB).
+    radar_constant_db: Option<f32>,
+    /// `peak_power` (kW).
+    peak_power_kw: Option<f32>,
+    /// `noise_power` (dBm).
+    noise_power_dbm: Option<f32>,
+    /// `receiver_gain` (dB).
+    receiver_gain_db: Option<f32>,
+    /// `antenna_gain` (dB).
+    antenna_gain_db: Option<f32>,
+    /// `system_gain` (dB).
+    system_gain_db: Option<f32>,
+    /// `horz_beam_width` and `vert_beam_width` (deg).
+    beam_width_h_deg: Option<f32>,
+    beam_width_v_deg: Option<f32>,
+    /// `req_rotat_vel` (deg/s).
+    rotation_deg_per_s: Option<f32>,
+    /// `eff_unamb_range` (km).
+    unambiguous_range_km: Option<f32>,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Cfac {
     azimuth_deg: f32,
@@ -406,6 +441,9 @@ struct PendingRay {
     /// RYIB `ray_status`: 0 = normal, 1 = in transition, 2 = bad.
     status: i32,
     time: Option<DateTime<Utc>>,
+    /// RYIB `peak_power` (kW), `None` where the file writes a missing value
+    /// (-999 in DOW6 files).
+    peak_power_kw: Option<f32>,
 }
 
 struct SweepParse {
@@ -419,6 +457,9 @@ struct SweepParse {
     radd_longitude_deg: f32,
     radd_latitude_deg: f32,
     radd_altitude_km: f32,
+    radd: RaddConstants,
+    /// VOLD `proj_name`, `flight_num` and `gen_facility`, verbatim.
+    vold_text: Vec<(&'static str, String)>,
     eff_unamb_vel_mps: Option<f32>,
     frequency_ghz: Option<f32>,
     prt1_ms: Option<f32>,
@@ -453,6 +494,8 @@ impl SweepParse {
             radd_longitude_deg: f32::NAN,
             radd_latitude_deg: f32::NAN,
             radd_altitude_km: f32::NAN,
+            radd: RaddConstants::default(),
+            vold_text: Vec::new(),
             eff_unamb_vel_mps: None,
             frequency_ghz: None,
             prt1_ms: None,
@@ -551,6 +594,18 @@ impl SweepParse {
         let hour = self.endian.i16(block, 42);
         let minute = self.endian.i16(block, 44);
         let second = self.endian.i16(block, 46);
+        // proj_name[20] at 16; flight_num[8] at 48 and gen_facility[8] at 56
+        // follow the date when the block is long enough.
+        self.vold_text = [
+            ("proj_name", 16..36),
+            ("flight_num", 48..56),
+            ("gen_facility", 56..64),
+        ]
+        .into_iter()
+        .filter(|(_, bytes)| bytes.end <= block.len())
+        .map(|(name, bytes)| (name, text(&block[bytes])))
+        .filter(|(_, value)| !value.is_empty())
+        .collect();
         if let Some(date) = NaiveDate::from_ymd_opt(year, month.max(0) as u32, day.max(0) as u32) {
             self.vold_date = Some(date);
             if self.start_time.is_none() {
@@ -571,6 +626,19 @@ impl SweepParse {
         // extended version with identical leading offsets.
         require(block, 144, offset, "RADD")?;
         self.instrument = text(&block[8..16]);
+        let value = |offset| valid_dorade_f32(self.endian.f32(block, offset));
+        self.radd = RaddConstants {
+            radar_constant_db: value(16),
+            peak_power_kw: value(20).filter(|power| *power > 0.0),
+            noise_power_dbm: value(24),
+            receiver_gain_db: value(28),
+            antenna_gain_db: value(32),
+            system_gain_db: value(36),
+            beam_width_h_deg: value(40).filter(|width| *width > 0.0),
+            beam_width_v_deg: value(44).filter(|width| *width > 0.0),
+            rotation_deg_per_s: value(52),
+            unambiguous_range_km: value(96).filter(|range| *range > 0.0),
+        };
         self.scan_mode = self.endian.i16(block, 50);
         self.compression = self.endian.i16(block, 68);
         self.radd_longitude_deg = self.endian.f32(block, 80);
@@ -605,6 +673,11 @@ impl SweepParse {
     fn parse_parm(&mut self, block: &[u8], offset: usize) -> Result<()> {
         require(block, 104, offset, "PARM")?;
         let name = text(&block[8..16]);
+        let description = text(&block[16..56]);
+        let units = text(&block[56..64]);
+        let bandwidth_mhz = self.endian.f32(block, 68);
+        let pulse_width_m = self.endian.i16(block, 72);
+        let num_samples = self.endian.i16(block, 76);
         let binary_format = self.endian.i16(block, 78);
         let scale = self.endian.f32(block, 92);
         let bias = self.endian.f32(block, 96);
@@ -623,6 +696,11 @@ impl SweepParse {
         };
         self.params.push(ParamState {
             name,
+            description,
+            units,
+            pulse_width_m,
+            num_samples,
+            bandwidth_mhz,
             scale: if scale.abs() > 1.0e-6 { scale } else { 1.0 },
             bias,
             bad_data,
@@ -716,6 +794,8 @@ impl SweepParse {
             elevation_deg: self.endian.f32(block, 28) + self.cfac.elevation_deg,
             status: self.endian.i32(block, 40),
             time,
+            peak_power_kw: Some(self.endian.f32(block, 32))
+                .filter(|power| power.is_finite() && *power > 0.0),
         })
     }
 
@@ -1005,6 +1085,7 @@ impl SweepParse {
                 .filter(|frequency| frequency.is_finite() && *frequency > 0.0)
                 .map(|frequency| vec![f64::from(frequency) * 1e9])
                 .unwrap_or_default();
+            self.describe_volume(volume);
         } else if volume.attrs.instrument_name != self.instrument {
             return Err(invalid(
                 0,
@@ -1082,6 +1163,10 @@ impl SweepParse {
 
         sweep.reserve_rays(nrays);
         let rays = std::mem::take(&mut self.rays);
+        let transmit_power_dbm: Vec<f32> = rays
+            .iter()
+            .map(|(ray, _)| ray.peak_power_kw.map_or(f32::NAN, kw_to_dbm))
+            .collect();
         for (ray, rows) in rays {
             let time_s = ray.time.map_or(f64::NAN, |time| {
                 (time - reference).num_milliseconds() as f64 / 1000.0
@@ -1110,6 +1195,29 @@ impl SweepParse {
         if let Some(prt_s) = prt_s {
             sweep.ray_vars.prt_s = Some(vec![prt_s; nrays]);
         }
+        if let Some(range_km) = self.radd.unambiguous_range_km {
+            sweep.ray_vars.unambiguous_range_m = Some(vec![range_km * 1000.0; nrays]);
+        }
+        if let Some(pulse_width_s) = self.common_pulse_width_s() {
+            sweep.ray_vars.pulse_width_s = Some(vec![pulse_width_s; nrays]);
+        }
+        if let Some(samples) = self
+            .common_param(|param| param.num_samples)
+            .filter(|n| *n > 0)
+        {
+            sweep.ray_vars.n_samples = Some(vec![i32::from(samples); nrays]);
+        }
+        sweep.target_scan_rate_deg_per_s = self.radd.rotation_deg_per_s;
+        if transmit_power_dbm.iter().any(|power| power.is_finite()) {
+            sweep.monitoring = Some(Box::new(Monitoring {
+                radar_measured_transmit_power_h_dbm: Some(transmit_power_dbm),
+                ..Monitoring::default()
+            }));
+        }
+        if let Some(calibration) = self.calibration() {
+            let index = calibration_index(&mut volume.radar_calibration, calibration);
+            sweep.ray_vars.calib_index = Some(vec![index; nrays]);
+        }
         for param in &mut self.params {
             if let Some(field) = param.field.take()
                 && field.nrays > 0
@@ -1127,6 +1235,106 @@ impl SweepParse {
         builder.sweep_starts.push(sweep_start);
         Ok(())
     }
+}
+
+impl SweepParse {
+    /// Volume-level descriptors from the first sweepfile: RADD beam widths
+    /// and antenna gain and the PARM receiver bandwidth
+    /// (`radar_parameters`), and the VOLD text fields (global attributes,
+    /// verbatim).
+    fn describe_volume(&self, volume: &mut Volume) {
+        let radd = &self.radd;
+        let parameters = &mut volume.radar_parameters;
+        parameters.beam_width_h_deg = radd.beam_width_h_deg;
+        parameters.beam_width_v_deg = radd.beam_width_v_deg;
+        // One antenna for both polarizations.
+        parameters.antenna_gain_h_db = radd.antenna_gain_db;
+        parameters.antenna_gain_v_db = radd.antenna_gain_db;
+        parameters.receiver_bandwidth_hz = self
+            .common_param(|param| param.bandwidth_mhz.to_bits())
+            .map(f32::from_bits)
+            .and_then(valid_dorade_f32)
+            .filter(|bandwidth| *bandwidth > 0.0)
+            .map(|bandwidth| bandwidth * 1e6);
+        for (name, value) in &self.vold_text {
+            volume
+                .attrs
+                .other
+                .push((Box::from(*name), AttrValue::Text(value.as_str().into())));
+        }
+    }
+
+    /// This sweepfile's RADD calibration constants as a `radar_calibration`
+    /// entry (without an index), with the PARM pulse width they apply to;
+    /// `None` when the file records none.
+    fn calibration(&self) -> Option<RadarCalibration> {
+        let radd = &self.radd;
+        let calibration = RadarCalibration {
+            radar_constant_h: radd.radar_constant_db,
+            xmit_power_h_dbm: radd.peak_power_kw.map(kw_to_dbm),
+            noise_hc_dbm: radd.noise_power_dbm,
+            receiver_gain_hc_db: radd.receiver_gain_db,
+            antenna_gain_h_db: radd.antenna_gain_db,
+            antenna_gain_v_db: radd.antenna_gain_db,
+            extra: radd
+                .system_gain_db
+                .map(|gain| {
+                    (
+                        Box::from("system_gain"),
+                        AttrValue::Scalar(Scalar::F32(gain)),
+                    )
+                })
+                .into_iter()
+                .collect(),
+            ..RadarCalibration::default()
+        };
+        (calibration != RadarCalibration::default()).then(|| RadarCalibration {
+            pulse_width_s: self.common_pulse_width_s(),
+            ..calibration
+        })
+    }
+
+    /// `value` of every PARM when they all agree.
+    fn common_param<T: PartialEq + Copy>(&self, value: impl Fn(&ParamState) -> T) -> Option<T> {
+        let first = value(self.params.first()?);
+        self.params
+            .iter()
+            .all(|param| value(param) == first)
+            .then_some(first)
+    }
+
+    /// The PARM pulse width (m) of every field, as a duration (two-way).
+    fn common_pulse_width_s(&self) -> Option<f32> {
+        const SPEED_OF_LIGHT_M_PER_S: f64 = 299_792_458.0;
+        self.common_param(|param| param.pulse_width_m)
+            .filter(|metres| *metres > 0)
+            .map(|metres| (2.0 * f64::from(metres) / SPEED_OF_LIGHT_M_PER_S) as f32)
+    }
+}
+
+/// Peak power in kW as dBm (1 kW is 60 dBm).
+fn kw_to_dbm(kw: f32) -> f32 {
+    10.0 * kw.log10() + 60.0
+}
+
+/// The `calib_index` of `entry` in `calibration`: an equal entry's, else a
+/// new entry's.
+fn calibration_index(calibration: &mut Vec<RadarCalibration>, entry: RadarCalibration) -> i32 {
+    let found = calibration.iter().find(|existing| {
+        RadarCalibration {
+            calib_index: None,
+            ..(*existing).clone()
+        } == entry
+    });
+    if let Some(index) = found.and_then(|existing| existing.calib_index) {
+        return index;
+    }
+    let index = i32::try_from(calibration.len()).unwrap_or(i32::MAX);
+    calibration.push(RadarCalibration {
+        calib_index: Some(index),
+        ..entry
+    });
+    index
 }
 
 /// An empty field for a PARM: `i8` / `i16` verbatim with the DORADE
@@ -1163,12 +1371,19 @@ fn new_field(param: &ParamState, ngates: u32) -> Field {
             coding: FloatCoding::default(),
         },
     };
-    Field::new(
+    let mut field = Field::new(
         FieldName::parse(&param.name),
         GateMapping::IDENTITY,
         ngates,
         data,
-    )
+    );
+    if !param.description.is_empty() {
+        field.attrs.long_name = Some(param.description.clone().into());
+    }
+    if !param.units.is_empty() {
+        field.attrs.units = Some(param.units.clone().into());
+    }
+    field
 }
 
 /// The DORADE RADD `scan_mode` code as an FM301 `sweep_mode` (design note
@@ -1765,5 +1980,250 @@ mod tests {
             unreachable!()
         };
         assert_eq!(values[0], -3030);
+    }
+
+    fn assert_near(actual: Option<f32>, expected: f64, what: &str) {
+        let actual = actual.unwrap_or_else(|| panic!("{what}: missing"));
+        assert!(
+            close(f64::from(actual), expected, 1e-3 * expected.abs().max(1.0)),
+            "{what}: {actual} != {expected}"
+        );
+    }
+
+    /// Every ray of a per-ray variable holds `expected`.
+    fn assert_constant(values: Option<&Vec<f32>>, rays: usize, expected: f64, what: &str) {
+        let values = values.unwrap_or_else(|| panic!("{what}: missing"));
+        assert_eq!(values.len(), rays, "{what}");
+        for value in values {
+            assert_near(Some(*value), expected, what);
+        }
+    }
+
+    const LIGHT_M_PER_S: f64 = 299_792_458.0;
+
+    #[test]
+    fn radd_parm_ryib_and_vold_descriptors_reach_the_model() {
+        // Golden section `dorade`, keys `<case>.radd_constants`,
+        // `<case>.params[*].{description, units, pulse_width, num_samples,
+        // recvr_bandwidth}`, `<case>.ryib_peak_power` and `<case>.vold_text`.
+        // Missing RADD values are -9999 (DOW6) or -32768 (NOXP), a missing
+        // RYIB peak power is -999 (DOW6), and a zero bandwidth is unset.
+
+        let dow6 = read_dorade_sweep_volume(&corpus(DOW6_RHI)).expect("decode");
+        let parameters = &dow6.radar_parameters;
+        assert_near(parameters.beam_width_h_deg, 1.0, "DOW6 beam width h");
+        assert_near(parameters.beam_width_v_deg, 1.0, "DOW6 beam width v");
+        assert_near(
+            parameters.antenna_gain_h_db,
+            44.299_999,
+            "DOW6 antenna gain h",
+        );
+        assert_near(
+            parameters.antenna_gain_v_db,
+            44.299_999,
+            "DOW6 antenna gain v",
+        );
+        assert_near(parameters.receiver_bandwidth_hz, 2.0e6, "DOW6 bandwidth");
+        let [calibration] = dow6.radar_calibration.as_slice() else {
+            panic!("DOW6: one calibration entry");
+        };
+        assert_eq!(calibration.calib_index, Some(0));
+        assert_near(
+            calibration.pulse_width_s,
+            2.0 * 75.0 / LIGHT_M_PER_S,
+            "DOW6 calibration pulse width",
+        );
+        assert_near(
+            calibration.radar_constant_h,
+            81.051_201,
+            "DOW6 radar constant",
+        );
+        // peak_power 19.952623 kW.
+        assert_near(
+            calibration.xmit_power_h_dbm,
+            10.0 * 19.952_623_367_309_57f64.log10() + 60.0,
+            "DOW6 transmit power",
+        );
+        assert_near(calibration.noise_hc_dbm, -55.072_601, "DOW6 noise power");
+        assert_near(
+            calibration.receiver_gain_hc_db,
+            50.651_699,
+            "DOW6 receiver gain",
+        );
+        assert_near(
+            calibration.antenna_gain_h_db,
+            44.299_999,
+            "DOW6 calibration gain",
+        );
+        assert_eq!(calibration.extra.len(), 1);
+        assert_eq!(&*calibration.extra[0].0, "system_gain");
+        let AttrValue::Scalar(Scalar::F32(system_gain)) = calibration.extra[0].1 else {
+            panic!("system gain is float32");
+        };
+        assert_near(Some(system_gain), 42.299_999, "DOW6 system gain");
+        assert!(dow6.attrs.other.is_empty(), "DOW6 VOLD text is blank");
+        let sweep = &dow6.sweeps[0];
+        let rays = sweep.nrays();
+        assert_constant(
+            sweep.ray_vars.unambiguous_range_m.as_ref(),
+            rays,
+            59_958.492,
+            "DOW6 unambiguous range",
+        );
+        assert_constant(
+            sweep.ray_vars.pulse_width_s.as_ref(),
+            rays,
+            2.0 * 75.0 / LIGHT_M_PER_S,
+            "DOW6 pulse width",
+        );
+        assert_eq!(sweep.ray_vars.n_samples, Some(vec![256; rays]));
+        assert_eq!(sweep.ray_vars.calib_index, Some(vec![0; rays]));
+        assert_eq!(
+            sweep.target_scan_rate_deg_per_s, None,
+            "req_rotat_vel -9999"
+        );
+        assert!(sweep.monitoring.is_none(), "RYIB peak_power -999");
+        let ncp = field(sweep, "NCP");
+        assert_eq!(ncp.attrs.long_name.as_deref(), Some("NCP"));
+        assert_eq!(ncp.attrs.units, None, "blank PARM units");
+        let snr = field(sweep, "SNRHC");
+        assert_eq!(snr.attrs.units.as_deref(), Some("dB"));
+        assert_eq!(
+            field(sweep, "VS1").attrs.long_name.as_deref(),
+            Some("VELPS")
+        );
+
+        let noxp = read_dorade_sweep_volume(&corpus(NOXP_SECTOR)).expect("decode");
+        let parameters = &noxp.radar_parameters;
+        assert_near(parameters.beam_width_h_deg, 0.879_999, "NOXP beam width h");
+        assert_near(parameters.beam_width_v_deg, 0.879_999, "NOXP beam width v");
+        assert_eq!(parameters.antenna_gain_h_db, None, "antenna_gain -32768");
+        assert_eq!(parameters.receiver_bandwidth_hz, None, "recvr_bandwidth 0");
+        let [calibration] = noxp.radar_calibration.as_slice() else {
+            panic!("NOXP: one calibration entry");
+        };
+        assert_near(
+            calibration.radar_constant_h,
+            63.709_999,
+            "NOXP radar constant",
+        );
+        assert_near(
+            calibration.xmit_power_h_dbm,
+            10.0 * 300f64.log10() + 60.0,
+            "NOXP transmit power",
+        );
+        assert_near(calibration.noise_hc_dbm, 26.0, "NOXP noise power");
+        assert_eq!(calibration.receiver_gain_hc_db, None);
+        assert!(calibration.extra.is_empty(), "system_gain -32768");
+        assert_eq!(noxp.attrs.other.len(), 1);
+        assert_eq!(&*noxp.attrs.other[0].0, "gen_facility");
+        assert_eq!(noxp.attrs.other[0].1, AttrValue::Text("NOXPRVP".into()));
+        let sweep = &noxp.sweeps[0];
+        let rays = sweep.nrays();
+        assert_constant(
+            sweep.ray_vars.unambiguous_range_m.as_ref(),
+            rays,
+            157_784.21,
+            "NOXP unambiguous range",
+        );
+        assert_constant(
+            sweep.ray_vars.pulse_width_s.as_ref(),
+            rays,
+            2.0 * 300.0 / LIGHT_M_PER_S,
+            "NOXP pulse width",
+        );
+        assert_eq!(sweep.ray_vars.n_samples, Some(vec![32; rays]));
+        assert_eq!(sweep.ray_vars.calib_index, Some(vec![0; rays]));
+        // RYIB peak_power 300 kW on every kept ray.
+        let monitoring = sweep.monitoring.as_ref().expect("RYIB peak power");
+        assert_constant(
+            monitoring.radar_measured_transmit_power_h_dbm.as_ref(),
+            rays,
+            10.0 * 300f64.log10() + 60.0,
+            "NOXP measured transmit power",
+        );
+        assert_eq!(monitoring.radar_measured_transmit_power_v_dbm, None);
+        let reflectivity = field(sweep, "DZ");
+        assert_eq!(
+            reflectivity.attrs.long_name.as_deref(),
+            Some("Reflectivity (1 byte)")
+        );
+        assert_eq!(reflectivity.attrs.units.as_deref(), Some("dBZ"));
+        // PARM units are 8 characters: KDP's "dimensionless" is cut.
+        assert_eq!(field(sweep, "KDP").attrs.units.as_deref(), Some("dimensio"));
+    }
+
+    #[test]
+    fn calibration_entries_follow_the_sweepfile_constants() {
+        // The three 2009-06-10 NOXP sweepfiles share their RADD constants
+        // (golden `noxp_0610_*.radd_constants`: radar_const 76.72, peak_power
+        // 30 kW, PARM pulse_width 150 m) and give one entry. The 2009-05-25
+        // sector sweepfile of the same radar has radar_const 63.71, 300 kW
+        // and 300 m, so a volume of both gives two entries, and each sweep's
+        // rays point at their own (the files are from different days; the
+        // builder accepts them because the instrument matches).
+        let same = read_dorade_volume_from_slices(&[
+            corpus(NOXP_0610_05),
+            corpus(NOXP_0610_10),
+            corpus(NOXP_0610_20),
+        ])
+        .expect("decode");
+        let [calibration] = same.radar_calibration.as_slice() else {
+            panic!("one entry for identical constants");
+        };
+        assert_eq!(calibration.calib_index, Some(0));
+        assert_near(calibration.radar_constant_h, 76.720_001, "radar constant");
+        assert_near(
+            calibration.xmit_power_h_dbm,
+            10.0 * 30f64.log10() + 60.0,
+            "transmit power",
+        );
+        assert_near(
+            calibration.pulse_width_s,
+            2.0 * 150.0 / LIGHT_M_PER_S,
+            "pulse width",
+        );
+        for sweep in &same.sweeps {
+            assert_eq!(sweep.ray_vars.calib_index, Some(vec![0; sweep.nrays()]));
+            let power = sweep
+                .monitoring
+                .as_ref()
+                .and_then(|m| m.radar_measured_transmit_power_h_dbm.as_ref());
+            assert_constant(power, sweep.nrays(), 10.0 * 30f64.log10() + 60.0, "power");
+        }
+
+        let mixed = read_dorade_volume_from_slices(&[
+            corpus(NOXP_0610_05),
+            corpus(NOXP_SECTOR),
+            corpus(NOXP_0610_10),
+        ])
+        .expect("decode");
+        let constants: Vec<(Option<i32>, f32)> = mixed
+            .radar_calibration
+            .iter()
+            .map(|entry| (entry.calib_index, entry.radar_constant_h.unwrap()))
+            .collect();
+        assert_eq!(constants.len(), 2, "{constants:?}");
+        assert_eq!(constants[0].0, Some(0));
+        assert_eq!(constants[1].0, Some(1));
+        assert!(close(f64::from(constants[0].1), 76.72, 1e-3));
+        assert!(close(f64::from(constants[1].1), 63.71, 1e-3));
+        let indices: Vec<i32> = mixed
+            .sweeps
+            .iter()
+            .map(|sweep| {
+                let index = sweep.ray_vars.calib_index.as_ref().expect("calib_index");
+                assert!(index.iter().all(|value| *value == index[0]));
+                index[0]
+            })
+            .collect();
+        assert_eq!(indices, [0, 1, 0]);
+        // The volume-level parameters and VOLD text come from the first file.
+        assert_near(
+            mixed.radar_parameters.beam_width_h_deg,
+            0.879_999,
+            "beam width",
+        );
+        assert_eq!(mixed.attrs.other.len(), 1);
     }
 }

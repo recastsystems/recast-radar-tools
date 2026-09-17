@@ -31,9 +31,14 @@
 //! with a key and the design-note section that decides it. The code that
 //! applies a rule records its key: an item left uncompared counts as a known
 //! difference (not as a comparison), and an item compared under a rule (a
-//! tolerance, a unit or naming convention) counts as a comparison. When every
-//! case ran, every listed difference must have been applied at least once.
-//! Everything else must match.
+//! tolerance, a unit or naming convention) counts as a comparison. Every
+//! listed difference must have been applied at least once. Everything else
+//! must match, and every item of ours must be in the golden or listed.
+//!
+//! All 11 cases must run: a case whose file is neither committed nor cached
+//! and cannot be downloaded fails the test, unless
+//! `RECAST_RADAR_TESTDATA_OFFLINE` is set (then the available cases run and
+//! the coverage check is skipped).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -148,7 +153,7 @@ const EXPECTED: &[(&str, &str)] = &[
     ),
     (
         "site-parameters",
-        "xradar 0.12 writes an empty radar_parameters group for NEXRAD; ours writes the Message 18 antenna gain and, before Build 18, beam width (section 2)",
+        "xradar 0.12 writes empty radar_parameters and radar_calibration groups for NEXRAD and ODIM, and no ODIM pulse width or calibration index; ours writes what the source records: the NEXRAD Message 18 frequency, antenna gain and (before Build 18) beam width, and ODIM `how` beam widths, antenna gains, receiver bandwidth, and per-dataset radar constants and pulse width with each ray's calibration index (sections 2, 9)",
     ),
     (
         "empty-groups",
@@ -719,12 +724,14 @@ fn compare_group_attrs(
         }
         compare_attr(report, &what, name, value, mine);
     }
-    if path == "/" {
+    // Every attribute of ours must be in the golden, except the listed FM301
+    // root attributes.
+    {
         for name in ours.attrs.keys() {
             if golden_attrs.contains_key(name) {
                 continue;
             }
-            if let Some(key) = ours_only(OURS_ONLY_ATTRS, name) {
+            if let Some(key) = ours_only(OURS_ONLY_ATTRS, name).filter(|_| path == "/") {
                 report.note(key);
             } else if ctx.zero_vcp && VCP_ROOT_ATTRS.contains(&name.as_str()) {
                 report.note("zero-vcp");
@@ -1429,8 +1436,15 @@ fn compare_xradar_view(
                 report.note("platform-track");
                 continue;
             }
-            // Site parameters xradar leaves out of its NEXRAD radar_parameters.
-            if path == "/radar_parameters" && ctx.source == SourceFormat::NexradLevel2 {
+            // Site parameters xradar leaves out for NEXRAD and ODIM.
+            let site_source = matches!(
+                ctx.source,
+                SourceFormat::NexradLevel2 | SourceFormat::OdimH5
+            );
+            let site_group = matches!(path, "/radar_parameters" | "/radar_calibration");
+            let odim_ray_constants = ctx.source == SourceFormat::OdimH5
+                && matches!(name.as_str(), "pulse_width" | "r_calib_index");
+            if (site_source && site_group) || odim_ray_constants {
                 report.note("site-parameters");
                 continue;
             }
@@ -1932,14 +1946,15 @@ fn every_golden_case_matches_xradar_and_pyart() {
     let cases = cases();
     assert!(cases.len() >= 11, "{} cases in index.json", cases.len());
     let mut failures = String::new();
-    let mut checked = 0;
+    let mut skipped = Vec::new();
     let mut used = BTreeSet::new();
     for case in &cases {
-        // `None` only when the file is not cached and the network is off.
+        // `None` only when the file is not committed, not cached, and cannot
+        // be downloaded.
         let Some(decoded) = decode(case) else {
+            skipped.push(case.id.as_str());
             continue;
         };
-        checked += 1;
         let mut reports = Vec::new();
         if let Some(golden) = &case.xradar {
             reports.push(("xradar", check_xradar(case, &decoded, golden)));
@@ -1971,25 +1986,41 @@ fn every_golden_case_matches_xradar_and_pyart() {
             }
         }
     }
-    assert!(checked > 0, "no golden file was available");
     assert!(failures.is_empty(), "\n{failures}");
-    if checked == cases.len() {
-        let unused: Vec<&str> = EXPECTED
-            .iter()
-            .map(|(key, _)| *key)
-            .filter(|key| !used.contains(key))
-            .collect();
+    // A case whose file cannot be fetched is skipped only when offline runs
+    // were asked for; otherwise the acceptance test would pass on the six
+    // committed files alone.
+    if !skipped.is_empty() {
         assert!(
-            unused.is_empty(),
-            "EXPECTED differences no case applies: {unused:?}"
+            offline_requested(),
+            "{} of {} cases have no file (not cached, download failed): {skipped:?}; set {}=1 to run the available cases only",
+            skipped.len(),
+            cases.len(),
+            recast_radar_testdata::OFFLINE_ENV
         );
-    } else {
         eprintln!(
-            "{} of {} cases were not available offline; the EXPECTED coverage check needs all of them",
-            cases.len() - checked,
+            "{} of {} cases skipped offline ({skipped:?}); the EXPECTED coverage check needs all of them",
+            skipped.len(),
             cases.len()
         );
+        return;
     }
+    let unused: Vec<&str> = EXPECTED
+        .iter()
+        .map(|(key, _)| *key)
+        .filter(|key| !used.contains(key))
+        .collect();
+    assert!(
+        unused.is_empty(),
+        "EXPECTED differences no case applies: {unused:?}"
+    );
+}
+
+/// `RECAST_RADAR_TESTDATA_OFFLINE` is set (as `recast-radar-testdata` reads
+/// it).
+fn offline_requested() -> bool {
+    std::env::var_os(recast_radar_testdata::OFFLINE_ENV)
+        .is_some_and(|value| !value.is_empty() && value != "0")
 }
 
 #[test]

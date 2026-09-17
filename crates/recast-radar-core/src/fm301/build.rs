@@ -976,7 +976,7 @@ impl<'a> Builder<'a> {
         }
 
         let mut attrs: Attrs<'a> = Vec::new();
-        if self.xradar_items() {
+        if self.all() {
             attrs.extend(
                 sweep
                     .other

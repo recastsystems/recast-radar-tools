@@ -224,11 +224,30 @@ impl<'a> H5File<'a> {
             if message.kind != 0x000C {
                 continue;
             }
-            if let Ok(Some(attr)) = self.parse_attribute(&message.body, name) {
+            if let Ok(Some((_, attr))) = self.parse_attribute(&message.body, Some(name)) {
                 return Some(attr);
             }
         }
         None
+    }
+
+    /// Every attribute of the object at `path` that decodes, in header order
+    /// (compact attribute messages, as [`Self::attr`] reads them). Empty when
+    /// the object does not exist.
+    pub fn attrs(&self, path: &str) -> Vec<(String, H5Attr)> {
+        let Some(header) = self
+            .objects
+            .get(path)
+            .and_then(|address| self.parse_object_header(*address).ok())
+        else {
+            return Vec::new();
+        };
+        header
+            .messages
+            .iter()
+            .filter(|message| message.kind == 0x000C)
+            .filter_map(|message| self.parse_attribute(&message.body, None).ok().flatten())
+            .collect()
     }
 
     /// Read the full dataset at `path`.
@@ -893,7 +912,13 @@ impl<'a> H5File<'a> {
 
     /// Parse one attribute message body; returns the value when the
     /// attribute's name matches.
-    fn parse_attribute(&self, body: &[u8], wanted: &str) -> Result<Option<H5Attr>> {
+    /// The attribute in `body`, with its name; `None` when `wanted` names
+    /// another attribute.
+    fn parse_attribute(
+        &self,
+        body: &[u8],
+        wanted: Option<&str>,
+    ) -> Result<Option<(String, H5Attr)>> {
         let version = *body.first().ok_or_else(|| truncated(0, 1, 0))?;
         if !(1..=3).contains(&version) {
             return Err(invalid(
@@ -934,9 +959,10 @@ impl<'a> H5File<'a> {
         cursor = cursor
             .checked_add(pad(name_size)?)
             .ok_or_else(|| invalid(cursor, "HDF5 attribute name cursor overflow"))?;
-        if name != wanted {
+        if wanted.is_some_and(|wanted| name != wanted) {
             return Ok(None);
         }
+        let name = name.into_owned();
         let dtype = self.parse_datatype(checked_range(body, cursor, dt_size)?)?;
         cursor = cursor
             .checked_add(pad(dt_size)?)
@@ -955,7 +981,8 @@ impl<'a> H5File<'a> {
         let data = body
             .get(cursor..)
             .ok_or_else(|| truncated(cursor, 0, body.len()))?;
-        self.attr_value(&dtype, count, data).map(Some)
+        self.attr_value(&dtype, count, data)
+            .map(|value| Some((name, value)))
     }
 
     fn attr_value(&self, dtype: &Datatype, count: usize, data: &[u8]) -> Result<H5Attr> {
@@ -1870,7 +1897,7 @@ mod tests {
     #[test]
     fn truncated_messages_return_errors_instead_of_indexing() {
         let file = parser(&[]);
-        assert!(file.parse_attribute(&[1], "name").is_err());
+        assert!(file.parse_attribute(&[1], Some("name")).is_err());
         let Err(_) = file.parse_layout(&[3, 0]) else {
             panic!("truncated compact layout must fail");
         };

@@ -9,7 +9,8 @@
 
 use chrono::{TimeZone, Utc};
 use recast_radar_core::model::{
-    FieldData, FieldName, LinearTransform, Quantity, RangeCoord, Sweep, Volume,
+    AttrValue, FieldData, FieldName, LinearTransform, Quantity, RadarCalibration, RangeCoord,
+    Scalar, Sweep, Volume,
 };
 use recast_radar_io_odim::read_odim_h5_volume;
 use recast_radar_testdata::{require_file, sha256_hex};
@@ -268,4 +269,322 @@ fn espdg_float64_planes_stay_float64_with_their_sentinels() {
     let vradh = sweep.field(&FieldName::Vradh).unwrap();
     assert!(matches!(vradh.data, FieldData::F64 { .. }));
     let _ = require_file!("odim-espdg-20260707-1927-pvol-dbzh-vradh");
+}
+
+// ---------------------------------------------------------------------------
+// `how` metadata (ODIM_H5 v2.4 Table 8). Expected values: tools/
+// golden_io_formats.py, section `odim`, key `how_constants` (h5py): the root
+// and first-dataset site constants, and per dataset its constants, its
+// other attributes and the names of its per-ray arrays.
+// ---------------------------------------------------------------------------
+
+fn names(attrs: &[(Box<str>, AttrValue)]) -> Vec<&str> {
+    let mut names: Vec<&str> = attrs.iter().map(|(name, _)| &**name).collect();
+    names.sort_unstable();
+    names
+}
+
+fn attr<'a>(attrs: &'a [(Box<str>, AttrValue)], name: &str) -> &'a AttrValue {
+    attrs
+        .iter()
+        .find(|(key, _)| &**key == name)
+        .map(|(_, value)| value)
+        .unwrap_or_else(|| panic!("no attribute {name}"))
+}
+
+fn f64_attr(value: f64) -> AttrValue {
+    AttrValue::Scalar(Scalar::F64(value))
+}
+
+/// Every ray of `values` equals `expected`.
+fn per_ray<T: PartialEq + std::fmt::Debug + Copy>(
+    values: &Option<Vec<T>>,
+    rays: usize,
+    expected: T,
+) {
+    assert_eq!(values.as_deref(), Some(&vec![expected; rays][..]));
+}
+
+/// The radar constants of one calibration entry, in `f32`.
+fn constants(entry: &RadarCalibration) -> (Option<i32>, [Option<f32>; 5]) {
+    (
+        entry.calib_index,
+        [
+            entry.radar_constant_h,
+            entry.radar_constant_v,
+            entry.antenna_gain_h_db,
+            entry.antenna_gain_v_db,
+            entry.pulse_width_s,
+        ],
+    )
+}
+
+/// iesha: site constants in the dataset `how` groups, and a different pulse
+/// width and radar constant for dataset 10.
+#[test]
+fn iesha_how_constants_per_dataset() {
+    let Some(volume) = decode("odim-iesha-20260305-0115-pvol") else {
+        return;
+    };
+    let parameters = &volume.radar_parameters;
+    assert_eq!(parameters.beam_width_h_deg, Some(0.955));
+    assert_eq!(parameters.beam_width_v_deg, Some(0.942));
+    assert_eq!(parameters.antenna_gain_h_db, Some(45.0));
+    assert_eq!(parameters.antenna_gain_v_db, Some(45.0));
+    assert_eq!(parameters.receiver_bandwidth_hz, None);
+    let entries: Vec<_> = volume.radar_calibration.iter().map(constants).collect();
+    assert_eq!(
+        entries,
+        [
+            (
+                Some(0),
+                [
+                    Some(67.949),
+                    Some(68.456),
+                    Some(45.0),
+                    Some(45.0),
+                    Some(2e-6)
+                ]
+            ),
+            (
+                Some(1),
+                [
+                    Some(70.167),
+                    Some(70.674),
+                    Some(45.0),
+                    Some(45.0),
+                    Some(1.2e-6)
+                ]
+            ),
+        ]
+    );
+    // Datasets 1-9: rpm 4, pulsewidth 2.0; dataset 10: rpm 5, 1.2.
+    for (index, sweep) in volume.sweeps.iter().enumerate() {
+        let rays = sweep.nrays();
+        let (entry, rate, width) = if index < 9 {
+            (0, 24.0, 2e-6)
+        } else {
+            (1, 30.0, 1.2e-6)
+        };
+        per_ray(&sweep.ray_vars.calib_index, rays, entry);
+        per_ray(&sweep.ray_vars.pulse_width_s, rays, width);
+        assert_eq!(sweep.target_scan_rate_deg_per_s, Some(rate));
+        // The other 25 dataset attributes stay verbatim; startazA/stopazA are
+        // the ray azimuths.
+        assert_eq!(
+            names(&sweep.other),
+            [
+                "BBC",
+                "CSR",
+                "Dclutter",
+                "LOG",
+                "NEZH",
+                "NEZV",
+                "RXlossH",
+                "RXlossV",
+                "SQI",
+                "TXlossH",
+                "TXlossV",
+                "VPRCorr",
+                "Vsamples",
+                "anglesync",
+                "anglesyncRes",
+                "astart",
+                "clutterType",
+                "highprf",
+                "lowprf",
+                "polmode",
+                "poltype",
+                "radomelossH",
+                "radomelossV",
+                "scan_count",
+                "scan_index",
+            ],
+            "sweep {index}"
+        );
+    }
+    let first = &volume.sweeps[0].other;
+    let last = &volume.sweeps[9].other;
+    assert_eq!(attr(first, "NEZH"), &f64_attr(-47.7944));
+    assert_eq!(attr(last, "NEZH"), &f64_attr(-43.3579));
+    assert_eq!(attr(first, "Vsamples"), &AttrValue::Scalar(Scalar::I64(25)));
+    assert_eq!(attr(last, "highprf"), &f64_attr(1000.0));
+    assert_eq!(attr(first, "Dclutter"), &AttrValue::text("DFT,FFT,Spatial"));
+    // Root: `beamwidth` is not used (the datasets give beamwH and beamwV).
+    assert_eq!(
+        names(&volume.attrs.other),
+        [
+            "beamwidth",
+            "endepochs",
+            "highprf",
+            "lowprf",
+            "scan_optimized",
+            "software",
+            "startepochs",
+            "sw_version",
+            "system",
+            "wavelength",
+        ]
+    );
+    assert_eq!(
+        attr(&volume.attrs.other, "system"),
+        &AttrValue::text("Leo. Meteor 735CDP")
+    );
+}
+
+/// dkrom: site constants and rpm/pulsewidth in the root `how` only, with
+/// the writer's own names (`antgain`, `TXpower`) kept verbatim.
+#[test]
+fn dkrom_how_constants_from_the_root() {
+    let Some(volume) = decode("odim-dkrom-20260820-1130-pvol") else {
+        return;
+    };
+    let parameters = &volume.radar_parameters;
+    assert_eq!(parameters.beam_width_h_deg, Some(0.95));
+    assert_eq!(parameters.beam_width_v_deg, Some(0.95));
+    assert_eq!(parameters.antenna_gain_h_db, None, "`antgain` is not ODIM");
+    assert_eq!(parameters.receiver_bandwidth_hz, Some(1.382e6));
+    assert!(volume.radar_calibration.is_empty());
+    for sweep in &volume.sweeps {
+        let rays = sweep.nrays();
+        assert_eq!(
+            sweep.target_scan_rate_deg_per_s,
+            Some((3.093_332_095_999_999_7 * 6.0) as f32)
+        );
+        per_ray(&sweep.ray_vars.pulse_width_s, rays, 0.8e-6);
+        assert_eq!(sweep.ray_vars.calib_index, None);
+        // Per-ray angles and times written as text stay verbatim.
+        assert_eq!(names(&sweep.other), ["azangels", "aztimes", "elangels"]);
+    }
+    let azangels = attr(&volume.sweeps[0].other, "azangels").as_text().unwrap();
+    assert_eq!(azangels.len(), 5659);
+    assert!(azangels.starts_with("359.643:360.510864,0.664673:1.52161,"));
+    let root = &volume.attrs.other;
+    assert_eq!(
+        names(root),
+        [
+            "RXloss",
+            "SQI",
+            "TXloss",
+            "TXpower",
+            "ZDR offset[dB]",
+            "antgain",
+            "beamwidth",
+            "ccor",
+            "clutterfilter",
+            "gasattn",
+            "log noise threshold",
+            "lslope",
+            "maxrange",
+            "nscans",
+            "number of rays",
+            "polarity",
+            "prf",
+            "prffac",
+            "pulseindex",
+            "rgain",
+            "samples",
+            "sloss",
+            "system",
+            "task",
+            "wavelength",
+        ]
+    );
+    assert_eq!(attr(root, "ZDR offset[dB]"), &f64_attr(-1.188));
+    assert_eq!(
+        attr(root, "clutterfilter"),
+        &AttrValue::Scalar(Scalar::I64(3))
+    );
+    assert_eq!(attr(root, "antgain"), &f64_attr(45.0));
+}
+
+/// espdg: root constants apply to both datasets; the pulse width 1e-06 (not
+/// microseconds) and the zero bandwidth stay verbatim.
+#[test]
+fn espdg_how_constants_and_unconverted_values() {
+    let Some(volume) = decode("odim-espdg-20260707-1927-pvol-dbzh-vradh") else {
+        return;
+    };
+    let parameters = &volume.radar_parameters;
+    assert_eq!(parameters.beam_width_h_deg, Some(0.950_000_04));
+    assert_eq!(parameters.antenna_gain_v_db, Some(45.0));
+    assert_eq!(parameters.receiver_bandwidth_hz, None);
+    let entries: Vec<_> = volume.radar_calibration.iter().map(constants).collect();
+    assert_eq!(
+        entries,
+        [(
+            Some(0),
+            [Some(67.79), Some(70.69), Some(45.0), Some(45.0), None]
+        )]
+    );
+    for sweep in &volume.sweeps {
+        let rays = sweep.nrays();
+        per_ray(&sweep.ray_vars.calib_index, rays, 0);
+        assert_eq!(sweep.ray_vars.pulse_width_s, None);
+        assert_eq!(sweep.target_scan_rate_deg_per_s, Some(16.0), "antspeed");
+        per_ray(&sweep.ray_vars.nyquist_velocity_mps, rays, 39.9217);
+        assert_eq!(names(&sweep.other), ["scan_index"]);
+    }
+    let root = &volume.attrs.other;
+    assert_eq!(
+        names(root),
+        [
+            "Dclutter",
+            "NEZH",
+            "NEZV",
+            "RXbandwidth",
+            "RXlossH",
+            "RXlossV",
+            "Vsamples",
+            "azmethod",
+            "binmethod",
+            "frequency",
+            "highprf",
+            "lowprf",
+            "melting_layer_top",
+            "peakpwr",
+            "polmode",
+            "poltype",
+            "pulsewidth",
+            "scan_count",
+            "simulated",
+            "software",
+            "sw_version",
+            "system",
+            "task",
+            "wavelength",
+            "zcalH",
+            "zcalV",
+        ]
+    );
+    assert_eq!(attr(root, "pulsewidth"), &f64_attr(1e-06));
+    assert_eq!(attr(root, "RXbandwidth"), &f64_attr(0.0));
+}
+
+/// norst: the older root `beamwidth`, rpm per dataset, and a non-standard
+/// `radarconstH` kept verbatim (no calibration entry).
+#[test]
+fn norst_how_constants_with_older_names() {
+    let Some(volume) = decode("odim-norst-20170421-0908-pvol") else {
+        return;
+    };
+    let parameters = &volume.radar_parameters;
+    assert_eq!(parameters.beam_width_h_deg, Some(0.95));
+    assert_eq!(parameters.beam_width_v_deg, Some(0.95));
+    assert!(volume.radar_calibration.is_empty());
+    assert!(volume.attrs.other.is_empty());
+    let rates: Vec<Option<f32>> = volume
+        .sweeps
+        .iter()
+        .map(|sweep| sweep.target_scan_rate_deg_per_s)
+        .collect();
+    let rpm = [1.0, 1.166_666_666_666_666_7, 2.5, 2.5, 2.5, 2.5];
+    let expected: Vec<Option<f32>> = rpm.iter().map(|rpm| Some((rpm * 6.0) as f32)).collect();
+    assert_eq!(rates, expected);
+    for sweep in &volume.sweeps {
+        assert_eq!(names(&sweep.other), ["NEZ", "radarconstH"]);
+        assert_eq!(attr(&sweep.other, "radarconstH"), &f64_attr(10.9826));
+        assert_eq!(attr(&sweep.other, "NEZ"), &f64_attr(0.0));
+        assert_eq!(sweep.ray_vars.pulse_width_s, None);
+    }
 }

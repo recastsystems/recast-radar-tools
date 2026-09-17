@@ -64,10 +64,12 @@ design text (sections 0 to 17). Section 17 and this section record the differenc
 | main sync | `2a7e805` | main's l2-fixes (KVWX blank radar id, headerless input rejection, golden `--check`) |
 | shim removal | `b811f2d` | `core::legacy`, the round-trip test, the shim-gate tooling and every `legacy_api`/`legacy_bridge` module deleted; core exports the model only |
 | F.4 | `8bf7f79` | `crates/recast-radar-core/tests/fm301_conformance.rs` |
-| main sync | this merge | main's real-data test conversion (stream C) ported onto the model |
+| main sync | `0719ae5` | main's real-data test conversion (stream C) ported onto the model |
+| verifier fixes | `78e4c70`, `ec4c52a`, `7db265f`, `eb0cb14` and the commit that adds this line | fuzz harness on the `read_*` names; Level II tilt tests on decoder output; zero-copy per `first_dim`; Message 18 radar parameters; ODIM and DORADE metadata; conformance strictness (see [Verifier findings](#verifier-findings-2026-09-17)) |
 
 The four sub-worktrees (`fm301-io`, `fm301-algo`, `fm301-render`, `fm301-golden`) are
-removed; their branches are merged.
+removed. Their branches still exist (`f948dd7`, `ce3e6b3`, `5053c14`, `6f66549`). All four are
+ancestors of `fm301`, so deleting them loses nothing; that is left to whoever merges `fm301`.
 
 ### F.4 conformance
 
@@ -76,31 +78,53 @@ removed; their branches are merged.
 `FirstDim::Auto` against `auto`). Every golden group, dimension, variable and attribute is
 compared: packed arrays and coordinates by SHA-256 in the golden's convention (`time` as int64
 ns), otherwise count, min, max, mean, first and last within 1e-4 relative; scalars and
-attributes by value. The Py-ART side checks the sweep table, fixed angles, sweep modes,
-location, per-sweep coordinates and instrument parameters. It also checks every field laid
-out on Py-ART's volume range (6.5), by hash or by value summary. Result: **0 errors**.
+attributes by value. In the other direction, every group, variable and attribute of ours must
+be in the golden or covered by a listed difference. The Py-ART side checks the sweep table,
+fixed angles, sweep modes, location, per-sweep coordinates and instrument parameters. It also
+checks every field laid out on Py-ART's volume range (6.5), by hash or by value summary.
+Result: **0 errors**.
 
-| Case | xradar: hashes / summaries / scalars / attributes | Py-ART: hashes / summaries / scalars / attributes |
+| Case | xradar: hashes / summaries / scalars / attributes / known | Py-ART: hashes / summaries / scalars / attributes / known |
 |---|---|---|
-| `l2-ktlx-20240315-000217` | 328 / 40 / 216 / 2096 | 144 / 60 / 43 / 2 |
-| `l2-kdvn-20200810-180401` | 328 / 42 / 226 / 2116 | 143 / 63 / 45 / 2 |
-| `l2-kpah-20080415-235014` | 66 / 14 / 98 / 514 | 29 / 21 / 17 / 2 |
-| `l2-klix-20050829-130035` | 156 / 40 / 320 / 784 | 94 / 58 / 45 / 1 |
-| `l2-ktlx-19990504-002218` | no golden (xradar 0.12 fails to open the file) | 74 / 46 / 37 / 0 |
-| `odim-dkrom-20260820-1130-pvol` | 220 / 22 / 138 / 1484 | 80 / 30 / 23 / 0 |
-| `odim-iesha-20260305-0115-pvol` | 106 / 36 / 138 / 784 | 30 / 30 / 23 / 0 |
-| `odim-espdg-20260707-1927-pvol-dbzh-vradh` | 22 / 4 / 42 / 136 | 0 / 10 / 8 / 0 |
-| `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` | 70 / 10 / 146 / 72 | 8 / 10 / 5 / 1 |
-| `cfrad1-dow8-20211011-223602-rhi-trim3-classic` | 54 / 8 / 146 / 64 | 5 / 5 / 4 / 1 |
-| `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` (decoded from its committed classic twin) | 16 / 2 / 26 / 26 | 3 / 4 / 4 / 1 |
-| **total** | **1366 / 218 / 1496 / 8076** | **610 / 337 / 254 / 10** |
+| `l2-ktlx-20240315-000217` | 328 / 40 / 216 / 2096 / 18 | 144 / 60 / 43 / 2 / 36 |
+| `l2-kdvn-20200810-180401` | 328 / 42 / 226 / 2116 / 18 | 143 / 63 / 45 / 2 / 25 |
+| `l2-kpah-20080415-235014` | 66 / 14 / 86 / 514 / 30 | 29 / 21 / 17 / 2 / 6 |
+| `l2-klix-20050829-130035` | 156 / 40 / 210 / 784 / 114 | 94 / 58 / 40 / 1 / 11 |
+| `l2-ktlx-19990504-002218` | no golden (xradar 0.12 fails to open the file) | 74 / 46 / 32 / 0 / 11 |
+| `odim-dkrom-20260820-1130-pvol` | 220 / 22 / 138 / 1484 / 38 | 80 / 30 / 23 / 0 / 0 |
+| `odim-iesha-20260305-0115-pvol` | 106 / 36 / 138 / 784 / 36 | 30 / 30 / 23 / 0 / 0 |
+| `odim-espdg-20260707-1927-pvol-dbzh-vradh` | 22 / 4 / 38 / 136 / 20 | 0 / 10 / 8 / 0 / 0 |
+| `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` | 70 / 10 / 62 / 72 / 538 | 8 / 10 / 5 / 1 / 0 |
+| `cfrad1-dow8-20211011-223602-rhi-trim3-classic` | 54 / 8 / 70 / 64 / 496 | 5 / 5 / 4 / 1 / 0 |
+| `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` (see below) | 16 / 2 / 24 / 26 / 128 | 3 / 4 / 4 / 1 / 0 |
+| **total** | **1366 / 218 / 1208 / 8076 / 1436** | **610 / 337 / 244 / 10 / 89** |
 
-Together: 1976 array hashes, 555 value summaries, 1750 scalars and 8086 attributes, the same
-counts as at `8bf7f79`.
+Together: 1976 array hashes, 555 value summaries, 1452 scalars and 8086 attributes compared,
+and 1525 golden items left uncompared as known differences. Up to `8bf7f79` the test counted
+those items as scalars, so it reported 1750 scalars: 282 of them (IRENE 84, DOW8 76, KLIX
+xradar 104, KPAH 12, xsapr 2, KLIX Py-ART 2, KTLX 1999 2) and 16 Message 1 location and
+NaN-Nyquist items had no comparison behind them. Since `eb0cb14` a skipped item counts as a
+known difference, and a golden attribute with no comparable value (JSON null or object) is an
+error.
 
-The `EXPECTED` list in the test holds the 22 known reader differences, each with the section
-of this note (for example 1, 7.1, 8.2, 9, 10, 11, 14, A.3) or the code that decides it. The
-test checks each one explicitly instead of skipping it.
+The `EXPECTED` list in the test holds 27 known reader differences, each with a key and the
+section of this note (for example 1, 7.1, 8.2, 9, 10, 11, 14, A.3) or the code that decides it.
+The code that applies a difference records its key, and the test fails if a listed difference
+is never applied. All 11 cases must run: a case whose file is neither committed nor cached and
+cannot be downloaded (the five Level II files are download-only) fails the test unless
+`RECAST_RADAR_TESTDATA_OFFLINE` is set, which runs the six committed cases and skips the
+coverage check.
+
+**The netCDF-4 case is not decoded from its own file.** The pure-Rust CfRadial reader opens
+classic netCDF only. The router sends HDF5 containers to `hdf5lite` (io-odim), which reads
+superblock v0 and v1 and rejects later versions. The netCDF-4 files in the corpus use
+superblock v2 (the xsapr file itself, and `cfrad1-spol-20080604-002217-sur`, which fails with
+"HDF5 superblock version 2 ... unsupported"). The xsapr case therefore decodes its committed
+classic twin `cfrad1-xsapr-sgp-20110520-ppi-classic`, a raw variable-for-variable copy
+(`testdata/other/manifest.toml`, `derived_from`), and compares it with the golden that xradar
+and Py-ART produced from the netCDF-4 file. No CfRadial netCDF-4 file is decoded natively by
+any test. Reading netCDF-4 needs superblock v2/v3, v2 object headers throughout, fractal heaps
+and v2 B-trees in `hdf5lite` (open item below).
 
 Fixes found by the comparison (`8bf7f79`):
 
@@ -126,10 +150,23 @@ legacy types to the model in every crate:
 
 The goldens are unchanged, except where a legacy convention cannot be expressed in the model:
 
-- The goldens take a Level II tilt's elevation from its first radial (MetPy), while the reader
-  reports the VCP cut angle as `fixed_angle_deg` (5.2). The shared `level2` helpers of the
-  filters, map, retrieve and track tests therefore set each sweep's fixed angle to its first
-  ray's elevation.
+- The goldens took a Level II tilt's elevation from its first radial (MetPy), while the reader
+  reports the VCP cut angle as `fixed_angle_deg` (5.2). At `0719ae5` the shared `level2`
+  helpers of the filters, map, retrieve and track tests set each sweep's fixed angle to its
+  first ray's elevation, so no test ran those products on what the decoder returns. Since
+  `ec4c52a` the helpers return the decoded volume unmodified, and `filters_map_golden.py`,
+  `retrieve_golden.py` and `track_golden.py` take the tilt elevation from the reader's fixed
+  angle (MetPy `vcp_info`, or Py-ART's `fixed_angle` for the Moore tracks case). The
+  regenerated goldens differ only where the tilt elevation enters: `map/volumetric.json`,
+  `retrieve/{availability,shear,sweep,volume}.json` and `track/{swath,tracks}.json`; the
+  unmodified tools had first regenerated every golden byte-identically. **This is a behaviour
+  change against `main`:** beam height, ground range and the lowest-tilt choice of the column
+  products (`map::volumetric`, `retrieve::volume`, `retrieve::detect`, the trackers) now use
+  the VCP angle. Split cuts and SAILS/MRLE repeats share that angle exactly (KTLX 2024 sweeps 0,
+  1, 4, 5, 8, 9 at 0.4834 deg; KILX sweeps 0, 1, 11), so they tie. The products keep them in
+  acquisition order (tested in `volumetric_real` and `swath_real`). The KDVN derecho sequence
+  in `tracking_real` has no merge with VCP geometry and one merge with first-radial
+  elevations; the test checks both.
 - `testdata/golden/map/rhi.json`: the DOW8 and DOW6 panel geometry is now the files' exact
   gate centres (CfRadial and DORADE keep exact centres, 6.6), not legacy integer metres
   (`tools/filters_map_golden.py`). Only those two entries changed.
@@ -161,29 +198,77 @@ Behaviour fixes found while porting:
 The synthetic-input detector now also knows the model's types (`Volume`, `Sweep`, `Rays`,
 `Field`, `RayVariables`, the bench's `Plane`) and its content methods (`push_ray`, `add_field`,
 `push_row_*`). The 28 findings this surfaced were converted to real data, except 6 model unit
-tests (row layouts no corpus file has, and the H/unspecified/V preference of `Sweep::find`).
-Those are listed as `pending` in `testdata/synthetic-allowlist.toml`, and
-`docs/testdata/synthetic-inventory.md` explains each one.
+tests that `0719ae5` listed as `pending`. Since `7db265f`, the row layouts no corpus file has
+(absent rows, a short first row, a relabelled 8-bit PHI block) are built from mutated real
+Message 31 radials of the KTLX 2013 trim (`crates/recast-radar-core/tests/real_rows.rs`),
+and the 16-bit row API's own checks run on a real PHI block's bytes, allowlisted as an
+`exception` because no decoder reaches them. Two `pending` entries remain: the
+H/unspecified/V preference of `Sweep::find` and its helper, which need a volume with DBZH,
+DBZ and DBZV together (none in the corpus; they await user review).
+`testdata/synthetic-allowlist.toml` and `docs/testdata/synthetic-inventory.md` explain each.
 
 ### Verification
 
-On the merged tree (Windows 11 host, Rust 1.94):
+On the tree with the verifier fixes (Windows 11 host, Rust 1.94; `0719ae5` gave 1306 passed
+in 110 targets):
 
-- `cargo test --workspace --release`: **1306 passed, 0 failed, 28 ignored** (110 test
+- `cargo test --workspace --release`: **1316 passed, 0 failed, 28 ignored** (111 test
   targets, doc tests included). All 28 ignored tests are live-network probes, manual
-  benchmarks, or tests that need an external corpus or Python path.
-- `cargo clippy --workspace --all-targets --release`: only the `unwrap_used`/`expect_used`
-  warnings CI tolerates (`.github/workflows/ci.yml`). `cargo fmt --all` is clean.
-- Bench checksums (`recast-radar-bench <file> --iters 1`, the three `docs/baselines` files):
-  `0x818e0eff4fb8569e` (KTLX 2024), `0xd5080047ae5dfeb5` (KILX 2026) and `0x1df2b8849f9a2796`
-  (KTLX 2013). They are identical to `docs/baselines/import-checksums.txt` and deterministic
-  across iterations. `main` still prints the import values for the two KTLX files
-  (`0xc04a5e2dfecc4c1f`, `0x19e3735f42cdca4b`). The bench picks its sweeps by
-  `fixed_angle_deg`, which is the VCP cut angle here, so it renders different sweeps. At
-  `b811f2d`, selecting by first-ray elevation reproduced `main`'s values on the same build
-  (recorded in the checksum file).
+  benchmarks, or tests that need an external corpus or Python path. All 11 conformance cases
+  ran.
+- `cargo clippy --workspace --all-targets --all-features --locked`: only the
+  `unwrap_used`/`expect_used` warnings CI tolerates (`.github/workflows/ci.yml`).
+  `cargo fmt --all` is clean. `cargo doc --workspace --no-deps` reports no warning.
+- CI's other checks: `cargo check --manifest-path fuzz/Cargo.toml --workspace --all-targets
+  --no-default-features --locked`, `tools/ci/pure-rust-check.sh`, `tools/ci/wasm-check.sh`
+  and `cargo hack check -p recast-radar-tools --each-feature --no-dev-deps` pass.
+  `fuzz-tools regressions` prints no `PANIC`. The seed replays reject exactly the seeds the
+  fuzz README lists as rejected on purpose.
+- `tools/fm301_golden.py --check --offline`: 23 golden files up to date.
+- Bench checksums. **Plan F's "checksums identical" holds only for the render pipeline; two of
+  the three recorded values changed and need user sign-off.**
 
-Single-core decode timing against `main` `e9fdb6c`:
+  | File | Import / `main` value, sweeps R/V | `fm301` default value, sweeps R/V | `fm301 --sweeps` with the import's R,V |
+  |---|---|---|---|
+  | KTLX20240315_000217_V06 | `0xc04a5e2dfecc4c1f`, 4/9 | `0x818e0eff4fb8569e`, 0/1 | `0xc04a5e2dfecc4c1f` |
+  | KILX20260418_013553_V06 | `0xd5080047ae5dfeb5`, 0/1 | `0xd5080047ae5dfeb5`, 0/1 | `0xd5080047ae5dfeb5` |
+  | KTLX20130520_201643_V06.gz | `0x19e3735f42cdca4b`, 1/1 | `0x1df2b8849f9a2796`, 0/1 | `0x19e3735f42cdca4b` |
+
+  The cause is sweep selection, not rendering. `lowest_sweep_with` takes the smallest
+  `Sweep::fixed_angle_deg`, then the smallest index. `fixed_angle_deg` is the VCP cut angle
+  (5.2), where the legacy model used the cut's first radial elevation. Py-ART's first-ray
+  elevations: KTLX 2024 sweeps 0/1/4/9 at 0.58/0.48/0.41/0.48 deg, KTLX 2013 sweeps 0/1 at
+  0.60/0.53, KILX sweeps 0/1 at 0.15/0.53; all of these have the VCP angle 0.48 deg. The old
+  rule therefore picked KTLX 2024 reflectivity from sweep 4 and velocity from sweep 9, and
+  KTLX 2013 both from sweep 1 (the Doppler cut). The new rule picks the first tilt at 0.48 deg:
+  reflectivity from sweep 0 (the surveillance cut) and velocity from sweep 1 in every file.
+  With `--sweeps` set to the import's selection (`ec4c52a`), this build prints the import
+  values, so the decode and render pipeline is unchanged.
+  `docs/baselines/import-checksums.txt` records the new defaults (since `b811f2d`) and the
+  import values with their `--sweeps` lines. The bench mirrors the BowEcho app's render
+  worker, which still selects by first-radial elevation (bench comment). Moving the app to
+  the model changes its "lowest sweep" in the same way, so that needs the same decision.
+
+Single-core decode timing against `main` `e9fdb6c`, three runs. All use release builds,
+`RAYON_NUM_THREADS=1`, ABBA-interleaved rounds and the three baseline files.
+
+1. **After the verifier fixes** (this tree, which adds the Message 18 read to the Level II
+   decoder, `eb0cb14`). Bench decode stage, 12 rounds x 8 iterations. The host was busy:
+   a WSL VM used about 24 of 32 threads, and Windows reported 82-100% load. fm301/main ratio
+   of each round's fastest decode:
+
+   | File | median ratio (range) | ratio of means, median | `main` / `fm301` fastest ms |
+   |---|---:|---:|---:|
+   | KTLX20240315_000217_V06 | 0.986 (0.860 to 1.054) | 0.997 | 350.3 / 347.5 |
+   | KILX20260418_013553_V06 | 0.995 (0.879 to 1.072) | 0.999 | 803.5 / 763.3 |
+   | KTLX20130520_201643_V06.gz | 0.992 (0.849 to 1.047) | 1.006 | 52.9 / 44.9 |
+
+   No regression shows. Under this load single rounds scatter by about 15%.
+2. **Verifier, `0719ae5`**, quiet host (load 0-13%), bench decode stage, 12 rounds x 8
+   iterations. Median per-round ratio of the fastest decodes: 1.002 (KTLX 2024; 0.978 to
+   1.037), 1.001 (KILX; 0.858 to 1.055), 1.010 (KTLX 2013; 0.989 to 1.036). Ratios of the
+   overall fastest decodes: 1.000, 1.022, 1.011.
+3. **`0719ae5`, CPU time**, on a loaded host. Details:
 
 - Setup: release builds of both trees, `RAYON_NUM_THREADS=1`, ABBA-interleaved rounds, the
   three baseline files.
@@ -210,19 +295,46 @@ order of the table):
 
 No difference shows above the host's noise. By median, `fm301` is at most about 2% slower,
 except in the pinned KILX run (+5%), and single rounds scatter by 10-25%. KTLX 2013 is at
-least as fast on every protocol. A quiet-host run of the stream D ABBA protocol would resolve
-differences below 2%.
+least as fast on every protocol. The quiet-host run (2) shows no difference beyond 3%, and
+run 1 shows no cost from the Message 18 read added since then, within that run's noise
+(its median ratios are 0.986 to 0.995).
 
 ### Open items
 
-- The six pending allowlist entries above need corpus files that have those layouts.
-- The open questions of section 15 remain open. The 22 `EXPECTED` reader differences are
+- **User sign-off:** the two re-recorded bench checksums, and the Level II tilt elevation (VCP
+  angle) that the column products and trackers now use (see Verification and the merge notes
+  above).
+- **User review:** the two `pending` allowlist entries (`Sweep::find` name preference).
+- No CfRadial netCDF-4 file is decoded natively (F.4 conformance above). Supporting it means
+  extending `hdf5lite` to superblock v2/v3 and the structures netCDF-4 uses.
+- The open questions of section 15 remain open. The 27 `EXPECTED` reader differences are
   deliberate and documented.
-- Level II `fixed_angle_deg` is the VCP cut angle. The goldens of the algorithm crates still
-  use first-radial elevations, which their tests bridge by editing the fixed angle.
-  Regenerating those goldens with VCP angles would remove the edit.
-- Decode timing on this shared Windows host resolves differences only down to about 2%. The
-  stream D protocol on a quiet Linux host is the check to run before a release.
+- Branches `fm301-io`, `fm301-algo`, `fm301-render` and `fm301-golden` can be deleted after
+  the merge.
+- Decode timing on this shared Windows host resolves differences only down to about 2%
+  (quiet) or 15% (loaded). The stream D protocol on a quiet Linux host is the check to run
+  before a release.
+
+### Verifier findings (2026-09-17)
+
+An independent verification of `0719ae5` reported 1 blocker, 4 major and 8 minor findings.
+Their resolutions:
+
+| Finding | Resolution |
+|---|---|
+| blocker: `fuzz/` still called the removed `decode_*` names; `fuzz/` is outside the workspace, so nothing caught it | `78e4c70`: the harness and README use the `read_*` names, and CI checks the fuzz workspace (library and `fuzz-tools`, stable toolchain). The 61 seed replays give the same outcomes as `main` |
+| major: zero-copy depends on `first_dim`; the "76 of 104" assumed `Time`, and the binding default `Auto` gives 0 for NEXRAD and CfRadial | `7db265f`: `fm301_view::zero_copy_fields_depend_on_first_dim` pins the counts for ten files. Sections 0 item 9, 6.5, 12.2 and 12.3 now give the counts per `first_dim` and what the binding does in each case |
+| major: the column products take the VCP angle as tilt elevation, and the tests hid it by rewriting `fixed_angle_deg` | `ec4c52a`: the tests run on decoder output, the goldens take the reader's fixed angle, and ties are tested. The behaviour change is recorded above for sign-off |
+| major: two of three checksum baselines were re-recorded | the new and old values, the sweeps each build renders, and the cause are in Verification; `recast-radar-bench --sweeps` reproduces the import values (`ec4c52a`). Sign-off is open |
+| major: DORADE and ODIM metadata did not reach the model (review finding 5 unmet) | this commit: DORADE PARM units and description, RADD beam widths, antenna gain, receiver bandwidth and calibration constants, PARM pulse width and sample count, RYIB transmit power, VOLD text; ODIM `how` site constants, per-dataset radar constants, `rpm`/`antspeed`, `pulsewidth`, and every other `how` attribute verbatim. Section 16 finding 5 lists what is still dropped |
+| minor: the allowlist header was stale; some pending tests could use mutated real bytes | `7db265f` (see the merge notes above) |
+| minor: the conformance counts included uncompared items, offline skips passed silently, and the coverage check was weak | `eb0cb14` and this commit (F.4 conformance above) |
+| minor: the xsapr netCDF-4 golden is compared against the classic twin | disclosed above; open item |
+| minor: `FirstDim::Time` is not the identity for NOXP 2009 | `7db265f` corrected the code docs; this commit corrects sections 0 item 2, 12.1 and 14 |
+| minor: Level II `radar_parameters` was empty | `eb0cb14`: Message 18 frequency, antenna gain and (before Build 18) beam width |
+| minor: stale names, and the `read_*` naming decision was not recorded | `7db265f` fixed the references; section 13.4 records the naming |
+| minor: float64 `scale_factor`/`add_offset` for NEXRAD not stated | section 12.3 |
+| minor: leftover `fm301-*` branches | listed above; not deleted here |
 
 ---
 
@@ -234,8 +346,10 @@ differences below 2%.
    (A.2). Each `Field` is one dataset variable, and `FieldName` is its variable name.
 2. **Rays.** Ray coordinates are struct-of-arrays: `time_s: Vec<f64>`,
    `azimuth_deg: Vec<f32>`, `elevation_deg: Vec<f32>`. The model keeps rays in the source's
-   storage order, which is acquisition order for NEXRAD, CfRadial and DORADE and
-   azimuth-indexed order for ODIM and JMA. Decoders never reorder rows. The FM301 view orders
+   storage order. That is acquisition order for NEXRAD, CfRadial and most DORADE files, and
+   azimuth-indexed order for ODIM. The NOXP 2009 DORADE sweepfiles are azimuth-ordered with
+   RYIB times that decrease. JMA storage starts at an arbitrary azimuth with equal ray times.
+   Decoders never reorder rows. The FM301 view orders
    rays through a row permutation, never by moving data. `FirstDim::Time` (the WMO flavor, and
    xradar's `first_dim="time"`) gives acquisition order under dimension `time`, so the `time`
    coordinate is monotonic. `FirstDim::Auto` reproduces xradar's default `first_dim="auto"`:
@@ -296,10 +410,16 @@ differences below 2%.
    `unsafe fn`, and spec principle 2 forbids that. A binding therefore takes ownership: it
    moves each field's `Vec` into NumPy (`PyArray::from_vec`, safe and zero-copy) after
    recording the FM301 layout. `VolumeView` stays the Rust-side conformance surface (12.2).
+   The moved buffer is the variable itself only when the view's ray order is the storage
+   order. That depends on `first_dim`: `Time` for acquisition-ordered sources (NEXRAD,
+   CfRadial), `Auto` for azimuth-ordered ones (ODIM). Otherwise the variable is a lazy
+   permuted view of the moved buffer (12.2).
 10. **Passthrough.** Global attributes, sweep attributes, per-ray variables, calibration
     entries and root variables without a typed slot are kept verbatim with their source name
-    and numeric type (`ExtraVariable`, `AttrValue`), so CfRadial and DORADE sources reach a
-    DataTree or Py-ART `Radar` without losing metadata (sections 2, 3, 9, 11).
+    and type (`ExtraVariable`, `AttrValue`). CfRadial, ODIM and DORADE sources can therefore
+    reach a DataTree or Py-ART `Radar` without losing metadata (sections 2, 3, 9, 11). Section
+    16 finding 5 lists what each decoder keeps. The view writes root and sweep attributes
+    without a typed slot only with `Passthrough::All`, because xradar 0.12 writes none of them.
 
 ---
 
@@ -1331,12 +1451,14 @@ covers the union of their extents. Each field keeps its native `[nrays × ngates
   250 m next), `Sweep::attach_geometry` rewrites integer mappings; no data moves.
 - **Bindings.** A PyO3 layer moves a field's `Vec<u8>` or `Vec<u16>` into NumPy without
   copying (12.2). The result is already the FM301 variable whenever
-  `start == 0 && stride == 1 && ngates == range.ngates` and the view's ray order is the
-  storage order. In KTLX 2024 that holds for 76 of 104 fields: every field of the Doppler
-  cuts and of sweeps 12, 13 and 16..19, and REF and CCORH in every sweep. The other 28 fields
-  become the native array inside a lazy backend array that pads on `__getitem__`, which is
-  xradar's own mechanism. Those 28 are the dual-pol moments in the surveillance cuts plus
-  VEL, SW and the dual-pol moments in sweeps 10 and 11.
+  `start == 0 && stride == 1 && ngates == range.ngates` **and** the view's ray order is the
+  storage order. The second condition depends on `first_dim` (12.2). In KTLX 2024 with
+  `FirstDim::Time`, the geometry condition holds for 76 of 104 fields: every field of the
+  Doppler cuts and of sweeps 12, 13 and 16..19, and REF and CCORH in every sweep. The other
+  28 are the dual-pol moments in the surveillance cuts plus VEL, SW and the dual-pol moments
+  in sweeps 10 and 11; they become the native array inside a lazy backend array that pads on
+  `__getitem__`, which is xradar's own mechanism. With `FirstDim::Auto`, all 104 fields need
+  the azimuth permutation, so all 104 are lazy (still without a copy at decode).
 - **Algorithms** keep working in native geometry through `Field::native_geometry`, as they do
   with `MomentGrid::gate_range` today.
 
@@ -1675,16 +1797,16 @@ pub struct PrtSequence { pub nprt: u32, pub values_s: Vec<f32> } // row-major [t
 `None` means the source did not provide the variable, and the view omits it (WMO-CF.5.3.9:
 no meaning may be inferred from absence). A vector that is present always has `nrays` entries.
 
-| FM301 variable | NEXRAD (Msg 31 / Msg 1) | ODIM | CfRadial | xradar 0.12 | Py-ART |
-|---|---|---|---|---|---|
-| nyquist_velocity | RAD block / Msg 1 header, 0.01 m/s units | `how/NI`, a scalar broadcast to rays | variable | NEXRAD: not present; ODIM: scalar with dims `()`; CfRadial: `(azimuth)` | `instrument_parameters.nyquist_velocity`, per ray, all formats; 0 on NEXRAD Msg 1 surveillance rays |
-| unambiguous_range | RAD block / Msg 1 header, 0.1 km units → m | — | variable | NEXRAD: not present; CfRadial: `(azimuth)` | `instrument_parameters.unambiguous_range`, per ray, m |
-| prt, prt_ratio | not provided now; stream A may later derive them from VCP and PRF tables | `how/lowprf`, `how/highprf` (Hz → s) when present | variables | CfRadial `(azimuth)` | `instrument_parameters.prt`, `prt_ratio` |
-| n_samples | not per ray; Msg 5 pulse counts go to `NexradMetadata` (A.4) | not mapped | variable (IRENE 32, int32, `_FillValue` -9999) | CfRadial `(azimuth)` | `instrument_parameters.n_samples` |
-| pulse_width | Msg 5 short/long is a category, **not** a duration, so it stays in `NexradMetadata` | `how/pulsewidth` (µs → s) | variable (IRENE 5e-7 s) | CfRadial `(azimuth)` | `instrument_parameters.pulse_width` |
-| scan_rate | — | `how/rpm` → deg/s | variable | CfRadial `(azimuth)` | `scan_rate` |
-| antenna_transition | — | — | variable (int8) | CfRadial `(azimuth)` | `antenna_transition` |
-| calib_index | — | — | `r_calib_index` (int32 in DOW8 and IRENE) | CfRadial `r_calib_index (azimuth)`, float64 after decoding | — |
+| FM301 variable | NEXRAD (Msg 31 / Msg 1) | ODIM | CfRadial | DORADE | xradar 0.12 | Py-ART |
+|---|---|---|---|---|---|---|
+| nyquist_velocity | RAD block / Msg 1 header, 0.01 m/s units | `how/NI` (dataset, else root), a scalar broadcast to rays | variable | RADD `eff_unamb_vel`, else from wavelength and PRTs | NEXRAD: not present; ODIM: scalar with dims `()`; CfRadial: `(azimuth)` | `instrument_parameters.nyquist_velocity`, per ray, all formats; 0 on NEXRAD Msg 1 surveillance rays |
+| unambiguous_range | RAD block / Msg 1 header, 0.1 km units → m | — | variable | RADD `eff_unamb_range` (km → m) | NEXRAD: not present; CfRadial: `(azimuth)` | `instrument_parameters.unambiguous_range`, per ray, m |
+| prt, prt_ratio | not provided now; stream A may later derive them from VCP and PRF tables | not mapped: `how/lowprf` and `how/highprf` stay verbatim in `Sweep::other` (CfRadial's `prt_ratio` convention for dual PRF is not confirmed) | variables | RADD `prt1` (ms → s); no ratio | CfRadial `(azimuth)` | `instrument_parameters.prt`, `prt_ratio` |
+| n_samples | not per ray; Msg 5 pulse counts go to `NexradMetadata` (A.4) | not mapped (`Vsamples` stays verbatim) | variable (IRENE 32, int32, `_FillValue` -9999) | PARM `num_samples`, when every PARM agrees | CfRadial `(azimuth)` | `instrument_parameters.n_samples` |
+| pulse_width | Msg 5 short/long is a category, **not** a duration, so it stays in `NexradMetadata` | `how/pulsewidth` (µs → s; dataset, else root; values outside 0.05 to 10 stay verbatim) | variable (IRENE 5e-7 s) | PARM `pulse_width` (m → 2L/c s), when every PARM agrees | CfRadial `(azimuth)` | `instrument_parameters.pulse_width` |
+| scan_rate | — | — (`how/rpm` or `antspeed` is the sweep's `target_scan_rate`) | variable | — (RYIB `true_scan_rate` is missing in every corpus file; RADD `req_rotat_vel` is the `target_scan_rate`) | CfRadial `(azimuth)` | `scan_rate` |
+| antenna_transition | — | — | variable (int8) | — (transition rays are dropped) | CfRadial `(azimuth)` | `antenna_transition` |
+| calib_index | — | one `radar_calibration` entry per distinct dataset radar-constant set (16, finding 5) | `r_calib_index` (int32 in DOW8 and IRENE) | one entry per distinct sweepfile RADD constant set | CfRadial `r_calib_index (azimuth)`, float64 after decoding | — |
 
 The existing rule still holds: PRF **codes** from VCP tables never become a physical PRT. The
 legacy `ScanLegMetadata` codes move to `ScanDefinition::legs`.
@@ -1802,24 +1924,29 @@ pub enum Flavor {
 pub enum FirstDim {
     /// Dimension `time`; rays in acquisition order (stable sort by `time_s`). This is xradar's
     /// `first_dim="time"` (iesha: rotated so the first ray is at azimuth 136.51, A.4), and the
-    /// only choice for `Wmo2022`, because a CF coordinate variable must be monotonic. For
-    /// NEXRAD, CfRadial and DORADE, storage order is already acquisition order, so the
-    /// permutation is the identity and nothing is reordered.
+    /// only choice for `Wmo2022`, because a CF coordinate variable must be monotonic. The
+    /// permutation is the identity where storage order is acquisition order (NEXRAD, CfRadial,
+    /// most DORADE files) or every ray time is equal (JMA, dkrom). It is not the identity for
+    /// ODIM files with per-ray times, or for the NOXP 2009 DORADE sweepfiles, whose RYIB times
+    /// decrease (44, 43, 42 s within a sweep; checked with an independent RYIB parse).
     Time,
     /// xradar's default `first_dim="auto"`: dimension `azimuth` or `elevation`, rays sorted by
     /// that angle. The dimension choice follows xradar 0.12's rule as observed, including
-    /// `azimuth` for the DOW8 RHI (A.5). F.4 pins KTLX 2024, dkrom and DOW8.
+    /// `azimuth` for the DOW8 RHI (A.5). F.4 pins KTLX 2024, dkrom and DOW8. The permutation
+    /// is the identity for azimuth-ordered storage (ODIM, NOXP 2009), not for NEXRAD,
+    /// CfRadial or JMA.
     Auto,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Passthrough {
     /// Write what the flavor's reference writes. For Xradar012 that is xradar 0.12's set:
-    /// sweep `extra_vars` and calibration `extra` yes, root `attrs.other` no (A.5). For
-    /// Wmo2022 it is FM301 names only.
+    /// sweep `extra_vars`, platform track and calibration `extra` yes; root `attrs.other` and
+    /// sweep `other` no (A.5; xradar writes no ODIM `how` attributes). For Wmo2022 it is FM301
+    /// names only.
     Flavor,
     /// Also every `other`, `extra_vars` and `extra` item, verbatim, for lossless CfRadial 2
-    /// output.
+    /// output (CfRadial global attributes, ODIM `how` attributes, DORADE VOLD text).
     All,
 }
 
@@ -1930,11 +2057,36 @@ call. The binding therefore does not expose the view's borrows. It works as foll
    `reshape([nrays, ngates])`. For a contiguous array, `reshape` returns a view and copies
    nothing. From then on NumPy owns the memory.
 4. When the field's `DataRef` has `RowOrder::Identity`, `start == 0`, `stride == 1` and
-   `native_gates == out_gates`, the reshaped array is the variable (KTLX 2024: 76 of 104
-   fields, 6.5). Otherwise the variable is an xarray `BackendArray` (wrapped in
-   `LazilyIndexedArray`) that holds the native array and applies row order, padding and
-   repetition in `__getitem__`, as xradar's own NEXRAD backend array does.
+   `native_gates == out_gates` (`DataRef::is_zero_copy`), the reshaped array is the variable.
+   Otherwise the variable is an xarray `BackendArray` (wrapped in `LazilyIndexedArray`) that
+   holds the native array and applies row order, padding and repetition in `__getitem__`, as
+   xradar's own NEXRAD backend array does. Nothing is copied at decode either way; a lazy
+   variable copies the part a caller reads.
 5. The DataTree is built from the layout's encoded attributes and decoded as 12.3 describes.
+
+`RowOrder::Identity` depends on `first_dim`, because storage keeps the source's ray order
+(0 item 2). Fields that are the variable as moved, out of all fields
+(`fm301_view::zero_copy_fields_depend_on_first_dim`):
+
+| File | `FirstDim::Time` | `FirstDim::Auto` |
+|---|---|---|
+| KTLX 2024 (Level II, SAILS) | 76 / 104 | 0 / 104 |
+| KILX 2026 (Level II) | 95 / 125 | 0 / 125 |
+| KPAH 2008 (Level II, legacy resolution) | 8 / 15 | 0 / 15 |
+| DOW8 RHI (CfRadial 1) | 3 / 3 | 0 / 3 |
+| DOW6 RHI (DORADE) | 32 / 32 | 0 / 32 |
+| NOXP 2009 (DORADE, decreasing ray times) | 0 / 9 | 9 / 9 |
+| norst (ODIM, per-ray times) | 0 / 6 | 6 / 6 |
+| iesha (ODIM, per-ray times) | 0 / 30 | 30 / 30 |
+| dkrom (ODIM, equal ray times) | 80 / 80 | 80 / 80 |
+| JMA N5 (equal ray times, arbitrary start azimuth) | 26 / 26 | 0 / 26 |
+
+No single `first_dim` gives the zero-copy variable for every format. The binding keeps
+`first_dim` as an option with xradar's default `Auto` (12.3), so its output can replace
+`open_*_datatree()`. Under `Auto`, NEXRAD, CfRadial and JMA fields are lazy permuted views of
+the moved buffers; under `Time`, ODIM fields with per-ray times are. A caller that wants the
+moved buffer itself as often as possible picks `Time` for NEXRAD and CfRadial and `Auto` for
+ODIM. The permutation is one `u32` per ray, shared by the sweep's variables.
 
 Consequences, stated so a binding author does not rediscover them:
 
@@ -1959,7 +2111,8 @@ The layout is the encoded form. The binding's DataTree builder takes these optio
 | `mask_range_folded` | `true` | gates equal to the range-folded code become NaN (lazily), as Py-ART masks `raw <= 1` |
 | `range_folded_variable` | `false` | adds, per field with a range-folded code, a lazy `uint8` variable `<FIELD>_flags(time, range)` with `flag_values = [1]` and `flag_meanings = "range_folded"`, and sets the field's `ancillary_variables = "<FIELD>_flags"` (Table 301-10). Range-folded information then survives masking. Off by default because xradar has no such variable |
 | `packed_attrs` | `Encoding` | where packed-unit attributes go after decoding (next list) |
-| `first_dim` | `Auto` | `FirstDim` (12.1), mirroring xradar's `first_dim` option, so the output can replace `open_*_datatree()` output |
+| `first_dim` | `Auto` | `FirstDim` (12.1), mirroring xradar's `first_dim` option, so the output can replace `open_*_datatree()` output. It decides which fields are the moved buffer itself and which are lazy permuted views (12.2 table): under `Auto`, no NEXRAD or CfRadial field is the moved buffer |
+| `passthrough` | `Flavor` | `Passthrough` (12.1); `All` adds the source attributes xradar 0.12 drops (CfRadial global attributes, ODIM `how`, DORADE VOLD text) |
 
 When `decode` is true, xarray moves `_FillValue`, `scale_factor` and `add_offset` into
 `.encoding` but leaves every other attribute in `.attrs`. That includes `_Undetect`,
@@ -1979,6 +2132,18 @@ Two trade-offs, both verified with xarray 2026.7.0:
 Converting `valid_range` to physical `valid_min`/`valid_max` was considered and rejected. CF
 requires those in the packed type on packed variables, so writing the tree back would produce
 a non-conforming file, and netCDF4-python would compare packed data against physical bounds.
+
+**NEXRAD packing attributes are float64, a deliberate parity choice.** Both flavors write the
+NEXRAD `scale_factor` and `add_offset` as float64 (`LinearTransform::attr_width` is `F64` for
+`IcdScaleOffset`), as xradar 0.12's decoded encoding does. xarray takes the decoded dtype
+from those attributes, so a decoded NEXRAD field is float64, twice the memory of float32, and
+is computed as `raw * scale_factor + add_offset`. `Field::value` and Py-ART instead evaluate
+`(raw - offset) / scale` in float32. The two agree after a cast to float32 for every raw code
+of the seven NEXRAD codings (checked for all u8 codes and all u16 codes of ZDR and PHI). As
+float64 values they differ by up to 1.5e-5 (PHI, raw 2 to 1023) and 5e-8 (RHO). A binding
+that wants float32 decoded fields, and Py-ART's exact values, can write the attributes as
+float32 or cast after decoding; neither is the default, because the default reproduces
+xradar.
 
 F.4 compares the encoded form only (`mask_and_scale=False` on the xradar side, `decode=false`
 on ours), so these options do not affect conformance.
@@ -2325,13 +2490,35 @@ The workspace also has the check-cfg entry. With the cfg:
 - `grep -rn "legacy::\|legacy_api\|RadarVolume\|MomentGrid\|ElevationCut\|recast_legacy_deprecation" crates Cargo.toml`
   finds nothing.
 
+**Final names (kept at the removal, `b811f2d`; recorded 2026-09-17).** The native decoders
+keep the `read_` prefix that F.3 gave them, and the legacy `decode_` names are gone. The
+reasons for not renaming them back are recorded here for review. The return type changed
+from `RadarVolume` to `Volume`, so every caller must be edited anyway, and a new name turns
+each such call site into a "cannot find function" error instead of a type error further
+along. The `read_` prefix is also uniform across the io crates. This departs from plan A.4,
+which names
+`decode_volume_with_metadata`. The full map (`main` `e9fdb6c` to `fm301`):
+
+| Crate | `main` | `fm301` |
+|---|---|---|
+| io-nexrad | `decode_volume_from_bytes`, `decode_volume_from_path`, `decode_volume_with_metadata`, `decode_volume_from_bytes_with_bzip_preview`, `decode_gzip_volume_from_bytes_with_preview`, `decode_gzip_volume_from_reader`, `decode_gzip_preview_from_bytes`, `decode_bzip_block_preview_from_bytes`, `decode_normalized_volume_bytes` | the same names with `read_` for `decode_` |
+| io (router) | `decode_supported_volume_bytes`, `decode_mobile_archive_from_path`, `decode_mobile_dir_from_path` | `read_supported_volume_bytes`, `read_mobile_archive_from_path`, `read_mobile_dir_from_path`; new `read_supported_volume_with_metadata` |
+| io-odim | `decode_odim_h5_volume` | `read_odim_h5_volume` |
+| io-cfradial | `decode_cfradial1_volume` | `read_cfradial1_volume` |
+| io-dorade | `decode_dorade_sweep_volume`, `decode_dorade_volume_from_slices`, `decode_dorade_volume_from_paths`, `decode_dorade_volume_for_path`, `decode_mobile_archive_from_path`, `decode_mobile_dir_from_path` | the same names with `read_`; the generic `read_*_as` variants over `MobileDecode` (one implementation, `Volume`; a leftover of the shim that could be folded away) |
+| io-jma | `decode_jma_tar_volumes`, `decode_jma_tar_first_station` | `read_jma_tar_volumes`, `read_jma_tar_first_station` |
+| io-level3 | — | new `read_level3_volume` |
+
+Internal helpers that do not return a model type keep their names (for example io-nexrad's
+private `decode_bzip_blocks_pipelined`).
+
 ---
 
 ## 14. Where xradar 0.12, FM301-2022 and Py-ART disagree, and what this model does
 
 | Topic | FM301-2022 text | xradar 0.12 | Py-ART 2.2.5 | Model / view |
 |---|---|---|---|---|
-| Ray dimension | `time` is primary (a CF coordinate, so monotonic) | `azimuth` (PPI) or `elevation` (RHI), rays sorted; `time` in acquisition order with `first_dim="time"` | a 1-D ray index across the volume | `FirstDim::Time`: `time`, acquisition order (a row permutation; identity for NEXRAD, CfRadial, DORADE). `FirstDim::Auto` (Xradar flavor): xradar's default. Model storage order never changes (12.1) |
+| Ray dimension | `time` is primary (a CF coordinate, so monotonic) | `azimuth` (PPI) or `elevation` (RHI), rays sorted; `time` in acquisition order with `first_dim="time"` | a 1-D ray index across the volume | `FirstDim::Time`: `time`, acquisition order (a row permutation; the identity for NEXRAD, CfRadial, most DORADE files and sources with equal ray times; not for ODIM with per-ray times or NOXP 2009 DORADE). `FirstDim::Auto` (Xradar flavor): xradar's default. Model storage order never changes (12.1, 12.2) |
 | Time reference | `seconds since YYYY-MM-DDThh:mm:ssZ`, whole seconds (Table 301-6b) | `time` as datetime64 | first radial's time floored to the second | `time_reference` whole seconds; fraction in `time_s` (section 2) |
 | Attribute types | `_Undetect`, `flag_values`, `flag_masks` "same as field data" (Table 301-10) | NEXRAD attributes as Python bool/int/float; `to_cfradial2` cannot write the bools | NEXRAD `vcp_pattern` as text | typed `AttrValue`; flag and range attributes in the packed type; bools as text in the WMO flavor |
 | Fixed angle variable | `fixed_angle` | `sweep_fixed_angle` | `fixed_angle` (volume array) | Xradar flavor: `sweep_fixed_angle`; WMO flavor: `fixed_angle` |
@@ -2443,6 +2630,62 @@ None of the resolutions adds work at decode:
 | 14 | minor | Py-ART alias table, classification and Py-ART conformance details | **Accepted.** PIDA alias is `path_integrateddifferential_attenuation` (checked). `PyartNames::{Config, Reader}` and `NameInfo::pyart_odim`. `Quantity::classify(name, standard_name)` tries standard name, then Py-ART names, then suffixes (xsapr `standard_name` checked; DOW8's name-as-standard-name falls through). F.4 uses `linear_interp=False` for coarse-reflectivity volumes. `FieldName` serde goes through `as_str`/`parse` | 4; 6.5; 8.2; 8.3 |
 | 15 | minor | `legacy.rs` and `SweepResidue` mechanics are underspecified or contradictory | **Accepted.** Only the model types move. `lib.rs` keeps `bounded_read`, refractivity, geometry and the module declarations (checked: `refractivity.rs` imports `crate::EARTH_RADIUS_M` and `crate::beam_height_above_radar_m`, and `field_names.rs` imports `crate::MomentType`). The acceptance compares item text instead of a `git diff -M` rename. The residue moved out of `Sweep` into `LegacyResidue`, returned beside the `Volume`, and `Sweep::legacy` is gone | 0 item 8; 3; 13.2; 13.4 |
 | 16 | minor | Float and ragged-source handling is ambiguous | **Accepted.** One rule for floats: stored verbatim, with the source fill as `_FillValue` and no rewrite pass. `FieldData::F64` added (espdg float64 checked, gain 1, offset 0); `FloatCoding::transform` covers ODIM float planes with other gain or offset. `push_row_*(ray, ..)` fills gaps as `absent_rows`. `n_gates_vary = "true"` is padded at decode; ray-to-ray geometry changes return `CfRadialError::PerRayGeometry` (a documented limitation). Checked: no corpus file uses either path | 0 item 4; 3; 4; 7.2; 7.3 |
+
+**Finding 5 as implemented (F.3, and the 2026-09-17 verifier fixes).** The model slots exist
+for every source. What each decoder fills:
+
+- **CfRadial 1:** global attributes without a typed slot go to `attrs.other` (9 on DOW8).
+  `status_xml` and `grid_mapping` become root `extra_vars`. `ray_start_range`,
+  `ray_gate_spacing` and `georef_*` become per-sweep `extra_vars`. `r_calib_*` become
+  calibration entries, with non-FM301 names in `extra`, and other field attributes go to
+  `FieldAttrs::other`. Every metadata item of the legacy CfRadial decoder has a home.
+- **ODIM_H5:** from the root `how`, else the first dataset's:
+  - `beamwH`/`beamwV` (or `beamwidth`), `antgainH`/`antgainV` and `RXbandwidth` go to
+    `radar_parameters`; `frequency` or `wavelength` gives `frequency_hz` (both also stay
+    verbatim).
+  - Per dataset (dataset `how` over the root's): `NI` gives the Nyquist velocity, `rpm` or
+    `antspeed` the target scan rate, and `pulsewidth` (microseconds; other magnitudes are
+    left verbatim) the per-ray pulse width. `radconstH`/`radconstV` with the antenna gains and
+    the pulse width give one `radar_calibration` entry per distinct set, and each ray's
+    `calib_index` points at its entry (iesha: datasets 1-9 at 67.949 dB and 2.0 µs, dataset
+    10 at 70.167 dB and 1.2 µs).
+  - Every other `how` attribute stays verbatim: the root's in `attrs.other`, a dataset's in
+    `Sweep::other` (iesha keeps 25 per dataset; dkrom keeps its per-ray angle and time
+    strings).
+  - Still dropped: per-ray `how` arrays other than the ray coordinates (none in the corpus;
+    of `startazA`/`stopazA`, `startelA`/`stopelA` and `startazT`/`stopazT` only the midpoints
+    are kept), `what`/`where` attributes the decoder does not read, and `dataM/how` groups.
+    `hdf5lite` widens numeric attributes to 64 bits and reads compact attribute storage only.
+    In the four checked files it reads every attribute h5py reports.
+  - xradar 0.12 drops all of this beyond `NI`, so `Flavor` views do not write the verbatim
+    part.
+- **DORADE:**
+  - PARM `param_description` and `param_units` become the field's `long_name` and `units`,
+    verbatim (8-character units: NOXP's KDP reads `dimensio`). PARM `pulse_width` (metres,
+    converted as 2L/c), `num_samples` and `recvr_bandwidth` go to per-ray `pulse_width`,
+    `n_samples` and `radar_parameters`.
+  - RADD beam widths and antenna gain go to `radar_parameters`. `radar_const`, `peak_power`
+    (as dBm), `noise_power`, `receiver_gain`, `antenna_gain` and `system_gain` (in `extra`)
+    give one calibration entry per distinct set across the sweepfiles, with per-ray
+    `calib_index`. `eff_unamb_range` gives `unambiguous_range` and `req_rotat_vel` the target
+    scan rate.
+  - RYIB `peak_power` gives the per-ray measured transmit power (COW2 125.9 kW, NOXP 300 kW;
+    DOW6 writes -999). VOLD `proj_name`, `flight_num` and `gen_facility` go to
+    `attrs.other` when not blank.
+  - Still dropped: RYIB `true_scan_rate` (missing in every corpus file), ASIB platform
+    records (documented limitation), SWIB `filter_flag`, and PARM polarization, threshold,
+    parameter type and configuration fields. `standard_name` stays unset because DORADE has
+    none.
+  - A multi-sweepfile volume takes `radar_parameters` and the VOLD text from its first
+    sweepfile.
+- **NEXRAD Level II:** Message 18 fills `radar_parameters` (frequency, antenna gain, beam width
+  before Build 18). The remaining RDA metadata is typed in `NexradMetadata` beside the
+  `Volume` (0 item 7), and the view writes xradar's items through `ExtraAttrs`.
+
+Tests: `odim_fm301.rs` (`*_how_*`, all four ODIM PVOLs against h5py),
+`dorade.rs` (`radd_parm_ryib_and_vold_descriptors_reach_the_model`,
+`calibration_entries_follow_the_sweepfile_constants`, against the `golden_io_formats.py`
+block walker), and `fm301_view.rs` (`passthrough_all_adds_the_verbatim_source_metadata`).
 
 ---
 

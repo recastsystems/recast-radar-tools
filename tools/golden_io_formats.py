@@ -360,6 +360,38 @@ def odim():
         "xradar_sweeps": xr_sweeps,
     }
 
+    # --- `how` metadata (ODIM_H5 v2.4 Table 8) of four PVOLs: the site
+    # constants of the root `how` and of the first dataset's, and per dataset
+    # its constants, every attribute that is not a per-ray array (name and
+    # value), and the names of the per-ray arrays.
+    typed = ("beamwH", "beamwV", "beamwidth", "antgainH", "antgainV", "RXbandwidth",
+             "radconstH", "radconstV", "rpm", "antspeed", "pulsewidth")
+    constants = {}
+    for key, entry in (("iesha", "odim-iesha-20260305-0115-pvol"), ("dkrom", "odim-dkrom-20260820-1130-pvol"),
+                       ("espdg", "odim-espdg-20260707-1927-pvol-dbzh-vradh"), ("norst", "odim-norst-20170421-0908-pvol")):
+        h5 = h5py.File(corpus_path(entry), "r")
+        datasets = sorted((k for k in h5 if k.startswith("dataset")), key=lambda s: int(s[7:]))
+        root = h5_attrs(h5["how"]) if "how" in h5 else {}
+        first = h5_attrs(h5[datasets[0]]["how"]) if "how" in h5[datasets[0]] else {}
+        per_dataset = []
+        for name in datasets:
+            how = h5_attrs(h5[name]["how"]) if "how" in h5[name] else {}
+            nrays = h5_attrs(h5[name]["where"])["nrays"]
+            per_ray = sorted(k for k, v in how.items() if isinstance(v, list) and len(v) == nrays)
+            per_dataset.append({
+                "constants": {k: how[k] for k in typed if k in how},
+                "attrs": {k: v for k, v in how.items() if k not in per_ray},
+                "per_ray": per_ray,
+            })
+        constants[key] = {
+            "id": entry,
+            "root": {k: root[k] for k in typed if k in root},
+            "root_attrs": root,
+            "first_dataset": {k: first[k] for k in typed if k in first},
+            "datasets": per_dataset,
+        }
+    out["how_constants"] = constants
+
     # --- espdg: copied what-group sentinels on VRADH (float64 planes).
     espdg_id = "odim-espdg-20260707-1927-pvol-dbzh-vradh"
     path = corpus_path(espdg_id)
@@ -567,6 +599,9 @@ def dorade_sweep(entry_id=None, data=None, probe_rays=(), probe_gates=()):
         elif ident == "VOLD":
             info["vold_volume_number"] = struct.unpack(e + "h", block[10:12])[0]
             info["vold_date"] = list(struct.unpack(e + "hhhhhh", block[36:48]))
+            text = lambda raw: raw.split(b"\0")[0].decode("latin1").strip()
+            info["vold_text"] = {"proj_name": text(block[16:36]), "flight_num": text(block[48:56]),
+                                 "gen_facility": text(block[56:64])}
         elif ident == "RADD":
             info["radar_name"] = block[8:16].split(b"\0")[0].decode("latin1").strip()
             info["scan_mode"] = struct.unpack(e + "h", block[50:52])[0]
@@ -574,14 +609,25 @@ def dorade_sweep(entry_id=None, data=None, probe_rays=(), probe_gates=()):
             info["longitude"], info["latitude"], info["altitude_km"], info["eff_unamb_vel"] = \
                 struct.unpack(e + "ffff", block[80:96])
             info["radd_bytes"] = size
+            names = ("radar_const", "peak_power", "noise_power", "receiver_gain", "antenna_gain",
+                     "system_gain", "horz_beam_width", "vert_beam_width")
+            info["radd_constants"] = dict(zip(names, struct.unpack(e + "8f", block[16:48])))
+            info["radd_constants"]["req_rotat_vel"] = struct.unpack(e + "f", block[52:56])[0]
+            info["radd_constants"]["eff_unamb_range"] = struct.unpack(e + "f", block[96:100])[0]
         elif ident == "PARM":
             name = block[8:16].split(b"\0")[0].decode("latin1").strip()
             fmt = struct.unpack(e + "h", block[78:80])[0]
             scale, bias = struct.unpack(e + "ff", block[92:100])
             bad = struct.unpack(e + "i", block[100:104])[0]
             cells = struct.unpack(e + "i", block[200:204])[0] if size >= 212 else None
+            description = block[16:56].split(b"\0")[0].decode("latin1").strip()
+            units = block[56:64].split(b"\0")[0].decode("latin1").strip()
+            bandwidth = struct.unpack(e + "f", block[68:72])[0]
+            pulse_width, polarization, samples = struct.unpack(e + "hhh", block[72:78])
             params.append({"name": name, "binary_format": fmt, "scale": scale, "bias": bias,
-                           "bad_data": bad, "number_cells": cells, "offset": pos, "size": size})
+                           "bad_data": bad, "number_cells": cells, "offset": pos, "size": size,
+                           "description": description, "units": units, "recvr_bandwidth": bandwidth,
+                           "pulse_width": pulse_width, "num_samples": samples})
         elif ident == "CFAC":
             names = ("azimuth", "elevation", "range_delay_m", "longitude", "latitude", "pressure_alt_km", "radar_alt_km")
             info["cfac"] = dict(zip(names, struct.unpack(e + "7f", block[8:36])))
@@ -603,10 +649,11 @@ def dorade_sweep(entry_id=None, data=None, probe_rays=(), probe_gates=()):
             info["fixed_angle"] = struct.unpack(e + "f", block[32:36])[0]
         elif ident == "RYIB":
             sweep, jday, hh, mm, ss, ms = struct.unpack(e + "iihhhh", block[8:24])
-            az, el = struct.unpack(e + "ff", block[24:32])
+            az, el, peak_power, true_scan_rate = struct.unpack(e + "ffff", block[24:40])
             status = struct.unpack(e + "i", block[40:44])[0]
             current = {"offset": pos, "julian_day": jday, "time": [hh, mm, ss, ms], "azimuth": az,
-                       "elevation": el, "status": status, "fields": {}}
+                       "elevation": el, "peak_power": peak_power, "true_scan_rate": true_scan_rate,
+                       "status": status, "fields": {}}
             rays.append(current)
         elif ident == "RDAT" and current is not None:
             name = block[8:16].split(b"\0")[0].decode("latin1").strip()
@@ -628,6 +675,10 @@ def dorade_sweep(entry_id=None, data=None, probe_rays=(), probe_gates=()):
     info["ray_offsets"] = [r["offset"] for r in rays]
     kept = [r for r in rays if r["status"] == 0] or rays
     info["kept_ray_count"] = len(kept)
+    # Distinct RYIB peak_power (kW) and true_scan_rate (deg/s) of the kept
+    # rays; -999, -9999 and -32768 are missing values.
+    info["ryib_peak_power"] = sorted({r["peak_power"] for r in kept})
+    info["ryib_true_scan_rate"] = sorted({r["true_scan_rate"] for r in kept})
 
     def ms_of_day(t):
         return ((t[0] * 60 + t[1]) * 60 + t[2]) * 1000 + t[3]
@@ -641,7 +692,8 @@ def dorade_sweep(entry_id=None, data=None, probe_rays=(), probe_gates=()):
     for index, ray in enumerate(kept):
         entry = {"azimuth": ray["azimuth"] + cfac.get("azimuth", 0.0),
                  "elevation": ray["elevation"] + cfac.get("elevation", 0.0),
-                 "time_offset_ms": ms_of_day(ray["time"]) - start_ms, "julian_day": ray["julian_day"]}
+                 "time_offset_ms": ms_of_day(ray["time"]) - start_ms, "julian_day": ray["julian_day"],
+                 "peak_power": ray["peak_power"], "true_scan_rate": ray["true_scan_rate"]}
         if index in probe_rays:
             entry["physical"] = {}
             entry["bad_count"] = {}

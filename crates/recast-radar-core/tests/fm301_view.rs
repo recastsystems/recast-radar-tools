@@ -367,6 +367,129 @@ fn zero_copy_fields_depend_on_first_dim() {
     }
 }
 
+/// `name` of `group` as materialized values.
+fn values(group: &fm301::Group<'_>, name: &str) -> ArrayBuf {
+    group
+        .variable(name)
+        .unwrap_or_else(|| panic!("{} has no {name}", group.name))
+        .values
+        .materialize()
+        .unwrap()
+}
+
+/// Unmodelled source metadata (`Volume::attrs.other`, `Sweep::other`) is
+/// written only with `Passthrough::All`; xradar 0.12 writes none of it
+/// (design note 0 item 10, 12.3). Typed site constants and per-ray
+/// calibration indices are written either way.
+#[test]
+fn passthrough_all_adds_the_verbatim_source_metadata() {
+    let all = ViewOptions {
+        passthrough: Passthrough::All,
+        ..TIME_ORDER
+    };
+    let cases = [
+        "cfrad1-dow8-20211011-223602-rhi-trim3-classic",
+        "odim-iesha-20260305-0115-pvol",
+        "dorade-noxp-20090525-203211-sector",
+    ];
+    for id in cases {
+        let Some(volume) = volume(id) else {
+            continue;
+        };
+        assert!(!volume.attrs.other.is_empty(), "{id}: no root metadata");
+        let flavor = fm301::volume_view(&volume, TIME_ORDER, None).unwrap();
+        let everything = fm301::volume_view(&volume, all, None).unwrap();
+        for (name, value) in &volume.attrs.other {
+            assert_eq!(everything.root.attr(name), Some(value), "{id}: {name}");
+            assert_eq!(flavor.root.attr(name), None, "{id}: {name}");
+        }
+        for (index, sweep) in volume.sweeps.iter().enumerate() {
+            let path = format!("sweep_{index}");
+            let (flavor, everything) = (
+                flavor.group(&path).unwrap(),
+                everything.group(&path).unwrap(),
+            );
+            for (name, value) in &sweep.other {
+                assert_eq!(everything.attr(name), Some(value), "{id} {path}: {name}");
+                assert_eq!(flavor.attr(name), None, "{id} {path}: {name}");
+            }
+            assert_eq!(
+                flavor.variables.len(),
+                everything.variables.len(),
+                "{id} {path}"
+            );
+        }
+    }
+
+    // CfRadial: the file's global attributes without a typed slot.
+    if let Some(dow8) = volume("cfrad1-dow8-20211011-223602-rhi-trim3-classic") {
+        assert_eq!(dow8.attrs.other.len(), 9, "{:?}", dow8.attrs.other);
+    }
+
+    // ODIM: root and dataset `how` attributes; two calibration entries
+    // (datasets 1-9 at 2.0 microseconds, dataset 10 at 1.2).
+    if let Some(iesha) = volume("odim-iesha-20260305-0115-pvol") {
+        let view = fm301::volume_view(&iesha, all, None).unwrap();
+        assert_eq!(view.root.attr("software"), Some(&text("RAINBOW 5.61.14")));
+        assert_eq!(
+            view.group("sweep_0").unwrap().attr("NEZH"),
+            Some(&AttrValue::Scalar(Scalar::F64(-47.7944)))
+        );
+        assert_eq!(
+            view.group("sweep_9").unwrap().attr("NEZH"),
+            Some(&AttrValue::Scalar(Scalar::F64(-43.3579)))
+        );
+        let calibration = view.group("radar_calibration").unwrap();
+        assert_eq!(calibration.dim("calib"), Some(2));
+        assert_eq!(
+            values(calibration, "calib_index"),
+            ArrayBuf::I32(vec![0, 1])
+        );
+        assert_eq!(
+            values(calibration, "radar_constant_h"),
+            ArrayBuf::F32(vec![67.949, 70.167])
+        );
+        assert_eq!(
+            values(calibration, "pulse_width"),
+            ArrayBuf::F32(vec![2e-6, 1.2e-6])
+        );
+        for (index, expected) in [(0, 0), (8, 0), (9, 1)] {
+            let sweep = view.group(&format!("sweep_{index}")).unwrap();
+            let rays = sweep.dim("time").unwrap();
+            assert_eq!(
+                values(sweep, "r_calib_index"),
+                ArrayBuf::I32(vec![expected; rays]),
+                "sweep {index}"
+            );
+        }
+    }
+
+    // DORADE: VOLD text, the RADD calibration entry and the RYIB transmit
+    // power (300 kW) per ray.
+    if let Some(noxp) = volume("dorade-noxp-20090525-203211-sector") {
+        let view = fm301::volume_view(&noxp, all, None).unwrap();
+        assert_eq!(view.root.attr("gen_facility"), Some(&text("NOXPRVP")));
+        let calibration = view.group("radar_calibration").unwrap();
+        assert_eq!(calibration.dim("calib"), Some(1));
+        assert_eq!(
+            values(calibration, "radar_constant_h"),
+            ArrayBuf::F32(vec![63.71])
+        );
+        let parameters = view.group("radar_parameters").unwrap();
+        assert_eq!(
+            parameters.variable("radar_beam_width_h").unwrap().values,
+            Values::Scalar(Scalar::F32(0.879_999_94))
+        );
+        let sweep = view.group("sweep_0").unwrap();
+        let rays = sweep.dim("time").unwrap();
+        let ArrayBuf::F32(power) = values(sweep, "measured_transmit_power_h") else {
+            panic!("float32 transmit power");
+        };
+        assert_eq!(power.len(), rays);
+        assert!(power.iter().all(|dbm| (dbm - 84.771_21).abs() < 1e-3));
+    }
+}
+
 #[test]
 fn flag_values_that_do_not_fit_the_packed_type_are_an_error() {
     let Some(mut volume) = volume("l2-ktlx-20240315-000217-trim") else {

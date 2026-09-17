@@ -153,11 +153,11 @@ where
     F: Fn(&[u8]) -> std::result::Result<Volume, E> + Sync,
     E: Display,
 {
-    decode_mobile_archive_as::<Volume, F, E>(path, decode_level2)
+    read_mobile_archive_as::<Volume, F, E>(path, decode_level2)
 }
 
 /// [`read_mobile_archive_from_path`] for any [`MobileDecode`] volume type.
-pub fn decode_mobile_archive_as<V, F, E>(
+pub fn read_mobile_archive_as<V, F, E>(
     path: &Path,
     decode_level2: F,
 ) -> Result<Vec<MobileVolume<V>>>
@@ -189,11 +189,11 @@ where
     F: Fn(&[u8]) -> std::result::Result<Volume, E> + Sync,
     E: Display,
 {
-    decode_mobile_dir_as::<Volume, F, E>(dir, decode_level2)
+    read_mobile_dir_as::<Volume, F, E>(dir, decode_level2)
 }
 
 /// [`read_mobile_dir_from_path`] for any [`MobileDecode`] volume type.
-pub fn decode_mobile_dir_as<V, F, E>(dir: &Path, decode_level2: F) -> Result<Vec<MobileVolume<V>>>
+pub fn read_mobile_dir_as<V, F, E>(dir: &Path, decode_level2: F) -> Result<Vec<MobileVolume<V>>>
 where
     V: MobileDecode,
     F: Fn(&[u8]) -> std::result::Result<V, E> + Sync,
@@ -589,11 +589,11 @@ const PEEK_HEAD_BYTES: usize = 64 * 1024;
 /// headers are peeked from the first `PEEK_HEAD_BYTES` only, so opening a
 /// file in a large deployment directory stays cheap.
 pub fn read_dorade_volume_for_path(path: &Path) -> Result<Volume> {
-    decode_dorade_volume_for_path_as::<Volume>(path)
+    read_dorade_volume_for_path_as::<Volume>(path)
 }
 
 /// [`read_dorade_volume_for_path`] for any [`MobileDecode`] volume type.
-pub fn decode_dorade_volume_for_path_as<V: MobileDecode>(path: &Path) -> Result<V> {
+pub fn read_dorade_volume_for_path_as<V: MobileDecode>(path: &Path) -> Result<V> {
     let bytes = read_file_limited(path, MAX_MOBILE_MEMBER_BYTES)?;
     let header = peek_dorade_sweep(&bytes)?;
 

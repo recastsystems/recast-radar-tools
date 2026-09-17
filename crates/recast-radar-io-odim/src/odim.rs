@@ -50,12 +50,14 @@
 //! 8/16-bit unsigned and float data planes are supported (the only types
 //! OPERA members emit).
 
+use std::collections::BTreeSet;
+
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
 use recast_radar_core::model::{
-    Field, FieldData, FieldName, FloatCoding, FloatWidth, FollowMode, GateMapping, IntCoding,
-    LinearTransform, PackedInt, Quantity, RangeCoord, SourceFormat, Sweep, SweepMode, Volume,
-    floor_to_second,
+    ArrayBuf, AttrValue, Field, FieldData, FieldName, FloatCoding, FloatWidth, FollowMode,
+    GateMapping, IntCoding, LinearTransform, PackedInt, Quantity, RadarCalibration,
+    RadarParameters, RangeCoord, Scalar, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
 };
 
 pub use crate::hdf5lite::looks_like_hdf5_bytes;
@@ -109,7 +111,7 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
     if let Some(mhz) = odim_radar_frequency_mhz(&file) {
         volume.radar_parameters.frequency_hz = vec![mhz * 1e6];
     }
-    let root_nyquist = attr_f64(&file, "/how", "NI");
+    let root_how = How::read(&file, "/how");
 
     let mut dataset_names: Vec<String> = file
         .child_names("/")
@@ -125,17 +127,34 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
     }
     check_sweep_count(dataset_names.len(), "ODIM_H5 volume").map_err(OdimError::LimitExceeded)?;
 
+    let first_how = How::read(&file, &format!("/{}/how", dataset_names[0]));
+    let mut root_used = describe_volume(&root_how, &first_how, &mut volume);
+
     let mut budget = DecodeBudget::volume();
     // Absolute ray times (seconds since the Unix epoch) until the reference
     // is known.
     let mut ray_epoch_s: Vec<Vec<f64>> = Vec::with_capacity(dataset_names.len());
     let mut skipped_planes = 0usize;
     for (index, name) in dataset_names.iter().enumerate() {
-        let (sweep, times) = decode_sweep(&file, name, index, root_nyquist, &mut budget)?;
+        let (mut sweep, times) = decode_sweep(
+            &file,
+            name,
+            index,
+            &root_how,
+            &volume.radar_parameters,
+            &mut budget,
+        )?;
         skipped_planes += sweep.skipped_planes;
         ray_epoch_s.push(times);
+        root_used.extend(sweep.root_used);
+        if let Some(calibration) = sweep.calibration {
+            let index = calibration_index(&mut volume.radar_calibration, calibration);
+            sweep.sweep.ray_vars.calib_index = Some(vec![index; sweep.sweep.nrays()]);
+        }
         volume.sweeps.push(sweep.sweep);
     }
+    // The root `how` attributes no typed slot holds, verbatim.
+    volume.attrs.other = root_how.unused(&root_used, None);
 
     // Time reference: the nominal volume time, else the earliest ray.
     if nominal_time.is_none() {
@@ -168,13 +187,18 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
 struct DecodedSweep {
     sweep: Sweep,
     skipped_planes: usize,
+    /// The dataset's radar constants, for `radar_calibration`.
+    calibration: Option<RadarCalibration>,
+    /// Root `how` attributes the sweep took as its defaults.
+    root_used: BTreeSet<&'static str>,
 }
 
 fn decode_sweep(
     file: &H5File<'_>,
     dataset: &str,
     index: usize,
-    root_nyquist: Option<f64>,
+    root_how: &How,
+    parameters: &RadarParameters,
     budget: &mut DecodeBudget,
 ) -> Result<(DecodedSweep, Vec<f64>)> {
     let where_path = format!("/{dataset}/where");
@@ -185,10 +209,36 @@ fn decode_sweep(
         as f32;
     let rstart_km = attr_f64(file, &where_path, "rstart").unwrap_or(0.0);
     let rscale_m = attr_f64(file, &where_path, "rscale").unwrap_or(0.0);
-    let nyquist = attr_f64(file, &how_path, "NI")
-        .or(root_nyquist)
+    let how = How::read(file, &how_path);
+    let mut settings = SweepHow::new(&how, root_how);
+    let nyquist = settings
+        .number("NI")
         .map(|value| value as f32)
         .filter(|value| *value > 0.0);
+    settings.used("NI", nyquist.is_some());
+    // `rpm` (revolutions per minute), else `antspeed` (deg/s, v2.4).
+    let rpm = settings
+        .number("rpm")
+        .filter(|rpm| *rpm > 0.0)
+        .map(|rpm| (rpm * 6.0) as f32);
+    settings.used("rpm", rpm.is_some());
+    let scan_rate = rpm.or_else(|| {
+        let speed = settings
+            .number("antspeed")
+            .filter(|speed| *speed > 0.0)
+            .map(|speed| speed as f32);
+        settings.used("antspeed", speed.is_some());
+        speed
+    });
+    // ODIM_H5 v2.2+ gives microseconds; a value outside 0.05 to 10 is
+    // another unit (AEMET writes 1e-06) and stays verbatim.
+    let pulse_width_s = settings
+        .number("pulsewidth")
+        .filter(|us| (0.05..=10.0).contains(us))
+        .map(|us| (us * 1e-6) as f32);
+    settings.used("pulsewidth", pulse_width_s.is_some());
+    let calibration = settings.calibration(pulse_width_s);
+    settings.site_constants(parameters);
 
     let mut data_names: Vec<String> = file
         .child_names(&format!("/{dataset}"))
@@ -228,6 +278,15 @@ fn decode_sweep(
 
     let mut sweep = Sweep::new(index as u32, SweepMode::AzimuthSurveillance, elangle);
     sweep.follow_mode = Some(FollowMode::None);
+    sweep.target_scan_rate_deg_per_s = scan_rate;
+    // The dataset's other `how` attributes, verbatim; per-ray arrays the
+    // decoder does not read into ray coordinates are left out.
+    let SweepHow {
+        dataset_used,
+        root_used,
+        ..
+    } = settings;
+    sweep.other = how.unused(&dataset_used, Some(nrays));
     sweep.range = RangeCoord::Uniform {
         first_center_m,
         spacing_m,
@@ -297,6 +356,9 @@ fn decode_sweep(
     sweep.rays.time_s = vec![0.0; nrays];
     if let Some(nyquist) = nyquist {
         sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyquist; nrays]);
+    }
+    if let Some(pulse_width_s) = pulse_width_s {
+        sweep.ray_vars.pulse_width_s = Some(vec![pulse_width_s; nrays]);
     }
 
     let mut skipped_planes = 0usize;
@@ -384,6 +446,8 @@ fn decode_sweep(
         DecodedSweep {
             sweep,
             skipped_planes,
+            calibration,
+            root_used,
         },
         times,
     ))
@@ -820,6 +884,220 @@ fn attr_array(file: &H5File<'_>, path: &str, name: &str) -> Option<Vec<f64>> {
         H5Attr::F64(value) => Some(vec![value]),
         H5Attr::I64(value) => Some(vec![value as f64]),
         H5Attr::Str(_) => None,
+    }
+}
+
+/// The attributes of one `how` group, in header order (empty when the
+/// group does not exist).
+struct How(Vec<(String, H5Attr)>);
+
+impl How {
+    fn read(file: &H5File<'_>, path: &str) -> Self {
+        Self(file.attrs(path))
+    }
+
+    /// The finite numeric value of `name`.
+    fn number(&self, name: &str) -> Option<f64> {
+        self.0
+            .iter()
+            .find(|(key, _)| key == name)
+            .and_then(|(_, value)| value.as_f64())
+            .filter(|value| value.is_finite())
+    }
+
+    /// The attributes not named in `used`, verbatim. With `nrays`, arrays
+    /// with one entry per ray are left out too.
+    fn unused(&self, used: &BTreeSet<&str>, nrays: Option<usize>) -> Vec<(Box<str>, AttrValue)> {
+        self.0
+            .iter()
+            .filter(|(name, _)| !used.contains(name.as_str()))
+            .filter(|(_, value)| nrays.is_none_or(|nrays| !is_per_ray(value, nrays)))
+            .map(|(name, value)| (Box::from(name.as_str()), attr_value(value.clone())))
+            .collect()
+    }
+}
+
+/// Site constants from ODIM_H5 `how` (v2.4 Table 8) into
+/// `radar_parameters`: `beamwH`/`beamwV` (deg; the older `beamwidth` for
+/// either), `antgainH`/`antgainV` (dB) and `RXbandwidth` (MHz), each from
+/// the root `how`, else the first dataset's. Returns the root attributes it
+/// used.
+fn describe_volume(root: &How, first: &How, volume: &mut Volume) -> BTreeSet<&'static str> {
+    let mut root_used = BTreeSet::new();
+    let mut positive = |name: &'static str| {
+        let root_value = root.number(name).filter(|value| *value > 0.0);
+        if root_value.is_some() {
+            root_used.insert(name);
+        }
+        root_value
+            .or_else(|| first.number(name).filter(|value| *value > 0.0))
+            .map(|value| value as f32)
+    };
+    let beam_width_h = positive("beamwH");
+    let beam_width_v = positive("beamwV");
+    let antenna_gain_h = positive("antgainH");
+    let antenna_gain_v = positive("antgainV");
+    let bandwidth_mhz = positive("RXbandwidth");
+    let beamwidth = match (beam_width_h, beam_width_v) {
+        (Some(_), Some(_)) => None,
+        _ => positive("beamwidth"),
+    };
+    let parameters = &mut volume.radar_parameters;
+    parameters.beam_width_h_deg = beam_width_h.or(beamwidth);
+    parameters.beam_width_v_deg = beam_width_v.or(beamwidth);
+    parameters.antenna_gain_h_db = antenna_gain_h;
+    parameters.antenna_gain_v_db = antenna_gain_v;
+    parameters.receiver_bandwidth_hz = bandwidth_mhz.map(|mhz| mhz * 1e6);
+    root_used
+}
+
+/// A dataset's `how` settings: the dataset's value of an attribute, else
+/// the root's (ODIM_H5: lower-level `how` attributes override higher ones),
+/// and which attributes of each level a typed slot took.
+struct SweepHow<'a> {
+    dataset: &'a How,
+    root: &'a How,
+    dataset_used: BTreeSet<&'static str>,
+    root_used: BTreeSet<&'static str>,
+}
+
+impl<'a> SweepHow<'a> {
+    fn new(dataset: &'a How, root: &'a How) -> Self {
+        Self {
+            dataset,
+            root,
+            dataset_used: BTreeSet::new(),
+            root_used: BTreeSet::new(),
+        }
+    }
+
+    fn number(&self, name: &str) -> Option<f64> {
+        self.dataset.number(name).or_else(|| self.root.number(name))
+    }
+
+    /// Record that the value [`Self::number`] returned for `name` went into
+    /// a typed slot.
+    fn used(&mut self, name: &'static str, used: bool) {
+        if !used {
+            return;
+        }
+        if self.dataset.number(name).is_some() {
+            self.dataset_used.insert(name);
+        } else if self.root.number(name).is_some() {
+            self.root_used.insert(name);
+        }
+    }
+
+    /// `radconstH`/`radconstV` (dB) with the antenna gains and the pulse
+    /// width they apply to, as a `radar_calibration` entry (without an
+    /// index); `None` without a radar constant.
+    fn calibration(&mut self, pulse_width_s: Option<f32>) -> Option<RadarCalibration> {
+        let mut value = |name: &'static str, positive: bool| {
+            let value = self
+                .number(name)
+                .filter(|value| !positive || *value > 0.0)
+                .map(|value| value as f32);
+            self.used(name, value.is_some());
+            value
+        };
+        let radar_constant_h = value("radconstH", false);
+        let radar_constant_v = value("radconstV", false);
+        if radar_constant_h.is_none() && radar_constant_v.is_none() {
+            return None;
+        }
+        Some(RadarCalibration {
+            radar_constant_h,
+            radar_constant_v,
+            antenna_gain_h_db: value("antgainH", true),
+            antenna_gain_v_db: value("antgainV", true),
+            pulse_width_s,
+            ..RadarCalibration::default()
+        })
+    }
+
+    /// Mark the dataset's site constants that equal the volume's
+    /// `radar_parameters` as held there.
+    fn site_constants(&mut self, parameters: &RadarParameters) {
+        let same = |value: Option<f64>, slot: Option<f32>| {
+            value.is_some_and(|value| Some(value as f32) == slot)
+        };
+        let dataset = self.dataset;
+        let beamwidth = dataset.number("beamwidth");
+        let checks: [(&'static str, bool); 6] = [
+            (
+                "beamwH",
+                same(dataset.number("beamwH"), parameters.beam_width_h_deg),
+            ),
+            (
+                "beamwV",
+                same(dataset.number("beamwV"), parameters.beam_width_v_deg),
+            ),
+            (
+                "beamwidth",
+                same(beamwidth, parameters.beam_width_h_deg)
+                    && same(beamwidth, parameters.beam_width_v_deg),
+            ),
+            (
+                "antgainH",
+                same(dataset.number("antgainH"), parameters.antenna_gain_h_db),
+            ),
+            (
+                "antgainV",
+                same(dataset.number("antgainV"), parameters.antenna_gain_v_db),
+            ),
+            (
+                "RXbandwidth",
+                same(
+                    dataset.number("RXbandwidth").map(|mhz| mhz * 1e6),
+                    parameters.receiver_bandwidth_hz,
+                ),
+            ),
+        ];
+        for (name, same) in checks {
+            if same {
+                self.dataset_used.insert(name);
+            }
+        }
+    }
+}
+
+/// The `calib_index` of `entry` in `calibration`: an equal entry's, else a
+/// new entry's.
+fn calibration_index(calibration: &mut Vec<RadarCalibration>, entry: RadarCalibration) -> i32 {
+    let found = calibration.iter().find(|existing| {
+        RadarCalibration {
+            calib_index: None,
+            ..(*existing).clone()
+        } == entry
+    });
+    if let Some(index) = found.and_then(|existing| existing.calib_index) {
+        return index;
+    }
+    let index = i32::try_from(calibration.len()).unwrap_or(i32::MAX);
+    calibration.push(RadarCalibration {
+        calib_index: Some(index),
+        ..entry
+    });
+    index
+}
+
+/// An array attribute with one entry per ray (a per-ray `how` array).
+fn is_per_ray(value: &H5Attr, nrays: usize) -> bool {
+    nrays > 1
+        && match value {
+            H5Attr::F64Array(values) => values.len() == nrays,
+            H5Attr::I64Array(values) => values.len() == nrays,
+            _ => false,
+        }
+}
+
+fn attr_value(value: H5Attr) -> AttrValue {
+    match value {
+        H5Attr::Str(text) => AttrValue::Text(text.into()),
+        H5Attr::F64(value) => AttrValue::Scalar(Scalar::F64(value)),
+        H5Attr::I64(value) => AttrValue::Scalar(Scalar::I64(value)),
+        H5Attr::F64Array(values) => AttrValue::Array(ArrayBuf::F64(values)),
+        H5Attr::I64Array(values) => AttrValue::Array(ArrayBuf::I64(values)),
     }
 }
 
