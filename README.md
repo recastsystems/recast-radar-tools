@@ -235,6 +235,7 @@ the centre to the edge.
 | `recast-radar-tools` | | The facade: re-exports the crates below as modules behind features |
 | `recast-radar-core` | `core` | FM301 data model: volumes, sweeps, ray coordinates, fields with CF packing, the FM301 group view, beam geometry, field names |
 | `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2; the Level III VAD Wind Profile product |
+| `recast-radar-bzip2` | | bzip2 decompressor without unsafe code or dependencies, written for LDM records: about a quarter of the instructions of C libbzip2 |
 | `recast-radar-io-level3` | `level3` | NEXRAD and TDWR Level III products: NOAAPort/WMO framing, message and product description headers, symbology, graphic and tabular blocks, display packets, data levels |
 | `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through an HDF5 reader written in Rust |
 | `recast-radar-io-cfradial` | `cfradial` | CfRadial 1, through a classic netCDF (CDF-1, CDF-2) reader written in Rust |
@@ -307,8 +308,10 @@ keywords, categories and a readme.
 
 Without `net`, nothing in the build compiles C or C++, for any target:
 
-- bzip2 through the `bzip2` crate's Rust backend (`libbz2-rs-sys` is a Rust
-  port, despite its name), gzip and zlib through `flate2` with `zlib-rs`.
+- Level II bzip2 (LDM records and whole-file) through `recast-radar-bzip2`,
+  this repository's decoder without unsafe code; Level III bzip2 through the
+  `bzip2` crate's Rust backend (`libbz2-rs-sys` is a Rust port, despite its
+  name); gzip and zlib through `flate2` with `zlib-rs`.
 - HDF5 (for ODIM_H5) and classic netCDF (for CfRadial) are read by parsers in
   this repository, not by the C libraries.
 - chrono is built with its `now` feature instead of `clock`. `clock` would add

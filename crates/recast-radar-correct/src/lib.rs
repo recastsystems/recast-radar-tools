@@ -16,6 +16,8 @@
 
 mod dealias_pyart;
 mod dealias_v4;
+#[cfg(test)]
+mod real_data;
 mod region_core;
 
 pub use dealias_pyart::dealias_velocity_pyart_region;
@@ -597,397 +599,377 @@ fn first_minimum_index(values: &[f64]) -> usize {
 }
 
 #[cfg(test)]
-pub(crate) mod test_support {
-    use recast_radar_core::{Field, FieldData, FieldName, FloatCoding, Sweep, SweepMode};
-
-    /// A sealed PPI sweep at `elevation_deg` with one physical velocity field
-    /// (`VRADH`) of `azimuths.len()` rows on uniform gates, and per-ray Nyquist
-    /// velocities when given.
-    pub(crate) fn velocity_sweep(
-        azimuths: &[f32],
-        elevation_deg: f32,
-        first_center_m: f64,
-        spacing_m: f64,
-        gates: usize,
-        values: Vec<f32>,
-        nyquist_mps: Option<Vec<f32>>,
-    ) -> Sweep {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, elevation_deg);
-        for (ray, azimuth) in azimuths.iter().enumerate() {
-            sweep.push_ray(ray as f64, *azimuth, elevation_deg);
-        }
-        sweep.ray_vars.nyquist_velocity_mps = nyquist_mps;
-        let mapping = sweep
-            .attach_geometry(first_center_m, spacing_m, gates as u32)
-            .unwrap();
-        let mut field = Field::new(
-            FieldName::Vradh,
-            mapping,
-            gates as u32,
-            FieldData::F32 {
-                values,
-                coding: FloatCoding::default(),
-            },
-        );
-        field.nrays = azimuths.len() as u32;
-        sweep.add_field(field).unwrap();
-        sweep.seal().unwrap();
-        sweep
-    }
-}
-
-#[cfg(test)]
 mod tests {
+    //! Region engine tests on real Level II sweeps. Expected folds come from
+    //! Py-ART 2.2.5 `dealias_region_based` on the same files
+    //! (`tools/correct_golden.py`, goldens in `tests/golden/`); a golden's
+    //! rays are checked against the decoded rows gate for gate before use.
+
     use super::*;
-    use crate::test_support::velocity_sweep;
+    use crate::real_data::{
+        self, VelocitySweep, enclosed_patches, fold_agreement, golden_volume, grid_folds,
+        radial_jumps_removed,
+    };
 
-    fn velocity(sweep: &Sweep) -> &Field {
-        &sweep.fields[0]
-    }
-
+    /// Along each ray the raw velocity jumps by more than the Nyquist velocity
+    /// wherever the wind folds, and Py-ART's unfolding makes those gate pairs
+    /// continuous: 3,735 in the KDVN derecho sector (Nyquist 21.0 m/s), 6,713
+    /// in the KBOX blizzard sector (28.4 m/s). The region engine must restore
+    /// radial continuity at nearly all of them (measured: 3,402 and 6,672).
     #[test]
     fn lightweight_velocity_dealias_unfolds_radial_continuity() {
-        let sweep = velocity_sweep(
-            &[0.0],
-            0.5,
-            0.0,
-            1000.0,
-            5,
-            vec![0.0, 5.0, 9.0, -9.0, -7.0],
-            Some(vec![10.0]),
-        );
-
-        let corrected = dealias_velocity(&sweep, velocity(&sweep));
-        assert!(matches!(corrected.data, FieldData::U16 { .. }));
-        assert_eq!(corrected.name, FieldName::Vraddh);
-        assert_eq!(corrected.gates, velocity(&sweep).gates);
-
-        let values = (0..corrected.ngates as usize)
-            .map(|gate| corrected.value(0, gate).expect("corrected gate"))
-            .collect::<Vec<_>>();
-        assert_eq!(values, vec![0.0, 5.0, 9.0, 11.0, 13.0]);
+        for (case, min_share) in [
+            ("kdvn_20200810_trim_s1", 0.89),
+            ("kbox_20220129_trim_s1", 0.99),
+        ] {
+            let Some((volume, golden)) = golden_volume(case) else {
+                return;
+            };
+            let cut = &volume.sweeps[golden.sweep];
+            let sweep = VelocitySweep::of_sweep(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let corrected = dealias_velocity(cut, real_data::velocity(cut));
+            assert!(matches!(corrected.data, FieldData::U16 { .. }));
+            assert_eq!(corrected.name, FieldName::Vraddh);
+            let engine = grid_folds(&sweep, &corrected);
+            let (by_pyart, by_engine) = radial_jumps_removed(&sweep, &pyart, &engine);
+            eprintln!("{case}: raw jumps Py-ART removes {by_pyart}, engine also {by_engine}");
+            assert!(
+                by_pyart > 300,
+                "{case}: the sweep must actually fold along rays"
+            );
+            assert!(
+                by_engine as f64 >= min_share * by_pyart as f64,
+                "{case}: engine restored continuity at {by_engine} of {by_pyart} folded gate pairs"
+            );
+        }
     }
 
+    /// Feeds without a usable Nyquist velocity pass through unchanged and
+    /// report the skip: the TDWR Doppler cut (every radial carries Nyquist 0;
+    /// Py-ART reads the same) and all 13 sweeps of a JMA radial-velocity
+    /// station member (staggered PRT; the JMA decoder leaves Nyquist unset).
     #[test]
     fn dealias_skip_detection_reports_nyquist_less_feeds() {
-        // JMA-style feed: staggered PRF leaves Nyquist unset on every
-        // ray, so the "dealiased" field is a pure pass-through and the UI
-        // must be able to disclose that.
-        let observed = vec![2.0f32, 4.0, 6.0, 8.0];
-        let rows_data: Vec<Vec<f32>> = (0..4).map(|_| observed.clone()).collect();
-        let mut sweep = test_velocity_sweep_rows(rows_data);
-        sweep.ray_vars.nyquist_velocity_mps = None;
-
-        assert!(
-            dealias_skipped_no_nyquist(&sweep, velocity(&sweep)),
-            "no usable Nyquist on any ray must report the skip"
-        );
-        // The skip really is a pass-through: values come back as recorded.
-        let corrected = dealias_velocity(&sweep, velocity(&sweep));
-        for (gate, value) in observed.iter().enumerate() {
-            assert_eq!(
-                corrected.value(1, gate),
-                Some(*value),
-                "gate {gate} must pass through unchanged"
-            );
-        }
-
-        // Any ray with a usable Nyquist flips the answer (the median
-        // fallback then covers Nyquist-less rows).
-        let with_first = |first: f32| {
-            let mut nyquist = vec![f32::NAN; 4];
-            nyquist[0] = first;
-            Some(nyquist)
+        let Some((volume, golden)) = golden_volume("tstl_20230331_trim_s1") else {
+            return;
         };
-        sweep.ray_vars.nyquist_velocity_mps = with_first(20.0);
-        assert!(!dealias_skipped_no_nyquist(&sweep, velocity(&sweep)));
+        assert_eq!(
+            golden.nyquist_mps, 0.0,
+            "Py-ART reads Nyquist 0 from the TDWR file"
+        );
+        let mut cut = volume.sweeps[golden.sweep].clone();
+        let sweep = VelocitySweep::of_sweep(&cut);
+        golden.aligned_folds(&cut, &sweep);
+        assert!(dealias_skipped_no_nyquist(&cut, real_data::velocity(&cut)));
+        let corrected = dealias_velocity(&cut, real_data::velocity(&cut));
+        assert_pass_through(&sweep, &corrected, golden.valid_gates);
 
-        // Non-finite / non-positive declarations are not usable Nyquists.
-        sweep.ray_vars.nyquist_velocity_mps = with_first(0.0);
-        assert!(dealias_skipped_no_nyquist(&sweep, velocity(&sweep)));
-        sweep.ray_vars.nyquist_velocity_mps = with_first(f32::NAN);
-        assert!(dealias_skipped_no_nyquist(&sweep, velocity(&sweep)));
+        // JMA: 547,108 of 2,201,600 velocity gates are non-missing (manifest
+        // description of the member, from the JMA GRIB2 run-length walker).
+        let bytes = match recast_radar_testdata::bytes("jma-n6-20191012-090000-rs47773") {
+            Ok(bytes) => bytes,
+            Err(error) if error.is_offline() => return,
+            Err(error) => panic!("{error}"),
+        };
+        let jma = recast_radar_io_jma::read_jma_tar_first_station(&bytes).expect("decode JMA");
+        assert_eq!(jma.sweeps.len(), 13);
+        let mut valid = 0;
+        for jma_cut in &jma.sweeps {
+            let grid = real_data::velocity(jma_cut);
+            assert!(dealias_skipped_no_nyquist(jma_cut, grid));
+            let jma_sweep = VelocitySweep::of_sweep(jma_cut);
+            let finite = jma_sweep.finite_gates();
+            assert_pass_through(&jma_sweep, &dealias_velocity(jma_cut, grid), finite);
+            valid += finite;
+        }
+        assert_eq!(valid, 547_108);
+
+        // Positive control: the KDVN Doppler cut carries Nyquist 21.03 m/s.
+        let Some((control, control_golden)) = golden_volume("kdvn_20200810_trim_s1") else {
+            return;
+        };
+        let control_cut = &control.sweeps[control_golden.sweep];
+        assert!(!dealias_skipped_no_nyquist(
+            control_cut,
+            real_data::velocity(control_cut)
+        ));
+
+        // Edits of the decoded TDWR cut: one radial with the control's
+        // Nyquist makes the whole cut dealiasable (median fallback); zero or
+        // NaN declarations are not usable.
+        real_data::set_nyquist(&mut cut, 0, control_golden.nyquist_mps);
+        assert!(!dealias_skipped_no_nyquist(&cut, real_data::velocity(&cut)));
+        real_data::set_nyquist(&mut cut, 0, 0.0);
+        assert!(dealias_skipped_no_nyquist(&cut, real_data::velocity(&cut)));
+        real_data::set_nyquist(&mut cut, 0, f32::NAN);
+        assert!(dealias_skipped_no_nyquist(&cut, real_data::velocity(&cut)));
     }
 
+    fn assert_pass_through(sweep: &VelocitySweep, corrected: &Field, valid_gates: usize) {
+        let mut valid = 0;
+        for (idx, observed) in sweep.observed.iter().enumerate() {
+            let value = corrected.value(idx / sweep.gates, idx % sweep.gates);
+            if observed.is_finite() {
+                valid += 1;
+                let value = value.expect("valid gate kept");
+                assert!(
+                    (value - observed).abs() <= 0.05,
+                    "gate {idx}: {value} != observed {observed}"
+                );
+            } else {
+                assert_eq!(value, None, "gate {idx} has no observation");
+            }
+        }
+        assert_eq!(valid, valid_gates);
+    }
+
+    /// Smoothly varying winds folded across whole regions: the KBOX blizzard
+    /// sector (Py-ART moves 13,895 gates) and Ida's 0.48 deg cut at Nyquist
+    /// 23.2 m/s (152,673 gates). The engine's folds must match Py-ART's up to
+    /// one global 2N offset, and the unfolded field must not break where
+    /// Py-ART's is continuous.
     #[test]
     fn region_dealias_recovers_smooth_folded_ramp() {
-        // A smooth radial velocity ramp from -34 to +34 m/s with Nyquist 20 is
-        // aliased into [-20, 20]; the region-based unfolder must recover the
-        // smooth field (up to a global 2·Nyquist constant from anchoring).
-        let nyq = 20.0f32;
-        let gates = 24usize;
-        let rows = 12usize;
-        let truth: Vec<f32> = (0..gates)
-            .map(|g| -34.0 + 68.0 * g as f32 / (gates as f32 - 1.0))
-            .collect();
-        let alias = |v: f32| -> f32 {
-            let mut a = v;
-            while a > nyq {
-                a -= 2.0 * nyq;
-            }
-            while a < -nyq {
-                a += 2.0 * nyq;
-            }
-            a
-        };
-        let observed_row: Vec<f32> = truth.iter().map(|v| alias(*v)).collect();
-        // The raw row genuinely folds (large gate-to-gate jumps present).
-        let raw_jumps = observed_row
-            .windows(2)
-            .filter(|w| (w[0] - w[1]).abs() > nyq)
-            .count();
-        assert!(raw_jumps >= 1, "test fixture must actually alias");
-
-        let rows_data: Vec<Vec<f32>> = (0..rows).map(|_| observed_row.clone()).collect();
-        let mut sweep = test_velocity_sweep_rows(rows_data);
-        sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyq; rows]);
-
-        let corrected = dealias_velocity(&sweep, velocity(&sweep));
-        let recovered: Vec<f32> = (0..gates)
-            .map(|g| corrected.value(rows / 2, g).expect("gate"))
-            .collect();
-
-        // 1) the unfolded field is smooth: no gate-to-gate jump exceeds Nyquist.
-        for w in recovered.windows(2) {
+        for (case, min_agreement, max_break_share) in [
+            ("kbox_20220129_trim_s1", 0.997, 0.001),
+            ("klix_20210829_s2", 0.995, 0.0005),
+        ] {
+            let Some((volume, golden)) = golden_volume(case) else {
+                return;
+            };
             assert!(
-                (w[0] - w[1]).abs() <= nyq,
-                "residual fold in dealiased ramp: {w:?}"
+                golden.unfolded_gates > 10_000,
+                "{case}: Py-ART unfolds the sweep"
             );
-        }
-        // 2) it matches the truth up to a single constant multiple of 2·Nyquist.
-        let offset = recovered[0] - truth[0];
-        let folds = (offset / (2.0 * nyq)).round();
-        assert!(
-            (offset - folds * 2.0 * nyq).abs() < 1.0,
-            "offset not a fold multiple: {offset}"
-        );
-        for (r, t) in recovered.iter().zip(truth.iter()) {
+            let cut = &volume.sweeps[golden.sweep];
+            let sweep = VelocitySweep::of_sweep(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let engine = grid_folds(&sweep, &dealias_velocity(cut, real_data::velocity(cut)));
+            let agreement = fold_agreement(&sweep, &engine, &pyart, golden.rays_wrap_around);
+            eprintln!("{case}: {:.5} {agreement:?}", agreement.fraction());
+            assert_eq!(agreement.compared, golden.valid_gates);
             assert!(
-                (r - (t + folds * 2.0 * nyq)).abs() < 1.0,
-                "recovered {r} != truth {t} (+{folds} folds)"
+                agreement.fraction() >= min_agreement,
+                "{case}: fold agreement with Py-ART {:.5}",
+                agreement.fraction()
+            );
+            assert!(
+                (agreement.engine_breaks as f64)
+                    <= max_break_share * agreement.pyart_continuous_pairs as f64,
+                "{case}: {} breaks where Py-ART is continuous",
+                agreement.engine_breaks
             );
         }
     }
 
+    /// Ida's outer rain bands are nearly alias-free: Py-ART moves 13 of
+    /// 63,544 gates. Gates Py-ART leaves in place must stay in place, and no
+    /// error may run down a radial.
     #[test]
     fn region_dealias_does_not_propagate_errors_down_a_radial() {
-        // The classic spoke failure: one ambiguous gate near the radar must not
-        // flip the entire downrange radial. Two radials of identical, coherent,
-        // sub-Nyquist data should come back essentially unchanged (no fold).
-        let nyq = 20.0f32;
-        let coherent = vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0];
-        let rows_data: Vec<Vec<f32>> = (0..16).map(|_| coherent.clone()).collect();
-        let mut sweep = test_velocity_sweep_rows(rows_data);
-        sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyq; 16]);
-
-        let corrected = dealias_velocity(&sweep, velocity(&sweep));
-        for (g, value) in coherent.iter().enumerate() {
-            assert_eq!(
-                corrected.value(5, g),
-                Some(*value),
-                "coherent gate {g} should be untouched"
-            );
+        let Some((volume, golden)) = golden_volume("klix_20210829_trim_s1") else {
+            return;
+        };
+        let cut = &volume.sweeps[golden.sweep];
+        let sweep = VelocitySweep::of_sweep(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let engine = grid_folds(&sweep, &dealias_velocity(cut, real_data::velocity(cut)));
+        let mut kept_by_pyart = 0;
+        let mut moved = 0;
+        let mut longest_run = 0;
+        for row in 0..sweep.rows {
+            let mut run = 0;
+            for gate in 0..sweep.gates {
+                let idx = row * sweep.gates + gate;
+                if pyart[idx] != Some(0) {
+                    continue;
+                }
+                kept_by_pyart += 1;
+                if engine[idx] == Some(0) {
+                    run = 0;
+                } else {
+                    moved += 1;
+                    run += 1;
+                    longest_run = longest_run.max(run);
+                }
+            }
         }
+        eprintln!("kept by Py-ART {kept_by_pyart}, moved {moved}, longest run {longest_run}");
+        assert_eq!(kept_by_pyart, golden.valid_gates - golden.unfolded_gates);
+        assert!(moved <= 12, "{moved} gates moved that Py-ART keeps");
+        assert!(
+            longest_run <= 4,
+            "a run of {longest_run} moved gates along a ray"
+        );
     }
 
+    /// Edge resolution order and tied fold votes must not depend on hash
+    /// iteration order: 16 runs over the derecho sector are byte-identical.
     #[test]
     fn region_dealias_is_deterministic_across_runs() {
-        // Same input must always produce the same unfolded field: edge
-        // resolution order and tied fold votes must not depend on HashMap
-        // iteration order (which differs per HashMap instance).
-        let nyq = 20.0f32;
-        let rows = 24usize;
-        let gates = 40usize;
-        let mut seed = 0x2468_ace1_u32;
-        let mut lcg = move || {
-            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            (seed >> 16) as f32 / 65_536.0
+        let Some((volume, golden)) = golden_volume("kdvn_20200810_trim_s1") else {
+            return;
         };
-        let rows_data: Vec<Vec<f32>> = (0..rows)
-            .map(|row| {
-                (0..gates)
-                    .map(|gate| {
-                        let patch = (row / 3) * 7 + gate / 5;
-                        let base = match patch % 4 {
-                            0 => -38.0,
-                            1 => -2.0,
-                            2 => 18.5,
-                            _ => 39.0,
-                        };
-                        let v = base + (lcg() - 0.5) * 6.0;
-                        let mut aliased = v;
-                        while aliased > nyq {
-                            aliased -= 2.0 * nyq;
-                        }
-                        while aliased < -nyq {
-                            aliased += 2.0 * nyq;
-                        }
-                        aliased
-                    })
-                    .collect()
-            })
-            .collect();
-        let mut sweep = test_velocity_sweep_rows(rows_data);
-        sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyq; rows]);
-
-        let reference = dealias_velocity(&sweep, velocity(&sweep));
+        let cut = &volume.sweeps[golden.sweep];
+        let grid = real_data::velocity(cut);
+        let reference = dealias_velocity(cut, grid);
+        let sweep = VelocitySweep::of_sweep(cut);
+        let moved = grid_folds(&sweep, &reference)
+            .iter()
+            .filter(|fold| fold.is_some_and(|fold| fold != 0))
+            .count();
+        eprintln!("moved {moved}");
+        assert!(
+            moved > 4_000,
+            "the sector must exercise fold resolution ({moved} moved)"
+        );
         for run in 0..16 {
-            let corrected = dealias_velocity(&sweep, velocity(&sweep));
             assert_eq!(
-                corrected.data, reference.data,
+                dealias_velocity(cut, grid).data,
+                reference.data,
                 "dealias output changed between identical runs (run {run})"
             );
         }
     }
 
+    /// Patches Py-ART unfolds that are enclosed on every side by gates it
+    /// leaves on the sweep's dominant branch (18 patches of 6 gates or more
+    /// in the derecho sector): the geometry supports the fold, so the engine
+    /// must unfold them too, and leave their rings alone.
     #[test]
     fn region_dealias_unfolds_geometrically_supported_fold() {
-        // A folded 2-gate segment surrounded on three sides by data that
-        // consistently implies one fold is unfolded (the old radial-walk code
-        // wrongly "suppressed" this as a spike and left the alias in place).
-        let quiet = vec![0.0, 3.0, 5.0, 7.0, 8.0];
-        let folded = vec![0.0, 5.0, 9.0, -9.0, -7.0];
-        let sweep = test_velocity_sweep_rows(vec![
-            quiet.clone(),
-            quiet.clone(),
-            folded,
-            quiet.clone(),
-            quiet,
-        ]);
-
-        let corrected = dealias_velocity(&sweep, velocity(&sweep));
-
-        assert_eq!(corrected.value(2, 3), Some(11.0));
-        assert_eq!(corrected.value(2, 4), Some(13.0));
+        let Some((volume, golden)) = golden_volume("kdvn_20200810_trim_s1") else {
+            return;
+        };
+        let cut = &volume.sweeps[golden.sweep];
+        let sweep = VelocitySweep::of_sweep(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let engine = grid_folds(&sweep, &dealias_velocity(cut, real_data::velocity(cut)));
+        let offset = fold_agreement(&sweep, &engine, &pyart, golden.rays_wrap_around).offset;
+        let patches = enclosed_patches(&sweep, &pyart, 6);
+        let (patch_share, ring_share) = patch_agreement(&patches, &engine, &pyart, offset);
+        eprintln!(
+            "patches {} patch {patch_share:.4} ring {ring_share:.4}",
+            patches.len()
+        );
+        assert!(patches.len() >= 15);
+        assert!(
+            patch_share >= 0.97,
+            "patch gates matching Py-ART: {patch_share:.4}"
+        );
+        assert!(
+            ring_share >= 0.975,
+            "ring gates matching Py-ART: {ring_share:.4}"
+        );
     }
 
-    /// Build a full 360° velocity tilt whose TRUE field is a uniform wind
-    /// (radial component = speed·cos(az − dir)), wrapped into ±nyquist.
-    /// (Ported from the retired cascade engine's test fixture.)
-    fn tilt_with_uniform_wind(
-        elevation: f32,
-        speed: f32,
-        toward_deg: f32,
-        nyquist: f32,
-        rows: usize,
-        gates: usize,
-    ) -> Sweep {
-        let mut data = vec![f32::NAN; rows * gates];
-        let mut azimuths = Vec::with_capacity(rows);
-        for row in 0..rows {
-            let az = row as f32 * (360.0 / rows as f32);
-            azimuths.push(az);
-            let true_v = speed * ((az - toward_deg).to_radians()).cos();
-            let mut wrapped = true_v;
-            while wrapped > nyquist {
-                wrapped -= 2.0 * nyquist;
+    fn patch_agreement(
+        patches: &[real_data::FoldedPatch],
+        engine: &[Option<i32>],
+        pyart: &[Option<i32>],
+        offset: i32,
+    ) -> (f64, f64) {
+        let share = |gates: &mut dyn Iterator<Item = usize>| {
+            let (mut total, mut agreeing) = (0usize, 0usize);
+            for idx in gates {
+                total += 1;
+                agreeing += usize::from(engine[idx] == pyart[idx].map(|fold| fold + offset));
             }
-            while wrapped < -nyquist {
-                wrapped += 2.0 * nyquist;
-            }
-            for gate in 0..gates {
-                data[row * gates + gate] = wrapped;
-            }
-        }
-        velocity_sweep(
-            &azimuths,
-            elevation,
-            1000.0,
-            250.0,
-            gates,
-            data,
-            Some(vec![nyquist; rows]),
+            agreeing as f64 / total.max(1) as f64
+        };
+        (
+            share(&mut patches.iter().flat_map(|patch| patch.gates.iter().copied())),
+            share(&mut patches.iter().flat_map(|patch| patch.ring.iter().copied())),
         )
     }
 
-    /// Pins the two v0.29.0 survivors of the retired cascade/hybrid engines:
-    /// [`range_band_reference`] (also the bench battery's `rms_harmonic`
-    /// metric input) and the region engine's external-reference branch
-    /// selection ([`dealias_velocity_with_reference`]).
+    /// [`range_band_reference`] on the Nyquist 32.1 m/s cut of Ida's
+    /// split pair, used as the external reference for the 23.2 m/s cut at the
+    /// same angle, picks each group's absolute branch. Truth is Py-ART's
+    /// output on the branch closest to the HRRR analysis at the site
+    /// (`env_offset` in the golden).
     #[test]
     fn external_harmonic_reference_selects_the_absolute_branch() {
-        // 35 m/s wind. Clean tilt: Nyquist 40 — no aliasing, honest fit.
-        // Target tilt: Nyquist 20 — large sectors wrap (|v| up to 35), the
-        // regime where a same-sweep reference is circular.
-        let clean = tilt_with_uniform_wind(2.4, 35.0, 180.0, 40.0, 360, 200);
-        let reference = range_band_reference(&clean, velocity(&clean));
+        let Some((volume, golden)) = golden_volume("klix_20210829_s2") else {
+            return;
+        };
+        let clean_golden = real_data::PyartGolden::load("klix_20210829_s1");
+        let clean = &volume.sweeps[clean_golden.sweep];
+        let target = &volume.sweeps[golden.sweep];
+        let reference =
+            range_band_reference(clean, &dealias_velocity(clean, real_data::velocity(clean)));
+        let usable = reference.fits.iter().flatten().count();
         assert!(
-            reference.fits.iter().filter(|fit| fit.is_some()).count() > 0,
-            "clean uniform wind must produce usable band fits"
+            usable >= 70,
+            "usable band fits: {usable} of {}",
+            reference.fits.len()
         );
 
-        let target = tilt_with_uniform_wind(0.5, 35.0, 180.0, 20.0, 360, 200);
-        let dealiased =
-            dealias_velocity_with_reference(&target, velocity(&target), Some(&reference));
-        let mut worst = 0.0f32;
-        for row in 0..360 {
-            let az = row as f32;
-            let truth = 35.0 * ((az - 180.0).to_radians()).cos();
-            for gate in (0..200).step_by(7) {
-                if let Some(v) = dealiased.value(row, gate).filter(|v| v.is_finite()) {
-                    worst = worst.max((v - truth).abs());
-                }
-            }
-        }
+        let sweep = VelocitySweep::of_sweep(target);
+        let pyart = golden.aligned_folds(target, &sweep);
+        let env_offset = golden.env.as_ref().expect("HRRR offset").offset;
+        let absolute = |grid: &Field| {
+            grid_folds(&sweep, grid)
+                .iter()
+                .zip(&pyart)
+                .filter(|(engine, pyart)| {
+                    matches!((engine, pyart), (Some(e), Some(p)) if *e == *p + env_offset)
+                })
+                .count()
+        };
+        let grid = real_data::velocity(target);
+        let plain = absolute(&dealias_velocity(target, grid));
+        let referenced = absolute(&dealias_velocity_with_reference(
+            target,
+            grid,
+            Some(&reference),
+        ));
+        eprintln!(
+            "plain {plain} referenced {referenced} of {}",
+            golden.valid_gates
+        );
         assert!(
-            worst < 2.0,
-            "external reference should recover the true field everywhere; worst error {worst} m/s"
+            referenced as f64 >= 0.998 * golden.valid_gates as f64,
+            "absolute branch agreement {referenced} of {}",
+            golden.valid_gates
+        );
+        assert!(
+            referenced >= plain + 500,
+            "the reference must fix branches: {plain} -> {referenced}"
         );
     }
 
+    /// Folded patches spanning three or more adjacent radials, enclosed by
+    /// dominant-branch gates in the KBOX blizzard sector: adjacent folded
+    /// rows support each other and must all be unfolded.
     #[test]
     fn velocity_dealias_preserves_supported_adjacent_folds() {
-        let quiet = vec![0.0, 3.0, 5.0, 7.0, 8.0];
-        let folded = vec![0.0, 5.0, 9.0, -9.0, -7.0];
-        let sweep = test_velocity_sweep_rows(vec![
-            quiet.clone(),
-            folded.clone(),
-            folded.clone(),
-            folded,
-            quiet,
-        ]);
-
-        let corrected = dealias_velocity(&sweep, velocity(&sweep));
-
-        assert_eq!(corrected.value(2, 3), Some(11.0));
-        assert_eq!(corrected.value(2, 4), Some(13.0));
-    }
-
-    #[test]
-    fn copy_row_resolves_every_sentinel_and_absent_rows() {
-        let mut sweep = velocity_sweep(
-            &[0.0, 1.0],
-            0.5,
-            2125.0,
-            250.0,
-            3,
-            vec![1.0, f32::NAN, 3.0, 4.0, 5.0, 6.0],
-            Some(vec![26.0, 26.0]),
+        let Some((volume, golden)) = golden_volume("kbox_20220129_trim_s1") else {
+            return;
+        };
+        let cut = &volume.sweeps[golden.sweep];
+        let sweep = VelocitySweep::of_sweep(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let engine = grid_folds(&sweep, &dealias_velocity(cut, real_data::velocity(cut)));
+        let offset = fold_agreement(&sweep, &engine, &pyart, golden.rays_wrap_around).offset;
+        let patches: Vec<_> = enclosed_patches(&sweep, &pyart, 6)
+            .into_iter()
+            .filter(|patch| patch.rows >= 3)
+            .collect();
+        let (patch_share, ring_share) = patch_agreement(&patches, &engine, &pyart, offset);
+        eprintln!(
+            "patches {} patch {patch_share:.4} ring {ring_share:.4}",
+            patches.len()
         );
-        let mut row = vec![0.0f32; 3];
-        copy_scaled_velocity_row(velocity(&sweep), 0, &mut row);
-        assert_eq!(row[0], 1.0);
-        assert!(row[1].is_nan());
-        assert_eq!(row[2], 3.0);
-        sweep.fields[0].absent_rows = vec![1];
-        copy_scaled_velocity_row(velocity(&sweep), 1, &mut row);
-        assert!(row.iter().all(|value| value.is_nan()));
-    }
-
-    /// Rows of physical velocity, azimuth = row index, 1 km gates from 0 m,
-    /// Nyquist 10 m/s on every ray.
-    fn test_velocity_sweep_rows(rows: Vec<Vec<f32>>) -> Sweep {
-        let gates = rows.first().map(Vec::len).unwrap_or(0);
-        let count = rows.len();
-        let azimuths: Vec<f32> = (0..count).map(|index| index as f32).collect();
-        velocity_sweep(
-            &azimuths,
-            0.5,
-            0.0,
-            1000.0,
-            gates,
-            rows.into_iter().flatten().collect(),
-            Some(vec![10.0; count]),
-        )
+        assert!(patches.len() >= 30);
+        assert!(
+            patch_share >= 0.99,
+            "patch gates matching Py-ART: {patch_share:.4}"
+        );
+        assert!(
+            ring_share >= 0.99,
+            "ring gates matching Py-ART: {ring_share:.4}"
+        );
     }
 }

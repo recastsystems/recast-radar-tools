@@ -939,19 +939,6 @@ mod tests {
     }
 
     #[test]
-    fn nexrad_sentinels_resolve_in_order() {
-        let mut field = nexrad_ref(5);
-        field.push_row_u8(0, &[0, 1, 2, 66, 255]).unwrap();
-        assert_eq!(field.gate(0, 0), Some(Gate::Undetect));
-        assert_eq!(field.gate(0, 1), Some(Gate::RangeFolded));
-        assert_eq!(field.gate(0, 2), Some(Gate::Value(-32.0)));
-        assert_eq!(field.value(0, 3), Some(0.0));
-        assert_eq!(field.value(0, 4), Some(94.5));
-        assert_eq!(field.gate(0, 5), None);
-        assert_eq!(field.quantity, Quantity::Reflectivity);
-    }
-
-    #[test]
     fn skipped_rays_become_absent_rows_and_short_rows_are_padded() {
         let mut field = nexrad_ref(3);
         field.push_row_u8(1, &[80, 90]).unwrap();
@@ -1003,93 +990,5 @@ mod tests {
             field.push_row_u8(1, &[1]),
             Err(FieldError::StorageMismatch { .. })
         ));
-    }
-
-    #[test]
-    fn float_fields_keep_source_fill_verbatim() {
-        let mut field = Field::new(
-            FieldName::parse("reflectivity_horizontal"),
-            GateMapping::IDENTITY,
-            3,
-            FieldData::F32 {
-                values: Vec::new(),
-                coding: FloatCoding {
-                    transform: None,
-                    fill_value: Some(-9999.0),
-                    undetect: None,
-                },
-            },
-        );
-        field.push_row_f32(0, &[-9999.0, f32::NAN, 12.5]).unwrap();
-        assert_eq!(field.gate(0, 0), Some(Gate::Missing));
-        assert_eq!(field.gate(0, 1), Some(Gate::Missing));
-        assert_eq!(field.value(0, 2), Some(12.5));
-        let FieldData::F32 { values, .. } = &field.data else {
-            panic!("f32 storage");
-        };
-        assert_eq!(values[0], -9999.0);
-    }
-
-    #[test]
-    fn cf_scale_offset_and_lut_agree() {
-        let field = Field::new(
-            FieldName::parse("DBZ"),
-            GateMapping::IDENTITY,
-            3,
-            FieldData::I8 {
-                values: vec![-128, 0, 10],
-                coding: IntCoding {
-                    transform: LinearTransform::CfScaleOffset {
-                        scale_factor: 0.5,
-                        add_offset: 32.0,
-                        attr_width: FloatWidth::F32,
-                    },
-                    fill_value: Some(-128),
-                    undetect: None,
-                    range_folded: None,
-                    valid_range: None,
-                },
-            },
-        );
-        assert_eq!(field.nrays, 1);
-        let lut = field.lut8().unwrap();
-        assert!(lut[128].is_nan());
-        assert_eq!(lut[0], 32.0);
-        assert_eq!(lut[10], field.value(0, 2).unwrap());
-        assert_eq!(field.to_physical()[1], 32.0);
-    }
-
-    #[test]
-    fn native_geometry_of_coarse_fields() {
-        let range = RangeCoord::Uniform {
-            first_center_m: -375.0,
-            spacing_m: 250.0,
-            ngates: 548,
-        };
-        let mut field = nexrad_ref(137);
-        field.gates = GateMapping {
-            start: 0,
-            stride: 4,
-        };
-        assert_eq!(field.native_geometry(&range), Some((0.0, 1000.0)));
-        field.gates = GateMapping::IDENTITY;
-        assert_eq!(field.native_geometry(&range), Some((-375.0, 250.0)));
-    }
-
-    #[test]
-    fn into_array_moves_the_buffer() {
-        let mut field = nexrad_ref(2);
-        field.push_row_u8(0, &[5, 6]).unwrap();
-        let pointer = match &field.data {
-            FieldData::U8 { values, .. } => values.as_ptr(),
-            _ => unreachable!(),
-        };
-        let parts = field.into_parts();
-        let (array, coding) = parts.data.into_array();
-        let ArrayBuf::U8(values) = array else {
-            panic!("u8 array");
-        };
-        assert_eq!(values.as_ptr(), pointer);
-        assert!(matches!(coding, Coding::U8(_)));
     }
 }

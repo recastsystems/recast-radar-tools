@@ -893,30 +893,37 @@ mod tests {
         assert_eq!(canonical_quantity("QIND"), None);
     }
 
+    /// Met Eireann Shannon carries DBZH, TH and VRADH on every sweep: the
+    /// filtered DBZH is the reflectivity whatever the dataset order (the real
+    /// sweep with its fields reversed), VRADH the velocity, and no quantity
+    /// is spectrum width.
     #[test]
     fn filtered_odim_quantities_win_duplicate_canonical_moments() {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        for name in ["TH", "DBZH", "TV"] {
-            sweep
-                .add_field(Field::new(
-                    FieldName::parse(name),
-                    GateMapping::IDENTITY,
-                    1,
-                    FieldData::U8 {
-                        values: Vec::new(),
-                        coding: IntCoding::new(LinearTransform::IcdScaleOffset {
-                            scale: 1.0,
-                            offset: 0.0,
-                        }),
-                    },
-                ))
-                .unwrap();
+        let bytes = recast_radar_testdata::bytes("odim-iesha-20260305-0115-pvol")
+            .unwrap_or_else(|err| panic!("{err}"));
+        let volume = read_odim_h5_volume(&bytes).unwrap();
+        let mut sweep = volume.sweeps[0].clone();
+        let names: Vec<&str> = sweep.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["DBZH", "TH", "VRADH"]);
+        for reversed in [false, true] {
+            if reversed {
+                sweep.fields.reverse();
+                assert_eq!(sweep.fields[1].name.as_str(), "TH");
+            }
+            assert_eq!(
+                canonical_field(&sweep, CanonicalMoment::Reflectivity),
+                Some(FieldName::Dbzh)
+            );
+            assert_eq!(
+                canonical_field(&sweep, CanonicalMoment::Velocity),
+                Some(FieldName::Vradh)
+            );
+            assert_eq!(
+                canonical_field(&sweep, CanonicalMoment::SpectrumWidth),
+                None
+            );
         }
-        assert_eq!(
-            canonical_field(&sweep, CanonicalMoment::Reflectivity),
-            Some(FieldName::Dbzh)
-        );
-        assert_eq!(canonical_field(&sweep, CanonicalMoment::Velocity), None);
+        assert!(canonical_quantity_priority("DBZH") > canonical_quantity_priority("TH"));
     }
 
     #[test]
@@ -980,86 +987,166 @@ mod tests {
         assert_eq!(coding.undetect, Some(3));
     }
 
-    /// Build a one-ray float field (physical values) for the recovery tests
-    /// with the given `nodata` / `undetect` sentinels (the AEMET dBZ pair
-    /// when copied). `NaN` encodes no-echo, finite values are readings.
-    fn float_field(
-        name: FieldName,
-        row: Vec<f32>,
-        nodata: Option<f32>,
-        undetect: Option<f32>,
-    ) -> Field {
-        let mut field = Field::new(
-            name,
-            GateMapping::IDENTITY,
-            row.len() as u32,
-            FieldData::F32 {
-                values: Vec::new(),
-                coding: FloatCoding {
-                    transform: None,
-                    fill_value: nodata,
-                    undetect,
-                },
-            },
-        );
-        field.push_row_f32(0, &row).expect("push row");
-        field
+    // ----- copied-what-group velocity recovery on real AEMET planes --------
+    //
+    // Input: corpus entry `odim-espdg-20260707-1927-pvol-dbzh-vradh` (AEMET
+    // Perdiguera, IRIS 10.3 export). Both datasets stamp the DBZH `what`
+    // sentinels (nodata 95.5, undetect -32.0, offset 0.0, gain 1.0) onto
+    // VRADH, whose no-echo gates hold the offset (0 m/s). The decoder keeps
+    // the datasets in file order: sweep 0 is dataset1 (1.5 deg), sweep 1 is
+    // dataset2 (0.5 deg).
+    //
+    // Expected values: tools/golden_io_formats.py, section `odim`, keys
+    // `espdg_recovery` (h5py raw planes: a fill gate is DBZH no-echo and VRADH
+    // on offset; a genuine zero is DBZH echo and VRADH on offset) and
+    // `espdg_distinct_sentinel_mutation` (the file offset of dataset2 VRADH
+    // what/nodata, found by editing candidates and reading them back with
+    // libhdf5; the v2 object-header checksum recomputed with lookup3; h5py
+    // reads the edited file).
+
+    const ESPDG: &str = "odim-espdg-20260707-1927-pvol-dbzh-vradh";
+    /// dataset2 VRADH what/nodata f64 value (95.5) and its OHDR checksum.
+    const VRADH_NODATA_OFFSET: usize = 101_591;
+    const VRADH_OHDR_CHECKSUM_OFFSET: usize = 101_629;
+    const ORIGINAL_CHECKSUM: u32 = 320_803_438;
+    const DISTINCT_NODATA: f64 = -9999.0;
+    const DISTINCT_CHECKSUM: u32 = 3_075_319_015;
+    /// Sweep indexes of the two datasets.
+    const DATASET1: usize = 0;
+    const DATASET2: usize = 1;
+
+    fn espdg_bytes() -> Vec<u8> {
+        recast_radar_testdata::bytes(ESPDG).unwrap_or_else(|err| panic!("{err}"))
     }
 
-    fn copied_sentinel_sweep(vel_nodata: f32, vel_undetect: f32) -> Sweep {
-        // gate0: Z no-echo, V=0  -> collapsed no-data fill (must mask)
-        // gate1: Z echo,    V=0  -> genuine 0 m/s reading (must keep)
-        // gate2: Z no-echo, V=5  -> velocity off `offset` (must keep)
-        // gate3: Z echo,    V=3  -> ordinary gate (must keep)
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep
-            .add_field(float_field(
-                FieldName::Dbzh,
-                vec![f32::NAN, 10.0, f32::NAN, 20.0],
-                Some(95.5),
-                Some(-32.0),
-            ))
-            .unwrap();
-        sweep
-            .add_field(float_field(
-                FieldName::Vradh,
-                vec![0.0, 0.0, 5.0, 3.0],
-                Some(vel_nodata),
-                Some(vel_undetect),
-            ))
-            .unwrap();
-        sweep
+    /// The same file with dataset2 (0.5 deg) VRADH what/nodata rewritten to a
+    /// value no gate holds: a writer that gives velocity its own sentinels.
+    fn espdg_with_distinct_velocity_nodata() -> Vec<u8> {
+        let mut bytes = espdg_bytes();
+        let nodata = &bytes[VRADH_NODATA_OFFSET..VRADH_NODATA_OFFSET + 8];
+        assert_eq!(f64::from_le_bytes(nodata.try_into().unwrap()), 95.5);
+        let checksum = &bytes[VRADH_OHDR_CHECKSUM_OFFSET..VRADH_OHDR_CHECKSUM_OFFSET + 4];
+        assert_eq!(
+            u32::from_le_bytes(checksum.try_into().unwrap()),
+            ORIGINAL_CHECKSUM
+        );
+        bytes[VRADH_NODATA_OFFSET..VRADH_NODATA_OFFSET + 8]
+            .copy_from_slice(&DISTINCT_NODATA.to_le_bytes());
+        bytes[VRADH_OHDR_CHECKSUM_OFFSET..VRADH_OHDR_CHECKSUM_OFFSET + 4]
+            .copy_from_slice(&DISTINCT_CHECKSUM.to_le_bytes());
+        bytes
     }
+
+    fn velocity(sweep: &Sweep) -> &Field {
+        sweep.field(&FieldName::Vradh).expect("VRADH")
+    }
+
+    /// (valid gates, missing flat-index sum, missing flat-index square sum,
+    /// 0 m/s gates, 0 m/s flat-index sum) of a plane, with flat index
+    /// `ray * ngates + gate`.
+    fn velocity_summary(field: &Field) -> (usize, u64, u64, usize, u64) {
+        let ngates = field.ngates as usize;
+        let mut summary = (0usize, 0u64, 0u64, 0usize, 0u64);
+        for ray in 0..field.nrays as usize {
+            for gate in 0..ngates {
+                let index = (ray * ngates + gate) as u64;
+                match field.value(ray, gate) {
+                    Some(value) => {
+                        summary.0 += 1;
+                        if value == 0.0 {
+                            summary.3 += 1;
+                            summary.4 += index;
+                        }
+                    }
+                    None => {
+                        summary.1 += index;
+                        summary.2 += index * index;
+                    }
+                }
+            }
+        }
+        summary
+    }
+
+    /// golden espdg_recovery.dataset2: 89237 fill gates masked (index sum
+    /// 4625669116, square sum 326315664938928), 12869 genuine 0 m/s gates
+    /// with echo kept (index sum 821953830), 18403 valid gates left.
+    const DATASET2_RECOVERED: (usize, u64, u64, usize, u64) = (
+        18_403,
+        4_625_669_116,
+        326_315_664_938_928,
+        12_869,
+        821_953_830,
+    );
+    /// golden espdg_recovery.dataset1: 90846 fill gates, 8141 genuine zeros,
+    /// 16794 valid gates.
+    const DATASET1_RECOVERED: (usize, u64, u64, usize, u64) = (
+        16_794,
+        4_709_191_624,
+        333_031_625_592_866,
+        8_141,
+        511_192_353,
+    );
 
     #[test]
     fn copied_whatgroup_recovery_masks_only_no_echo_offset_gates() {
-        // Copied-what-group signature: velocity carries the reflectivity
-        // sentinels (the AEMET/IRIS bug), so recovery engages.
-        let mut sweep = copied_sentinel_sweep(95.5, -32.0);
-        assert_eq!(recover_sweep_velocity_nodata(&mut sweep), 1);
-        let vel = sweep.field(&FieldName::Vradh).unwrap();
-        assert_eq!(vel.value(0, 0), None, "no-echo 0 m/s fill masked");
-        assert_eq!(vel.value(0, 1), Some(0.0), "genuine 0 m/s with echo kept");
+        // The decoder stores the planes verbatim: the 0.5 deg VRADH plane
+        // decodes with the full 0 m/s wall, 107640 valid gates, 102106 of
+        // them zero (89237 fill + 12869 genuine).
+        let mut volume = read_odim_h5_volume(&espdg_bytes()).expect("decode espdg");
+        assert!((volume.sweeps[DATASET1].fixed_angle_deg - 1.5).abs() < 0.01);
+        let low = &volume.sweeps[DATASET2];
+        assert!((low.fixed_angle_deg - 0.5).abs() < 0.01);
+        let before = velocity_summary(velocity(low));
+        assert_eq!((before.0, before.1, before.3), (107_640, 0, 102_106));
+        // Velocity carries the reflectivity sentinels: the copied-what-group
+        // signature.
+        let dbzh = low.field(&FieldName::Dbzh).expect("DBZH");
+        assert_eq!(plane_sentinels(velocity(low)), plane_sentinels(dbzh));
+        assert_eq!(plane_sentinels(dbzh), (Some(95.5), Some(-32.0), 0.0));
+
+        let masked = recover_copied_whatgroup_velocity_nodata(&mut volume);
+
+        assert_eq!(masked, 89_237 + 90_846);
+        let low = velocity(&volume.sweeps[DATASET2]);
+        assert_eq!(velocity_summary(low), DATASET2_RECOVERED);
+        // First fill gate (0,0) masked; first genuine zero (0,32) kept.
+        assert_eq!(low.value(0, 0), None);
+        assert_eq!(low.value(0, 32), Some(0.0));
         assert_eq!(
-            vel.value(0, 2),
-            Some(5.0),
-            "velocity off offset kept even without echo"
+            velocity_summary(velocity(&volume.sweeps[DATASET1])),
+            DATASET1_RECOVERED
         );
-        assert_eq!(vel.value(0, 3), Some(3.0), "ordinary gate kept");
+        // A second pass finds nothing left to mask.
+        assert_eq!(recover_copied_whatgroup_velocity_nodata(&mut volume), 0);
     }
 
     #[test]
     fn distinct_velocity_sentinels_are_never_reflectivity_gated() {
-        // Velocity declares its OWN sentinels (not the reflectivity ones):
-        // a conformant writer. Recovery must not touch the plane, so the
-        // 0 m/s gate co-located with no-echo reflectivity survives unchanged.
-        let mut sweep = copied_sentinel_sweep(-999.0, 888.0);
-        assert_eq!(recover_sweep_velocity_nodata(&mut sweep), 0);
-        let vel = sweep.field(&FieldName::Vradh).unwrap();
+        // dataset2 VRADH now declares nodata -9999.0 while DBZH keeps 95.5: a
+        // conformant writer. golden espdg_distinct_sentinel_mutation: h5py
+        // reads 107640 non-sentinel VRADH gates, 102106 of them 0 m/s.
+        let edited = espdg_with_distinct_velocity_nodata();
+        let mut volume = read_odim_h5_volume(&edited).expect("decode edited espdg");
+        let low = &volume.sweeps[DATASET2];
+        let summary = velocity_summary(velocity(low));
+        assert_eq!((summary.0, summary.1, summary.3), (107_640, 0, 102_106));
+        assert_eq!(plane_sentinels(velocity(low)).0, Some(DISTINCT_NODATA));
+        // Co-located no-echo reflectivity at (0,0) does not mask velocity.
+        assert_eq!(low.field(&FieldName::Dbzh).expect("DBZH").value(0, 0), None);
+        assert_eq!(velocity(low).value(0, 0), Some(0.0));
+
+        // The recovery leaves the edited sweep alone and still recovers the
+        // unedited 1.5 deg sweep, which carries the copied sentinels.
+        let masked = recover_copied_whatgroup_velocity_nodata(&mut volume);
+        assert_eq!(masked, 90_846);
         assert_eq!(
-            vel.value(0, 0),
-            Some(0.0),
-            "distinct-sentinel writer left untouched"
+            velocity_summary(velocity(&volume.sweeps[DATASET2])),
+            summary
+        );
+        assert_eq!(
+            velocity_summary(velocity(&volume.sweeps[DATASET1])),
+            DATASET1_RECOVERED
         );
     }
 }

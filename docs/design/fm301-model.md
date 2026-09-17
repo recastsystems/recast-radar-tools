@@ -1,8 +1,9 @@
 # FM301 data model for `recast-radar-core` (wave 2, task F.1)
 
-Status: design note, revised after independent review (plan F.1). Section 16 lists every review
-finding and its resolution. Date: 2026-09-16.
-Branch: `fm301` (main `79f3410` with branch `testdata` merged).
+Status: implemented (F.2 to F.4, 2026-09-17); see [Status](#status-f2-to-f4) below. The text
+from section 0 on is the F.1 design note, revised after independent review (section 16 lists
+every review finding and its resolution), dated 2026-09-16, on branch `fm301` (main `79f3410`
+with branch `testdata` merged).
 
 Inputs:
 
@@ -40,6 +41,188 @@ F.1 items and where they are covered:
 | Rust type definitions | 2 (`Volume`), 3 (`Sweep`), 4 (`Field`, `FieldName`), 12 (view), 13.2 (shim) |
 | Binding strategy (no unsafe, no copy at decode) | 12.2, 12.3 |
 | Review findings and resolutions | 16 |
+| Implementation status, conformance results, timing | Status |
+
+---
+
+## Status (F.2 to F.4)
+
+Date: 2026-09-17. Branch `fm301`, merged with `main` `e9fdb6c`. Stream F's work is done: the
+model and view (F.2), native decoding and every crate on the model (F.3), the legacy shim
+removed, and the conformance tests (F.4). The code is authoritative where it differs from the
+design text (sections 0 to 17). Section 17 and this section record the differences.
+
+### What landed
+
+| Step | Commits | Content |
+|---|---|---|
+| F.2 | `e4df5bd` | `recast-radar-core` model (`src/model/`), FM301 view (`src/fm301/`), legacy shim |
+| F.3 io | `20eb3c5`, `02f755a`, `9d19c9a`, `218d0f8`, `7ebc402`, `f948dd7` (branch `fm301-io`) | io-nexrad, io-odim, io-cfradial, io-dorade, io-jma and the router decode natively into `Volume`; recast-radar-data uses the router API; io-level3 radial, raster and generic products as FM301 volumes |
+| F.3 algorithms | merge `1c68329` (branch `fm301-algo`) | correct, filters, map, retrieve, track on `Volume`/`Sweep`/`Field` |
+| F.3 render | merge `0c48ff3` (branch `fm301-render`) | render and bench on the model; pinned render-parity fingerprints |
+| goldens | merge `1c1cedf` (branch `fm301-golden`) | `tools/fm301_golden.py` and `testdata/conformance/fm301/` (xradar 0.12.0 and arm_pyart 2.2.5 on 11 real files) |
+| main sync | `2a7e805` | main's l2-fixes (KVWX blank radar id, headerless input rejection, golden `--check`) |
+| shim removal | `b811f2d` | `core::legacy`, the round-trip test, the shim-gate tooling and every `legacy_api`/`legacy_bridge` module deleted; core exports the model only |
+| F.4 | `8bf7f79` | `crates/recast-radar-core/tests/fm301_conformance.rs` |
+| main sync | this merge | main's real-data test conversion (stream C) ported onto the model |
+
+The four sub-worktrees (`fm301-io`, `fm301-algo`, `fm301-render`, `fm301-golden`) are
+removed; their branches are merged.
+
+### F.4 conformance
+
+`fm301_conformance.rs` decodes each of the 11 golden cases natively and builds the
+`Flavor::Xradar012` view twice (`FirstDim::Time` against the golden `time` view,
+`FirstDim::Auto` against `auto`). Every golden group, dimension, variable and attribute is
+compared: packed arrays and coordinates by SHA-256 in the golden's convention (`time` as int64
+ns), otherwise count, min, max, mean, first and last within 1e-4 relative; scalars and
+attributes by value. The Py-ART side checks the sweep table, fixed angles, sweep modes,
+location, per-sweep coordinates and instrument parameters. It also checks every field laid
+out on Py-ART's volume range (6.5), by hash or by value summary. Result: **0 errors**.
+
+| Case | xradar: hashes / summaries / scalars / attributes | Py-ART: hashes / summaries / scalars / attributes |
+|---|---|---|
+| `l2-ktlx-20240315-000217` | 328 / 40 / 216 / 2096 | 144 / 60 / 43 / 2 |
+| `l2-kdvn-20200810-180401` | 328 / 42 / 226 / 2116 | 143 / 63 / 45 / 2 |
+| `l2-kpah-20080415-235014` | 66 / 14 / 98 / 514 | 29 / 21 / 17 / 2 |
+| `l2-klix-20050829-130035` | 156 / 40 / 320 / 784 | 94 / 58 / 45 / 1 |
+| `l2-ktlx-19990504-002218` | no golden (xradar 0.12 fails to open the file) | 74 / 46 / 37 / 0 |
+| `odim-dkrom-20260820-1130-pvol` | 220 / 22 / 138 / 1484 | 80 / 30 / 23 / 0 |
+| `odim-iesha-20260305-0115-pvol` | 106 / 36 / 138 / 784 | 30 / 30 / 23 / 0 |
+| `odim-espdg-20260707-1927-pvol-dbzh-vradh` | 22 / 4 / 42 / 136 | 0 / 10 / 8 / 0 |
+| `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` | 70 / 10 / 146 / 72 | 8 / 10 / 5 / 1 |
+| `cfrad1-dow8-20211011-223602-rhi-trim3-classic` | 54 / 8 / 146 / 64 | 5 / 5 / 4 / 1 |
+| `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` (decoded from its committed classic twin) | 16 / 2 / 26 / 26 | 3 / 4 / 4 / 1 |
+| **total** | **1366 / 218 / 1496 / 8076** | **610 / 337 / 254 / 10** |
+
+Together: 1976 array hashes, 555 value summaries, 1750 scalars and 8086 attributes, the same
+counts as at `8bf7f79`.
+
+The `EXPECTED` list in the test holds the 22 known reader differences, each with the section
+of this note (for example 1, 7.1, 8.2, 9, 10, 11, 14, A.3) or the code that decides it. The
+test checks each one explicitly instead of skipping it.
+
+Fixes found by the comparison (`8bf7f79`):
+
+- io-nexrad: the Message 1 Nyquist velocity is halfword 31, and the unambiguous range per ray
+  comes from Message 1 halfword 4 and the Message 31 RAD block.
+- io-nexrad: xradar's Message 5 and Message 2 attributes are written through `ExtraAttrs`.
+- io-cfradial: `r_calib_*` decodes into `Volume::radar_calibration`.
+- core view: a CfRadial field's `coordinates` attribute is written once, and `frequency` has
+  no empty `standard_name`.
+
+### Merge of main's real-data tests
+
+On `main`, stream C converted every test to real radar files (376 synthetic tests and helpers),
+added a detector for synthetic inputs (`recast-radar-testdata::synthetic`,
+`tests/no_synthetic.rs`) and emptied its allowlist. This merge ports those tests from the
+legacy types to the model in every crate:
+
+- io-nexrad, io-odim, io-cfradial, io-dorade, io-jma and the router;
+- correct (`src/real_data.rs`, dealias v4), filters, map, retrieve and track (`tests/*_real.rs`
+  with a shared `tests/common`);
+- render (lib tests on real KTLX, KPAH and KEWX sweeps), the bench's dealias battery, and core
+  (`tests/real_model.rs`, `tests/real_merge.rs`).
+
+The goldens are unchanged, except where a legacy convention cannot be expressed in the model:
+
+- The goldens take a Level II tilt's elevation from its first radial (MetPy), while the reader
+  reports the VCP cut angle as `fixed_angle_deg` (5.2). The shared `level2` helpers of the
+  filters, map, retrieve and track tests therefore set each sweep's fixed angle to its first
+  ray's elevation.
+- `testdata/golden/map/rhi.json`: the DOW8 and DOW6 panel geometry is now the files' exact
+  gate centres (CfRadial and DORADE keep exact centres, 6.6), not legacy integer metres
+  (`tools/filters_map_golden.py`). Only those two entries changed.
+- `testdata/golden/retrieve/sweep.json`: the 500 m RHO variant is a stride-2 field on the
+  250 m range (6.5), so its first centre is 125 m further out (`tools/retrieve_golden.py`).
+  Only `rho_500m` changed.
+- `testdata/golden/core/model.json` (`tools/core_golden.py`): the reference merge follows
+  `merge_volumes`. Collisions are by field name, so Hurum's DBZH and TH are both kept and
+  first-part-wins is tested with the TH part renamed to DBZH. Level II sweeps match on the
+  Message 5 cut angle (MetPy `vcp_info`), and the time reference is the first radial floored
+  to the second (Py-ART's convention, 16 item 8). The other golden sections are
+  byte-identical.
+- Tests of legacy behaviour the model dropped are gone: DORADE canonical-moment mapping (names
+  are verbatim, 8.1) and the ODIM undetect-to-nodata remap (planes are verbatim, 7.2; replaced
+  by `integer_coding_keeps_nodata_and_undetect_apart`). The DORADE multi-sweep test now
+  asserts that sweeps stay in input order (the legacy reader sorted them by elevation).
+
+Behaviour fixes found while porting:
+
+- io-dorade: RDAT rows are cut to the cell count CSFD describes (NOXP: 1001 cells, not the
+  1002 words with padding). The track goldens count words, so those tests allow for the one
+  extra word.
+- retrieve: the VWP accepts `SweepMode::Sector` sweeps as well as full PPIs (the NOXP sector
+  PPI case).
+- core `merge_volumes`: a per-ray variable of the matched sweep with the wrong length is
+  replaced by the incoming one, and an incoming variable with the wrong length is never
+  adopted, so a merged sweep always seals.
+
+The synthetic-input detector now also knows the model's types (`Volume`, `Sweep`, `Rays`,
+`Field`, `RayVariables`, the bench's `Plane`) and its content methods (`push_ray`, `add_field`,
+`push_row_*`). The 28 findings this surfaced were converted to real data, except 6 model unit
+tests (row layouts no corpus file has, and the H/unspecified/V preference of `Sweep::find`).
+Those are listed as `pending` in `testdata/synthetic-allowlist.toml`, and
+`docs/testdata/synthetic-inventory.md` explains each one.
+
+### Verification
+
+On the merged tree (Windows 11 host, Rust 1.94):
+
+- `cargo test --workspace --release`: **1306 passed, 0 failed, 28 ignored** (110 test
+  targets, doc tests included). All 28 ignored tests are live-network probes, manual
+  benchmarks, or tests that need an external corpus or Python path.
+- `cargo clippy --workspace --all-targets --release`: only the `unwrap_used`/`expect_used`
+  warnings CI tolerates (`.github/workflows/ci.yml`). `cargo fmt --all` is clean.
+- Bench checksums (`recast-radar-bench <file> --iters 1`, the three `docs/baselines` files):
+  `0x818e0eff4fb8569e` (KTLX 2024), `0xd5080047ae5dfeb5` (KILX 2026) and `0x1df2b8849f9a2796`
+  (KTLX 2013). They are identical to `docs/baselines/import-checksums.txt` and deterministic
+  across iterations. `main` still prints the import values for the two KTLX files
+  (`0xc04a5e2dfecc4c1f`, `0x19e3735f42cdca4b`). The bench picks its sweeps by
+  `fixed_angle_deg`, which is the VCP cut angle here, so it renders different sweeps. At
+  `b811f2d`, selecting by first-ray elevation reproduced `main`'s values on the same build
+  (recorded in the checksum file).
+
+Single-core decode timing against `main` `e9fdb6c`:
+
+- Setup: release builds of both trees, `RAYON_NUM_THREADS=1`, ABBA-interleaved rounds, the
+  three baseline files.
+- Probe: each build decodes the file with `read_volume_from_bytes` (on `main`,
+  `decode_volume_from_bytes`) once untimed, then N timed times.
+- Load: other agents were compiling on the same 32-thread host (Windows reported 26-100%
+  load). The table therefore reports process CPU time, which excludes time spent waiting for
+  a CPU.
+
+| File | `main` CPU ms per decode (min / median) | `fm301` CPU ms per decode (min / median) | fm301 / main per round: median (range), 12 rounds |
+|---|---:|---:|---:|
+| KTLX20240315_000217_V06 | 255.2 / 299.1 | 262.6 / 311.4 | 1.010 (0.926 to 1.237) |
+| KILX20260418_013553_V06 | 582.4 / 605.1 | 569.6 / 607.2 | 1.008 (0.957 to 1.249) |
+| KTLX20130520_201643_V06.gz | 45.0 / 45.5 | 43.3 / 44.9 | 0.983 (0.959 to 0.997) |
+
+Three wall-clock protocols give the same picture (median fm301/main ratio per file, in the
+order of the table):
+
+- the bench's decode stage, using the fastest iteration of each run (8 to 16 rounds): 1.011,
+  0.984, 0.955;
+- the decode probe, unpinned (10 rounds): 1.006, 1.023, 0.995;
+- the decode probe, pinned to one logical CPU at high priority (16 rounds): 1.009, 1.052,
+  0.981.
+
+No difference shows above the host's noise. By median, `fm301` is at most about 2% slower,
+except in the pinned KILX run (+5%), and single rounds scatter by 10-25%. KTLX 2013 is at
+least as fast on every protocol. A quiet-host run of the stream D ABBA protocol would resolve
+differences below 2%.
+
+### Open items
+
+- The six pending allowlist entries above need corpus files that have those layouts.
+- The open questions of section 15 remain open. The 22 `EXPECTED` reader differences are
+  deliberate and documented.
+- Level II `fixed_angle_deg` is the VCP cut angle. The goldens of the algorithm crates still
+  use first-radial elevations, which their tests bridge by editing the fixed angle.
+  Regenerating those goldens with VCP angles would remove the edit.
+- Decode timing on this shared Windows host resolves differences only down to about 2%. The
+  stream D protocol on a quiet Linux host is the check to run before a release.
 
 ---
 

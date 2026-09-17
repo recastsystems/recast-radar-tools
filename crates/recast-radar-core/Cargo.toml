@@ -14,21 +14,27 @@ chrono.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
-[dev-dependencies]
-# FM301 view and conformance tests over the real corpus (tests/fm301_view.rs,
-# tests/fm301_conformance.rs). A dev-dependency cycle (io depends on core) is
-# fine for integration tests.
-recast-radar-io = { path = "../recast-radar-io" }
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
-recast-radar-testdata = { path = "../recast-radar-testdata" }
-serde_json.workspace = true
-
 [features]
 # Serde derives on the data model. Reserved switch: the derives are still
 # unconditional today; once the model settles (stream F), `serde` becomes
 # optional and this feature turns into `["dep:serde"]`. The facade's `serde`
 # feature already forwards here.
 serde = []
+
+[dev-dependencies]
+# Real-data model tests (tests/real_model.rs, tests/real_merge.rs) and the
+# FM301 view and conformance tests (tests/fm301_view.rs,
+# tests/fm301_conformance.rs): corpus files decoded with the real readers,
+# goldens as JSON. Dev-only cycles through the io crates are allowed by
+# cargo; the integration tests link the library build, so the model types
+# are shared.
+recast-radar-io = { path = "../recast-radar-io" }
+recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
+recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-io-odim = { path = "../recast-radar-io-odim" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+serde_json.workspace = true
 
 [lints]
 workspace = true

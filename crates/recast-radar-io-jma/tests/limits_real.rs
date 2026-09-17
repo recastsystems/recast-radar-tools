@@ -18,11 +18,11 @@ fn be_u32(bytes: &[u8], at: usize) -> usize {
 }
 
 /// Offset of the first GRIB2 grid definition section (section 3) of the
-/// tar's first member: the member starts after one 512-byte tar header, the
-/// GRIB2 indicator section is 16 bytes, and every later section starts with
-/// its u32 length and section number.
+/// tar's first member: the member starts after one 512-byte tar header (the
+/// GRIB2 indicator section, 16 bytes, follows it; the unmodified-tar test
+/// checks its magic), and every later section starts with its u32 length and
+/// section number.
 fn first_grid_section(tar: &[u8]) -> usize {
-    assert_eq!(&tar[TAR_BLOCK..TAR_BLOCK + 4], b"GRIB");
     let mut at = TAR_BLOCK + 16;
     loop {
         let length = be_u32(tar, at);
@@ -34,14 +34,16 @@ fn first_grid_section(tar: &[u8]) -> usize {
     }
 }
 
-/// Section 3 (template 3.50120): point count (u32 at +6), gate count (u32
-/// at +14), radial count (u32 at +18).
-fn set_grid(tar: &mut [u8], gates: u32, radials: u32) {
-    let section = first_grid_section(tar);
+/// The RS47773 tar with its section 3 (template 3.50120) rewritten: point
+/// count (u32 at +6), gate count (u32 at +14), radial count (u32 at +18).
+fn rs47773_n5_with_grid(gates: u32, radials: u32) -> Vec<u8> {
+    let mut tar = rs47773_n5();
+    let section = first_grid_section(&tar);
     let points = gates * radials;
     tar[section + 6..section + 10].copy_from_slice(&points.to_be_bytes());
     tar[section + 14..section + 18].copy_from_slice(&gates.to_be_bytes());
     tar[section + 18..section + 22].copy_from_slice(&radials.to_be_bytes());
+    tar
 }
 
 fn assert_limit_error(tar: &[u8], what: &str) {
@@ -69,6 +71,7 @@ fn full_national_reflectivity_tar_decodes_within_the_batch_limit() {
 #[test]
 fn unmodified_single_station_tar_decodes_within_limits() {
     let tar = rs47773_n5();
+    assert_eq!(&tar[TAR_BLOCK..TAR_BLOCK + 4], b"GRIB");
     let section = first_grid_section(&tar);
     let (points, gates, radials) = (
         be_u32(&tar, section + 6),
@@ -91,15 +94,13 @@ fn tar_member_claiming_more_bytes_than_the_limit_is_rejected() {
 
 #[test]
 fn grid_claiming_more_gates_than_the_limit_is_rejected() {
-    let mut tar = rs47773_n5();
-    set_grid(&mut tar, 5000, 512);
+    let tar = rs47773_n5_with_grid(5000, 512);
     assert_limit_error(&tar, "5,000-gate grid");
 }
 
 #[test]
 fn grid_claiming_more_points_than_the_limit_is_rejected() {
-    let mut tar = rs47773_n5();
     // Both axes are at their individual ceilings; the product is not.
-    set_grid(&mut tar, 4096, 2048);
+    let tar = rs47773_n5_with_grid(4096, 2048);
     assert_limit_error(&tar, "8.4-million-point grid");
 }

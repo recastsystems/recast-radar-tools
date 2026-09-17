@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::sweep::{RayVariables, Sweep};
+use super::sweep::{PrtSequence, RayVariables, Sweep};
 use super::volume::{TimeCoverage, Volume};
 
 /// Tolerance used to treat two fixed angles or two ray azimuths as the same.
@@ -45,8 +45,11 @@ pub enum MergeError {
 ///   none of its field names, else the first matched sweep. Fields keep their
 ///   native geometry: each is re-attached to the matched sweep's range, and a
 ///   field that does not align is dropped and counted in `skipped_geometry`.
-/// - Missing per-ray instrument values of the matched sweep are filled from the
-///   incoming sweep.
+/// - Missing per-ray instrument values of the matched sweep (NaN, `-9999`
+///   samples, or an absent variable) are filled from the incoming sweep; values
+///   the matched sweep has are kept. A matched-sweep variable whose length is
+///   not the ray count is replaced by the incoming one, and an incoming
+///   variable whose length is not the ray count is ignored.
 /// - Unmatched sweeps are appended; the result is sorted by fixed angle
 ///   (stable) and renumbered: `sweep_number = i`, `elevation_number = i + 1`.
 pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeError> {
@@ -120,7 +123,8 @@ pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeE
                 continue;
             };
             let existing = &mut base.sweeps[index];
-            fill_ray_variables(&mut existing.ray_vars, &sweep.ray_vars);
+            let nrays = existing.nrays();
+            fill_ray_variables(&mut existing.ray_vars, &sweep.ray_vars, nrays);
             let incoming_range = sweep.range.clone();
             for mut field in sweep.fields {
                 if existing.field(&field.name).is_some() {
@@ -169,126 +173,92 @@ fn azimuth_difference_deg(a: f32, b: f32) -> f32 {
     diff.min(360.0 - diff)
 }
 
-fn fill_f32(base: &mut Option<Vec<f32>>, incoming: &Option<Vec<f32>>) {
-    match (base.as_mut(), incoming) {
-        (None, Some(values)) => *base = Some(values.clone()),
-        (Some(values), Some(other)) if values.len() == other.len() => {
+/// Fill one per-ray variable of a matched sweep with `nrays` rays from the
+/// incoming sweep: gates `missing` in `base` take the incoming value. An
+/// absent or mis-sized `base` takes the incoming vector whole; a mis-sized
+/// incoming vector is ignored.
+fn fill_values<T: Copy>(
+    base: &mut Option<Vec<T>>,
+    incoming: &Option<Vec<T>>,
+    nrays: usize,
+    missing: impl Fn(&T) -> bool,
+) {
+    let Some(other) = incoming.as_ref().filter(|other| other.len() == nrays) else {
+        return;
+    };
+    match base.as_mut() {
+        Some(values) if values.len() == nrays => {
             for (value, other) in values.iter_mut().zip(other) {
-                if value.is_nan() {
+                if missing(value) {
                     *value = *other;
                 }
             }
         }
-        _ => {}
+        _ => *base = Some(other.clone()),
     }
 }
 
-fn fill_ray_variables(base: &mut RayVariables, incoming: &RayVariables) {
+fn fill_f32(base: &mut Option<Vec<f32>>, incoming: &Option<Vec<f32>>, nrays: usize) {
+    fill_values(base, incoming, nrays, |value| value.is_nan());
+}
+
+/// Take the incoming vector when `base` has none or a mis-sized one.
+fn fill_whole<T: Clone>(base: &mut Option<Vec<T>>, incoming: &Option<Vec<T>>, nrays: usize) {
+    if base.as_ref().is_some_and(|values| values.len() == nrays) {
+        return;
+    }
+    if let Some(other) = incoming.as_ref().filter(|other| other.len() == nrays) {
+        *base = Some(other.clone());
+    }
+}
+
+fn fill_ray_variables(base: &mut RayVariables, incoming: &RayVariables, nrays: usize) {
     fill_f32(
         &mut base.nyquist_velocity_mps,
         &incoming.nyquist_velocity_mps,
+        nrays,
     );
-    fill_f32(&mut base.unambiguous_range_m, &incoming.unambiguous_range_m);
-    fill_f32(&mut base.prt_s, &incoming.prt_s);
-    fill_f32(&mut base.prt_ratio, &incoming.prt_ratio);
-    fill_f32(&mut base.pulse_width_s, &incoming.pulse_width_s);
-    fill_f32(&mut base.scan_rate_deg_per_s, &incoming.scan_rate_deg_per_s);
+    fill_f32(
+        &mut base.unambiguous_range_m,
+        &incoming.unambiguous_range_m,
+        nrays,
+    );
+    fill_f32(&mut base.prt_s, &incoming.prt_s, nrays);
+    fill_f32(&mut base.prt_ratio, &incoming.prt_ratio, nrays);
+    fill_f32(&mut base.pulse_width_s, &incoming.pulse_width_s, nrays);
+    fill_f32(
+        &mut base.scan_rate_deg_per_s,
+        &incoming.scan_rate_deg_per_s,
+        nrays,
+    );
     fill_f32(
         &mut base.rx_range_resolution_m,
         &incoming.rx_range_resolution_m,
+        nrays,
     );
-    fill_f32(&mut base.independent_samples, &incoming.independent_samples);
-    match (base.n_samples.as_mut(), &incoming.n_samples) {
-        (None, Some(values)) => base.n_samples = Some(values.clone()),
-        (Some(values), Some(other)) if values.len() == other.len() => {
-            for (value, other) in values.iter_mut().zip(other) {
-                if *value == -9999 {
-                    *value = *other;
-                }
-            }
-        }
-        _ => {}
+    fill_f32(
+        &mut base.independent_samples,
+        &incoming.independent_samples,
+        nrays,
+    );
+    fill_values(&mut base.n_samples, &incoming.n_samples, nrays, |value| {
+        *value == -9999
+    });
+    let sequence_fits = |sequence: &PrtSequence| {
+        sequence.values_s.len() == nrays.saturating_mul(sequence.nprt as usize)
+    };
+    if !base.prt_sequence_s.as_ref().is_some_and(sequence_fits)
+        && let Some(sequence) = incoming
+            .prt_sequence_s
+            .as_ref()
+            .filter(|s| sequence_fits(s))
+    {
+        base.prt_sequence_s = Some(sequence.clone());
     }
-    if base.prt_sequence_s.is_none() {
-        base.prt_sequence_s = incoming.prt_sequence_s.clone();
-    }
-    if base.antenna_transition.is_none() {
-        base.antenna_transition = incoming.antenna_transition.clone();
-    }
-    if base.calib_index.is_none() {
-        base.calib_index = incoming.calib_index.clone();
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
-mod tests {
-    use chrono::{DateTime, Utc};
-
-    use super::*;
-    use crate::model::{Field, FieldData, FieldName, GateMapping, IntCoding, SweepMode};
-
-    fn part(site: &str, seconds: i64, angle: f32, name: FieldName, spacing: f64) -> Volume {
-        let mut volume = Volume::new(
-            site,
-            DateTime::<Utc>::from_timestamp(seconds, 0).unwrap_or_default(),
-        );
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, angle);
-        for ray in 0..3 {
-            sweep.push_ray(f64::from(ray), ray as f32 * 120.0, angle);
-        }
-        let gates = sweep.attach_geometry(spacing / 2.0, spacing, 4).unwrap();
-        let mut field = Field::new(
-            name,
-            gates,
-            4,
-            FieldData::U8 {
-                values: Vec::new(),
-                coding: IntCoding::nexrad(2.0, 66.0),
-            },
-        );
-        for ray in 0..3 {
-            field.push_row_u8(ray, &[2, 3, 4, 5]).unwrap();
-        }
-        sweep.add_field(field).unwrap();
-        sweep.seal().unwrap();
-        volume.sweeps.push(sweep);
-        volume
-    }
-
-    #[test]
-    fn merges_fields_of_matching_sweeps_and_rebases_time() {
-        let dbzh = part("SKJAV", 1_010, 0.5, FieldName::Dbzh, 250.0);
-        let vradh = part("SKJAV", 1_000, 0.52, FieldName::Vradh, 1000.0);
-        let (merged, report) = merge_volumes(vec![dbzh, vradh]).unwrap();
-        assert_eq!(merged.sweeps.len(), 1);
-        assert_eq!(report.merged_fields, 1);
-        let sweep = &merged.sweeps[0];
-        assert_eq!(sweep.fields[1].name, FieldName::Vradh);
-        assert_eq!(
-            sweep.fields[1].gates,
-            GateMapping {
-                start: 0,
-                stride: 4
-            }
-        );
-        assert_eq!(merged.time_reference.timestamp(), 1_000);
-        assert_eq!(sweep.rays.time_s[0], 10.0);
-    }
-
-    #[test]
-    fn rejects_other_sites_and_counts_collisions() {
-        let a = part("SKJAV", 0, 0.5, FieldName::Dbzh, 250.0);
-        let b = part("SKKOJ", 0, 0.5, FieldName::Dbzh, 250.0);
-        assert!(matches!(
-            merge_volumes(vec![a.clone(), b]),
-            Err(MergeError::SiteMismatch { .. })
-        ));
-        let (_, report) = merge_volumes(vec![a.clone(), a]).unwrap();
-        assert_eq!(report.field_collisions, 1);
-        assert!(matches!(
-            merge_volumes(Vec::new()),
-            Err(MergeError::NoParts)
-        ));
-    }
+    fill_whole(
+        &mut base.antenna_transition,
+        &incoming.antenna_transition,
+        nrays,
+    );
+    fill_whole(&mut base.calib_index, &incoming.calib_index, nrays);
 }

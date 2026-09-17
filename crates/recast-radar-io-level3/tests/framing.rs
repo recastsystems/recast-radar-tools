@@ -454,7 +454,10 @@ fn check_unknown_sizes(
         match packet {
             Packet::Unknown { bytes, code } => {
                 total += bytes.len();
-                if bytes.get(..2) != Some(&code.to_be_bytes()[..]) {
+                let leading = bytes
+                    .get(..2)
+                    .map(|word| u16::from_be_bytes([word[0], word[1]]));
+                if leading != Some(*code) {
                     problems.push(format!(
                         "{what}: unknown packet {code} bytes do not start with its code"
                     ));

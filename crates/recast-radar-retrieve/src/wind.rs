@@ -401,36 +401,76 @@ mod tests {
         }
     }
 
+    /// The gust proxy on the Moore Doppler tilt (KTLX 2013-05-20 sweep 1,
+    /// 0.5 deg): on each ray, |dealiased velocity| (3-gate median) where the
+    /// same ray's reflectivity at that range reaches 10 dBZ and the beam is
+    /// below 1 km above the radar, and nothing elsewhere.
     #[test]
     fn gust_proxy_masks_to_echo_and_the_lowest_kilometre() {
-        use crate::test_support::{add_f32_field, sweep_with_rows, volume_with};
-        // 0.5°, 250 m gates from 250 m: the beam passes 1 km ARL near 80 km.
-        let rows = 8;
-        let gates = 400;
-        let mut sweep = sweep_with_rows(rows, 0.5, Some(60.0));
-        add_f32_field(
-            &mut sweep,
-            FieldName::Vradh,
-            250.0,
-            250.0,
-            gates,
-            vec![-30.0; rows * gates],
+        let path = recast_radar_testdata::require_file!("l2-ktlx-20130520-201643-trim");
+        let volume = recast_radar_io_nexrad::read_volume_from_path(&path).expect("decode");
+        let sweep_index = 1;
+        let sweep = &volume.sweeps[sweep_index];
+        assert!(volume.sweeps[0].find(Quantity::RadialVelocity).is_none());
+        let velocity = sweep.field(&FieldName::Vradh).expect("VRADH");
+        let reflectivity = sweep.field(&FieldName::Dbzh).expect("DBZH");
+        let dealiased = dealias_velocity(sweep, velocity);
+        let gust = gust_proxy_from_dealiased(&volume, sweep_index, &dealiased).expect("gust");
+        assert_eq!(gust.name, FieldName::parse(GUST_NAME));
+        assert_eq!(gust.shape(), dealiased.shape());
+        // `gust_proxy` dealiases the first velocity sweep itself: the same
+        // product.
+        let own = gust_proxy(&volume).expect("gust");
+        assert_eq!(own.to_physical().len(), gust.to_physical().len());
+        assert!(
+            own.to_physical()
+                .iter()
+                .zip(gust.to_physical())
+                .all(|(a, b)| a.to_bits() == b.to_bits())
         );
-        // Reflectivity on 1 km gates sharing the velocity lattice's inner
-        // edge (first centre 625 m): echo only in the first 40 km.
-        let mut dbz = vec![f32::NAN; rows * 100];
+
+        let (first_m, spacing_m) = dealiased.native_geometry(&sweep.range).expect("geometry");
+        let (ref_first_m, ref_spacing_m) = reflectivity
+            .native_geometry(&sweep.range)
+            .expect("reflectivity geometry");
+        let elevation = f64::from(sweep.fixed_angle_deg);
+        let (rows, gates) = gust.shape();
+        let (mut values, mut without_echo, mut too_high) = (0usize, 0usize, 0usize);
         for row in 0..rows {
-            for gate in 0..40 {
-                dbz[row * 100 + gate] = 35.0;
+            for gate in 0..gates {
+                let value = gust.value(row, gate);
+                let slant = first_m + gate as f64 * spacing_m;
+                if beam_height_above_radar_m(slant, elevation) >= 1000.0 {
+                    assert_eq!(value, None, "row {row} gate {gate} above 1 km");
+                    too_high += 1;
+                    continue;
+                }
+                let ref_gate = ((slant - ref_first_m) / ref_spacing_m).round() as isize;
+                let echo = ref_gate >= 0
+                    && (ref_gate as usize) < reflectivity.ngates as usize
+                    && reflectivity
+                        .value(row, ref_gate as usize)
+                        .is_some_and(|dbz| dbz >= 10.0);
+                if !echo {
+                    assert_eq!(value, None, "row {row} gate {gate} without echo");
+                    without_echo += 1;
+                    continue;
+                }
+                let Some(value) = value else { continue };
+                values += 1;
+                // The 3-gate median is one of the three neighbouring values.
+                let neighbours: Vec<f32> = (gate.saturating_sub(1)..(gate + 2).min(gates))
+                    .filter_map(|g| dealiased.value(row, g))
+                    .map(f32::abs)
+                    .collect();
+                assert!(
+                    neighbours.iter().any(|v| (v - value).abs() < 1e-3),
+                    "row {row} gate {gate}: {value} not in {neighbours:?}"
+                );
             }
         }
-        add_f32_field(&mut sweep, FieldName::Dbzh, 625.0, 1000.0, 100, dbz);
-        let volume = volume_with(vec![sweep]);
-        let gust = gust_proxy(&volume).expect("gust");
-        assert_eq!(gust.name, FieldName::parse(GUST_NAME));
-        assert_eq!(gust.value(3, 10), Some(30.0));
-        // No echo past 40 km, and no product past the 1 km beam height.
-        assert_eq!(gust.value(3, 200), None);
-        assert_eq!(gust.value(3, 399), None);
+        assert!(values > 1_000, "{values} gust gates");
+        assert!(without_echo > 1_000, "{without_echo} gates masked for echo");
+        assert!(too_high > 1_000, "{too_high} gates above 1 km");
     }
 }

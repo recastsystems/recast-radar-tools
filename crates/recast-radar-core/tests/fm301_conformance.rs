@@ -1367,20 +1367,25 @@ fn pyart_layout(sweep: &Sweep, field: &Field, r0: f64, dr: f64, ngates: usize) -
     }
     let (k, m) = (k as usize, m.round() as i64);
     let (rows, native) = field.shape();
-    let mut out = vec![f32::NAN; rows * ngates];
-    for row in 0..rows {
-        let out_row = &mut out[row * ngates..(row + 1) * ngates];
-        for gate in 0..native {
-            let value = field.value(row, gate).unwrap_or(f32::NAN);
-            for rep in 0..k {
-                let index = m + (gate * k + rep) as i64;
-                if index >= 0 && (index as usize) < ngates {
-                    out_row[index as usize] = value;
-                }
-            }
+    // Py-ART gate `index` shows native gate `(index - m) / k`; gates before
+    // the field's first gate or past its last are NaN.
+    let value = |row: usize, index: usize| -> f32 {
+        let offset = index as i64 - m;
+        if offset < 0 {
+            return f32::NAN;
         }
-    }
-    Some(out)
+        let gate = offset as usize / k;
+        if gate < native {
+            field.value(row, gate).unwrap_or(f32::NAN)
+        } else {
+            f32::NAN
+        }
+    };
+    Some(
+        (0..rows)
+            .flat_map(|row| (0..ngates).map(move |index| value(row, index)))
+            .collect(),
+    )
 }
 
 /// Py-ART's ODIM azimuth convention: `numpy.angle` of the complex mean of

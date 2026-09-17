@@ -15,6 +15,7 @@ recast-radar-core = { path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]
+# Real corpus files (spec section 5).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]

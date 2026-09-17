@@ -3220,9 +3220,10 @@ impl<E: Error + 'static> Error for PsdIntegrationError<E> {
 
 #[cfg(test)]
 mod tests {
-    use std::{convert::Infallible, error::Error, fmt};
+    use std::{error::Error, fmt};
 
     use super::*;
+    use crate::{AxisCoordinate, AxisKind, InterpolationError, OfflineLut};
 
     #[track_caller]
     fn assert_relative(actual: f64, expected: f64, tolerance: f64) {
@@ -3272,7 +3273,16 @@ mod tests {
         c_at_a_scale_m: f64,
         density_kg_m3: f64,
     ) -> IshmaelPsdInput {
-        let number_per_kg = 1.0e5;
+        input_from_scales_at_number(category, a_scale_m, c_at_a_scale_m, density_kg_m3, 1.0e5)
+    }
+
+    fn input_from_scales_at_number(
+        category: IshmaelIceCategory,
+        a_scale_m: f64,
+        c_at_a_scale_m: f64,
+        density_kg_m3: f64,
+        number_per_kg: f64,
+    ) -> IshmaelPsdInput {
         let delta = (c_at_a_scale_m / ISHMAEL_MONOMER_SEMI_AXIS_M).ln()
             / (a_scale_m / ISHMAEL_MONOMER_SEMI_AXIS_M).ln();
         let mean_volume = mean_particle_volume(a_scale_m, delta, ISHMAEL_GAMMA_SHAPE).unwrap();
@@ -3297,30 +3307,130 @@ mod tests {
         .unwrap()
     }
 
-    fn synthetic_per_particle(node: &PsdParticleNode) -> AdditiveScattering {
-        let diameter = node.equivolume_diameter_m();
-        let zh = 1.0e-5 * (1.0 + 1.0e8 * diameter * diameter);
-        let zv = 0.8 * zh;
-        let speed = 0.25 + 1_000.0 * diameter;
-        AdditiveScattering::from_components([
-            zh,
-            zv,
-            0.7 * zh,
-            0.0,
-            1.0e-8 * diameter / 1.0e-4,
+    /// Per-particle scattering from the committed PyTMatrix 0.3.3 dry-ice
+    /// spheroid table (corpus id `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`:
+    /// 29 equivolume diameters 0.1-50 mm x axis ratios 0.7/0.85/1.0 at
+    /// 2.7008 GHz and 0 deg elevation, solid-ice dielectric, Gaussian
+    /// 20-degree canting, Schiller-Naumann fall speeds). A node is looked up
+    /// at its equivolume diameter and minor/major axis ratio; bulk density
+    /// is not an axis of this conventional table, so the support domain
+    /// spans the ISHMAEL densities up to the solid-ice endpoint. A node the
+    /// small-sphere policy routed below the table floor is evaluated at the
+    /// floor sphere and scaled by `(D / D_floor)^6`.
+    struct DryIceTable {
+        lut: OfflineLut,
+        frequency_hz: f64,
+    }
+
+    impl DryIceTable {
+        fn diameter_range_m(&self) -> [f64; 2] {
+            let axis = &self.lut.header().axes()[0];
+            [axis.coordinates()[0], *axis.coordinates().last().unwrap()]
+        }
+
+        fn ratio_range(&self) -> [f64; 2] {
+            let axis = &self.lut.header().axes()[1];
+            [axis.coordinates()[0], *axis.coordinates().last().unwrap()]
+        }
+
+        fn domain(&self) -> PsdParticleDomain {
+            PsdParticleDomain::new(
+                self.diameter_range_m(),
+                [1.5, ICE_MATERIAL_DENSITY_KG_M3],
+                self.ratio_range(),
+            )
+            .unwrap()
+        }
+
+        fn support(&self) -> PsdParticleSupport {
+            PsdParticleSupport::uniform(self.domain())
+        }
+
+        fn per_particle(
+            &self,
+            node: &PsdParticleNode,
+        ) -> Result<AdditiveScattering, InterpolationError> {
+            let floor = self.diameter_range_m()[0];
+            let (diameter, ratio, factor) = if node.scattering_route()
+                == IshmaelParticleScatteringRoute::TableFloorAnchoredExactSphereRayleighV1
+            {
+                (floor, 1.0, (node.equivolume_diameter_m() / floor).powi(6))
+            } else {
+                (
+                    node.equivolume_diameter_m(),
+                    node.minor_to_major_axis_ratio(),
+                    1.0,
+                )
+            };
+            let value = self.lut.interpolate(&[
+                AxisCoordinate::new(AxisKind::EquivolumeDiameter, diameter)?,
+                AxisCoordinate::new(AxisKind::MinorToMajorAxisRatio, ratio)?,
+                AxisCoordinate::new(AxisKind::Frequency, self.frequency_hz)?,
+                AxisCoordinate::new(AxisKind::RadarElevation, 0.0)?,
+            ])?;
+            value
+                .checked_scale(factor)
+                .map_err(InterpolationError::InvalidInterpolatedOutput)
+        }
+    }
+
+    fn dry_ice_table() -> DryIceTable {
+        let corpus = crate::test_corpus::dry_ice();
+        let frequency_hz = corpus.lut_frequency_hz();
+        DryIceTable {
+            lut: corpus.table,
+            frequency_hz,
+        }
+    }
+
+    /// The Schiller-Naumann terminal-speed law the dry-ice table's generator
+    /// config declares (its stored fall-speed moments follow it), as the
+    /// versioned external provenance token every integration below carries.
+    fn dry_ice_fall_speed_provenance() -> PsdFallSpeedProvenance {
+        crate::test_corpus::config_fall_speed_provenance(&crate::test_corpus::dry_ice().config)
+    }
+
+    /// The default integration config with two budgets opened for a
+    /// conventional table: the additive convergence tolerance is 2e-2
+    /// instead of 5e-3, because a multilinear lookup on 29 log-spaced
+    /// diameter nodes is only piecewise linear in the D^6-steep backscatter
+    /// and the coarse and refined Gauss-Legendre rules disagree by 0.5-1.1%
+    /// on it (most on the floor-bridged 8 micrometre spheres); and the
+    /// domain-omission budgets are 1e-4, because the table starts at 0.1 mm
+    /// and the ISHMAEL gamma tails of the 0.5 mm distributions below that
+    /// floor hold under 1e-4 of number (and far less of mass and D6).
+    fn table_config() -> PsdIntegrationConfig {
+        PsdIntegrationConfig::new(
+            8,
+            256,
+            96.0,
             1.0e-10,
-            8.0e-11,
-            zh * speed,
-            zh * speed * speed,
-        ])
+            5.0e-8,
+            2.0e-2,
+            DEFAULT_ADDITIVE_ABSOLUTE_TOLERANCES,
+            1.0e-4,
+            1.0e-4,
+            1.0e-4,
+        )
         .unwrap()
     }
 
-    fn synthetic_fall_speed_provenance() -> PsdFallSpeedProvenance {
-        PsdFallSpeedProvenance::new(
-            PsdFallSpeedAuthority::SyntheticTestOnly,
-            Sha256Digest::compute(b"scheme-psd-test-size-speed-v1"),
-        )
+    /// Planar ice with a 0.5 mm characteristic semi-axis, minor/major ratio
+    /// 0.85 at the scale size: its quadrature nodes lie inside the table's
+    /// diameter and ratio axes.
+    /// 200 particles per kg of air (about 0.05 g m^-3 of ice at this size):
+    /// the additive sums stay inside the polar-accumulator ranges.
+    const TABLE_NUMBER_PER_KG: f64 = 200.0;
+
+    fn table_oblate_distribution() -> IshmaelPsd {
+        IshmaelPsd::reconstruct(input_from_scales_at_number(
+            IshmaelIceCategory::Planar,
+            0.5e-3,
+            0.425e-3,
+            400.0,
+            TABLE_NUMBER_PER_KG,
+        ))
+        .unwrap()
     }
 
     #[test]
@@ -3412,35 +3522,42 @@ mod tests {
 
     #[test]
     fn node_habit_comes_from_geometry_not_category_label() {
-        let oblate = oblate_distribution();
-        let prolate = IshmaelPsd::reconstruct(input_from_scales(
+        let table = dry_ice_table();
+        // Both distributions are labelled by their WRF category; the habit
+        // of every node follows its axes: planar with c < a is oblate, and a
+        // columnar label with c > a is prolate.
+        let oblate = table_oblate_distribution();
+        let prolate = IshmaelPsd::reconstruct(input_from_scales_at_number(
             IshmaelIceCategory::Planar,
-            50.0e-6,
-            100.0e-6,
+            0.5e-3,
+            0.5e-3 / 0.85,
             400.0,
+            TABLE_NUMBER_PER_KG,
         ))
         .unwrap();
         let mut saw_oblate = false;
         integrate_ishmael_psd(
             &oblate,
-            PsdIntegrationConfig::default(),
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            table_config(),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
             |node| {
                 saw_oblate |= node.habit() == PsdSpheroidHabit::Oblate;
-                Ok::<_, Infallible>(synthetic_per_particle(node))
+                assert_ne!(node.habit(), PsdSpheroidHabit::Prolate);
+                table.per_particle(node)
             },
         )
         .unwrap();
         let mut saw_prolate = false;
         integrate_ishmael_psd(
             &prolate,
-            PsdIntegrationConfig::default(),
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            table_config(),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
             |node| {
                 saw_prolate |= node.habit() == PsdSpheroidHabit::Prolate;
-                Ok::<_, Infallible>(synthetic_per_particle(node))
+                assert_ne!(node.habit(), PsdSpheroidHabit::Oblate);
+                table.per_particle(node)
             },
         )
         .unwrap();
@@ -3450,33 +3567,29 @@ mod tests {
 
     #[test]
     fn authenticated_solid_ice_closure_preserves_mass_and_shape_at_918_for_both_habits() {
-        let domain = PsdParticleDomain::new(
-            [1.0e-9, 1.0],
-            [1.5, ICE_MATERIAL_DENSITY_KG_M3],
-            [0.01, 1.0],
-        )
-        .unwrap();
-        let support = PsdParticleSupport::uniform(domain);
+        let table = dry_ice_table();
+        let support = table.support();
         for (a_scale_m, c_at_a_scale_m, expected_habit) in [
-            (50.0e-6, 25.0e-6, PsdSpheroidHabit::Oblate),
-            (50.0e-6, 100.0e-6, PsdSpheroidHabit::Prolate),
+            (0.5e-3, 0.425e-3, PsdSpheroidHabit::Oblate),
+            (0.5e-3, 0.5e-3 / 0.85, PsdSpheroidHabit::Prolate),
         ] {
-            let distribution = IshmaelPsd::reconstruct(input_from_scales(
+            let distribution = IshmaelPsd::reconstruct(input_from_scales_at_number(
                 IshmaelIceCategory::Planar,
                 a_scale_m,
                 c_at_a_scale_m,
                 918.0,
+                TABLE_NUMBER_PER_KG,
             ))
             .unwrap();
             let native = prepare_ishmael_psd(
                 &distribution,
-                PsdIntegrationConfig::default(),
+                table_config(),
                 support,
-                synthetic_fall_speed_provenance(),
+                dry_ice_fall_speed_provenance(),
             )
             .unwrap();
             let native_error = native
-                .finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node)))
+                .finish(|_, _, node| table.per_particle(node))
                 .expect_err("native rho=918 remains outside exact rho<=917 LUT support");
             assert!(matches!(
                 native_error,
@@ -3485,9 +3598,9 @@ mod tests {
 
             let prepared = prepare_ishmael_psd_with_solid_ice_material_closure(
                 &distribution,
-                PsdIntegrationConfig::default(),
+                table_config(),
                 support,
-                synthetic_fall_speed_provenance(),
+                dry_ice_fall_speed_provenance(),
                 ICE_MATERIAL_DENSITY_KG_M3,
             )
             .unwrap();
@@ -3536,7 +3649,7 @@ mod tests {
             assert!(saw_expected_habit);
 
             let result = prepared
-                .finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node)))
+                .finish(|_, _, node| table.per_particle(node))
                 .unwrap();
             let audit = result.audit();
             assert_eq!(audit.material_closure, material);
@@ -3566,7 +3679,7 @@ mod tests {
             &distribution,
             PsdIntegrationConfig::default(),
             PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            dry_ice_fall_speed_provenance(),
             916.9,
         )
         .expect_err("an arbitrary density clamp must not enter the closure");
@@ -3581,26 +3694,32 @@ mod tests {
 
     #[test]
     fn equal_native_axes_produce_spherical_nodes() {
-        let spherical = IshmaelPsd::reconstruct(input_from_scales(
+        let table = dry_ice_table();
+        let spherical = IshmaelPsd::reconstruct(input_from_scales_at_number(
             IshmaelIceCategory::Aggregate,
-            50.0e-6,
-            50.0e-6,
+            0.5e-3,
+            0.5e-3,
             400.0,
+            TABLE_NUMBER_PER_KG,
         ))
         .unwrap();
         let mut saw_non_spherical = false;
+        let mut evaluated = 0;
         integrate_ishmael_psd(
             &spherical,
-            PsdIntegrationConfig::default(),
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            table_config(),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
             |node| {
                 saw_non_spherical |= node.habit() != PsdSpheroidHabit::Spherical;
-                Ok::<_, Infallible>(synthetic_per_particle(node))
+                assert_eq!(node.minor_to_major_axis_ratio(), 1.0);
+                evaluated += 1;
+                table.per_particle(node)
             },
         )
         .unwrap();
         assert!(!saw_non_spherical);
+        assert!(evaluated > 0);
     }
 
     #[test]
@@ -3613,32 +3732,30 @@ mod tests {
         ))
         .unwrap();
         assert!(spherical.is_exact_spherical_distribution());
-        let floor_m = 50.0e-6;
+        // The table floor (0.1 mm) is the bridge anchor; 8 micrometre ice
+        // sits almost entirely below it.
+        let table = dry_ice_table();
+        let floor_m = table.diameter_range_m()[0];
         let domain = PsdParticleDomain::new(
-            [floor_m, 0.02],
+            table.diameter_range_m(),
             [100.0, ICE_MATERIAL_DENSITY_KG_M3],
-            [0.1, 1.0],
+            table.ratio_range(),
         )
         .unwrap();
         let support = PsdParticleSupport::uniform(domain);
-        let fall_speed = synthetic_fall_speed_provenance();
+        let fall_speed = dry_ice_fall_speed_provenance();
 
-        let disabled = prepare_ishmael_psd(
-            &spherical,
-            PsdIntegrationConfig::default(),
-            support,
-            fall_speed,
-        )
-        .unwrap();
+        let disabled =
+            prepare_ishmael_psd(&spherical, table_config(), support, fall_speed).unwrap();
         assert!(disabled.nodes().all(|(_, _, node)| {
             node.scattering_route() == IshmaelParticleScatteringRoute::TMatrixTable
         }));
         assert!(matches!(
-            disabled.finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node))),
+            disabled.finish(|_, _, node| table.per_particle(node)),
             Err(PsdIntegrationError::Psd(PsdError::DomainOmission { .. }))
         ));
 
-        let enabled_config = PsdIntegrationConfig::default().with_small_sphere_scattering_policy(
+        let enabled_config = table_config().with_small_sphere_scattering_policy(
             IshmaelSmallSphereScatteringPolicy::RayleighLimitBelowTableDiameterFloorV1,
         );
         let enabled = prepare_ishmael_psd(&spherical, enabled_config, support, fall_speed).unwrap();
@@ -3664,7 +3781,7 @@ mod tests {
         assert!(saw_bridge && saw_table);
 
         let result = enabled
-            .finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node)))
+            .finish(|_, _, node| table.per_particle(node))
             .unwrap();
         let audit = result.audit();
         assert_eq!(
@@ -3686,14 +3803,17 @@ mod tests {
         let policy = PsdIntegrationConfig::default().with_small_sphere_scattering_policy(
             IshmaelSmallSphereScatteringPolicy::RayleighLimitBelowTableDiameterFloorV1,
         );
+        let table = dry_ice_table();
+        let [floor_m, ceiling_m] = table.diameter_range_m();
+        // A support that starts 5 table nodes above the table floor.
         let domain = PsdParticleDomain::new(
-            [500.0e-6, 0.02],
+            [500.0e-6, ceiling_m],
             [500.0, ICE_MATERIAL_DENSITY_KG_M3],
-            [0.1, 1.0],
+            table.ratio_range(),
         )
         .unwrap();
         let support = PsdParticleSupport::new(Some(domain), None, Some(domain));
-        let fall_speed = synthetic_fall_speed_provenance();
+        let fall_speed = dry_ice_fall_speed_provenance();
 
         let nonspherical = IshmaelPsd::reconstruct(input_from_scales(
             IshmaelIceCategory::Columnar,
@@ -3706,8 +3826,7 @@ mod tests {
         assert!(prepared.nodes().all(|(_, _, node)| {
             node.scattering_route() == IshmaelParticleScatteringRoute::TMatrixTable
         }));
-        let result =
-            prepared.finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node)));
+        let result = prepared.finish(|_, _, node| table.per_particle(node));
         assert!(
             matches!(
                 result,
@@ -3727,14 +3846,16 @@ mod tests {
         let prepared = prepare_ishmael_psd(&density_miss, policy, support, fall_speed).unwrap();
         assert_eq!(prepared.nodes().count(), 0);
         assert!(matches!(
-            prepared.finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node))),
+            prepared.finish(|_, _, node| table.per_particle(node)),
             Err(PsdIntegrationError::Psd(PsdError::DomainOmission { .. }))
         ));
 
+        // A support capped at 0.2 mm: spheres below the table floor are
+        // bridged, but the miss ABOVE the cap is not.
         let upper_limited_domain = PsdParticleDomain::new(
-            [1.0e-9, 10.0e-6],
+            [floor_m, 2.0 * floor_m],
             [100.0, ICE_MATERIAL_DENSITY_KG_M3],
-            [0.1, 1.0],
+            table.ratio_range(),
         )
         .unwrap();
         let prepared = prepare_ishmael_psd(
@@ -3746,25 +3867,27 @@ mod tests {
         .unwrap();
         assert!(prepared.nodes().all(|(_, _, node)| {
             let diameter = node.equivolume_diameter_m();
-            diameter <= 10.0e-6
+            diameter <= 2.0 * floor_m
                 && (node.scattering_route() == IshmaelParticleScatteringRoute::TMatrixTable
-                    || diameter < 1.0e-9)
+                    || diameter < floor_m)
         }));
         assert!(matches!(
-            prepared.finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node))),
+            prepared.finish(|_, _, node| table.per_particle(node)),
             Err(PsdIntegrationError::Psd(PsdError::DomainOmission { .. }))
         ));
     }
 
     #[test]
     fn refined_integration_closes_number_mass_d6_and_preserves_tail_audit() {
-        let distribution = oblate_distribution();
+        let table = dry_ice_table();
+        let distribution = table_oblate_distribution();
+        let config = table_config();
         let result = integrate_ishmael_psd(
             &distribution,
-            PsdIntegrationConfig::default(),
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
-            |node| Ok::<_, Infallible>(synthetic_per_particle(node)),
+            config,
+            table.support(),
+            dry_ice_fall_speed_provenance(),
+            |node| table.per_particle(node),
         )
         .unwrap();
         let audit = result.audit();
@@ -3773,70 +3896,112 @@ mod tests {
             audit.quadrature,
             PsdQuadratureRule::CompositeGaussLegendre8AdaptiveRefinedV2
         );
-        assert_eq!(audit.fall_speed, synthetic_fall_speed_provenance());
+        assert_eq!(audit.fall_speed, dry_ice_fall_speed_provenance());
+        assert_eq!(
+            audit.fall_speed.authority(),
+            PsdFallSpeedAuthority::ExternalVersionedResearch
+        );
         assert!(audit.number_closure_relative_error <= 5.0e-8);
         assert!(audit.mass_closure_relative_error <= 5.0e-8);
         assert!(audit.d6_closure_relative_error <= 5.0e-8);
         assert_relative(
-            audit.represented_number_fraction + audit.truncation_tail_number_fraction,
+            audit.represented_number_fraction
+                + audit.truncation_tail_number_fraction
+                + audit.domain_omitted_number_fraction,
             1.0,
             5.0e-8,
         );
         assert_relative(
-            audit.represented_mass_fraction + audit.truncation_tail_mass_fraction,
+            audit.represented_mass_fraction
+                + audit.truncation_tail_mass_fraction
+                + audit.domain_omitted_mass_fraction,
             1.0,
             5.0e-8,
         );
         assert_relative(
-            audit.represented_d6_fraction + audit.truncation_tail_d6_fraction,
+            audit.represented_d6_fraction
+                + audit.truncation_tail_d6_fraction
+                + audit.domain_omitted_d6_fraction,
             1.0,
             5.0e-8,
         );
-        assert_eq!(audit.domain_omitted_number_fraction, 0.0);
-        assert_eq!(audit.domain_omitted_mass_fraction, 0.0);
-        assert_eq!(audit.domain_omitted_d6_fraction, 0.0);
+        // Only the sub-0.1 mm tail of the distribution lies outside the
+        // conventional table; it is audited, not hidden.
+        assert!(audit.domain_omitted_number_fraction > 0.0);
+        assert!(
+            audit.domain_omitted_number_fraction <= config.maximum_domain_omitted_number_fraction()
+        );
+        assert!(audit.domain_omitted_mass_fraction <= 1.0e-9);
+        assert!(audit.domain_omitted_d6_fraction <= 1.0e-12);
+        assert!(result.additive().zh().get() > 0.0);
         assert!(audit.coarse_nodes_evaluated >= 64);
         assert!(audit.refined_nodes_evaluated >= 128);
         assert!(audit.refined_nodes_evaluated > audit.coarse_nodes_evaluated);
         assert!(audit.refined_nodes_evaluated <= 256);
     }
 
+    /// The table's Schiller-Naumann fall speeds grow with size, so the
+    /// ZH-weighted speed of the distribution has a positive variance.
     #[test]
     fn size_dependent_fall_moments_produce_nonzero_variance() {
+        let table = dry_ice_table();
         let result = integrate_ishmael_psd(
-            &oblate_distribution(),
-            PsdIntegrationConfig::default(),
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
-            |node| Ok::<_, Infallible>(synthetic_per_particle(node)),
+            &table_oblate_distribution(),
+            table_config(),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
+            |node| table.per_particle(node),
         )
         .unwrap();
         assert!(result.accumulator().fall_speed_mps > 0.0);
         assert!(result.accumulator().fall_speed_variance_m2s2 > 0.0);
     }
 
+    /// A support covering only the table's first diameter interval
+    /// (0.1-0.125 mm) holds a sliver of the 0.5 mm distribution: the nodes
+    /// outside are omitted, not clamped onto the table, and the omission is
+    /// reported.
     #[test]
     fn narrow_particle_domain_fails_instead_of_clamping_nodes() {
-        let domain =
-            PsdParticleDomain::new([1.0e-12, 1.0e-7], [50.0, 920.0], [f64::MIN_POSITIVE, 1.0])
-                .unwrap();
+        let table = dry_ice_table();
+        let floor_m = table.diameter_range_m()[0];
+        let domain = PsdParticleDomain::new(
+            [floor_m, table.lut.header().axes()[0].coordinates()[1]],
+            [50.0, 920.0],
+            table.ratio_range(),
+        )
+        .unwrap();
+        let mut evaluated = Vec::new();
         let error = integrate_ishmael_psd(
-            &oblate_distribution(),
+            &table_oblate_distribution(),
             PsdIntegrationConfig::default(),
             PsdParticleSupport::uniform(domain),
-            synthetic_fall_speed_provenance(),
-            |node| Ok::<_, Infallible>(synthetic_per_particle(node)),
+            dry_ice_fall_speed_provenance(),
+            |node| {
+                evaluated.push(node.equivolume_diameter_m());
+                table.per_particle(node)
+            },
         )
         .unwrap_err();
-        assert!(matches!(
-            error,
-            PsdIntegrationError::Psd(PsdError::DomainOmission { .. })
-        ));
+        assert!(
+            evaluated
+                .iter()
+                .all(|d| (floor_m..=1.25 * floor_m).contains(d)),
+            "only nodes inside the sliver were evaluated: {evaluated:?}"
+        );
+        assert!(
+            matches!(
+                error,
+                PsdIntegrationError::Psd(PsdError::DomainOmission { .. })
+            ),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn sub_node_width_supported_sliver_cannot_hide_domain_omission() {
-        let distribution = oblate_distribution();
+        let table = dry_ice_table();
+        let distribution = table_oblate_distribution();
         let diameter_lower = distribution.equivolume_diameter_at_scaled_a(1.0).unwrap();
         let diameter_upper = distribution
             .equivolume_diameter_at_scaled_a(1.000_001)
@@ -3851,8 +4016,8 @@ mod tests {
             &distribution,
             PsdIntegrationConfig::default(),
             PsdParticleSupport::uniform(sliver),
-            synthetic_fall_speed_provenance(),
-            |node| Ok::<_, Infallible>(synthetic_per_particle(node)),
+            dry_ice_fall_speed_provenance(),
+            |node| table.per_particle(node),
         )
         .unwrap_err();
         assert!(matches!(
@@ -4332,7 +4497,7 @@ mod tests {
             &distribution,
             PsdIntegrationConfig::default(),
             PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            dry_ice_fall_speed_provenance(),
         )
         .expect_err("internally inconsistent source geometry must fail before quadrature");
         match error {
@@ -4397,7 +4562,7 @@ mod tests {
                 &distribution,
                 PsdIntegrationConfig::default(),
                 PsdParticleSupport::default(),
-                synthetic_fall_speed_provenance(),
+                dry_ice_fall_speed_provenance(),
             ),
             Err(PsdError::SourceStateMassClosure { .. })
         ));
@@ -4411,7 +4576,7 @@ mod tests {
             &distribution,
             PsdIntegrationConfig::default(),
             PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            dry_ice_fall_speed_provenance(),
         )
         .expect_err("an artificial reconstruction bug must remain fail-closed");
         assert!(matches!(
@@ -4436,22 +4601,42 @@ mod tests {
 
     #[test]
     fn callback_error_retains_quadrature_level_and_node() {
+        let table = dry_ice_table();
+        let distribution = table_oblate_distribution();
+        // The first node inside the table support (the sub-floor nodes are
+        // omitted, so it is not node 0).
+        let first = prepare_ishmael_psd(
+            &distribution,
+            table_config(),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
+        )
+        .unwrap()
+        .nodes()
+        .next()
+        .map(|(level, index, _)| (level, index))
+        .expect("a coarse node inside the table");
+        assert_eq!(first.0, PsdQuadratureLevel::Coarse);
+        assert!(first.1 > 0);
         let error = integrate_ishmael_psd(
-            &oblate_distribution(),
-            PsdIntegrationConfig::default(),
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            &distribution,
+            table_config(),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
             |_| Err::<AdditiveScattering, _>(CallbackError),
         )
         .unwrap_err();
-        assert!(matches!(
-            error,
-            PsdIntegrationError::NodeEvaluation {
-                level: PsdQuadratureLevel::Coarse,
-                node_index: 0,
-                ..
-            }
-        ));
+        assert!(
+            matches!(
+                error,
+                PsdIntegrationError::NodeEvaluation {
+                    level: PsdQuadratureLevel::Coarse,
+                    node_index,
+                    ..
+                } if node_index == first.1
+            ),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -4484,12 +4669,13 @@ mod tests {
             1.0e-6,
         )
         .unwrap();
+        let table = dry_ice_table();
         let error = integrate_ishmael_psd(
-            &oblate_distribution(),
+            &table_oblate_distribution(),
             impossible_tail,
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
-            |node| Ok::<_, Infallible>(synthetic_per_particle(node)),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
+            |node| table.per_particle(node),
         )
         .unwrap_err();
         assert!(matches!(
@@ -4500,15 +4686,18 @@ mod tests {
 
     #[test]
     fn prepared_workload_preserves_level_index_and_callback_order() {
+        let table = dry_ice_table();
         let prepared = prepare_ishmael_psd(
-            &oblate_distribution(),
-            PsdIntegrationConfig::default(),
-            PsdParticleSupport::default(),
-            synthetic_fall_speed_provenance(),
+            &table_oblate_distribution(),
+            table_config(),
+            table.support(),
+            dry_ice_fall_speed_provenance(),
         )
         .unwrap();
-        assert_eq!(prepared.node_count(PsdQuadratureLevel::Coarse), 72);
-        assert_eq!(prepared.node_count(PsdQuadratureLevel::Refined), 136);
+        let coarse = prepared.node_count(PsdQuadratureLevel::Coarse);
+        let refined = prepared.node_count(PsdQuadratureLevel::Refined);
+        assert!(coarse >= 64, "{coarse}");
+        assert!(refined > coarse, "{refined} vs {coarse}");
         assert_eq!(prepared.node_count(PsdQuadratureLevel::AdaptiveRefined), 0);
 
         let expected = prepared
@@ -4518,13 +4707,14 @@ mod tests {
                 (level, index, node.scaled_a().to_bits())
             })
             .collect::<Vec<_>>();
+        assert_eq!(expected.len(), coarse + refined);
         assert!(
-            expected[..72]
+            expected[..coarse]
                 .iter()
                 .all(|(level, ..)| *level == PsdQuadratureLevel::Coarse)
         );
         assert!(
-            expected[72..]
+            expected[coarse..]
                 .iter()
                 .all(|(level, ..)| *level == PsdQuadratureLevel::Refined)
         );
@@ -4533,7 +4723,7 @@ mod tests {
         prepared
             .finish(|level, index, node| {
                 callback_order.push((level, index, node.scaled_a().to_bits()));
-                Ok::<_, Infallible>(synthetic_per_particle(node))
+                table.per_particle(node)
             })
             .unwrap();
         assert_eq!(callback_order, expected);
@@ -4541,33 +4731,39 @@ mod tests {
 
     #[test]
     fn prepared_cpu_finish_is_bit_identical_to_frozen_pre_refactor_result() {
+        // Frozen from the first run of the prepared CPU finish over the
+        // committed dry-ice table with `table_oblate_distribution()` and
+        // `table_config()`: ZH 2.1421e6, ZV 1.8374e6 mm^6 m^-3, KDP 1.899
+        // deg/km, ZH-weighted fall moments 3.1027e7 and 4.6143e8; maximum
+        // additive convergence error 5.384e-3 on component 1 (ZV).
         // Bit-identical on x86_64-pc-windows-msvc, where these were frozen;
         // other targets compare within a tolerance (see `assert_frozen_bits`).
         const EXPECTED_COMPONENT_BITS: [u64; AdditiveScattering::COMPONENT_COUNT] = [
-            4_624_366_135_188_360_613,
-            4_622_730_831_761_640_179,
-            4_621_913_180_048_279_949,
-            0,
-            4_570_454_029_199_748_885,
-            4_533_201_175_231_653_355,
-            4_531_784_465_286_792_376,
-            4_621_728_900_563_117_324,
-            4_619_695_587_033_046_629,
+            4_701_854_596_218_879_931,
+            4_700_642_511_187_517_770,
+            4_701_263_243_177_457_375,
+            4_653_444_141_753_260_532,
+            4_611_231_953_337_178_844,
+            4_578_441_290_809_515_500,
+            4_577_409_422_140_062_759,
+            4_719_094_059_727_367_312,
+            4_736_521_044_202_777_272,
         ];
         const EXPECTED_CLOSURE_BITS: [u64; 3] = [
-            4_409_129_588_311_982_080,
-            4_447_716_880_169_304_064,
-            4_422_341_320_031_338_496,
+            4_405_329_676_126_388_224,
+            4_428_441_410_542_239_744,
+            4_414_512_797_241_573_376,
         ];
-        const EXPECTED_CONVERGENCE_BITS: u64 = 4_497_224_872_953_735_180;
+        const EXPECTED_CONVERGENCE_BITS: u64 = 4_572_857_304_189_427_097;
 
-        let distribution = oblate_distribution();
-        let config = PsdIntegrationConfig::default();
-        let support = PsdParticleSupport::default();
-        let fall_speed = synthetic_fall_speed_provenance();
+        let table = dry_ice_table();
+        let distribution = table_oblate_distribution();
+        let config = table_config();
+        let support = table.support();
+        let fall_speed = dry_ice_fall_speed_provenance();
         let prepared = prepare_ishmael_psd(&distribution, config, support, fall_speed).unwrap();
         let direct = prepared
-            .finish(|_, _, node| Ok::<_, Infallible>(synthetic_per_particle(node)))
+            .finish(|_, _, node| table.per_particle(node))
             .unwrap();
         for (actual, frozen) in direct
             .additive()
@@ -4592,10 +4788,10 @@ mod tests {
             audit.maximum_additive_convergence_error,
             EXPECTED_CONVERGENCE_BITS,
         );
-        assert_eq!(audit.maximum_additive_convergence_component, 4);
+        assert_eq!(audit.maximum_additive_convergence_component, 1);
 
         let delegated = integrate_ishmael_psd(&distribution, config, support, fall_speed, |node| {
-            Ok::<_, Infallible>(synthetic_per_particle(node))
+            table.per_particle(node)
         })
         .unwrap();
         assert_eq!(delegated, direct);

@@ -1,0 +1,45 @@
+{
+ "source": "tools/retrieve_golden.py availability; MetPy 1.7.1 Level2File",
+ "files": [
+  {
+   "id": "l2-ktlx-20240315-000217-trim",
+   "sweeps": [
+    {
+     "index": 0,
+     "radials": 480,
+     "elevation_deg": 0.582,
+     "moments": {
+      "CFP": 480,
+      "PHI": 480,
+      "REF": 480,
+      "RHO": 480,
+      "ZDR": 480
+     }
+    },
+    {
+     "index": 1,
+     "radials": 480,
+     "elevation_deg": 0.483,
+     "moments": {
+      "REF": 480,
+      "SW": 480,
+      "VEL": 480
+     }
+    }
+   ]
+  },
+  {
+   "id": "l2-ktlx-19990503-230052",
+   "sweeps": [
+    {
+     "index": 0,
+     "radials": 68,
+     "elevation_deg": 0.483,
+     "moments": {
+      "REF": 68
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -1166,9 +1166,9 @@ fn second_ldm_record(raw: &[u8]) -> Vec<u8> {
     record
 }
 
-/// The "DZDR" moment block of a message 31 body, located through the Data
-/// Header Block pointers: `(block offset, scale, offset)` read from the
-/// bytes (Table XVII-B bytes 20-23 and 24-27).
+/// The ZDR data moment block (type `D`, name "ZDR") of a message 31 body,
+/// located through the Data Header Block pointers: `(block offset, scale,
+/// offset)` read from the bytes (Table XVII-B bytes 20-23 and 24-27).
 fn zdr_block_encoding_from_bytes(body: &[u8]) -> Option<(usize, f32, f32)> {
     let count = usize::from(u16::from_be_bytes([body[30], body[31]]));
     (0..count)
@@ -1176,7 +1176,14 @@ fn zdr_block_encoding_from_bytes(body: &[u8]) -> Option<(usize, f32, f32)> {
             let at = 32 + 4 * slot;
             u32::from_be_bytes([body[at], body[at + 1], body[at + 2], body[at + 3]]) as usize
         })
-        .find(|&pointer| &body[pointer..pointer + 4] == b"DZDR")
+        .find(|&pointer| {
+            body[pointer] == b'D'
+                && DataMomentName::from_bytes([
+                    body[pointer + 1],
+                    body[pointer + 2],
+                    body[pointer + 3],
+                ]) == DataMomentName::DifferentialReflectivity
+        })
         .map(|pointer| {
             let real = |at: usize| {
                 f32::from_be_bytes([body[at], body[at + 1], body[at + 2], body[at + 3]])

@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "status": "research_only_unvalidated",
+  "kernel": "pytmatrix-0.3.3",
+  "table_id": "conventional-liquid-rain-sband-pytmatrix-0.3.3-unvalidated-v1",
+  "particle_population": {
+    "microphysics_family": "conventional",
+    "category": "rain",
+    "shape_family": "oblate_spheroid",
+    "size_distribution": "monodisperse_node",
+    "normalization_number_concentration_m3": 1.0
+  },
+  "axes": [
+    {
+      "kind": "equivolume_diameter",
+      "unit": "meter",
+      "coordinates": [0.0003, 0.000375, 0.00046875, 0.0005859375, 0.000732421875, 0.00091552734375, 0.0011444091796875, 0.00143051147460937, 0.00178813934326172, 0.00223517417907715, 0.00279396772384644, 0.00349245965480804, 0.00436557456851005, 0.00545696821063757, 0.00682121026329696, 0.007]
+    },
+    {
+      "kind": "minor_to_major_axis_ratio",
+      "unit": "unitless_fraction",
+      "coordinates": [0.8, 0.9, 1.0]
+    },
+    {
+      "kind": "frequency",
+      "unit": "hertz",
+      "coordinates": [2700832954.954955]
+    },
+    {
+      "kind": "radar_elevation",
+      "unit": "degree",
+      "coordinates": [0.0]
+    }
+  ],
+  "dielectric": {
+    "model": "explicit_homogeneous",
+    "material": "liquid_water",
+    "refractive_index": {
+      "real": 9.075,
+      "imaginary": 1.253
+    },
+    "mass_density_kg_m3": 999.84,
+    "temperature_k": 273.15,
+    "frequency_dependence": "constant_over_configured_s_band_nodes"
+  },
+  "orientation": {
+    "model": "fixed_euler",
+    "yaw_deg": 0.0,
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0,
+    "pytmatrix_alpha_deg": 0.0,
+    "pytmatrix_beta_deg": 0.0,
+    "symmetry_axis": "vertical"
+  },
+  "radar": {
+    "speed_of_light_m_s": 299792458.0,
+    "reference_water_dielectric_factor_squared": 0.93,
+    "length_unit_passed_to_pytmatrix": "millimeter",
+    "backscatter_geometry_deg": [90.0, 90.0, 0.0, 180.0, 0.0, 0.0],
+    "forward_scatter_geometry_deg": [90.0, 90.0, 0.0, 0.0, 0.0, 0.0],
+    "beam_elevation_transform": "pytmatrix_theta0_90_minus_e_theta_back_90_plus_e_theta_forward_90_minus_e_degrees",
+    "polarization_basis": "pytmatrix_local_horizontal_vertical_scattering_basis",
+    "view_applicability": "horizontal_singleton_zero_degree_axis",
+    "covariance_phase_convention": "pytmatrix_delta_hv_hh_times_conjugate_vv",
+    "solver": {
+      "shape": "spheroid",
+      "ddelt": 0.001,
+      "ndgs": 2
+    }
+  },
+  "terminal_velocity": {
+    "law": "atlas_rain_1973_exponential",
+    "a_m_s": 9.65,
+    "b_m_s": 10.3,
+    "c_per_mm": 0.6,
+    "valid_diameter_range_m": [0.0003, 0.007]
+  },
+  "temporal": {
+    "sampling": "instantaneous"
+  },
+  "execution": {
+    "point_timeout_seconds": 120,
+    "process_isolation": "fresh_python_subprocess_per_grid_point",
+    "result_collection_order": "declared_axis_order_last_axis_fastest",
+    "partial_grid_policy": "reject_entire_lut",
+    "thread_count_per_process": 1
+  },
+  "payload": {
+    "encoding": "f64_le_point_major_last_axis_fastest"
+  },
+  "references": [
+    "https://github.com/jleinonen/pytmatrix/tree/0.3.3",
+    "https://github.com/jleinonen/pytmatrix/blob/0.3.3/pytmatrix/refractive.py",
+    "https://doi.org/10.1029/JC078i033p07847"
+  ]
+}

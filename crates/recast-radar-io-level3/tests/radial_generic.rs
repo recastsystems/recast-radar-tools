@@ -254,9 +254,9 @@ struct Grid {
     rows: usize,
     cols: usize,
     levels: Vec<u16>,
-    /// SHA-256 input as the golden tool encodes it: `u8` for radial packets,
-    /// big-endian `u16` for generic packets.
-    bytes: Vec<u8>,
+    /// SHA-256 of the levels as the golden tool encodes them: `u8` for
+    /// radial packets, big-endian `u16` for generic packets.
+    raw_sha256: String,
     /// Physical values from the public API (`RadialPacket::values`,
     /// `GenericRadialComponent::values`).
     values: Vec<f32>,
@@ -443,7 +443,7 @@ fn radial_grid(
         rows: radial.num_radials(),
         cols: usize::from(radial.num_bins),
         levels: radial.levels.iter().map(|&l| u16::from(l)).collect(),
-        bytes: radial.levels.clone(),
+        raw_sha256: common::sha256_hex(&radial.levels),
         values: radial.values(levels),
         level_at,
     })
@@ -525,7 +525,7 @@ fn generic_grid(
     Some(Grid {
         rows: component.radials.len(),
         cols,
-        bytes: grid_levels.iter().flat_map(|l| l.to_be_bytes()).collect(),
+        raw_sha256: common::sha256_hex_u16_be(&grid_levels),
         levels: grid_levels,
         values: component.values(levels),
         level_at,
@@ -618,11 +618,10 @@ fn check_grid(grid: &Grid, data: &Json, what: &str, problems: &mut Vec<String>) 
         grid.cols as i64,
         data.get("cols").int("cols")
     );
-    let digest = common::sha256_hex(&grid.bytes);
     check_eq!(
         problems,
         format!("{what} raw levels sha256"),
-        Some(digest.as_str()),
+        Some(grid.raw_sha256.as_str()),
         data.get("raw_sha256").as_str()
     );
     let decoded = histogram(&grid.levels);
@@ -883,7 +882,7 @@ fn check_icd_levels(
 /// the decoder for the halfwords found in the corpus.
 fn expected_threshold_label(raw: u16) -> String {
     const CODES: [&str; 4] = ["BLANK", "TH", "ND", "RF"];
-    let [high, low] = raw.to_be_bytes();
+    let (high, low) = ((raw >> 8) as u8, (raw & 0xff) as u8);
     let mut label = String::new();
     if high & 0x04 != 0 {
         label.push('<');

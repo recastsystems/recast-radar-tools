@@ -291,18 +291,14 @@ fn lowest_sweep_with(volume: &Volume, quantity: Quantity) -> Option<usize> {
         .map(|(index, _)| index)
 }
 
-/// Physical `f32` copy of a field (NaN for every sentinel), same name.
+/// The real field re-encoded as physical `f32` (NaN for every sentinel),
+/// same name, geometry and absent rows.
 fn physical_copy(field: &Field) -> Field {
-    let mut copy = Field::new(
-        field.name.clone(),
-        field.gates,
-        field.ngates,
-        FieldData::F32 {
-            values: field.to_physical(),
-            coding: FloatCoding::default(),
-        },
-    );
-    copy.absent_rows = field.absent_rows.clone();
+    let mut copy = field.clone();
+    copy.data = FieldData::F32 {
+        values: field.to_physical(),
+        coding: FloatCoding::default(),
+    };
     copy
 }
 

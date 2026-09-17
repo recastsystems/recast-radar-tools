@@ -17,11 +17,16 @@ recast-radar-map = { path = "../recast-radar-map" }
 recast-radar-retrieve = { path = "../recast-radar-retrieve" }
 
 [dev-dependencies]
+# Real-data tests: corpus files decoded with the real readers, goldens as
+# JSON, gzip for the DORADE sweep-sequence archive.
+flate2.workspace = true
 image.workspace = true
+recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-io = { path = "../recast-radar-io" }
 recast-radar-filters = { path = "../recast-radar-filters" }
 recast-radar-testdata = { path = "../recast-radar-testdata" }
+serde_json.workspace = true
 
 [lints]
 workspace = true

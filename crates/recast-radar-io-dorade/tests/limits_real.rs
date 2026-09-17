@@ -29,12 +29,23 @@ fn read_i32(bytes: &[u8], at: usize, endian: Endian) -> i32 {
     }
 }
 
-fn write_i32(bytes: &mut [u8], at: usize, value: i32, endian: Endian) {
+/// The testdata sweep `id` with the `i32` at `at` replaced by `value`, after
+/// checking the real value `expect(bytes)` gives.
+fn with_i32(
+    id: &str,
+    endian: Endian,
+    at: impl FnOnce(&[u8]) -> usize,
+    value: impl FnOnce(&[u8], usize) -> i32,
+) -> Vec<u8> {
+    let mut bytes = read_testdata(id);
+    let at = at(&bytes);
+    let value = value(&bytes, at);
     let word = match endian {
         Endian::Big => value.to_be_bytes(),
         Endian::Little => value.to_le_bytes(),
     };
     bytes[at..at + 4].copy_from_slice(&word);
+    bytes
 }
 
 /// Offset of the first descriptor block with `id`, walking block lengths.
@@ -85,23 +96,33 @@ fn cell_spacing_descriptor_claiming_too_many_cells_is_rejected() {
 
 #[test]
 fn parameter_descriptor_claiming_too_many_cells_is_rejected() {
-    let mut bytes = read_testdata(NOXP);
-    let parm = find_block(&bytes, b"PARM", Endian::Little);
     // Extended PARM number_cells (i32 at +200): the real 1,001 becomes 1e6.
-    assert_eq!(read_i32(&bytes, parm + 200, Endian::Little), 1001);
-    write_i32(&mut bytes, parm + 200, 1_000_000, Endian::Little);
+    let bytes = with_i32(
+        NOXP,
+        Endian::Little,
+        |bytes| find_block(bytes, b"PARM", Endian::Little) + 200,
+        |bytes, at| {
+            assert_eq!(read_i32(bytes, at, Endian::Little), 1001);
+            1_000_000
+        },
+    );
     assert_limit_error(read_dorade_sweep_volume(&bytes), "one-million-cell PARM");
 }
 
 #[test]
 fn uncompressed_ray_longer_than_the_gate_limit_is_rejected() {
-    let mut bytes = read_testdata(NOXP);
-    let rdat = find_block(&bytes, b"RDAT", Endian::Little);
     // Stretch the first 16-bit field block over the rest of the file: its
     // payload now claims far more than the gate limit in one ray.
-    let stretched = bytes.len() - rdat;
-    assert!((stretched - 16) / 2 > MAX_GATES_PER_RADIAL);
-    write_i32(&mut bytes, rdat + 4, stretched as i32, Endian::Little);
+    let bytes = with_i32(
+        NOXP,
+        Endian::Little,
+        |bytes| find_block(bytes, b"RDAT", Endian::Little) + 4,
+        |bytes, at| {
+            let stretched = bytes.len() - (at - 4);
+            assert!((stretched - 16) / 2 > MAX_GATES_PER_RADIAL);
+            stretched as i32
+        },
+    );
     assert_limit_error(read_dorade_sweep_volume(&bytes), "stretched RDAT block");
 }
 

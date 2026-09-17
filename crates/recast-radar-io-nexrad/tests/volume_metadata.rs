@@ -809,8 +809,10 @@ fn start_chunk_record(start: &[u8]) -> Vec<u8> {
     bunzip(&start[28..])
 }
 
-/// A start chunk with its record replaced by `record`, recompressed.
-fn rebuild_start_chunk(start: &[u8], record: &[u8]) -> Vec<u8> {
+/// The committed KIWA start chunk (`CHUNKS[0]`) with its record replaced by
+/// `record`, recompressed.
+fn rebuild_start_chunk(record: &[u8]) -> Vec<u8> {
+    let start = load(CHUNKS[0]).unwrap_or_else(|| panic!("{} is committed", CHUNKS[0]));
     let control = i32::from_be_bytes(start[24..28].try_into().unwrap());
     let compressed = bzip(record);
     let mut rebuilt = start[..24].to_vec();
@@ -854,7 +856,7 @@ fn broken_metadata_message_is_reported_not_fatal() {
     let segments = frame_of(&record, 15) + 12 + 16 + 4;
     assert_eq!(&record[segments..segments + 2], &[0, 5]);
     record[segments + 1] = 9;
-    let mut mutated = rebuild_start_chunk(&start, &record);
+    let mut mutated = rebuild_start_chunk(&record);
     mutated.extend_from_slice(&rest);
 
     let decoded = read_volume_with_metadata(&mutated).unwrap();
@@ -953,7 +955,7 @@ fn first_message_of_a_type_is_kept() {
         &215u16.to_be_bytes()
     );
     record[vcp_halfword..vcp_halfword + 2].copy_from_slice(&35u16.to_be_bytes());
-    let mutated = rebuild_start_chunk(&start, &record);
+    let mutated = rebuild_start_chunk(&record);
 
     let messages_2: Vec<i32> = MessageWalker::new(&messages::metadata_record(&mutated).unwrap())
         .flatten()

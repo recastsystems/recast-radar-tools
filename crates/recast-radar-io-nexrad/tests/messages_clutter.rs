@@ -174,7 +174,7 @@ fn azimuth_runs(map: &ClutterFilterMap) -> Value {
 #[test]
 fn clutter_filter_maps_match_metpy() {
     let goldens = goldens();
-    assert_eq!(goldens.len(), 22, "golden files");
+    assert_eq!(goldens.len(), 27, "golden files");
     let mut checked = 0;
     for (id, golden) in &goldens {
         let Some(raw) = load(id) else { continue };
@@ -234,7 +234,7 @@ fn joinable_bypass_goldens(goldens: &[(String, Value)]) -> usize {
 #[test]
 fn bypass_maps_match_metpy_radial_0() {
     let goldens = goldens();
-    assert_eq!(joinable_bypass_goldens(&goldens), 9);
+    assert_eq!(joinable_bypass_goldens(&goldens), 12);
     let mut checked = 0;
     for (id, golden) in &goldens {
         let Some(raw) = load(id) else { continue };
@@ -670,7 +670,7 @@ fn bypass_map_halfwords_match_file_bytes() {
 #[test]
 fn bypass_map_bit_order_follows_icd_note_4() {
     let goldens = goldens();
-    assert_eq!(joinable_bypass_goldens(&goldens), 9);
+    assert_eq!(joinable_bypass_goldens(&goldens), 12);
     let mut checked = 0;
     let mut sources = Vec::new();
     for (id, golden) in &goldens {

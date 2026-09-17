@@ -18,6 +18,7 @@ thiserror.workspace = true
 # Cross-format sniffer and netCDF-4 rejection checks in the integration tests.
 recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
 recast-radar-io-odim = { path = "../recast-radar-io-odim" }
+# Real corpus files (spec section 5).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]

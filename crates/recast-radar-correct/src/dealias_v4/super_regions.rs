@@ -149,72 +149,216 @@ fn edge_is_strong(edge: &crate::region_core::RegionEdge) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Super-region tests on the region solve of real Level II sweeps.
+    //! Fold votes are checked against Py-ART 2.2.5 `dealias_region_based`
+    //! on the same sweep (`tools/correct_golden.py`); the partition is checked
+    //! against an independent union-find over the documented edge rule.
+
     use super::*;
-    use crate::region_core::solve_region_folds;
+    use crate::real_data::{VelocitySweep, golden_volume};
+    use crate::region_core::{RegionEdge, solve_region_folds};
 
-    /// Two coherent blocks joined by a single-gate-pair contact: the lone
-    /// edge is weak (support 1 < 12), so the blocks land in different
-    /// super-regions and the contact survives only as a soft weak edge.
-    #[test]
-    fn single_contact_edge_is_weak_and_splits_super_regions() {
-        let rows = 8;
-        let gates = 8;
-        let nyq = vec![20.0f32; rows];
-        let azimuths: Vec<f32> = (0..rows).map(|r| r as f32).collect();
-        let mut observed = vec![f32::NAN; rows * gates];
-        // Left block: value −5 in gates 0..3, all rows. Right block: +12 in
-        // gates 5..8. One bridge gate pair at row 0, gates 3/4/5 → exactly one
-        // shared boundary pair between the two regions... bridge value chosen
-        // inside REGION_JOIN_FRAC of the left block only.
-        for row in 0..rows {
-            for gate in 0..3 {
-                observed[row * gates + gate] = -5.0;
-            }
-            for gate in 5..8 {
-                observed[row * gates + gate] = 12.0;
-            }
-        }
-        observed[3] = -3.0; // row 0 gate 3: joins left block (|Δ| = 2 < 10)
-        // row 0 gate 4: joins right block (|Δ| = 4 < 10); the 3|4 contact is
-        // a boundary pair (|Δ| = 11 > 10) whose jump (0.275 folds) is still
-        // unambiguous, so it survives as a WEAK edge (1 vote < 12 support).
-        observed[4] = 8.0;
-        for row in 0..rows {
-            for gate in 5..8 {
-                observed[row * gates + gate] = 8.0; // keep the right block joined
-            }
-        }
-
-        let solve = solve_region_folds(&observed, &nyq, rows, gates, &azimuths);
-        assert_eq!(solve.region_size.len(), 2, "two regions expected");
-        let supers = build_super_regions(&solve);
-        assert_eq!(supers.super_count(), 2, "weak edge must not weld");
-        assert_eq!(supers.weak_edges.len(), 1);
-        assert!((supers.weak_edges[0].share - 1.0).abs() < 1e-9);
+    fn sweep_solve(case: &str) -> Option<(VelocitySweep, RegionSolve, Vec<Option<i32>>)> {
+        let (volume, golden) = golden_volume(case)?;
+        let cut = &volume.sweeps[golden.sweep];
+        let sweep = VelocitySweep::of_sweep(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let solve = solve_region_folds(
+            &sweep.observed,
+            &sweep.nyq,
+            sweep.rows,
+            sweep.gates,
+            &sweep.azimuths,
+        );
+        Some((sweep, solve, pyart))
     }
 
-    /// A long shared boundary with a unanimous fold vote is strong: the two
-    /// regions weld into one super-region and no weak edge remains.
-    #[test]
-    fn high_support_edge_welds_a_super_region() {
-        let rows = 16;
-        let gates = 8;
-        let nyq = vec![20.0f32; rows];
-        let azimuths: Vec<f32> = (0..rows).map(|r| r as f32).collect();
-        let mut observed = vec![f32::NAN; rows * gates];
-        for row in 0..rows {
-            for gate in 0..4 {
-                observed[row * gates + gate] = -18.0;
+    /// The documented strong-edge rule (support >= 12, share >= 0.8, mean
+    /// jump within 0.3 of a whole fold), written out independently.
+    fn documented_strong(edge: &RegionEdge) -> bool {
+        edge.winning_votes >= 12
+            && 5 * edge.winning_votes >= 4 * edge.total_votes
+            && (edge.mean_jump_folds - edge.mean_jump_folds.round()).abs() <= 0.30
+    }
+
+    /// Super-region partition from a plain union-find over strong edges,
+    /// as a canonical label per region (smallest region id in its set).
+    fn reference_partition(solve: &RegionSolve) -> Vec<u32> {
+        let mut parent: Vec<u32> = (0..solve.region_size.len() as u32).collect();
+        fn root(parent: &mut [u32], mut x: u32) -> u32 {
+            while parent[x as usize] != x {
+                x = parent[x as usize];
             }
-            for gate in 4..8 {
-                observed[row * gates + gate] = 15.0; // fold: −18 vs +15 → Δ=33 ≈ 2N
+            x
+        }
+        for edge in solve.edges.iter().filter(|edge| documented_strong(edge)) {
+            let (a, b) = (root(&mut parent, edge.lo), root(&mut parent, edge.hi));
+            let (keep, drop) = (a.min(b), a.max(b));
+            parent[drop as usize] = keep;
+        }
+        (0..parent.len() as u32)
+            .map(|x| root(&mut parent, x))
+            .collect()
+    }
+
+    /// Majority Py-ART fold of every region.
+    fn region_pyart_folds(solve: &RegionSolve, pyart: &[Option<i32>]) -> Vec<Option<i32>> {
+        let mut votes: Vec<std::collections::BTreeMap<i32, usize>> =
+            vec![Default::default(); solve.region_size.len()];
+        for (idx, &rid) in solve.region_of.iter().enumerate() {
+            if let (true, Some(fold)) = (rid != u32::MAX, pyart[idx]) {
+                *votes[rid as usize].entry(fold).or_default() += 1;
             }
         }
-        let solve = solve_region_folds(&observed, &nyq, rows, gates, &azimuths);
-        assert_eq!(solve.region_size.len(), 2);
-        // 16 shared boundary pairs, unanimous fold −1 vote → strong.
+        votes
+            .into_iter()
+            .map(|counts| {
+                counts
+                    .into_iter()
+                    .max_by_key(|(_, count)| *count)
+                    .map(|(fold, _)| fold)
+            })
+            .collect()
+    }
+
+    /// The derecho sector's region graph has many seams touching along a
+    /// single gate pair. Such an edge (support 1 < 12) is weak: it never welds
+    /// its regions, and when they end up in different super-regions and its
+    /// jump is unambiguous it survives only as a soft weak edge. The whole
+    /// partition must equal the union-find over strong edges.
+    #[test]
+    fn single_contact_edge_is_weak_and_splits_super_regions() {
+        let Some((_, solve, _)) = sweep_solve("kdvn_20200810_trim_s1") else {
+            return;
+        };
         let supers = build_super_regions(&solve);
-        assert_eq!(supers.super_count(), 1, "strong edge must weld");
-        assert!(supers.weak_edges.is_empty());
+        let reference = reference_partition(&solve);
+        for (region, &representative) in reference.iter().enumerate() {
+            assert_eq!(
+                supers.super_of_region[region], supers.super_of_region[representative as usize],
+                "region {region} split from its strong set"
+            );
+        }
+        let distinct_reference: std::collections::BTreeSet<u32> =
+            reference.iter().copied().collect();
+        assert_eq!(
+            supers.super_count(),
+            distinct_reference.len(),
+            "super-regions vs strong components"
+        );
+
+        let single_contacts: Vec<&RegionEdge> = solve
+            .edges
+            .iter()
+            .filter(|edge| edge.total_votes == 1)
+            .collect();
+        let split = single_contacts
+            .iter()
+            .filter(|edge| {
+                supers.super_of_region[edge.lo as usize] != supers.super_of_region[edge.hi as usize]
+            })
+            .count();
+        let expected_weak: Vec<(u32, u32)> = solve
+            .edges
+            .iter()
+            .filter(|edge| !documented_strong(edge))
+            .filter(|edge| (edge.mean_jump_folds - edge.mean_jump_folds.round()).abs() <= 0.30)
+            .map(|edge| {
+                (
+                    supers.super_of_region[edge.lo as usize],
+                    supers.super_of_region[edge.hi as usize],
+                )
+            })
+            .filter(|(lo, hi)| lo != hi)
+            .collect();
+        let weak: Vec<(u32, u32)> = supers
+            .weak_edges
+            .iter()
+            .map(|edge| (edge.lo_super, edge.hi_super))
+            .collect();
+        let single_weak = supers
+            .weak_edges
+            .iter()
+            .filter(|edge| (edge.share - 1.0).abs() < 1e-12)
+            .count();
+        eprintln!(
+            "regions {}, supers {}, edges {}, single contacts {} ({split} across super-regions), weak edges {} ({single_weak} unanimous)",
+            solve.region_size.len(),
+            supers.super_count(),
+            solve.edges.len(),
+            single_contacts.len(),
+            weak.len()
+        );
+        assert!(
+            single_contacts.len() >= 1_000,
+            "single-contact edges {}",
+            single_contacts.len()
+        );
+        assert!(
+            split >= 1_000,
+            "single contacts across super-regions {split}"
+        );
+        assert!(single_contacts.iter().all(|edge| !documented_strong(edge)));
+        assert_eq!(
+            weak, expected_weak,
+            "weak edges are the unambiguous weak seams across super-regions, in edge order"
+        );
+        assert!(supers.super_count() < solve.region_size.len());
+    }
+
+    /// The KBOX blizzard sector: seams with long unanimous boundaries weld
+    /// their regions into one super-region, and their fold vote is the fold
+    /// Py-ART finds between the same two regions.
+    #[test]
+    fn high_support_edge_welds_a_super_region() {
+        let Some((_, solve, pyart)) = sweep_solve("kbox_20220129_trim_s1") else {
+            return;
+        };
+        let supers = build_super_regions(&solve);
+        let region_folds = region_pyart_folds(&solve, &pyart);
+        let strong: Vec<&RegionEdge> = solve
+            .edges
+            .iter()
+            .filter(|edge| documented_strong(edge))
+            .collect();
+        let (mut folding, mut folding_agree, mut agree) = (0, 0, 0);
+        for edge in &strong {
+            assert_eq!(
+                supers.super_of_region[edge.lo as usize], supers.super_of_region[edge.hi as usize],
+                "strong edge {}-{} must weld",
+                edge.lo, edge.hi
+            );
+            let pyart_fold = region_folds[edge.hi as usize]
+                .zip(region_folds[edge.lo as usize])
+                .map(|(hi, lo)| hi - lo);
+            agree += usize::from(pyart_fold == Some(edge.fold));
+            if edge.fold != 0 {
+                folding += 1;
+                folding_agree += usize::from(pyart_fold == Some(edge.fold));
+            }
+        }
+        let welded_across_folds = supers
+            .weak_edges
+            .iter()
+            .filter(|edge| edge.lo_super == edge.hi_super)
+            .count();
+        eprintln!(
+            "strong edges {}, fold vote = Py-ART on {agree}; folding strong edges {folding}, Py-ART agrees on {folding_agree}",
+            strong.len()
+        );
+        assert_eq!(
+            welded_across_folds, 0,
+            "no weak edge inside one super-region"
+        );
+        assert!(strong.len() >= 100, "strong edges {}", strong.len());
+        assert!(folding >= 100, "strong edges carrying a fold {folding}");
+        assert!(
+            agree as f64 >= 0.99 * strong.len() as f64,
+            "fold votes matching Py-ART {agree}"
+        );
+        assert!(
+            folding_agree as f64 >= 0.99 * folding as f64,
+            "folding votes matching Py-ART {folding_agree}"
+        );
     }
 }

@@ -138,22 +138,6 @@ pub fn sweep_can_materialize_field(sweep: &Sweep, name: &FieldName) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{add_f32_field, sweep_with_rows};
-
-    fn sweep(rows: usize, names: &[FieldName]) -> Sweep {
-        let mut sweep = sweep_with_rows(rows, 0.5, Some(25.0));
-        for name in names {
-            add_f32_field(
-                &mut sweep,
-                name.clone(),
-                2125.0,
-                250.0,
-                8,
-                vec![0.0; rows * 8],
-            );
-        }
-        sweep
-    }
 
     #[test]
     fn threshold_relaxes_for_short_sweeps() {
@@ -161,88 +145,6 @@ mod tests {
         assert_eq!(displayable_radial_threshold(40), 20);
         assert_eq!(displayable_radial_threshold(1), 1);
         assert_eq!(displayable_radial_threshold(0), 1);
-    }
-
-    #[test]
-    fn derive_on_demand_admits_a_sweep_the_presence_gate_rejects() {
-        // A dual-pol surveillance sweep: DBZH + PHIDP + RHOHV present, no
-        // DBZH_CORR.
-        let sweep = sweep(720, &[FieldName::Dbzh, FieldName::Phidp, FieldName::Rhohv]);
-        let refc = DerivedSweepProduct::CorrectedReflectivity.field_name_in(&sweep);
-        assert_eq!(refc, FieldName::parse("DBZH_CORR"));
-
-        // Not there yet ...
-        assert!(!sweep_has_field_source(&sweep, &refc));
-        // ... but derivable, so a picker must offer this sweep.
-        assert!(sweep_can_materialize_field(&sweep, &refc));
-        assert!(sweep_has_advanced_product_sources(
-            &sweep,
-            DerivedSweepProduct::CorrectedReflectivity
-        ));
-    }
-
-    #[test]
-    fn derive_on_demand_never_admits_kdp() {
-        // KDP's output name is the NATIVE `KDP`, so it can never reach the
-        // derive-on-demand arm. A sweep carrying PHIDP could compute KDP, but
-        // selecting "KDP" still requires real KDP.
-        let sweep = sweep(720, &[FieldName::Phidp]);
-        assert_eq!(
-            DerivedSweepProduct::Kdp.field_name_in(&sweep),
-            FieldName::Kdp
-        );
-        assert!(advanced_derived_product_for_name(&FieldName::Kdp).is_none());
-        assert!(!sweep_can_materialize_field(&sweep, &FieldName::Kdp));
-    }
-
-    #[test]
-    fn native_fields_route_straight_through_the_presence_gate() {
-        let sweep = sweep(720, &[FieldName::Dbzh]);
-        for name in [
-            FieldName::Dbzh,
-            FieldName::Vradh,
-            FieldName::Wradh,
-            FieldName::Zdr,
-            FieldName::Rhohv,
-            FieldName::Phidp,
-            FieldName::Kdp,
-        ] {
-            assert_eq!(
-                sweep_can_materialize_field(&sweep, &name),
-                sweep_has_field_source(&sweep, &name),
-                "{name:?} must not take the derive-on-demand arm"
-            );
-        }
-    }
-
-    #[test]
-    fn a_partial_sweep_carries_no_sources() {
-        // 720 rays declared, but the field only filled 10 rows.
-        let mut sweep = sweep(720, &[]);
-        add_f32_field(
-            &mut sweep,
-            FieldName::Dbzh,
-            2125.0,
-            250.0,
-            8,
-            vec![0.0; 10 * 8],
-        );
-        assert!(!sweep_has_field_source(&sweep, &FieldName::Dbzh));
-        assert!(!sweep_has_advanced_product_sources(
-            &sweep,
-            DerivedSweepProduct::HailSignature
-        ));
-        // Sealing pads the field with absent rows; still not displayable.
-        sweep.seal().unwrap();
-        assert!(!sweep_has_field_source(&sweep, &FieldName::Dbzh));
-    }
-
-    #[test]
-    fn unknown_names_that_match_nothing_are_not_derivable() {
-        let sweep = sweep(720, &[FieldName::Dbzh]);
-        let bogus = FieldName::parse("NOT_A_PRODUCT");
-        assert!(advanced_derived_product_for_name(&bogus).is_none());
-        assert!(!sweep_can_materialize_field(&sweep, &bogus));
     }
 
     #[test]

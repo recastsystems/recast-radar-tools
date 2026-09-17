@@ -1,0 +1,226 @@
+{
+ "name": "l2-ktlx-19990504-002218-trim",
+ "ids": ["l2-ktlx-19990504-002218-trim"],
+ "generator": "tools/level2_decode_golden.py (MetPy 1.7.1 Level2File, Py-ART 2.2.5 NEXRADLevel2File, byte walker)",
+ "outer_compression": "none",
+ "ldm_records": [
+  {
+   "control_word": 14816,
+   "offset": 24,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 14235,
+   "offset": 14844,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 17690,
+   "offset": 29083,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 1365,
+   "offset": 46777,
+   "decompressed_len": 17024,
+   "radials": 7
+  },
+  {
+   "control_word": 43328,
+   "offset": 48146,
+   "decompressed_len": 294272,
+   "radials": 120
+  },
+  {
+   "control_word": 44048,
+   "offset": 91478,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 53259,
+   "offset": 135530,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": -3090,
+   "offset": 188793,
+   "decompressed_len": 17024,
+   "radials": 7
+  }
+ ],
+ "stream_len": 1787520,
+ "volume_header": {
+  "tape": "ARCHIVE2.",
+  "extension": "036",
+  "icao_hex": "00000000",
+  "metpy_stid": "\u0000\u0000\u0000\u0000",
+  "julian_date": 10716,
+  "time_ms": 1338000,
+  "metpy_epoch_ms": 925777338000
+ },
+ "message_count": 735,
+ "messages_by_type": {
+  "1": 734,
+  "2": 1
+ },
+ "messages_before_first_radial": [
+  [0, 1208, 0, 1, 28405, 10716, 1339260, 1, 1]
+ ],
+ "first_radial": {
+  "message_type": 1,
+  "body_offset": 28,
+  "time_ms": 1338804,
+  "date": 10716,
+  "azimuth_number": 1,
+  "azimuth_deg": 10.283203125,
+  "status": 3,
+  "elevation_number": 1,
+  "cut_sector": 1,
+  "elevation_deg": 0.4833984375,
+  "vcp": 11,
+  "nyquist_offset_46_raw": 0
+ },
+ "site": null,
+ "message1_vcp": 11,
+ "message5_vcp": null,
+ "metpy_sweep_radials": [367, 367],
+ "pyart_sweep_rays": [367, 367],
+ "sweeps": [
+  {
+   "radials": 367,
+   "message_type": 1,
+   "elevation_number": 1,
+   "first_status": 3,
+   "last_status": 2,
+   "first_elevation_deg": 0.4833984375,
+   "first_azimuth_deg": 10.283203125,
+   "last_azimuth_deg": 11.6015625,
+   "azimuth_sum_deg": 65758.88671875,
+   "elevation_sum_deg": 164.2236328125,
+   "first_epoch_ms": 925777338804,
+   "nyquist_count": 0,
+   "nyquist_sum_mps": 0.0,
+   "nyquist_min_mps": null,
+   "nyquist_max_mps": null,
+   "moments": {
+    "REF": {
+     "rows": 367,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 460,
+     "first_gate_m": 0,
+     "gate_width_m": 1000,
+     "scale": 2.0,
+     "offset": 66.0,
+     "valid_count": 32024,
+     "raw_valid_sum": 2817849,
+     "scaled_sum": 352132.5,
+     "scaled_min": -18.0,
+     "scaled_max": 69.5,
+     "samples": [
+      [266, 23, 205, 69.5],
+      [237, 6, 30, -18.0],
+      [0, 1, 105, 19.5],
+      [0, 184, 0, null],
+      [73, 1, 93, 13.5],
+      [73, 184, 0, null],
+      [146, 1, 97, 15.5],
+      [146, 184, 0, null],
+      [219, 1, 83, 8.5],
+      [219, 184, 0, null],
+      [292, 1, 96, 15.0],
+      [292, 184, 0, null],
+      [366, 1, 98, 16.0],
+      [366, 184, 0, null]
+     ]
+    }
+   }
+  },
+  {
+   "radials": 367,
+   "message_type": 1,
+   "elevation_number": 2,
+   "first_status": 0,
+   "last_status": 2,
+   "first_elevation_deg": 0.4833984375,
+   "first_azimuth_deg": 17.9736328125,
+   "last_azimuth_deg": 19.599609375,
+   "azimuth_sum_deg": 65797.998046875,
+   "elevation_sum_deg": 165.8935546875,
+   "first_epoch_ms": 925777358490,
+   "nyquist_count": 367,
+   "nyquist_sum_mps": 9578.7,
+   "nyquist_min_mps": 26.1,
+   "nyquist_max_mps": 26.1,
+   "moments": {
+    "SW": {
+     "rows": 367,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 920,
+     "first_gate_m": -375,
+     "gate_width_m": 250,
+     "scale": 2.0,
+     "offset": 129.0,
+     "valid_count": 111458,
+     "raw_valid_sum": 15023438,
+     "scaled_sum": 322678.0,
+     "scaled_min": 0.0,
+     "scaled_max": 15.0,
+     "samples": [
+      [24, 18, 159, 15.0],
+      [0, 14, 129, 0.0],
+      [0, 12, 131, 1.0],
+      [0, 368, 134, 2.5],
+      [73, 12, 131, 1.0],
+      [73, 368, 0, null],
+      [146, 12, 132, 1.5],
+      [146, 368, 0, null],
+      [219, 19, 131, 1.0],
+      [219, 368, 0, null],
+      [292, 12, 130, 0.5],
+      [292, 368, 140, 5.5],
+      [366, 12, 131, 1.0],
+      [366, 368, 129, 0.0]
+     ]
+    },
+    "VEL": {
+     "rows": 367,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 920,
+     "first_gate_m": -375,
+     "gate_width_m": 250,
+     "scale": 2.0,
+     "offset": 129.0,
+     "valid_count": 111458,
+     "raw_valid_sum": 14796730,
+     "scaled_sum": 209324.0,
+     "scaled_min": -26.0,
+     "scaled_max": 26.0,
+     "samples": [
+      [0, 275, 181, 26.0],
+      [0, 283, 77, -26.0],
+      [0, 12, 134, 2.5],
+      [0, 368, 81, -24.0],
+      [73, 12, 116, -6.5],
+      [73, 368, 0, null],
+      [146, 12, 115, -7.0],
+      [146, 368, 0, null],
+      [219, 19, 135, 3.0],
+      [219, 368, 0, null],
+      [292, 12, 149, 10.0],
+      [292, 368, 149, 10.0],
+      [366, 12, 134, 2.5],
+      [366, 368, 181, 26.0]
+     ]
+    }
+   }
+  }
+ ]
+}

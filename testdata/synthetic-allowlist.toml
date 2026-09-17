@@ -1,0 +1,137 @@
+# Synthetic test inputs still in the workspace (plan task C.1).
+#
+# Empty since C.3: every C.1 entry was converted to real inputs in C.2, and the
+# tests merged from main in C.3 were converted too (docs/testdata/synthetic-inventory.md).
+# New findings must be converted; an entry may be added only as a justified
+# exception (see `status` below).
+#
+# `crates/recast-radar-testdata/tests/no_synthetic.rs` scans test code and data
+# files (rules: `recast_radar_testdata::synthetic`) and fails on any finding
+# that is not listed here, and on any entry that no longer matches a finding.
+# docs/testdata/synthetic-inventory.md gives the real replacement for each one.
+#
+# One array of tables per conversion group (plan task C.2):
+#   io-nexrad, io-formats, correct, filters-map, retrieve, track, render-bench,
+#   core-data-scattering
+# Each entry sits under the group that owns its crate (the test checks this).
+#
+#   [[<group>]]
+#   path = "crates/<crate>/..."   # workspace-relative
+#   name = "tests::helper"        # item path inside the file; omitted for a data file
+#   status = "pending"            # "pending": convert in C.2, then delete the entry
+#                                 # "exception": permanent; allowed only for pure math or
+#                                 #   geometry helpers that do not consume radar data, fuzz
+#                                 #   regression inputs, and corruption helpers that start
+#                                 #   from real bytes
+#   justification = "..."         # pending: the real replacement; exception: why it stays
+#
+# Converting a test: switch it to real files, delete its entry and the entries of
+# helpers it no longer uses. To print every current finding as tables:
+#   RECAST_RADAR_SYNTHETIC_REPORT=findings.toml cargo test -p recast-radar-testdata --test no_synthetic
+
+# ============================================================================
+# io-nexrad (0 entries)
+# ============================================================================
+
+# All converted to real files in C.2 (see crates/recast-radar-io-nexrad/src/lib.rs
+# `tests` and tools/level2_decode_golden.py).
+
+# ============================================================================
+# io-formats (0 entries; every test converted to real data in C.2)
+# ============================================================================
+
+# ============================================================================
+# correct (0 entries): every synthetic test was converted to real data in C.2
+# ============================================================================
+
+# ============================================================================
+# filters-map (0 entries)
+# ============================================================================
+
+# All 36 converted in C.2 (branch real-tests-filters-map): real-data tests in
+# crates/recast-radar-filters/tests/{gate_filter,smooth,interpolate}_real.rs and
+# crates/recast-radar-map/tests/{rhi,volumetric}_real.rs, goldens from
+# tools/filters_map_golden.py.
+
+# ============================================================================
+# retrieve (0 entries)
+# ============================================================================
+
+# All 48 converted in C.2 (branch real-tests-retrieve): real-data tests in
+# crates/recast-radar-retrieve/tests/{availability,detect,gbvtd,shear,sweep,volume,vwp}_real.rs
+# and the wind.rs unit test, goldens from tools/retrieve_golden.py
+# (testdata/golden/retrieve/*.json).
+
+# ============================================================================
+# track (0 entries)
+# ============================================================================
+#
+# Converted in C.2 (branch real-tests-track): the 22 synthetic tests and 8
+# helpers of crates/recast-radar-track/src/{cells,swath,temporal,tracking,tracks}.rs
+# were replaced by crates/recast-radar-track/tests/*_real.rs on corpus files,
+# with goldens under testdata/golden/track/ from tools/track_golden.py.
+
+# ============================================================================
+# render-bench (0 entries): converted in C.2 (tests read the corpus and
+# testdata/golden/{bench,render}/*.json from tools/render_bench_golden.py)
+# ============================================================================
+
+# ============================================================================
+# core-data-scattering (6 entries, all pending)
+# ============================================================================
+#
+# Every legacy entry of this group was converted in C.2 (branch
+# real-tests-core-data-scattering): recast-radar-core's model tests moved to
+# crates/recast-radar-core/tests/{real_model,real_merge}.rs over decoded corpus
+# files (goldens: tools/core_golden.py); recast-radar-data's provider-contract
+# tests run over committed ORD archive listings and its tropical merge tests
+# over captured NHC/GDACS feeds; recast-radar-scattering's LUT, PSD and runtime
+# tests load the committed PyTMatrix 0.3.3 tables and WRF P3 tables
+# (testdata/scattering/manifest.toml, goldens: tools/scattering_golden.py).
+#
+# The FM301 model (stream F) brought its own unit tests. When the detector
+# learned the FM301 names (Volume, Sweep, Field, push_ray, add_field,
+# push_row_*), the tests with a real equivalent moved to real_model.rs and
+# real_merge.rs (ICD code resolution, float fill values, CF packing, buffer
+# moves, Message 1 range mapping, seal, merge geometry). The entries below
+# exercise row layouts and a name preference that no corpus file has: a scan of
+# all 48 cached Level II files with Py-ART (stream F) found no sweep where a
+# moment is missing on some radials or where a later radial has more gates than
+# the first, and no corpus volume has horizontal, unspecified and vertical
+# reflectivity together.
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/model/field.rs"
+name = "tests::nexrad_ref"
+status = "pending"
+justification = "helper of the three row-layout tests below; goes with them"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/model/field.rs"
+name = "tests::skipped_rays_become_absent_rows_and_short_rows_are_padded"
+status = "pending"
+justification = "replace with a real Level II sweep whose moment is missing on some radials (none in the corpus); short-row padding is covered by real_model.rs decoded_field_pads_rows_with_fewer_gates (KDMX 2008) and trailing absent rows by seal_pads_trailing_absent_rows_and_checks_invariants; the RowOrder error has no real input"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/model/field.rs"
+name = "tests::longer_rows_widen_existing_rows"
+status = "pending"
+justification = "replace with a real Level II sweep whose first radial is shorter than a later one (none in the corpus)"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/model/field.rs"
+name = "tests::u16_be_rows_decode_and_reject_odd_lengths"
+status = "pending"
+justification = "16-bit decoding is covered by real_model.rs decoded_u16_differential_phase_field_matches_big_endian_codes (KTLX 2013 PHI vs Py-ART); the odd-length and storage-type errors need a corrupted real record that reaches them"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/model/sweep.rs"
+name = "tests::u8_field"
+status = "pending"
+justification = "helper of find_prefers_horizontal_then_unspecified_then_vertical; goes with it"
+
+[[core-data-scattering]]
+path = "crates/recast-radar-core/src/model/sweep.rs"
+name = "tests::find_prefers_horizontal_then_unspecified_then_vertical"
+status = "pending"
+justification = "replace with a real volume carrying DBZH, DBZ and DBZV (none in the corpus)"

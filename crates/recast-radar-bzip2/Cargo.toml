@@ -1,0 +1,21 @@
+[package]
+name = "recast-radar-bzip2"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure-Rust bzip2 decompressor without unsafe code or dependencies, tuned for NEXRAD Level II LDM records"
+readme = "README.md"
+keywords = ["bzip2", "decompression", "nexrad", "radar", "no-unsafe"]
+categories = ["compression", "parser-implementations"]
+
+[dependencies]
+
+[dev-dependencies]
+# Reference decoder and encoder for the tests: the bzip2 crate's pure-Rust
+# backend (libbz2-rs-sys), a port of libbzip2 1.0.8.
+bzip2.workspace = true
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+
+[lints]
+workspace = true

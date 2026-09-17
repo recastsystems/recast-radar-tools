@@ -54,6 +54,10 @@ pub(crate) struct SweepState {
     /// Elevation angle of the radial that opened the sweep: the value later
     /// radials are matched against.
     pub first_elevation_deg: f32,
+    /// Status of the radial that opened the sweep (checked by the golden
+    /// tests; the model has no slot for it).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub first_status: Option<RadialStatus>,
     /// Status of the last radial appended to the sweep.
     pub last_status: Option<RadialStatus>,
     /// Block name to field index; `usize::MAX` marks a moment whose gates do
@@ -226,6 +230,7 @@ impl VolumeBuilder {
         self.volume.sweeps.push(sweep);
         self.sweeps.push(SweepState {
             first_elevation_deg: elevation_angle,
+            first_status: Some(status),
             ..SweepState::default()
         });
         Ok(index)

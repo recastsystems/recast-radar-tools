@@ -1,0 +1,263 @@
+{
+ "name": "l2-tstl-20230331-230314-trim",
+ "ids": ["l2-tstl-20230331-230314-trim"],
+ "generator": "tools/level2_decode_golden.py (MetPy 1.7.1 Level2File, Py-ART 2.2.5 NEXRADLevel2File, byte walker)",
+ "outer_compression": "none",
+ "ldm_records": [
+  {
+   "control_word": 255,
+   "offset": 24,
+   "decompressed_len": 325888,
+   "radials": 0
+  },
+  {
+   "control_word": 37495,
+   "offset": 283,
+   "decompressed_len": 193952,
+   "radials": 120
+  },
+  {
+   "control_word": 43041,
+   "offset": 37782,
+   "decompressed_len": 191520,
+   "radials": 120
+  },
+  {
+   "control_word": 40012,
+   "offset": 80827,
+   "decompressed_len": 191520,
+   "radials": 120
+  },
+  {
+   "control_word": 85268,
+   "offset": 120843,
+   "decompressed_len": 245280,
+   "radials": 120
+  },
+  {
+   "control_word": 90667,
+   "offset": 206115,
+   "decompressed_len": 245280,
+   "radials": 120
+  },
+  {
+   "control_word": -92656,
+   "offset": 296786,
+   "decompressed_len": 245280,
+   "radials": 120
+  }
+ ],
+ "stream_len": 1638720,
+ "volume_header": {
+  "tape": "AR2V0008.",
+  "extension": "300",
+  "icao_hex": "5453544c",
+  "metpy_stid": "TSTL",
+  "julian_date": 19448,
+  "time_ms": 82994000,
+  "metpy_epoch_ms": 1680303794000
+ },
+ "message_count": 723,
+ "messages_by_type": {
+  "5": 1,
+  "2": 2,
+  "31": 720
+ },
+ "messages_before_first_radial": [
+  [321024, 548, 8, 5, 1, 19448, 82995000, 1, 1],
+  [323456, 48, 9, 2, 1, 19448, 82995000, 1, 1],
+  [325888, 792, 8, 31, 26393, 19448, 82994000, 1, 1]
+ ],
+ "first_radial": {
+  "message_type": 31,
+  "body_offset": 325916,
+  "stid": "TSTL",
+  "time_ms": 82994000,
+  "date": 19448,
+  "azimuth_number": 1,
+  "azimuth_deg": 0.2197265625,
+  "radial_length": 1568,
+  "azimuth_spacing_code": 2,
+  "status": 3,
+  "elevation_number": 1,
+  "cut_sector": 1,
+  "elevation_deg": 0.263671875,
+  "block_count": 4,
+  "block_pointers": [68, 112, 124, 144, 0, 0, 0, 0, 0, 1381388108]
+ },
+ "site": {
+  "latitude_deg": 38.80500030517578,
+  "longitude_deg": -90.48899841308594,
+  "site_amsl_m": 197,
+  "feedhorn_agl_m": 197,
+  "vol_block_vcp": 80
+ },
+ "message1_vcp": null,
+ "message5_vcp": 80,
+ "metpy_sweep_radials": [360, 360],
+ "pyart_sweep_rays": [360, 360],
+ "sweeps": [
+  {
+   "radials": 360,
+   "message_type": 31,
+   "elevation_number": 1,
+   "first_status": 3,
+   "last_status": 2,
+   "first_elevation_deg": 0.263671875,
+   "first_azimuth_deg": 0.2197265625,
+   "last_azimuth_deg": 359.208984375,
+   "azimuth_sum_deg": 64702.265625,
+   "elevation_sum_deg": 94.921875,
+   "first_epoch_ms": 1680303794000,
+   "nyquist_count": 0,
+   "nyquist_sum_mps": 0.0,
+   "nyquist_min_mps": null,
+   "nyquist_max_mps": null,
+   "moments": {
+    "REF": {
+     "rows": 360,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 1390,
+     "first_gate_m": 0,
+     "gate_width_m": 300,
+     "scale": 2.0,
+     "offset": 66.0,
+     "valid_count": 159054,
+     "raw_valid_sum": 11921519,
+     "scaled_sum": 711977.5,
+     "scaled_min": -30.0,
+     "scaled_max": 59.0,
+     "samples": [
+      [188, 283, 184, 59.0],
+      [70, 5, 6, -30.0],
+      [0, 2, 28, -19.0],
+      [0, 556, 0, null],
+      [71, 2, 34, -16.0],
+      [71, 556, 0, null],
+      [143, 2, 23, -21.5],
+      [143, 556, 0, null],
+      [215, 2, 33, -16.5],
+      [215, 556, 0, null],
+      [287, 2, 38, -14.0],
+      [287, 556, 0, null],
+      [359, 2, 32, -17.0],
+      [359, 556, 0, null]
+     ]
+    }
+   }
+  },
+  {
+   "radials": 360,
+   "message_type": 31,
+   "elevation_number": 2,
+   "first_status": 0,
+   "last_status": 2,
+   "first_elevation_deg": 0.263671875,
+   "first_azimuth_deg": 11.25,
+   "last_azimuth_deg": 10.2392578125,
+   "azimuth_sum_deg": 64702.265625,
+   "elevation_sum_deg": 94.921875,
+   "first_epoch_ms": 1680303811000,
+   "nyquist_count": 0,
+   "nyquist_sum_mps": 0.0,
+   "nyquist_min_mps": null,
+   "nyquist_max_mps": null,
+   "moments": {
+    "REF": {
+     "rows": 360,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 592,
+     "first_gate_m": 0,
+     "gate_width_m": 150,
+     "scale": 2.0,
+     "offset": 66.0,
+     "valid_count": 190635,
+     "raw_valid_sum": 12999724,
+     "scaled_sum": 208907.0,
+     "scaled_min": -22.0,
+     "scaled_max": 60.5,
+     "samples": [
+      [178, 567, 187, 60.5],
+      [2, 3, 22, -22.0],
+      [0, 0, 23, -21.5],
+      [0, 236, 85, 9.5],
+      [71, 0, 28, -19.0],
+      [71, 236, 52, -7.0],
+      [143, 0, 48, -9.0],
+      [143, 236, 155, 44.5],
+      [215, 0, 26, -20.0],
+      [215, 236, 52, -7.0],
+      [287, 0, 49, -8.5],
+      [287, 236, 61, -2.5],
+      [359, 0, 24, -21.0],
+      [359, 236, 87, 10.5]
+     ]
+    },
+    "SW": {
+     "rows": 360,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 592,
+     "first_gate_m": 0,
+     "gate_width_m": 150,
+     "scale": 2.0,
+     "offset": 129.0,
+     "valid_count": 173525,
+     "raw_valid_sum": 23266080,
+     "scaled_sum": 440677.5,
+     "scaled_min": 0.0,
+     "scaled_max": 7.5,
+     "samples": [
+      [69, 0, 144, 7.5],
+      [5, 31, 129, 0.0],
+      [0, 4, 134, 2.5],
+      [0, 236, 134, 2.5],
+      [71, 1, 134, 2.5],
+      [71, 236, 135, 3.0],
+      [143, 1, 135, 3.0],
+      [143, 236, 132, 1.5],
+      [215, 3, 136, 3.5],
+      [215, 236, 134, 2.5],
+      [287, 1, 132, 1.5],
+      [287, 236, 135, 3.0],
+      [359, 2, 134, 2.5],
+      [359, 236, 133, 2.0]
+     ]
+    },
+    "VEL": {
+     "rows": 360,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 592,
+     "first_gate_m": 0,
+     "gate_width_m": 150,
+     "scale": 2.0,
+     "offset": 129.0,
+     "valid_count": 173525,
+     "raw_valid_sum": 21331676,
+     "scaled_sum": -526524.5,
+     "scaled_min": -43.0,
+     "scaled_max": 43.5,
+     "samples": [
+      [27, 138, 216, 43.5],
+      [330, 82, 43, -43.0],
+      [0, 4, 141, 6.0],
+      [0, 236, 157, 14.0],
+      [71, 1, 132, 1.5],
+      [71, 236, 144, 7.5],
+      [143, 1, 132, 1.5],
+      [143, 236, 118, -5.5],
+      [215, 3, 129, 0.0],
+      [215, 236, 90, -19.5],
+      [287, 1, 133, 2.0],
+      [287, 236, 109, -10.0],
+      [359, 2, 132, 1.5],
+      [359, 236, 152, 11.5]
+     ]
+    }
+   }
+  }
+ ]
+}

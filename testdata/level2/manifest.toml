@@ -120,13 +120,40 @@ tags = ["era:2016", "site:kewx", "radar:wsr-88d", "header:AR2V0006", "build:16.1
 description = "KEWX 2016-04-13 02:25Z; San Antonio hailstorm ~55-60 km W with 70.5 dBZ cores: the lowest sweep has 259 gates >= 60 dBZ within 120 km, 39 of them with RHOHV < 0.93 and |ZDR| < 1 dB. Build 16.1, VCP 212 with one SAILS cut, 19 sweeps / 9720 radials."
 
 [[file]]
+id = "l2-kdvn-20200810-175718"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_175718_V06"]
+sha256 = "3e785475b2fd40be69a7c2eaa22170574aa9b36fd92f9fb32520f2d3eff680fb"
+size = 15760259
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 17:57:18Z; the volume before l2-kdvn-20200810-180401 (same layout: AR2V0006.156, 94 LDM bzip2 records, VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials). First of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810) used with the Level III Storm Tracking Information products l3-kdvn-20200810-*-nst by the storm-tracking tests."
+
+[[file]]
 id = "l2-kdvn-20200810-180401"
 format = "nexrad-level2"
 urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_180401_V06"]
 sha256 = "665415a2e2e7451fb0a030d97538f621a408002383d32a036962b579311bc808"
 size = 16063887
-tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
-description = "KDVN 2020-08-10 18:04Z; Iowa derecho bow echo 100-150 km W of the radar with aliased Doppler velocity in the bow. Uncompressed file of 94 LDM bzip2 records, Build 18.2, VOL 44 v2.0 / RAD 28, ZDR 8-bit, Message 13 present. VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials."
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 18:04Z; Iowa derecho bow echo 100-150 km W of the radar with aliased Doppler velocity in the bow. Uncompressed file of 94 LDM bzip2 records, Build 18.2, VOL 44 v2.0 / RAD 28, ZDR 8-bit, Message 13 present. VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials. Second of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810)."
+
+[[file]]
+id = "l2-kdvn-20200810-181043"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_181043_V06"]
+sha256 = "9aa4b6053ec7ef4a8292b04d940c292acadd18a93f0872f4ce39a397d71b3d97"
+size = 16341122
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 18:10:43Z; the volume after l2-kdvn-20200810-180401 (same layout: AR2V0006.158, 94 LDM bzip2 records, VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials). Third of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810)."
+
+[[file]]
+id = "l2-kdvn-20200810-181724"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2020/08/10/KDVN/KDVN20200810_181724_V06"]
+sha256 = "5165223d6b45b626bfa3fb01794c1c0b70ddfbeea9fccffa38978f0bbae80187"
+size = 16483359
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "sequence:kdvn-20200810", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KDVN 2020-08-10 18:17:24Z; two volumes after l2-kdvn-20200810-180401 (same layout: AR2V0006.159, 94 LDM bzip2 records, VCP 212 MESO-SAILS x2, 21 sweeps / 11160 radials). Last of the four consecutive derecho volumes 17:57-18:17Z (tag sequence:kdvn-20200810)."
 
 [[file]]
 id = "l2-klix-20210829-180425"
@@ -136,6 +163,24 @@ sha256 = "729483bb8b4587686acb885c967261dc49692f04244aec458ad4d94d683e228a"
 size = 17635589
 tags = ["era:2021", "site:klix", "radar:wsr-88d", "header:AR2V0006", "build:19.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:44", "rad-block:28", "vcp:112", "mpda", "sails", "res:super", "regime:hurricane", "trim", "provider:aws", "bucket:unidata-nexrad-level2"]
 description = "KLIX 2021-08-29 18:04Z; Hurricane Ida eye ~140 km SW with the eyewall in range and an aliased velocity couplet. Build 19.1, CFP moment present, ZDR 16-bit, no Message 13. VCP 112 with the MPDA flag and SAILS x1: three cuts each near 0.5, 0.9 and 1.3 deg, 23 sweeps / 12600 radials."
+
+[[file]]
+id = "l2-klix-20210829-173117"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2021/08/29/KLIX/KLIX20210829_173117_V06"]
+sha256 = "202f8fc940a5cee5b430d7c648662bfbf9067b936cc39f35086bfd865c4fcd54"
+size = 17996934
+tags = ["era:2021", "site:klix", "radar:wsr-88d", "header:AR2V0006", "build:19.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:44", "rad-block:28", "vcp:112", "mpda", "sails", "res:super", "regime:hurricane", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KLIX 2021-08-29 17:31Z; Hurricane Ida, 33 min before l2-klix-20210829-180425 (same site, VCP and layout): a stale previous volume for the recast-radar-correct temporal-prior tests. AR2V0006.048 header, 106 LDM bzip2 records: Message 2 (x3, RDA build raw 1910), 3, 5 (VCP 112, supplemental 2051), 15 (x5), 18 (x4) and 12600 Message 31 radials (VOL 44 v2.0, RAD 28; REF/VEL/SW on Doppler cuts, REF/ZDR 16-bit/PHI/RHO/CFP on surveillance cuts); 23 sweeps."
+
+[[file]]
+id = "l2-klix-20210829-175748"
+format = "nexrad-level2"
+urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2021/08/29/KLIX/KLIX20210829_175748_V06"]
+sha256 = "feeb14c31b9d8694bb4840a8d4943077be1a3d86c4803ccc551126c60cdc3416"
+size = 17833396
+tags = ["era:2021", "site:klix", "radar:wsr-88d", "header:AR2V0006", "build:19.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:44", "rad-block:28", "vcp:112", "mpda", "sails", "res:super", "regime:hurricane", "provider:aws", "bucket:unidata-nexrad-level2"]
+description = "KLIX 2021-08-29 17:57Z; Hurricane Ida, the volume immediately before l2-klix-20210829-180425 (6 min 37 s earlier, same site, VCP and layout): the previous volume for the recast-radar-correct temporal-prior tests. AR2V0006.052 header, 106 LDM bzip2 records: Message 2 (x3, RDA build raw 1910), 3, 5 (VCP 112, supplemental 2051), 15 (x5), 18 (x4) and 12600 Message 31 radials (VOL 44 v2.0, RAD 28; REF/VEL/SW on Doppler cuts, REF/ZDR 16-bit/PHI/RHO/CFP on surveillance cuts); 23 sweeps."
 
 [[file]]
 id = "l2-klix-20210829-175748-mdm"
@@ -965,6 +1010,63 @@ size = 112078
 ephemeral = true
 tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:end", "build:24.1", "vcp:215", "elev:15", "radial-status:4"]
 description = "KIWA real-time chunk volume 307, chunk 70/70 (End): one LDM bzip2 record, 120 Message 31 radials of elevation 15 (~8.0 deg), radial times 00:41:42.589-00:41:47.217Z, azimuth 310.5-69.5 deg, radial status [1, 4]. S3 LastModified 2026-09-17T00:41:50.000Z."
+
+# TDWR real-time chunks (stream E, data-access): downloaded by the recorded ChunkIterator cassettes
+# in crates/recast-radar-data/tests/fixtures/listings/ (README.md there) and replayed from these copies.
+[[file]]
+id = "l2chunk-tlas-998-20260917-012843-001-s"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/998/20260917-012843-001-S"]
+sha256 = "4c738b8c3f9bc723fc7190053687e31441b881114a777b2c50bbb9da1aa18371"
+size = 263
+committed = "files/level2-chunks/TLAS-998-20260917-012843-001-S"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-998", "chunk:start", "vcp:90", "msg:2", "msg:5"]
+description = "TLAS (Las Vegas TDWR) real-time chunk volume 998, chunk 1 (Start), captured live 2026-09-17 by the tlas-chunk-too-large cassette: 24-byte AR2V0008.998 volume header (01:28:43Z) + one LDM bzip2 record with Messages 2 and 5 (VCP 90); no radials. S3 LastModified 2026-09-17T01:29:11Z."
+
+[[file]]
+id = "l2chunk-tlas-999-20260917-013443-001-s"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/999/20260917-013443-001-S"]
+sha256 = "dfeec3fd45f3e6aac91a448432539f9fc463ade0db4d0a4d59d67f80f00dfa66"
+size = 265
+committed = "files/level2-chunks/TLAS-999-20260917-013443-001-S"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-999", "chunk:start", "vcp:90", "msg:2", "msg:5"]
+description = "TLAS real-time chunk volume 999, chunk 1 (Start), captured live 2026-09-17 by the tlas-chunk-too-large cassette: 24-byte AR2V0008.999 volume header (01:34:43Z) + one LDM bzip2 record with Messages 2 and 5 (VCP 90); no radials. S3 LastModified 2026-09-17T01:35:17Z."
+
+[[file]]
+id = "l2chunk-tlas-3-20260917-015242-001-s"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/3/20260917-015242-001-S"]
+sha256 = "e9e1587d18515a1374698f090652f9222bd3d6702ba685b4ddecb25233a9830b"
+size = 262
+committed = "files/level2-chunks/TLAS-3-20260917-015242-001-S"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-3", "chunk:start", "vcp:90", "msg:2", "msg:5"]
+description = "TLAS real-time chunk volume 3 (the id after 999), chunk 1 (Start), captured live 2026-09-17 by the tlas-next-volume-bytes cassette: 24-byte AR2V0008.003 volume header (01:52:42Z) + one LDM bzip2 record with Messages 2 and 5 (VCP 90); no radials. S3 LastModified 2026-09-17T01:53:10Z."
+
+[[file]]
+id = "l2chunk-tlas-3-20260917-015242-002-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/3/20260917-015242-002-I"]
+sha256 = "a17bcffe02bcb8bf88752551437411f88d134f87beeb990340637598d8f56a33"
+size = 7363
+committed = "files/level2-chunks/TLAS-3-20260917-015242-002-I"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-3", "chunk:intermediate", "vcp:90", "msg:31", "elev:1", "radial-status:3"]
+description = "TLAS real-time chunk volume 3, chunk 2 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (0.79 deg), azimuth 9.2-128.2 deg, radial status [1, 3]. S3 LastModified 2026-09-17T01:53:13Z."
+
+[[file]]
+id = "l2chunk-tlas-3-20260917-015242-003-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/3/20260917-015242-003-I"]
+sha256 = "60156285869bcdf98e2b804ba1c305c44adf893cfe1a11c0446aa46b2d4affba"
+size = 24018
+committed = "files/level2-chunks/TLAS-3-20260917-015242-003-I"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-3", "chunk:intermediate", "vcp:90", "msg:31", "elev:1"]
+description = "TLAS real-time chunk volume 3, chunk 3 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (0.79 deg), azimuth 129.2-248.2 deg, radial status [1]. S3 LastModified 2026-09-17T01:53:20Z."
 
 # Trimmed fixtures (TD.3): committed files made by trim-level2 (crates/recast-radar-testdata/src/bin/trim-level2.rs)
 # from the entries tagged `trim` above. Each `derivation` starts with the trim-level2 options that reproduce the

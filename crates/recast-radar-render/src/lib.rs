@@ -3827,11 +3827,181 @@ fn unfiltered_reflectivity_name(name: &str) -> bool {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateMapping, LinearTransform, SweepMode};
+    use recast_radar_core::{Gate, GateMapping, LinearTransform};
+    use serde_json::Value;
 
-    #[test]
-    fn base_layer_starts_visible() {
-        assert!(RenderLayer::base(FieldName::Dbzh).visible);
+    // ---- real-data fixtures ----
+    //
+    // Expected values: `testdata/golden/render/*.json`, written by
+    // `tools/render_bench_golden.py render` with Py-ART 2.2.5 (raw gate
+    // codes, azimuths, gate geometry, `storm_relative_velocity`) and MetPy
+    // 1.7.1 (scaled values), never with this workspace's readers.
+
+    const KTLX_2024: &str = "l2-ktlx-20240315-000217-trim";
+    const KTLX_2013: &str = "l2-ktlx-20130520-201643-trim";
+    const KTLX_1999: &str = "l2-ktlx-19990504-002218-trim";
+    /// Legacy-resolution Message 31 volume: sweeps 4-6 carry 1 km
+    /// reflectivity (stride 4 on the sweep range) beside 250 m Doppler
+    /// moments.
+    const KPAH_2008: &str = "l2-kpah-20080415-235014";
+    const KPAH_MIXED_SWEEP: usize = 4;
+
+    /// Parsed golden file `testdata/golden/render/<name>`.
+    fn golden(name: &str) -> Value {
+        let path = recast_radar_testdata::testdata_dir()
+            .join("golden")
+            .join("render")
+            .join(name);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        serde_json::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+    }
+
+    /// Decode a corpus Level II file with the NEXRAD reader.
+    fn level2(path: &Path) -> Volume {
+        recast_radar_io_nexrad::read_volume_from_path(path)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+    }
+
+    fn as_usize(value: &Value) -> usize {
+        value
+            .as_u64()
+            .unwrap_or_else(|| panic!("expected an unsigned integer, got {value}")) as usize
+    }
+
+    fn as_f32(value: &Value) -> f32 {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("expected a number, got {value}")) as f32
+    }
+
+    fn array(value: &Value) -> &Vec<Value> {
+        value
+            .as_array()
+            .unwrap_or_else(|| panic!("expected an array, got {value}"))
+    }
+
+    fn row_gate(pair: &Value) -> (usize, usize) {
+        (as_usize(&pair[0]), as_usize(&pair[1]))
+    }
+
+    /// Field `name` of sweep `sweep_index`.
+    fn field<'v>(volume: &'v Volume, sweep_index: usize, name: &FieldName) -> &'v Field {
+        volume.sweeps[sweep_index]
+            .field(name)
+            .unwrap_or_else(|| panic!("sweep {sweep_index} has no {name}"))
+    }
+
+    /// Field `name` of sweep `sweep_index` with its gate geometry.
+    fn view<'v>(volume: &'v Volume, sweep_index: usize, name: &FieldName) -> FieldView<'v> {
+        view_on(
+            field(volume, sweep_index, name),
+            &volume.sweeps[sweep_index].range,
+            sweep_index,
+        )
+        .expect("field geometry")
+    }
+
+    /// The `u8` codes and coding of a byte-coded field.
+    fn u8_codes(field: &Field) -> (&[u8], IntCoding<u8>) {
+        let FieldValues::U8(values, coding) = field_values(field) else {
+            panic!("{} should be stored as u8 codes", field.name);
+        };
+        (values, coding)
+    }
+
+    fn icd_scale_offset<T: PackedInt>(coding: &IntCoding<T>) -> (f32, f32) {
+        let LinearTransform::IcdScaleOffset { scale, offset } = coding.transform else {
+            panic!("NEXRAD fields use the ICD transform");
+        };
+        (scale, offset)
+    }
+
+    /// The decoded field must carry the golden gate geometry (centre of the
+    /// first gate and spacing) and, row by row, the golden ray azimuths (the
+    /// f32 angle field of the file).
+    fn assert_geometry(sweep: &Sweep, field: &Field, expected: &Value) {
+        assert!(
+            field.absent_rows.is_empty(),
+            "every ray carries {}",
+            field.name
+        );
+        assert_eq!(field.nrays as usize, as_usize(&expected["rows"]));
+        assert_eq!(field.ngates as usize, as_usize(&expected["gates"]));
+        let (first_gate_m, spacing_m) = field.native_geometry(&sweep.range).expect("geometry");
+        assert_eq!(
+            first_gate_m,
+            expected["first_gate_m"].as_i64().expect("first gate") as f64
+        );
+        assert_eq!(
+            spacing_m,
+            expected["gate_spacing_m"].as_i64().expect("gate spacing") as f64
+        );
+        let azimuths = array(&expected["azimuth_deg"]);
+        assert_eq!(azimuths.len(), field.nrays as usize);
+        for (row, azimuth) in azimuths.iter().enumerate() {
+            let decoded = sweep.rays.azimuth_deg[row];
+            assert!(
+                (decoded - as_f32(azimuth)).abs() < 1e-4,
+                "row {row}: azimuth {decoded} != {azimuth}"
+            );
+        }
+    }
+
+    /// A 65 x 65 viewport at 50 m per pixel whose centre pixel (32, 32) sits
+    /// exactly on the centre of `gate` of `row`; returns the options and the
+    /// centre pixel's index.
+    fn gate_centre_viewport(
+        sweep: &Sweep,
+        field: &Field,
+        row: usize,
+        gate: usize,
+    ) -> (ViewportRasterOptions, usize) {
+        const SIZE: u32 = 65;
+        const KM_PER_PX: f32 = 0.05;
+        let centre_px = (SIZE / 2) as f32 + 0.5;
+        let azimuth = sweep.rays.azimuth_deg[row].to_radians();
+        let (first_gate_m, spacing_m) = field.native_geometry(&sweep.range).expect("geometry");
+        let range_km = (first_gate_m + gate as f64 * spacing_m) as f32 / 1000.0;
+        let options = ViewportRasterOptions {
+            width: SIZE,
+            height: SIZE,
+            radar_x_px: centre_px - range_km * azimuth.sin() / KM_PER_PX,
+            radar_y_px: centre_px + range_km * azimuth.cos() / KM_PER_PX,
+            km_per_px_x: KM_PER_PX,
+            km_per_px_y: KM_PER_PX,
+            rotation_rad: 0.0,
+        };
+        let centre = (SIZE / 2) as usize * SIZE as usize + (SIZE / 2) as usize;
+        (options, centre)
+    }
+
+    fn pixel(pixels: &[u8], index: usize) -> [u8; 4] {
+        let mut color = [0; 4];
+        color.copy_from_slice(&pixels[index * 4..index * 4 + 4]);
+        color
+    }
+
+    fn assert_color_close(actual: [u8; 4], expected: [u8; 4], what: &str) {
+        assert!(
+            actual
+                .iter()
+                .zip(&expected)
+                .all(|(a, b)| a.abs_diff(*b) <= 1),
+            "{what}: {actual:?} != {expected:?}"
+        );
+    }
+
+    fn opaque_pixels(pixels: &[u8]) -> usize {
+        pixels.chunks_exact(4).filter(|pixel| pixel[3] != 0).count()
+    }
+
+    fn has_visible_pixel(pixels: &[u8]) -> bool {
+        pixels.chunks_exact(4).any(|pixel| pixel[3] != 0)
+    }
+
+    fn has_transparent_pixel(pixels: &[u8]) -> bool {
+        pixels.chunks_exact(4).any(|pixel| pixel[3] == 0)
     }
 
     fn sample_viewport_options() -> ViewportRasterOptions {
@@ -3844,6 +4014,35 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.1,
         }
+    }
+
+    /// 333 x 217 viewport at 0.5 km per pixel, radar at the centre: the
+    /// storm-scale window the cache tests share.
+    fn window_viewport_options() -> ViewportRasterOptions {
+        ViewportRasterOptions {
+            width: 333,
+            height: 217,
+            radar_x_px: 166.5,
+            radar_y_px: 108.5,
+            km_per_px_x: 0.5,
+            km_per_px_y: 0.5,
+            rotation_rad: 0.0,
+        }
+    }
+
+    fn raster() -> RasterOptions {
+        RasterOptions {
+            width: 96,
+            height: 96,
+            range_fraction: 94,
+        }
+    }
+
+    // ---- options, tables and codings (no radar data) ----
+
+    #[test]
+    fn base_layer_starts_visible() {
+        assert!(RenderLayer::base(FieldName::Dbzh).visible);
     }
 
     #[test]
@@ -3988,40 +4187,9 @@ mod tests {
     }
 
     #[test]
-    fn velocity_range_folded_bins_render_table_rf_color() {
-        let volume = test_volume();
-        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Vradh)) else {
-            panic!("u8 velocity");
-        };
-        let tables = ColorTableSet::default();
-        let table = tables.for_family(ColorTableFamily::Velocity);
-
-        assert_eq!(
-            color_for_code(&coding, &table.sampler(), 1u8),
-            table.range_folded_color()
-        );
-        assert_eq!(color_for_code(&coding, &table.sampler(), 0u8), [0, 0, 0, 0]);
-    }
-
-    #[test]
-    fn reflectivity_range_folded_bins_render_table_rf_color() {
-        let volume = test_volume();
-        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Dbzh)) else {
-            panic!("u8 reflectivity");
-        };
-        let tables = ColorTableSet::default();
-        let table = tables.for_family(ColorTableFamily::Reflectivity);
-
-        assert_eq!(
-            color_for_code(&coding, &table.sampler(), 1u8),
-            table.range_folded_color()
-        );
-    }
-
-    #[test]
     fn nexrad_coding_blanks_undetect_and_out_of_range_codes() {
-        // A natively decoded NEXRAD field: raw 0 is undetect and fill, raw 1
-        // range folded, valid_range [2, 255].
+        // The NEXRAD coding: raw 0 is undetect and fill, raw 1 range folded,
+        // valid_range [2, 255].
         let coding = IntCoding::<u8>::nexrad(2.0, 66.0);
         assert_eq!(code_class(&coding, 0u8), CodeClass::Blank);
         assert_eq!(code_class(&coding, 1u8), CodeClass::RangeFolded);
@@ -4075,45 +4243,6 @@ mod tests {
     }
 
     #[test]
-    fn storm_relative_byte_row_palette_matches_direct_color_math() {
-        let volume = test_volume();
-        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Vradh)) else {
-            panic!("u8 velocity");
-        };
-        let tables = ColorTableSet::default();
-        let color_table = tables.for_family(ColorTableFamily::Velocity);
-        let row_motion = [3.25];
-        let palettes = build_storm_relative_row_palettes(&coding, &row_motion, color_table);
-
-        for raw in [0u8, 1, 119, 129, 139] {
-            assert_eq!(
-                palettes[0][usize::from(raw)],
-                storm_relative_code_color(&coding, &color_table.sampler(), raw, row_motion[0])
-            );
-        }
-        assert_eq!(palettes[0][0], [0, 0, 0, 0]);
-        assert_eq!(palettes[0][1], color_table.range_folded_color());
-    }
-
-    #[test]
-    fn custom_color_table_feeds_precomputed_byte_palette() {
-        let volume = test_volume();
-        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Vradh)) else {
-            panic!("u8 velocity");
-        };
-        let table = ColorTable::parse(
-            "unit test velocity",
-            "units: m/s\ncolor: -20 1 2 3\ncolor: 0 10 20 30\ncolor: 20 40 50 60",
-        )
-        .expect("custom color table");
-
-        let palette = build_byte_palette(&coding, &table);
-
-        assert_eq!(palette[64], [10, 20, 30, 255]);
-        assert_eq!(palette[74], [25, 35, 45, 255]);
-    }
-
-    #[test]
     fn storm_relative_velocity_subtracts_motion_along_beam() {
         let storm_motion = StormMotion {
             direction_deg: 0.0,
@@ -4132,32 +4261,6 @@ mod tests {
             storm_relative_velocity_mps(10.0, 90.0, storm_motion).round(),
             10.0
         );
-    }
-
-    #[test]
-    fn storm_motion_basis_matches_direct_projection() {
-        let volume = test_volume();
-        let sweep = &volume.sweeps[0];
-        let field = field_of(&volume, &FieldName::Vradh);
-        let basis = StormMotionBasis::new(sweep, field);
-        let storm_motion = StormMotion {
-            direction_deg: 225.0,
-            speed_mps: 18.0,
-        };
-        let row_motion = basis.row_motion_components(storm_motion);
-
-        assert_eq!(row_motion.len(), field.nrays as usize);
-        for (row, azimuth_deg) in sweep.rays.azimuth_deg.iter().enumerate() {
-            let direct = motion_component_away_mps(storm_motion, *azimuth_deg);
-            assert!((row_motion[row] - direct).abs() < 0.000_01);
-        }
-        for (basis, direct) in
-            row_motion
-                .iter()
-                .zip(row_motion_components(sweep, field, storm_motion))
-        {
-            assert!((basis - direct).abs() < 0.000_01);
-        }
     }
 
     #[test]
@@ -4202,11 +4305,326 @@ mod tests {
         );
     }
 
+    // ---- range folding and palettes on the KTLX 2024-03-15 split cut ----
+
+    /// Range-folded velocity gates (raw code 1: 342 of them in the 0.48 deg
+    /// Doppler cut, located with Py-ART) take the velocity table's
+    /// range-folded colour, in the palette and in rendered pixels.
+    #[test]
+    fn velocity_range_folded_bins_render_table_rf_color() {
+        let expected = golden("ktlx2024.json");
+        let doppler = &expected["doppler"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&doppler["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let velocity = field(&volume, sweep_index, &FieldName::Vradh);
+        assert_geometry(sweep, velocity, doppler);
+        let (values, coding) = u8_codes(velocity);
+        assert_eq!(
+            coding.fill_value,
+            Some(as_usize(&doppler["no_data_code"]) as u8)
+        );
+        assert_eq!(
+            coding.range_folded,
+            Some(as_usize(&doppler["range_folded_code"]) as u8)
+        );
+        let gates = velocity.ngates as usize;
+        assert_eq!(
+            values.iter().filter(|&&code| code == 1).count(),
+            as_usize(&doppler["range_folded_gates"])
+        );
+        assert_eq!(
+            values.iter().filter(|&&code| code == 0).count(),
+            as_usize(&doppler["no_data_gates"])
+        );
+        for pair in array(&doppler["range_folded_first"]) {
+            let (row, gate) = row_gate(pair);
+            assert_eq!(values[row * gates + gate], 1, "row {row} gate {gate}");
+            assert_eq!(velocity.gate(row, gate), Some(Gate::RangeFolded));
+            assert_eq!(velocity.value(row, gate), None);
+        }
+
+        let tables = ColorTableSet::default();
+        let table = tables.for_family(ColorTableFamily::Velocity);
+        let range_folded = table.range_folded_color();
+        assert_ne!(range_folded[3], 0);
+        assert_eq!(color_for_code(&coding, &table.sampler(), 1u8), range_folded);
+        assert_eq!(color_for_code(&coding, &table.sampler(), 0u8), [0, 0, 0, 0]);
+        assert_eq!(build_byte_palette(&coding, table)[1], range_folded);
+
+        for pair in array(&doppler["range_folded_interior"]) {
+            let (row, gate) = row_gate(pair);
+            let (options, centre) = gate_centre_viewport(sweep, velocity, row, gate);
+            let (_, _, pixels) =
+                render_field_viewport_rgba(&volume, sweep_index, &FieldName::Vradh, options)
+                    .expect("viewport velocity");
+            assert_eq!(
+                pixel(&pixels, centre),
+                range_folded,
+                "pixel on range-folded gate row {row} gate {gate}"
+            );
+        }
+    }
+
+    /// The Doppler cut's reflectivity carries the same 342 range-folded codes
+    /// as its velocity; they render with the reflectivity table's range-folded
+    /// colour.
+    #[test]
+    fn reflectivity_range_folded_bins_render_table_rf_color() {
+        let expected = golden("ktlx2024.json");
+        let doppler = &expected["doppler_reflectivity"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&doppler["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = field(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity, doppler);
+        let (values, coding) = u8_codes(reflectivity);
+        assert_eq!(coding.range_folded, Some(1));
+        let gates = reflectivity.ngates as usize;
+        assert_eq!(
+            values.iter().filter(|&&code| code == 1).count(),
+            as_usize(&doppler["range_folded_gates"])
+        );
+        for pair in array(&doppler["range_folded_first"]) {
+            let (row, gate) = row_gate(pair);
+            assert_eq!(values[row * gates + gate], 1, "row {row} gate {gate}");
+        }
+
+        let tables = ColorTableSet::default();
+        let table = tables.for_family(ColorTableFamily::Reflectivity);
+        let range_folded = table.range_folded_color();
+        assert_eq!(color_for_code(&coding, &table.sampler(), 1u8), range_folded);
+
+        for pair in array(&doppler["range_folded_interior"]) {
+            let (row, gate) = row_gate(pair);
+            let (options, centre) = gate_centre_viewport(sweep, reflectivity, row, gate);
+            let (_, _, pixels) =
+                render_field_viewport_rgba(&volume, sweep_index, &FieldName::Dbzh, options)
+                    .expect("viewport reflectivity");
+            assert_eq!(
+                pixel(&pixels, centre),
+                range_folded,
+                "pixel on range-folded gate row {row} gate {gate}"
+            );
+        }
+    }
+
+    /// Per-row storm-relative palettes: for real velocity gates the palette
+    /// colour is the table colour of Py-ART's `storm_relative_velocity`
+    /// (storm from 225 deg at 18 m/s) for the same gate, and equals the direct
+    /// colour math; no-data and range-folded codes keep their colours.
+    #[test]
+    fn storm_relative_byte_row_palette_matches_pyart_storm_relative_velocity() {
+        let expected = golden("ktlx2024.json");
+        let doppler = &expected["doppler"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&doppler["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let velocity = field(&volume, sweep_index, &FieldName::Vradh);
+        let (values, coding) = u8_codes(velocity);
+        let gates = velocity.ngates as usize;
+        let storm_motion = StormMotion {
+            direction_deg: as_f32(&doppler["storm_motion"]["direction_deg"]),
+            speed_mps: as_f32(&doppler["storm_motion"]["speed_mps"]),
+        };
+        let tables = ColorTableSet::default();
+        let color_table = tables.for_family(ColorTableFamily::Velocity);
+        let sampler = color_table.sampler();
+        let row_motion = StormMotionBasis::new(sweep, velocity).row_motion_components(storm_motion);
+        let palettes = build_storm_relative_row_palettes(&coding, &row_motion, color_table);
+        assert_eq!(palettes.len(), velocity.nrays as usize);
+
+        let samples = array(&doppler["storm_relative_samples"]);
+        assert!(samples.len() >= 32);
+        for sample in samples {
+            let (row, gate) = (as_usize(&sample["row"]), as_usize(&sample["gate"]));
+            let code = as_usize(&sample["code"]);
+            let value = as_f32(&sample["velocity_mps"]);
+            let storm_relative = as_f32(&sample["storm_relative_mps"]);
+            assert_eq!(usize::from(values[row * gates + gate]), code);
+            assert_eq!(velocity.value(row, gate), Some(value));
+            let azimuth = sweep.rays.azimuth_deg[row];
+            assert!(
+                (storm_relative_velocity_mps(value, azimuth, storm_motion) - storm_relative).abs()
+                    < 1e-3,
+                "row {row} gate {gate}"
+            );
+            assert!((value - row_motion[row] - storm_relative).abs() < 1e-3);
+            let color = palettes[row][code];
+            assert_eq!(
+                color,
+                storm_relative_code_color(&coding, &sampler, code as u8, row_motion[row])
+            );
+            assert_color_close(
+                color,
+                sampler.color_for_value(storm_relative),
+                &format!("row {row} code {code}"),
+            );
+        }
+        let rows = velocity.nrays as usize;
+        for row in [0, rows / 2, rows - 1] {
+            assert_eq!(palettes[row][0], [0, 0, 0, 0]);
+            assert_eq!(palettes[row][1], color_table.range_folded_color());
+        }
+    }
+
+    /// A custom velocity ramp sampled through the byte palette of the real
+    /// field (scale 2, offset 129 from the file's data block header): every
+    /// code present in the sweep maps to the ramp colour of its physical
+    /// velocity, including the exact stops at 0 m/s (code 129) and 20 m/s
+    /// (code 169).
+    #[test]
+    fn custom_color_table_feeds_precomputed_byte_palette() {
+        let expected = golden("ktlx2024.json");
+        let doppler = &expected["doppler"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let velocity = field(&volume, as_usize(&doppler["sweep"]), &FieldName::Vradh);
+        let (values, coding) = u8_codes(velocity);
+        assert_eq!(
+            icd_scale_offset(&coding),
+            (as_f32(&doppler["scale"]), as_f32(&doppler["offset"]))
+        );
+        let table = ColorTable::parse(
+            "unit test velocity",
+            "units: m/s\ncolor: -20 1 2 3\ncolor: 0 10 20 30\ncolor: 20 40 50 60",
+        )
+        .expect("custom color table");
+
+        let palette = build_byte_palette(&coding, &table);
+
+        let samples = array(&doppler["custom_table_samples"]);
+        assert!(samples.len() > 50);
+        let mut exact_stops = 0;
+        for sample in samples {
+            let code = as_usize(&sample["code"]);
+            let value = as_f32(&sample["velocity_mps"]);
+            assert!(
+                values.contains(&(code as u8)),
+                "code {code} is in the sweep"
+            );
+            assert_eq!(palette[code], table.color_for_value(value), "code {code}");
+            match value {
+                0.0 => {
+                    assert_eq!(palette[code], [10, 20, 30, 255]);
+                    exact_stops += 1;
+                }
+                10.0 => {
+                    assert_eq!(palette[code], [25, 35, 45, 255]);
+                    exact_stops += 1;
+                }
+                20.0 => {
+                    assert_eq!(palette[code], [40, 50, 60, 255]);
+                    exact_stops += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(exact_stops, 3);
+        assert_eq!(palette[0], [0, 0, 0, 0]);
+        assert_eq!(palette[1], table.range_folded_color());
+    }
+
+    /// The per-row storm-motion basis reproduces `speed · cos(direction −
+    /// azimuth)` on the file's azimuths (Py-ART's storm-relative correction).
+    #[test]
+    fn storm_motion_basis_matches_direct_projection() {
+        let expected = golden("ktlx2024.json");
+        let doppler = &expected["doppler"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&doppler["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let velocity = field(&volume, sweep_index, &FieldName::Vradh);
+        assert_geometry(sweep, velocity, doppler);
+        let basis = StormMotionBasis::new(sweep, velocity);
+        let storm_motion = StormMotion {
+            direction_deg: 225.0,
+            speed_mps: 18.0,
+        };
+        let row_motion = basis.row_motion_components(storm_motion);
+        assert_eq!(row_motion.len(), velocity.nrays as usize);
+
+        for (row, azimuth) in array(&doppler["azimuth_deg"]).iter().enumerate() {
+            let azimuth = as_f32(azimuth);
+            let reference =
+                storm_motion.speed_mps * (storm_motion.direction_deg - azimuth).to_radians().cos();
+            assert!(
+                (row_motion[row] - reference).abs() < 1e-4,
+                "row {row}: {} != {reference}",
+                row_motion[row]
+            );
+            let direct = motion_component_away_mps(storm_motion, sweep.rays.azimuth_deg[row]);
+            assert!((row_motion[row] - direct).abs() < 1e-5);
+        }
+        for (basis, direct) in
+            row_motion
+                .iter()
+                .zip(row_motion_components(sweep, velocity, storm_motion))
+        {
+            assert!((basis - direct).abs() < 1e-5);
+        }
+    }
+
+    // ---- gate geometry ----
+
+    /// KPAH 2008 sweep 4: 1 km reflectivity (centres from 500 m) beside
+    /// 250 m Doppler moments (centres from 125 m). The reflectivity keeps its
+    /// native 1 km gates at their true centres, every fourth gate of the
+    /// sweep's 250 m range.
+    #[test]
+    fn field_geometry_follows_the_gate_mapping_on_the_sweep_range() {
+        let path = recast_radar_testdata::require_file!(KPAH_2008);
+        let volume = level2(&path);
+        let sweep = &volume.sweeps[KPAH_MIXED_SWEEP];
+        let reflectivity = field(&volume, KPAH_MIXED_SWEEP, &FieldName::Dbzh);
+        let velocity = field(&volume, KPAH_MIXED_SWEEP, &FieldName::Vradh);
+        assert_eq!(sweep.range.spacing_m(), Some(250.0));
+        assert_eq!(sweep.range.center_m(0), Some(125.0));
+        assert_eq!(
+            reflectivity.gates,
+            GateMapping {
+                start: 0,
+                stride: 4
+            }
+        );
+        assert_eq!(velocity.gates, GateMapping::IDENTITY);
+
+        let dbzh = FieldGeometry::of(reflectivity, &sweep.range).unwrap();
+        assert_eq!(dbzh.first_gate_m(), 500.0);
+        assert_eq!(dbzh.lookup_spacing_m(), 1000.0);
+        assert_eq!(dbzh.gate_count, reflectivity.ngates as usize);
+        assert_eq!(
+            dbzh.max_range_m(),
+            500.0 + 1000.0 * reflectivity.ngates as f32
+        );
+        let vradh = FieldGeometry::of(velocity, &sweep.range).unwrap();
+        assert_eq!(vradh.first_gate_m(), 125.0);
+        assert_eq!(vradh.lookup_spacing_m(), 250.0);
+        assert_eq!(vradh.max_range_m(), 125.0 + 250.0 * velocity.ngates as f32);
+    }
+
+    // ---- viewport geometry on the KTLX 2024-03-15 surveillance cut ----
+
+    /// The sample-cache bound follows the radar's 460 km footprint (1832 gates
+    /// of 250 m from 2125 m): between the exact pixel count inside that circle
+    /// and that count plus the row-span padding, and below the full viewport.
     #[test]
     fn field_sample_cache_upper_bound_tracks_actual_radar_footprint() {
-        let volume = test_volume();
-        let sweep = &volume.sweeps[0];
-        let field = field_of(&volume, &FieldName::Dbzh);
+        let expected = golden("ktlx2024.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = field(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity, surveillance);
+        let max_range_km = as_f32(&surveillance["max_range_m"]) / 1000.0;
+        let geometry = view(&volume, sweep_index, &FieldName::Dbzh).geometry;
+        assert_eq!(geometry.max_range_m() / 1000.0, max_range_km);
         let options = ViewportRasterOptions {
             width: 1_920,
             height: 1_080,
@@ -4218,12 +4636,33 @@ mod tests {
         };
 
         let full_viewport = viewport_sample_cache_storage_upper_bound(options);
-        let radar_footprint =
-            viewport_sample_cache_storage_upper_bound_for_field(field, &sweep.range, options);
+        let radar_footprint = viewport_sample_cache_storage_upper_bound_for_field(
+            reflectivity,
+            &sweep.range,
+            options,
+        );
+        let span_bytes = 1_080 * std::mem::size_of::<CachedRowSpan>();
 
         assert!(radar_footprint < full_viewport);
-        assert!(radar_footprint > 1_080 * std::mem::size_of::<CachedRowSpan>());
-        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).unwrap();
+        assert!(radar_footprint > span_bytes);
+        let slots = (radar_footprint - span_bytes) / std::mem::size_of::<CachedSample>();
+        // Pixels whose centre lies within the footprint circle.
+        let mut inside = 0usize;
+        for y in 0..options.height {
+            let dy_km = (options.radar_y_px - (y as f32 + 0.5)) * options.km_per_px_y;
+            for x in 0..options.width {
+                let dx_km = (x as f32 + 0.5 - options.radar_x_px) * options.km_per_px_x;
+                if dx_km.hypot(dy_km) <= max_range_km {
+                    inside += 1;
+                }
+            }
+        }
+        assert!(inside > 0);
+        assert!(
+            slots >= inside && slots <= inside + 4 * options.height as usize,
+            "{slots} sample slots for {inside} pixels inside the {max_range_km} km circle"
+        );
+        let cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Dbzh).unwrap();
         assert_eq!(
             cache
                 .sample_cache_storage_upper_bound(&volume, options)
@@ -4233,60 +4672,17 @@ mod tests {
     }
 
     #[test]
-    fn field_geometry_follows_the_gate_mapping_on_the_sweep_range() {
-        // KLIX 2005 sweep 2: 1 km reflectivity beside 250 m Doppler moments.
-        // The reflectivity keeps its native 1 km gates at their true centres.
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 1.5);
-        let reflectivity = sweep.attach_geometry(0.0, 1000.0, 137).unwrap();
-        sweep
-            .add_field(Field::new(
-                FieldName::Dbzh,
-                reflectivity,
-                137,
-                FieldData::U8 {
-                    values: vec![70; 137],
-                    coding: IntCoding::nexrad(2.0, 66.0),
-                },
-            ))
-            .unwrap();
-        let velocity = sweep.attach_geometry(-375.0, 250.0, 548).unwrap();
-        sweep
-            .add_field(Field::new(
-                FieldName::Vradh,
-                velocity,
-                548,
-                FieldData::U8 {
-                    values: vec![129; 548],
-                    coding: IntCoding::nexrad(2.0, 129.0),
-                },
-            ))
-            .unwrap();
-        let dbzh = FieldGeometry::of(&sweep.fields[0], &sweep.range).unwrap();
-        assert_eq!(dbzh.first_gate_m(), 0.0);
-        assert_eq!(dbzh.lookup_spacing_m(), 1000.0);
-        assert_eq!(dbzh.gate_count, 137);
-        assert_eq!(dbzh.max_range_m(), 137_000.0);
-        let vradh = FieldGeometry::of(&sweep.fields[1], &sweep.range).unwrap();
-        assert_eq!(vradh.first_gate_m(), -375.0);
-        assert_eq!(vradh.lookup_spacing_m(), 250.0);
-        assert_eq!(vradh.max_range_m(), -375.0 + 250.0 * 548.0);
-        assert_eq!(
-            sweep.fields[0].gates,
-            GateMapping {
-                start: 0,
-                stride: 4
-            }
-        );
-    }
-
-    #[test]
     fn viewport_lookup_matches_reference_hypot_formula() {
-        let volume = test_volume();
-        let sweep = &volume.sweeps[0];
-        let view = view_of(&volume, &FieldName::Dbzh);
-        let row_lookup = AzimuthLookup::new(sweep, view);
-        let max_range_m = view.geometry.max_range_m().max(1.0);
-        let max_range_km = max_range_m / 1000.0;
+        let expected = golden("ktlx2024.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity.field, surveillance);
+        let row_lookup = AzimuthLookup::new(sweep, reflectivity);
+        let max_range_km = reflectivity.geometry.max_range_m().max(1.0) / 1000.0;
         let geometry = ViewportGeometry {
             width: 333,
             radar_x_px: 166.5,
@@ -4298,34 +4694,46 @@ mod tests {
             rot_cos: 1.0,
         };
 
-        for (x, y) in [(0, 0), (166, 108), (180, 110), (220, 70), (332, 216)] {
+        // The kept radials run clockwise from 167 deg through west to 47 deg:
+        // pixels west, south and north of the radar resolve, the centre pixel
+        // (inside the first gate) and pixels to the east do not.
+        let mut resolved = 0;
+        for (x, y) in [
+            (0, 0),
+            (10, 108),
+            (166, 200),
+            (166, 10),
+            (60, 60),
+            (166, 108),
+            (180, 110),
+            (220, 70),
+            (332, 216),
+        ] {
+            let sample = viewport_lookup(x, y, reflectivity.geometry, &row_lookup, geometry);
             assert_eq!(
-                viewport_lookup(x, y, view.geometry, &row_lookup, geometry),
-                viewport_lookup_reference(x, y, view.geometry, &row_lookup, geometry)
+                sample,
+                viewport_lookup_reference(x, y, reflectivity.geometry, &row_lookup, geometry)
             );
+            resolved += usize::from(sample.is_some());
         }
+        assert_eq!(resolved, 5);
     }
 
     #[test]
     fn viewport_lookup_table_matches_reference_hypot_formula() {
-        let volume = test_volume();
-        let sweep = &volume.sweeps[0];
-        let view = view_of(&volume, &FieldName::Dbzh);
-        let row_lookup = AzimuthLookup::new(sweep, view);
-        let geometry = viewport_geometry(
-            view.geometry,
-            ViewportRasterOptions {
-                width: 333,
-                height: 217,
-                radar_x_px: 166.5,
-                radar_y_px: 108.5,
-                km_per_px_x: 0.5,
-                km_per_px_y: 0.5,
-                rotation_rad: 0.0,
-            },
-        );
-        let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
+        let expected = golden("ktlx2024.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity.field, surveillance);
+        let row_lookup = AzimuthLookup::new(sweep, reflectivity);
+        let geometry = viewport_geometry(reflectivity.geometry, window_viewport_options());
+        let lookup_table = ViewportLookupTable::new(reflectivity.geometry, geometry);
 
+        let mut resolved = 0;
         for y in [0, 10, 70, 108, 140, 216] {
             for x in [0, 20, 120, 166, 180, 260, 332] {
                 let table_sample = lookup_table.row(y).and_then(|row| {
@@ -4336,11 +4744,13 @@ mod tests {
                 });
                 assert_eq!(
                     table_sample,
-                    viewport_lookup_reference(x, y, view.geometry, &row_lookup, geometry),
+                    viewport_lookup_reference(x, y, reflectivity.geometry, &row_lookup, geometry),
                     "lookup mismatch at {x},{y}"
                 );
+                resolved += usize::from(table_sample.is_some());
             }
         }
+        assert!(resolved >= 12, "only {resolved} probe pixels resolved");
     }
 
     /// The fast table path must agree with `viewport_lookup` (whose
@@ -4349,24 +4759,25 @@ mod tests {
     /// used to drop the rotation entirely (field-reported skew).
     #[test]
     fn viewport_lookup_table_matches_rotated_viewport_lookup() {
-        let volume = test_volume();
-        let sweep = &volume.sweeps[0];
-        let view = view_of(&volume, &FieldName::Dbzh);
-        let row_lookup = AzimuthLookup::new(sweep, view);
+        let expected = golden("ktlx2024.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity.field, surveillance);
+        let row_lookup = AzimuthLookup::new(sweep, reflectivity);
         for rotation_rad in [-0.21f32, 0.005, 0.35] {
             let geometry = viewport_geometry(
-                view.geometry,
+                reflectivity.geometry,
                 ViewportRasterOptions {
-                    width: 333,
-                    height: 217,
-                    radar_x_px: 166.5,
-                    radar_y_px: 108.5,
-                    km_per_px_x: 0.5,
-                    km_per_px_y: 0.5,
                     rotation_rad,
+                    ..window_viewport_options()
                 },
             );
-            let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
+            let lookup_table = ViewportLookupTable::new(reflectivity.geometry, geometry);
+            let mut resolved = 0usize;
             for y in 0..217 {
                 let row = lookup_table.row(y);
                 for x in 0..333 {
@@ -4378,11 +4789,15 @@ mod tests {
                     });
                     assert_eq!(
                         table_sample,
-                        viewport_lookup(x, y, view.geometry, &row_lookup, geometry),
+                        viewport_lookup(x, y, reflectivity.geometry, &row_lookup, geometry),
                         "rotated lookup mismatch at {x},{y} (gamma {rotation_rad})"
                     );
+                    resolved += usize::from(table_sample.is_some());
                 }
             }
+            // Two thirds of the circle are kept radials: well over a third of
+            // the window resolves.
+            assert!(resolved > 333 * 217 / 3, "{resolved} pixels resolved");
         }
     }
 
@@ -4393,38 +4808,27 @@ mod tests {
     /// parity test above passed at rotation 0 while the screen skewed).
     #[test]
     fn baked_rotation_changes_table_azimuth_bins() {
-        // Full-circle 1°-radial sweep: the 4-ray `test_volume` leaves
-        // most azimuth bins unfilled, which would no-op this sweep.
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep.elevation_number = Some(1);
-        let mapping = sweep.attach_geometry(0.0, 100.0, 60).unwrap();
-        let mut reflectivity = u8_field(FieldName::Dbzh, mapping, 60, 1.0, 0.0);
-        for i in 0..360 {
-            let ray = sweep.push_ray(0.0, i as f32, 0.5);
-            reflectivity.push_row_u8(ray, &[40u8; 60]).unwrap();
-        }
-        sweep.ray_vars.nyquist_velocity_mps = Some(vec![32.0; 360]);
-        sweep.add_field(reflectivity).unwrap();
-        sweep.seal().unwrap();
-        let view = view_on(&sweep.fields[0], &sweep.range, 0).unwrap();
-        let row_lookup = AzimuthLookup::new(&sweep, view);
+        let expected = golden("ktlx2024.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity.field, surveillance);
+        let row_lookup = AzimuthLookup::new(sweep, reflectivity);
         let options = |rotation_rad| ViewportRasterOptions {
             width: 96,
             height: 96,
             radar_x_px: 48.0,
             radar_y_px: 48.0,
-            km_per_px_x: 0.1,
-            km_per_px_y: 0.1,
+            km_per_px_x: 0.5,
+            km_per_px_y: 0.5,
             rotation_rad,
         };
-        let rotated = ViewportLookupTable::new(
-            view.geometry,
-            viewport_geometry(view.geometry, options(0.35)),
-        );
-        let straight = ViewportLookupTable::new(
-            view.geometry,
-            viewport_geometry(view.geometry, options(0.0)),
-        );
+        let gates = reflectivity.geometry;
+        let rotated = ViewportLookupTable::new(gates, viewport_geometry(gates, options(0.35)));
+        let straight = ViewportLookupTable::new(gates, viewport_geometry(gates, options(0.0)));
         let sample_at = |table: &ViewportLookupTable, x: u32, y: u32| {
             table.row(y).and_then(|row| {
                 row.x_range
@@ -4449,8 +4853,8 @@ mod tests {
             }
         }
         assert!(resolved > 100, "sweep barely hit the volume ({resolved})");
-        // 0.35 rad ≈ 20°: against 1° radials nearly every pixel must land
-        // in a different radial than the unrotated table.
+        // 0.35 rad ≈ 20°: against 0.5° super-resolution radials nearly every
+        // pixel must land in a different radial than the unrotated table.
         assert!(
             moved_bins * 2 > resolved,
             "baked rotation moved only {moved_bins}/{resolved} pixels — rotation is not reaching the table path"
@@ -4459,188 +4863,273 @@ mod tests {
 
     #[test]
     fn viewport_row_span_covers_reference_samples() {
-        let volume = test_volume();
-        let sweep = &volume.sweeps[0];
-        let view = view_of(&volume, &FieldName::Dbzh);
-        let row_lookup = AzimuthLookup::new(sweep, view);
-        let max_range_m = view.geometry.max_range_m().max(1.0);
-        let max_range_km = max_range_m / 1000.0;
+        let expected = golden("ktlx2024.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity.field, surveillance);
+        let row_lookup = AzimuthLookup::new(sweep, reflectivity);
+        let max_range_km = reflectivity.geometry.max_range_m().max(1.0) / 1000.0;
+        // 96 px at 10 km per pixel: the 460 km footprint ends inside the window.
         let geometry = ViewportGeometry {
             width: 96,
             radar_x_px: 48.0,
             radar_y_px: 48.0,
-            km_per_px_x: 0.5,
-            km_per_px_y: 0.5,
+            km_per_px_x: 10.0,
+            km_per_px_y: 10.0,
             max_range_km_sq: max_range_km * max_range_km,
             rot_sin: 0.0,
             rot_cos: 1.0,
         };
 
+        let mut covered = 0usize;
         for y in 0..96 {
             let span = geometry.x_range_for_row(y);
             for x in 0..96 {
-                if viewport_lookup_reference(x, y, view.geometry, &row_lookup, geometry).is_some() {
+                if viewport_lookup_reference(x, y, reflectivity.geometry, &row_lookup, geometry)
+                    .is_some()
+                {
                     assert!(
                         span.as_ref().is_some_and(|range| range.contains(&x)),
                         "row span missed reference sample at ({x}, {y})"
                     );
+                    covered += 1;
                 }
+            }
+        }
+        assert!(covered > 1_000, "{covered} reference samples");
+        assert!(geometry.x_range_for_row(0).is_none());
+        assert!(geometry.x_range_for_row(95).is_none());
+    }
+
+    // ---- azimuth lookup ----
+
+    /// Legacy 1 deg radials (KTLX 1999-05-04, Message 1, 367 radials with
+    /// 1 km reflectivity gates) fill every 0.1 deg bin of the circle, and a
+    /// query azimuth resolves to the nearest radial (numpy, angular distance
+    /// on the file's azimuths).
+    #[test]
+    fn azimuth_lookup_fills_wider_native_radial_sectors() {
+        let expected = golden("ktlx1999.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_1999);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        assert_geometry(sweep, reflectivity.field, surveillance);
+        let spacing = as_f32(&surveillance["median_spacing_deg"]);
+        assert!(spacing > 0.9 && spacing < 1.0, "{spacing} deg radials");
+
+        let lookup = AzimuthLookup::new(sweep, reflectivity);
+        for bin in 0..AZIMUTH_BINS {
+            let azimuth = bin as f32 * AZIMUTH_BIN_WIDTH_DEG;
+            assert!(
+                lookup.row_for_azimuth(azimuth).is_some(),
+                "no radial serves azimuth {azimuth}"
+            );
+        }
+        let queries = array(&surveillance["nearest_ray_queries"]);
+        assert!(queries.len() >= 50);
+        for query in queries {
+            let azimuth = as_f32(&query["azimuth_deg"]);
+            assert_eq!(
+                lookup.row_for_azimuth(azimuth),
+                Some(as_usize(&query["row"])),
+                "azimuth {azimuth}"
+            );
+        }
+    }
+
+    /// Where two neighbouring radials both serve an azimuth bin (the bin at
+    /// the midpoint between them), the one whose data reaches farther wins:
+    /// row valid extents come from Py-ART's raw codes, and a gate that only the
+    /// longer row fills resolves to that row.
+    #[test]
+    fn azimuth_lookup_prefers_neighbour_row_with_longer_valid_extent() {
+        let expected = golden("ktlx2024.json");
+        let surveillance = &expected["surveillance"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&surveillance["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        let field = reflectivity.field;
+        assert_geometry(sweep, field, surveillance);
+        let (values, coding) = u8_codes(field);
+        let gates = field.ngates as usize;
+        for (row, extent) in array(&surveillance["valid_extent"]).iter().enumerate() {
+            assert_eq!(row_valid_extent(field, row), as_usize(extent), "row {row}");
+        }
+
+        let lookup = AzimuthLookup::new(sweep, reflectivity);
+        let pairs = array(&surveillance["longer_extent_neighbours"]);
+        assert!(pairs.len() >= 16);
+        for pair in pairs {
+            let (first, second) = row_gate(&pair["rows"]);
+            assert_eq!(second, first + 1);
+            let longer = as_usize(&pair["longer_row"]);
+            let shorter = if longer == first { second } else { first };
+            let gate = as_usize(&pair["gate"]);
+            assert_eq!(gate + 1, row_valid_extent(field, longer));
+            assert!(gate >= row_valid_extent(field, shorter));
+            assert_eq!(values[shorter * gates + gate], 0);
+            assert_ne!(values[longer * gates + gate], 0);
+
+            // Bins at the midpoint of the two radials' 0.1 deg bin centres.
+            let first_bin = azimuth_bin(sweep.rays.azimuth_deg[first]);
+            let mut second_bin = azimuth_bin(sweep.rays.azimuth_deg[second]);
+            if second_bin < first_bin {
+                second_bin += AZIMUTH_BINS;
+            }
+            let sum = first_bin + second_bin;
+            let probes: Vec<usize> = if sum.is_multiple_of(2) {
+                vec![(sum / 2) % AZIMUTH_BINS]
+            } else {
+                vec![(sum / 2) % AZIMUTH_BINS, (sum / 2 + 1) % AZIMUTH_BINS]
+            };
+            for bin in probes {
+                let candidates: Vec<usize> = lookup
+                    .candidates_for_bin(bin)
+                    .iter()
+                    .map(|candidate| candidate.row)
+                    .collect();
+                assert!(
+                    candidates.contains(&first) && candidates.contains(&second),
+                    "bin {bin} between rows {first} and {second} has candidates {candidates:?}"
+                );
+                assert_eq!(candidates[0], longer, "bin {bin}");
+                let sample = SampleLookup {
+                    azimuth_bin: bin,
+                    gate,
+                };
+                let resolved =
+                    resolve_int_sample(values, &coding, reflectivity.gate_count(), &lookup, sample)
+                        .expect("gate within the longer row resolves");
+                assert_eq!(resolved.row, longer, "bin {bin} gate {gate}");
+                assert_eq!(resolved.gate, gate);
             }
         }
     }
 
-    #[test]
-    fn azimuth_lookup_fills_wider_native_radial_sectors() {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep.elevation_number = Some(1);
-        let mapping = sweep.attach_geometry(0.0, 1_000.0, 1).unwrap();
-        let mut field = u8_field(FieldName::Dbzh, mapping, 1, 1.0, 0.0);
-        for index in 0..180 {
-            let ray = sweep.push_ray(0.0, index as f32 * 2.0, 0.5);
-            field.push_row_u8(ray, &[20]).unwrap();
-        }
-        sweep.add_field(field).unwrap();
-        sweep.seal().unwrap();
-
-        let view = view_on(&sweep.fields[0], &sweep.range, 0).unwrap();
-        let lookup = AzimuthLookup::new(&sweep, view);
-        assert!(lookup.row_for_azimuth(1.0).is_some());
-        assert!(lookup.row_for_azimuth(181.0).is_some());
-    }
-
-    #[test]
-    fn azimuth_lookup_prefers_duplicate_row_with_longer_valid_extent() {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep.elevation_number = Some(1);
-        let mapping = sweep.attach_geometry(0.0, 1_000.0, 4).unwrap();
-        let mut field = u8_field(FieldName::Dbzh, mapping, 4, 1.0, 0.0);
-        for azimuth_deg in [0.0, 0.0, 2.0, 4.0] {
-            sweep.push_ray(0.0, azimuth_deg, 0.5);
-        }
-        field
-            .push_row_u8(0, &[20, 0, 0, 0])
-            .expect("short duplicate row");
-        field
-            .push_row_u8(1, &[20, 30, 40, 50])
-            .expect("long duplicate row");
-        field
-            .push_row_u8(2, &[20, 30, 40, 50])
-            .expect("neighbor row");
-        field
-            .push_row_u8(3, &[20, 30, 40, 50])
-            .expect("neighbor row");
-        sweep.add_field(field).unwrap();
-        sweep.seal().unwrap();
-        let field = &sweep.fields[0];
-
-        let view = view_on(field, &sweep.range, 0).unwrap();
-        let lookup = AzimuthLookup::new(&sweep, view);
-        assert_eq!(lookup.row_for_azimuth(0.0), Some(1));
-        assert_eq!(row_valid_extent(field, 0), 1);
-        assert_eq!(row_valid_extent(field, 1), 4);
-
-        let sample = SampleLookup {
-            azimuth_bin: azimuth_bin(0.0),
-            gate: 3,
-        };
-        let FieldValues::U8(values, coding) = field_values(field) else {
-            panic!("test field should use u8 storage");
-        };
-        let resolved = resolve_int_sample(values, &coding, view.gate_count(), &lookup, sample)
-            .expect("sample should resolve");
-        assert_eq!(resolved.row, 1);
-        assert_eq!(resolved.gate, 3);
-    }
-
+    /// A ray without a row never draws: on the real surveillance cut with
+    /// ray 100 marked absent (its stored codes blanked, as the model keeps
+    /// them), the ray takes no azimuth slot and its neighbours serve its bins.
     #[test]
     fn absent_rows_take_no_azimuth_slot_and_never_resolve() {
-        // Ray 1 never received a row: its azimuth must not draw, and the
-        // fill code the model stored there is not a sample.
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        let mapping = sweep.attach_geometry(0.0, 1_000.0, 2).unwrap();
-        let mut field = u8_field(FieldName::Dbzh, mapping, 2, 1.0, 0.0);
-        for azimuth_deg in [0.0, 90.0, 180.0] {
-            sweep.push_ray(0.0, azimuth_deg, 0.5);
+        let expected = golden("ktlx2024.json");
+        let sweep_index = as_usize(&expected["surveillance"]["sweep"]);
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let mut volume = level2(&path);
+        const ABSENT: usize = 100;
+        let before = {
+            let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+            let lookup = AzimuthLookup::new(&volume.sweeps[sweep_index], reflectivity);
+            let azimuth = volume.sweeps[sweep_index].rays.azimuth_deg[ABSENT];
+            assert_eq!(lookup.row_for_azimuth(azimuth), Some(ABSENT));
+            azimuth
+        };
+        {
+            let sweep = &mut volume.sweeps[sweep_index];
+            let index = sweep.field_index(&FieldName::Dbzh).expect("DBZH");
+            let field = &mut sweep.fields[index];
+            let gates = field.ngates as usize;
+            let FieldData::U8 { values, .. } = &mut field.data else {
+                panic!("u8 reflectivity");
+            };
+            values[ABSENT * gates..(ABSENT + 1) * gates].fill(0);
+            field.absent_rows = vec![ABSENT as u32];
+            sweep.seal().expect("sealed edit");
         }
-        field.push_row_u8(0, &[20, 30]).unwrap();
-        field.push_row_u8(2, &[20, 30]).unwrap();
-        sweep.add_field(field).unwrap();
-        sweep.seal().unwrap();
-        let field = &sweep.fields[0];
-        assert_eq!(field.absent_rows, vec![1]);
-        assert!(has_rows(field));
-
-        let view = view_on(field, &sweep.range, 0).unwrap();
-        let lookup = AzimuthLookup::new(&sweep, view);
-        assert_eq!(lookup.row_for_azimuth(0.0), Some(0));
-        assert_eq!(lookup.row_for_azimuth(180.0), Some(2));
-        assert_eq!(lookup.row_for_azimuth(90.0), None);
-
+        let sweep = &volume.sweeps[sweep_index];
+        let reflectivity = view(&volume, sweep_index, &FieldName::Dbzh);
+        assert!(has_rows(reflectivity.field));
+        let lookup = AzimuthLookup::new(sweep, reflectivity);
+        let served = lookup
+            .row_for_azimuth(before)
+            .expect("a neighbour serves the bin");
+        assert_ne!(served, ABSENT);
+        assert_eq!(served.abs_diff(ABSENT), 1);
+        for bin in 0..AZIMUTH_BINS {
+            assert!(
+                lookup
+                    .candidates_for_bin(bin)
+                    .iter()
+                    .all(|candidate| candidate.row != ABSENT),
+                "absent ray is a candidate of bin {bin}"
+            );
+        }
         // A field whose rows are all absent is empty for rendering.
-        let mut empty = u8_field(FieldName::Vradh, mapping, 2, 1.0, 64.0);
-        empty.push_absent_rows_to(3).unwrap();
+        let mut empty = reflectivity.field.clone();
+        empty.absent_rows = (0..empty.nrays).collect();
         assert!(!has_rows(&empty));
     }
 
+    /// Range-folded gates count as valid data: the valid extent of each
+    /// velocity row (one past the last non-zero code, from Py-ART) includes
+    /// them, and a range-folded gate resolves to its own row.
     #[test]
     fn int_sample_resolution_keeps_visible_range_folded_candidates() {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep.elevation_number = Some(1);
-        let mapping = sweep.attach_geometry(0.0, 1_000.0, 4).unwrap();
-        let mut field = u8_field(FieldName::Vradh, mapping, 4, 1.0, 0.0);
-        sweep.push_ray(0.0, 0.0, 0.5);
-        field
-            .push_row_u8(0, &[1, 1, 1, 1])
-            .expect("range-folded row");
-        sweep.add_field(field).unwrap();
-        sweep.seal().unwrap();
-        let field = &sweep.fields[0];
+        let expected = golden("ktlx2024.json");
+        let doppler = &expected["doppler"];
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&doppler["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let velocity = view(&volume, sweep_index, &FieldName::Vradh);
+        assert_geometry(sweep, velocity.field, doppler);
+        let (values, coding) = u8_codes(velocity.field);
+        let gates = velocity.gate_count();
+        for (row, extent) in array(&doppler["valid_extent"]).iter().enumerate() {
+            assert_eq!(
+                row_valid_extent(velocity.field, row),
+                as_usize(extent),
+                "row {row}"
+            );
+        }
 
-        let view = view_on(field, &sweep.range, 0).unwrap();
-        let lookup = AzimuthLookup::new(&sweep, view);
-        assert_eq!(row_valid_extent(field, 0), 4);
-
-        let FieldValues::U8(values, coding) = field_values(field) else {
-            panic!("test field should use u8 storage");
-        };
-        let resolved = resolve_int_sample(
-            values,
-            &coding,
-            view.gate_count(),
-            &lookup,
-            SampleLookup {
-                azimuth_bin: azimuth_bin(0.0),
-                gate: 3,
-            },
-        )
-        .expect("range-folded sample should resolve");
-
-        assert_eq!(resolved.row, 0);
-        assert_eq!(resolved.gate, 3);
+        let lookup = AzimuthLookup::new(sweep, velocity);
+        for pair in array(&doppler["range_folded_first"]) {
+            let (row, gate) = row_gate(pair);
+            assert_eq!(values[row * gates + gate], 1);
+            assert!(gate < row_valid_extent(velocity.field, row));
+            let sample = SampleLookup {
+                azimuth_bin: azimuth_bin(sweep.rays.azimuth_deg[row]),
+                gate,
+            };
+            let resolved = resolve_int_sample(values, &coding, gates, &lookup, sample)
+                .expect("range-folded sample should resolve");
+            assert_eq!(resolved, ResolvedSample { row, gate });
+        }
     }
+
+    // ---- viewport rendering and caches ----
 
     #[test]
     fn viewport_render_uses_requested_screen_resolution() {
-        let volume = test_volume();
-        let options = ViewportRasterOptions {
-            width: 333,
-            height: 217,
-            radar_x_px: 166.5,
-            radar_y_px: 108.5,
-            km_per_px_x: 0.5,
-            km_per_px_y: 0.5,
-            rotation_rad: 0.0,
+        let expected = golden("ktlx2024.json");
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&expected["doppler"]["sweep"]);
+        let options = window_viewport_options();
+        let storm_motion = StormMotion {
+            direction_deg: 45.0,
+            speed_mps: 10.0,
         };
 
-        let reflectivity = render_field_viewport_image(&volume, 0, &FieldName::Dbzh, options)
-            .expect("viewport reflectivity");
+        let reflectivity =
+            render_field_viewport_image(&volume, sweep_index, &FieldName::Dbzh, options)
+                .expect("viewport reflectivity");
         assert_eq!(reflectivity.dimensions(), (333, 217));
         assert!(has_visible_pixel(reflectivity.as_raw()));
 
         let mut reusable_pixels = vec![255; viewport_rgba_buffer_len(options)];
         let dimensions = render_field_viewport_rgba_into(
             &volume,
-            0,
+            sweep_index,
             &FieldName::Dbzh,
             options,
             &mut reusable_pixels,
@@ -4649,27 +5138,24 @@ mod tests {
         assert_eq!(dimensions, (333, 217));
         assert!(has_visible_pixel(&reusable_pixels));
         assert!(has_transparent_pixel(&reusable_pixels));
+        assert_eq!(reusable_pixels, *reflectivity.as_raw());
 
-        let reflectivity_cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh)
+        let reflectivity_cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Dbzh)
             .expect("viewport reflectivity cache");
         assert_eq!(reflectivity_cache.field_name(), &FieldName::Dbzh);
-        assert_eq!(reflectivity_cache.sweep_index(), 0);
+        assert_eq!(reflectivity_cache.sweep_index(), sweep_index);
         reusable_pixels.fill(255);
         let dimensions = reflectivity_cache
             .render_field_rgba_into(&volume, options, &mut reusable_pixels)
             .expect("cached viewport reflectivity");
         assert_eq!(dimensions, (333, 217));
-        assert!(has_visible_pixel(&reusable_pixels));
-        assert!(has_transparent_pixel(&reusable_pixels));
+        assert_eq!(reusable_pixels, *reflectivity.as_raw());
 
         let storm_relative = render_storm_relative_velocity_viewport_image(
             &volume,
-            0,
+            sweep_index,
             &FieldName::Vradh,
-            StormMotion {
-                direction_deg: 45.0,
-                speed_mps: 10.0,
-            },
+            storm_motion,
             options,
         )
         .expect("viewport storm-relative velocity");
@@ -4679,12 +5165,9 @@ mod tests {
         let mut storm_relative_pixels = vec![255; viewport_rgba_buffer_len(options)];
         let dimensions = render_storm_relative_velocity_viewport_rgba_into(
             &volume,
-            0,
+            sweep_index,
             &FieldName::Vradh,
-            StormMotion {
-                direction_deg: 45.0,
-                speed_mps: 10.0,
-            },
+            storm_motion,
             options,
             &mut storm_relative_pixels,
         )
@@ -4692,33 +5175,38 @@ mod tests {
         assert_eq!(dimensions, (333, 217));
         assert!(has_visible_pixel(&storm_relative_pixels));
         assert!(has_transparent_pixel(&storm_relative_pixels));
+        assert_eq!(storm_relative_pixels, *storm_relative.as_raw());
 
-        let velocity_cache = ViewportFieldCache::new(&volume, 0, &FieldName::Vradh)
+        let velocity_cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Vradh)
             .expect("viewport velocity cache");
         storm_relative_pixels.fill(255);
         let dimensions = velocity_cache
             .render_storm_relative_velocity_rgba_into(
                 &volume,
-                StormMotion {
-                    direction_deg: 45.0,
-                    speed_mps: 10.0,
-                },
+                storm_motion,
                 options,
                 &mut storm_relative_pixels,
             )
             .expect("cached viewport storm-relative velocity");
         assert_eq!(dimensions, (333, 217));
-        assert!(has_visible_pixel(&storm_relative_pixels));
-        assert!(has_transparent_pixel(&storm_relative_pixels));
+        assert_eq!(storm_relative_pixels, *storm_relative.as_raw());
+        // The window is mostly clear air (the storms sit 225 km south): a few
+        // hundred reflectivity pixels, tens of thousands of velocity pixels.
+        assert!(opaque_pixels(reflectivity.as_raw()) > 500);
+        assert!(opaque_pixels(storm_relative.as_raw()) > 10_000);
     }
 
+    /// Storm-relative rendering and dealiasing need a radial velocity, and
+    /// the caches report missing fields and sweeps (KTLX 2024 trim: sweep 0
+    /// is the surveillance cut without spectrum width, two sweeps in all).
     #[test]
     fn storm_relative_rendering_needs_a_radial_velocity() {
-        let volume = test_volume();
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
         let options = sample_viewport_options();
         let err = render_storm_relative_velocity_viewport_image(
             &volume,
-            0,
+            1,
             &FieldName::Dbzh,
             StormMotion {
                 direction_deg: 45.0,
@@ -4733,13 +5221,13 @@ mod tests {
                 field: FieldName::Dbzh
             }
         ));
-        let Err(err) = ViewportFieldCache::new_dealiased_velocity(&volume, 0, &FieldName::Dbzh)
+        let Err(err) = ViewportFieldCache::new_dealiased_velocity(&volume, 1, &FieldName::Dbzh)
         else {
             panic!("dealiasing needs a radial velocity");
         };
         assert!(matches!(err, RenderError::NotRadialVelocity { .. }));
         let Err(err) = ViewportFieldCache::new(&volume, 0, &FieldName::Wradh) else {
-            panic!("the test sweep has no spectrum width");
+            panic!("the surveillance cut has no spectrum width");
         };
         assert!(matches!(
             err,
@@ -4749,31 +5237,49 @@ mod tests {
             }
         ));
         let Err(err) = ViewportFieldCache::new(&volume, 3, &FieldName::Dbzh) else {
-            panic!("the test volume has one sweep");
+            panic!("the trimmed volume has two sweeps");
         };
         assert!(matches!(
             err,
             RenderError::SweepOutOfRange {
                 index: 3,
-                sweep_count: 1
+                sweep_count: 2
             }
         ));
     }
 
+    /// The sample cache reproduces the direct render exactly when every
+    /// measured code has a visible colour (an opaque reflectivity ramp).
+    /// Under the default reflectivity palette, which hides low dBZ, the two
+    /// paths can differ only where the cache's first candidate radial holds a
+    /// hidden code: the direct render falls through to the next candidate of
+    /// the azimuth bin, the cache leaves the pixel transparent.
     #[test]
     fn viewport_sample_cache_matches_direct_field_render() {
-        let volume = test_volume();
-        let options = ViewportRasterOptions {
-            width: 333,
-            height: 217,
-            radar_x_px: 166.5,
-            radar_y_px: 108.5,
-            km_per_px_x: 0.5,
-            km_per_px_y: 0.5,
-            rotation_rad: 0.0,
-        };
-        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh)
-            .expect("viewport reflectivity cache");
+        let expected = golden("ktlx2024.json");
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&expected["doppler"]["sweep"]);
+        let options = window_viewport_options();
+        let opaque_ramp = ColorTable::parse(
+            "opaque reflectivity",
+            "units: dBZ
+color: -33 0 0 60
+color: 20 0 200 0
+color: 95 255 0 0",
+        )
+        .expect("opaque ramp");
+        assert_eq!(opaque_ramp.color_for_value(-32.0)[3], 255);
+        assert_eq!(opaque_ramp.color_for_value(94.5)[3], 255);
+        let mut tables = ColorTableSet::default();
+        tables.set_family(ColorTableFamily::Reflectivity, opaque_ramp);
+        let cache = ViewportFieldCache::new_with_color_tables(
+            &volume,
+            sweep_index,
+            &FieldName::Dbzh,
+            &tables,
+        )
+        .expect("viewport reflectivity cache");
         let sample_cache = cache
             .build_sample_cache(&volume, options)
             .expect("viewport sample cache");
@@ -4791,6 +5297,7 @@ mod tests {
         assert_eq!(sample_cache.dimensions(), (333, 217));
         assert!(sample_cache.sample_count() > 0);
         assert!(sample_cache.storage_bytes() < viewport_rgba_buffer_len(options));
+        assert!(opaque_pixels(&direct_pixels) > 500);
         assert_eq!(sample_cache_pixels, direct_pixels);
 
         let mut reused_pixels = direct_pixels.clone();
@@ -4802,24 +5309,59 @@ mod tests {
             )
             .expect("sample-cache reuse viewport render");
         assert_eq!(reused_pixels, sample_cache_pixels);
+
+        // Default palette: the same sample cache, transparent low dBZ.
+        let cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Dbzh)
+            .expect("default reflectivity cache");
+        let sample_cache = cache
+            .build_sample_cache(&volume, options)
+            .expect("default sample cache");
+        cache
+            .render_field_rgba_into(&volume, options, &mut direct_pixels)
+            .expect("direct default render");
+        cache
+            .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut sample_cache_pixels)
+            .expect("sample-cache default render");
+        let mut fallthrough = 0usize;
+        for (index, (cached, direct)) in sample_cache_pixels
+            .chunks_exact(4)
+            .zip(direct_pixels.chunks_exact(4))
+            .enumerate()
+        {
+            if cached != direct {
+                assert!(
+                    cached[3] == 0 && direct[3] != 0,
+                    "pixel {} ({}, {}): cache {cached:?}, direct {direct:?}",
+                    index,
+                    index % 333,
+                    index / 333
+                );
+                fallthrough += 1;
+            }
+        }
+        assert!(
+            fallthrough < opaque_pixels(&direct_pixels),
+            "{fallthrough} fall-through pixels of {} opaque",
+            opaque_pixels(&direct_pixels)
+        );
     }
 
     #[test]
     fn viewport_geometry_cache_resolves_across_compatible_products() {
-        let volume = test_volume();
-        let options = ViewportRasterOptions {
-            width: 333,
-            height: 217,
-            radar_x_px: 166.5,
-            radar_y_px: 108.5,
-            km_per_px_x: 0.5,
-            km_per_px_y: 0.5,
-            rotation_rad: 0.0,
-        };
-        let reflectivity_cache =
-            ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).expect("reflectivity cache");
-        let velocity_cache =
-            ViewportFieldCache::new(&volume, 0, &FieldName::Vradh).expect("velocity cache");
+        let expected = golden("ktlx2024.json");
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        // The Doppler cut carries reflectivity and velocity on the same gates.
+        let sweep_index = as_usize(&expected["doppler"]["sweep"]);
+        assert_eq!(
+            view(&volume, sweep_index, &FieldName::Dbzh).geometry,
+            view(&volume, sweep_index, &FieldName::Vradh).geometry
+        );
+        let options = window_viewport_options();
+        let reflectivity_cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Dbzh)
+            .expect("reflectivity cache");
+        let velocity_cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Vradh)
+            .expect("velocity cache");
         let geometry_cache = reflectivity_cache
             .build_geometry_cache(&volume, options)
             .expect("geometry cache");
@@ -4845,41 +5387,23 @@ mod tests {
 
         assert_eq!(geometry_cache.dimensions(), (333, 217));
         assert!(geometry_cache.sample_count() >= geometry_sample_cache.sample_count());
+        assert!(opaque_pixels(&direct_pixels) > 1_000);
         assert_eq!(geometry_pixels, direct_pixels);
     }
 
+    /// KPAH 2008 sweep 4: a geometry cache built for the 1 km reflectivity
+    /// cannot serve the 250 m velocity of the same sweep.
     #[test]
     fn viewport_geometry_cache_rejects_a_different_gate_geometry() {
-        // A field with other gates cannot reuse a geometry cache built for
-        // the sweep's 1 km reflectivity.
-        let mut volume = test_volume();
-        let sweep = &mut volume.sweeps[0];
-        // 500 m gates from a 250 m centre: their edges line up with the
-        // 1 km gates, so the range refines to 500 m.
-        let mapping = sweep.attach_geometry(250.0, 500.0, 12).unwrap();
-        assert_eq!(
-            mapping,
-            GateMapping {
-                start: 1,
-                stride: 1
-            }
+        let path = recast_radar_testdata::require_file!(KPAH_2008);
+        let volume = level2(&path);
+        assert_ne!(
+            view(&volume, KPAH_MIXED_SWEEP, &FieldName::Dbzh).geometry,
+            view(&volume, KPAH_MIXED_SWEEP, &FieldName::Vradh).geometry
         );
-        assert_eq!(
-            sweep.fields[0].gates,
-            GateMapping {
-                start: 0,
-                stride: 2
-            }
-        );
-        let mut fine = u8_field(FieldName::Wradh, mapping, 12, 1.0, 0.0);
-        for ray in 0..4 {
-            fine.push_row_u8(ray, &[30; 12]).unwrap();
-        }
-        sweep.add_field(fine).unwrap();
-        sweep.seal().unwrap();
         let options = sample_viewport_options();
-        let coarse = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).unwrap();
-        let fine = ViewportFieldCache::new(&volume, 0, &FieldName::Wradh).unwrap();
+        let coarse = ViewportFieldCache::new(&volume, KPAH_MIXED_SWEEP, &FieldName::Dbzh).unwrap();
+        let fine = ViewportFieldCache::new(&volume, KPAH_MIXED_SWEEP, &FieldName::Vradh).unwrap();
         let geometry_cache = coarse.build_geometry_cache(&volume, options).unwrap();
         assert!(matches!(
             fine.build_sample_cache_from_geometry_cache(&volume, &geometry_cache),
@@ -4894,21 +5418,17 @@ mod tests {
 
     #[test]
     fn viewport_sample_cache_matches_direct_storm_relative_render() {
-        let volume = test_volume();
-        let options = ViewportRasterOptions {
-            width: 333,
-            height: 217,
-            radar_x_px: 166.5,
-            radar_y_px: 108.5,
-            km_per_px_x: 0.5,
-            km_per_px_y: 0.5,
-            rotation_rad: 0.0,
-        };
+        let expected = golden("ktlx2024.json");
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&expected["doppler"]["sweep"]);
+        let options = window_viewport_options();
         let storm_motion = StormMotion {
             direction_deg: 45.0,
             speed_mps: 10.0,
         };
-        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Vradh).expect("velocity cache");
+        let cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Vradh)
+            .expect("velocity cache");
         let sample_cache = cache
             .build_sample_cache(&volume, options)
             .expect("velocity sample cache");
@@ -4933,6 +5453,7 @@ mod tests {
             .expect("sample-cache SRV viewport render");
 
         assert_eq!(dimensions, (333, 217));
+        assert!(opaque_pixels(&direct_pixels) > 1_000);
         assert_eq!(sample_cache_pixels, direct_pixels);
 
         let next_storm_motion = StormMotion {
@@ -4948,6 +5469,12 @@ mod tests {
                 &mut cleared_next_pixels,
             )
             .expect("cleared next SRV viewport render");
+        // A different storm motion recolours the measured gates.
+        assert_ne!(cleared_next_pixels, sample_cache_pixels);
+        assert_eq!(
+            opaque_pixels(&cleared_next_pixels),
+            opaque_pixels(&sample_cache_pixels)
+        );
 
         let mut reused_next_pixels = sample_cache_pixels;
         cache
@@ -4980,7 +5507,10 @@ mod tests {
 
     #[test]
     fn viewport_sample_cache_rejects_mismatched_cache() {
-        let volume = test_volume();
+        let expected = golden("ktlx2024.json");
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&expected["doppler"]["sweep"]);
         let options = ViewportRasterOptions {
             width: 64,
             height: 64,
@@ -4990,10 +5520,10 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.0,
         };
-        let reflectivity_cache =
-            ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).expect("reflectivity cache");
-        let velocity_cache =
-            ViewportFieldCache::new(&volume, 0, &FieldName::Vradh).expect("velocity cache");
+        let reflectivity_cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Dbzh)
+            .expect("reflectivity cache");
+        let velocity_cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Vradh)
+            .expect("velocity cache");
         let sample_cache = reflectivity_cache
             .build_sample_cache(&volume, options)
             .expect("reflectivity sample cache");
@@ -5014,29 +5544,40 @@ mod tests {
 
     #[test]
     fn viewport_render_rejects_wrong_sized_reusable_buffer() {
-        let volume = test_volume();
-        let options = ViewportRasterOptions {
-            width: 333,
-            height: 217,
-            radar_x_px: 166.5,
-            radar_y_px: 108.5,
-            km_per_px_x: 0.5,
-            km_per_px_y: 0.5,
-            rotation_rad: 0.0,
-        };
+        let expected = golden("ktlx2024.json");
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&expected["doppler"]["sweep"]);
+        let options = window_viewport_options();
 
         let mut pixels = vec![0; viewport_rgba_buffer_len(options) - 4];
-        let err =
-            render_field_viewport_rgba_into(&volume, 0, &FieldName::Dbzh, options, &mut pixels)
-                .expect_err("wrong buffer size should be rejected");
+        let err = render_field_viewport_rgba_into(
+            &volume,
+            sweep_index,
+            &FieldName::Dbzh,
+            options,
+            &mut pixels,
+        )
+        .expect_err("wrong buffer size should be rejected");
 
-        assert!(matches!(err, RenderError::BufferSizeMismatch { .. }));
+        assert!(matches!(
+            err,
+            RenderError::BufferSizeMismatch {
+                width: 333,
+                height: 217,
+                ..
+            }
+        ));
     }
 
+    /// A cache built on the 2024 KTLX volume refuses to draw the 2013 one.
     #[test]
     fn viewport_cache_rejects_different_volume() {
-        let volume = test_volume();
-        let other_volume = test_volume();
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let other_path = recast_radar_testdata::require_file!(KTLX_2013);
+        let other_volume = level2(&other_path);
+        assert_ne!(volume.time_reference, other_volume.time_reference);
         let options = ViewportRasterOptions {
             width: 64,
             height: 64,
@@ -5055,11 +5596,68 @@ mod tests {
             .expect_err("cache should be bound to its source volume");
 
         assert!(matches!(err, RenderError::CacheVolumeMismatch));
+        cache
+            .render_field_rgba_into(&volume, options, &mut pixels)
+            .expect("the source volume still renders");
+        assert!(has_visible_pixel(&pixels));
     }
 
+    /// Differential phase in the Build 13.2 KTLX 2013-05-20 volume is a
+    /// 16-bit field (codes to 1022, scale 2.8361, offset 2): its wide palette
+    /// colours every code by the physical value MetPy reports, and the cached
+    /// viewport render equals the direct one.
     #[test]
     fn viewport_cache_renders_u16_palette_fields() {
-        let volume = test_u16_volume();
+        let expected = golden("ktlx2013.json");
+        let phase = &expected["differential_phase"];
+        let path = recast_radar_testdata::require_file!(KTLX_2013);
+        let volume = level2(&path);
+        let sweep_index = as_usize(&phase["sweep"]);
+        let sweep = &volume.sweeps[sweep_index];
+        let phidp = field(&volume, sweep_index, &FieldName::Phidp);
+        assert_geometry(sweep, phidp, phase);
+        let FieldValues::U16(values, coding) = field_values(phidp) else {
+            panic!("16-bit differential phase should be stored as u16");
+        };
+        let gates = phidp.ngates as usize;
+        let max_code = as_usize(&phase["max_code"]) as u16;
+        assert_eq!(values.iter().copied().max(), Some(max_code));
+        let (scale, offset) = icd_scale_offset(&coding);
+        assert!((scale - as_f32(&phase["scale"])).abs() < 1e-4);
+        assert!((offset - as_f32(&phase["offset"])).abs() < 1e-4);
+        let finite = (0..phidp.nrays as usize)
+            .flat_map(|row| (0..gates).map(move |gate| (row, gate)))
+            .filter(|&(row, gate)| phidp.value(row, gate).is_some())
+            .count();
+        assert_eq!(finite, as_usize(&phase["finite_gates"]));
+
+        let tables = ColorTableSet::default();
+        let table = tables.for_family(ColorTableFamily::DifferentialPhase);
+        assert_eq!(
+            color_family_for_field(phidp),
+            ColorTableFamily::DifferentialPhase
+        );
+        let palette = build_wide_palette(values, &coding, table);
+        assert_eq!(palette.len(), usize::from(max_code) + 1);
+        assert_eq!(palette[0], [0, 0, 0, 0]);
+        for sample in array(&phase["samples"]) {
+            let (row, gate) = (as_usize(&sample["row"]), as_usize(&sample["gate"]));
+            let code = as_usize(&sample["code"]);
+            let value = as_f32(&sample["value_deg"]);
+            assert_eq!(usize::from(values[row * gates + gate]), code);
+            let scaled = phidp.value(row, gate).expect("finite phase");
+            assert!((scaled - value).abs() < 1e-3, "row {row} gate {gate}");
+            assert_eq!(
+                palette[code],
+                color_for_code(&coding, &table.sampler(), code as u16)
+            );
+            assert_color_close(
+                palette[code],
+                table.color_for_value(value),
+                &format!("row {row} gate {gate} code {code}"),
+            );
+        }
+
         let options = ViewportRasterOptions {
             width: 96,
             height: 96,
@@ -5069,95 +5667,159 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.0,
         };
-        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh)
-            .expect("viewport u16 reflectivity cache");
+        let cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Phidp)
+            .expect("viewport u16 differential phase cache");
         let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
-
         let dimensions = cache
             .render_field_rgba_into(&volume, options, &mut pixels)
-            .expect("cached u16 viewport reflectivity");
-
+            .expect("cached u16 viewport differential phase");
         assert_eq!(dimensions, (96, 96));
         assert!(has_visible_pixel(&pixels));
         assert!(has_transparent_pixel(&pixels));
 
-        // The wide palette covers exactly the codes present.
-        let FieldValues::U16(values, coding) = field_values(field_of(&volume, &FieldName::Dbzh))
-        else {
-            panic!("u16 storage");
-        };
-        let tables = ColorTableSet::default();
-        let palette = build_wide_palette(
-            values,
-            &coding,
-            tables.for_family(ColorTableFamily::Reflectivity),
-        );
-        assert_eq!(palette.len(), 181);
+        let mut direct = vec![0; viewport_rgba_buffer_len(options)];
+        render_field_viewport_rgba_into(
+            &volume,
+            sweep_index,
+            &FieldName::Phidp,
+            options,
+            &mut direct,
+        )
+        .expect("direct u16 viewport differential phase");
+        assert_eq!(direct, pixels);
     }
 
+    /// The KTLX 2024 Doppler-cut reflectivity (u8 codes, scale 2, offset
+    /// 66, 342 range-folded gates) re-encoded losslessly in every other
+    /// `FieldData` type draws the same pixels through the PNG raster, the
+    /// viewport raster and the sample cache.
     #[test]
     fn every_storage_type_renders_the_same_physical_values() {
-        // The same 4 x 6 reflectivity plane in every `FieldData` encoding
-        // draws identical pixels through the PNG raster, the viewport
-        // raster and the sample cache.
-        let expected = render_field_image(&test_volume(), 0, &FieldName::Dbzh, raster()).unwrap();
-        assert!(has_visible_pixel(expected.as_raw()));
+        let expected = golden("ktlx2024.json");
+        let sweep_index = as_usize(&expected["doppler_reflectivity"]["sweep"]);
+        let path = recast_radar_testdata::require_file!(KTLX_2024);
+        let volume = level2(&path);
+        let reference = field(&volume, sweep_index, &FieldName::Dbzh);
+        let (codes, coding) = u8_codes(reference);
+        assert_eq!(icd_scale_offset(&coding), (2.0, 66.0));
+        let direct = render_field_image(&volume, sweep_index, &FieldName::Dbzh, raster()).unwrap();
+        assert!(has_visible_pixel(direct.as_raw()));
         let options = sample_viewport_options();
-        let (_, _, expected_viewport) =
-            render_field_viewport_rgba(&test_volume(), 0, &FieldName::Dbzh, options).unwrap();
-        assert!(has_visible_pixel(&expected_viewport));
-
-        let rows: [[u8; 6]; 4] = [[20, 30, 40, 50, 60, 70]; 4];
-        let physical: Vec<f32> = rows.iter().flatten().map(|raw| f32::from(*raw)).collect();
-        let cf = |width| LinearTransform::CfScaleOffset {
-            scale_factor: 0.5,
-            add_offset: 0.0,
-            attr_width: width,
+        let (_, _, direct_viewport) =
+            render_field_viewport_rgba(&volume, sweep_index, &FieldName::Dbzh, options).unwrap();
+        assert!(has_visible_pixel(&direct_viewport));
+        // The sample cache can leave pixels transparent where the direct
+        // render falls through to a second candidate radial (see
+        // `viewport_sample_cache_matches_direct_field_render`), so cached
+        // renders compare with the u8 field's cached render.
+        let direct_cached = {
+            let cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Dbzh).unwrap();
+            let sample_cache = cache.build_sample_cache(&volume, options).unwrap();
+            let mut cached = vec![255; viewport_rgba_buffer_len(options)];
+            cache
+                .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut cached)
+                .unwrap();
+            cached
         };
+
+        // Physical dBZ = (code - 66) / 2; codes 0 (undetect) and 1 (range
+        // folded) have no value.
+        let physical: Vec<Option<f32>> = codes
+            .iter()
+            .map(|code| (*code >= 2).then(|| (f32::from(*code) - 66.0) / 2.0))
+            .collect();
+        let range_folded: Vec<bool> = codes.iter().map(|code| *code == 1).collect();
+        assert!(range_folded.iter().any(|folded| *folded));
         let variants: Vec<FieldData> = vec![
-            FieldData::I8 {
-                values: physical.iter().map(|value| *value as i8).collect(),
+            // i16 half-dBZ steps with a CF transform and the NEXRAD sentinels.
+            FieldData::I16 {
+                values: physical
+                    .iter()
+                    .zip(&range_folded)
+                    .map(|(value, folded)| match value {
+                        Some(value) => (*value * 2.0) as i16,
+                        None if *folded => -32767,
+                        None => -32768,
+                    })
+                    .collect(),
                 coding: IntCoding {
                     transform: LinearTransform::CfScaleOffset {
-                        scale_factor: 1.0,
+                        scale_factor: 0.5,
                         add_offset: 0.0,
-                        attr_width: recast_radar_core::model::FloatWidth::F32,
+                        attr_width: recast_radar_core::model::FloatWidth::F64,
                     },
-                    fill_value: Some(-128),
-                    undetect: None,
-                    range_folded: None,
-                    valid_range: None,
-                },
-            },
-            FieldData::U16 {
-                values: physical.iter().map(|value| (*value * 2.0) as u16).collect(),
-                coding: IntCoding {
-                    transform: LinearTransform::IcdScaleOffset {
-                        scale: 2.0,
-                        offset: 0.0,
-                    },
-                    fill_value: Some(0),
-                    undetect: None,
-                    range_folded: Some(1),
-                    valid_range: None,
-                },
-            },
-            FieldData::I16 {
-                values: physical.iter().map(|value| (*value * 2.0) as i16).collect(),
-                coding: IntCoding {
-                    transform: cf(recast_radar_core::model::FloatWidth::F64),
                     fill_value: Some(-32768),
                     undetect: None,
-                    range_folded: None,
+                    range_folded: Some(-32767),
                     valid_range: None,
                 },
             },
+            // u16 codes with the ICD transform.
+            FieldData::U16 {
+                values: codes.iter().map(|code| u16::from(*code)).collect(),
+                coding: IntCoding {
+                    transform: coding.transform,
+                    fill_value: Some(0),
+                    undetect: Some(0),
+                    range_folded: Some(1),
+                    valid_range: Some([2, 255]),
+                },
+            },
+        ];
+        for data in variants {
+            let dtype = data.dtype();
+            let mut edited = volume.clone();
+            let sweep = &mut edited.sweeps[sweep_index];
+            let index = sweep.field_index(&FieldName::Dbzh).unwrap();
+            sweep.fields[index].data = data;
+            sweep.seal().unwrap();
+            let image =
+                render_field_image(&edited, sweep_index, &FieldName::Dbzh, raster()).unwrap();
+            assert!(image.as_raw() == direct.as_raw(), "{dtype} PNG raster");
+            let cache = ViewportFieldCache::new(&edited, sweep_index, &FieldName::Dbzh).unwrap();
+            let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
+            cache
+                .render_field_rgba_into(&edited, options, &mut pixels)
+                .unwrap();
+            assert!(pixels == direct_viewport, "{dtype} viewport raster");
+            let sample_cache = cache.build_sample_cache(&edited, options).unwrap();
+            let mut cached = vec![255; viewport_rgba_buffer_len(options)];
+            cache
+                .render_field_rgba_with_sample_cache(&edited, &sample_cache, &mut cached)
+                .unwrap();
+            assert!(cached == direct_cached, "{dtype} sample cache");
+        }
+
+        // Float storage has no range-folded code: those gates blank, so the
+        // float variants match the u8 field with range folding blanked too.
+        let mut blanked = volume.clone();
+        {
+            let sweep = &mut blanked.sweeps[sweep_index];
+            let index = sweep.field_index(&FieldName::Dbzh).unwrap();
+            let FieldData::U8 { values, .. } = &mut sweep.fields[index].data else {
+                unreachable!()
+            };
+            for code in values.iter_mut().filter(|code| **code == 1) {
+                *code = 0;
+            }
+        }
+        let expected_image =
+            render_field_image(&blanked, sweep_index, &FieldName::Dbzh, raster()).unwrap();
+        let (_, _, expected_viewport) =
+            render_field_viewport_rgba(&blanked, sweep_index, &FieldName::Dbzh, options).unwrap();
+        let floats: Vec<FieldData> = vec![
             FieldData::F32 {
-                values: physical.clone(),
+                values: physical
+                    .iter()
+                    .map(|value| value.unwrap_or(f32::NAN))
+                    .collect(),
                 coding: FloatCoding::default(),
             },
             FieldData::F64 {
-                values: physical.iter().map(|value| f64::from(*value)).collect(),
+                values: physical
+                    .iter()
+                    .map(|value| value.map_or(-9999.0, f64::from))
+                    .collect(),
                 coding: FloatCoding {
                     transform: None,
                     fill_value: Some(-9999.0),
@@ -5165,130 +5827,26 @@ mod tests {
                 },
             },
         ];
-        for data in variants {
+        for data in floats {
             let dtype = data.dtype();
-            let mut volume = test_volume();
-            let sweep = &mut volume.sweeps[0];
-            let mapping = sweep.fields[0].gates;
-            sweep.fields.clear();
-            sweep
-                .add_field(Field::new(FieldName::Dbzh, mapping, 6, data))
-                .unwrap();
+            let mut edited = volume.clone();
+            let sweep = &mut edited.sweeps[sweep_index];
+            let index = sweep.field_index(&FieldName::Dbzh).unwrap();
+            sweep.fields[index].data = data;
             sweep.seal().unwrap();
-            let image = render_field_image(&volume, 0, &FieldName::Dbzh, raster()).unwrap();
-            assert_eq!(image.as_raw(), expected.as_raw(), "{dtype} PNG raster");
-            let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).unwrap();
+            let image =
+                render_field_image(&edited, sweep_index, &FieldName::Dbzh, raster()).unwrap();
+            assert!(
+                image.as_raw() == expected_image.as_raw(),
+                "{dtype} PNG raster"
+            );
+            let cache = ViewportFieldCache::new(&edited, sweep_index, &FieldName::Dbzh).unwrap();
             let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
             cache
-                .render_field_rgba_into(&volume, options, &mut pixels)
+                .render_field_rgba_into(&edited, options, &mut pixels)
                 .unwrap();
-            assert_eq!(pixels, expected_viewport, "{dtype} viewport raster");
-            let sample_cache = cache.build_sample_cache(&volume, options).unwrap();
-            let mut cached = vec![255; viewport_rgba_buffer_len(options)];
-            cache
-                .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut cached)
-                .unwrap();
-            assert_eq!(cached, expected_viewport, "{dtype} sample cache");
+            assert!(pixels == expected_viewport, "{dtype} viewport raster");
         }
-    }
-
-    #[test]
-    fn derived_and_resampled_fields_render_through_the_cache() {
-        let volume = test_volume();
-        let sweep = &volume.sweeps[0];
-        let tables = ColorTableSet::default();
-        let options = sample_viewport_options();
-
-        // A physical copy of the velocity drawn as a derived field.
-        let source = field_of(&volume, &FieldName::Vradh);
-        let derived = Field::new(
-            FieldName::parse("VEL_F32"),
-            source.gates,
-            source.ngates,
-            FieldData::F32 {
-                values: source.to_physical(),
-                coding: FloatCoding::default(),
-            },
-        );
-        let cache = ViewportFieldCache::new_derived(
-            &volume,
-            0,
-            derived,
-            &sweep.range,
-            ColorTableFamily::Velocity,
-            &tables,
-        )
-        .unwrap();
-        let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
-        cache
-            .render_field_rgba_into(&volume, options, &mut pixels)
-            .unwrap();
-        let mut native = vec![255; viewport_rgba_buffer_len(options)];
-        ViewportFieldCache::new(&volume, 0, &FieldName::Vradh)
-            .unwrap()
-            .render_field_rgba_into(&volume, options, &mut native)
-            .unwrap();
-        // Raw 0 and 1 are blank / range folded in the native field and NaN
-        // in the physical copy; the test rows hold neither, so the two agree.
-        assert_eq!(pixels, native);
-
-        // A display-resampled field: twice the rows on its own azimuths.
-        let mut resampled = Field::new(
-            FieldName::parse("DBZH_DISPLAY"),
-            GateMapping::IDENTITY,
-            6,
-            FieldData::U8 {
-                values: Vec::new(),
-                coding: IntCoding::new(LinearTransform::IcdScaleOffset {
-                    scale: 1.0,
-                    offset: 0.0,
-                }),
-            },
-        );
-        let row_azimuths: Vec<f32> = (0..8).map(|row| row as f32 * 45.0).collect();
-        for row in 0..8 {
-            resampled
-                .push_row_u8(row, &[20, 30, 40, 50, 60, 70])
-                .unwrap();
-        }
-        let cache = ViewportFieldCache::new_resampled(
-            &volume,
-            0,
-            resampled,
-            &sweep.range,
-            &row_azimuths,
-            ColorTableFamily::Reflectivity,
-            &tables,
-        )
-        .unwrap();
-        let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
-        cache
-            .render_field_rgba_into(&volume, options, &mut pixels)
-            .unwrap();
-        assert!(has_visible_pixel(&pixels));
-        assert!(has_transparent_pixel(&pixels));
-        let sample_cache = cache.build_sample_cache(&volume, options).unwrap();
-        let mut cached = vec![255; viewport_rgba_buffer_len(options)];
-        cache
-            .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut cached)
-            .unwrap();
-        assert_eq!(cached, pixels);
-    }
-
-    fn raster() -> RasterOptions {
-        RasterOptions {
-            width: 96,
-            height: 96,
-            range_fraction: 94,
-        }
-    }
-
-    fn has_visible_pixel(pixels: &[u8]) -> bool {
-        pixels.chunks_exact(4).any(|pixel| pixel[3] != 0)
-    }
-
-    fn has_transparent_pixel(pixels: &[u8]) -> bool {
-        pixels.chunks_exact(4).any(|pixel| pixel[3] == 0)
     }
 
     fn viewport_lookup_reference(
@@ -5318,190 +5876,184 @@ mod tests {
             gate: gate as usize,
         })
     }
-
-    /// A `u8` field with the legacy unit-test coding: `(raw - offset) /
-    /// scale`, raw 0 blank, raw 1 range folded.
-    fn u8_field(
-        name: FieldName,
-        gates: GateMapping,
-        ngates: u32,
-        scale: f32,
-        offset: f32,
-    ) -> Field {
-        Field::new(
-            name,
-            gates,
-            ngates,
-            FieldData::U8 {
-                values: Vec::new(),
-                coding: IntCoding {
-                    transform: LinearTransform::IcdScaleOffset { scale, offset },
-                    fill_value: Some(0),
-                    undetect: None,
-                    range_folded: Some(1),
-                    valid_range: None,
-                },
-            },
-        )
-    }
-
-    fn field_of<'a>(volume: &'a Volume, name: &FieldName) -> &'a Field {
-        volume.sweeps[0].field(name).expect("test field")
-    }
-
-    fn view_of<'a>(volume: &'a Volume, name: &FieldName) -> FieldView<'a> {
-        view_on(field_of(volume, name), &volume.sweeps[0].range, 0).expect("test field geometry")
-    }
-
-    /// One sweep at 0.5 deg with four rays (N, E, S, W), 6 gates of 1 km from
-    /// 0 m, `u8` reflectivity and velocity.
-    fn test_volume() -> Volume {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep.elevation_number = Some(1);
-        let mapping = sweep.attach_geometry(0.0, 1_000.0, 6).unwrap();
-        for azimuth_deg in [0.0, 90.0, 180.0, 270.0] {
-            sweep.push_ray(0.0, azimuth_deg, 0.5);
-        }
-        sweep.ray_vars.nyquist_velocity_mps = Some(vec![32.0; 4]);
-
-        let mut reflectivity = u8_field(FieldName::Dbzh, mapping, 6, 1.0, 0.0);
-        let mut velocity = u8_field(FieldName::Vradh, mapping, 6, 1.0, 64.0);
-        for ray in 0..4 {
-            reflectivity
-                .push_row_u8(ray, &[20, 30, 40, 50, 60, 70])
-                .expect("reflectivity row");
-            velocity
-                .push_row_u8(ray, &[44, 54, 64, 74, 84, 94])
-                .expect("velocity row");
-        }
-        sweep.add_field(reflectivity).unwrap();
-        sweep.add_field(velocity).unwrap();
-
-        let mut volume = Volume::new("TST", chrono::Utc::now());
-        volume.sweeps.push(sweep);
-        volume.seal().unwrap();
-        volume
-    }
-
-    fn test_u16_volume() -> Volume {
-        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
-        sweep.elevation_number = Some(1);
-        let mapping = sweep.attach_geometry(0.0, 1_000.0, 6).unwrap();
-        for azimuth_deg in [0.0, 90.0, 180.0, 270.0] {
-            sweep.push_ray(0.0, azimuth_deg, 0.5);
-        }
-
-        let mut reflectivity = Field::new(
-            FieldName::Dbzh,
-            mapping,
-            6,
-            FieldData::U16 {
-                values: Vec::new(),
-                coding: IntCoding {
-                    transform: LinearTransform::IcdScaleOffset {
-                        scale: 2.0,
-                        offset: 64.0,
-                    },
-                    fill_value: Some(0),
-                    undetect: None,
-                    range_folded: Some(1),
-                    valid_range: None,
-                },
-            },
-        );
-        for ray in 0..4 {
-            let row: Vec<u8> = [80u16, 100, 120, 140, 160, 180]
-                .iter()
-                .flat_map(|value| value.to_be_bytes())
-                .collect();
-            reflectivity
-                .push_row_u16_be(ray, &row)
-                .expect("u16 reflectivity row");
-        }
-        sweep.add_field(reflectivity).unwrap();
-
-        let mut volume = Volume::new("U16", chrono::Utc::now());
-        volume.sweeps.push(sweep);
-        volume.seal().unwrap();
-        volume
-    }
 }
 
-/// Derived fields from `recast-radar-map` drawn through the viewport cache.
+/// Derived fields from `recast-radar-map` drawn through the viewport cache
+/// (moved here from the volumetric tests when the algorithms left this crate).
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod derived_product_tests {
-    use recast_radar_core::{Field, FieldData, FieldName, FloatCoding, Sweep, SweepMode, Volume};
+    use recast_radar_core::{Field, FieldData, FieldName, Quantity, Volume};
     use recast_radar_map::{ECHO_TOP_THRESHOLD_DBZ, composite_reflectivity, echo_top, vil};
+    use serde_json::Value;
+    use std::path::Path;
 
-    fn sweep_with_ref(number: u32, elev: f32, az_count: usize, gates: usize, dbz: f32) -> Sweep {
-        let mut sweep = Sweep::new(number, SweepMode::AzimuthSurveillance, elev);
-        let mapping = sweep.attach_geometry(0.0, 1_000.0, gates as u32).unwrap();
-        for k in 0..az_count {
-            sweep.push_ray(k as f64, k as f32 * (360.0 / az_count as f32), elev);
-        }
-        let mut field = Field::new(
-            FieldName::Dbzh,
-            mapping,
-            gates as u32,
-            FieldData::F32 {
-                values: Vec::new(),
-                coding: FloatCoding::default(),
-            },
-        );
-        let row = vec![dbz; gates];
-        for ray in 0..az_count {
-            field.push_row_f32(ray, &row).unwrap();
-        }
-        sweep.add_field(field).unwrap();
-        sweep
+    use crate::color::{ColorTableFamily, ColorTableSet};
+    use crate::{ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len};
+
+    fn level2(path: &Path) -> Volume {
+        recast_radar_io_nexrad::read_volume_from_path(path)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
     }
 
+    fn as_f32(value: &Value) -> f32 {
+        value
+            .as_f64()
+            .unwrap_or_else(|| panic!("expected a number, got {value}")) as f32
+    }
+
+    fn as_usize(value: &Value) -> usize {
+        value
+            .as_u64()
+            .unwrap_or_else(|| panic!("expected an unsigned integer, got {value}")) as usize
+    }
+
+    fn angular_distance(a: f32, b: f32) -> f32 {
+        let delta = (a - b).rem_euclid(360.0);
+        delta.min(360.0 - delta)
+    }
+
+    fn max_value(field: &Field) -> f32 {
+        let (rows, gates) = field.shape();
+        (0..rows)
+            .flat_map(|row| (0..gates).map(move |gate| (row, gate)))
+            .filter_map(|(row, gate)| field.value(row, gate))
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
+
+    /// End-to-end on the full KEWX 2016-04-13 volume (19 sweeps): compute
+    /// each derived field and render it through the same ViewportFieldCache
+    /// path the GUI worker uses, with its dedicated color family. The
+    /// composite peaks at the volume's strongest gate as Py-ART reads it
+    /// (76.5 dBZ on the 4.0 deg tilt, 55.9 km out at 251.5 deg; the lowest
+    /// tilt alone tops at 70.5 dBZ), and the pixel drawn on that column
+    /// carries the reflectivity colour of 76.5 dBZ.
     #[test]
     fn derived_products_render_through_viewport_cache() {
-        // End-to-end: compute each derived field and render it through the
-        // same ViewportFieldCache path the GUI worker uses, with its dedicated
-        // color family. Asserts the render produces opaque pixels (no panic,
-        // correct plumbing).
-        use crate::color::{ColorTableFamily, ColorTableSet};
-        use crate::{ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len};
+        let golden_path = recast_radar_testdata::testdata_dir()
+            .join("golden")
+            .join("render")
+            .join("kewx.json");
+        let text = std::fs::read_to_string(&golden_path)
+            .unwrap_or_else(|error| panic!("{}: {error}", golden_path.display()));
+        let expected: Value = serde_json::from_str(&text)
+            .unwrap_or_else(|error| panic!("{}: {error}", golden_path.display()));
+        let path = recast_radar_testdata::require_file!("l2-kewx-20160413-022531");
+        let volume = level2(&path);
+        assert_eq!(volume.sweeps.len(), as_usize(&expected["sweeps"]));
 
-        let mut v = Volume::new("TST", chrono::Utc::now());
-        v.sweeps.push(sweep_with_ref(0, 0.5, 360, 120, 45.0));
-        v.sweeps.push(sweep_with_ref(1, 3.0, 360, 120, 50.0));
-        v.seal().unwrap();
-        let cases = [
-            (composite_reflectivity(&v), ColorTableFamily::Reflectivity),
-            (
-                echo_top(&v, ECHO_TOP_THRESHOLD_DBZ),
-                ColorTableFamily::EchoTops,
-            ),
-            (vil(&v), ColorTableFamily::Vil),
-        ];
+        // Py-ART's first sweep: the 0.48 deg surveillance cut.
+        let lowest = &expected["lowest_sweep"];
+        let first = &volume.sweeps[0];
+        let first_field = first.field(&FieldName::Dbzh).expect("first sweep DBZH");
+        assert_eq!(first_field.nrays as usize, as_usize(&lowest["rows"]));
+        assert_eq!(first_field.ngates as usize, as_usize(&lowest["gates"]));
+        let (first_gate_m, spacing_m) = first_field.native_geometry(&first.range).unwrap();
+        assert_eq!(first_gate_m as f32, as_f32(&lowest["first_gate_m"]));
+        assert_eq!(spacing_m as f32, as_f32(&lowest["gate_spacing_m"]));
+        let first_max = max_value(first_field);
+        assert_eq!(first_max, as_f32(&lowest["max_dbz"]));
+
+        // The derived fields lie on the reflectivity sweep with the lowest
+        // fixed angle (the first of the four 0.5 deg passes of this SAILS
+        // volume: sweep 0).
+        let (base_index, base) = volume
+            .sweeps
+            .iter()
+            .enumerate()
+            .filter(|(_, sweep)| sweep.find(Quantity::Reflectivity).is_some())
+            .min_by(|a, b| a.1.fixed_angle_deg.total_cmp(&b.1.fixed_angle_deg))
+            .expect("a reflectivity sweep");
+        assert_eq!(base_index, 0);
+        assert!(base.fixed_angle_deg < 1.0, "{} deg", base.fixed_angle_deg);
+        let base_field = base.find(Quantity::Reflectivity).unwrap();
+        let (_, gates) = base_field.shape();
+        let composite = composite_reflectivity(&volume).expect("composite field");
+        assert_eq!(composite.shape(), base_field.shape());
+        assert_eq!(composite.gates, base_field.gates);
+        assert_eq!(composite.absent_rows, base_field.absent_rows);
+        let FieldData::F32 { values, .. } = &composite.data else {
+            panic!("derived fields are f32");
+        };
+        let (index, peak) = values
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, value)| value.is_finite())
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .expect("finite composite");
+        let volume_max = &expected["volume_max"];
+        assert!((peak - as_f32(&volume_max["dbz"])).abs() < 1e-3, "{peak}");
+        assert!(peak > first_max);
+        let (row, gate) = (index / gates, index % gates);
+        let azimuth = base.rays.azimuth_deg[row];
+        assert!(
+            angular_distance(azimuth, as_f32(&volume_max["azimuth_deg"])) < 1.0,
+            "composite peak at {azimuth} deg"
+        );
+        let (first_gate_m, spacing_m) = composite.native_geometry(&base.range).unwrap();
+        let range_m = (first_gate_m + gate as f64 * spacing_m) as f32;
+        assert!(
+            (range_m - as_f32(&volume_max["ground_range_m"])).abs() < 400.0,
+            "composite peak at {range_m} m"
+        );
+
+        let echo_top = echo_top(&volume, ECHO_TOP_THRESHOLD_DBZ).expect("echo top field");
+        let top = echo_top
+            .value(row, gate)
+            .expect("echo top over the peak column");
+        // The 76.5 dBZ gate itself clears the 18.3 dBZ threshold, so the top
+        // is at least its beam height (Py-ART's ray elevation is up to 0.2 deg
+        // from the sweep's fixed angle: 250 m at this range).
+        assert!(
+            top >= as_f32(&volume_max["height_above_radar_m"]) - 250.0,
+            "{top} m"
+        );
+        let vil = vil(&volume).expect("VIL field");
+        assert!(vil.value(row, gate).is_some_and(|vil| vil > 0.0));
+
         let tables = ColorTableSet::default();
+        // 65 x 65 pixels at 50 m per pixel centred on the peak column.
+        let size = 65u32;
+        let km_per_px = 0.05f32;
+        let centre_px = (size / 2) as f32 + 0.5;
+        let radians = azimuth.to_radians();
         let opts = ViewportRasterOptions {
-            width: 256,
-            height: 256,
-            radar_x_px: 128.0,
-            radar_y_px: 128.0,
-            km_per_px_x: 1.0,
-            km_per_px_y: 1.0,
+            width: size,
+            height: size,
+            radar_x_px: centre_px - range_m / 1000.0 * radians.sin() / km_per_px,
+            radar_y_px: centre_px + range_m / 1000.0 * radians.cos() / km_per_px,
+            km_per_px_x: km_per_px,
+            km_per_px_y: km_per_px,
             rotation_rad: 0.0,
         };
-        for (field, family) in cases {
-            let field = field.expect("derived field");
-            // The derived field lies on sweep 0's rays and range.
-            let cache =
-                ViewportFieldCache::new_derived(&v, 0, field, &v.sweeps[0].range, family, &tables)
-                    .expect("derived cache");
+        let centre = ((size / 2) * size + size / 2) as usize * 4;
+        let range = base.range.clone();
+        let cases = [
+            (composite, ColorTableFamily::Reflectivity, Some(peak)),
+            (echo_top, ColorTableFamily::EchoTops, None),
+            (vil, ColorTableFamily::Vil, None),
+        ];
+        for (field, family, expected_value) in cases {
+            let cache = ViewportFieldCache::new_derived(
+                &volume, base_index, field, &range, family, &tables,
+            )
+            .expect("derived cache");
             let mut pixels = vec![0u8; viewport_rgba_buffer_len(opts)];
             cache
-                .render_field_rgba_into(&v, opts, &mut pixels)
+                .render_field_rgba_into(&volume, opts, &mut pixels)
                 .expect("render");
             assert!(
                 pixels.chunks_exact(4).any(|p| p[3] > 0),
                 "{family:?} derived product rendered no opaque pixels"
             );
+            if let Some(value) = expected_value {
+                assert_eq!(
+                    &pixels[centre..centre + 4],
+                    &tables.for_family(family).color_for_value(value),
+                    "{family:?} pixel on the peak column"
+                );
+            }
         }
     }
 }

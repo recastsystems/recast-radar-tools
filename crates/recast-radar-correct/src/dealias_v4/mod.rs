@@ -717,345 +717,424 @@ fn encode_tilt(tilt: &TiltField, folds: &[i32]) -> Field {
 
 #[cfg(test)]
 mod tests {
+    //! v4 tests on real Level II volumes. Relative folds come from Py-ART
+    //! 2.2.5 `dealias_region_based` on the same sweeps; the absolute branch is
+    //! Py-ART's output shifted by the golden's `env_offset`, the whole-sweep
+    //! branch closest to the model wind fixture (`tools/correct_golden.py`).
+    //! Previous volumes are the real KLIX volumes before the Ida volume.
+
     use super::*;
-    use crate::dealias_velocity;
-    use crate::test_support::velocity_sweep;
+    use crate::real_data::{
+        self, PyartGolden, VelocitySweep, corpus_volume, echo_components, enclosed_patches,
+        environment_fixture, fold_agreement, golden_volume, grid_folds,
+    };
+    use crate::{dealias_skipped_no_nyquist, dealias_velocity, volume_start_time};
     use chrono::Duration;
     use recast_radar_core::Sweep;
 
-    fn utc(hours: i64) -> DateTime<Utc> {
-        DateTime::<Utc>::UNIX_EPOCH + Duration::hours(hours)
+    const IDA: &str = "l2-klix-20210829-180425";
+    const IDA_PREVIOUS: &str = "l2-klix-20210829-175748";
+    const IDA_33_MIN_EARLIER: &str = "l2-klix-20210829-173117";
+
+    /// `volume` with only sweep `index` left (a real tilt with no vertical
+    /// neighbours).
+    fn only_cut(volume: &Volume, index: usize) -> Volume {
+        let mut single = volume.clone();
+        let mut keep = single.sweeps.swap_remove(index);
+        keep.sweep_number = 0;
+        single.sweeps = vec![keep];
+        single
     }
 
-    fn volume_at(time: DateTime<Utc>, sweeps: Vec<Sweep>) -> Volume {
-        let mut volume = Volume::new("TEST", time);
-        volume.sweeps = sweeps;
-        for (index, sweep) in volume.sweeps.iter_mut().enumerate() {
-            sweep.sweep_number = index as u32;
-        }
-        volume
+    /// Gates of `grid` on Py-ART's absolute branch (golden `env_offset`).
+    fn absolute_agreement(golden: &PyartGolden, cut: &Sweep, grid: &Field) -> usize {
+        let sweep = VelocitySweep::of_sweep(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let offset = golden.env.as_ref().map_or(0, |env| env.offset);
+        grid_folds(&sweep, grid)
+            .iter()
+            .zip(&pyart)
+            .filter(|(engine, pyart)| matches!((engine, pyart), (Some(e), Some(p)) if *e == *p + offset))
+            .count()
     }
 
-    fn velocity_cut(
-        elevation: f32,
-        nyquist: f32,
-        rows: usize,
-        gates: usize,
-        value_at: impl Fn(usize, usize) -> f32,
-    ) -> Sweep {
-        let mut data = vec![f32::NAN; rows * gates];
-        let mut azimuths = Vec::with_capacity(rows);
-        for row in 0..rows {
-            azimuths.push(row as f32 * (360.0 / rows as f32));
-            for gate in 0..gates {
-                data[row * gates + gate] = value_at(row, gate);
-            }
-        }
-        velocity_sweep(
-            &azimuths,
-            elevation,
-            1000.0,
-            250.0,
-            gates,
-            data,
-            Some(vec![nyquist; rows]),
-        )
-    }
-
-    fn wrap(value: f32, nyquist: f32) -> f32 {
-        (value + nyquist).rem_euclid(2.0 * nyquist) - nyquist
-    }
-
-    fn wind_cut(
-        elevation: f32,
-        speed: f32,
-        toward_deg: f32,
-        nyquist: f32,
-        rows: usize,
-        gates: usize,
-    ) -> Sweep {
-        velocity_cut(elevation, nyquist, rows, gates, move |row, _| {
-            let azimuth = row as f32 * (360.0 / rows as f32);
-            wrap(speed * (azimuth - toward_deg).to_radians().cos(), nyquist)
-        })
-    }
-
-    fn wind_error(field: &Field, rows: usize, gates: usize, speed: f32, toward: f32) -> f32 {
-        let mut worst = 0.0f32;
-        for row in 0..rows {
-            let azimuth = row as f32 * (360.0 / rows as f32);
-            let truth = speed * (azimuth - toward).to_radians().cos();
-            for gate in (0..gates).step_by(7) {
-                if let Some(value) = field.value(row, gate).filter(|v| v.is_finite()) {
-                    worst = worst.max((value - truth).abs());
-                }
-            }
-        }
-        worst
-    }
-
-    fn uniform_env(
-        speed: f32,
-        toward_deg: f32,
-        valid_time: DateTime<Utc>,
-    ) -> EnvironmentalWindProfile {
-        let (u, v) = (
-            speed * toward_deg.to_radians().sin(),
-            speed * toward_deg.to_radians().cos(),
-        );
-        EnvironmentalWindProfile {
-            levels: vec![
-                EnvWindLevel {
-                    height_m_arl: 0.0,
-                    u_mps: u,
-                    v_mps: v,
-                },
-                EnvWindLevel {
-                    height_m_arl: 15_000.0,
-                    u_mps: u,
-                    v_mps: v,
-                },
-            ],
-            valid_time,
-        }
-    }
-
-    // ---- hybrid test-suite scenarios ported to v4 (spec Stage 5) ----
-
+    /// Ida's 1.80 deg tilt (Nyquist 23.2 m/s) solved alone has no vertical
+    /// evidence; the previous volume (17:57:48Z, 6 min 37 s earlier) supplies
+    /// the branch through the temporal prior.
     #[test]
     fn v4_temporal_reference_recovers_a_topmost_aliased_high_tilt() {
-        let base = utc(1);
-        let previous = volume_at(
-            base,
-            vec![
-                wind_cut(1.23, 35.0, 180.0, 20.0, 360, 120),
-                wind_cut(2.4, 35.0, 180.0, 40.0, 360, 120),
-            ],
-        );
-        let current = volume_at(
-            base + Duration::minutes(5),
-            vec![wind_cut(1.23, 35.0, 180.0, 20.0, 360, 120)],
-        );
-
-        let field = dealias_velocity_v4(&current, 0, Some(&previous), None).expect("v4");
+        let Some((current, golden)) = golden_volume("klix_20210829_s9") else {
+            return;
+        };
+        let Some(previous) = corpus_volume(IDA_PREVIOUS) else {
+            return;
+        };
+        let alone = only_cut(&current, golden.sweep);
+        let without = dealias_volume(&alone, None, None);
+        let with = dealias_volume(&alone, Some(TemporalPrior::Volume(&previous)), None);
+        assert!(with.diagnostics().temporal_prior_used);
+        assert!(!without.diagnostics().temporal_prior_used);
+        let cut = &alone.sweeps[0];
+        let before = absolute_agreement(&golden, cut, without.tilt_field(0).expect("tilt"));
+        let after = absolute_agreement(&golden, cut, with.tilt_field(0).expect("tilt"));
+        eprintln!("temporal: {before} -> {after} of {}", golden.valid_gates);
         assert!(
-            wind_error(&field, 360, 120, 35.0, 180.0) < 2.0,
-            "temporal prior must recover the branch"
+            after as f64 >= 0.994 * golden.valid_gates as f64,
+            "with the prior {after} of {} gates on Py-ART's branch",
+            golden.valid_gates
+        );
+        assert!(
+            after >= before + 300,
+            "the prior must move gates onto the right branch: {before} -> {after}"
         );
     }
 
+    /// The same 1.80 deg tilt solved with the lower Ida tilts (0.48, 0.88
+    /// and 1.32 deg, 720 radials each, Nyquist up to 32.1 m/s) below it:
+    /// vertical evidence from the lower tilts fixes branches the tilt cannot
+    /// decide alone.
     #[test]
     fn v4_lower_current_tilt_can_reference_a_folded_higher_tilt() {
-        let volume = volume_at(
-            utc(2),
-            vec![
-                wind_cut(0.5, 35.0, 90.0, 40.0, 360, 100),
-                wind_cut(1.23, 35.0, 90.0, 20.0, 720, 100),
-            ],
+        let Some((volume, golden)) = golden_volume("klix_20210829_s9") else {
+            return;
+        };
+        let mut stack = volume.as_ref().clone();
+        stack.sweeps.truncate(golden.sweep + 1);
+        let alone = only_cut(&volume, golden.sweep);
+        let stacked = dealias_volume(&stack, None, None);
+        let single = dealias_volume(&alone, None, None);
+        assert_eq!(stacked.diagnostics().velocity_tilts, 7);
+        let cut = &volume.sweeps[golden.sweep];
+        let with_lower = absolute_agreement(
+            &golden,
+            cut,
+            stacked.tilt_field(golden.sweep).expect("tilt"),
         );
-        let field = dealias_velocity_v4(&volume, 1, None, None).expect("v4");
+        let without_lower = absolute_agreement(&golden, cut, single.tilt_field(0).expect("tilt"));
+        eprintln!(
+            "vertical: {without_lower} -> {with_lower} of {}",
+            golden.valid_gates
+        );
+        assert!(with_lower as f64 >= 0.994 * golden.valid_gates as f64);
         assert!(
-            wind_error(&field, 720, 100, 35.0, 90.0) < 2.0,
-            "vertical evidence must recover the branch"
+            with_lower >= without_lower + 300,
+            "{without_lower} -> {with_lower}"
         );
     }
 
+    /// Isolated echo regions (4-connected components of 64 to 1,000 valid
+    /// gates) on Ida's 1.80 and 2.42 deg tilts: with the whole volume the
+    /// lower tilts decide their branch; the tilt alone gets fewer right. The
+    /// solve must not invent gates outside the tilt's own coverage.
     #[test]
     fn v4_current_lower_tilt_fixes_an_isolated_high_tilt_branch() {
-        let isolated = |elevation: f32, nyquist: f32| {
-            velocity_cut(elevation, nyquist, 360, 80, move |row, gate| {
-                if (80..=110).contains(&row) && (20..45).contains(&gate) {
-                    wrap(35.0, nyquist)
-                } else {
-                    f32::NAN
+        let Some(volume) = corpus_volume(IDA) else {
+            return;
+        };
+        let full = dealias_volume(&volume, None, None);
+        for (case, min_share, min_gain) in [
+            ("klix_20210829_s9", 0.94, 0.15),
+            ("klix_20210829_s13", 0.90, 0.05),
+        ] {
+            let golden = PyartGolden::load(case);
+            let cut = &volume.sweeps[golden.sweep];
+            let sweep = VelocitySweep::of_sweep(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let single = dealias_volume(&only_cut(&volume, golden.sweep), None, None);
+            let full_grid = full.tilt_field(golden.sweep).expect("tilt");
+            let volume_folds = grid_folds(&sweep, full_grid);
+            let single_folds = grid_folds(&sweep, single.tilt_field(0).expect("tilt"));
+
+            let offset = golden.env.as_ref().map_or(0, |env| env.offset);
+            let label = echo_components(sweep.rows, sweep.gates, golden.rays_wrap_around, |idx| {
+                sweep.observed[idx].is_finite()
+            });
+            let mut members: std::collections::HashMap<u32, usize> =
+                std::collections::HashMap::new();
+            for component in label.iter().flatten() {
+                *members.entry(*component).or_default() += 1;
+            }
+            let isolated = |size: usize| (64..=1000).contains(&size);
+            let regions = members.values().filter(|size| isolated(**size)).count();
+            let (mut gates, mut volume_ok, mut single_ok) = (0usize, 0usize, 0usize);
+            for (idx, component) in label.iter().enumerate() {
+                let Some(component) = component else { continue };
+                if !isolated(members[component]) {
+                    continue;
                 }
-            })
-        };
-        let volume = volume_at(utc(3), vec![isolated(0.5, 45.0), isolated(1.23, 20.0)]);
-
-        let field = dealias_velocity_v4(&volume, 1, None, None).expect("v4");
-        assert!(
-            (field.value(90, 30).expect("value") - 35.0).abs() < 1.0,
-            "vertical evidence must choose the +1 branch"
-        );
-        assert!(
-            field.value(20, 30).is_none(),
-            "must not invent gates outside native coverage"
-        );
+                let truth = pyart[idx].map(|fold| fold + offset);
+                gates += 1;
+                volume_ok += usize::from(volume_folds[idx] == truth);
+                single_ok += usize::from(single_folds[idx] == truth);
+            }
+            eprintln!(
+                "{case}: {regions} regions, {gates} gates, volume {volume_ok}, alone {single_ok}"
+            );
+            assert!(regions >= 8, "{case}: isolated regions {regions}");
+            assert!(
+                volume_ok as f64 >= min_share * gates as f64,
+                "{case}: {volume_ok} of {gates}"
+            );
+            assert!(
+                volume_ok as f64 >= single_ok as f64 + min_gain * gates as f64,
+                "{case}: volume {volume_ok} vs alone {single_ok} of {gates}"
+            );
+            let invented = (0..sweep.rows * sweep.gates)
+                .filter(|&idx| {
+                    !sweep.observed[idx].is_finite()
+                        && full_grid
+                            .value(idx / sweep.gates, idx % sweep.gates)
+                            .is_some()
+                })
+                .count();
+            assert_eq!(
+                invented, 0,
+                "{case}: gates invented outside native coverage"
+            );
+        }
     }
 
+    /// The KDVN derecho's 0.48 deg Doppler cut (Nyquist 21.0 m/s): folded
+    /// patches inside inbound flow. The volume solve and its repair
+    /// gauntlet must agree with Py-ART far better than the region engine,
+    /// including on the enclosed patches (Py-ART folds of 20+ gates ringed by
+    /// dominant-branch gates, all inside inbound flow here).
     #[test]
-    fn v4_repairs_a_folded_patch_fused_into_legitimate_inbound() {
-        let patch = |elevation: f32, nyquist: f32| {
-            velocity_cut(elevation, nyquist, 360, 100, move |row, gate| {
-                let truth = if (120..=180).contains(&row) && (30..=70).contains(&gate) {
-                    35.0
-                } else {
-                    -5.0
-                };
-                wrap(truth, nyquist)
-            })
+    fn v4_repairs_folded_patches_inside_inbound_flow() {
+        let Some((volume, golden)) = golden_volume("kdvn_20200810_s1") else {
+            return;
         };
-        let volume = volume_at(utc(4), vec![patch(0.5, 45.0), patch(1.23, 20.0)]);
-
-        let field = dealias_velocity_v4(&volume, 1, None, None).expect("v4");
-        assert!(
-            (field.value(150, 50).expect("patch") - 35.0).abs() < 1.0,
-            "folded lobe must be recovered"
+        let cut = &volume.sweeps[golden.sweep];
+        let sweep = VelocitySweep::of_sweep(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let solution = dealias_volume(&volume, None, None);
+        assert!(solution.diagnostics().patch_changed > 0);
+        let v4 = grid_folds(&sweep, solution.tilt_field(golden.sweep).expect("tilt"));
+        let region = grid_folds(&sweep, &dealias_velocity(cut, real_data::velocity(cut)));
+        let v4_agreement = fold_agreement(&sweep, &v4, &pyart, golden.rays_wrap_around);
+        let region_agreement = fold_agreement(&sweep, &region, &pyart, golden.rays_wrap_around);
+        let per_echo =
+            |a: &real_data::FoldAgreement| a.component_agreeing as f64 / a.compared as f64;
+        eprintln!(
+            "v4 {:.5}/{:.5} region {:.5}/{:.5}",
+            v4_agreement.fraction(),
+            per_echo(&v4_agreement),
+            region_agreement.fraction(),
+            per_echo(&region_agreement)
         );
+        assert!(v4_agreement.fraction() >= 0.935);
+        assert!(per_echo(&v4_agreement) >= 0.985);
+        assert!(v4_agreement.fraction() >= region_agreement.fraction() + 0.08);
+
+        let patches = enclosed_patches(&sweep, &pyart, 20);
+        let (mut patch_gates, mut inbound_patches, mut agreeing) = (0, 0, 0);
+        for patch in &patches {
+            let ring_mean = patch
+                .ring
+                .iter()
+                .map(|&idx| sweep.unfolded(idx, pyart[idx].expect("ring gate")))
+                .sum::<f32>()
+                / patch.ring.len() as f32;
+            if ring_mean >= 0.0 {
+                continue;
+            }
+            inbound_patches += 1;
+            patch_gates += patch.gates.len();
+            agreeing += patch
+                .gates
+                .iter()
+                .filter(|&&idx| v4[idx] == pyart[idx].map(|fold| fold + v4_agreement.offset))
+                .count();
+        }
+        eprintln!("inbound patches {inbound_patches}, gates {patch_gates}, v4 {agreeing}");
+        assert!(inbound_patches >= 4);
         assert!(
-            (field.value(60, 50).expect("background") + 5.0).abs() < 1.0,
-            "legitimate inbound background must stay"
+            agreeing as f64 >= 0.7 * patch_gates as f64,
+            "{agreeing} of {patch_gates}"
         );
     }
 
+    /// A previous volume older than the 15 min temporal limit (Ida 17:31Z,
+    /// 33 min before) must be ignored: output byte-identical to no prior. The
+    /// 17:57Z volume, inside the limit, is used.
     #[test]
     fn v4_stale_temporal_volume_is_ignored() {
-        let base = utc(5);
-        let previous = volume_at(base, vec![wind_cut(1.23, 35.0, 180.0, 40.0, 360, 80)]);
-        let current = volume_at(
-            base + Duration::minutes(30),
-            vec![wind_cut(1.23, 15.0, 180.0, 25.0, 360, 80)],
-        );
-
-        let with_stale = dealias_velocity_v4(&current, 0, Some(&previous), None).expect("v4");
-        let without = dealias_velocity_v4(&current, 0, None, None).expect("v4");
-        assert_eq!(with_stale.data, without.data);
-    }
-
-    // ---- v4-specific stage tests ----
-
-    /// F3 reproduction: an internally-consistent aliased island attached to
-    /// the main field by ONE low-support (weak) edge whose vote says
-    /// "same branch".  Without external evidence v4 must reproduce v1
-    /// exactly (graceful degradation); with the environmental profile the
-    /// island must rebranch.
-    #[test]
-    fn v4_weak_edge_subgraph_rebranches_only_with_environmental_evidence() {
-        let nyquist = 20.0;
-        // Main field: gates 0..30 everywhere at −5 (plus a 5-row bridge at
-        // gate 30).  Island: rows 100..140, gates 31..61 at +12 (truth −28).
-        let cut = velocity_cut(0.5, nyquist, 360, 70, move |row, gate| {
-            if gate < 30 {
-                -5.0
-            } else if gate == 30 {
-                if (118..123).contains(&row) {
-                    -5.0
-                } else {
-                    f32::NAN
-                }
-            } else if (100..140).contains(&row) && (31..61).contains(&gate) {
-                12.0
-            } else {
-                f32::NAN
-            }
-        });
-        let volume = volume_at(utc(6), vec![cut]);
-
-        let v1 = {
-            let sweep = &volume.sweeps[0];
-            dealias_velocity(
-                sweep,
-                sweep.find(Quantity::RadialVelocity).expect("velocity"),
-            )
+        let Some((current, golden)) = golden_volume("klix_20210829_s9") else {
+            return;
         };
+        let (Some(stale), Some(fresh)) = (
+            corpus_volume(IDA_33_MIN_EARLIER),
+            corpus_volume(IDA_PREVIOUS),
+        ) else {
+            return;
+        };
+        // The staleness check compares volume start times (first rays): the
+        // 17:31Z volume is about 33 min older.
+        let age = volume_start_time(&current) - volume_start_time(&stale);
         assert!(
-            (v1.value(120, 45).expect("v1 island") - 12.0).abs() < 1.0,
-            "v1 must exhibit the F3 misbranch for this test to be meaningful"
+            age > Duration::minutes(15) && age < Duration::minutes(40),
+            "{age}"
         );
-
-        let no_env = dealias_velocity_v4(&volume, 0, None, None).expect("v4");
+        let alone = only_cut(&current, golden.sweep);
+        let with_stale = dealias_volume(&alone, Some(TemporalPrior::Volume(&stale)), None);
+        let without = dealias_volume(&alone, None, None);
+        assert!(!with_stale.diagnostics().temporal_prior_used);
         assert_eq!(
-            no_env.data, v1.data,
-            "without external evidence v4 must degrade to v1 exactly"
+            with_stale.tilt_field(0).map(|g| &g.data),
+            without.tilt_field(0).map(|g| &g.data)
         );
-
-        // Environment: 28 m/s toward azimuth 300° ⇒ v̂ ≈ −28 in the island's
-        // sector (az 100–140°) and mildly positive/negative elsewhere.
-        let env = uniform_env(28.0, 300.0, volume.time_reference);
-        let with_env = dealias_velocity_v4(&volume, 0, None, Some(&env)).expect("v4");
-        assert!(
-            (with_env.value(120, 45).expect("island") + 28.0).abs() < 1.0,
-            "the weak-edge island must rebranch to −28"
+        assert_eq!(
+            with_stale.tilt_confidence(0).map(ConfidenceGrid::values),
+            without.tilt_confidence(0).map(ConfidenceGrid::values)
         );
-        assert!(
-            (with_env.value(200, 10).expect("main") + 5.0).abs() < 1.0,
-            "the main field must not move"
+        let with_fresh = dealias_volume(&alone, Some(TemporalPrior::Volume(&fresh)), None);
+        assert!(with_fresh.diagnostics().temporal_prior_used);
+        assert_ne!(
+            with_fresh.tilt_field(0).map(|g| &g.data),
+            without.tilt_field(0).map(|g| &g.data)
         );
     }
 
-    /// F5 reproduction: a 30 m/s uniform wind under Nyquist 20 aliases both
-    /// tilts identically, so the vertical pairwise term is branch-degenerate
-    /// (shifting both tilts together costs nothing) and v1's largest-region
-    /// anchor lands on a WRAPPED band.  Only the environmental anchor can
-    /// decide; with it, both tilts must land on the true wind everywhere.
+    /// Moore 2013 with the RAP 20Z analysis at KTLX (16 min before the
+    /// volume): the gates whose branch the profile changes are rebranched onto
+    /// Py-ART's absolute branch. Without the profile the engine reports no
+    /// external evidence anywhere (confidence never above interior-only).
     #[test]
-    fn v4_branch_degenerate_volume_is_decided_by_the_environment() {
-        let nyquist = 20.0;
-        let make = |elevation: f32| wind_cut(elevation, 30.0, 0.0, nyquist, 360, 80);
-        let volume = volume_at(utc(7), vec![make(0.5), make(1.4)]);
-
-        // Probe azimuth 0 (row 0): truth 30, wrapped observation −10.
-        // Without env the absolute branch is under-determined (the anchor
-        // may land on either a wrapped or an unwrapped band — segmentation
-        // detail, not evidence): the output must be a whole-2N multiple of
-        // the observation, nothing in between.
-        let no_env = dealias_velocity_v4(&volume, 0, None, None).expect("v4");
-        let probed = no_env.value(0, 40).expect("no env");
-        let folds = (probed + 10.0) / 40.0;
-        assert!(
-            (folds - folds.round()).abs() < 0.05,
-            "no-env output must sit a whole number of folds from the raw value, got {probed}"
-        );
-
-        let env = uniform_env(30.0, 0.0, volume.time_reference);
-        let with_env = dealias_velocity_v4(&volume, 0, None, Some(&env)).expect("v4");
-        assert!(
-            wind_error(&with_env, 360, 80, 30.0, 0.0) < 2.0,
-            "env anchor must unfold the whole tilt"
-        );
-        let upper = dealias_volume(&volume, None, Some(&env));
-        let upper_field = upper.tilt_field(1).expect("upper tilt");
-        assert!(
-            wind_error(upper_field, 360, 80, 30.0, 0.0) < 2.5,
-            "both tilts must move together (volume consistency)"
-        );
+    fn v4_rebranches_onto_the_absolute_branch_only_with_environmental_evidence() {
+        let Some((volume, _)) = golden_volume("ktlx_20130520_s1") else {
+            return;
+        };
+        let env = environment_fixture("env_ktlx.json");
+        let without = dealias_volume(&volume, None, None);
+        let with = dealias_volume(&volume, None, Some(&env));
+        assert!(!without.diagnostics().env_profile_used);
+        assert!(with.diagnostics().env_profile_used);
+        let (mut changed, mut with_ok, mut without_ok) = (0, 0, 0);
+        for case in ["ktlx_20130520_s1", "ktlx_20130520_s3"] {
+            let golden = PyartGolden::load(case);
+            let cut = &volume.sweeps[golden.sweep];
+            let sweep = VelocitySweep::of_sweep(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let offset = golden.env.as_ref().expect("RAP offset").offset;
+            let before = grid_folds(&sweep, without.tilt_field(golden.sweep).expect("tilt"));
+            let after = grid_folds(&sweep, with.tilt_field(golden.sweep).expect("tilt"));
+            for idx in 0..pyart.len() {
+                let (Some(b), Some(a), Some(p)) = (before[idx], after[idx], pyart[idx]) else {
+                    continue;
+                };
+                if a != b {
+                    changed += 1;
+                    with_ok += usize::from(a == p + offset);
+                    without_ok += usize::from(b == p + offset);
+                }
+            }
+            let confidence = without.tilt_confidence(golden.sweep).expect("confidence");
+            assert!(
+                confidence
+                    .values()
+                    .iter()
+                    .all(|value| *value <= confidence::INTERIOR_ONLY)
+            );
+        }
+        eprintln!("rebranched {changed}: with env {with_ok}, without {without_ok}");
+        assert!(changed >= 40, "rebranched gates {changed}");
+        assert!(with_ok as f64 >= 0.85 * changed as f64);
+        assert!(without_ok as f64 <= 0.15 * changed as f64);
     }
 
-    /// A stale profile must behave exactly like no profile (spec §4a).
+    /// With the RAP profile both lowest Doppler tilts of the Moore volume land
+    /// on Py-ART's absolute branch (the branch closest to the profile) almost
+    /// everywhere.
+    #[test]
+    fn v4_environment_decides_the_absolute_branch_on_both_tilts() {
+        let Some((volume, _)) = golden_volume("ktlx_20130520_s1") else {
+            return;
+        };
+        let env = environment_fixture("env_ktlx.json");
+        assert!(env.usable_for(volume_start_time(&volume)));
+        let solution = dealias_volume(&volume, None, Some(&env));
+        for (case, min_share) in [("ktlx_20130520_s1", 0.998), ("ktlx_20130520_s3", 0.997)] {
+            let golden = PyartGolden::load(case);
+            let golden_env = golden.env.as_ref().expect("RAP offset");
+            assert_eq!(golden_env.fixture, "env_ktlx.json");
+            assert!(
+                golden_env.within_nyquist as f64 >= 0.99 * golden.valid_gates as f64,
+                "{case}: Py-ART's branch lies within one Nyquist of the RAP projection on {} gates",
+                golden_env.within_nyquist
+            );
+            let cut = &volume.sweeps[golden.sweep];
+            let agreeing = absolute_agreement(
+                &golden,
+                cut,
+                solution.tilt_field(golden.sweep).expect("tilt"),
+            );
+            eprintln!("{case}: {agreeing} of {}", golden.valid_gates);
+            assert!(
+                agreeing as f64 >= min_share * golden.valid_gates as f64,
+                "{case}: {agreeing}"
+            );
+        }
+    }
+
+    /// The HRRR profile for Ida, with its valid time moved 4 h earlier (6 h
+    /// before the volume, beyond the 3 h limit), must behave exactly like no
+    /// profile; unedited (2 h before) it is used.
     #[test]
     fn v4_stale_environment_profile_is_ignored() {
-        let nyquist = 20.0;
-        let make = |elevation: f32| {
-            velocity_cut(elevation, nyquist, 360, 80, move |_, _| wrap(30.0, nyquist))
+        let Some((volume, golden)) = golden_volume("klix_20210829_trim_s1") else {
+            return;
         };
-        let volume = volume_at(utc(8), vec![make(0.5)]);
-
-        let stale = uniform_env(30.0, 0.0, volume.time_reference - Duration::hours(4));
-        let with_stale = dealias_velocity_v4(&volume, 0, None, Some(&stale)).expect("v4");
-        let without = dealias_velocity_v4(&volume, 0, None, None).expect("v4");
-        assert_eq!(with_stale.data, without.data);
+        let mut stale = environment_fixture("env_klix_hrrr.json");
+        assert!(stale.usable_for(volume_start_time(&volume)));
+        let fresh = dealias_volume(&volume, None, Some(&stale));
+        assert!(fresh.diagnostics().env_profile_used);
+        stale.valid_time -= Duration::hours(4);
+        let with_stale = dealias_volume(&volume, None, Some(&stale));
+        let without = dealias_volume(&volume, None, None);
+        assert!(!with_stale.diagnostics().env_profile_used);
+        assert_eq!(
+            with_stale.tilt_field(golden.sweep).map(|g| &g.data),
+            without.tilt_field(golden.sweep).map(|g| &g.data)
+        );
+        assert_eq!(
+            with_stale
+                .tilt_confidence(golden.sweep)
+                .map(ConfidenceGrid::values),
+            without
+                .tilt_confidence(golden.sweep)
+                .map(ConfidenceGrid::values)
+        );
+        assert_ne!(
+            fresh
+                .tilt_confidence(golden.sweep)
+                .map(ConfidenceGrid::values),
+            without
+                .tilt_confidence(golden.sweep)
+                .map(ConfidenceGrid::values)
+        );
     }
 
-    /// Determinism pin (spec §5.4): identical inputs ⇒ byte-identical fields
-    /// and confidence across repeated solves.
+    /// Determinism pin (spec §5.4): the whole Ida volume with the HRRR
+    /// profile solved twice gives byte-identical grids and confidence on all
+    /// 19 velocity tilts.
     #[test]
     fn v4_solve_is_deterministic_across_runs() {
-        let volume = volume_at(
-            utc(9),
-            vec![
-                wind_cut(0.5, 35.0, 90.0, 40.0, 360, 100),
-                wind_cut(1.23, 35.0, 90.0, 20.0, 720, 100),
-            ],
-        );
-        let env = uniform_env(35.0, 90.0, volume.time_reference);
+        let Some((volume, golden)) = golden_volume("klix_20210829_s1") else {
+            return;
+        };
+        let env = environment_fixture("env_klix_hrrr.json");
         let first = dealias_volume(&volume, None, Some(&env));
         let second = dealias_volume(&volume, None, Some(&env));
+        assert_eq!(
+            first.diagnostics().velocity_tilts,
+            golden.file_velocity_sweeps
+        );
+        assert_eq!(first.diagnostics(), second.diagnostics());
         for sweep_index in 0..volume.sweeps.len() {
             assert_eq!(
                 first.tilt_field(sweep_index).map(|field| &field.data),
                 second.tilt_field(sweep_index).map(|field| &field.data),
-                "fields must be byte-identical (sweep {sweep_index})"
+                "grids must be byte-identical (sweep {sweep_index})"
             );
             assert_eq!(
                 first
@@ -1069,20 +1148,85 @@ mod tests {
         }
     }
 
-    /// Confidence output sanity: solved nodes with external evidence carry a
-    /// margin-derived confidence; the temporal consumer can read it back.
+    /// Confidence on Ida with the HRRR profile: gates the solver rates above
+    /// interior-only are on Py-ART's absolute branch almost without exception
+    /// (the margin is meaningful), most gates get such a rating, and the
+    /// diagnostics report the profile and all 19 velocity tilts.
     #[test]
     fn v4_confidence_grid_reflects_decision_margins() {
-        let volume = volume_at(utc(10), vec![wind_cut(0.5, 30.0, 0.0, 40.0, 360, 60)]);
-        let env = uniform_env(30.0, 0.0, volume.time_reference);
+        let Some((volume, first_golden)) = golden_volume("klix_20210829_s1") else {
+            return;
+        };
+        let env = environment_fixture("env_klix_hrrr.json");
         let solution = dealias_volume(&volume, None, Some(&env));
-        let confidence = solution.tilt_confidence(0).expect("confidence");
-        let sampled = confidence.value(10, 30).expect("gate");
-        assert!(
-            sampled > confidence::INTERIOR_ONLY,
-            "an env-covered unambiguous field must be confident, got {sampled}"
+        assert_eq!(
+            solution.diagnostics().velocity_tilts,
+            first_golden.file_velocity_sweeps
         );
-        assert_eq!(solution.diagnostics().velocity_tilts, 1);
         assert!(solution.diagnostics().env_profile_used);
+        for case in [
+            "klix_20210829_s1",
+            "klix_20210829_s2",
+            "klix_20210829_s9",
+            "klix_20210829_s13",
+        ] {
+            let golden = PyartGolden::load(case);
+            let cut = &volume.sweeps[golden.sweep];
+            let sweep = VelocitySweep::of_sweep(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let offset = golden.env.as_ref().expect("HRRR offset").offset;
+            let folds = grid_folds(&sweep, solution.tilt_field(golden.sweep).expect("tilt"));
+            let confidence = solution.tilt_confidence(golden.sweep).expect("confidence");
+            let (mut confident, mut confident_ok, mut rest, mut rest_ok) = (0, 0, 0, 0);
+            for idx in 0..pyart.len() {
+                let Some(p) = pyart[idx] else { continue };
+                let ok = folds[idx] == Some(p + offset);
+                let value = confidence
+                    .value(idx / sweep.gates, idx % sweep.gates)
+                    .expect("gate");
+                if value > confidence::INTERIOR_ONLY {
+                    confident += 1;
+                    confident_ok += usize::from(ok);
+                } else {
+                    rest += 1;
+                    rest_ok += usize::from(ok);
+                }
+            }
+            eprintln!("{case}: confident {confident_ok}/{confident}, rest {rest_ok}/{rest}");
+            assert!(
+                confident as f64 >= 0.9 * golden.valid_gates as f64,
+                "{case}: {confident}"
+            );
+            assert!(
+                confident_ok as f64 >= 0.995 * confident as f64,
+                "{case}: {confident_ok} of {confident}"
+            );
+            assert!(
+                (confident_ok as f64 / confident as f64) > (rest_ok as f64 / rest.max(1) as f64),
+                "{case}: confident gates must be right more often than the rest"
+            );
+        }
+    }
+
+    /// Nyquist-less feeds stay pass-through in v4 as in the region engine: the
+    /// TDWR Doppler cut (Nyquist 0 on every radial).
+    #[test]
+    fn v4_passes_nyquist_less_tdwr_through() {
+        let Some((volume, golden)) = golden_volume("tstl_20230331_trim_s1") else {
+            return;
+        };
+        let cut = &volume.sweeps[golden.sweep];
+        assert!(dealias_skipped_no_nyquist(cut, real_data::velocity(cut)));
+        let sweep = VelocitySweep::of_sweep(cut);
+        golden.aligned_folds(cut, &sweep);
+        let solution = dealias_volume(&volume, None, None);
+        let grid = solution.tilt_field(golden.sweep).expect("tilt");
+        for (idx, observed) in sweep.observed.iter().enumerate() {
+            let value = grid.value(idx / sweep.gates, idx % sweep.gates);
+            match value {
+                Some(value) => assert!((value - observed).abs() <= 0.05, "gate {idx}"),
+                None => assert!(!observed.is_finite(), "gate {idx} dropped"),
+            }
+        }
     }
 }

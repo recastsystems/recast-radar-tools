@@ -12,12 +12,13 @@
 //! `recast-radar-io-cfradial/tests/cfradial_real_files.rs`, and
 //! `recast-radar-io-dorade/tests/dorade_real.rs`. ODIM_H5 is
 //! the EUMETNET OPERA Data Information Model (Michelson et al., OPERA WP
-//! 2.1/2.2, v2.2-2.3). No real Archive II file ships in `tests/data` (Level
-//! II volumes are megabytes), so the Archive II leg uses the same minimal
-//! synthetic single-radial volume the `recast-radar-io-nexrad` unit tests
-//! pin, rebuilt here byte-for-byte.
+//! 2.1/2.2, v2.2-2.3). The OPERA ORD volumes (iesha, dkrom), the Irene
+//! CfRadial and the NEXRAD Archive II volumes come from the real corpus
+//! (`recast_radar_testdata`, ids in `testdata/**/manifest.toml`); the
+//! Archive II radial counts are Py-ART / MetPy values from
+//! `tools/golden_io_formats.py`, section `router`.
 
-use recast_radar_core::model::{FieldData, Volume};
+use recast_radar_core::model::{FieldData, Sweep, Volume};
 use recast_radar_io::read_supported_volume_bytes;
 use recast_radar_io_odim::odim_cartesian::decode_odim_h5_cartesian_max;
 
@@ -29,8 +30,6 @@ const NORST: &[u8] =
     include_bytes!("../../recast-radar-io-odim/tests/data/T_PAGZ35_C_ENMI_20170421090837.hdf");
 const ESPDG: &[u8] =
     include_bytes!("../../recast-radar-io-odim/tests/data/espdg.pvol.20260707.dbzh_vradh.h5");
-const ODIM_SYNTH: &[u8] =
-    include_bytes!("../../recast-radar-io-odim/tests/data/odim_pvol_synth.h5");
 const IMGW_KDP_MAX: &[u8] =
     include_bytes!("../../recast-radar-io-odim/tests/data/imgw_polrad/2026071100150601KDP.max.h5");
 const XSAPR_PPI: &[u8] = include_bytes!(
@@ -42,11 +41,13 @@ const XSAPR_PPI_NETCDF4: &[u8] = include_bytes!(
 const DOW8_RHI: &[u8] = include_bytes!(
     "../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc"
 );
-const CFRADIAL_SYNTH: &[u8] =
-    include_bytes!("../../recast-radar-io-cfradial/tests/data/cfrad_synth.nc");
 const COW2_SWEEP: &[u8] = include_bytes!(
     "../../recast-radar-io-dorade/tests/data/swp.1260521225514.COW2.229.1.0_SUR_v215.head24"
 );
+
+fn corpus(id: &str) -> Vec<u8> {
+    recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
+}
 
 fn assert_routed_matches_direct(
     bytes: &[u8],
@@ -62,17 +63,20 @@ fn assert_routed_matches_direct(
         "{what} instrument name"
     );
     assert!(!routed.sweeps.is_empty(), "{what} decoded no sweeps");
-    // Float planes carry NaN fills, and `NaN != NaN` under PartialEq would
-    // fail even for byte-identical decodes — compare float storage bitwise,
-    // everything else structurally.
+    assert_same_volume(routed, direct, what);
+}
+
+/// Float planes and per-ray variables carry NaN fills, and `NaN != NaN`
+/// under PartialEq would fail even for byte-identical decodes: compare float
+/// storage bitwise, everything else structurally.
+fn assert_same_volume(routed: Volume, direct: Volume, what: &str) {
     assert_eq!(
         float_plane_bits(&routed),
         float_plane_bits(&direct),
         "{what}: routed float planes != direct decode"
     );
-    assert_eq!(
-        with_float_planes_cleared(routed),
-        with_float_planes_cleared(direct),
+    assert!(
+        comparable(routed) == comparable(direct),
         "{what}: routed != direct decode"
     );
 }
@@ -98,9 +102,28 @@ fn float_plane_bits(volume: &Volume) -> Vec<Vec<u64>> {
         .collect()
 }
 
-/// The same volume with float plane contents emptied (compared bitwise above).
-fn with_float_planes_cleared(mut volume: Volume) -> Volume {
+/// The same volume with float plane contents emptied (compared bitwise by
+/// [`float_plane_bits`]) and NaN per-ray values replaced.
+fn comparable(mut volume: Volume) -> Volume {
     for sweep in &mut volume.sweeps {
+        let vars = &mut sweep.ray_vars;
+        for values in [
+            &mut vars.nyquist_velocity_mps,
+            &mut vars.unambiguous_range_m,
+            &mut vars.prt_s,
+            &mut vars.prt_ratio,
+            &mut vars.pulse_width_s,
+            &mut vars.scan_rate_deg_per_s,
+            &mut vars.rx_range_resolution_m,
+            &mut vars.independent_samples,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            for value in values.iter_mut().filter(|value| value.is_nan()) {
+                *value = f32::MAX;
+            }
+        }
         for field in &mut sweep.fields {
             match &mut field.data {
                 FieldData::F32 { values, .. } => values.clear(),
@@ -119,13 +142,25 @@ fn router_matches_direct_odim_decoder_on_real_pvols() {
         (BEWID, "BEWID", "bewid scan1.hdf"),
         (NORST, "NORST", "T_PAGZ35 ENMI .hdf"),
         (ESPDG, "ESPDG", "espdg v2-OHDR dbzh_vradh.h5"),
-        (ODIM_SYNTH, "TEST", "odim_pvol_synth.h5"),
     ] {
         assert_routed_matches_direct(
             bytes,
             recast_radar_io_odim::odim::read_odim_h5_volume(bytes).map_err(|err| err.to_string()),
             site,
             what,
+        );
+    }
+    // OPERA ORD archive objects: source NOD:iesha and NOD:dkrom (h5py).
+    for (id, site) in [
+        ("odim-iesha-20260305-0115-pvol", "IESHA"),
+        ("odim-dkrom-20260820-1130-pvol", "DKROM"),
+    ] {
+        let bytes = corpus(id);
+        assert_routed_matches_direct(
+            &bytes,
+            recast_radar_io_odim::odim::read_odim_h5_volume(&bytes).map_err(|err| err.to_string()),
+            site,
+            id,
         );
     }
 }
@@ -135,7 +170,6 @@ fn router_matches_direct_cfradial_decoder_on_classic_netcdf() {
     for (bytes, site, what) in [
         (XSAPR_PPI, "xsapr-sgp", "X-SAPR classic PPI"),
         (DOW8_RHI, "DOW8", "DOW8 native RHI"),
-        (CFRADIAL_SYNTH, "SYNTH1", "cfrad_synth.nc"),
     ] {
         assert_routed_matches_direct(
             bytes,
@@ -145,6 +179,15 @@ fn router_matches_direct_cfradial_decoder_on_classic_netcdf() {
             what,
         );
     }
+    // Radx-written classic CfRadial 1.3: instrument_name CPOLRVP (netCDF4).
+    let irene = corpus("cfrad1-irene-sr2-20110827-120420-sur-sweeps01");
+    assert_routed_matches_direct(
+        &irene,
+        recast_radar_io_cfradial::cfradial::read_cfradial1_volume(&irene)
+            .map_err(|err| err.to_string()),
+        "CPOLRVP",
+        "Irene SMART-R2 classic PPI",
+    );
 }
 
 #[test]
@@ -203,143 +246,72 @@ fn image_decoder_and_volume_router_remain_separate() {
         "{volume_error}"
     );
 
-    let image_error = decode_odim_h5_cartesian_max(ODIM_SYNTH)
-        .expect_err("PVOL must not route into Cartesian grid");
+    // /what object = PVOL (h5py) is not a Cartesian IMAGE.
+    let pvol = corpus("odim-iesha-20260305-0115-pvol");
+    let image_error =
+        decode_odim_h5_cartesian_max(&pvol).expect_err("PVOL must not route into Cartesian grid");
     assert!(image_error.to_string().contains("is not a Cartesian IMAGE"));
 }
 
-#[test]
-fn router_decodes_synthetic_archive_ii_same_as_direct_decoder() {
-    let bytes = synthetic_archive_ii();
-    let direct =
-        recast_radar_io_nexrad::read_volume_from_bytes(&bytes).expect("direct Archive II decode");
-    let routed = read_supported_volume_bytes(&bytes).expect("routed Archive II decode");
-    assert_eq!(routed, direct);
-}
+/// Real Archive II volumes: AR2V0006 LDM bzip2 records (KTLX 2024 trim),
+/// ARCHIVE2 Message 1 records (KTLX 1999 trim), and a whole-file gzip object
+/// with Message 31 radials (KPAH 2008 AR2V0004, a download entry). Py-ART
+/// `read_nexrad_archive` and MetPy `Level2File` agree on the counts.
+const ARCHIVE_II: [(&str, usize, &[usize]); 3] = [
+    ("l2-ktlx-20240315-000217-trim", 960, &[480, 480]),
+    ("l2-ktlx-19990504-002218-trim", 734, &[367, 367]),
+    ("l2-kpah-20080415-235014", 2520, &[360; 7]),
+];
 
-#[test]
-fn router_matches_direct_archive_ii_decoder_on_synthetic_volume() {
-    let bytes = synthetic_archive_ii();
-    assert_routed_matches_direct(
-        &bytes,
-        recast_radar_io_nexrad::read_volume_from_bytes(&bytes).map_err(|err| err.to_string()),
-        "KTLX",
-        "synthetic Archive II",
-    );
-}
-
-// --- Minimal Archive II builder (mirrors the in-crate unit-test fixture) ---
-
-const VOLUME_HEADER_LEN: usize = 24;
-const CONTROL_WORD_LEN: usize = 12;
-const MESSAGE_HEADER_LEN: usize = 16;
-const RECORD_BYTES: usize = 2432;
-const MSG_31_HEADER_LEN: usize = 72;
-
-/// One uncompressed AR2V record holding a single Message 31 radial with REF
-/// and VEL moments — the same shape as `synthetic_archive(false)` in the
-/// crate's unit tests.
-fn synthetic_archive_ii() -> Vec<u8> {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"AR2V00000");
-    bytes.extend_from_slice(b"1  ");
-    bytes.extend_from_slice(&19_724u32.to_be_bytes());
-    bytes.extend_from_slice(&1_000u32.to_be_bytes());
-    bytes.extend_from_slice(b"KTLX");
-
-    bytes.extend_from_slice(&[0u8; CONTROL_WORD_LEN]);
-    let body = synthetic_message_31_body();
-    let message_size = u16::try_from((MESSAGE_HEADER_LEN + body.len()) / 2)
-        .unwrap_or_else(|e| panic!("message size fits u16: {e}"));
-    bytes.extend_from_slice(&message_size.to_be_bytes());
-    bytes.push(0);
-    bytes.push(31);
-    bytes.extend_from_slice(&7u16.to_be_bytes());
-    bytes.extend_from_slice(&19_724u16.to_be_bytes());
-    bytes.extend_from_slice(&1_000u32.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.extend_from_slice(&body);
-    bytes.resize(VOLUME_HEADER_LEN + RECORD_BYTES, 0);
-    bytes
-}
-
-fn synthetic_message_31_body() -> Vec<u8> {
-    let mut body = vec![0u8; MSG_31_HEADER_LEN];
-    body[0..4].copy_from_slice(b"AR2V");
-    body[4..8].copy_from_slice(&1_000u32.to_be_bytes());
-    body[8..10].copy_from_slice(&19_724u16.to_be_bytes());
-    body[10..12].copy_from_slice(&1u16.to_be_bytes());
-    body[12..16].copy_from_slice(&180.5f32.to_bits().to_be_bytes());
-    body[18..20].copy_from_slice(&1u16.to_be_bytes());
-    body[20] = 2;
-    body[21] = 3;
-    body[22] = 1;
-    body[23] = 1;
-    body[24..28].copy_from_slice(&0.5f32.to_bits().to_be_bytes());
-    body[30..32].copy_from_slice(&4u16.to_be_bytes());
-
-    let vol_pointer = body.len();
-    push_volume_block(&mut body);
-    let rad_pointer = body.len();
-    push_radial_block(&mut body);
-    let ref_pointer = body.len();
-    push_u8_moment(&mut body, b"DREF", &[0, 66, 80]);
-    let vel_pointer = body.len();
-    push_u8_moment(&mut body, b"DVEL", &[129, 139, 119]);
-
-    set_pointer(&mut body, 0, vol_pointer);
-    set_pointer(&mut body, 2, rad_pointer);
-    set_pointer(&mut body, 3, ref_pointer);
-    set_pointer(&mut body, 4, vel_pointer);
-    body
-}
-
-fn push_volume_block(body: &mut Vec<u8>) {
-    body.extend_from_slice(b"RVOL");
-    body.extend_from_slice(&1u16.to_be_bytes());
-    body.push(1);
-    body.push(0);
-    body.extend_from_slice(&35.333f32.to_bits().to_be_bytes());
-    body.extend_from_slice(&(-97.277f32).to_bits().to_be_bytes());
-    body.extend_from_slice(&370i16.to_be_bytes());
-    body.extend_from_slice(&20u16.to_be_bytes());
-    for _ in 0..5 {
-        body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-    }
-    body.extend_from_slice(&212u16.to_be_bytes());
-    body.extend_from_slice(&0u16.to_be_bytes());
-}
-
-fn push_radial_block(body: &mut Vec<u8>) {
-    body.extend_from_slice(b"RRAD");
-    body.extend_from_slice(&1u16.to_be_bytes());
-    body.extend_from_slice(&0i16.to_be_bytes());
-    body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-    body.extend_from_slice(&0.0f32.to_bits().to_be_bytes());
-    body.extend_from_slice(&2_500i16.to_be_bytes());
-    body.extend_from_slice(&0u16.to_be_bytes());
-}
-
-fn push_u8_moment(body: &mut Vec<u8>, id: &[u8; 4], gates: &[u8]) {
-    body.extend_from_slice(id);
-    body.extend_from_slice(&0u32.to_be_bytes());
-    body.extend_from_slice(&(gates.len() as u16).to_be_bytes());
-    body.extend_from_slice(&0i16.to_be_bytes());
-    body.extend_from_slice(&250i16.to_be_bytes());
-    body.extend_from_slice(&0i16.to_be_bytes());
-    body.extend_from_slice(&0i16.to_be_bytes());
-    body.push(0);
-    body.push(8);
-    body.extend_from_slice(&2.0f32.to_bits().to_be_bytes());
-    body.extend_from_slice(&66.0f32.to_bits().to_be_bytes());
-    body.extend_from_slice(gates);
-    if !body.len().is_multiple_of(2) {
-        body.push(0);
+fn archive_ii_bytes(id: &str) -> Option<Vec<u8>> {
+    match recast_radar_testdata::path(id) {
+        Ok(path) => Some(std::fs::read(path).expect("read Archive II volume")),
+        Err(err) if err.is_offline() => {
+            eprintln!("skipping {id}: {err}");
+            None
+        }
+        Err(err) => panic!("{err}"),
     }
 }
 
-fn set_pointer(body: &mut [u8], pointer_index: usize, value: usize) {
-    let offset = 32 + pointer_index * 4;
-    body[offset..offset + 4].copy_from_slice(&(value as u32).to_be_bytes());
+#[test]
+fn router_decodes_real_archive_ii_same_as_direct_decoder() {
+    for (id, radials, per_sweep) in ARCHIVE_II {
+        let Some(bytes) = archive_ii_bytes(id) else {
+            continue;
+        };
+        let direct = recast_radar_io_nexrad::read_volume_from_bytes(&bytes)
+            .unwrap_or_else(|err| panic!("direct decode {id}: {err}"));
+        let routed = read_supported_volume_bytes(&bytes)
+            .unwrap_or_else(|err| panic!("routed decode {id}: {err}"));
+        assert_eq!(routed.provenance.decode.decoded_ray_count, radials, "{id}");
+        let counts: Vec<usize> = routed.sweeps.iter().map(Sweep::nrays).collect();
+        assert_eq!(counts, per_sweep, "{id}");
+        assert_same_volume(routed, direct, id);
+    }
+}
+
+#[test]
+fn router_matches_direct_archive_ii_decoder_on_real_volumes() {
+    // Site ids: MetPy station KTLX / KPAH; the 1999 ARCHIVE2 header carries a
+    // NUL ICAO (MetPy reads four NUL bytes), so its id comes from the decoder
+    // fallback and is compared with the direct decode only.
+    for (id, _, _) in ARCHIVE_II {
+        let Some(bytes) = archive_ii_bytes(id) else {
+            continue;
+        };
+        let direct =
+            recast_radar_io_nexrad::read_volume_from_bytes(&bytes).map_err(|err| err.to_string());
+        let site = match id {
+            "l2-kpah-20080415-235014" => "KPAH".to_owned(),
+            "l2-ktlx-20240315-000217-trim" => "KTLX".to_owned(),
+            _ => direct
+                .as_ref()
+                .expect("direct decode")
+                .attrs
+                .instrument_name
+                .clone(),
+        };
+        assert_routed_matches_direct(&bytes, direct, &site, id);
+    }
 }

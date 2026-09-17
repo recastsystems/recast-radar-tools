@@ -619,17 +619,3 @@ impl Volume {
         Ok(())
     }
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn time_reference_is_whole_seconds() {
-        let time = DateTime::<Utc>::from_timestamp(1_710_460_937, 182_000_000).unwrap();
-        let volume = Volume::new("KTLX", time);
-        assert_eq!(volume.time_reference.nanosecond(), 0);
-        assert_eq!(volume.instant(0.182), Some(time));
-    }
-}

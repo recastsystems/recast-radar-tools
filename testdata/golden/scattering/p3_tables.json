@@ -1,0 +1,330 @@
+{
+ "three_moment": {
+  "all_qmin_ge_qmax": true,
+  "all_qmin_positive": true,
+  "bytes": 17886038,
+  "collision_records": 330000,
+  "data_rows": 341000,
+  "first_line": "    1    1    1    1    0.29834E-03    0.28204E-02    0.36896E-30    0.16633E-31    0.14329E-06    0.29328E-05    0.44210E+14    0.20487E+05    0.30632E-32    0.15633E-29    0.80063E-05    0.90000E+03    0.77675E-02    0.50000E+06    0.00000E+00",
+  "header": " LOOKUP_TABLE_1-version:  5.4_3momI",
+  "id": "wrf-p3-lookup-table-1-v5.4-3momI",
+  "inverse_qmin_max": 231180003704832.0,
+  "inverse_qmin_min": 44209998397440.0,
+  "lines": 341002,
+  "main_records": 11000,
+  "samples": [
+   {
+    "index": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 500000.0,
+    "mean_density": 900.0,
+    "mu": 0.0,
+    "position": 0
+   },
+   {
+    "index": [
+     1,
+     1,
+     1,
+     2
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 500000.0,
+    "mean_density": 900.0,
+    "mu": 0.0,
+    "position": 1
+   },
+   {
+    "index": [
+     1,
+     1,
+     1,
+     50
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 25.0,
+    "mean_density": 0.7642300128936768,
+    "mu": 0.0,
+    "position": 49
+   },
+   {
+    "index": [
+     6,
+     3,
+     3,
+     1
+    ],
+    "inverse_qmax": 11570.0,
+    "inverse_qmin": 205750005661696.0,
+    "lambda": 5500000.0,
+    "mean_density": 900.0,
+    "mu": 10.0,
+    "position": 5500
+   },
+   {
+    "index": [
+     11,
+     5,
+     4,
+     50
+    ],
+    "inverse_qmax": 28.898000717163086,
+    "inverse_qmin": 231180003704832.0,
+    "lambda": 525.0,
+    "mean_density": 900.0,
+    "mu": 20.0,
+    "position": 10999
+   }
+  ],
+  "separator": " "
+ },
+ "three_moment_first_block": {
+  "all_qmin_ge_qmax": true,
+  "all_qmin_positive": true,
+  "bytes": 81338,
+  "collision_records": 1500,
+  "data_rows": 1550,
+  "first_line": "    1    1    1    1    0.29834E-03    0.28204E-02    0.36896E-30    0.16633E-31    0.14329E-06    0.29328E-05    0.44210E+14    0.20487E+05    0.30632E-32    0.15633E-29    0.80063E-05    0.90000E+03    0.77675E-02    0.50000E+06    0.00000E+00",
+  "header": " LOOKUP_TABLE_1-version:  5.4_3momI",
+  "id": "wrf-p3-lookup-table-1-v5.4-3momI-first-block",
+  "inverse_qmin_max": 44209998397440.0,
+  "inverse_qmin_min": 44209998397440.0,
+  "lines": 1552,
+  "main_records": 50,
+  "samples": [
+   {
+    "index": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 500000.0,
+    "mean_density": 900.0,
+    "mu": 0.0,
+    "position": 0
+   },
+   {
+    "index": [
+     1,
+     1,
+     1,
+     2
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 500000.0,
+    "mean_density": 900.0,
+    "mu": 0.0,
+    "position": 1
+   },
+   {
+    "index": [
+     1,
+     1,
+     1,
+     50
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 25.0,
+    "mean_density": 0.7642300128936768,
+    "mu": 0.0,
+    "position": 49
+   },
+   {
+    "index": [
+     1,
+     1,
+     1,
+     26
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 1263.9000244140625,
+    "mean_density": 30.295000076293945,
+    "mu": 0.0,
+    "position": 25
+   },
+   {
+    "index": [
+     1,
+     1,
+     1,
+     50
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 25.0,
+    "mean_density": 0.7642300128936768,
+    "mu": 0.0,
+    "position": 49
+   }
+  ],
+  "separator": " "
+ },
+ "two_moment": {
+  "all_qmin_ge_qmax": true,
+  "all_qmin_positive": true,
+  "bytes": 1606038,
+  "collision_records": 30000,
+  "data_rows": 31000,
+  "first_line": "    1    1    1    0.15624E-03    0.35587E-03    0.00000E+00    0.00000E+00    0.46535E-06    0.13832E-05    0.18052E+15    0.33382E+05    0.10245E-33    0.00000E+00    0.30666E-05    0.90000E+03    0.35000E+07    0.60000E+01",
+  "header": " LOOKUP_TABLE_1-version:  5.4_2momI",
+  "id": "wrf-p3-lookup-table-1-v5.4-2momI",
+  "inverse_qmin_max": 231180003704832.0,
+  "inverse_qmin_min": 44209998397440.0,
+  "lines": 31002,
+  "main_records": 1000,
+  "samples": [
+   {
+    "index": [
+     1,
+     1,
+     1
+    ],
+    "inverse_qmax": 33382.0,
+    "inverse_qmin": 180519992033280.0,
+    "lambda": 3500000.0,
+    "mu": 6.0,
+    "position": 0
+   },
+   {
+    "index": [
+     1,
+     1,
+     2
+    ],
+    "inverse_qmax": 33382.0,
+    "inverse_qmin": 180519992033280.0,
+    "lambda": 3500000.0,
+    "mu": 6.0,
+    "position": 1
+   },
+   {
+    "index": [
+     1,
+     1,
+     50
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 25.0,
+    "mu": 0.0,
+    "position": 49
+   },
+   {
+    "index": [
+     3,
+     3,
+     1
+    ],
+    "inverse_qmax": 11116.0,
+    "inverse_qmin": 180519992033280.0,
+    "lambda": 3500000.0,
+    "mu": 6.0,
+    "position": 500
+   },
+   {
+    "index": [
+     5,
+     4,
+     50
+    ],
+    "inverse_qmax": 28.898000717163086,
+    "inverse_qmin": 231180003704832.0,
+    "lambda": 525.0,
+    "mu": 20.0,
+    "position": 999
+   }
+  ],
+  "separator": " "
+ },
+ "two_moment_first_block": {
+  "all_qmin_ge_qmax": true,
+  "all_qmin_positive": true,
+  "bytes": 80338,
+  "collision_records": 1500,
+  "data_rows": 1550,
+  "first_line": "    1    1    1    0.15624E-03    0.35587E-03    0.00000E+00    0.00000E+00    0.46535E-06    0.13832E-05    0.18052E+15    0.33382E+05    0.10245E-33    0.00000E+00    0.30666E-05    0.90000E+03    0.35000E+07    0.60000E+01",
+  "header": " LOOKUP_TABLE_1-version:  5.4_2momI",
+  "id": "wrf-p3-lookup-table-1-v5.4-2momI-first-block",
+  "inverse_qmin_max": 180519992033280.0,
+  "inverse_qmin_min": 44209998397440.0,
+  "lines": 1552,
+  "main_records": 50,
+  "samples": [
+   {
+    "index": [
+     1,
+     1,
+     1
+    ],
+    "inverse_qmax": 33382.0,
+    "inverse_qmin": 180519992033280.0,
+    "lambda": 3500000.0,
+    "mu": 6.0,
+    "position": 0
+   },
+   {
+    "index": [
+     1,
+     1,
+     2
+    ],
+    "inverse_qmax": 33382.0,
+    "inverse_qmin": 180519992033280.0,
+    "lambda": 3500000.0,
+    "mu": 6.0,
+    "position": 1
+   },
+   {
+    "index": [
+     1,
+     1,
+     50
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 25.0,
+    "mu": 0.0,
+    "position": 49
+   },
+   {
+    "index": [
+     1,
+     1,
+     26
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 1263.9000244140625,
+    "mu": 0.0,
+    "position": 25
+   },
+   {
+    "index": [
+     1,
+     1,
+     50
+    ],
+    "inverse_qmax": 20487.0,
+    "inverse_qmin": 44209998397440.0,
+    "lambda": 25.0,
+    "mu": 0.0,
+    "position": 49
+   }
+  ],
+  "separator": " "
+ }
+}

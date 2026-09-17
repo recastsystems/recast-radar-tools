@@ -12,20 +12,20 @@
 //!
 //! # Limits
 //!
-//! The router expands a whole-file gzip wrapper and a single-member ZIP
-//! local record (declared and actual size) to at most
-//! `MAX_DECODED_RADAR_BYTES` (512 MiB) each; a gzip stream inside a ZIP
-//! record holds both buffers. The expanded bytes then meet the limits of the
-//! decoder they route to, whose limit errors pass through unchanged inside
-//! [`IoError`] (`NexradError::LimitExceeded`, `OdimError::LimitExceeded`, and
-//! so on). The mobile archive wrappers inherit the DORADE crate's archive
-//! limits.
+//! The router expands a whole-file gzip wrapper (every member of a
+//! multi-member file) and a single-member ZIP local record (declared and
+//! actual size) to at most `MAX_DECODED_RADAR_BYTES` (512 MiB) each; a gzip
+//! stream inside a ZIP record holds both buffers. The expanded bytes then
+//! meet the limits of the decoder they route to, whose limit errors pass
+//! through unchanged inside [`IoError`] (`NexradError::LimitExceeded`,
+//! `OdimError::LimitExceeded`, and so on). The mobile archive wrappers
+//! inherit the DORADE crate's archive limits.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 use std::path::Path;
 
-use flate2::read::{DeflateDecoder, GzDecoder};
+use flate2::read::DeflateDecoder;
 use recast_radar_core::bounded_read::{
     MAX_DECODED_RADAR_BYTES, copy_bytes_limited, read_to_end_limited,
 };
@@ -263,9 +263,12 @@ pub fn read_mobile_dir_from_path(dir: &Path) -> Result<Vec<MobileVolume>, IoErro
     )?)
 }
 
+/// Inflate a whole-file gzip wrapper, every member, in one pass: the same
+/// path the Level II decoder takes for `.gz` volumes, so a multi-member file
+/// decodes the same whichever way it is opened.
 fn decompress_gzip_bytes(raw: &[u8]) -> Result<Vec<u8>, IoError> {
-    read_to_end_limited(
-        GzDecoder::new(raw),
+    recast_radar_io_nexrad::gzip::inflate_gzip_members_limited(
+        raw,
         MAX_DECODED_RADAR_BYTES,
         "gzip radar payload",
     )
@@ -347,63 +350,128 @@ fn decompress_zip_local_member_bytes(raw: &[u8]) -> Result<Vec<u8>, IoError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flate2::Compression;
-    use flate2::write::DeflateEncoder;
-    use std::io::Write;
+    use flate2::read::GzDecoder;
+    use std::io::Read;
 
+    fn corpus(id: &str) -> Vec<u8> {
+        recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    /// Leading bytes of committed corpus files in each format, sniffed in
+    /// router order; the expected route is each manifest entry's `format`.
     #[test]
     fn sniffs_supported_volume_formats_in_router_order() {
-        // DORADE descriptor blocks win over everything (8-byte head form:
-        // 4-byte name + a block length plausible in at least one byte order).
-        let mut dorade_head = b"VOLD".to_vec();
-        dorade_head.extend_from_slice(&8u32.to_le_bytes());
+        for (id, expected) in [
+            // format dorade (big-endian COW2 and little-endian DOW6 / NOXP)
+            (
+                "dorade-cow2-20260521-225514-sur-head24",
+                SupportedVolumeFormat::Dorade,
+            ),
+            (
+                "dorade-dow6-20211230-222139-rhi-head41",
+                SupportedVolumeFormat::Dorade,
+            ),
+            (
+                "dorade-noxp-20090501-190244-ppi",
+                SupportedVolumeFormat::Dorade,
+            ),
+            // format odim-h5, and netCDF-4 CfRadial (an HDF5 container)
+            (
+                "odim-bejab-20190606-0000-pvol",
+                SupportedVolumeFormat::OdimH5,
+            ),
+            (
+                "cfrad1-xsapr-sgp-20110520-ppi-netcdf4",
+                SupportedVolumeFormat::OdimH5,
+            ),
+            // format cfradial1 (classic netCDF)
+            (
+                "cfrad1-xsapr-sgp-20110520-ppi-classic",
+                SupportedVolumeFormat::CfRadial,
+            ),
+            (
+                "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
+                SupportedVolumeFormat::CfRadial,
+            ),
+            // format jma-grib2-tar
+            (
+                "jma-n5-20191012-090000-rs47773",
+                SupportedVolumeFormat::JmaGrib2Tar,
+            ),
+            // format nexrad-level2 (AR2V0006 and ARCHIVE2 headers)
+            (
+                "l2-ktlx-20240315-000217-trim",
+                SupportedVolumeFormat::NexradLevel2,
+            ),
+            (
+                "l2-ktlx-19990504-002218-trim",
+                SupportedVolumeFormat::NexradLevel2,
+            ),
+            // format zip-local-member: the router unwraps it before sniffing,
+            // so the raw record itself falls through.
+            (
+                "odim-au24-20260610-000300-nci-zip-member",
+                SupportedVolumeFormat::NexradLevel2,
+            ),
+        ] {
+            assert_eq!(sniff_supported_volume_format(&corpus(id)), expected, "{id}");
+        }
+
+        // A JMA tar needs its first 512-byte header block.
+        let jma = corpus("jma-n5-20191012-090000-rs47773");
         assert_eq!(
-            sniff_supported_volume_format(&dorade_head),
-            SupportedVolumeFormat::Dorade
-        );
-        assert_eq!(
-            sniff_supported_volume_format(b"\x89HDF\r\n\x1a\nrest"),
-            SupportedVolumeFormat::OdimH5
-        );
-        assert_eq!(
-            sniff_supported_volume_format(b"CDF\x01...."),
-            SupportedVolumeFormat::CfRadial
-        );
-        // JMA radar tar: ustar magic at byte 257 + Z__C_RJTD member name.
-        let mut jma_tar = vec![0u8; 1024];
-        let jma_name =
-            b"Z__C_RJTD_20260612064000_RDR_JMAGPV_RS47937_Gar0p5km0p7deg_Pze_ANAL_grib2.bin";
-        jma_tar[..jma_name.len()].copy_from_slice(jma_name);
-        jma_tar[257..262].copy_from_slice(b"ustar");
-        assert_eq!(
-            sniff_supported_volume_format(&jma_tar),
-            SupportedVolumeFormat::JmaGrib2Tar
-        );
-        // A generic (non-JMA) tar is not claimed; it falls through.
-        let mut plain_tar = vec![0u8; 1024];
-        plain_tar[..9].copy_from_slice(b"notes.txt");
-        plain_tar[257..262].copy_from_slice(b"ustar");
-        assert_eq!(
-            sniff_supported_volume_format(&plain_tar),
+            sniff_supported_volume_format(&jma[..511]),
             SupportedVolumeFormat::NexradLevel2
         );
-        // Archive II, compressed wrappers, and unknown garbage all fall
-        // through to the Level II decoder so its errors surface.
+        // The same real ustar header with the member name no longer a
+        // Z__C_RJTD_*_RDR_JMAGPV name is a generic tar and falls through.
+        let mut renamed = jma.clone();
+        assert_eq!(&renamed[..10], b"Z__C_RJTD_");
+        renamed[..2].copy_from_slice(b"X_");
         assert_eq!(
-            sniff_supported_volume_format(b"AR2V0006."),
+            sniff_supported_volume_format(&renamed),
             SupportedVolumeFormat::NexradLevel2
         );
+        // CDF-3 does not exist: the classic header relabelled as version 3.
+        let mut cdf3 = corpus("cfrad1-xsapr-sgp-20110520-ppi-classic");
+        cdf3[3] = 3;
         assert_eq!(
-            sniff_supported_volume_format(b"\x1f\x8b\x08\0\0\0\0\0"),
+            sniff_supported_volume_format(&cdf3),
             SupportedVolumeFormat::NexradLevel2
         );
         assert_eq!(
             sniff_supported_volume_format(b""),
             SupportedVolumeFormat::NexradLevel2
         );
-        // CDF-3 does not exist; netCDF-3 sniff accepts 1/2/5 only.
+    }
+
+    /// Downloaded corpus files: a whole-file gzip Archive II object and a
+    /// generic (non-JMA) ustar archive both fall through to Level II.
+    #[test]
+    fn sniffs_gzip_archive_and_generic_tar_as_level2_fallthrough() {
+        let kvwx = std::fs::read(recast_radar_testdata::require_file!(
+            "l2-kvwx-20080415-235337"
+        ))
+        .expect("read kvwx");
+        assert_eq!(kvwx[..2], [0x1f, 0x8b], "gzip member header");
         assert_eq!(
-            sniff_supported_volume_format(b"CDF\x03...."),
+            sniff_supported_volume_format(&kvwx),
+            SupportedVolumeFormat::NexradLevel2
+        );
+
+        // First tar header of the NOXP archive (a ustar directory entry).
+        let tgz = std::fs::read(recast_radar_testdata::require_file!(
+            "dorade-noxp-20090501-sweeps-tgz"
+        ))
+        .expect("read NOXP archive");
+        let mut head = vec![0u8; 1024];
+        GzDecoder::new(tgz.as_slice())
+            .read_exact(&mut head)
+            .expect("inflate tar head");
+        assert_eq!(&head[257..262], b"ustar");
+        assert!(head.starts_with(b"2009/NOX/sweep/0501"));
+        assert_eq!(
+            sniff_supported_volume_format(&head),
             SupportedVolumeFormat::NexradLevel2
         );
     }
@@ -425,29 +493,50 @@ mod tests {
         );
     }
 
+    /// Input: corpus entry `odim-au24-20260610-000300-nci-zip-member`, the
+    /// unmodified NCI THREDDS response for a member of a daily
+    /// `24_20260610.pvol.zip`: one ZIP local-file record (no central
+    /// directory) followed by the start of the next record.
+    ///
+    /// Expected values: tools/golden_io_formats.py, section `router`, key
+    /// `nci_zip_member` (PKWARE APPNOTE local header read with `struct`,
+    /// member inflated with `zlib`, CRC-32 checked, opened with h5py).
     #[test]
     fn unwraps_zip_local_member_stream_without_central_directory() {
-        let payload = b"\x89HDF\r\n\x1a\nfake odim bytes";
-        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(payload).unwrap();
-        let compressed = encoder.finish().unwrap();
-        let name = b"2_20260624_235500.pvol.h5";
-        let mut zip = Vec::new();
-        zip.extend_from_slice(b"PK\x03\x04");
-        zip.extend_from_slice(&20u16.to_le_bytes());
-        zip.extend_from_slice(&0u16.to_le_bytes());
-        zip.extend_from_slice(&8u16.to_le_bytes());
-        zip.extend_from_slice(&0u16.to_le_bytes());
-        zip.extend_from_slice(&0u16.to_le_bytes());
-        zip.extend_from_slice(&0u32.to_le_bytes());
-        zip.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
-        zip.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-        zip.extend_from_slice(&(name.len() as u16).to_le_bytes());
-        zip.extend_from_slice(&0u16.to_le_bytes());
-        zip.extend_from_slice(name);
-        zip.extend_from_slice(&compressed);
+        let response = corpus("odim-au24-20260610-000300-nci-zip-member");
+        assert!(mobile_archive::looks_like_zip_bytes(&response));
+        // flags 0, method 8 (deflate), 85154 compressed bytes from offset 84;
+        // 269511 trailing bytes start with the next local-header signature.
+        assert_eq!(u16::from_le_bytes([response[8], response[9]]), 8);
+        assert_eq!(&response[84 + 85_154..84 + 85_154 + 4], b"PK\x03\x04");
 
-        let decoded = decompress_zip_local_member_bytes(&zip).unwrap();
-        assert_eq!(decoded, payload);
+        let member = decompress_zip_local_member_bytes(&response).expect("unwrap member");
+        assert_eq!(member.len(), 354_749);
+        assert_eq!(
+            recast_radar_testdata::sha256_hex(&member),
+            "3d5bac474eaefed70d82a6567c26ab93d992e1118c7c5a50888e36e952c2a75a"
+        );
+        assert!(hdf5lite::looks_like_hdf5_bytes(&member));
+
+        // The router decodes the unwrapped ODIM PVOL exactly like the direct
+        // decoder. h5py: source RAD:AU24,PLC:Bowen; 10 sweeps, stored from
+        // 32 deg down to 0.8 deg (kept in file order); the lowest has 360
+        // rays x 958 bins.
+        let direct = odim::read_odim_h5_volume(&member).expect("direct ODIM decode");
+        let routed = read_supported_volume_bytes(&response).expect("routed decode");
+        assert_eq!(routed.attrs.instrument_name, "AU24");
+        assert_eq!(routed.attrs.site_name.as_deref(), Some("Bowen"));
+        let elevations: Vec<f32> = routed
+            .sweeps
+            .iter()
+            .map(|sweep| sweep.fixed_angle_deg)
+            .collect();
+        assert_eq!(
+            elevations,
+            [32.0, 22.0, 16.0, 11.5, 8.0, 5.6, 3.6, 2.4, 1.6, 0.8]
+        );
+        assert_eq!(routed.sweeps[9].nrays(), 360);
+        assert_eq!(routed.sweeps[9].range.ngates(), 958);
+        assert_eq!(routed, direct);
     }
 }

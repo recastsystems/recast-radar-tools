@@ -15,6 +15,7 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `decode_cfradial1_volume` |
 | `dorade` | `recast-radar-io-dorade` | `looks_like_dorade_bytes`, `peek_dorade_sweep`, then `decode_dorade_sweep_volume` (even lengths) or `decode_dorade_volume_from_slices` with the input twice (odd lengths) |
 | `jma` | `recast-radar-io-jma` | `looks_like_jma_tar_bytes`, then by length mod 3: `decode_jma_tar_volumes(None)`, `decode_jma_tar_first_station`, or `jma_tar_station_headers` plus a site-filtered `decode_jma_tar_volumes` |
+| `bzip2` | `recast-radar-bzip2` | `Decoder::decode_stream_into` on the input, then `Decoder::decode_two_into` on the input paired with its own first half, with a 64 MiB output limit |
 
 The harness bodies live in `src/lib.rs`; each `fuzz_targets/<target>.rs` is a
 one-line libFuzzer wrapper around the function with the same name. A harness
@@ -61,6 +62,8 @@ these derivations:
   way a real-time client assembles a volume.
 - `.headN`: a DORADE sweepfile cut at the block boundary after its first `N`
   ray groups, the same head-trim used for the committed DORADE fixtures.
+- `.ldm-recordN`: the bzip2 stream of LDM record `N` of a block-bzip2
+  Level II file or real-time chunk, without its control word.
 
 No seed byte is synthesized. The seed list, with the reason for each file, is
 the `SEEDS` table in `tools/src/main.rs`.
@@ -86,7 +89,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All six targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All seven targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2_volume dorade
@@ -98,7 +101,8 @@ cd fuzz && cargo +nightly fuzz run -s none level2_volume corpus/level2_volume se
 and overflow checks, so arithmetic overflow panics) and no sanitizer. The
 decoder crates contain no unsafe code, and leaving out AddressSanitizer about
 doubles the execution rate. To check the unsafe code in dependencies (bzip2,
-zlib-rs, zip), build with the default `-s address` instead. `run.sh` also:
+zlib-rs, zip), build with the default `-s address` instead (`recast-radar-bzip2`
+has none, so the `bzip2` target gains nothing from a sanitizer). `run.sh` also:
 
 - sets `RAYON_NUM_THREADS=1`, so each target uses about one core
 - sets `-max_len` to the largest seed for the target

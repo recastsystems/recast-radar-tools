@@ -21,6 +21,7 @@
 mod cache;
 mod fetch;
 mod manifest;
+pub mod synthetic;
 pub mod trim;
 
 use std::collections::HashMap;

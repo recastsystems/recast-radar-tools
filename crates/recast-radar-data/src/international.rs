@@ -1010,97 +1010,151 @@ mod tests {
     /// crossing threads).
     fn assert_provider_box_is_send_sync<T: Send + Sync + ?Sized>() {}
 
-    struct FakeProvider;
+    /// ORD archive-bucket listings of RMI Jabbeke (`bejab`) for the 14:00Z
+    /// hour of 2026-06-12 and 2026-06-13, captured 2026-09-17 from
+    /// `https://s3.waw3-1.cloudferro.com/openradar-archive` (permanent
+    /// bucket; 48 objects each: 12 five-minute stamps x 2 elevation ladders,
+    /// DBZH + TH on the 0.3 deg ladder and DBZH + VRAD on the 0.5 deg Doppler
+    /// ladder). The trait-contract tests below run a provider over these
+    /// captures instead of the network.
+    const BEJAB_ARCHIVE_HOUR_20260612: &str =
+        include_str!("international/fixtures/ord_archive_bejab_20260612T14_hour.xml");
+    const BEJAB_ARCHIVE_HOUR_20260613: &str =
+        include_str!("international/fixtures/ord_archive_bejab_20260613T14_hour.xml");
+    const ORD_ARCHIVE_BUCKET: &str = "https://s3.waw3-1.cloudferro.com/openradar-archive";
+    const BEJAB: &str = "bejab";
 
-    fn fake_sites() -> Vec<IntlSite> {
-        vec![IntlSite {
-            provider_id: "fake",
-            site_id: "nwsit".to_owned(),
-            label: "Nowhere Site".to_owned(),
-            country: "Nowhere",
-            latitude_deg: Some(55.5),
-            longitude_deg: Some(12.0),
-        }]
+    /// Frame plans of one captured bejab hour listing, OLDEST FIRST: one plan
+    /// per scan (`{stamp}@{elevation ladder}`), its objects as the parts with
+    /// the DBZH file first (the merge base), `merge` set because the scan is
+    /// split across per-quantity files. Identity is the scan key, a pure
+    /// function of the listing.
+    fn captured_bejab_plans(xml: &str) -> Vec<FramePlan> {
+        let listing = parse_s3_style_listing(xml).expect("captured listing parses");
+        assert!(!listing.is_truncated);
+        let mut scans: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for key in listing.keys {
+            let name = key.rsplit('/').next().expect("object name");
+            let mut fields = name.trim_end_matches(".h5").split('@');
+            let site = fields.next().expect("site");
+            let stamp = fields.next().expect("stamp");
+            let ladder = fields.next().expect("ladder");
+            assert_eq!(site, BEJAB);
+            scans
+                .entry(format!("{site}@{stamp}@{ladder}"))
+                .or_default()
+                .push(key);
+        }
+        scans
+            .into_iter()
+            .map(|(identity, mut keys)| {
+                // DBZH first: it is the merge base.
+                keys.sort_by_key(|key| (!key.ends_with("@DBZH.h5"), key.clone()));
+                let parts = keys
+                    .into_iter()
+                    .map(|key| PlanPart {
+                        url: format!("{ORD_ARCHIVE_BUCKET}/{key}"),
+                    })
+                    .collect::<Vec<_>>();
+                FramePlan {
+                    merge: parts.len() > 1,
+                    identity,
+                    parts,
+                }
+            })
+            .collect()
     }
 
-    impl IntlProvider for FakeProvider {
+    /// The bejab site as the ORD provider's embedded catalog carries it.
+    fn bejab_site(provider_id: &'static str) -> IntlSite {
+        let ord = OrdProvider::new()
+            .static_sites()
+            .into_iter()
+            .find(|site| site.site_id == BEJAB)
+            .expect("bejab is in the ORD static catalog");
+        IntlSite { provider_id, ..ord }
+    }
+
+    fn captured_latest(site_id: &str) -> Result<FramePlan, String> {
+        if site_id != BEJAB {
+            return Err(format!("no captured listing for site '{site_id}'"));
+        }
+        captured_bejab_plans(BEJAB_ARCHIVE_HOUR_20260612)
+            .pop()
+            .ok_or_else(|| "captured listing holds no scan".to_owned())
+    }
+
+    /// A provider over the 2026-06-12 capture with neither a `recent_source`
+    /// nor an `archive_source`: the trait defaults apply.
+    struct ArchivedBejab;
+
+    impl IntlProvider for ArchivedBejab {
         fn id(&self) -> &'static str {
-            "fake"
+            "ord-archive-bejab-capture"
         }
 
         fn label(&self) -> &'static str {
-            "Fake Provider"
+            "ORD archive capture (Jabbeke)"
         }
 
         fn country(&self) -> &'static str {
-            "Nowhere"
+            "Belgium"
         }
 
         #[cfg(feature = "net")]
         fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
-            Ok(fake_sites())
+            Ok(vec![bejab_site(self.id())])
         }
 
         #[cfg(feature = "net")]
         fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
-            if site_id != "nwsit" {
-                return Err(format!("unknown site '{site_id}'"));
-            }
-            Ok(FramePlan {
-                identity: "nwsit_202606110000".to_owned(),
-                parts: vec![PlanPart {
-                    url: "https://example.invalid/nwsit_202606110000.h5".to_owned(),
-                }],
-                merge: false,
-            })
+            captured_latest(site_id)
         }
 
         fn static_sites(&self) -> Vec<IntlSite> {
-            fake_sites()
+            vec![bejab_site(self.id())]
         }
     }
 
-    /// A provider with a rolling window: implements [`RecentFrames`] and
-    /// hands it back from `recent_source` — the one act that must both
-    /// route `recent()` and flip `supports_recent()`.
-    struct FakeLoopProvider;
+    /// The same capture with a rolling window: implements [`RecentFrames`]
+    /// over the hour listing and hands it back from `recent_source` — the
+    /// one act that must both route `recent()` and flip `supports_recent()`.
+    struct ArchivedBejabLoop;
 
-    impl RecentFrames for FakeLoopProvider {
+    impl RecentFrames for ArchivedBejabLoop {
         #[cfg(feature = "net")]
         fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
-            Ok((0..count)
-                .map(|index| FramePlan {
-                    identity: format!("{site_id}_frame_{index}"),
-                    parts: vec![PlanPart {
-                        url: format!("https://example.invalid/{site_id}_frame_{index}.h5"),
-                    }],
-                    merge: false,
-                })
-                .collect())
+            if site_id != BEJAB {
+                return Err(format!("no captured listing for site '{site_id}'"));
+            }
+            let mut plans = captured_bejab_plans(BEJAB_ARCHIVE_HOUR_20260612);
+            let skip = plans.len().saturating_sub(count);
+            Ok(plans.split_off(skip))
         }
     }
 
-    impl IntlProvider for FakeLoopProvider {
+    impl IntlProvider for ArchivedBejabLoop {
         fn id(&self) -> &'static str {
-            "fake-loop"
+            "ord-archive-bejab-capture-loop"
         }
 
         fn label(&self) -> &'static str {
-            "Fake Loop Provider"
+            "ORD archive capture (Jabbeke, rolling window)"
         }
 
         fn country(&self) -> &'static str {
-            "Nowhere"
+            "Belgium"
         }
 
         #[cfg(feature = "net")]
         fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
-            FakeProvider.list_sites()
+            Ok(vec![bejab_site(self.id())])
         }
 
         #[cfg(feature = "net")]
         fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
-            FakeProvider.latest(site_id)
+            captured_latest(site_id)
         }
 
         fn recent_source(&self) -> Option<&dyn RecentFrames> {
@@ -1108,57 +1162,52 @@ mod tests {
         }
 
         fn static_sites(&self) -> Vec<IntlSite> {
-            fake_sites()
+            vec![bejab_site(self.id())]
         }
     }
 
-    /// A provider with a dated archive: implements [`ArchiveFrames`] and
-    /// hands it back from `archive_source` — the one act that must both
-    /// route archive lookups and flip `supports_archive()`.
-    struct FakeArchiveProvider;
+    /// The two captured days as a dated archive: implements
+    /// [`ArchiveFrames`] and hands it back from `archive_source` — the one
+    /// act that must both route archive lookups and flip
+    /// `supports_archive()`.
+    struct ArchivedBejabArchive;
 
-    impl ArchiveFrames for FakeArchiveProvider {
+    impl ArchiveFrames for ArchivedBejabArchive {
         #[cfg(feature = "net")]
         fn day_plans(&self, site_id: &str, date_utc: NaiveDate) -> Result<Vec<FramePlan>, String> {
-            if site_id != "nwsit" {
-                return Err(format!("unknown site '{site_id}'"));
+            if site_id != BEJAB {
+                return Err(format!("no captured listing for site '{site_id}'"));
             }
-            Ok((0..2)
-                .map(|index| {
-                    let stamp = date_utc.format("%Y%m%d");
-                    FramePlan {
-                        identity: format!("{site_id}_{stamp}_{index}"),
-                        parts: vec![PlanPart {
-                            url: format!("https://example.invalid/{site_id}_{stamp}_{index}.h5"),
-                        }],
-                        merge: false,
-                    }
-                })
-                .collect())
+            let xml = match (date_utc.year(), date_utc.month(), date_utc.day()) {
+                (2026, 6, 12) => BEJAB_ARCHIVE_HOUR_20260612,
+                (2026, 6, 13) => BEJAB_ARCHIVE_HOUR_20260613,
+                _ => return Err(format!("no captured listing for '{site_id}' on {date_utc}")),
+            };
+            Ok(captured_bejab_plans(xml))
         }
     }
 
-    impl IntlProvider for FakeArchiveProvider {
+    impl IntlProvider for ArchivedBejabArchive {
         fn id(&self) -> &'static str {
-            "fake-archive"
+            "ord-archive-bejab-capture-archive"
         }
 
         fn label(&self) -> &'static str {
-            "Fake Archive Provider"
+            "ORD archive capture (Jabbeke, dated)"
         }
 
         fn country(&self) -> &'static str {
-            "Nowhere"
+            "Belgium"
         }
 
         #[cfg(feature = "net")]
         fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
-            FakeProvider.list_sites()
+            Ok(vec![bejab_site(self.id())])
         }
 
         #[cfg(feature = "net")]
         fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
-            FakeProvider.latest(site_id)
+            captured_latest(site_id)
         }
 
         fn archive_source(&self) -> Option<&dyn ArchiveFrames> {
@@ -1166,7 +1215,52 @@ mod tests {
         }
 
         fn static_sites(&self) -> Vec<IntlSite> {
-            fake_sites()
+            vec![bejab_site(self.id())]
+        }
+    }
+
+    /// The captured listings carry what the tests below rely on: 24 scans
+    /// per hour (12 stamps x 2 ladders), each a DBZH + TH or DBZH + VRAD pair
+    /// under the archive bucket, oldest first.
+    #[test]
+    fn captured_bejab_listings_hold_twenty_four_split_scans_per_hour() {
+        for (xml, day) in [
+            (BEJAB_ARCHIVE_HOUR_20260612, "20260612"),
+            (BEJAB_ARCHIVE_HOUR_20260613, "20260613"),
+        ] {
+            let plans = captured_bejab_plans(xml);
+            assert_eq!(plans.len(), 24, "{day}");
+            assert_eq!(
+                plans[0].identity,
+                format!("bejab@{day}T1400@0.3_0.9_1.5_2.2_2.9_3.8_4.8_6.5_9.0_13.0_25.0")
+            );
+            assert_eq!(
+                plans[23].identity,
+                format!("bejab@{day}T1455@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0")
+            );
+            assert!(
+                plans
+                    .windows(2)
+                    .all(|pair| pair[0].identity < pair[1].identity)
+            );
+            for plan in &plans {
+                assert!(plan.merge);
+                assert_eq!(plan.parts.len(), 2);
+                assert!(
+                    plan.parts[0].url.ends_with("@DBZH.h5"),
+                    "{}",
+                    plan.parts[0].url
+                );
+                // The 0.3 deg ladder pairs DBZH with unfiltered TH, the 0.5
+                // deg Doppler ladder pairs it with VRAD.
+                let second = if plan.identity.contains("@0.3_") {
+                    "@TH.h5"
+                } else {
+                    "@VRAD.h5"
+                };
+                assert!(plan.parts[1].url.ends_with(second), "{}", plan.parts[1].url);
+                assert!(plan.parts[0].url.starts_with(ORD_ARCHIVE_BUCKET));
+            }
         }
     }
 
@@ -1319,15 +1413,28 @@ mod tests {
     }
 
     /// Without a `recent_source`, `recent()` degrades to a one-frame loop
-    /// (exactly `latest`) and the provider reports no loop support.
+    /// (exactly `latest`: the newest scan of the captured hour) and the
+    /// provider reports no loop support.
     #[cfg(feature = "net")]
     #[test]
     fn default_recent_is_a_single_frame_and_reports_no_loop_support() {
-        let provider = FakeProvider;
+        let provider = ArchivedBejab;
         assert!(provider.recent_source().is_none());
         assert!(!provider.supports_recent());
-        let plans = provider.recent("nwsit", 5).expect("single-frame fallback");
-        assert_eq!(plans, vec![provider.latest("nwsit").unwrap()]);
+        let plans = provider.recent(BEJAB, 5).expect("single-frame fallback");
+        assert_eq!(plans, vec![provider.latest(BEJAB).unwrap()]);
+        assert_eq!(
+            plans[0].identity,
+            "bejab@20260612T1455@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0"
+        );
+        assert!(plans[0].merge);
+        assert_eq!(
+            plans[0].parts[0].url,
+            format!(
+                "{ORD_ARCHIVE_BUCKET}/2026/06/12/BE/bejab/PVOL/\
+                 bejab@20260612T1455@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@DBZH.h5"
+            )
+        );
     }
 
     /// With a `recent_source`, `recent()` routes to the rolling window and
@@ -1335,19 +1442,31 @@ mod tests {
     #[cfg(feature = "net")]
     #[test]
     fn recent_source_routes_recent_and_flips_supports_recent_together() {
-        let provider = FakeLoopProvider;
+        let provider = ArchivedBejabLoop;
         assert!(provider.supports_recent());
-        let plans = provider.recent("nwsit", 2).expect("rolling window");
+        let plans = provider.recent(BEJAB, 2).expect("rolling window");
         assert_eq!(plans.len(), 2, "must not fall back to a single frame");
-        assert_eq!(plans[0].identity, "nwsit_frame_0");
-        assert_eq!(plans[1].identity, "nwsit_frame_1");
+        assert_eq!(
+            plans[0].identity,
+            "bejab@20260612T1455@0.3_0.9_1.5_2.2_2.9_3.8_4.8_6.5_9.0_13.0_25.0"
+        );
+        assert_eq!(
+            plans[1].identity,
+            "bejab@20260612T1455@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0"
+        );
+        assert_eq!(plans[1], provider.latest(BEJAB).unwrap(), "newest last");
+        assert_eq!(
+            provider.recent(BEJAB, 30).expect("whole hour").len(),
+            24,
+            "the window is the captured hour"
+        );
     }
 
     /// Without an `archive_source`, a provider honestly reports no
     /// archive lookup.
     #[test]
     fn default_archive_source_is_absent_and_reports_no_archive_support() {
-        let provider = FakeProvider;
+        let provider = ArchivedBejab;
         assert!(provider.archive_source().is_none());
         assert!(!provider.supports_archive());
     }
@@ -1358,39 +1477,48 @@ mod tests {
     #[cfg(feature = "net")]
     #[test]
     fn archive_source_routes_day_plans_and_flips_supports_archive_together() {
-        let provider = FakeArchiveProvider;
+        let provider = ArchivedBejabArchive;
         assert!(provider.supports_archive());
-        let date = NaiveDate::from_ymd_opt(2026, 6, 9).expect("date");
+        let date = NaiveDate::from_ymd_opt(2026, 6, 13).expect("date");
         let plans = provider
             .archive_source()
             .expect("archive source")
-            .day_plans("nwsit", date)
+            .day_plans(BEJAB, date)
             .expect("day plans");
+        assert_eq!(plans, captured_bejab_plans(BEJAB_ARCHIVE_HOUR_20260613));
+        assert_eq!(plans.len(), 24);
         assert_eq!(
-            plans
-                .iter()
-                .map(|plan| plan.identity.as_str())
-                .collect::<Vec<_>>(),
-            vec!["nwsit_20260609_0", "nwsit_20260609_1"],
+            plans[0].identity, "bejab@20260613T1400@0.3_0.9_1.5_2.2_2.9_3.8_4.8_6.5_9.0_13.0_25.0",
             "oldest first"
         );
+        assert_eq!(
+            plans[23].identity,
+            "bejab@20260613T1455@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0"
+        );
+        let err = provider
+            .archive_source()
+            .expect("archive source")
+            .day_plans(BEJAB, NaiveDate::from_ymd_opt(2026, 6, 14).expect("date"))
+            .unwrap_err();
+        assert!(err.contains("2026-06-14"), "unexpected error: {err}");
     }
 
     #[cfg(feature = "net")]
     #[test]
     fn default_archive_progress_is_object_safe_and_honors_precancel() {
-        let provider = FakeArchiveProvider;
+        let provider = ArchivedBejabArchive;
         let source: &dyn ArchiveFrames = provider.archive_source().expect("archive source");
-        let date = NaiveDate::from_ymd_opt(2026, 6, 9).expect("date");
+        let date = NaiveDate::from_ymd_opt(2026, 6, 12).expect("date");
         let cancel = AtomicBool::new(false);
         let mut snapshots = Vec::new();
         let plans = source
-            .day_plans_with_progress("nwsit", date, &cancel, &mut |snapshot| {
+            .day_plans_with_progress(BEJAB, date, &cancel, &mut |snapshot| {
                 snapshots.push(snapshot)
             })
             .expect("progress day plans");
 
-        assert_eq!(plans.len(), 2);
+        assert_eq!(plans.len(), 24);
+        assert_eq!(plans, captured_bejab_plans(BEJAB_ARCHIVE_HOUR_20260612));
         assert_eq!(
             snapshots,
             [
@@ -1403,7 +1531,7 @@ mod tests {
                 ArchiveListProgress {
                     completed_phases: 1,
                     total_phases: 1,
-                    plans_found: 2,
+                    plans_found: 24,
                     catalog_requests_completed: 1,
                 },
             ]
@@ -1412,7 +1540,7 @@ mod tests {
         let cancel = AtomicBool::new(true);
         let mut cancelled_snapshots = Vec::new();
         let err = source
-            .day_plans_with_progress("nwsit", date, &cancel, &mut |snapshot| {
+            .day_plans_with_progress(BEJAB, date, &cancel, &mut |snapshot| {
                 cancelled_snapshots.push(snapshot)
             })
             .unwrap_err();
@@ -1422,36 +1550,58 @@ mod tests {
     }
 
     /// The provided `window_plans` folds `day_plans` over every UTC date
-    /// the window touches, stays oldest-first, and caps to the NEWEST
-    /// `max` frames (the loop-ending-at-scan tail).
+    /// the window touches (the two captured bejab days), stays oldest-first,
+    /// and caps to the NEWEST `max` frames (the loop-ending-at-scan tail).
     #[cfg(feature = "net")]
     #[test]
     fn default_window_plans_folds_days_oldest_first_and_caps_to_the_newest() {
         use chrono::TimeZone;
-        let provider = FakeArchiveProvider;
+        let provider = ArchivedBejabArchive;
         let source = provider.archive_source().expect("archive source");
-        let start = Utc.with_ymd_and_hms(2026, 6, 9, 6, 0, 0).unwrap();
-        let end = Utc.with_ymd_and_hms(2026, 6, 10, 18, 0, 0).unwrap();
+        let start = Utc.with_ymd_and_hms(2026, 6, 12, 6, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 6, 13, 18, 0, 0).unwrap();
 
         let plans = source
-            .window_plans("nwsit", start, end, 3)
+            .window_plans(BEJAB, start, end, 30)
             .expect("window plans");
+        let day_one = captured_bejab_plans(BEJAB_ARCHIVE_HOUR_20260612);
+        let day_two = captured_bejab_plans(BEJAB_ARCHIVE_HOUR_20260613);
+        assert_eq!(plans.len(), 30, "48 folded scans capped to the newest 30");
         assert_eq!(
-            plans
-                .iter()
-                .map(|plan| plan.identity.as_str())
-                .collect::<Vec<_>>(),
-            vec!["nwsit_20260609_1", "nwsit_20260610_0", "nwsit_20260610_1"],
-            "two folded days, oldest trimmed by the cap"
+            &plans[..6],
+            &day_one[18..],
+            "the newest 6 scans of 06-12 first"
         );
+        assert_eq!(&plans[6..], &day_two[..], "then all 24 scans of 06-13");
+        assert_eq!(
+            plans[0].identity,
+            "bejab@20260612T1445@0.3_0.9_1.5_2.2_2.9_3.8_4.8_6.5_9.0_13.0_25.0"
+        );
+        assert_eq!(
+            source
+                .window_plans(BEJAB, start, end, 100)
+                .expect("uncapped")
+                .len(),
+            48
+        );
+        // A day without a capture (2026-06-14) is skipped, not fatal.
+        let three_days = source
+            .window_plans(
+                BEJAB,
+                start,
+                Utc.with_ymd_and_hms(2026, 6, 14, 18, 0, 0).unwrap(),
+                100,
+            )
+            .expect("partial archive loop beats none");
+        assert_eq!(three_days.len(), 48);
 
         assert!(
             source
-                .window_plans("nwsit", start, end, 0)
+                .window_plans(BEJAB, start, end, 0)
                 .expect("empty cap")
                 .is_empty()
         );
-        let err = source.window_plans("nwsit", end, start, 3).unwrap_err();
+        let err = source.window_plans(BEJAB, end, start, 3).unwrap_err();
         assert!(err.contains("precedes"), "unexpected error: {err}");
         let err = source.window_plans("missing", start, end, 3).unwrap_err();
         assert!(
@@ -1939,14 +2089,20 @@ mod tests {
     #[cfg(feature = "net")]
     #[test]
     fn trait_contract_round_trips_through_a_boxed_provider() {
-        let provider: Box<dyn IntlProvider> = Box::new(FakeProvider);
+        let provider: Box<dyn IntlProvider> = Box::new(ArchivedBejab);
         let sites = provider.list_sites().unwrap();
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].provider_id, provider.id());
+        assert_eq!(sites[0].site_id, BEJAB);
+        assert_eq!(sites[0].country, "Belgium");
+        // Jabbeke's coordinates as the ORD catalog (and the files' /where
+        // group) carry them.
+        assert_eq!(sites[0].latitude_deg, Some(51.1917));
+        assert_eq!(sites[0].longitude_deg, Some(3.0642));
 
         let plan = provider.latest(&sites[0].site_id).unwrap();
-        assert!(!plan.merge);
-        assert_eq!(plan.parts.len(), 1);
+        assert!(plan.merge, "a per-quantity scan is a split frame");
+        assert_eq!(plan.parts.len(), 2);
         // Same upstream frame -> same identity (dedupe key stability).
         assert_eq!(provider.latest(&sites[0].site_id).unwrap(), plan);
 
