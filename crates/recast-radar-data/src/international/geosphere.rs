@@ -17,10 +17,9 @@
 
 use chrono::{Duration, Utc};
 
-use super::{
-    FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames, fetch_s3_style_listing,
-    s3_style_listing_url,
-};
+#[cfg(feature = "net")]
+use super::fetch_s3_style_listing;
+use super::{FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames, s3_style_listing_url};
 
 const DATAHUB_BASE: &str = "https://public.hub.geosphere.at/datahub";
 const FILE_PREFIX: &str = "resources/radar_volumen_hochficht-v1-5min/filelisting/";
@@ -74,10 +73,12 @@ impl IntlProvider for GeoSphereProvider {
         "Austria"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         Ok(self.static_sites())
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         validate_site(site_id)?;
         let keys = window_wxrhof_keys()?;
@@ -101,6 +102,7 @@ impl IntlProvider for GeoSphereProvider {
 }
 
 impl RecentFrames for GeoSphereProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         validate_site(site_id)?;
         let keys = window_wxrhof_keys()?;
@@ -130,6 +132,7 @@ fn no_frames_error() -> String {
 /// the paged `start-after` walk `latest` has always done, but keeping ALL
 /// matching keys instead of only the newest one. Guaranteed non-empty on
 /// `Ok`.
+#[cfg(feature = "net")]
 fn window_wxrhof_keys() -> Result<Vec<String>, String> {
     let now = Utc::now();
     for hours in LOOKBACK_HOURS {
@@ -269,6 +272,7 @@ mod tests {
         assert!(recent_plans(&[format!("{FILE_PREFIX}notes.txt")], 3).is_empty());
     }
 
+    #[cfg(feature = "net")]
     #[test]
     fn provider_serves_exactly_one_site_and_rejects_others() {
         let provider = GeoSphereProvider::new();

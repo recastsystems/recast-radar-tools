@@ -14,6 +14,7 @@
 
 use super::listing::{join_url, parse_autoindex};
 use super::{FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames};
+#[cfg(feature = "net")]
 use crate::fetch_text;
 
 const BRIC_ROOT: &str = "https://www.arpa.piemonte.it/rischi_naturali/radar/bric/";
@@ -73,10 +74,12 @@ impl IntlProvider for PiemonteProvider {
         "Italy"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         Ok(self.static_sites())
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         let site = piemonte_site(site_id)?;
         newest_frame(site).ok_or_else(|| {
@@ -107,6 +110,7 @@ impl IntlProvider for PiemonteProvider {
 }
 
 impl RecentFrames for PiemonteProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         let site = piemonte_site(site_id)?;
         let mut files = piemonte_volume_files(site)?;
@@ -131,12 +135,14 @@ fn piemonte_site(site_id: &str) -> Result<&'static PiemonteSite, String> {
         .ok_or_else(|| format!("ARPA Piemonte: unknown site '{site_id}'"))
 }
 
+#[cfg(feature = "net")]
 fn newest_frame(site: &PiemonteSite) -> Option<FramePlan> {
     let mut files = piemonte_volume_files(site).ok()?;
     files.sort();
     files.pop().map(|file| frame_plan(site, file))
 }
 
+#[cfg(feature = "net")]
 fn piemonte_volume_files(site: &PiemonteSite) -> Result<Vec<String>, String> {
     let html = fetch_text(site.root)
         .map_err(|err| format!("ARPA Piemonte {} listing {}: {err}", site.label, site.root))?;
@@ -218,6 +224,7 @@ mod tests {
         assert_eq!(sites[0].country, "Italy");
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live ARPA Piemonte endpoint probe"]
     fn live_piemonte_latest_resolves_full_hdf5_volumes() {

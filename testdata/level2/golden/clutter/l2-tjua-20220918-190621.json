@@ -1,0 +1,14 @@
+{
+  "id": "l2-tjua-20220918-190621",
+  "sha256": "e7e364dc0729fbe652984fe8b95d47b73c024bd9b214153c3da6e43953015179",
+  "generator": "tools/level2_golden.py",
+  "metpy": "1.7.1",
+  "input": "volume header + metadata record; messages 1 and 31 skipped",
+  "clutter_filter_map": {
+    "generation_time": "2022-09-14T16:39:00Z",
+    "elevation_segments": 5,
+    "azimuths_per_segment": [360,360,360,360,360],
+    "azimuth_runs": [[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]]]
+  },
+  "metpy_log": []
+}
