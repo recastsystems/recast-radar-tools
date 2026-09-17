@@ -1,6 +1,6 @@
 //! Polar-domain smoothing for display: a NaN-aware 3×3 binomial kernel
-//! ([1 2 1]⊗[1 2 1]) over azimuth × range on the moment's physical values.
-//! Smoothing the GRID once (cached per volume/cut/product by the render
+//! ([1 2 1]⊗[1 2 1]) over azimuth × range on the field's physical values.
+//! Smoothing the FIELD once (cached per volume/sweep/product by the render
 //! worker) and rendering it through the existing nearest-gate fast path
 //! keeps pans at full speed — the smoothed look costs one ~5–10 ms pass per
 //! product instead of per-pixel work every frame.
@@ -11,23 +11,25 @@
 //! should use the native (unsmoothed) display.
 
 use rayon::prelude::*;
-use recast_radar_core::{MomentGrid, MomentStorage};
+use recast_radar_core::Field;
 
-/// Smooth a moment grid's values into a new F32 grid with identical
-/// geometry. Azimuth wraps; range is clamped at the ends.
-pub fn smooth_moment_grid(grid: &MomentGrid) -> MomentGrid {
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
+use crate::physical_field_like;
+
+/// Smooth a field's physical values into a new `F32` field with identical
+/// geometry. Rows are rays in storage order: azimuth wraps from the last row
+/// to the first; range is clamped at the ends.
+pub fn smooth_field(field: &Field) -> Field {
+    let (rows, gates) = field.shape();
     let mut values = vec![f32::NAN; rows * gates];
     if rows > 0 && gates > 0 {
-        // Materialize scaled values once (NaN for missing/RF).
+        // Materialize physical values once (NaN for every sentinel).
         let mut source = vec![f32::NAN; rows * gates];
         source
             .par_chunks_mut(gates)
             .enumerate()
             .for_each(|(row, out_row)| {
                 for (gate, cell) in out_row.iter_mut().enumerate() {
-                    if let Some(v) = grid.scaled_value(row, gate).filter(|v| v.is_finite()) {
+                    if let Some(v) = field.value(row, gate).filter(|v| v.is_finite()) {
                         *cell = v;
                     }
                 }
@@ -66,47 +68,34 @@ pub fn smooth_moment_grid(grid: &MomentGrid) -> MomentGrid {
                 }
             });
     }
-    MomentGrid {
-        moment: grid.moment.clone(),
-        gate_range: grid.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: grid.radial_indices.clone(),
-        storage: MomentStorage::F32(values),
-    }
+    physical_field_like(field, field.nrays, field.ngates, values)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, MomentType};
+    use crate::test_support::sweep_with;
+    use recast_radar_core::FieldName;
 
-    fn grid(rows: usize, gates: usize, data: Vec<f32>) -> MomentGrid {
-        MomentGrid {
-            moment: MomentType::Reflectivity,
-            gate_range: GateRange {
-                first_gate_m: 250,
-                gate_spacing_m: 250,
-                gate_count: gates,
-            },
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..rows).collect(),
-            storage: MomentStorage::F32(data),
-        }
+    fn field(rows: usize, gates: usize, data: Vec<f32>) -> Field {
+        let azimuths: Vec<f32> = (0..rows).map(|row| row as f32 * 45.0).collect();
+        let mut sweep = sweep_with(
+            &azimuths,
+            250.0,
+            250.0,
+            gates,
+            vec![(FieldName::Dbzh, data)],
+            None,
+        );
+        sweep.fields.remove(0)
     }
 
     #[test]
     fn uniform_field_is_unchanged() {
-        let g = grid(8, 8, vec![35.0; 64]);
-        let s = smooth_moment_grid(&g);
+        let s = smooth_field(&field(8, 8, vec![35.0; 64]));
         for row in 0..8 {
             for gate in 0..8 {
-                let v = s.scaled_value(row, gate).unwrap();
+                let v = s.value(row, gate).unwrap();
                 assert!((v - 35.0).abs() < 1e-4, "{v}");
             }
         }
@@ -121,11 +110,11 @@ mod tests {
                 data[row * 8 + gate] = 20.0;
             }
         }
-        let s = smooth_moment_grid(&grid(8, 8, data));
+        let s = smooth_field(&field(8, 8, data));
         // Edge gate keeps its value (NaN neighbors renormalize)…
-        assert!((s.scaled_value(0, 3).unwrap() - 20.0).abs() < 1e-4);
+        assert!((s.value(0, 3).unwrap() - 20.0).abs() < 1e-4);
         // …and empty gates STAY empty (no coverage bleed).
-        assert!(s.scaled_value(0, 4).is_none_or(|v| v.is_nan()));
+        assert_eq!(s.value(0, 4), None);
     }
 
     #[test]
@@ -138,9 +127,9 @@ mod tests {
                 data[row * 8 + gate] = 40.0;
             }
         }
-        let s = smooth_moment_grid(&grid(8, 8, data));
-        let low_side = s.scaled_value(3, 3).unwrap();
-        let high_side = s.scaled_value(3, 4).unwrap();
+        let s = smooth_field(&field(8, 8, data));
+        let low_side = s.value(3, 3).unwrap();
+        let high_side = s.value(3, 4).unwrap();
         assert!(low_side > 0.0 && low_side < 20.0, "{low_side}");
         assert!(high_side > 20.0 && high_side < 40.0, "{high_side}");
     }

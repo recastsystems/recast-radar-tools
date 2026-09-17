@@ -50,11 +50,11 @@ mod solve;
 mod super_regions;
 
 pub use confidence::ConfidenceGrid;
-pub use env_profile::{EnvWindLevel, EnvironmentalWindProfile, project_environmental_winds};
+pub use env_profile::{EnvWindLevel, EnvironmentalWindProfile, project_environmental_winds_onto};
 
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
-use recast_radar_core::{GateRange, MomentGrid, MomentStorage, MomentType, RadarVolume};
+use recast_radar_core::{Field, GateMapping, Quantity, Volume};
 
 use crate::region_core::{self, RegionSolve};
 use graph::MappedPrior;
@@ -88,7 +88,7 @@ const V4_INTERVAL_SPLIT_FRAC: f32 = 0.5;
 /// volume is accepted and solved internally as a fallback (see module doc).
 pub enum TemporalPrior<'a> {
     Solution(&'a V4VolumeSolution),
-    Volume(&'a RadarVolume),
+    Volume(&'a Volume),
 }
 
 /// Solver + gauntlet diagnostics; the eval battery regression-gates these.
@@ -118,10 +118,13 @@ pub struct V4Diagnostics {
 
 /// One solved velocity tilt.
 pub struct V4TiltSolution {
-    cut_index: usize,
+    sweep_index: usize,
     elevation_deg: f32,
     azimuths: Vec<f32>,
-    grid: MomentGrid,
+    /// Centre of native gate 0 and native spacing of `field`, metres.
+    first_gate_m: f64,
+    gate_spacing_m: f64,
+    field: Field,
     confidence: ConfidenceGrid,
 }
 
@@ -130,21 +133,28 @@ pub struct V4TiltSolution {
 pub struct V4VolumeSolution {
     site_id: String,
     volume_time: DateTime<Utc>,
-    /// Indexed by cut index (None for cuts without velocity).
+    /// Indexed by sweep index (None for sweeps without velocity).
     tilts: Vec<Option<V4TiltSolution>>,
     diagnostics: V4Diagnostics,
+    /// Legacy-model copies of the tilts, filled only by the legacy
+    /// `dealias_volume_v4` wrapper (removed with the FM301 shim).
+    pub(crate) legacy_tilts: crate::legacy_api::LegacyTilts,
 }
 
 impl V4VolumeSolution {
-    /// Dealiased grid for a cut, if it carried velocity.  O(1).
-    pub fn tilt_grid(&self, cut_index: usize) -> Option<&MomentGrid> {
-        self.tilts.get(cut_index)?.as_ref().map(|tilt| &tilt.grid)
+    /// Dealiased velocity field (`VRADDH`) for a sweep, if it carried
+    /// velocity.  O(1).
+    pub fn tilt_field(&self, sweep_index: usize) -> Option<&Field> {
+        self.tilts
+            .get(sweep_index)?
+            .as_ref()
+            .map(|tilt| &tilt.field)
     }
 
-    /// Per-gate branch confidence for a cut (spec §8).  O(1).
-    pub fn tilt_confidence(&self, cut_index: usize) -> Option<&ConfidenceGrid> {
+    /// Per-gate branch confidence for a sweep (spec §8).  O(1).
+    pub fn tilt_confidence(&self, sweep_index: usize) -> Option<&ConfidenceGrid> {
         self.tilts
-            .get(cut_index)?
+            .get(sweep_index)?
             .as_ref()
             .map(|tilt| &tilt.confidence)
     }
@@ -153,9 +163,12 @@ impl V4VolumeSolution {
         &self.diagnostics
     }
 
-    /// Consume the solution, extracting one tilt's grid without a clone.
-    pub fn into_tilt_grid(mut self, cut_index: usize) -> Option<MomentGrid> {
-        self.tilts.get_mut(cut_index)?.take().map(|tilt| tilt.grid)
+    /// Consume the solution, extracting one tilt's field without a clone.
+    pub fn into_tilt_field(mut self, sweep_index: usize) -> Option<Field> {
+        self.tilts
+            .get_mut(sweep_index)?
+            .take()
+            .map(|tilt| tilt.field)
     }
 }
 
@@ -164,28 +177,38 @@ impl V4VolumeSolution {
 /// `previous` enables the temporal prior; `environment` the absolute branch
 /// anchor.  Both are optional and independently validated (site, age,
 /// staleness) — an unusable input degrades gracefully, never errors.
-pub fn dealias_volume_v4(
-    volume: &RadarVolume,
+///
+/// Velocity is each sweep's [`Quantity::RadialVelocity`] field
+/// ([`recast_radar_core::Sweep::find`]); sweeps whose velocity field provides
+/// no rows or gates are skipped.  The volume time used for the temporal and
+/// environmental staleness checks is the first ray time
+/// (`time_coverage.start`), else the time reference.
+pub fn dealias_volume(
+    volume: &Volume,
     previous: Option<TemporalPrior<'_>>,
     environment: Option<&EnvironmentalWindProfile>,
 ) -> V4VolumeSolution {
-    let environment = environment.filter(|profile| profile.usable_for(volume.volume_time));
+    let volume_time = crate::volume_start_time(volume);
+    let environment = environment.filter(|profile| profile.usable_for(volume_time));
 
     // ---- per-tilt fields + v1 region solves (parallel, order-stable) ----
-    let velocity_cuts: Vec<(usize, &MomentGrid)> = volume
-        .cuts
+    let velocity_sweeps: Vec<(usize, &Field, (f64, f64))> = volume
+        .sweeps
         .iter()
         .enumerate()
-        .filter_map(|(cut_index, cut)| {
-            cut.moments
-                .get(&MomentType::Velocity)
-                .filter(|grid| grid.radial_count() > 0 && grid.gate_range.gate_count > 0)
-                .map(|grid| (cut_index, grid))
+        .filter_map(|(sweep_index, sweep)| {
+            let field = sweep
+                .find(Quantity::RadialVelocity)
+                .filter(|field| crate::provided_rows(field) > 0 && field.ngates > 0)?;
+            let geometry = field.native_geometry(&sweep.range)?;
+            Some((sweep_index, field, geometry))
         })
         .collect();
-    let mut tilts: Vec<TiltField> = velocity_cuts
+    let mut tilts: Vec<TiltField> = velocity_sweeps
         .par_iter()
-        .map(|&(cut_index, grid)| build_tilt_field(volume, cut_index, grid))
+        .map(|&(sweep_index, field, geometry)| {
+            build_tilt_field(volume, sweep_index, field, geometry)
+        })
         .collect();
 
     // ---- global node assignment (deterministic: tilt order, super order) --
@@ -252,21 +275,24 @@ pub fn dealias_volume_v4(
     }
 
     // ---- encode ----
-    let mut solutions: Vec<Option<V4TiltSolution>> = (0..volume.cuts.len()).map(|_| None).collect();
+    let mut solutions: Vec<Option<V4TiltSolution>> =
+        (0..volume.sweeps.len()).map(|_| None).collect();
     for (tilt, (folds, confidence_values)) in tilts.into_iter().zip(per_tilt) {
-        let grid = encode_tilt(&tilt, &folds);
+        let field = encode_tilt(&tilt, &folds);
         let confidence = ConfidenceGrid::new(tilt.rows, tilt.gates, confidence_values);
-        solutions[tilt.cut_index] = Some(V4TiltSolution {
-            cut_index: tilt.cut_index,
+        solutions[tilt.sweep_index] = Some(V4TiltSolution {
+            sweep_index: tilt.sweep_index,
             elevation_deg: tilt.elevation_deg,
             azimuths: tilt.azimuths,
-            grid,
+            first_gate_m: tilt.first_gate_m,
+            gate_spacing_m: tilt.gate_spacing_m,
+            field,
             confidence,
         });
     }
 
     let diagnostics = V4Diagnostics {
-        velocity_tilts: velocity_cuts.len(),
+        velocity_tilts: velocity_sweeps.len(),
         nodes: node_count,
         graph_edges: tables.edges.len(),
         components: outcome.components,
@@ -286,42 +312,45 @@ pub fn dealias_volume_v4(
     };
 
     V4VolumeSolution {
-        site_id: volume.site.id.clone(),
-        volume_time: volume.volume_time,
+        site_id: volume.attrs.instrument_name.clone(),
+        volume_time,
         tilts: solutions,
         diagnostics,
+        legacy_tilts: crate::legacy_api::LegacyTilts::default(),
     }
 }
 
-/// Drop-in per-cut convenience mirroring the retired
+/// Per-sweep convenience mirroring the retired
 /// `dealias_velocity_grid_hybrid` signature (removed at v0.29.0).
 /// Runs the volume solve internally — callers that need more than one tilt
 /// should hold a [`V4VolumeSolution`] instead (one solve serves all tilts).
-pub fn dealias_velocity_grid_v4(
-    volume: &RadarVolume,
-    cut_index: usize,
-    previous: Option<&RadarVolume>,
+pub fn dealias_velocity_v4(
+    volume: &Volume,
+    sweep_index: usize,
+    previous: Option<&Volume>,
     environment: Option<&EnvironmentalWindProfile>,
-) -> Option<MomentGrid> {
+) -> Option<Field> {
     volume
-        .cuts
-        .get(cut_index)?
-        .moments
-        .get(&MomentType::Velocity)?;
-    let solution = dealias_volume_v4(volume, previous.map(TemporalPrior::Volume), environment);
-    solution.into_tilt_grid(cut_index)
+        .sweeps
+        .get(sweep_index)?
+        .find(Quantity::RadialVelocity)?;
+    let solution = dealias_volume(volume, previous.map(TemporalPrior::Volume), environment);
+    solution.into_tilt_field(sweep_index)
 }
 
 /// Everything the solver knows about one velocity tilt.
 pub(crate) struct TiltField {
-    pub(crate) cut_index: usize,
+    pub(crate) sweep_index: usize,
     pub(crate) elevation_deg: f32,
     pub(crate) rows: usize,
     pub(crate) gates: usize,
-    pub(crate) first_gate_m: i32,
-    pub(crate) gate_spacing_m: i32,
-    pub(crate) gate_range: GateRange,
-    pub(crate) radial_indices: Vec<usize>,
+    /// Centre of native gate 0 and native spacing, metres.
+    pub(crate) first_gate_m: f64,
+    pub(crate) gate_spacing_m: f64,
+    /// The source field's mapping onto its sweep range and absent rows, which
+    /// the encoded output keeps.
+    pub(crate) source_gates: GateMapping,
+    pub(crate) source_absent_rows: Vec<u32>,
     pub(crate) wraps: bool,
     pub(crate) azimuths: Vec<f32>,
     /// Per-row Nyquist (NaN where unknown — those rows pass through).
@@ -335,17 +364,21 @@ pub(crate) struct TiltField {
     pub(crate) node_of_super: Vec<usize>,
 }
 
-fn build_tilt_field(volume: &RadarVolume, cut_index: usize, grid: &MomentGrid) -> TiltField {
-    let cut = &volume.cuts[cut_index];
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
+fn build_tilt_field(
+    volume: &Volume,
+    sweep_index: usize,
+    field: &Field,
+    (first_gate_m, gate_spacing_m): (f64, f64),
+) -> TiltField {
+    let sweep = &volume.sweeps[sweep_index];
+    let (rows, gates) = field.shape();
     let total = rows.saturating_mul(gates);
 
-    let azimuths = crate::radial_azimuths(cut, grid);
-    let fallback_nyquist = crate::median_nyquist_mps(cut, grid);
+    let azimuths = crate::radial_azimuths(sweep, field);
+    let fallback_nyquist = crate::median_nyquist_mps(sweep, field);
     let mut nyq = vec![f32::NAN; rows.max(1)];
     for (row, slot) in nyq.iter_mut().enumerate().take(rows) {
-        *slot = crate::row_nyquist_mps(cut, grid, row)
+        *slot = crate::row_nyquist_mps(sweep, row)
             .or(fallback_nyquist)
             .filter(|value| value.is_finite() && *value > 0.0)
             .unwrap_or(f32::NAN);
@@ -355,7 +388,7 @@ fn build_tilt_field(volume: &RadarVolume, cut_index: usize, grid: &MomentGrid) -
     if total > 0 {
         let mut row_buffer = vec![f32::NAN; gates];
         for row in 0..rows {
-            crate::copy_scaled_velocity_row(grid, row, &mut row_buffer);
+            crate::copy_scaled_velocity_row(field, row, &mut row_buffer);
             observed[row * gates..(row + 1) * gates].copy_from_slice(&row_buffer);
         }
     }
@@ -372,14 +405,14 @@ fn build_tilt_field(volume: &RadarVolume, cut_index: usize, grid: &MomentGrid) -
     let wraps = crate::sweep_wraps(&azimuths);
 
     TiltField {
-        cut_index,
-        elevation_deg: cut.elevation_deg,
+        sweep_index,
+        elevation_deg: sweep.fixed_angle_deg,
         rows,
         gates,
-        first_gate_m: grid.gate_range.first_gate_m,
-        gate_spacing_m: grid.gate_range.gate_spacing_m,
-        gate_range: grid.gate_range.clone(),
-        radial_indices: grid.radial_indices.clone(),
+        first_gate_m,
+        gate_spacing_m,
+        source_gates: field.gates,
+        source_absent_rows: field.absent_rows.clone(),
         wraps,
         azimuths,
         nyq,
@@ -432,7 +465,7 @@ fn apply_labels(
 
 /// Resolve the temporal prior into per-tilt mapped fields.
 fn resolve_temporal(
-    volume: &RadarVolume,
+    volume: &Volume,
     tilts: &[TiltField],
     previous: Option<TemporalPrior<'_>>,
     environment: Option<&EnvironmentalWindProfile>,
@@ -449,26 +482,29 @@ fn resolve_temporal(
         Some(TemporalPrior::Volume(previous_volume)) => {
             if !temporal_usable(
                 volume,
-                &previous_volume.site.id,
-                previous_volume.volume_time,
+                &previous_volume.attrs.instrument_name,
+                crate::volume_start_time(previous_volume),
             ) {
                 return none();
             }
             // See module doc: the bare volume is solved with this engine
             // (no temporal recursion) so the prior does not re-inject the
             // exact branch errors the temporal term exists to correct.
-            let prior_solution = dealias_volume_v4(previous_volume, None, environment);
+            let prior_solution = dealias_volume(previous_volume, None, environment);
             map_solution(tilts, &prior_solution)
         }
     }
 }
 
-fn temporal_usable(current: &RadarVolume, prior_site: &str, prior_time: DateTime<Utc>) -> bool {
-    if !current.site.id.eq_ignore_ascii_case(prior_site) {
+fn temporal_usable(current: &Volume, prior_site: &str, prior_time: DateTime<Utc>) -> bool {
+    if !current
+        .attrs
+        .instrument_name
+        .eq_ignore_ascii_case(prior_site)
+    {
         return false;
     }
-    let age_seconds = current
-        .volume_time
+    let age_seconds = crate::volume_start_time(current)
         .signed_duration_since(prior_time)
         .num_seconds();
     age_seconds > 0 && age_seconds <= TEMPORAL_MAX_AGE_SECONDS
@@ -488,7 +524,7 @@ fn map_solution(tilts: &[TiltField], solution: &V4VolumeSolution) -> Vec<Option<
                 .min_by(|left, right| {
                     left.1
                         .total_cmp(&right.1)
-                        .then_with(|| left.0.cut_index.cmp(&right.0.cut_index))
+                        .then_with(|| left.0.sweep_index.cmp(&right.0.sweep_index))
                 })?
                 .0;
             map_solution_tilt(tilt, source)
@@ -506,9 +542,9 @@ fn map_solution_tilt(tilt: &TiltField, source: &V4TiltSolution) -> Option<Mapped
         tilt.first_gate_m,
         tilt.gate_spacing_m,
         tilt.gates,
-        source.grid.gate_range.first_gate_m,
-        source.grid.gate_range.gate_spacing_m,
-        source.grid.gate_range.gate_count,
+        source.first_gate_m,
+        source.gate_spacing_m,
+        source.field.ngates as usize,
     );
     let mut values = vec![f32::NAN; total];
     let mut confidence = vec![0.0f32; total];
@@ -522,8 +558,8 @@ fn map_solution_tilt(tilt: &TiltField, source: &V4TiltSolution) -> Option<Mapped
                 continue;
             };
             let Some(value) = source
-                .grid
-                .scaled_value(source_row, source_gate)
+                .field
+                .value(source_row, source_gate)
                 .filter(|value| value.is_finite() && value.abs() <= MAX_REFERENCE_ABS_VELOCITY_MPS)
             else {
                 continue;
@@ -652,10 +688,10 @@ fn build_repair_reference(
     any.then_some(reference)
 }
 
-/// Encode the final folds into the shared dealiased-velocity grid format
+/// Encode the final folds into the shared dealiased-velocity field format
 /// (same scale/offset contract as v1/v2/v3 so every consumer downstream is
 /// untouched).
-fn encode_tilt(tilt: &TiltField, folds: &[i32]) -> MomentGrid {
+fn encode_tilt(tilt: &TiltField, folds: &[i32]) -> Field {
     let total = tilt.rows.saturating_mul(tilt.gates);
     let mut corrected = vec![crate::DEALIASED_VELOCITY_NODATA; total];
     for row in 0..tilt.rows {
@@ -674,27 +710,34 @@ fn encode_tilt(tilt: &TiltField, folds: &[i32]) -> MomentGrid {
             corrected[idx] = crate::encode_dealiased_velocity(unfolded);
         }
     }
-    MomentGrid {
-        moment: MomentType::Velocity,
-        gate_range: tilt.gate_range.clone(),
-        scale: crate::DEALIASED_VELOCITY_SCALE,
-        offset: crate::DEALIASED_VELOCITY_OFFSET,
-        nodata: Some(crate::DEALIASED_VELOCITY_NODATA),
-        range_folded: None,
-        radial_indices: tilt.radial_indices.clone(),
-        storage: MomentStorage::U16(corrected),
-    }
+    crate::dealiased_velocity_field_parts(
+        tilt.source_gates,
+        tilt.rows,
+        tilt.gates,
+        tilt.source_absent_rows.clone(),
+        corrected,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dealias_velocity_grid;
+    use crate::dealias_velocity;
+    use crate::test_support::velocity_sweep;
     use chrono::Duration;
-    use recast_radar_core::{ElevationCut, RadarSite, Radial};
+    use recast_radar_core::Sweep;
 
     fn utc(hours: i64) -> DateTime<Utc> {
         DateTime::<Utc>::UNIX_EPOCH + Duration::hours(hours)
+    }
+
+    fn volume_at(time: DateTime<Utc>, sweeps: Vec<Sweep>) -> Volume {
+        let mut volume = Volume::new("TEST", time);
+        volume.sweeps = sweeps;
+        for (index, sweep) in volume.sweeps.iter_mut().enumerate() {
+            sweep.sweep_number = index as u32;
+        }
+        volume
     }
 
     fn velocity_cut(
@@ -703,42 +746,24 @@ mod tests {
         rows: usize,
         gates: usize,
         value_at: impl Fn(usize, usize) -> f32,
-    ) -> ElevationCut {
-        let gate_range = GateRange {
-            first_gate_m: 1000,
-            gate_spacing_m: 250,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(elevation, None);
+    ) -> Sweep {
         let mut data = vec![f32::NAN; rows * gates];
+        let mut azimuths = Vec::with_capacity(rows);
         for row in 0..rows {
-            let azimuth = row as f32 * (360.0 / rows as f32);
-            cut.radials.push(Radial {
-                azimuth_deg: azimuth,
-                elevation_deg: elevation,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(nyquist),
-                radial_status: None,
-            });
+            azimuths.push(row as f32 * (360.0 / rows as f32));
             for gate in 0..gates {
                 data[row * gates + gate] = value_at(row, gate);
             }
         }
-        cut.moments.insert(
-            MomentType::Velocity,
-            MomentGrid {
-                moment: MomentType::Velocity,
-                gate_range,
-                scale: 1.0,
-                offset: 0.0,
-                nodata: None,
-                range_folded: None,
-                radial_indices: (0..rows).collect(),
-                storage: MomentStorage::F32(data),
-            },
-        );
-        cut
+        velocity_sweep(
+            &azimuths,
+            elevation,
+            1000.0,
+            250.0,
+            gates,
+            data,
+            Some(vec![nyquist; rows]),
+        )
     }
 
     fn wrap(value: f32, nyquist: f32) -> f32 {
@@ -752,20 +777,20 @@ mod tests {
         nyquist: f32,
         rows: usize,
         gates: usize,
-    ) -> ElevationCut {
+    ) -> Sweep {
         velocity_cut(elevation, nyquist, rows, gates, move |row, _| {
             let azimuth = row as f32 * (360.0 / rows as f32);
             wrap(speed * (azimuth - toward_deg).to_radians().cos(), nyquist)
         })
     }
 
-    fn wind_error(grid: &MomentGrid, rows: usize, gates: usize, speed: f32, toward: f32) -> f32 {
+    fn wind_error(field: &Field, rows: usize, gates: usize, speed: f32, toward: f32) -> f32 {
         let mut worst = 0.0f32;
         for row in 0..rows {
             let azimuth = row as f32 * (360.0 / rows as f32);
             let truth = speed * (azimuth - toward).to_radians().cos();
             for gate in (0..gates).step_by(7) {
-                if let Some(value) = grid.scaled_value(row, gate).filter(|v| v.is_finite()) {
+                if let Some(value) = field.value(row, gate).filter(|v| v.is_finite()) {
                     worst = worst.max((value - truth).abs());
                 }
             }
@@ -804,31 +829,37 @@ mod tests {
     #[test]
     fn v4_temporal_reference_recovers_a_topmost_aliased_high_tilt() {
         let base = utc(1);
-        let mut previous = RadarVolume::new(RadarSite::new("TEST"), base);
-        previous.cuts = vec![
-            wind_cut(1.23, 35.0, 180.0, 20.0, 360, 120),
-            wind_cut(2.4, 35.0, 180.0, 40.0, 360, 120),
-        ];
-        let mut current = RadarVolume::new(RadarSite::new("TEST"), base + Duration::minutes(5));
-        current.cuts = vec![wind_cut(1.23, 35.0, 180.0, 20.0, 360, 120)];
+        let previous = volume_at(
+            base,
+            vec![
+                wind_cut(1.23, 35.0, 180.0, 20.0, 360, 120),
+                wind_cut(2.4, 35.0, 180.0, 40.0, 360, 120),
+            ],
+        );
+        let current = volume_at(
+            base + Duration::minutes(5),
+            vec![wind_cut(1.23, 35.0, 180.0, 20.0, 360, 120)],
+        );
 
-        let grid = dealias_velocity_grid_v4(&current, 0, Some(&previous), None).expect("v4");
+        let field = dealias_velocity_v4(&current, 0, Some(&previous), None).expect("v4");
         assert!(
-            wind_error(&grid, 360, 120, 35.0, 180.0) < 2.0,
+            wind_error(&field, 360, 120, 35.0, 180.0) < 2.0,
             "temporal prior must recover the branch"
         );
     }
 
     #[test]
     fn v4_lower_current_tilt_can_reference_a_folded_higher_tilt() {
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(2));
-        volume.cuts = vec![
-            wind_cut(0.5, 35.0, 90.0, 40.0, 360, 100),
-            wind_cut(1.23, 35.0, 90.0, 20.0, 720, 100),
-        ];
-        let grid = dealias_velocity_grid_v4(&volume, 1, None, None).expect("v4");
+        let volume = volume_at(
+            utc(2),
+            vec![
+                wind_cut(0.5, 35.0, 90.0, 40.0, 360, 100),
+                wind_cut(1.23, 35.0, 90.0, 20.0, 720, 100),
+            ],
+        );
+        let field = dealias_velocity_v4(&volume, 1, None, None).expect("v4");
         assert!(
-            wind_error(&grid, 720, 100, 35.0, 90.0) < 2.0,
+            wind_error(&field, 720, 100, 35.0, 90.0) < 2.0,
             "vertical evidence must recover the branch"
         );
     }
@@ -844,16 +875,15 @@ mod tests {
                 }
             })
         };
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(3));
-        volume.cuts = vec![isolated(0.5, 45.0), isolated(1.23, 20.0)];
+        let volume = volume_at(utc(3), vec![isolated(0.5, 45.0), isolated(1.23, 20.0)]);
 
-        let grid = dealias_velocity_grid_v4(&volume, 1, None, None).expect("v4");
+        let field = dealias_velocity_v4(&volume, 1, None, None).expect("v4");
         assert!(
-            (grid.scaled_value(90, 30).expect("value") - 35.0).abs() < 1.0,
+            (field.value(90, 30).expect("value") - 35.0).abs() < 1.0,
             "vertical evidence must choose the +1 branch"
         );
         assert!(
-            grid.scaled_value(20, 30).is_none(),
+            field.value(20, 30).is_none(),
             "must not invent gates outside native coverage"
         );
     }
@@ -870,16 +900,15 @@ mod tests {
                 wrap(truth, nyquist)
             })
         };
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(4));
-        volume.cuts = vec![patch(0.5, 45.0), patch(1.23, 20.0)];
+        let volume = volume_at(utc(4), vec![patch(0.5, 45.0), patch(1.23, 20.0)]);
 
-        let grid = dealias_velocity_grid_v4(&volume, 1, None, None).expect("v4");
+        let field = dealias_velocity_v4(&volume, 1, None, None).expect("v4");
         assert!(
-            (grid.scaled_value(150, 50).expect("patch") - 35.0).abs() < 1.0,
+            (field.value(150, 50).expect("patch") - 35.0).abs() < 1.0,
             "folded lobe must be recovered"
         );
         assert!(
-            (grid.scaled_value(60, 50).expect("background") + 5.0).abs() < 1.0,
+            (field.value(60, 50).expect("background") + 5.0).abs() < 1.0,
             "legitimate inbound background must stay"
         );
     }
@@ -887,14 +916,15 @@ mod tests {
     #[test]
     fn v4_stale_temporal_volume_is_ignored() {
         let base = utc(5);
-        let mut previous = RadarVolume::new(RadarSite::new("TEST"), base);
-        previous.cuts = vec![wind_cut(1.23, 35.0, 180.0, 40.0, 360, 80)];
-        let mut current = RadarVolume::new(RadarSite::new("TEST"), base + Duration::minutes(30));
-        current.cuts = vec![wind_cut(1.23, 15.0, 180.0, 25.0, 360, 80)];
+        let previous = volume_at(base, vec![wind_cut(1.23, 35.0, 180.0, 40.0, 360, 80)]);
+        let current = volume_at(
+            base + Duration::minutes(30),
+            vec![wind_cut(1.23, 15.0, 180.0, 25.0, 360, 80)],
+        );
 
-        let with_stale = dealias_velocity_grid_v4(&current, 0, Some(&previous), None).expect("v4");
-        let without = dealias_velocity_grid_v4(&current, 0, None, None).expect("v4");
-        assert_eq!(with_stale.storage, without.storage);
+        let with_stale = dealias_velocity_v4(&current, 0, Some(&previous), None).expect("v4");
+        let without = dealias_velocity_v4(&current, 0, None, None).expect("v4");
+        assert_eq!(with_stale.data, without.data);
     }
 
     // ---- v4-specific stage tests ----
@@ -924,34 +954,36 @@ mod tests {
                 f32::NAN
             }
         });
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(6));
-        volume.cuts = vec![cut];
+        let volume = volume_at(utc(6), vec![cut]);
 
         let v1 = {
-            let cut = &volume.cuts[0];
-            dealias_velocity_grid(cut, cut.moments.get(&MomentType::Velocity).expect("vel"))
+            let sweep = &volume.sweeps[0];
+            dealias_velocity(
+                sweep,
+                sweep.find(Quantity::RadialVelocity).expect("velocity"),
+            )
         };
         assert!(
-            (v1.scaled_value(120, 45).expect("v1 island") - 12.0).abs() < 1.0,
+            (v1.value(120, 45).expect("v1 island") - 12.0).abs() < 1.0,
             "v1 must exhibit the F3 misbranch for this test to be meaningful"
         );
 
-        let no_env = dealias_velocity_grid_v4(&volume, 0, None, None).expect("v4");
+        let no_env = dealias_velocity_v4(&volume, 0, None, None).expect("v4");
         assert_eq!(
-            no_env.storage, v1.storage,
+            no_env.data, v1.data,
             "without external evidence v4 must degrade to v1 exactly"
         );
 
         // Environment: 28 m/s toward azimuth 300° ⇒ v̂ ≈ −28 in the island's
         // sector (az 100–140°) and mildly positive/negative elsewhere.
-        let env = uniform_env(28.0, 300.0, volume.volume_time);
-        let with_env = dealias_velocity_grid_v4(&volume, 0, None, Some(&env)).expect("v4");
+        let env = uniform_env(28.0, 300.0, volume.time_reference);
+        let with_env = dealias_velocity_v4(&volume, 0, None, Some(&env)).expect("v4");
         assert!(
-            (with_env.scaled_value(120, 45).expect("island") + 28.0).abs() < 1.0,
+            (with_env.value(120, 45).expect("island") + 28.0).abs() < 1.0,
             "the weak-edge island must rebranch to −28"
         );
         assert!(
-            (with_env.scaled_value(200, 10).expect("main") + 5.0).abs() < 1.0,
+            (with_env.value(200, 10).expect("main") + 5.0).abs() < 1.0,
             "the main field must not move"
         );
     }
@@ -965,32 +997,31 @@ mod tests {
     fn v4_branch_degenerate_volume_is_decided_by_the_environment() {
         let nyquist = 20.0;
         let make = |elevation: f32| wind_cut(elevation, 30.0, 0.0, nyquist, 360, 80);
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(7));
-        volume.cuts = vec![make(0.5), make(1.4)];
+        let volume = volume_at(utc(7), vec![make(0.5), make(1.4)]);
 
         // Probe azimuth 0 (row 0): truth 30, wrapped observation −10.
         // Without env the absolute branch is under-determined (the anchor
         // may land on either a wrapped or an unwrapped band — segmentation
         // detail, not evidence): the output must be a whole-2N multiple of
         // the observation, nothing in between.
-        let no_env = dealias_velocity_grid_v4(&volume, 0, None, None).expect("v4");
-        let probed = no_env.scaled_value(0, 40).expect("no env");
+        let no_env = dealias_velocity_v4(&volume, 0, None, None).expect("v4");
+        let probed = no_env.value(0, 40).expect("no env");
         let folds = (probed + 10.0) / 40.0;
         assert!(
             (folds - folds.round()).abs() < 0.05,
             "no-env output must sit a whole number of folds from the raw value, got {probed}"
         );
 
-        let env = uniform_env(30.0, 0.0, volume.volume_time);
-        let with_env = dealias_velocity_grid_v4(&volume, 0, None, Some(&env)).expect("v4");
+        let env = uniform_env(30.0, 0.0, volume.time_reference);
+        let with_env = dealias_velocity_v4(&volume, 0, None, Some(&env)).expect("v4");
         assert!(
             wind_error(&with_env, 360, 80, 30.0, 0.0) < 2.0,
             "env anchor must unfold the whole tilt"
         );
-        let upper = dealias_volume_v4(&volume, None, Some(&env));
-        let upper_grid = upper.tilt_grid(1).expect("upper tilt");
+        let upper = dealias_volume(&volume, None, Some(&env));
+        let upper_field = upper.tilt_field(1).expect("upper tilt");
         assert!(
-            wind_error(upper_grid, 360, 80, 30.0, 0.0) < 2.5,
+            wind_error(upper_field, 360, 80, 30.0, 0.0) < 2.5,
             "both tilts must move together (volume consistency)"
         );
     }
@@ -1002,39 +1033,42 @@ mod tests {
         let make = |elevation: f32| {
             velocity_cut(elevation, nyquist, 360, 80, move |_, _| wrap(30.0, nyquist))
         };
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(8));
-        volume.cuts = vec![make(0.5)];
+        let volume = volume_at(utc(8), vec![make(0.5)]);
 
-        let stale = uniform_env(30.0, 0.0, volume.volume_time - Duration::hours(4));
-        let with_stale = dealias_velocity_grid_v4(&volume, 0, None, Some(&stale)).expect("v4");
-        let without = dealias_velocity_grid_v4(&volume, 0, None, None).expect("v4");
-        assert_eq!(with_stale.storage, without.storage);
+        let stale = uniform_env(30.0, 0.0, volume.time_reference - Duration::hours(4));
+        let with_stale = dealias_velocity_v4(&volume, 0, None, Some(&stale)).expect("v4");
+        let without = dealias_velocity_v4(&volume, 0, None, None).expect("v4");
+        assert_eq!(with_stale.data, without.data);
     }
 
-    /// Determinism pin (spec §5.4): identical inputs ⇒ byte-identical grids
+    /// Determinism pin (spec §5.4): identical inputs ⇒ byte-identical fields
     /// and confidence across repeated solves.
     #[test]
     fn v4_solve_is_deterministic_across_runs() {
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(9));
-        volume.cuts = vec![
-            wind_cut(0.5, 35.0, 90.0, 40.0, 360, 100),
-            wind_cut(1.23, 35.0, 90.0, 20.0, 720, 100),
-        ];
-        let env = uniform_env(35.0, 90.0, volume.volume_time);
-        let first = dealias_volume_v4(&volume, None, Some(&env));
-        let second = dealias_volume_v4(&volume, None, Some(&env));
-        for cut_index in 0..volume.cuts.len() {
+        let volume = volume_at(
+            utc(9),
+            vec![
+                wind_cut(0.5, 35.0, 90.0, 40.0, 360, 100),
+                wind_cut(1.23, 35.0, 90.0, 20.0, 720, 100),
+            ],
+        );
+        let env = uniform_env(35.0, 90.0, volume.time_reference);
+        let first = dealias_volume(&volume, None, Some(&env));
+        let second = dealias_volume(&volume, None, Some(&env));
+        for sweep_index in 0..volume.sweeps.len() {
             assert_eq!(
-                first.tilt_grid(cut_index).map(|grid| &grid.storage),
-                second.tilt_grid(cut_index).map(|grid| &grid.storage),
-                "grids must be byte-identical (cut {cut_index})"
+                first.tilt_field(sweep_index).map(|field| &field.data),
+                second.tilt_field(sweep_index).map(|field| &field.data),
+                "fields must be byte-identical (sweep {sweep_index})"
             );
             assert_eq!(
-                first.tilt_confidence(cut_index).map(ConfidenceGrid::values),
-                second
-                    .tilt_confidence(cut_index)
+                first
+                    .tilt_confidence(sweep_index)
                     .map(ConfidenceGrid::values),
-                "confidence must be byte-identical (cut {cut_index})"
+                second
+                    .tilt_confidence(sweep_index)
+                    .map(ConfidenceGrid::values),
+                "confidence must be byte-identical (sweep {sweep_index})"
             );
         }
     }
@@ -1043,10 +1077,9 @@ mod tests {
     /// margin-derived confidence; the temporal consumer can read it back.
     #[test]
     fn v4_confidence_grid_reflects_decision_margins() {
-        let mut volume = RadarVolume::new(RadarSite::new("TEST"), utc(10));
-        volume.cuts = vec![wind_cut(0.5, 30.0, 0.0, 40.0, 360, 60)];
-        let env = uniform_env(30.0, 0.0, volume.volume_time);
-        let solution = dealias_volume_v4(&volume, None, Some(&env));
+        let volume = volume_at(utc(10), vec![wind_cut(0.5, 30.0, 0.0, 40.0, 360, 60)]);
+        let env = uniform_env(30.0, 0.0, volume.time_reference);
+        let solution = dealias_volume(&volume, None, Some(&env));
         let confidence = solution.tilt_confidence(0).expect("confidence");
         let sampled = confidence.value(10, 30).expect("gate");
         assert!(

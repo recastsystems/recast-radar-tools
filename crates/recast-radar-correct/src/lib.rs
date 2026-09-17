@@ -1,49 +1,46 @@
 //! Radar data correction: Doppler velocity dealiasing.
 //!
 //! Three unfolding engines share the helpers in this crate root:
-//! - the region-based engine ([`dealias_velocity_grid`],
-//!   [`dealias_velocity_grid_with_reference`]),
-//! - the model-anchored volume engine ([`dealias_volume_v4`],
-//!   [`dealias_velocity_grid_v4`]),
+//! - the region-based engine ([`dealias_velocity`],
+//!   [`dealias_velocity_with_reference`]),
+//! - the model-anchored volume engine ([`dealias_volume`],
+//!   [`dealias_velocity_v4`]),
 //! - a literal port of Py-ART's region dealiaser
-//!   ([`dealias_velocity_grid_pyart_region`]).
+//!   ([`dealias_velocity_pyart_region`]).
+//!
+//! Every engine works on the FM301 model of `recast-radar-core`: the velocity
+//! [`Field`] of a [`Sweep`] in, a dealiased-velocity field (`VRADDH`) on the
+//! same rays and gates out.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 mod dealias_pyart;
 mod dealias_v4;
+pub mod legacy_api;
 mod region_core;
 
-pub use dealias_pyart::dealias_velocity_grid_pyart_region;
+pub use dealias_pyart::dealias_velocity_pyart_region;
 pub use dealias_v4::{
     ConfidenceGrid, EnvWindLevel, EnvironmentalWindProfile, TemporalPrior, V4Diagnostics,
-    V4VolumeSolution, dealias_velocity_grid_v4, dealias_volume_v4, project_environmental_winds,
+    V4VolumeSolution, dealias_velocity_v4, dealias_volume, project_environmental_winds_onto,
 };
-use recast_radar_core::{ElevationCut, MomentGrid, MomentStorage, MomentType};
 
-/// Dealias (unfold) a base velocity moment.
-///
-/// This is a **region-based** unfolder, not a gate-by-gate radial walk. A
-/// radial/gate-sequential continuity scheme (the previous implementation)
-/// propagates a single bad fold down an entire ray, producing the radial
-/// "spokes" that plague high-shear convection (derechos, mesocyclones). The
-/// region-based approach decides whole coherent regions at once and lets
-/// genuine discontinuities remain at region boundaries, so an error cannot
-/// run down a radial. See Feldmann et al. (2020, *R2D2*, JTECH-D-20-0054.1),
-/// Jing & Wiener (1993), and Py-ART's `dealias_region_based`
-/// (Helmus & Collis 2016).
-///
-/// Steps: (1) flood-fill connected regions whose neighbouring gates differ by
-/// less than half a Nyquist (so no fold occurs *within* a region); (2) build a
-/// region-adjacency graph whose edges carry the integer Nyquist fold between
-/// the two regions (the consensus over all shared boundary gate-pairs);
-/// (3) resolve folds strongest-boundary-first via a union-find with per-node
-/// fold offset; (4) anchor each connected group so its largest region is
-/// unfolded (fold 0); (5) apply and despeckle.
+// Legacy signatures, kept until the FM301 shim is removed
+// (docs/design/fm301-model.md section 13.3).
+#[allow(deprecated)]
+pub use legacy_api::*;
+
+use chrono::{DateTime, Utc};
+use recast_radar_core::model::{Coding, RowRef};
+use recast_radar_core::{
+    Field, FieldData, FieldName, Gate, GateMapping, IntCoding, LinearTransform, Sweep, Volume,
+};
+
 /// Per-range-band zeroth-harmonic wind reference (Browning & Wexler 1968):
 /// v̂(az) = a·cos(az) + b·sin(az), fitted per band of gates. Supplied to the
 /// fold resolver as EXTERNAL evidence via
-/// [`dealias_velocity_grid_with_reference`]; the bench eval battery fits it
+/// [`dealias_velocity_with_reference`]; the bench eval battery fits it
 /// on each engine's own output for the `rms_harmonic` metric (dealias-v4
 /// spec §10.2).
 pub struct RangeBandReference {
@@ -67,20 +64,15 @@ const FIT_MIN_SECTORS: u32 = 5; // of 12 × 30° azimuth sectors
 const FIT_TRIM_MPS: f32 = 12.0;
 
 /// Fit the per-range-band zeroth harmonic v(az) = a·cos(az) + b·sin(az) on a
-/// (dealiased) velocity grid. Two passes: fit, then refit excluding outliers.
+/// (dealiased) velocity field of `sweep`. Two passes: fit, then refit
+/// excluding outliers.
 /// (Browning & Wexler 1968; formerly the tilt-cascade engine's reference fit
 /// — the cascade and hybrid engines were removed at v0.29.0, superseded by
 /// the model-anchored `dealias_v4` engine.)
-pub fn fit_range_band_reference(cut: &ElevationCut, grid: &MomentGrid) -> RangeBandReference {
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
+pub fn range_band_reference(sweep: &Sweep, field: &Field) -> RangeBandReference {
+    let (rows, gates) = field.shape();
     let bands = gates.div_ceil(REFERENCE_BAND_GATES).max(1);
-    let azimuth = |row: usize| -> Option<f32> {
-        grid.radial_indices
-            .get(row)
-            .and_then(|&i| cut.radials.get(i))
-            .map(|r| r.azimuth_deg)
-    };
+    let azimuth = |row: usize| -> Option<f32> { sweep.rays.azimuth_deg.get(row).copied() };
 
     let mut fits: Vec<Option<(f32, f32)>> = vec![None; bands];
     for pass in 0..2 {
@@ -94,7 +86,7 @@ pub fn fit_range_band_reference(cut: &ElevationCut, grid: &MomentGrid) -> RangeB
             let (sin_az, cos_az) = (az.sin(), az.cos());
             let sector_bit = 1u16 << ((az_deg.rem_euclid(360.0) / 30.0) as u32 % 12);
             for gate in 0..gates {
-                let Some(v) = grid.scaled_value(row, gate).filter(|v| v.is_finite()) else {
+                let Some(v) = field.value(row, gate).filter(|v| v.is_finite()) else {
                     continue;
                 };
                 let band = gate / REFERENCE_BAND_GATES;
@@ -138,12 +130,32 @@ pub fn fit_range_band_reference(cut: &ElevationCut, grid: &MomentGrid) -> RangeB
     }
 }
 
-pub fn dealias_velocity_grid(cut: &ElevationCut, source: &MomentGrid) -> MomentGrid {
-    dealias_velocity_grid_with_reference(cut, source, None)
+/// Dealias (unfold) the velocity field `source` of `sweep`; returns a
+/// `VRADDH` field on the same rays and native gates.
+///
+/// This is a **region-based** unfolder, not a gate-by-gate radial walk. A
+/// radial/gate-sequential continuity scheme (the previous implementation)
+/// propagates a single bad fold down an entire ray, producing the radial
+/// "spokes" that plague high-shear convection (derechos, mesocyclones). The
+/// region-based approach decides whole coherent regions at once and lets
+/// genuine discontinuities remain at region boundaries, so an error cannot
+/// run down a radial. See Feldmann et al. (2020, *R2D2*, JTECH-D-20-0054.1),
+/// Jing & Wiener (1993), and Py-ART's `dealias_region_based`
+/// (Helmus & Collis 2016).
+///
+/// Steps: (1) flood-fill connected regions whose neighbouring gates differ by
+/// less than half a Nyquist (so no fold occurs *within* a region); (2) build a
+/// region-adjacency graph whose edges carry the integer Nyquist fold between
+/// the two regions (the consensus over all shared boundary gate-pairs);
+/// (3) resolve folds strongest-boundary-first via a union-find with per-node
+/// fold offset; (4) anchor each connected group so its largest region is
+/// unfolded (fold 0); (5) apply and despeckle.
+pub fn dealias_velocity(sweep: &Sweep, source: &Field) -> Field {
+    dealias_velocity_with_reference(sweep, source, None)
 }
 
-/// True when [`dealias_velocity_grid`] over this cut can only pass raw
-/// velocity through: no radial of the velocity grid carries a usable
+/// True when [`dealias_velocity`] over this sweep can only pass raw
+/// velocity through: no provided row of the velocity field carries a usable
 /// (finite, positive) Nyquist velocity, so every per-row Nyquist and the
 /// median fallback are unknown and no fold correction can ever apply
 /// (`v` is emitted unchanged). JMA is always in this state by design
@@ -152,29 +164,28 @@ pub fn dealias_velocity_grid(cut: &ElevationCut, source: &MomentGrid) -> MomentG
 /// product labeled "dealiased" can disclose the pass-through instead of
 /// silently rendering raw velocity under a dealiased label (data trust:
 /// the fold warning can never fire without a Nyquist).
-pub fn dealias_skipped_no_nyquist(cut: &ElevationCut, source: &MomentGrid) -> bool {
-    median_nyquist_mps(cut, source).is_none()
+pub fn dealias_skipped_no_nyquist(sweep: &Sweep, source: &Field) -> bool {
+    median_nyquist_mps(sweep, source).is_none()
 }
 
-/// `dealias_velocity_grid` with an optional external wind reference: the
+/// [`dealias_velocity`] with an optional external wind reference: the
 /// resolver uses it for connected-group BRANCH selection and per-region
 /// verification (UNRAVEL-style checks, Louf et al. 2020). With `None` the
 /// behavior is identical to the plain region engine.
-pub fn dealias_velocity_grid_with_reference(
-    cut: &ElevationCut,
-    source: &MomentGrid,
+pub fn dealias_velocity_with_reference(
+    sweep: &Sweep,
+    source: &Field,
     reference: Option<&RangeBandReference>,
-) -> MomentGrid {
-    let rows = source.radial_count();
-    let gate_count = source.gate_range.gate_count;
+) -> Field {
+    let (rows, gate_count) = source.shape();
     let total = rows.saturating_mul(gate_count);
-    let fallback_nyquist = median_nyquist_mps(cut, source);
+    let fallback_nyquist = median_nyquist_mps(sweep, source);
 
     // Per-row Nyquist (NaN where unknown) and observed velocities (NaN for
     // no-data / range-folded gates, which never join a region).
     let mut nyq = vec![f32::NAN; rows.max(1)];
     for (row, slot) in nyq.iter_mut().enumerate().take(rows) {
-        *slot = row_nyquist_mps(cut, source, row)
+        *slot = row_nyquist_mps(sweep, row)
             .or(fallback_nyquist)
             .filter(|value| value.is_finite() && *value > 0.0)
             .unwrap_or(f32::NAN);
@@ -189,7 +200,7 @@ pub fn dealias_velocity_grid_with_reference(
         }
     }
 
-    let azimuths = radial_azimuths(cut, source);
+    let azimuths = radial_azimuths(sweep, source);
     let folds = region_based_dealias_folds(&observed, &nyq, rows, gate_count, &azimuths, reference);
 
     let mut corrected = vec![DEALIASED_VELOCITY_NODATA; total];
@@ -213,27 +224,19 @@ pub fn dealias_velocity_grid_with_reference(
 
     despeckle_dealiased_velocity(&mut corrected, &nyq, rows, gate_count);
 
-    MomentGrid {
-        moment: MomentType::Velocity,
-        gate_range: source.gate_range.clone(),
-        scale: DEALIASED_VELOCITY_SCALE,
-        offset: DEALIASED_VELOCITY_OFFSET,
-        nodata: Some(DEALIASED_VELOCITY_NODATA),
-        range_folded: None,
-        radial_indices: source.radial_indices.clone(),
-        storage: MomentStorage::U16(corrected),
-    }
+    dealiased_velocity_field(source, corrected)
 }
 
-/// Per-row beam azimuth of `grid` in degrees, normalized to `[0, 360)`; NaN
-/// for a row whose radial index is missing from `cut`.
-pub fn radial_azimuths(cut: &ElevationCut, grid: &MomentGrid) -> Vec<f32> {
-    grid.radial_indices
-        .iter()
-        .map(|ri| {
-            cut.radials
-                .get(*ri)
-                .map(|r| r.azimuth_deg.rem_euclid(360.0))
+/// Per-row beam azimuth of `field` (a field of `sweep`) in degrees,
+/// normalized to `[0, 360)`; NaN for a row past the sweep's rays.
+pub fn radial_azimuths(sweep: &Sweep, field: &Field) -> Vec<f32> {
+    (0..field.nrays as usize)
+        .map(|row| {
+            sweep
+                .rays
+                .azimuth_deg
+                .get(row)
+                .map(|azimuth| azimuth.rem_euclid(360.0))
                 .unwrap_or(f32::NAN)
         })
         .collect()
@@ -465,59 +468,93 @@ fn decode_dealiased_velocity(raw: u16) -> Option<f32> {
     Some((raw as f32 - DEALIASED_VELOCITY_OFFSET) / DEALIASED_VELOCITY_SCALE)
 }
 
+/// The shared dealiased-velocity field format: `VRADDH`, `u16` with
+/// `physical = (raw - 32768) / 10` m/s and raw 0 as `_FillValue`, on the
+/// source's rays and native gates. Rows the source did not provide stay
+/// absent.
+pub(crate) fn dealiased_velocity_field(source: &Field, corrected: Vec<u16>) -> Field {
+    dealiased_velocity_field_parts(
+        source.gates,
+        source.nrays as usize,
+        source.ngates as usize,
+        source.absent_rows.clone(),
+        corrected,
+    )
+}
+
+/// [`dealiased_velocity_field`] from the source's mapping, shape and absent
+/// rows.
+pub(crate) fn dealiased_velocity_field_parts(
+    gates: GateMapping,
+    nrays: usize,
+    ngates: usize,
+    absent_rows: Vec<u32>,
+    corrected: Vec<u16>,
+) -> Field {
+    let mut field = Field::new(
+        FieldName::Vraddh,
+        gates,
+        u32::try_from(ngates).unwrap_or(u32::MAX),
+        FieldData::U16 {
+            values: corrected,
+            coding: IntCoding {
+                fill_value: Some(DEALIASED_VELOCITY_NODATA),
+                ..IntCoding::new(LinearTransform::IcdScaleOffset {
+                    scale: DEALIASED_VELOCITY_SCALE,
+                    offset: DEALIASED_VELOCITY_OFFSET,
+                })
+            },
+        },
+    );
+    field.nrays = u32::try_from(nrays).unwrap_or(u32::MAX);
+    field.absent_rows = absent_rows;
+    field
+}
+
+/// Rows `field` provides: its rows minus the absent ones.
+pub(crate) fn provided_rows(field: &Field) -> usize {
+    (field.nrays as usize).saturating_sub(field.absent_rows.len())
+}
+
 /// Write row `row` of `source` into `row_values` as physical values (m/s).
 ///
-/// No-data and range-folded gates become NaN. `row_values` must be exactly
-/// `gate_count` long; otherwise (or when the row is out of range) it is left
-/// all NaN.
-pub fn copy_scaled_velocity_row(source: &MomentGrid, row: usize, row_values: &mut [f32]) {
+/// Every sentinel (no data, below threshold, range folded, outside
+/// `valid_range`) becomes NaN, as does a row the source did not provide.
+/// `row_values` must be exactly `ngates` long; otherwise (or when the row is
+/// out of range) it is left all NaN.
+pub fn copy_scaled_velocity_row(source: &Field, row: usize, row_values: &mut [f32]) {
     row_values.fill(f32::NAN);
-    let gate_count = source.gate_range.gate_count;
-    if gate_count == 0 || row_values.len() != gate_count {
+    let gate_count = source.ngates as usize;
+    if gate_count == 0 || row_values.len() != gate_count || source.is_absent(row) {
         return;
     }
-    let Some(row_start) = row.checked_mul(gate_count) else {
+    let Some(raw_row) = source.row(row) else {
         return;
     };
-    let row_end = row_start + gate_count;
-    match &source.storage {
-        MomentStorage::U8(values) => {
-            let Some(raw_row) = values.get(row_start..row_end) else {
-                return;
-            };
-            for (raw, value) in raw_row.iter().zip(row_values.iter_mut()) {
-                let raw = u16::from(*raw);
-                if source.nodata == Some(raw) || source.range_folded == Some(raw) {
-                    continue;
-                }
-                *value = (raw as f32 - source.offset) / source.scale;
+    fn fill<T: Copy>(raw: &[T], out: &mut [f32], resolve: impl Fn(T) -> Gate) {
+        for (raw, value) in raw.iter().zip(out.iter_mut()) {
+            if let Gate::Value(physical) = resolve(*raw) {
+                *value = physical;
             }
         }
-        MomentStorage::U16(values) => {
-            let Some(raw_row) = values.get(row_start..row_end) else {
-                return;
-            };
-            for (raw, value) in raw_row.iter().zip(row_values.iter_mut()) {
-                if source.nodata == Some(*raw) || source.range_folded == Some(*raw) {
-                    continue;
-                }
-                *value = (*raw as f32 - source.offset) / source.scale;
-            }
-        }
-        MomentStorage::F32(values) => {
-            let Some(source_row) = values.get(row_start..row_end) else {
-                return;
-            };
-            row_values.copy_from_slice(source_row);
-        }
+    }
+    match (raw_row, source.data.coding()) {
+        (RowRef::U8(raw), Coding::U8(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
+        (RowRef::U16(raw), Coding::U16(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
+        (RowRef::I8(raw), Coding::I8(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
+        (RowRef::I16(raw), Coding::I16(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
+        (RowRef::F32(raw), Coding::F32(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
+        (RowRef::F64(raw), Coding::F64(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
+        _ => {}
     }
 }
 
-fn median_nyquist_mps(cut: &ElevationCut, grid: &MomentGrid) -> Option<f32> {
-    let mut values = grid
-        .radial_indices
-        .iter()
-        .filter_map(|radial_index| cut.radials.get(*radial_index)?.nyquist_velocity_mps)
+/// Median usable (finite, positive) Nyquist velocity over the rows `field`
+/// provides.
+fn median_nyquist_mps(sweep: &Sweep, field: &Field) -> Option<f32> {
+    let mut values = (0..field.nrays as usize)
+        .filter(|&row| !field.is_absent(row))
+        .filter_map(|row| row_nyquist_mps(sweep, row))
         .filter(|value| value.is_finite() && *value > 0.0)
         .collect::<Vec<_>>();
     if values.is_empty() {
@@ -527,9 +564,24 @@ fn median_nyquist_mps(cut: &ElevationCut, grid: &MomentGrid) -> Option<f32> {
     Some(values[values.len() / 2])
 }
 
-fn row_nyquist_mps(cut: &ElevationCut, grid: &MomentGrid, row: usize) -> Option<f32> {
-    let radial_index = *grid.radial_indices.get(row)?;
-    cut.radials.get(radial_index)?.nyquist_velocity_mps
+/// Nyquist velocity of ray `row`; `None` when the sweep has no Nyquist
+/// variable or the ray's value is missing (NaN).
+fn row_nyquist_mps(sweep: &Sweep, row: usize) -> Option<f32> {
+    sweep
+        .ray_vars
+        .nyquist_velocity_mps
+        .as_ref()?
+        .get(row)
+        .copied()
+        .filter(|value| !value.is_nan())
+}
+
+/// The volume's nominal time: the first ray's time (`time_coverage.start`),
+/// else the whole-second time reference.
+pub(crate) fn volume_start_time(volume: &Volume) -> DateTime<Utc> {
+    volume
+        .time_coverage
+        .map_or(volume.time_reference, |coverage| coverage.start)
 }
 
 fn median_small_f32(values: &mut [f32], count: usize) -> f32 {
@@ -552,42 +604,73 @@ fn first_minimum_index(values: &[f64]) -> usize {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use recast_radar_core::{Field, FieldData, FieldName, FloatCoding, Sweep, SweepMode};
+
+    /// A sealed PPI sweep at `elevation_deg` with one physical velocity field
+    /// (`VRADH`) of `azimuths.len()` rows on uniform gates, and per-ray Nyquist
+    /// velocities when given.
+    pub(crate) fn velocity_sweep(
+        azimuths: &[f32],
+        elevation_deg: f32,
+        first_center_m: f64,
+        spacing_m: f64,
+        gates: usize,
+        values: Vec<f32>,
+        nyquist_mps: Option<Vec<f32>>,
+    ) -> Sweep {
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, elevation_deg);
+        for (ray, azimuth) in azimuths.iter().enumerate() {
+            sweep.push_ray(ray as f64, *azimuth, elevation_deg);
+        }
+        sweep.ray_vars.nyquist_velocity_mps = nyquist_mps;
+        let mapping = sweep
+            .attach_geometry(first_center_m, spacing_m, gates as u32)
+            .unwrap();
+        let mut field = Field::new(
+            FieldName::Vradh,
+            mapping,
+            gates as u32,
+            FieldData::F32 {
+                values,
+                coding: FloatCoding::default(),
+            },
+        );
+        field.nrays = azimuths.len() as u32;
+        sweep.add_field(field).unwrap();
+        sweep.seal().unwrap();
+        sweep
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, Radial};
+    use crate::test_support::velocity_sweep;
+
+    fn velocity(sweep: &Sweep) -> &Field {
+        &sweep.fields[0]
+    }
 
     #[test]
     fn lightweight_velocity_dealias_unfolds_radial_continuity() {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: 5,
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        cut.radials.push(Radial {
-            azimuth_deg: 0.0,
-            elevation_deg: 0.5,
-            time_offset_ms: 0,
-            gate_range: gate_range.clone(),
-            nyquist_velocity_mps: Some(10.0),
-            radial_status: None,
-        });
-        let grid = MomentGrid {
-            moment: MomentType::Velocity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: vec![0],
-            storage: MomentStorage::F32(vec![0.0, 5.0, 9.0, -9.0, -7.0]),
-        };
+        let sweep = velocity_sweep(
+            &[0.0],
+            0.5,
+            0.0,
+            1000.0,
+            5,
+            vec![0.0, 5.0, 9.0, -9.0, -7.0],
+            Some(vec![10.0]),
+        );
 
-        let corrected = dealias_velocity_grid(&cut, &grid);
-        assert!(matches!(corrected.storage, MomentStorage::U16(_)));
+        let corrected = dealias_velocity(&sweep, velocity(&sweep));
+        assert!(matches!(corrected.data, FieldData::U16 { .. }));
+        assert_eq!(corrected.name, FieldName::Vraddh);
+        assert_eq!(corrected.gates, velocity(&sweep).gates);
 
-        let values = (0..corrected.gate_range.gate_count)
-            .map(|gate| corrected.scaled_value(0, gate).expect("corrected gate"))
+        let values = (0..corrected.ngates as usize)
+            .map(|gate| corrected.value(0, gate).expect("corrected gate"))
             .collect::<Vec<_>>();
         assert_eq!(values, vec![0.0, 5.0, 9.0, 11.0, 13.0]);
     }
@@ -595,39 +678,42 @@ mod tests {
     #[test]
     fn dealias_skip_detection_reports_nyquist_less_feeds() {
         // JMA-style feed: staggered PRF leaves Nyquist unset on every
-        // radial, so the "dealiased" grid is a pure pass-through and the
-        // UI must be able to disclose that.
+        // ray, so the "dealiased" field is a pure pass-through and the UI
+        // must be able to disclose that.
         let observed = vec![2.0f32, 4.0, 6.0, 8.0];
         let rows_data: Vec<Vec<f32>> = (0..4).map(|_| observed.clone()).collect();
-        let (mut cut, grid) = test_velocity_grid_rows(rows_data);
-        for radial in &mut cut.radials {
-            radial.nyquist_velocity_mps = None;
-        }
+        let mut sweep = test_velocity_sweep_rows(rows_data);
+        sweep.ray_vars.nyquist_velocity_mps = None;
 
         assert!(
-            dealias_skipped_no_nyquist(&cut, &grid),
-            "no usable Nyquist on any radial must report the skip"
+            dealias_skipped_no_nyquist(&sweep, velocity(&sweep)),
+            "no usable Nyquist on any ray must report the skip"
         );
         // The skip really is a pass-through: values come back as recorded.
-        let corrected = dealias_velocity_grid(&cut, &grid);
+        let corrected = dealias_velocity(&sweep, velocity(&sweep));
         for (gate, value) in observed.iter().enumerate() {
             assert_eq!(
-                corrected.scaled_value(1, gate),
+                corrected.value(1, gate),
                 Some(*value),
                 "gate {gate} must pass through unchanged"
             );
         }
 
-        // Any radial with a usable Nyquist flips the answer (the median
+        // Any ray with a usable Nyquist flips the answer (the median
         // fallback then covers Nyquist-less rows).
-        cut.radials[0].nyquist_velocity_mps = Some(20.0);
-        assert!(!dealias_skipped_no_nyquist(&cut, &grid));
+        let with_first = |first: f32| {
+            let mut nyquist = vec![f32::NAN; 4];
+            nyquist[0] = first;
+            Some(nyquist)
+        };
+        sweep.ray_vars.nyquist_velocity_mps = with_first(20.0);
+        assert!(!dealias_skipped_no_nyquist(&sweep, velocity(&sweep)));
 
         // Non-finite / non-positive declarations are not usable Nyquists.
-        cut.radials[0].nyquist_velocity_mps = Some(0.0);
-        assert!(dealias_skipped_no_nyquist(&cut, &grid));
-        cut.radials[0].nyquist_velocity_mps = Some(f32::NAN);
-        assert!(dealias_skipped_no_nyquist(&cut, &grid));
+        sweep.ray_vars.nyquist_velocity_mps = with_first(0.0);
+        assert!(dealias_skipped_no_nyquist(&sweep, velocity(&sweep)));
+        sweep.ray_vars.nyquist_velocity_mps = with_first(f32::NAN);
+        assert!(dealias_skipped_no_nyquist(&sweep, velocity(&sweep)));
     }
 
     #[test]
@@ -660,14 +746,12 @@ mod tests {
         assert!(raw_jumps >= 1, "test fixture must actually alias");
 
         let rows_data: Vec<Vec<f32>> = (0..rows).map(|_| observed_row.clone()).collect();
-        let (mut cut, grid) = test_velocity_grid_rows(rows_data);
-        for radial in &mut cut.radials {
-            radial.nyquist_velocity_mps = Some(nyq);
-        }
+        let mut sweep = test_velocity_sweep_rows(rows_data);
+        sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyq; rows]);
 
-        let corrected = dealias_velocity_grid(&cut, &grid);
+        let corrected = dealias_velocity(&sweep, velocity(&sweep));
         let recovered: Vec<f32> = (0..gates)
-            .map(|g| corrected.scaled_value(rows / 2, g).expect("gate"))
+            .map(|g| corrected.value(rows / 2, g).expect("gate"))
             .collect();
 
         // 1) the unfolded field is smooth: no gate-to-gate jump exceeds Nyquist.
@@ -700,15 +784,13 @@ mod tests {
         let nyq = 20.0f32;
         let coherent = vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0];
         let rows_data: Vec<Vec<f32>> = (0..16).map(|_| coherent.clone()).collect();
-        let (mut cut, grid) = test_velocity_grid_rows(rows_data);
-        for radial in &mut cut.radials {
-            radial.nyquist_velocity_mps = Some(nyq);
-        }
+        let mut sweep = test_velocity_sweep_rows(rows_data);
+        sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyq; 16]);
 
-        let corrected = dealias_velocity_grid(&cut, &grid);
+        let corrected = dealias_velocity(&sweep, velocity(&sweep));
         for (g, value) in coherent.iter().enumerate() {
             assert_eq!(
-                corrected.scaled_value(5, g),
+                corrected.value(5, g),
                 Some(*value),
                 "coherent gate {g} should be untouched"
             );
@@ -752,16 +834,14 @@ mod tests {
                     .collect()
             })
             .collect();
-        let (mut cut, grid) = test_velocity_grid_rows(rows_data);
-        for radial in &mut cut.radials {
-            radial.nyquist_velocity_mps = Some(nyq);
-        }
+        let mut sweep = test_velocity_sweep_rows(rows_data);
+        sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyq; rows]);
 
-        let reference = dealias_velocity_grid(&cut, &grid);
+        let reference = dealias_velocity(&sweep, velocity(&sweep));
         for run in 0..16 {
-            let corrected = dealias_velocity_grid(&cut, &grid);
+            let corrected = dealias_velocity(&sweep, velocity(&sweep));
             assert_eq!(
-                corrected.storage, reference.storage,
+                corrected.data, reference.data,
                 "dealias output changed between identical runs (run {run})"
             );
         }
@@ -774,7 +854,7 @@ mod tests {
         // wrongly "suppressed" this as a spike and left the alias in place).
         let quiet = vec![0.0, 3.0, 5.0, 7.0, 8.0];
         let folded = vec![0.0, 5.0, 9.0, -9.0, -7.0];
-        let (cut, grid) = test_velocity_grid_rows(vec![
+        let sweep = test_velocity_sweep_rows(vec![
             quiet.clone(),
             quiet.clone(),
             folded,
@@ -782,10 +862,10 @@ mod tests {
             quiet,
         ]);
 
-        let corrected = dealias_velocity_grid(&cut, &grid);
+        let corrected = dealias_velocity(&sweep, velocity(&sweep));
 
-        assert_eq!(corrected.scaled_value(2, 3), Some(11.0));
-        assert_eq!(corrected.scaled_value(2, 4), Some(13.0));
+        assert_eq!(corrected.value(2, 3), Some(11.0));
+        assert_eq!(corrected.value(2, 4), Some(13.0));
     }
 
     /// Build a full 360° velocity tilt whose TRUE field is a uniform wind
@@ -798,24 +878,12 @@ mod tests {
         nyquist: f32,
         rows: usize,
         gates: usize,
-    ) -> ElevationCut {
-        let gate_range = GateRange {
-            first_gate_m: 1000,
-            gate_spacing_m: 250,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(elevation, None);
+    ) -> Sweep {
         let mut data = vec![f32::NAN; rows * gates];
+        let mut azimuths = Vec::with_capacity(rows);
         for row in 0..rows {
             let az = row as f32 * (360.0 / rows as f32);
-            cut.radials.push(Radial {
-                azimuth_deg: az,
-                elevation_deg: elevation,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(nyquist),
-                radial_status: None,
-            });
+            azimuths.push(az);
             let true_v = speed * ((az - toward_deg).to_radians()).cos();
             let mut wrapped = true_v;
             while wrapped > nyquist {
@@ -828,49 +896,42 @@ mod tests {
                 data[row * gates + gate] = wrapped;
             }
         }
-        cut.moments.insert(
-            MomentType::Velocity,
-            MomentGrid {
-                moment: MomentType::Velocity,
-                gate_range,
-                scale: 1.0,
-                offset: 0.0,
-                nodata: None,
-                range_folded: None,
-                radial_indices: (0..rows).collect(),
-                storage: MomentStorage::F32(data),
-            },
-        );
-        cut
+        velocity_sweep(
+            &azimuths,
+            elevation,
+            1000.0,
+            250.0,
+            gates,
+            data,
+            Some(vec![nyquist; rows]),
+        )
     }
 
     /// Pins the two v0.29.0 survivors of the retired cascade/hybrid engines:
-    /// [`fit_range_band_reference`] (also the bench battery's `rms_harmonic`
+    /// [`range_band_reference`] (also the bench battery's `rms_harmonic`
     /// metric input) and the region engine's external-reference branch
-    /// selection ([`dealias_velocity_grid_with_reference`]).
+    /// selection ([`dealias_velocity_with_reference`]).
     #[test]
     fn external_harmonic_reference_selects_the_absolute_branch() {
         // 35 m/s wind. Clean tilt: Nyquist 40 — no aliasing, honest fit.
         // Target tilt: Nyquist 20 — large sectors wrap (|v| up to 35), the
         // regime where a same-sweep reference is circular.
         let clean = tilt_with_uniform_wind(2.4, 35.0, 180.0, 40.0, 360, 200);
-        let clean_grid = clean.moments.get(&MomentType::Velocity).unwrap();
-        let reference = fit_range_band_reference(&clean, clean_grid);
+        let reference = range_band_reference(&clean, velocity(&clean));
         assert!(
             reference.fits.iter().filter(|fit| fit.is_some()).count() > 0,
             "clean uniform wind must produce usable band fits"
         );
 
         let target = tilt_with_uniform_wind(0.5, 35.0, 180.0, 20.0, 360, 200);
-        let target_grid = target.moments.get(&MomentType::Velocity).unwrap();
         let dealiased =
-            dealias_velocity_grid_with_reference(&target, target_grid, Some(&reference));
+            dealias_velocity_with_reference(&target, velocity(&target), Some(&reference));
         let mut worst = 0.0f32;
         for row in 0..360 {
             let az = row as f32;
             let truth = 35.0 * ((az - 180.0).to_radians()).cos();
             for gate in (0..200).step_by(7) {
-                if let Some(v) = dealiased.scaled_value(row, gate).filter(|v| v.is_finite()) {
+                if let Some(v) = dealiased.value(row, gate).filter(|v| v.is_finite()) {
                     worst = worst.max((v - truth).abs());
                 }
             }
@@ -885,7 +946,7 @@ mod tests {
     fn velocity_dealias_preserves_supported_adjacent_folds() {
         let quiet = vec![0.0, 3.0, 5.0, 7.0, 8.0];
         let folded = vec![0.0, 5.0, 9.0, -9.0, -7.0];
-        let (cut, grid) = test_velocity_grid_rows(vec![
+        let sweep = test_velocity_sweep_rows(vec![
             quiet.clone(),
             folded.clone(),
             folded.clone(),
@@ -893,39 +954,47 @@ mod tests {
             quiet,
         ]);
 
-        let corrected = dealias_velocity_grid(&cut, &grid);
+        let corrected = dealias_velocity(&sweep, velocity(&sweep));
 
-        assert_eq!(corrected.scaled_value(2, 3), Some(11.0));
-        assert_eq!(corrected.scaled_value(2, 4), Some(13.0));
+        assert_eq!(corrected.value(2, 3), Some(11.0));
+        assert_eq!(corrected.value(2, 4), Some(13.0));
     }
 
-    fn test_velocity_grid_rows(rows: Vec<Vec<f32>>) -> (ElevationCut, MomentGrid) {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: rows.first().map(Vec::len).unwrap_or(0),
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        for index in 0..rows.len() {
-            cut.radials.push(Radial {
-                azimuth_deg: index as f32,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(10.0),
-                radial_status: None,
-            });
-        }
-        let grid = MomentGrid {
-            moment: MomentType::Velocity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..cut.radials.len()).collect(),
-            storage: MomentStorage::F32(rows.into_iter().flatten().collect()),
-        };
-        (cut, grid)
+    #[test]
+    fn copy_row_resolves_every_sentinel_and_absent_rows() {
+        let mut sweep = velocity_sweep(
+            &[0.0, 1.0],
+            0.5,
+            2125.0,
+            250.0,
+            3,
+            vec![1.0, f32::NAN, 3.0, 4.0, 5.0, 6.0],
+            Some(vec![26.0, 26.0]),
+        );
+        let mut row = vec![0.0f32; 3];
+        copy_scaled_velocity_row(velocity(&sweep), 0, &mut row);
+        assert_eq!(row[0], 1.0);
+        assert!(row[1].is_nan());
+        assert_eq!(row[2], 3.0);
+        sweep.fields[0].absent_rows = vec![1];
+        copy_scaled_velocity_row(velocity(&sweep), 1, &mut row);
+        assert!(row.iter().all(|value| value.is_nan()));
+    }
+
+    /// Rows of physical velocity, azimuth = row index, 1 km gates from 0 m,
+    /// Nyquist 10 m/s on every ray.
+    fn test_velocity_sweep_rows(rows: Vec<Vec<f32>>) -> Sweep {
+        let gates = rows.first().map(Vec::len).unwrap_or(0);
+        let count = rows.len();
+        let azimuths: Vec<f32> = (0..count).map(|index| index as f32).collect();
+        velocity_sweep(
+            &azimuths,
+            0.5,
+            0.0,
+            1000.0,
+            gates,
+            rows.into_iter().flatten().collect(),
+            Some(vec![10.0; count]),
+        )
     }
 }

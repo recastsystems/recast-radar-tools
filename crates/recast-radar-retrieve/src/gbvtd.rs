@@ -84,11 +84,11 @@ impl PolarVelocityField {
     pub fn from_dealiased_velocity(cut: &ElevationCut, grid: &MomentGrid) -> Self {
         let rows = grid.radial_count();
         let gates = grid.gate_range.gate_count;
-        let azimuths_deg = recast_radar_correct::radial_azimuths(cut, grid);
+        let azimuths_deg = recast_radar_correct::legacy_api::radial_azimuths(cut, grid);
         let mut values = vec![f32::NAN; rows.saturating_mul(gates)];
         let mut row_buf = vec![f32::NAN; gates];
         for row in 0..rows {
-            recast_radar_correct::copy_scaled_velocity_row(grid, row, &mut row_buf);
+            recast_radar_correct::legacy_api::copy_scaled_velocity_row(grid, row, &mut row_buf);
             values[row * gates..(row + 1) * gates].copy_from_slice(&row_buf);
         }
         Self {

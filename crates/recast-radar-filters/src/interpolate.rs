@@ -1,9 +1,9 @@
-//! Inter-gate display interpolation: bilinear upsampling of a moment grid on
-//! the polar lattice (azimuth × range). The pass runs ONCE per
-//! volume/cut/product on the render worker (cached exactly like the binomial
-//! Soften pass in `smooth.rs`) and the finer grid is drawn through the
-//! unchanged nearest-gate fast path — pans stay full speed; only the cached
-//! grid is bigger.
+//! Inter-gate display interpolation: bilinear upsampling of a field on the
+//! polar lattice (azimuth × range). The pass runs ONCE per
+//! volume/sweep/product on the render worker (cached exactly like the
+//! binomial Soften pass in `smooth.rs`) and the finer sweep is drawn through
+//! the unchanged nearest-gate fast path — pans stay full speed; only the
+//! cached field is bigger.
 //!
 //! Technique: standard separable bilinear resampling, applied on the polar
 //! grid rather than the screen raster — the same "smoothed display" approach
@@ -18,10 +18,10 @@
 //! ## Upsample policy (input geometry → factors)
 //!
 //! Targets ≤ 0.25° azimuth and ≤ 250 m gates, capped at 4× per axis and a
-//! 64 MB F32 grid budget. Coarse grids are upsampled aggressively, fine grids
-//! mildly or not at all:
+//! 64 MB F32 buffer budget. Coarse fields are upsampled aggressively, fine
+//! fields mildly or not at all:
 //!
-//! | native cut                       | factors (az × rng) | result          |
+//! | native sweep                     | factors (az × rng) | result          |
 //! |----------------------------------|--------------------|-----------------|
 //! | 1.0° × 1000 m (legacy/intl)      | 4 × 4              | 0.25° × 250 m   |
 //! | 1.0° × 500 m (European C-band)   | 4 × 2              | 0.25° × 250 m   |
@@ -29,10 +29,12 @@
 //! | 0.5° × 250 m (NEXRAD super-res)  | 2 × 1              | 0.25° × 250 m   |
 //! | ≤ 0.25° × ≤ 250 m                | 1 × 1              | native (no pass)|
 //!
-//! Range factors are additionally constrained to keep the integer-meter gate
+//! Range factors are additionally constrained to keep whole-metre gate
 //! geometry exact (sub-spacing must divide evenly and the half-cell shift
-//! must be a whole meter); failing factors step down. Row/gate counts are
-//! clamped to the packed sample encoding's limits.
+//! must be a whole meter); failing factors step down. The rule is applied to
+//! the native spacing rounded to the metre, and the output geometry is
+//! computed in f64 from the exact spacing. Row/gate counts are clamped to the
+//! packed sample encoding's limits.
 //!
 //! ## Coverage discipline
 //!
@@ -49,9 +51,9 @@
 //! Sub-rows are synthesized only between beams whose azimuth gap is small
 //! (sector-scan edges keep their native hole).
 
-use crate::InterpPolicy;
+use crate::{InterpPolicy, physical_field_like};
 use rayon::prelude::*;
-use recast_radar_core::{ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType};
+use recast_radar_core::{Field, GateMapping, Quantity, RangeCoord, Sweep};
 
 /// Display target: no coarser than 0.25° between rendered radials.
 pub const INTERP_TARGET_AZIMUTH_DEG: f32 = 0.25;
@@ -59,7 +61,7 @@ pub const INTERP_TARGET_AZIMUTH_DEG: f32 = 0.25;
 pub const INTERP_TARGET_GATE_SPACING_M: i32 = 250;
 /// Hard cap per axis — beyond 4× the cost outruns the visual return.
 pub const INTERP_MAX_FACTOR: usize = 4;
-/// Budget for the cached F32 grid (the moment-cache entry that holds it).
+/// Budget for the cached F32 field (the moment-cache entry that holds it).
 pub const INTERP_MAX_GRID_BYTES: usize = 64 << 20;
 /// Upsampled row count stays below this: the renderer's fast path packs
 /// (row, gate) into 31 bits with 16 gate bits (`recast_radar_render`'s
@@ -80,11 +82,18 @@ const CC_GUARD_FLOOR: f32 = 0.97;
 /// Beams closer than this are duplicates — nothing to synthesize between.
 const MIN_SYNTH_DELTA_DEG: f32 = 0.01;
 
-/// A moment grid upsampled for display plus the per-row azimuths the
-/// synthetic rows render at (native rows keep their exact beam azimuth).
-pub struct InterpolatedGrid {
-    pub grid: MomentGrid,
-    pub row_azimuths_deg: Vec<f32>,
+/// A field upsampled for display, as a sweep of its own.
+///
+/// `sweep` holds exactly one field (the upsampled one, a physical `F32`
+/// field with the source's name). Its rays are the output rows: native rows
+/// keep their exact beam azimuth (normalized to `[0, 360)`), synthetic rows
+/// sit between them; each ray's time, elevation and Nyquist velocity are its
+/// nearest parent's. Its `range` is the sub-gate range coordinate.
+pub struct UpsampledSweep {
+    pub sweep: Sweep,
+    /// For each output ray, the source ray whose cell contains it (the
+    /// nearest parent), so per-ray lookups on the source sweep stay valid.
+    pub parent_rays: Vec<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -107,7 +116,7 @@ fn range_factor_is_exact(spacing_m: i32, factor: usize) -> bool {
     factor > 0 && spacing_m % factor == 0 && (spacing_m - spacing_m / factor) % 2 == 0
 }
 
-/// Pick adaptive upsample factors for a cut's nominal geometry (see the
+/// Pick adaptive upsample factors for a sweep's nominal geometry (see the
 /// module-level policy table).
 pub fn upsample_factors(
     nominal_azimuth_deg: f32,
@@ -141,7 +150,7 @@ pub fn upsample_factors(
     while range > 1 && gates.saturating_mul(range) > INTERP_MAX_GATES {
         range -= 1;
     }
-    // Memory budget for the cached F32 grid. Range steps down first (gates
+    // Memory budget for the cached F32 buffer. Range steps down first (gates
     // are usually already the finer axis; the azimuth seams are what the
     // interpolated mode exists to fill).
     while rows
@@ -162,14 +171,15 @@ pub fn upsample_factors(
     UpsampleFactors { azimuth, range }
 }
 
-/// Per-moment-family interpolation policy, mirroring the volumetric module's
-/// cross-section policies (`volumetric.rs`): velocity guards against
-/// blending across folds/couplets, CC against blending through the melting
-/// layer; everything else (REF/ZDR/SW/PHI/KDP) blends linearly.
-fn interp_policy_for_moment(moment: &MomentType) -> InterpPolicy {
-    match moment {
-        MomentType::Velocity => InterpPolicy::VelocityGuard,
-        MomentType::CorrelationCoefficient => InterpPolicy::CcGuard,
+/// Per-quantity interpolation policy, mirroring the volumetric module's
+/// cross-section policies (`volumetric.rs`): velocity (raw or dealiased)
+/// guards against blending across folds/couplets, CC against blending
+/// through the melting layer; everything else (REF/ZDR/SW/PHI/KDP) blends
+/// linearly.
+fn interp_policy_for_quantity(quantity: Quantity) -> InterpPolicy {
+    match quantity {
+        Quantity::RadialVelocity | Quantity::DealiasedRadialVelocity => InterpPolicy::VelocityGuard,
+        Quantity::CorrelationCoefficient => InterpPolicy::CcGuard,
         _ => InterpPolicy::LinearAngle,
     }
 }
@@ -199,25 +209,20 @@ struct GatePlan {
     nearest: usize,
 }
 
-/// Upsample a moment grid for display. Returns `None` when the grid is
-/// already at/finer than the display targets (callers fall back to the
-/// native path), when the cut has too few radials, or when the radial
-/// linkage is broken.
-pub fn upsample_moment_grid(cut: &ElevationCut, grid: &MomentGrid) -> Option<InterpolatedGrid> {
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
-    if rows < 2 || gates == 0 {
+/// Upsample `field` (a field of `sweep`) for display. Returns `None` when
+/// the field is already at/finer than the display targets (callers fall back
+/// to the native path), when the sweep has too few rays, or when the field
+/// has more rows than the sweep has rays.
+pub fn upsample_field(sweep: &Sweep, field: &Field) -> Option<UpsampledSweep> {
+    let (rows, gates) = field.shape();
+    if rows < 2 || gates == 0 || rows > sweep.nrays() {
         return None;
     }
-    let mut azimuths = Vec::with_capacity(rows);
-    for radial_index in &grid.radial_indices {
-        azimuths.push(
-            cut.radials
-                .get(*radial_index)?
-                .azimuth_deg
-                .rem_euclid(360.0),
-        );
-    }
+    let (first_center_m, spacing_m) = field.native_geometry(&sweep.range)?;
+    let azimuths: Vec<f32> = sweep.rays.azimuth_deg[..rows]
+        .iter()
+        .map(|azimuth| azimuth.rem_euclid(360.0))
+        .collect();
     // Scan-order azimuth steps (signed shortest; handles CW and CCW sweeps
     // and the wrap pair alike). The median is the nominal beam spacing —
     // robust to a sector scan's single large wrap gap.
@@ -234,7 +239,12 @@ pub fn upsample_moment_grid(cut: &ElevationCut, grid: &MomentGrid) -> Option<Int
     }
     magnitudes.sort_by(f32::total_cmp);
     let nominal_deg = magnitudes[magnitudes.len() / 2];
-    let factors = upsample_factors(nominal_deg, grid.gate_range.gate_spacing_m, rows, gates);
+    let spacing_whole_m = if spacing_m.is_finite() && spacing_m.abs() < f64::from(i32::MAX) {
+        spacing_m.round() as i32
+    } else {
+        0
+    };
+    let factors = upsample_factors(nominal_deg, spacing_whole_m, rows, gates);
     if factors.is_identity() {
         return None;
     }
@@ -270,9 +280,8 @@ pub fn upsample_moment_grid(cut: &ElevationCut, grid: &MomentGrid) -> Option<Int
 
     // Cell-centered range subdivision: native gate g's cell splits into R
     // sub-cells whose centers interpolate between the surrounding native
-    // gate CENTERS; ends clamp. first_gate_m is a gate center
-    // (gate = round((range - first)/spacing) in the fast path), so
-    // new_first = first + (sub - spacing)/2 keeps the rendered annulus
+    // gate CENTERS; ends clamp. The first sub-gate centre is
+    // first + (sub - spacing)/2, which keeps the rendered annulus
     // [first - spacing/2, first + (count - 0.5)·spacing) EXACTLY.
     let range_factor = factors.range;
     let new_gates = gates * range_factor;
@@ -291,23 +300,21 @@ pub fn upsample_moment_grid(cut: &ElevationCut, grid: &MomentGrid) -> Option<Int
         gate_plan.push(GatePlan { lo, hi, u, nearest });
     }
 
-    // Materialize scaled values once (NaN for missing/RF), as in smooth.rs.
+    // Materialize physical values once (NaN for every sentinel), as in
+    // smooth.rs.
     let mut source = vec![f32::NAN; rows * gates];
     source
         .par_chunks_mut(gates)
         .enumerate()
         .for_each(|(row, out_row)| {
             for (gate, cell) in out_row.iter_mut().enumerate() {
-                if let Some(value) = grid
-                    .scaled_value(row, gate)
-                    .filter(|value| value.is_finite())
-                {
+                if let Some(value) = field.value(row, gate).filter(|value| value.is_finite()) {
                     *cell = value;
                 }
             }
         });
 
-    let policy = interp_policy_for_moment(&grid.moment);
+    let policy = interp_policy_for_quantity(field.quantity);
     let mut values = vec![f32::NAN; row_plan.len() * new_gates];
     values
         .par_chunks_mut(new_gates)
@@ -360,85 +367,91 @@ pub fn upsample_moment_grid(cut: &ElevationCut, grid: &MomentGrid) -> Option<Int
             }
         });
 
-    let sub_spacing_m = grid.gate_range.gate_spacing_m / range_factor as i32;
-    let gate_range = GateRange {
-        first_gate_m: grid.gate_range.first_gate_m
-            + (sub_spacing_m - grid.gate_range.gate_spacing_m) / 2,
-        gate_spacing_m: sub_spacing_m,
-        gate_count: new_gates,
-    };
-    // Each output row links back to its nearest parent's radial so
-    // cut-radial lookups (Nyquist, beam azimuth basis) stay valid.
-    let radial_indices = row_plan
+    let sub_spacing_m = spacing_m / range_factor as f64;
+    let new_nrays = u32::try_from(row_plan.len()).ok()?;
+    let new_ngates = u32::try_from(new_gates).ok()?;
+
+    // Each output ray links back to its nearest parent's ray so per-ray
+    // lookups (Nyquist, beam azimuth basis) stay valid.
+    let parent_rays: Vec<u32> = row_plan
         .iter()
-        .map(|plan| grid.radial_indices[if plan.t <= 0.5 { plan.lo } else { plan.hi }])
+        .map(|plan| (if plan.t <= 0.5 { plan.lo } else { plan.hi }) as u32)
         .collect();
-    let row_azimuths_deg = row_plan.iter().map(|plan| plan.azimuth_deg).collect();
-    Some(InterpolatedGrid {
-        grid: MomentGrid {
-            moment: grid.moment.clone(),
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices,
-            storage: MomentStorage::F32(values),
-        },
-        row_azimuths_deg,
+    let mut out = Sweep::new(
+        sweep.sweep_number,
+        sweep.sweep_mode.clone(),
+        sweep.fixed_angle_deg,
+    );
+    out.follow_mode = sweep.follow_mode.clone();
+    out.prt_mode = sweep.prt_mode.clone();
+    out.polarization_mode = sweep.polarization_mode.clone();
+    out.target_scan_rate_deg_per_s = sweep.target_scan_rate_deg_per_s;
+    out.elevation_number = sweep.elevation_number;
+    out.complete = sweep.complete;
+    out.reserve_rays(row_plan.len());
+    for (plan, parent) in row_plan.iter().zip(&parent_rays) {
+        let parent = *parent as usize;
+        out.push_ray(
+            sweep.rays.time_s.get(parent).copied().unwrap_or(f64::NAN),
+            plan.azimuth_deg,
+            sweep
+                .rays
+                .elevation_deg
+                .get(parent)
+                .copied()
+                .unwrap_or(f32::NAN),
+        );
+    }
+    out.ray_vars.nyquist_velocity_mps =
+        sweep.ray_vars.nyquist_velocity_mps.as_ref().map(|nyquist| {
+            parent_rays
+                .iter()
+                .map(|parent| nyquist.get(*parent as usize).copied().unwrap_or(f32::NAN))
+                .collect()
+        });
+    out.range = RangeCoord::Uniform {
+        first_center_m: first_center_m + (sub_spacing_m - spacing_m) / 2.0,
+        spacing_m: sub_spacing_m,
+        ngates: new_ngates,
+    };
+    let mut upsampled = physical_field_like(field, new_nrays, new_ngates, values);
+    upsampled.gates = GateMapping::IDENTITY;
+    out.fields.push(upsampled);
+    Some(UpsampledSweep {
+        sweep: out,
+        parent_rays,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::Radial;
-    use std::collections::BTreeMap;
+    use crate::test_support::sweep_with;
+    use recast_radar_core::FieldName;
 
-    fn radial(azimuth_deg: f32, gate_range: GateRange) -> Radial {
-        Radial {
-            azimuth_deg,
-            elevation_deg: 0.5,
-            time_offset_ms: 0,
-            gate_range,
-            radial_status: None,
-            nyquist_velocity_mps: Some(26.0),
-        }
-    }
-
-    fn cut_and_grid(
-        moment: MomentType,
+    fn sweep_and_name(
+        name: FieldName,
         azimuths: &[f32],
         gates: usize,
         spacing_m: i32,
         data: Vec<f32>,
-    ) -> (ElevationCut, MomentGrid) {
-        let gate_range = GateRange {
-            first_gate_m: spacing_m,
-            gate_spacing_m: spacing_m,
-            gate_count: gates,
-        };
-        let cut = ElevationCut {
-            elevation_deg: 0.5,
-            elevation_number: Some(1),
-            radials: azimuths
-                .iter()
-                .map(|az| radial(*az, gate_range.clone()))
-                .collect(),
-            ray_instrument_metadata: Vec::new(),
-            moments: BTreeMap::new(),
-        };
-        let grid = MomentGrid {
-            moment,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..azimuths.len()).collect(),
-            storage: MomentStorage::F32(data),
-        };
-        (cut, grid)
+    ) -> Sweep {
+        sweep_with(
+            azimuths,
+            f64::from(spacing_m),
+            f64::from(spacing_m),
+            gates,
+            vec![(name, data)],
+            Some(26.0),
+        )
+    }
+
+    fn up_of(sweep: &Sweep) -> Option<UpsampledSweep> {
+        upsample_field(sweep, &sweep.fields[0])
+    }
+
+    fn up_field(up: &UpsampledSweep) -> &Field {
+        &up.sweep.fields[0]
     }
 
     fn full_sweep_azimuths(count: usize) -> Vec<f32> {
@@ -484,73 +497,66 @@ mod tests {
     fn geometry_subdivides_exactly() {
         // 1.0° × 1000 m, 360 rows × 4 gates → 4× both axes.
         let azimuths = full_sweep_azimuths(360);
-        let (cut, grid) = cut_and_grid(
-            MomentType::Reflectivity,
-            &azimuths,
-            4,
-            1000,
-            vec![30.0; 360 * 4],
-        );
-        let up = upsample_moment_grid(&cut, &grid).expect("coarse grid upsamples");
-        assert_eq!(up.grid.gate_range.gate_spacing_m, 250);
-        assert_eq!(up.grid.gate_range.gate_count, 16);
-        // first_gate_m is a gate CENTER: new_first = first + (sub - sp)/2.
-        assert_eq!(up.grid.gate_range.first_gate_m, 1000 + (250 - 1000) / 2);
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 4, 1000, vec![30.0; 360 * 4]);
+        let up = up_of(&sweep).expect("coarse field upsamples");
+        let range = &up.sweep.range;
+        assert_eq!(range.spacing_m(), Some(250.0));
+        assert_eq!(range.ngates(), 16);
+        assert_eq!(up_field(&up).ngates, 16);
+        // The first sub-gate centre: first + (sub - sp)/2.
+        assert_eq!(range.center_m(0), Some(1000.0 + (250.0 - 1000.0) / 2.0));
         // The rendered annulus is preserved exactly:
-        // first + (count - 0.5)·spacing matches on both grids.
-        let native_edge = grid.gate_range.first_gate_m as f32
-            + (grid.gate_range.gate_count as f32 - 0.5) * grid.gate_range.gate_spacing_m as f32;
-        let up_edge = up.grid.gate_range.first_gate_m as f32
-            + (up.grid.gate_range.gate_count as f32 - 0.5)
-                * up.grid.gate_range.gate_spacing_m as f32;
+        // first + (count - 0.5)·spacing matches on both sweeps.
+        let native_edge = sweep.range.center_m(0).unwrap() + (4.0 - 0.5) * 1000.0;
+        let up_edge = range.center_m(0).unwrap() + (16.0 - 0.5) * 250.0;
         assert_eq!(native_edge, up_edge);
-        let native_inner =
-            grid.gate_range.first_gate_m as f32 - grid.gate_range.gate_spacing_m as f32 / 2.0;
-        let up_inner =
-            up.grid.gate_range.first_gate_m as f32 - up.grid.gate_range.gate_spacing_m as f32 / 2.0;
-        assert_eq!(native_inner, up_inner);
+        assert_eq!(
+            sweep.range.center_m(0).unwrap() - 500.0,
+            range.center_m(0).unwrap() - 125.0
+        );
         // 360 rows × 4 az factor, every native row at its exact azimuth.
-        assert_eq!(up.row_azimuths_deg.len(), 1440);
-        assert_eq!(up.grid.radial_count(), 1440);
+        let row_azimuths = &up.sweep.rays.azimuth_deg;
+        assert_eq!(row_azimuths.len(), 1440);
+        assert_eq!(up_field(&up).nrays, 1440);
+        assert_eq!(up.parent_rays.len(), 1440);
         for (row, az) in azimuths.iter().enumerate() {
-            assert_eq!(up.row_azimuths_deg[row * 4], *az, "native row {row}");
+            assert_eq!(row_azimuths[row * 4], *az, "native row {row}");
+            assert_eq!(up.parent_rays[row * 4], row as u32);
         }
         // Synthetic rows fall between (1° spacing / 4 = 0.25° steps).
-        assert!((up.row_azimuths_deg[1] - 0.25).abs() < 1e-3);
-        assert!((up.row_azimuths_deg[2] - 0.5).abs() < 1e-3);
+        assert!((row_azimuths[1] - 0.25).abs() < 1e-3);
+        assert!((row_azimuths[2] - 0.5).abs() < 1e-3);
+        // Per-ray variables follow the nearest parent.
+        assert_eq!(
+            up.sweep
+                .ray_vars
+                .nyquist_velocity_mps
+                .as_ref()
+                .map(Vec::len),
+            Some(1440)
+        );
     }
 
     #[test]
     fn azimuth_wraps_between_last_and_first_row() {
         let azimuths = full_sweep_azimuths(360);
-        let (cut, grid) = cut_and_grid(
-            MomentType::Reflectivity,
-            &azimuths,
-            4,
-            1000,
-            vec![30.0; 360 * 4],
-        );
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 4, 1000, vec![30.0; 360 * 4]);
+        let up = up_of(&sweep).expect("upsamples");
         // Last native row is 359°; sub-rows climb toward 360 and wrap.
-        let tail: Vec<f32> = up.row_azimuths_deg[1437..].to_vec();
+        let tail: Vec<f32> = up.sweep.rays.azimuth_deg[1437..].to_vec();
         assert!((tail[0] - 359.25).abs() < 1e-3, "{tail:?}");
         assert!((tail[2] - 359.75).abs() < 1e-3, "{tail:?}");
     }
 
     #[test]
-    fn uniform_field_is_unchanged_and_fine_grids_pass_through() {
+    fn uniform_field_is_unchanged_and_fine_fields_pass_through() {
         let azimuths = full_sweep_azimuths(360);
-        let (cut, grid) = cut_and_grid(
-            MomentType::Reflectivity,
-            &azimuths,
-            8,
-            500,
-            vec![35.0; 360 * 8],
-        );
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
-        for row in 0..up.grid.radial_count() {
-            for gate in 0..up.grid.gate_range.gate_count {
-                let value = up.grid.scaled_value(row, gate).unwrap();
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 8, 500, vec![35.0; 360 * 8]);
+        let up = up_of(&sweep).expect("upsamples");
+        let field = up_field(&up);
+        for row in 0..field.nrays as usize {
+            for gate in 0..field.ngates as usize {
+                let value = field.value(row, gate).unwrap();
                 assert!(
                     (value - 35.0).abs() < 1e-4,
                     "row {row} gate {gate}: {value}"
@@ -559,14 +565,8 @@ mod tests {
         }
         // Already at target: no pass.
         let azimuths = full_sweep_azimuths(1440);
-        let (cut, grid) = cut_and_grid(
-            MomentType::Reflectivity,
-            &azimuths,
-            4,
-            250,
-            vec![35.0; 1440 * 4],
-        );
-        assert!(upsample_moment_grid(&cut, &grid).is_none());
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 4, 250, vec![35.0; 1440 * 4]);
+        assert!(up_of(&sweep).is_none());
     }
 
     #[test]
@@ -580,18 +580,12 @@ mod tests {
                 data[row * 4 + gate] = 20.0;
             }
         }
-        let (cut, grid) = cut_and_grid(MomentType::Reflectivity, &azimuths, 4, 1000, data);
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
-        let mut covered_rows = 0;
-        for row in 0..up.grid.radial_count() {
-            if (0..up.grid.gate_range.gate_count).any(|gate| {
-                up.grid
-                    .scaled_value(row, gate)
-                    .is_some_and(|v| v.is_finite())
-            }) {
-                covered_rows += 1;
-            }
-        }
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 4, 1000, data);
+        let up = up_of(&sweep).expect("upsamples");
+        let field = up_field(&up);
+        let covered_rows = (0..field.nrays as usize)
+            .filter(|&row| (0..field.ngates as usize).any(|gate| field.value(row, gate).is_some()))
+            .count();
         // Exactly the rows whose NEAREST parent is an echo row render
         // (and the beam-boundary rows at t = 0.5 only where BOTH parents
         // carry echo): 180 native echo rows, 179 interior segments × 3
@@ -611,12 +605,13 @@ mod tests {
         for row in 0..360 {
             data[row * 4 + 1] = 40.0;
         }
-        let (cut, grid) = cut_and_grid(MomentType::Reflectivity, &azimuths, 4, 1000, data);
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
-        for row in 0..up.grid.radial_count() {
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 4, 1000, data);
+        let up = up_of(&sweep).expect("upsamples");
+        let field = up_field(&up);
+        for row in 0..field.nrays as usize {
             for sub in 0..4 {
                 let gate = 4 + sub; // native gate 1's sub-cells
-                let value = up.grid.scaled_value(row, gate).unwrap();
+                let value = field.value(row, gate).unwrap();
                 assert!(
                     (value - 40.0).abs() < 1e-4,
                     "row {row} sub {sub}: {value} (partial blend leaked)"
@@ -625,9 +620,7 @@ mod tests {
             // Native gates 0 and 2 are empty: their sub-cells stay empty.
             for gate in (0..4).chain(8..12) {
                 assert!(
-                    up.grid
-                        .scaled_value(row, gate)
-                        .is_none_or(|value| value.is_nan()),
+                    field.value(row, gate).is_none(),
                     "row {row} gate {gate} grew coverage"
                 );
             }
@@ -646,11 +639,12 @@ mod tests {
                 data[row * 4 + gate] = value;
             }
         }
-        let (cut, grid) = cut_and_grid(MomentType::Velocity, &azimuths, 4, 1000, data);
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
-        for row in 0..up.grid.radial_count() {
-            for gate in 0..up.grid.gate_range.gate_count {
-                let value = up.grid.scaled_value(row, gate).unwrap();
+        let sweep = sweep_and_name(FieldName::Vradh, &azimuths, 4, 1000, data);
+        let up = up_of(&sweep).expect("upsamples");
+        let field = up_field(&up);
+        for row in 0..field.nrays as usize {
+            for gate in 0..field.ngates as usize {
+                let value = field.value(row, gate).unwrap();
                 assert!(
                     (value - 20.0).abs() < 1e-4 || (value + 22.0).abs() < 1e-4,
                     "row {row} gate {gate}: fabricated intermediate {value}"
@@ -665,12 +659,13 @@ mod tests {
                 data[row * 4 + gate] = value;
             }
         }
-        let (cut, grid) = cut_and_grid(MomentType::Velocity, &azimuths, 4, 1000, data);
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
-        let blended = (0..up.grid.radial_count()).any(|row| {
-            (0..up.grid.gate_range.gate_count).any(|gate| {
-                up.grid
-                    .scaled_value(row, gate)
+        let sweep = sweep_and_name(FieldName::Vradh, &azimuths, 4, 1000, data);
+        let up = up_of(&sweep).expect("upsamples");
+        let field = up_field(&up);
+        let blended = (0..field.nrays as usize).any(|row| {
+            (0..field.ngates as usize).any(|gate| {
+                field
+                    .value(row, gate)
                     .is_some_and(|value| value.abs() < 4.0)
             })
         });
@@ -688,12 +683,12 @@ mod tests {
                 data[row * 4 + gate] = if gate % 2 == 0 { 0.92 } else { 1.0 };
             }
         }
-        let (cut, grid) =
-            cut_and_grid(MomentType::CorrelationCoefficient, &azimuths, 4, 1000, data);
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
-        for row in 0..up.grid.radial_count() {
-            for gate in 0..up.grid.gate_range.gate_count {
-                let value = up.grid.scaled_value(row, gate).unwrap();
+        let sweep = sweep_and_name(FieldName::Rhohv, &azimuths, 4, 1000, data);
+        let up = up_of(&sweep).expect("upsamples");
+        let field = up_field(&up);
+        for row in 0..field.nrays as usize {
+            for gate in 0..field.ngates as usize {
+                let value = field.value(row, gate).unwrap();
                 assert!(
                     (value - 0.92).abs() < 1e-4 || (value - 1.0).abs() < 1e-4,
                     "row {row} gate {gate}: blended through the CC minimum ({value})"
@@ -706,57 +701,51 @@ mod tests {
     fn sector_scan_gap_stays_native() {
         // A 91-radial sector (0..90°) — no sub-rows across the 270° gap.
         let azimuths: Vec<f32> = (0..91).map(|i| i as f32).collect();
-        let (cut, grid) = cut_and_grid(
-            MomentType::Reflectivity,
-            &azimuths,
-            4,
-            1000,
-            vec![30.0; 91 * 4],
-        );
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
-        for az in &up.row_azimuths_deg {
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 4, 1000, vec![30.0; 91 * 4]);
+        let up = up_of(&sweep).expect("upsamples");
+        for az in &up.sweep.rays.azimuth_deg {
             assert!(
                 *az <= 90.0 + 1e-3,
                 "synthetic row at {az}° bridges the sector gap"
             );
         }
         // …but inside the sector the rows did refine to 0.25°.
-        assert_eq!(up.row_azimuths_deg.len(), 91 + 90 * 3);
+        assert_eq!(up.sweep.rays.azimuth_deg.len(), 91 + 90 * 3);
     }
 
     #[test]
     fn upsample_cost_smoke() {
-        // NEXRAD super-res-shaped cut (720 × 1832 at 0.5° × 250 m → 2×1)
-        // and a European-shaped cut (360 × 960 at 1.0° × 500 m → 4×2):
+        // NEXRAD super-res-shaped sweep (720 × 1832 at 0.5° × 250 m → 2×1)
+        // and a European-shaped sweep (360 × 960 at 1.0° × 500 m → 4×2):
         // one pass each, wall-clock printed for the perf report.
         let azimuths = full_sweep_azimuths(720);
         let data: Vec<f32> = (0..720 * 1832).map(|i| (i % 70) as f32).collect();
-        let (cut, grid) = cut_and_grid(MomentType::Reflectivity, &azimuths, 1832, 250, data);
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 1832, 250, data);
         let start = std::time::Instant::now();
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
+        let up = up_of(&sweep).expect("upsamples");
         let super_res_ms = start.elapsed().as_secs_f32() * 1000.0;
-        assert_eq!(up.grid.radial_count(), 1440);
-        assert_eq!(up.grid.gate_range.gate_count, 1832);
+        assert_eq!(up_field(&up).nrays, 1440);
+        assert_eq!(up_field(&up).ngates, 1832);
 
         let azimuths = full_sweep_azimuths(360);
         let data: Vec<f32> = (0..360 * 960).map(|i| (i % 70) as f32).collect();
-        let (cut, grid) = cut_and_grid(MomentType::Reflectivity, &azimuths, 960, 500, data);
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 960, 500, data);
         let start = std::time::Instant::now();
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
+        let up = up_of(&sweep).expect("upsamples");
         let euro_ms = start.elapsed().as_secs_f32() * 1000.0;
-        assert_eq!(up.grid.radial_count(), 1440);
-        assert_eq!(up.grid.gate_range.gate_count, 1920);
+        assert_eq!(up_field(&up).nrays, 1440);
+        assert_eq!(up_field(&up).ngates, 1920);
 
-        // Worst realistic 4×4 case: a long-range 1.0° × 1000 m cut
+        // Worst realistic 4×4 case: a long-range 1.0° × 1000 m sweep
         // (360 × 2000 → 1440 × 8000 = 11.5M cells, 46 MB F32).
         let azimuths = full_sweep_azimuths(360);
         let data: Vec<f32> = (0..360 * 2000).map(|i| (i % 70) as f32).collect();
-        let (cut, grid) = cut_and_grid(MomentType::Reflectivity, &azimuths, 2000, 1000, data);
+        let sweep = sweep_and_name(FieldName::Dbzh, &azimuths, 2000, 1000, data);
         let start = std::time::Instant::now();
-        let up = upsample_moment_grid(&cut, &grid).expect("upsamples");
+        let up = up_of(&sweep).expect("upsamples");
         let long_range_ms = start.elapsed().as_secs_f32() * 1000.0;
-        assert_eq!(up.grid.radial_count(), 1440);
-        assert_eq!(up.grid.gate_range.gate_count, 8000);
+        assert_eq!(up_field(&up).nrays, 1440);
+        assert_eq!(up_field(&up).ngates, 8000);
         println!(
             "upsample cost: super-res 720x1832 (2x1) {super_res_ms:.2} ms, \
              euro 360x960 (4x2) {euro_ms:.2} ms, \
