@@ -1,0 +1,21 @@
+[package]
+name = "recast-radar-testdata"
+description = "Real radar test corpus: manifest, sha256-verified committed fixtures and cached downloads (dev-only)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Level II trim tool (src/trim.rs): pure-Rust bzip2 (libbz2-rs-sys) and gzip (zlib-rs).
+bzip2 = "0.6"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
+toml = "1.1"
+# HTTPS via rustls is allowed in this dev-only crate (plan: Global Constraints).
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+
+[lints]
+workspace = true
