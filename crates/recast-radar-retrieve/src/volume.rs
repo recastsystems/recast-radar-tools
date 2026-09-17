@@ -1,15 +1,20 @@
-//! Volume/column products built from multiple elevation cuts.
+//! Volume/column products built from multiple sweeps.
 //!
 //! BowEcho already has optimized implementations of CREF, echo tops, VIL,
 //! VIL density, SHI/MESH/POSH/POH, and cross sections in `recast_radar_map`. This
 //! module adds generic CAPPI/column statistics plus echo-base/depth and height
 //! of maximum reflectivity without coupling `recast_radar_retrieve` to that
 //! crate.
+//!
+//! Every product selects its input by dataset variable name ([`FieldName`])
+//! across sweeps, and returns a physical `F32` field on the lowest such
+//! sweep's rays and native gates.
 
 use recast_radar_core::{
-    MomentGrid, MomentStorage, MomentType, RadarVolume, beam_ground_range_m,
-    beam_height_above_radar_m,
+    Field, FieldName, Quantity, Sweep, Volume, beam_ground_range_m, beam_height_above_radar_m,
 };
+
+use crate::sweep::physical_field;
 
 const EFFECTIVE_EARTH_RADIUS_M: f64 = 4.0 / 3.0 * 6_371_000.0;
 const HALF_BEAMWIDTH_RAD: f64 = 0.475 * std::f64::consts::PI / 180.0;
@@ -21,49 +26,52 @@ pub enum CappiInterpolation {
     LinearElevation,
 }
 
-struct CutSampler<'a> {
+struct SweepSampler<'a> {
     elevation_deg: f32,
-    grid: &'a MomentGrid,
+    field: &'a Field,
+    first_gate_m: f64,
+    gate_spacing_m: f64,
     azimuth_rows: Vec<(f32, usize)>,
     ground_range_m: Vec<f64>,
     height_m: Vec<f64>,
 }
 
-impl<'a> CutSampler<'a> {
-    fn new(volume: &'a RadarVolume, cut_index: usize, grid: &'a MomentGrid) -> Option<Self> {
-        let cut = volume.cuts.get(cut_index)?;
-        if grid.gate_range.gate_count == 0 || grid.gate_range.gate_spacing_m <= 0 {
+impl<'a> SweepSampler<'a> {
+    fn new(sweep: &'a Sweep, field: &'a Field) -> Option<Self> {
+        let (first_gate_m, gate_spacing_m) = field.native_geometry(&sweep.range)?;
+        let gates = field.ngates as usize;
+        if gates == 0 || gate_spacing_m <= 0.0 {
             return None;
         }
-        let mut azimuth_rows = grid
-            .radial_indices
-            .iter()
-            .copied()
-            .enumerate()
-            .filter_map(|(row, radial_index)| {
-                cut.radials
-                    .get(radial_index)
-                    .map(|radial| (radial.azimuth_deg.rem_euclid(360.0), row))
+        let mut azimuth_rows = (0..field.nrays as usize)
+            .filter_map(|row| {
+                sweep
+                    .rays
+                    .azimuth_deg
+                    .get(row)
+                    .map(|azimuth| (azimuth.rem_euclid(360.0), row))
             })
             .collect::<Vec<_>>();
         if azimuth_rows.is_empty() {
             return None;
         }
         azimuth_rows.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let mut ground_range_m = Vec::with_capacity(grid.gate_range.gate_count);
-        let mut height_m = Vec::with_capacity(grid.gate_range.gate_count);
-        for gate in 0..grid.gate_range.gate_count {
-            let slant_range_m = grid.gate_range.first_gate_m as f64
-                + gate as f64 * grid.gate_range.gate_spacing_m as f64;
-            ground_range_m.push(beam_ground_range_m(slant_range_m, cut.elevation_deg as f64));
+        let elevation_deg = sweep.fixed_angle_deg;
+        let mut ground_range_m = Vec::with_capacity(gates);
+        let mut height_m = Vec::with_capacity(gates);
+        for gate in 0..gates {
+            let slant_range_m = first_gate_m + gate as f64 * gate_spacing_m;
+            ground_range_m.push(beam_ground_range_m(slant_range_m, elevation_deg as f64));
             height_m.push(beam_height_above_radar_m(
                 slant_range_m,
-                cut.elevation_deg as f64,
+                elevation_deg as f64,
             ));
         }
         Some(Self {
-            elevation_deg: cut.elevation_deg,
-            grid,
+            elevation_deg,
+            field,
+            first_gate_m,
+            gate_spacing_m,
             azimuth_rows,
             ground_range_m,
             height_m,
@@ -135,12 +143,11 @@ impl<'a> CutSampler<'a> {
     fn sample(&self, azimuth_deg: f32, ground_range_m: f64) -> Option<ColumnSample> {
         let gate = self.gate_for_ground_range(ground_range_m)?;
         let row = self.nearest_row(azimuth_deg);
-        let value = self.grid.scaled_value(row, gate)?;
+        let value = self.field.value(row, gate)?;
         if !value.is_finite() {
             return None;
         }
-        let slant_range_m = self.grid.gate_range.first_gate_m as f64
-            + gate as f64 * self.grid.gate_range.gate_spacing_m as f64;
+        let slant_range_m = self.first_gate_m + gate as f64 * self.gate_spacing_m;
         Some(ColumnSample {
             height_m: self.height_m[gate],
             elevation_deg: self.elevation_deg as f64,
@@ -150,7 +157,7 @@ impl<'a> CutSampler<'a> {
     }
 
     fn row_azimuths(&self) -> Vec<f32> {
-        let mut out = vec![f32::NAN; self.grid.radial_count()];
+        let mut out = vec![f32::NAN; self.field.nrays as usize];
         for &(azimuth, row) in &self.azimuth_rows {
             if row < out.len() {
                 out[row] = azimuth;
@@ -168,20 +175,22 @@ struct ColumnSample {
     value: f32,
 }
 
-pub fn cappi_grid(
-    volume: &RadarVolume,
-    moment: MomentType,
+/// Constant-altitude PPI of the field named `name` at `height_m` above the
+/// radar, on the lowest such sweep's geometry; named
+/// `CAPPI_<NAME>_<height>KM`.
+pub fn cappi(
+    volume: &Volume,
+    name: &FieldName,
     height_m: f32,
     interpolation: CappiInterpolation,
-) -> Option<MomentGrid> {
+) -> Option<Field> {
     if !height_m.is_finite() || height_m < 0.0 {
         return None;
     }
-    let (base_index, base_grid) = base_cut(volume, &moment)?;
-    let base = CutSampler::new(volume, base_index, base_grid)?;
-    let columns = moment_columns(volume, &moment);
-    let rows = base_grid.radial_count();
-    let gates = base_grid.gate_range.gate_count;
+    let (base_index, base_field) = base_sweep(volume, name)?;
+    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let columns = field_columns(volume, name);
+    let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
@@ -199,35 +208,40 @@ pub fn cappi_grid(
             }
         }
     }
-    let id = format!("CAPPI_{}_{:.1}KM", moment.short_name(), height_m / 1000.0);
-    Some(f32_grid_like(base_grid, MomentType::Unknown(id), out))
+    let id = format!("CAPPI_{}_{:.1}KM", name.as_str(), height_m / 1000.0);
+    Some(product_field(
+        base_field,
+        &id,
+        base_field.attrs.units.as_deref(),
+        out,
+    ))
 }
 
-pub fn column_max_grid(volume: &RadarVolume, moment: MomentType) -> Option<MomentGrid> {
-    column_stat_grid(volume, moment, ColumnStatistic::Maximum)
+/// Column maximum of the field named `name`; `CMAX_<NAME>`.
+pub fn column_max(volume: &Volume, name: &FieldName) -> Option<Field> {
+    column_stat(volume, name, ColumnStatistic::Maximum)
 }
 
-pub fn column_min_grid(volume: &RadarVolume, moment: MomentType) -> Option<MomentGrid> {
-    column_stat_grid(volume, moment, ColumnStatistic::Minimum)
+/// Column minimum of the field named `name`; `CMIN_<NAME>`.
+pub fn column_min(volume: &Volume, name: &FieldName) -> Option<Field> {
+    column_stat(volume, name, ColumnStatistic::Minimum)
 }
 
-pub fn column_mean_grid(volume: &RadarVolume, moment: MomentType) -> Option<MomentGrid> {
-    column_stat_grid(volume, moment, ColumnStatistic::Mean)
+/// Column mean of the field named `name`; `CMEAN_<NAME>`.
+pub fn column_mean(volume: &Volume, name: &FieldName) -> Option<Field> {
+    column_stat(volume, name, ColumnStatistic::Mean)
 }
 
-pub fn low_level_composite_reflectivity_grid(
-    volume: &RadarVolume,
-    maximum_height_m: f32,
-) -> Option<MomentGrid> {
+/// Column-maximum reflectivity below `maximum_height_m`; `LLCREF`.
+pub fn low_level_composite_reflectivity(volume: &Volume, maximum_height_m: f32) -> Option<Field> {
     if !maximum_height_m.is_finite() || maximum_height_m <= 0.0 {
         return None;
     }
-    let moment = MomentType::Reflectivity;
-    let (base_index, base_grid) = base_cut(volume, &moment)?;
-    let base = CutSampler::new(volume, base_index, base_grid)?;
-    let columns = moment_columns(volume, &moment);
-    let rows = base_grid.radial_count();
-    let gates = base_grid.gate_range.gate_count;
+    let name = reflectivity_name(volume)?;
+    let (base_index, base_field) = base_sweep(volume, &name)?;
+    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let columns = field_columns(volume, &name);
+    let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
@@ -246,34 +260,34 @@ pub fn low_level_composite_reflectivity_grid(
             }
         }
     }
-    Some(f32_grid_like(
-        base_grid,
-        MomentType::Unknown("LLCREF".to_owned()),
-        out,
-    ))
+    Some(product_field(base_field, "LLCREF", Some("dBZ"), out))
 }
 
-pub fn echo_base_grid(volume: &RadarVolume, threshold_dbz: f32) -> Option<MomentGrid> {
-    echo_boundary_grid(volume, threshold_dbz, EchoBoundary::Base)
+/// Lowest height (m above the radar) with reflectivity ≥ `threshold_dbz`;
+/// `EBASE`.
+pub fn echo_base(volume: &Volume, threshold_dbz: f32) -> Option<Field> {
+    echo_boundary(volume, threshold_dbz, EchoBoundary::Base)
 }
 
-pub fn echo_top_height_grid(volume: &RadarVolume, threshold_dbz: f32) -> Option<MomentGrid> {
-    echo_boundary_grid(volume, threshold_dbz, EchoBoundary::Top)
+/// Highest height (m above the radar) with reflectivity ≥ `threshold_dbz`;
+/// `ET`.
+pub fn echo_top_height(volume: &Volume, threshold_dbz: f32) -> Option<Field> {
+    echo_boundary(volume, threshold_dbz, EchoBoundary::Top)
 }
 
-pub fn echo_depth_grid(volume: &RadarVolume, threshold_dbz: f32) -> Option<MomentGrid> {
-    let base = echo_base_grid(volume, threshold_dbz)?;
-    let top = echo_top_height_grid(volume, threshold_dbz)?;
-    if base.gate_range != top.gate_range || base.radial_indices != top.radial_indices {
+/// Echo top minus echo base (m); `EDEPTH`.
+pub fn echo_depth(volume: &Volume, threshold_dbz: f32) -> Option<Field> {
+    let base = echo_base(volume, threshold_dbz)?;
+    let top = echo_top_height(volume, threshold_dbz)?;
+    if base.gates != top.gates || base.shape() != top.shape() {
         return None;
     }
-    let rows = base.radial_count();
-    let gates = base.gate_range.gate_count;
+    let (rows, gates) = base.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
             if let (Some(base_height), Some(top_height)) =
-                (base.scaled_value(row, gate), top.scaled_value(row, gate))
+                (base.value(row, gate), top.value(row, gate))
                 && base_height.is_finite()
                 && top_height.is_finite()
             {
@@ -281,20 +295,16 @@ pub fn echo_depth_grid(volume: &RadarVolume, threshold_dbz: f32) -> Option<Momen
             }
         }
     }
-    Some(f32_grid_like(
-        &base,
-        MomentType::Unknown("EDEPTH".to_owned()),
-        out,
-    ))
+    Some(product_field(&base, "EDEPTH", Some("m"), out))
 }
 
-pub fn height_of_max_reflectivity_grid(volume: &RadarVolume) -> Option<MomentGrid> {
-    let moment = MomentType::Reflectivity;
-    let (base_index, base_grid) = base_cut(volume, &moment)?;
-    let base = CutSampler::new(volume, base_index, base_grid)?;
-    let columns = moment_columns(volume, &moment);
-    let rows = base_grid.radial_count();
-    let gates = base_grid.gate_range.gate_count;
+/// Height (m above the radar) of the column's maximum reflectivity; `HMAX`.
+pub fn height_of_max_reflectivity(volume: &Volume) -> Option<Field> {
+    let name = reflectivity_name(volume)?;
+    let (base_index, base_field) = base_sweep(volume, &name)?;
+    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let columns = field_columns(volume, &name);
+    let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
@@ -311,11 +321,7 @@ pub fn height_of_max_reflectivity_grid(volume: &RadarVolume) -> Option<MomentGri
             }
         }
     }
-    Some(f32_grid_like(
-        base_grid,
-        MomentType::Unknown("HMAX".to_owned()),
-        out,
-    ))
+    Some(product_field(base_field, "HMAX", Some("m"), out))
 }
 
 #[derive(Clone, Copy)]
@@ -325,16 +331,11 @@ enum ColumnStatistic {
     Mean,
 }
 
-fn column_stat_grid(
-    volume: &RadarVolume,
-    moment: MomentType,
-    statistic: ColumnStatistic,
-) -> Option<MomentGrid> {
-    let (base_index, base_grid) = base_cut(volume, &moment)?;
-    let base = CutSampler::new(volume, base_index, base_grid)?;
-    let columns = moment_columns(volume, &moment);
-    let rows = base_grid.radial_count();
-    let gates = base_grid.gate_range.gate_count;
+fn column_stat(volume: &Volume, name: &FieldName, statistic: ColumnStatistic) -> Option<Field> {
+    let (base_index, base_field) = base_sweep(volume, name)?;
+    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let columns = field_columns(volume, name);
+    let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
@@ -362,9 +363,10 @@ fn column_stat_grid(
         ColumnStatistic::Minimum => "CMIN",
         ColumnStatistic::Mean => "CMEAN",
     };
-    Some(f32_grid_like(
-        base_grid,
-        MomentType::Unknown(format!("{prefix}_{}", moment.short_name())),
+    Some(product_field(
+        base_field,
+        &format!("{prefix}_{}", name.as_str()),
+        base_field.attrs.units.as_deref(),
         out,
     ))
 }
@@ -375,17 +377,12 @@ enum EchoBoundary {
     Top,
 }
 
-fn echo_boundary_grid(
-    volume: &RadarVolume,
-    threshold_dbz: f32,
-    boundary: EchoBoundary,
-) -> Option<MomentGrid> {
-    let moment = MomentType::Reflectivity;
-    let (base_index, base_grid) = base_cut(volume, &moment)?;
-    let base = CutSampler::new(volume, base_index, base_grid)?;
-    let columns = moment_columns(volume, &moment);
-    let rows = base_grid.radial_count();
-    let gates = base_grid.gate_range.gate_count;
+fn echo_boundary(volume: &Volume, threshold_dbz: f32, boundary: EchoBoundary) -> Option<Field> {
+    let name = reflectivity_name(volume)?;
+    let (base_index, base_field) = base_sweep(volume, &name)?;
+    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let columns = field_columns(volume, &name);
+    let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
@@ -413,35 +410,46 @@ fn echo_boundary_grid(
         EchoBoundary::Base => "EBASE",
         EchoBoundary::Top => "ET",
     };
-    Some(f32_grid_like(
-        base_grid,
-        MomentType::Unknown(id.to_owned()),
-        out,
-    ))
+    Some(product_field(base_field, id, Some("m"), out))
 }
 
-fn base_cut<'a>(volume: &'a RadarVolume, moment: &MomentType) -> Option<(usize, &'a MomentGrid)> {
+/// The name of the volume's reflectivity: the preferred reflectivity field
+/// ([`Sweep::find`]) of the lowest sweep that has one.
+fn reflectivity_name(volume: &Volume) -> Option<FieldName> {
     volume
-        .cuts
+        .sweeps
+        .iter()
+        .filter_map(|sweep| {
+            sweep
+                .find(Quantity::Reflectivity)
+                .map(|field| (sweep.fixed_angle_deg, field))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, field)| field.name.clone())
+}
+
+/// Lowest-elevation sweep carrying a field named `name`, and that field.
+fn base_sweep<'a>(volume: &'a Volume, name: &FieldName) -> Option<(usize, &'a Field)> {
+    volume
+        .sweeps
         .iter()
         .enumerate()
-        .filter_map(|(index, cut)| {
-            cut.moments
-                .get(moment)
-                .map(|grid| (index, cut.elevation_deg, grid))
+        .filter_map(|(index, sweep)| {
+            sweep
+                .field(name)
+                .map(|field| (index, sweep.fixed_angle_deg, field))
         })
         .min_by(|left, right| left.1.total_cmp(&right.1))
-        .map(|(index, _, grid)| (index, grid))
+        .map(|(index, _, field)| (index, field))
 }
 
-fn moment_columns<'a>(volume: &'a RadarVolume, moment: &MomentType) -> Vec<CutSampler<'a>> {
+fn field_columns<'a>(volume: &'a Volume, name: &FieldName) -> Vec<SweepSampler<'a>> {
     let mut columns = volume
-        .cuts
+        .sweeps
         .iter()
-        .enumerate()
-        .filter_map(|(index, cut)| {
-            let grid = cut.moments.get(moment)?;
-            CutSampler::new(volume, index, grid)
+        .filter_map(|sweep| {
+            let field = sweep.field(name)?;
+            SweepSampler::new(sweep, field)
         })
         .collect::<Vec<_>>();
     columns.sort_by(|left, right| left.elevation_deg.total_cmp(&right.elevation_deg));
@@ -449,7 +457,7 @@ fn moment_columns<'a>(volume: &'a RadarVolume, moment: &MomentType) -> Vec<CutSa
 }
 
 fn column_profile(
-    columns: &[CutSampler<'_>],
+    columns: &[SweepSampler<'_>],
     azimuth_deg: f32,
     ground_range_m: f64,
 ) -> Vec<ColumnSample> {
@@ -537,76 +545,56 @@ fn angular_distance(left: f32, right: f32) -> f32 {
     difference.min(360.0 - difference)
 }
 
-fn f32_grid_like(base: &MomentGrid, moment: MomentType, values: Vec<f32>) -> MomentGrid {
-    MomentGrid {
-        moment,
-        gate_range: base.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: base.radial_indices.clone(),
-        storage: MomentStorage::F32(values),
-    }
+/// An F32 output field named `id` on the base field's geometry (NaN = no
+/// data).
+fn product_field(base: &Field, id: &str, units: Option<&str>, values: Vec<f32>) -> Field {
+    let mut field = physical_field(
+        base,
+        FieldName::parse(id),
+        Quantity::Other,
+        None,
+        None,
+        values,
+    );
+    field.attrs.units = units.map(|units| std::borrow::Cow::Owned(units.to_owned()));
+    field
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{ElevationCut, GateRange, RadarSite, Radial};
+    use crate::test_support::{add_f32_field, sweep_with_azimuths, volume_with};
 
-    fn test_volume() -> RadarVolume {
-        let mut volume = RadarVolume {
-            site: RadarSite::new("TEST"),
-            ..RadarVolume::default()
-        };
+    fn test_volume() -> Volume {
+        let mut sweeps = Vec::new();
         for (elevation, value) in [(0.5, 30.0), (2.5, 50.0)] {
-            let mut cut = ElevationCut::new(elevation, None);
-            cut.radials.push(Radial {
-                azimuth_deg: 0.0,
-                elevation_deg: elevation,
-                time_offset_ms: 0,
-                gate_range: GateRange {
-                    first_gate_m: 1000,
-                    gate_spacing_m: 1000,
-                    gate_count: 5,
-                },
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
-            cut.moments.insert(
-                MomentType::Reflectivity,
-                MomentGrid {
-                    moment: MomentType::Reflectivity,
-                    gate_range: GateRange {
-                        first_gate_m: 1000,
-                        gate_spacing_m: 1000,
-                        gate_count: 5,
-                    },
-                    scale: 1.0,
-                    offset: 0.0,
-                    nodata: None,
-                    range_folded: None,
-                    radial_indices: vec![0],
-                    storage: MomentStorage::F32(vec![value; 5]),
-                },
+            let mut sweep = sweep_with_azimuths(&[0.0], elevation, None);
+            add_f32_field(
+                &mut sweep,
+                FieldName::Dbzh,
+                1000.0,
+                1000.0,
+                5,
+                vec![value; 5],
             );
-            volume.cuts.push(cut);
+            sweeps.push(sweep);
         }
-        volume
+        volume_with(sweeps)
     }
 
     #[test]
     fn column_max_finds_upper_tilt_value() {
         let volume = test_volume();
-        let maximum = column_max_grid(&volume, MomentType::Reflectivity).unwrap();
-        assert_eq!(maximum.scaled_value(0, 3), Some(50.0));
+        let maximum = column_max(&volume, &FieldName::Dbzh).unwrap();
+        assert_eq!(maximum.name, FieldName::parse("CMAX_DBZH"));
+        assert_eq!(maximum.value(0, 3), Some(50.0));
     }
 
     #[test]
     fn echo_depth_is_nonnegative() {
         let volume = test_volume();
-        let depth = echo_depth_grid(&volume, 20.0).unwrap();
-        assert!(depth.scaled_value(0, 3).unwrap() >= 0.0);
+        let depth = echo_depth(&volume, 20.0).unwrap();
+        assert_eq!(depth.name, FieldName::parse("EDEPTH"));
+        assert!(depth.value(0, 3).unwrap() >= 0.0);
     }
 }

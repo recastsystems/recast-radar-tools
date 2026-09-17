@@ -3,17 +3,33 @@
 
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
-use recast_radar_map::{MeshCalibration, hail_grids, poh_grid};
-use recast_radar_retrieve::{gust_proxy_grid, marc_grid};
+use recast_radar_core::{Field, Volume};
+use recast_radar_map::{MeshCalibration, hail, poh};
+use recast_radar_retrieve::{gust_proxy, marc};
 
-fn stats(name: &str, grid: &recast_radar_core::MomentGrid, thresholds: &[f32]) {
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
+/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
+/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
+#[allow(deprecated)]
+mod legacy_bridge {
+    use super::Volume;
+    use std::path::Path;
+
+    pub fn decode_level2(path: &Path) -> Volume {
+        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path).expect("decode");
+        recast_radar_core::legacy::volume_from_legacy(legacy)
+            .expect("bridge")
+            .0
+    }
+}
+
+fn stats(name: &str, field: &Field, thresholds: &[f32]) {
+    let (rows, gates) = field.shape();
     let mut values: Vec<f32> = Vec::new();
     for row in 0..rows {
         for gate in 0..gates {
-            if let Some(v) = grid.scaled_value(row, gate)
+            if let Some(v) = field.value(row, gate)
                 && v.is_finite()
             {
                 values.push(v);
@@ -42,11 +58,10 @@ fn main() {
         .expect("usage: hail_wind_probe <file> [h0_km] [hm20_km]");
     let h0_km: f32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(3.2);
     let hm20_km: f32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(6.2);
-    let volume = recast_radar_io_nexrad::decode_volume_from_path(std::path::Path::new(&path))
-        .expect("decode");
+    let volume = legacy_bridge::decode_level2(std::path::Path::new(&path));
     println!(
-        "{} cuts, H0={h0_km} km, H-20={hm20_km} km",
-        volume.cuts.len()
+        "{} sweeps, H0={h0_km} km, H-20={hm20_km} km",
+        volume.sweeps.len()
     );
 
     for cal in [
@@ -54,7 +69,7 @@ fn main() {
         MeshCalibration::MurilloHomeyer2019P75,
         MeshCalibration::MurilloHomeyer2019P95,
     ] {
-        if let Some(hail) = hail_grids(&volume, h0_km * 1000.0, hm20_km * 1000.0, cal) {
+        if let Some(hail) = hail(&volume, h0_km * 1000.0, hm20_km * 1000.0, cal) {
             stats(&format!("MESH {cal:?}"), &hail.mesh_mm, &[19.0, 29.0, 47.0]);
             if cal == MeshCalibration::Witt1998 {
                 stats("SHI", &hail.shi, &[100.0]);
@@ -62,13 +77,13 @@ fn main() {
             }
         }
     }
-    if let Some(poh) = poh_grid(&volume, h0_km * 1000.0) {
+    if let Some(poh) = poh(&volume, h0_km * 1000.0) {
         stats("POH", &poh, &[50.0, 80.0]);
     }
-    if let Some(marc) = marc_grid(&volume) {
+    if let Some(marc) = marc(&volume) {
         stats("MARC dV", &marc, &[25.0, 30.0, 38.0]);
     }
-    if let Some(gust) = gust_proxy_grid(&volume) {
+    if let Some(gust) = gust_proxy(&volume) {
         stats("Gust proxy", &gust, &[25.0, 32.0]);
     }
 }

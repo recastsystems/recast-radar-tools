@@ -8,27 +8,27 @@
 
 use std::collections::BTreeMap;
 
-use recast_radar_core::{ElevationCut, MomentGrid, MomentStorage, MomentType};
+use recast_radar_core::{Field, Sweep};
 
 use crate::{
-    DEALIASED_VELOCITY_NODATA, DEALIASED_VELOCITY_OFFSET, DEALIASED_VELOCITY_SCALE,
-    copy_scaled_velocity_row, encode_dealiased_velocity, median_nyquist_mps, radial_azimuths,
-    row_nyquist_mps, sweep_wraps,
+    DEALIASED_VELOCITY_NODATA, copy_scaled_velocity_row, dealiased_velocity_field,
+    encode_dealiased_velocity, median_nyquist_mps, radial_azimuths, row_nyquist_mps, sweep_wraps,
 };
 
 const INTERVAL_SPLITS: usize = 3;
 const SKIP_BETWEEN_RAYS: usize = 100;
 const SKIP_ALONG_RAY: usize = 100;
 
-pub fn dealias_velocity_grid_pyart_region(cut: &ElevationCut, source: &MomentGrid) -> MomentGrid {
-    let rows = source.radial_count();
-    let gates = source.gate_range.gate_count;
+/// Dealias the velocity field `source` of `sweep` with the Py-ART region
+/// algorithm port. Returns a `VRADDH` field on the same rays and native gates.
+pub fn dealias_velocity_pyart_region(sweep: &Sweep, source: &Field) -> Field {
+    let (rows, gates) = source.shape();
     let total = rows.saturating_mul(gates);
-    let fallback_nyquist = median_nyquist_mps(cut, source);
+    let fallback_nyquist = median_nyquist_mps(sweep, source);
 
     let mut nyq = vec![f32::NAN; rows.max(1)];
     for (row, slot) in nyq.iter_mut().enumerate().take(rows) {
-        *slot = row_nyquist_mps(cut, source, row)
+        *slot = row_nyquist_mps(sweep, row)
             .or(fallback_nyquist)
             .filter(|value| value.is_finite() && *value > 0.0)
             .unwrap_or(f32::NAN);
@@ -43,7 +43,7 @@ pub fn dealias_velocity_grid_pyart_region(cut: &ElevationCut, source: &MomentGri
         }
     }
 
-    let azimuths = radial_azimuths(cut, source);
+    let azimuths = radial_azimuths(sweep, source);
     let folds = pyart_region_folds(&observed, &nyq, rows, gates, sweep_wraps(&azimuths));
 
     let mut corrected = vec![DEALIASED_VELOCITY_NODATA; total];
@@ -63,16 +63,7 @@ pub fn dealias_velocity_grid_pyart_region(cut: &ElevationCut, source: &MomentGri
         }
     }
 
-    MomentGrid {
-        moment: MomentType::Velocity,
-        gate_range: source.gate_range.clone(),
-        scale: DEALIASED_VELOCITY_SCALE,
-        offset: DEALIASED_VELOCITY_OFFSET,
-        nodata: Some(DEALIASED_VELOCITY_NODATA),
-        range_folded: None,
-        radial_indices: source.radial_indices.clone(),
-        storage: MomentStorage::U16(corrected),
-    }
+    dealiased_velocity_field(source, corrected)
 }
 
 fn pyart_region_folds(

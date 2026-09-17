@@ -1,15 +1,19 @@
 //! Sweep-local radar product derivation.
 //!
-//! `KDP` is the only derived product inserted as a first-class known
-//! [`MomentType`]. Additional products use `MomentType::Unknown` with stable
-//! short IDs so this patch does not force exhaustive-match changes through the
-//! renderer, inspector, serialization, and color-table crates. BowEcho can
-//! promote those IDs to dedicated enum variants later without changing the
-//! algorithms here.
+//! Products are dataset variables of one [`Sweep`], named after the design
+//! note's rule (`docs/design/fm301-model.md` section 8.3): standalone
+//! quantities keep a short id (`KDP`, `RR`, `AH`, `MET_QI`, ...); products
+//! derived from one input field are `<BASE>_<SUFFIX>` with `BASE` the input
+//! field's own name (`DBZH_TEX`, `DBZ_CORR`, `PHIDP_CLEAN`, `RHOHV_LOG`).
+//! Inputs are found by [`Quantity`] ([`Sweep::find`]), so a sweep decoded
+//! from any source format works regardless of its spelling of reflectivity.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Cow;
+use std::collections::BTreeSet;
 
-use recast_radar_core::{ElevationCut, MomentGrid, MomentStorage, MomentType, RadarVolume};
+use recast_radar_core::{
+    Field, FieldAttrs, FieldData, FieldName, FloatCoding, Polarization, Quantity, Sweep, Volume,
+};
 
 /// Products that can be computed independently for each elevation cut.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -183,14 +187,6 @@ impl DerivedSweepProduct {
         }
     }
 
-    pub fn moment_type(self) -> MomentType {
-        if self == Self::Kdp {
-            MomentType::SpecificDifferentialPhase
-        } else {
-            MomentType::Unknown(self.id().to_owned())
-        }
-    }
-
     /// Products whose calibration or physical bounds change with transmit
     /// wavelength. These must fail closed when the radar band is unknown;
     /// silently applying the historical S-band default produces plausible
@@ -210,6 +206,166 @@ impl DerivedSweepProduct {
                 | Self::RainRateHybrid
                 | Self::KdpTexture
         )
+    }
+}
+
+impl DerivedSweepProduct {
+    /// The input quantity whose field name is `BASE` in the product's
+    /// `<BASE>_<SUFFIX>` name; `None` for products with a fixed id.
+    pub fn base_quantity(self) -> Option<Quantity> {
+        Some(match self {
+            Self::ReflectivityTexture
+            | Self::ReflectivityRangeGradient
+            | Self::CorrectedReflectivity => Quantity::Reflectivity,
+            Self::VelocityTexture | Self::VelocityRangeGradient => Quantity::RadialVelocity,
+            Self::SpectrumWidthTexture => Quantity::SpectrumWidth,
+            Self::DifferentialReflectivityTexture | Self::CorrectedDifferentialReflectivity => {
+                Quantity::DifferentialReflectivity
+            }
+            Self::CorrelationCoefficientTexture | Self::LogCorrelationRatio => {
+                Quantity::CorrelationCoefficient
+            }
+            Self::DifferentialPhaseTexture | Self::FilteredDifferentialPhase => {
+                Quantity::DifferentialPhase
+            }
+            Self::KdpTexture => Quantity::SpecificDifferentialPhase,
+            _ => return None,
+        })
+    }
+
+    /// The `<SUFFIX>` of a base-named product.
+    const fn suffix(self) -> Option<&'static str> {
+        Some(match self {
+            Self::ReflectivityTexture
+            | Self::VelocityTexture
+            | Self::SpectrumWidthTexture
+            | Self::DifferentialReflectivityTexture
+            | Self::CorrelationCoefficientTexture
+            | Self::DifferentialPhaseTexture
+            | Self::KdpTexture => "_TEX",
+            Self::ReflectivityRangeGradient | Self::VelocityRangeGradient => "_GRAD_R",
+            Self::CorrectedReflectivity | Self::CorrectedDifferentialReflectivity => "_CORR",
+            Self::FilteredDifferentialPhase => "_CLEAN",
+            Self::LogCorrelationRatio => "_LOG",
+            _ => return None,
+        })
+    }
+
+    /// The fixed FM301 / xradar id of a product without a base
+    /// (design note 8.3), or the id used with the canonical base name.
+    const fn fixed_id(self) -> Option<&'static str> {
+        Some(match self {
+            Self::Kdp => "KDP",
+            Self::KdpUncertainty => "KDP_SD",
+            Self::SpecificAttenuation => "AH",
+            Self::PathIntegratedAttenuation => "PIA",
+            Self::SpecificDifferentialAttenuation => "ADP",
+            Self::PathIntegratedDifferentialAttenuation => "PIDA",
+            Self::RainRateReflectivity => "RR_Z",
+            Self::RainRateKdp => "RR_KDP",
+            Self::RainRateHybrid => "RR",
+            Self::LiquidWaterContent => "LWC",
+            Self::HailKineticEnergy => "HKE",
+            Self::CircularDepolarizationRatio => "CDR",
+            Self::MeteorologicalQuality => "MET_QI",
+            Self::MeteorologicalGateMask => "MET_MASK",
+            Self::TdsConfidence => "TDS_SCORE",
+            Self::HailSignature => "HAIL_SCORE",
+            Self::TurbulenceProxy => "TURB",
+            _ => return None,
+        })
+    }
+
+    /// The canonical FM301 name of a base quantity, used when the sweep has
+    /// no field of that quantity (the product is then unavailable anyway).
+    fn canonical_base(quantity: Quantity) -> FieldName {
+        match quantity {
+            Quantity::Reflectivity => FieldName::Dbzh,
+            Quantity::RadialVelocity => FieldName::Vradh,
+            Quantity::SpectrumWidth => FieldName::Wradh,
+            Quantity::DifferentialReflectivity => FieldName::Zdr,
+            Quantity::CorrelationCoefficient => FieldName::Rhohv,
+            Quantity::DifferentialPhase => FieldName::Phidp,
+            Quantity::SpecificDifferentialPhase => FieldName::Kdp,
+            _ => FieldName::Other("X".into()),
+        }
+    }
+
+    /// The product's dataset variable name given its input field's name
+    /// (design note 8.3). `base` is ignored by products with a fixed id;
+    /// `None` uses the canonical name of the base quantity.
+    pub fn field_name(self, base: Option<&FieldName>) -> FieldName {
+        match (self.suffix(), self.base_quantity(), self.fixed_id()) {
+            (Some(suffix), Some(quantity), _) => {
+                let base = base
+                    .cloned()
+                    .unwrap_or_else(|| Self::canonical_base(quantity));
+                FieldName::parse(&format!("{}{suffix}", base.as_str()))
+            }
+            (_, _, Some(id)) => FieldName::parse(id),
+            _ => FieldName::parse(self.id()),
+        }
+    }
+
+    /// The name this product gets in `sweep`: its base field is the sweep's
+    /// preferred field of [`DerivedSweepProduct::base_quantity`].
+    pub fn field_name_in(self, sweep: &Sweep) -> FieldName {
+        let base = self
+            .base_quantity()
+            .and_then(|quantity| sweep.find(quantity))
+            .map(|field| field.name.clone());
+        self.field_name(base.as_ref())
+    }
+
+    /// The name with the canonical base names (`DBZH_TEX`, `DBZH_CORR`, ...).
+    pub fn canonical_field_name(self) -> FieldName {
+        self.field_name(None)
+    }
+
+    /// The product a dataset variable name refers to, if any: fixed ids, and
+    /// `<BASE>_<SUFFIX>` names whose base classifies as the product's input
+    /// quantity. Case-insensitive. `KDP` is never a derived product here: a
+    /// field of that name is native specific differential phase.
+    pub fn for_name(name: &FieldName) -> Option<Self> {
+        let text = name.as_str();
+        if let Some(product) = Self::ALL
+            .iter()
+            .copied()
+            .filter(|product| *product != Self::Kdp)
+            .find(|product| {
+                product
+                    .fixed_id()
+                    .is_some_and(|id| id.eq_ignore_ascii_case(text))
+            })
+        {
+            return Some(product);
+        }
+        Self::ALL.iter().copied().find(|product| {
+            let (Some(suffix), Some(quantity)) = (product.suffix(), product.base_quantity()) else {
+                return false;
+            };
+            let Some(base) = text
+                .len()
+                .checked_sub(suffix.len())
+                .and_then(|split| text.is_char_boundary(split).then(|| text.split_at(split)))
+                .filter(|(_, tail)| tail.eq_ignore_ascii_case(suffix))
+                .map(|(base, _)| base)
+            else {
+                return false;
+            };
+            !base.is_empty() && Quantity::classify(base, None).0 == quantity
+        })
+    }
+
+    /// Semantic class of the product's output.
+    fn quantity(self) -> Quantity {
+        match self {
+            Self::Kdp => Quantity::SpecificDifferentialPhase,
+            Self::RainRateReflectivity | Self::RainRateKdp | Self::RainRateHybrid => {
+                Quantity::PrecipitationRate
+            }
+            _ => Quantity::Other,
+        }
     }
 }
 
@@ -476,7 +632,7 @@ impl Default for DerivationConfig {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CutDerivationReport {
+pub struct SweepDerivationReport {
     pub inserted: Vec<String>,
     pub skipped_existing: Vec<String>,
     pub unavailable: Vec<String>,
@@ -484,47 +640,78 @@ pub struct CutDerivationReport {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DerivationReport {
-    pub cuts_processed: usize,
+    pub sweeps_processed: usize,
     pub inserted: Vec<(usize, String)>,
     pub skipped_existing: Vec<(usize, String)>,
     pub unavailable: Vec<(usize, String)>,
 }
 
-/// Derive configured products on every elevation cut, preserving native moments
+/// Derive configured products on every sweep, preserving native fields
 /// unless `overwrite_existing` is enabled.
-pub fn derive_volume_in_place(
-    volume: &mut RadarVolume,
-    config: &DerivationConfig,
-) -> DerivationReport {
+pub fn derive_volume_in_place(volume: &mut Volume, config: &DerivationConfig) -> DerivationReport {
     let mut report = DerivationReport::default();
-    for (cut_index, cut) in volume.cuts.iter_mut().enumerate() {
-        let cut_report = derive_cut_in_place(cut, config);
-        report.cuts_processed += 1;
-        report
-            .inserted
-            .extend(cut_report.inserted.into_iter().map(|id| (cut_index, id)));
+    for (sweep_index, sweep) in volume.sweeps.iter_mut().enumerate() {
+        let sweep_report = derive_sweep_in_place(sweep, config);
+        report.sweeps_processed += 1;
+        report.inserted.extend(
+            sweep_report
+                .inserted
+                .into_iter()
+                .map(|id| (sweep_index, id)),
+        );
         report.skipped_existing.extend(
-            cut_report
+            sweep_report
                 .skipped_existing
                 .into_iter()
-                .map(|id| (cut_index, id)),
+                .map(|id| (sweep_index, id)),
         );
-        report
-            .unavailable
-            .extend(cut_report.unavailable.into_iter().map(|id| (cut_index, id)));
+        report.unavailable.extend(
+            sweep_report
+                .unavailable
+                .into_iter()
+                .map(|id| (sweep_index, id)),
+        );
     }
     report
 }
 
-/// Derive configured products for one cut and insert them into its moment map.
+/// The input fields of a sweep, resolved once per derivation
+/// ([`Sweep::find`] by quantity).
+struct Inputs<'a> {
+    reflectivity: Option<&'a Field>,
+    velocity: Option<&'a Field>,
+    spectrum_width: Option<&'a Field>,
+    zdr: Option<&'a Field>,
+    rho: Option<&'a Field>,
+    phi: Option<&'a Field>,
+    kdp: Option<&'a Field>,
+}
+
+impl<'a> Inputs<'a> {
+    fn of(sweep: &'a Sweep) -> Self {
+        Self {
+            reflectivity: sweep.find(Quantity::Reflectivity),
+            velocity: sweep.find(Quantity::RadialVelocity),
+            spectrum_width: sweep.find(Quantity::SpectrumWidth),
+            zdr: sweep.find(Quantity::DifferentialReflectivity),
+            rho: sweep.find(Quantity::CorrelationCoefficient),
+            phi: sweep.find(Quantity::DifferentialPhase),
+            kdp: sweep.find(Quantity::SpecificDifferentialPhase),
+        }
+    }
+}
+
+/// Derive configured products for one sweep and add them to its fields.
 ///
-/// The function computes against an immutable snapshot and commits all results
-/// at the end, so dependencies do not observe a half-mutated cut.
-pub fn derive_cut_in_place(
-    cut: &mut ElevationCut,
+/// The function computes against an immutable snapshot and commits all
+/// results at the end, so dependencies do not observe a half-mutated sweep.
+/// Report entries carry product ids ([`DerivedSweepProduct::id`]), not
+/// field names.
+pub fn derive_sweep_in_place(
+    sweep: &mut Sweep,
     config: &DerivationConfig,
-) -> CutDerivationReport {
-    let mut report = CutDerivationReport::default();
+) -> SweepDerivationReport {
+    let mut report = SweepDerivationReport::default();
     let mut allowed_products = config.products.clone();
     if !config.band.is_known() {
         for product in config
@@ -560,24 +747,26 @@ pub fn derive_cut_in_place(
         )
     });
 
+    let snapshot: &Sweep = sweep;
+    let inputs = Inputs::of(snapshot);
     let phase_bundle = if phase_needed {
-        derive_phase_bundle(cut, &config.kdp)
+        derive_phase_bundle(snapshot, &inputs, &config.kdp)
     } else {
         None
     };
 
     // Prefer a source-provided KDP field for downstream products. If no native
     // KDP is present, use the robust PHIDP retrieval from this pass.
-    let native_kdp = cut
-        .moments
-        .get(&MomentType::SpecificDifferentialPhase)
-        .cloned();
-    let derived_kdp = phase_bundle.as_ref().map(|bundle| bundle.kdp.clone());
-    let kdp_for_dependencies = native_kdp.as_ref().or(derived_kdp.as_ref());
+    let derived_kdp = phase_bundle.as_ref().map(|bundle| &bundle.kdp);
+    let kdp_for_dependencies = inputs.kdp.or(derived_kdp);
 
-    let phase_excess = phase_bundle
-        .as_ref()
-        .map(|bundle| phase_excess_grid(&bundle.filtered_phi, config.kdp.phase_baseline_gates));
+    let phase_excess = phase_bundle.as_ref().map(|bundle| {
+        phase_excess_field(
+            snapshot,
+            &bundle.filtered_phi,
+            config.kdp.phase_baseline_gates,
+        )
+    });
 
     let pia = if needs_any(
         requested,
@@ -586,21 +775,23 @@ pub fn derive_cut_in_place(
             DerivedSweepProduct::CorrectedReflectivity,
         ],
     ) {
+        let product = DerivedSweepProduct::PathIntegratedAttenuation;
         phase_excess.as_ref().map_or_else(
             || {
                 kdp_for_dependencies.map(|kdp| {
                     integrate_kdp(
+                        snapshot,
                         kdp,
-                        DerivedSweepProduct::PathIntegratedAttenuation.moment_type(),
+                        product,
                         config.attenuation.horizontal_db_per_degree,
                         config.attenuation.max_pia_db,
                     )
                 })
             },
             |phase| {
-                Some(scale_positive_grid(
+                Some(scale_positive_field(
                     phase,
-                    DerivedSweepProduct::PathIntegratedAttenuation.moment_type(),
+                    product,
                     config.attenuation.horizontal_db_per_degree,
                     config.attenuation.max_pia_db,
                 ))
@@ -617,21 +808,23 @@ pub fn derive_cut_in_place(
             DerivedSweepProduct::CorrectedDifferentialReflectivity,
         ],
     ) {
+        let product = DerivedSweepProduct::PathIntegratedDifferentialAttenuation;
         phase_excess.as_ref().map_or_else(
             || {
                 kdp_for_dependencies.map(|kdp| {
                     integrate_kdp(
+                        snapshot,
                         kdp,
-                        DerivedSweepProduct::PathIntegratedDifferentialAttenuation.moment_type(),
+                        product,
                         config.attenuation.differential_db_per_degree,
                         config.attenuation.max_pida_db,
                     )
                 })
             },
             |phase| {
-                Some(scale_positive_grid(
+                Some(scale_positive_field(
                     phase,
-                    DerivedSweepProduct::PathIntegratedDifferentialAttenuation.moment_type(),
+                    product,
                     config.attenuation.differential_db_per_degree,
                     config.attenuation.max_pida_db,
                 ))
@@ -641,19 +834,19 @@ pub fn derive_cut_in_place(
         None
     };
 
-    let mut pending = BTreeMap::<MomentType, MomentGrid>::new();
+    let mut pending: Vec<Field> = Vec::new();
 
     for &product in DerivedSweepProduct::ALL {
         if !requested.contains(&product) {
             continue;
         }
-        let output_moment = product.moment_type();
-        if cut.moments.contains_key(&output_moment) && !config.overwrite_existing {
+        let output_name = product.field_name_in(snapshot);
+        if snapshot.field(&output_name).is_some() && !config.overwrite_existing {
             report.skipped_existing.push(product.id().to_owned());
             continue;
         }
 
-        let grid = match product {
+        let field = match product {
             DerivedSweepProduct::Kdp => phase_bundle.as_ref().map(|bundle| bundle.kdp.clone()),
             DerivedSweepProduct::FilteredDifferentialPhase => phase_bundle
                 .as_ref()
@@ -662,202 +855,179 @@ pub fn derive_cut_in_place(
                 .as_ref()
                 .map(|bundle| bundle.uncertainty.clone()),
             DerivedSweepProduct::SpecificAttenuation => kdp_for_dependencies.map(|kdp| {
-                scale_positive_grid(
+                scale_positive_field(
                     kdp,
-                    output_moment.clone(),
+                    product,
                     config.attenuation.horizontal_db_per_degree,
                     f32::INFINITY,
                 )
             }),
             DerivedSweepProduct::PathIntegratedAttenuation => pia.clone(),
-            DerivedSweepProduct::CorrectedReflectivity => cut
-                .moments
-                .get(&MomentType::Reflectivity)
-                .and_then(|reflectivity| {
+            DerivedSweepProduct::CorrectedReflectivity => {
+                inputs.reflectivity.and_then(|reflectivity| {
                     pia.as_ref().map(|attenuation| {
-                        add_aligned_grid(reflectivity, attenuation, output_moment.clone(), 1.0, 1.0)
+                        add_aligned_field(snapshot, reflectivity, attenuation, product, 1.0, 1.0)
                     })
-                }),
+                })
+            }
             DerivedSweepProduct::SpecificDifferentialAttenuation => {
                 kdp_for_dependencies.map(|kdp| {
-                    scale_positive_grid(
+                    scale_positive_field(
                         kdp,
-                        output_moment.clone(),
+                        product,
                         config.attenuation.differential_db_per_degree,
                         f32::INFINITY,
                     )
                 })
             }
             DerivedSweepProduct::PathIntegratedDifferentialAttenuation => pida.clone(),
-            DerivedSweepProduct::CorrectedDifferentialReflectivity => cut
-                .moments
-                .get(&MomentType::DifferentialReflectivity)
-                .and_then(|zdr| {
-                    pida.as_ref().map(|attenuation| {
-                        add_aligned_grid(zdr, attenuation, output_moment.clone(), 1.0, 1.0)
-                    })
-                }),
-            DerivedSweepProduct::RainRateReflectivity => cut
-                .moments
-                .get(&MomentType::Reflectivity)
-                .map(|reflectivity| {
-                    rain_rate_z_grid(reflectivity, output_moment.clone(), &config.qpe)
-                }),
-            DerivedSweepProduct::RainRateKdp => kdp_for_dependencies
-                .map(|kdp| rain_rate_kdp_grid(kdp, output_moment.clone(), &config.qpe)),
-            DerivedSweepProduct::RainRateHybrid => hybrid_rain_rate_grid(
-                cut,
-                kdp_for_dependencies,
-                output_moment.clone(),
-                &config.qpe,
-            ),
-            DerivedSweepProduct::LiquidWaterContent => cut
-                .moments
-                .get(&MomentType::Reflectivity)
-                .map(|reflectivity| liquid_water_content_grid(reflectivity, output_moment.clone())),
-            DerivedSweepProduct::HailKineticEnergy => cut
-                .moments
-                .get(&MomentType::Reflectivity)
-                .map(|reflectivity| hail_kinetic_energy_grid(reflectivity, output_moment.clone())),
+            DerivedSweepProduct::CorrectedDifferentialReflectivity => inputs.zdr.and_then(|zdr| {
+                pida.as_ref().map(|attenuation| {
+                    add_aligned_field(snapshot, zdr, attenuation, product, 1.0, 1.0)
+                })
+            }),
+            DerivedSweepProduct::RainRateReflectivity => inputs
+                .reflectivity
+                .map(|reflectivity| rain_rate_z_field(reflectivity, product, &config.qpe)),
+            DerivedSweepProduct::RainRateKdp => {
+                kdp_for_dependencies.map(|kdp| rain_rate_kdp_field(kdp, product, &config.qpe))
+            }
+            DerivedSweepProduct::RainRateHybrid => {
+                hybrid_rain_rate_field(snapshot, &inputs, kdp_for_dependencies, &config.qpe)
+            }
+            DerivedSweepProduct::LiquidWaterContent => inputs
+                .reflectivity
+                .map(|reflectivity| liquid_water_content_field(reflectivity, product)),
+            DerivedSweepProduct::HailKineticEnergy => inputs
+                .reflectivity
+                .map(|reflectivity| hail_kinetic_energy_field(reflectivity, product)),
             DerivedSweepProduct::CircularDepolarizationRatio => {
-                circular_depolarization_ratio_grid(cut, output_moment.clone())
+                circular_depolarization_ratio_field(snapshot, &inputs)
             }
-            DerivedSweepProduct::LogCorrelationRatio => cut
-                .moments
-                .get(&MomentType::CorrelationCoefficient)
-                .map(|rho| log_correlation_ratio_grid(rho, output_moment.clone())),
-            DerivedSweepProduct::ReflectivityTexture => {
-                cut.moments.get(&MomentType::Reflectivity).map(|source| {
-                    texture_grid(
-                        cut,
-                        source,
-                        output_moment.clone(),
-                        &config.texture,
-                        TexturePeriod::Linear,
-                    )
-                })
-            }
-            DerivedSweepProduct::VelocityTexture => {
-                cut.moments.get(&MomentType::Velocity).map(|source| {
-                    texture_grid(
-                        cut,
-                        source,
-                        output_moment.clone(),
-                        &config.texture,
-                        TexturePeriod::NyquistVelocity,
-                    )
-                })
-            }
-            DerivedSweepProduct::SpectrumWidthTexture => {
-                cut.moments.get(&MomentType::SpectrumWidth).map(|source| {
-                    texture_grid(
-                        cut,
-                        source,
-                        output_moment.clone(),
-                        &config.texture,
-                        TexturePeriod::Linear,
-                    )
-                })
-            }
-            DerivedSweepProduct::DifferentialReflectivityTexture => cut
-                .moments
-                .get(&MomentType::DifferentialReflectivity)
-                .map(|source| {
-                    texture_grid(
-                        cut,
-                        source,
-                        output_moment.clone(),
-                        &config.texture,
-                        TexturePeriod::Linear,
-                    )
-                }),
-            DerivedSweepProduct::CorrelationCoefficientTexture => cut
-                .moments
-                .get(&MomentType::CorrelationCoefficient)
-                .map(|source| {
-                    texture_grid(
-                        cut,
-                        source,
-                        output_moment.clone(),
-                        &config.texture,
-                        TexturePeriod::Linear,
-                    )
-                }),
-            DerivedSweepProduct::DifferentialPhaseTexture => cut
-                .moments
-                .get(&MomentType::DifferentialPhase)
-                .map(|source| {
-                    texture_grid(
-                        cut,
-                        source,
-                        output_moment.clone(),
-                        &config.texture,
-                        TexturePeriod::Fixed(config.kdp.phase_period_deg),
-                    )
-                }),
-            DerivedSweepProduct::KdpTexture => kdp_for_dependencies.map(|source| {
-                texture_grid(
-                    cut,
+            DerivedSweepProduct::LogCorrelationRatio => inputs
+                .rho
+                .map(|rho| log_correlation_ratio_field(rho, product)),
+            DerivedSweepProduct::ReflectivityTexture => inputs.reflectivity.map(|source| {
+                texture_field(
+                    snapshot,
                     source,
-                    output_moment.clone(),
+                    product,
                     &config.texture,
                     TexturePeriod::Linear,
                 )
             }),
-            DerivedSweepProduct::ReflectivityRangeGradient => cut
-                .moments
-                .get(&MomentType::Reflectivity)
-                .map(|source| range_gradient_grid(source, output_moment.clone())),
-            DerivedSweepProduct::VelocityRangeGradient => cut
-                .moments
-                .get(&MomentType::Velocity)
-                .map(|source| velocity_range_gradient_grid(cut, source, output_moment.clone())),
+            DerivedSweepProduct::VelocityTexture => inputs.velocity.map(|source| {
+                texture_field(
+                    snapshot,
+                    source,
+                    product,
+                    &config.texture,
+                    TexturePeriod::NyquistVelocity,
+                )
+            }),
+            DerivedSweepProduct::SpectrumWidthTexture => inputs.spectrum_width.map(|source| {
+                texture_field(
+                    snapshot,
+                    source,
+                    product,
+                    &config.texture,
+                    TexturePeriod::Linear,
+                )
+            }),
+            DerivedSweepProduct::DifferentialReflectivityTexture => inputs.zdr.map(|source| {
+                texture_field(
+                    snapshot,
+                    source,
+                    product,
+                    &config.texture,
+                    TexturePeriod::Linear,
+                )
+            }),
+            DerivedSweepProduct::CorrelationCoefficientTexture => inputs.rho.map(|source| {
+                texture_field(
+                    snapshot,
+                    source,
+                    product,
+                    &config.texture,
+                    TexturePeriod::Linear,
+                )
+            }),
+            DerivedSweepProduct::DifferentialPhaseTexture => inputs.phi.map(|source| {
+                texture_field(
+                    snapshot,
+                    source,
+                    product,
+                    &config.texture,
+                    TexturePeriod::Fixed(config.kdp.phase_period_deg),
+                )
+            }),
+            DerivedSweepProduct::KdpTexture => kdp_for_dependencies.map(|source| {
+                texture_field(
+                    snapshot,
+                    source,
+                    product,
+                    &config.texture,
+                    TexturePeriod::Linear,
+                )
+            }),
+            DerivedSweepProduct::ReflectivityRangeGradient => inputs
+                .reflectivity
+                .map(|source| range_gradient_field(snapshot, source, product)),
+            DerivedSweepProduct::VelocityRangeGradient => inputs
+                .velocity
+                .map(|source| velocity_range_gradient_field(snapshot, source, product)),
             DerivedSweepProduct::MeteorologicalQuality => {
-                meteorological_quality_grid(cut, output_moment.clone())
+                meteorological_quality_field(snapshot, &inputs, product)
             }
             DerivedSweepProduct::MeteorologicalGateMask => {
-                meteorological_mask_grid(cut, output_moment.clone(), &config.meteo_mask)
+                meteorological_mask_field(snapshot, &inputs, product, &config.meteo_mask)
             }
             DerivedSweepProduct::TdsConfidence => {
-                tds_score_grid(cut, output_moment.clone(), &config.diagnostics)
+                tds_score_field(snapshot, &inputs, product, &config.diagnostics)
             }
             DerivedSweepProduct::HailSignature => {
-                hail_score_grid(cut, output_moment.clone(), &config.diagnostics)
+                hail_score_field(snapshot, &inputs, product, &config.diagnostics)
             }
             DerivedSweepProduct::TurbulenceProxy => {
-                turbulence_proxy_grid(cut, output_moment.clone(), &config.texture)
+                turbulence_proxy_field(snapshot, &inputs, product, &config.texture)
             }
         };
 
-        if let Some(grid) = grid {
-            pending.insert(output_moment, grid);
-            report.inserted.push(product.id().to_owned());
-        } else {
-            report.unavailable.push(product.id().to_owned());
+        match field {
+            Some(mut field) => {
+                field.name = output_name;
+                pending.push(field);
+                report.inserted.push(product.id().to_owned());
+            }
+            None => report.unavailable.push(product.id().to_owned()),
         }
     }
 
-    for (moment, grid) in pending {
-        cut.moments.insert(moment, grid);
+    for field in pending {
+        match sweep.field_index(&field.name) {
+            Some(index) => sweep.fields[index] = field,
+            None => sweep.fields.push(field),
+        }
     }
     report
 }
 
-/// Derive one product without mutating the caller's cut.
+/// Derive one product without mutating the caller's sweep.
 pub fn derive_product(
-    cut: &ElevationCut,
+    sweep: &Sweep,
     product: DerivedSweepProduct,
     config: &DerivationConfig,
-) -> Option<MomentGrid> {
-    let mut copy = cut.clone();
+) -> Option<Field> {
+    let mut copy = sweep.clone();
     let mut one = config.clone();
     one.products.clear();
     one.products.insert(product);
     // A caller asking for a derived product expects a newly computed value,
-    // even if a field with the same ID is already present in the snapshot.
+    // even if a field with the same name is already present in the snapshot.
     one.overwrite_existing = true;
-    derive_cut_in_place(&mut copy, &one);
-    copy.moments.get(&product.moment_type()).cloned()
+    derive_sweep_in_place(&mut copy, &one);
+    let name = product.field_name_in(sweep);
+    copy.fields.into_iter().find(|field| field.name == name)
 }
 
 fn needs_any(requested: &BTreeSet<DerivedSweepProduct>, products: &[DerivedSweepProduct]) -> bool {
@@ -866,58 +1036,54 @@ fn needs_any(requested: &BTreeSet<DerivedSweepProduct>, products: &[DerivedSweep
 
 #[derive(Clone)]
 struct PhaseBundle {
-    filtered_phi: MomentGrid,
-    kdp: MomentGrid,
-    uncertainty: MomentGrid,
+    filtered_phi: Field,
+    kdp: Field,
+    uncertainty: Field,
 }
 
-fn derive_phase_bundle(cut: &ElevationCut, config: &KdpConfig) -> Option<PhaseBundle> {
-    let phi = cut.moments.get(&MomentType::DifferentialPhase)?;
-    let rho = cut
-        .moments
-        .get(&MomentType::CorrelationCoefficient)
-        .map(GridSampler::new);
-    let reflectivity = cut
-        .moments
-        .get(&MomentType::Reflectivity)
-        .map(GridSampler::new);
+fn derive_phase_bundle(
+    sweep: &Sweep,
+    inputs: &Inputs<'_>,
+    config: &KdpConfig,
+) -> Option<PhaseBundle> {
+    let phi = inputs.phi?;
+    let rho = inputs.rho.and_then(|rho| FieldSampler::new(sweep, rho));
+    let reflectivity = inputs
+        .reflectivity
+        .and_then(|reflectivity| FieldSampler::new(sweep, reflectivity));
 
-    let rows = phi.radial_count();
-    let gates = phi.gate_range.gate_count;
-    if rows == 0 || gates == 0 || phi.gate_range.gate_spacing_m <= 0 {
+    let (rows, gates) = phi.shape();
+    let (phi_first_m, phi_spacing_m) = phi.native_geometry(&sweep.range)?;
+    if rows == 0 || gates == 0 || phi_spacing_m <= 0.0 {
         return None;
     }
 
     let mut filtered_values = vec![f32::NAN; rows * gates];
     let mut kdp_values = vec![f32::NAN; rows * gates];
     let mut uncertainty_values = vec![f32::NAN; rows * gates];
-    let spacing_km = phi.gate_range.gate_spacing_m as f64 / 1000.0;
+    let spacing_km = phi_spacing_m / 1000.0;
     let window_gates = regression_window_gates(config, spacing_km as f32);
 
     for row in 0..rows {
-        let radial_index = match phi.radial_indices.get(row) {
-            Some(index) => *index,
-            None => continue,
-        };
         let mut values = vec![f32::NAN; gates];
         let mut original_valid = vec![false; gates];
 
         for gate in 0..gates {
-            let Some(phase) = phi.scaled_value(row, gate) else {
+            let Some(phase) = phi.value(row, gate) else {
                 continue;
             };
             if !phase.is_finite() {
                 continue;
             }
-            let range_m = gate_center_m(phi, gate);
+            let range_m = phi_first_m + gate as f64 * phi_spacing_m;
             if let Some(rho_sampler) = rho.as_ref()
-                && let Some(rho_hv) = rho_sampler.sample(radial_index, range_m)
+                && let Some(rho_hv) = rho_sampler.sample(row, range_m)
                 && (!rho_hv.is_finite() || rho_hv < config.min_rho_hv)
             {
                 continue;
             }
             if let Some(ref_sampler) = reflectivity.as_ref()
-                && let Some(dbz) = ref_sampler.sample(radial_index, range_m)
+                && let Some(dbz) = ref_sampler.sample(row, range_m)
                 && (!dbz.is_finite() || dbz < config.min_reflectivity_dbz)
             {
                 continue;
@@ -970,17 +1136,13 @@ fn derive_phase_bundle(cut: &ElevationCut, config: &KdpConfig) -> Option<PhaseBu
     }
 
     Some(PhaseBundle {
-        filtered_phi: f32_grid_like(
+        filtered_phi: f32_field_like(
             phi,
-            DerivedSweepProduct::FilteredDifferentialPhase.moment_type(),
+            DerivedSweepProduct::FilteredDifferentialPhase,
             filtered_values,
         ),
-        kdp: f32_grid_like(phi, MomentType::SpecificDifferentialPhase, kdp_values),
-        uncertainty: f32_grid_like(
-            phi,
-            DerivedSweepProduct::KdpUncertainty.moment_type(),
-            uncertainty_values,
-        ),
+        kdp: f32_field_like(phi, DerivedSweepProduct::Kdp, kdp_values),
+        uncertainty: f32_field_like(phi, DerivedSweepProduct::KdpUncertainty, uncertainty_values),
     })
 }
 
@@ -1266,134 +1428,170 @@ fn median_f32(values: &[f32]) -> Option<f32> {
     }
 }
 
-fn f32_grid_like(base: &MomentGrid, moment: MomentType, values: Vec<f32>) -> MomentGrid {
-    debug_assert_eq!(
-        values.len(),
-        base.radial_count() * base.gate_range.gate_count
-    );
-    MomentGrid {
-        moment,
-        gate_range: base.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: base.radial_indices.clone(),
-        storage: MomentStorage::F32(values),
+/// A physical `F32` field of `product` on `base`'s rays and native gates
+/// (NaN = no data), named with the canonical base name until the pipeline
+/// assigns the sweep-specific name.
+pub(crate) fn f32_field_like(
+    base: &Field,
+    product: DerivedSweepProduct,
+    values: Vec<f32>,
+) -> Field {
+    debug_assert_eq!(values.len(), base.nrays as usize * base.ngates as usize);
+    physical_field(
+        base,
+        product.canonical_field_name(),
+        product.quantity(),
+        Some(product.units()),
+        Some(product.display_name()),
+        values,
+    )
+}
+
+/// A physical `F32` field named `name` on `base`'s rays, native gates and
+/// absent rows (a product is undefined where its source has no ray).
+pub(crate) fn physical_field(
+    base: &Field,
+    name: FieldName,
+    quantity: Quantity,
+    units: Option<&'static str>,
+    long_name: Option<&'static str>,
+    values: Vec<f32>,
+) -> Field {
+    Field {
+        name,
+        quantity,
+        polarization: Polarization::Unspecified,
+        attrs: FieldAttrs {
+            units: units.map(Cow::Borrowed),
+            long_name: long_name.map(Cow::Borrowed),
+            ..FieldAttrs::default()
+        },
+        nrays: base.nrays,
+        ngates: base.ngates,
+        gates: base.gates,
+        data: FieldData::F32 {
+            values,
+            coding: FloatCoding::default(),
+        },
+        absent_rows: base.absent_rows.clone(),
     }
 }
 
-fn gate_center_m(grid: &MomentGrid, gate: usize) -> f64 {
-    grid.gate_range.first_gate_m as f64 + gate as f64 * grid.gate_range.gate_spacing_m as f64
+/// Centre of native gate `gate` of a field with native geometry
+/// `(first_center_m, spacing_m)`.
+fn gate_center_m(first_center_m: f64, spacing_m: f64, gate: usize) -> f64 {
+    first_center_m + gate as f64 * spacing_m
 }
 
-struct GridSampler<'a> {
-    grid: &'a MomentGrid,
-    row_by_radial: BTreeMap<usize, usize>,
+/// Samples one field of a sweep by (ray, physical range): the gate whose
+/// centre is nearest the range, within 0.55 of a gate. Rows of every field
+/// of a sweep are the sweep's rays, so no radial lookup is needed.
+pub(crate) struct FieldSampler<'a> {
+    field: &'a Field,
+    first_center_m: f64,
+    spacing_m: f64,
 }
 
-impl<'a> GridSampler<'a> {
-    fn new(grid: &'a MomentGrid) -> Self {
-        let row_by_radial = grid
-            .radial_indices
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(row, radial)| (radial, row))
-            .collect();
-        Self {
-            grid,
-            row_by_radial,
-        }
+impl<'a> FieldSampler<'a> {
+    pub(crate) fn new(sweep: &Sweep, field: &'a Field) -> Option<Self> {
+        let (first_center_m, spacing_m) = field.native_geometry(&sweep.range)?;
+        Some(Self {
+            field,
+            first_center_m,
+            spacing_m,
+        })
     }
 
-    fn sample(&self, radial_index: usize, range_m: f64) -> Option<f32> {
-        let row = *self.row_by_radial.get(&radial_index)?;
-        let spacing = self.grid.gate_range.gate_spacing_m as f64;
+    pub(crate) fn sample(&self, row: usize, range_m: f64) -> Option<f32> {
+        let spacing = self.spacing_m;
         if !spacing.is_finite() || spacing <= 0.0 {
             return None;
         }
-        let gate_position = (range_m - self.grid.gate_range.first_gate_m as f64) / spacing;
+        let gate_position = (range_m - self.first_center_m) / spacing;
         if !gate_position.is_finite() {
             return None;
         }
         let rounded = gate_position.round();
-        if rounded < 0.0 || rounded >= self.grid.gate_range.gate_count as f64 {
+        if rounded < 0.0 || rounded >= self.field.ngates as f64 {
             return None;
         }
         if (gate_position - rounded).abs() > 0.55 {
             return None;
         }
-        self.grid.scaled_value(row, rounded as usize)
+        self.field.value(row, rounded as usize)
     }
 }
 
-fn phase_excess_grid(filtered_phi: &MomentGrid, baseline_gates: usize) -> MomentGrid {
-    let rows = filtered_phi.radial_count();
-    let gates = filtered_phi.gate_range.gate_count;
+fn phase_excess_field(sweep: &Sweep, filtered_phi: &Field, baseline_gates: usize) -> Field {
+    let (rows, gates) = filtered_phi.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         let baseline_candidates = (0..gates.min(baseline_gates.max(1)))
-            .filter_map(|gate| filtered_phi.scaled_value(row, gate))
+            .filter_map(|gate| filtered_phi.value(row, gate))
             .filter(|value| value.is_finite())
             .collect::<Vec<_>>();
         let Some(baseline) = median_f32(&baseline_candidates) else {
             continue;
         };
         for gate in 0..gates {
-            if let Some(value) = filtered_phi.scaled_value(row, gate)
+            if let Some(value) = filtered_phi.value(row, gate)
                 && value.is_finite()
             {
                 out[row * gates + gate] = (value - baseline).max(0.0);
             }
         }
     }
-    f32_grid_like(
+    let _ = sweep;
+    physical_field(
         filtered_phi,
-        MomentType::Unknown("PHI_EXCESS".to_owned()),
+        FieldName::parse("PHI_EXCESS"),
+        Quantity::Other,
+        Some("deg"),
+        None,
         out,
     )
 }
 
-fn scale_positive_grid(
-    source: &MomentGrid,
-    moment: MomentType,
+fn scale_positive_field(
+    source: &Field,
+    product: DerivedSweepProduct,
     coefficient: f32,
     maximum: f32,
-) -> MomentGrid {
-    let rows = source.radial_count();
-    let gates = source.gate_range.gate_count;
+) -> Field {
+    let (rows, gates) = source.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            if let Some(value) = source.scaled_value(row, gate)
+            if let Some(value) = source.value(row, gate)
                 && value.is_finite()
             {
                 out[row * gates + gate] = (coefficient * value.max(0.0)).min(maximum);
             }
         }
     }
-    f32_grid_like(source, moment, out)
+    f32_field_like(source, product, out)
 }
 
 /// Integrate KDP into two-way path attenuation. Since d(PHIDP)/dr = 2*KDP
 /// and PIA = alpha*PHIDP, d(PIA)/dr = 2*alpha*KDP.
 fn integrate_kdp(
-    kdp: &MomentGrid,
-    moment: MomentType,
+    sweep: &Sweep,
+    kdp: &Field,
+    product: DerivedSweepProduct,
     coefficient: f32,
     maximum: f32,
-) -> MomentGrid {
-    let rows = kdp.radial_count();
-    let gates = kdp.gate_range.gate_count;
-    let dr_km = kdp.gate_range.gate_spacing_m.max(0) as f32 / 1000.0;
+) -> Field {
+    let (rows, gates) = kdp.shape();
+    let dr_km = kdp
+        .native_geometry(&sweep.range)
+        .map_or(0.0, |(_, spacing_m)| spacing_m.max(0.0) as f32 / 1000.0);
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         let mut integrated = 0.0f32;
         let mut previous = None::<f32>;
         for gate in 0..gates {
             let current = kdp
-                .scaled_value(row, gate)
+                .value(row, gate)
                 .filter(|value| value.is_finite())
                 .map(|value| value.max(0.0));
             if let Some(current) = current {
@@ -1406,50 +1604,51 @@ fn integrate_kdp(
             }
         }
     }
-    f32_grid_like(kdp, moment, out)
+    f32_field_like(kdp, product, out)
 }
 
-fn add_aligned_grid(
-    base: &MomentGrid,
-    other: &MomentGrid,
-    moment: MomentType,
+fn add_aligned_field(
+    sweep: &Sweep,
+    base: &Field,
+    other: &Field,
+    product: DerivedSweepProduct,
     base_factor: f32,
     other_factor: f32,
-) -> MomentGrid {
-    let other = GridSampler::new(other);
-    let rows = base.radial_count();
-    let gates = base.gate_range.gate_count;
+) -> Field {
+    let (rows, gates) = base.shape();
     let mut out = vec![f32::NAN; rows * gates];
-    for row in 0..rows {
-        let Some(&radial_index) = base.radial_indices.get(row) else {
-            continue;
-        };
-        for gate in 0..gates {
-            let Some(base_value) = base.scaled_value(row, gate) else {
-                continue;
-            };
-            let Some(other_value) = other.sample(radial_index, gate_center_m(base, gate)) else {
-                continue;
-            };
-            if base_value.is_finite() && other_value.is_finite() {
-                out[row * gates + gate] = base_factor * base_value + other_factor * other_value;
+    if let (Some(other), Some((first_m, spacing_m))) = (
+        FieldSampler::new(sweep, other),
+        base.native_geometry(&sweep.range),
+    ) {
+        for row in 0..rows {
+            for gate in 0..gates {
+                let Some(base_value) = base.value(row, gate) else {
+                    continue;
+                };
+                let Some(other_value) = other.sample(row, gate_center_m(first_m, spacing_m, gate))
+                else {
+                    continue;
+                };
+                if base_value.is_finite() && other_value.is_finite() {
+                    out[row * gates + gate] = base_factor * base_value + other_factor * other_value;
+                }
             }
         }
     }
-    f32_grid_like(base, moment, out)
+    f32_field_like(base, product, out)
 }
 
-fn rain_rate_z_grid(
-    reflectivity: &MomentGrid,
-    moment: MomentType,
+fn rain_rate_z_field(
+    reflectivity: &Field,
+    product: DerivedSweepProduct,
     config: &QpeConfig,
-) -> MomentGrid {
-    let rows = reflectivity.radial_count();
-    let gates = reflectivity.gate_range.gate_count;
+) -> Field {
+    let (rows, gates) = reflectivity.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            let Some(dbz) = reflectivity.scaled_value(row, gate) else {
+            let Some(dbz) = reflectivity.value(row, gate) else {
                 continue;
             };
             if !dbz.is_finite() {
@@ -1462,16 +1661,15 @@ fn rain_rate_z_grid(
             out[row * gates + gate] = rate.min(config.max_rate_mm_h);
         }
     }
-    f32_grid_like(reflectivity, moment, out)
+    f32_field_like(reflectivity, product, out)
 }
 
-fn rain_rate_kdp_grid(kdp: &MomentGrid, moment: MomentType, config: &QpeConfig) -> MomentGrid {
-    let rows = kdp.radial_count();
-    let gates = kdp.gate_range.gate_count;
+fn rain_rate_kdp_field(kdp: &Field, product: DerivedSweepProduct, config: &QpeConfig) -> Field {
+    let (rows, gates) = kdp.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            let Some(value) = kdp.scaled_value(row, gate) else {
+            let Some(value) = kdp.value(row, gate) else {
                 continue;
             };
             if !value.is_finite() {
@@ -1481,77 +1679,73 @@ fn rain_rate_kdp_grid(kdp: &MomentGrid, moment: MomentType, config: &QpeConfig) 
             out[row * gates + gate] = rate.min(config.max_rate_mm_h);
         }
     }
-    f32_grid_like(kdp, moment, out)
+    f32_field_like(kdp, product, out)
 }
 
-fn hybrid_rain_rate_grid(
-    cut: &ElevationCut,
-    kdp: Option<&MomentGrid>,
-    moment: MomentType,
+fn hybrid_rain_rate_field(
+    sweep: &Sweep,
+    inputs: &Inputs<'_>,
+    kdp: Option<&Field>,
     config: &QpeConfig,
-) -> Option<MomentGrid> {
-    let reflectivity = cut.moments.get(&MomentType::Reflectivity);
-    match (reflectivity, kdp) {
+) -> Option<Field> {
+    let product = DerivedSweepProduct::RainRateHybrid;
+    match (inputs.reflectivity, kdp) {
         (None, None) => None,
-        (None, Some(kdp)) => Some(rain_rate_kdp_grid(kdp, moment, config)),
-        (Some(reflectivity), None) => Some(rain_rate_z_grid(reflectivity, moment, config)),
+        (None, Some(kdp)) => Some(rain_rate_kdp_field(kdp, product, config)),
+        (Some(reflectivity), None) => Some(rain_rate_z_field(reflectivity, product, config)),
         (Some(reflectivity), Some(kdp)) => {
-            let kdp_sampler = GridSampler::new(kdp);
-            let rho_sampler = cut
-                .moments
-                .get(&MomentType::CorrelationCoefficient)
-                .map(GridSampler::new);
-            let rows = reflectivity.radial_count();
-            let gates = reflectivity.gate_range.gate_count;
+            let kdp_sampler = FieldSampler::new(sweep, kdp);
+            let rho_sampler = inputs.rho.and_then(|rho| FieldSampler::new(sweep, rho));
+            let (rows, gates) = reflectivity.shape();
             let mut out = vec![f32::NAN; rows * gates];
-            for row in 0..rows {
-                let Some(&radial_index) = reflectivity.radial_indices.get(row) else {
-                    continue;
-                };
-                for gate in 0..gates {
-                    let Some(dbz) = reflectivity.scaled_value(row, gate) else {
-                        continue;
-                    };
-                    if !dbz.is_finite() {
-                        continue;
+            if let (Some(kdp_sampler), Some((first_m, spacing_m))) =
+                (kdp_sampler, reflectivity.native_geometry(&sweep.range))
+            {
+                for row in 0..rows {
+                    for gate in 0..gates {
+                        let Some(dbz) = reflectivity.value(row, gate) else {
+                            continue;
+                        };
+                        if !dbz.is_finite() {
+                            continue;
+                        }
+                        let range_m = gate_center_m(first_m, spacing_m, gate);
+                        let kdp_value = kdp_sampler.sample(row, range_m);
+                        let rho_value = rho_sampler
+                            .as_ref()
+                            .and_then(|sampler| sampler.sample(row, range_m));
+                        let use_kdp = kdp_value.is_some_and(|value| {
+                            value.is_finite()
+                                && value >= config.hybrid_min_kdp_deg_km
+                                && dbz >= config.hybrid_min_reflectivity_dbz
+                                && rho_value.is_none_or(|rho| {
+                                    rho.is_finite() && rho >= config.hybrid_min_rho_hv
+                                })
+                        });
+                        let rate = if use_kdp {
+                            config.kdp_alpha
+                                * kdp_value.unwrap_or_default().max(0.0).powf(config.kdp_beta)
+                        } else {
+                            let z_linear = 10.0f32.powf(0.1 * dbz);
+                            (z_linear / config.z_r_a.max(1.0e-6))
+                                .max(0.0)
+                                .powf(1.0 / config.z_r_b.max(1.0e-6))
+                        };
+                        out[row * gates + gate] = rate.min(config.max_rate_mm_h);
                     }
-                    let range_m = gate_center_m(reflectivity, gate);
-                    let kdp_value = kdp_sampler.sample(radial_index, range_m);
-                    let rho_value = rho_sampler
-                        .as_ref()
-                        .and_then(|sampler| sampler.sample(radial_index, range_m));
-                    let use_kdp = kdp_value.is_some_and(|value| {
-                        value.is_finite()
-                            && value >= config.hybrid_min_kdp_deg_km
-                            && dbz >= config.hybrid_min_reflectivity_dbz
-                            && rho_value.is_none_or(|rho| {
-                                rho.is_finite() && rho >= config.hybrid_min_rho_hv
-                            })
-                    });
-                    let rate = if use_kdp {
-                        config.kdp_alpha
-                            * kdp_value.unwrap_or_default().max(0.0).powf(config.kdp_beta)
-                    } else {
-                        let z_linear = 10.0f32.powf(0.1 * dbz);
-                        (z_linear / config.z_r_a.max(1.0e-6))
-                            .max(0.0)
-                            .powf(1.0 / config.z_r_b.max(1.0e-6))
-                    };
-                    out[row * gates + gate] = rate.min(config.max_rate_mm_h);
                 }
             }
-            Some(f32_grid_like(reflectivity, moment, out))
+            Some(f32_field_like(reflectivity, product, out))
         }
     }
 }
 
-fn liquid_water_content_grid(reflectivity: &MomentGrid, moment: MomentType) -> MomentGrid {
-    let rows = reflectivity.radial_count();
-    let gates = reflectivity.gate_range.gate_count;
+fn liquid_water_content_field(reflectivity: &Field, product: DerivedSweepProduct) -> Field {
+    let (rows, gates) = reflectivity.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            if let Some(dbz) = reflectivity.scaled_value(row, gate)
+            if let Some(dbz) = reflectivity.value(row, gate)
                 && dbz.is_finite()
             {
                 let z_linear = 10.0f64.powf(dbz.min(56.0) as f64 / 10.0);
@@ -1560,16 +1754,15 @@ fn liquid_water_content_grid(reflectivity: &MomentGrid, moment: MomentType) -> M
             }
         }
     }
-    f32_grid_like(reflectivity, moment, out)
+    f32_field_like(reflectivity, product, out)
 }
 
-fn hail_kinetic_energy_grid(reflectivity: &MomentGrid, moment: MomentType) -> MomentGrid {
-    let rows = reflectivity.radial_count();
-    let gates = reflectivity.gate_range.gate_count;
+fn hail_kinetic_energy_field(reflectivity: &Field, product: DerivedSweepProduct) -> Field {
+    let (rows, gates) = reflectivity.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            if let Some(dbz) = reflectivity.scaled_value(row, gate)
+            if let Some(dbz) = reflectivity.value(row, gate)
                 && dbz.is_finite()
             {
                 let weight = ((dbz - 40.0) / 10.0).clamp(0.0, 1.0);
@@ -1581,27 +1774,22 @@ fn hail_kinetic_energy_grid(reflectivity: &MomentGrid, moment: MomentType) -> Mo
             }
         }
     }
-    f32_grid_like(reflectivity, moment, out)
+    f32_field_like(reflectivity, product, out)
 }
 
-fn circular_depolarization_ratio_grid(
-    cut: &ElevationCut,
-    moment: MomentType,
-) -> Option<MomentGrid> {
-    let zdr = cut.moments.get(&MomentType::DifferentialReflectivity)?;
-    let rho = GridSampler::new(cut.moments.get(&MomentType::CorrelationCoefficient)?);
-    let rows = zdr.radial_count();
-    let gates = zdr.gate_range.gate_count;
+fn circular_depolarization_ratio_field(sweep: &Sweep, inputs: &Inputs<'_>) -> Option<Field> {
+    let product = DerivedSweepProduct::CircularDepolarizationRatio;
+    let zdr = inputs.zdr?;
+    let rho = FieldSampler::new(sweep, inputs.rho?)?;
+    let (first_m, spacing_m) = zdr.native_geometry(&sweep.range)?;
+    let (rows, gates) = zdr.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
-        let Some(&radial_index) = zdr.radial_indices.get(row) else {
-            continue;
-        };
         for gate in 0..gates {
-            let Some(zdr_db) = zdr.scaled_value(row, gate) else {
+            let Some(zdr_db) = zdr.value(row, gate) else {
                 continue;
             };
-            let Some(rho_hv) = rho.sample(radial_index, gate_center_m(zdr, gate)) else {
+            let Some(rho_hv) = rho.sample(row, gate_center_m(first_m, spacing_m, gate)) else {
                 continue;
             };
             if !zdr_db.is_finite() || !rho_hv.is_finite() {
@@ -1616,16 +1804,15 @@ fn circular_depolarization_ratio_grid(
             }
         }
     }
-    Some(f32_grid_like(zdr, moment, out))
+    Some(f32_field_like(zdr, product, out))
 }
 
-fn log_correlation_ratio_grid(rho: &MomentGrid, moment: MomentType) -> MomentGrid {
-    let rows = rho.radial_count();
-    let gates = rho.gate_range.gate_count;
+fn log_correlation_ratio_field(rho: &Field, product: DerivedSweepProduct) -> Field {
+    let (rows, gates) = rho.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            if let Some(value) = rho.scaled_value(row, gate)
+            if let Some(value) = rho.value(row, gate)
                 && value.is_finite()
             {
                 let bounded = value.clamp(0.0, 0.9999);
@@ -1633,7 +1820,7 @@ fn log_correlation_ratio_grid(rho: &MomentGrid, moment: MomentType) -> MomentGri
             }
         }
     }
-    f32_grid_like(rho, moment, out)
+    f32_field_like(rho, product, out)
 }
 
 #[derive(Clone, Copy)]
@@ -1650,21 +1837,20 @@ struct AzimuthNeighborhood {
 }
 
 impl AzimuthNeighborhood {
-    fn new(cut: &ElevationCut, grid: &MomentGrid) -> Self {
-        let mut azimuth_rows = grid
-            .radial_indices
-            .iter()
-            .copied()
-            .enumerate()
-            .filter_map(|(row, radial_index)| {
-                cut.radials
-                    .get(radial_index)
-                    .map(|radial| (radial.azimuth_deg.rem_euclid(360.0), row))
+    /// Rows of `field` (the sweep's rays it provides) ordered by azimuth.
+    fn new(sweep: &Sweep, field: &Field) -> Self {
+        let mut azimuth_rows = (0..field.nrays as usize)
+            .filter_map(|row| {
+                sweep
+                    .rays
+                    .azimuth_deg
+                    .get(row)
+                    .map(|azimuth| (azimuth.rem_euclid(360.0), row))
             })
             .collect::<Vec<_>>();
         azimuth_rows.sort_by(|a, b| a.0.total_cmp(&b.0));
         let sorted_rows = azimuth_rows.iter().map(|(_, row)| *row).collect::<Vec<_>>();
-        let mut rank_by_row = vec![0usize; grid.radial_count()];
+        let mut rank_by_row = vec![0usize; field.nrays as usize];
         for (rank, row) in sorted_rows.iter().copied().enumerate() {
             if row < rank_by_row.len() {
                 rank_by_row[row] = rank;
@@ -1707,16 +1893,26 @@ impl AzimuthNeighborhood {
     }
 }
 
-fn texture_grid(
-    cut: &ElevationCut,
-    source: &MomentGrid,
-    moment: MomentType,
+/// Nyquist velocity of ray `row` when the sweep has one and it is finite.
+fn ray_nyquist(sweep: &Sweep, row: usize) -> Option<f32> {
+    sweep
+        .ray_vars
+        .nyquist_velocity_mps
+        .as_ref()?
+        .get(row)
+        .copied()
+        .filter(|value| !value.is_nan())
+}
+
+fn texture_field(
+    sweep: &Sweep,
+    source: &Field,
+    product: DerivedSweepProduct,
     config: &TextureConfig,
     period_policy: TexturePeriod,
-) -> MomentGrid {
-    let rows = source.radial_count();
-    let gates = source.gate_range.gate_count;
-    let neighborhood = AzimuthNeighborhood::new(cut, source);
+) -> Field {
+    let (rows, gates) = source.shape();
+    let neighborhood = AzimuthNeighborhood::new(sweep, source);
     let mut out = vec![f32::NAN; rows * gates];
 
     for row in 0..rows {
@@ -1724,11 +1920,7 @@ fn texture_grid(
         let period = match period_policy {
             TexturePeriod::Linear => None,
             TexturePeriod::Fixed(period) => (period > 0.0 && period.is_finite()).then_some(period),
-            TexturePeriod::NyquistVelocity => source
-                .radial_indices
-                .get(row)
-                .and_then(|radial_index| cut.radials.get(*radial_index))
-                .and_then(|radial| radial.nyquist_velocity_mps)
+            TexturePeriod::NyquistVelocity => ray_nyquist(sweep, row)
                 .map(|nyquist| 2.0 * nyquist.abs())
                 .filter(|period| *period > 0.0 && period.is_finite()),
         };
@@ -1738,7 +1930,7 @@ fn texture_grid(
             let mut samples = Vec::with_capacity(neighbor_rows.len() * (gate_end - gate_start));
             for &neighbor_row in &neighbor_rows {
                 for neighbor_gate in gate_start..gate_end {
-                    if let Some(value) = source.scaled_value(neighbor_row, neighbor_gate)
+                    if let Some(value) = source.value(neighbor_row, neighbor_gate)
                         && value.is_finite()
                     {
                         samples.push(value);
@@ -1749,7 +1941,7 @@ fn texture_grid(
                 continue;
             }
             let reference = source
-                .scaled_value(row, gate)
+                .value(row, gate)
                 .filter(|value| value.is_finite())
                 .unwrap_or(samples[0]);
             if let Some(period) = period {
@@ -1766,47 +1958,45 @@ fn texture_grid(
             out[row * gates + gate] = variance.max(0.0).sqrt();
         }
     }
-    f32_grid_like(source, moment, out)
+    f32_field_like(source, product, out)
 }
 
 fn wrapped_delta(delta: f32, period: f32) -> f32 {
     (delta + 0.5 * period).rem_euclid(period) - 0.5 * period
 }
 
-fn range_gradient_grid(source: &MomentGrid, moment: MomentType) -> MomentGrid {
-    range_gradient_grid_with_period(source, moment, |_| None)
+fn range_gradient_field(sweep: &Sweep, source: &Field, product: DerivedSweepProduct) -> Field {
+    range_gradient_field_with_period(sweep, source, product, |_| None)
 }
 
-fn velocity_range_gradient_grid(
-    cut: &ElevationCut,
-    source: &MomentGrid,
-    moment: MomentType,
-) -> MomentGrid {
-    range_gradient_grid_with_period(source, moment, |row| {
-        source
-            .radial_indices
-            .get(row)
-            .and_then(|radial_index| cut.radials.get(*radial_index))
-            .and_then(|radial| radial.nyquist_velocity_mps)
+fn velocity_range_gradient_field(
+    sweep: &Sweep,
+    source: &Field,
+    product: DerivedSweepProduct,
+) -> Field {
+    range_gradient_field_with_period(sweep, source, product, |row| {
+        ray_nyquist(sweep, row)
             .map(|nyquist| 2.0 * nyquist.abs())
             .filter(|period| *period > 0.0 && period.is_finite())
     })
 }
 
-fn range_gradient_grid_with_period<F>(
-    source: &MomentGrid,
-    moment: MomentType,
+fn range_gradient_field_with_period<F>(
+    sweep: &Sweep,
+    source: &Field,
+    product: DerivedSweepProduct,
     period_for_row: F,
-) -> MomentGrid
+) -> Field
 where
     F: Fn(usize) -> Option<f32>,
 {
-    let rows = source.radial_count();
-    let gates = source.gate_range.gate_count;
-    let spacing_km = source.gate_range.gate_spacing_m as f32 / 1000.0;
+    let (rows, gates) = source.shape();
+    let spacing_km = source
+        .native_geometry(&sweep.range)
+        .map_or(f32::NAN, |(_, spacing_m)| spacing_m as f32 / 1000.0);
     let mut out = vec![f32::NAN; rows * gates];
     if !spacing_km.is_finite() || spacing_km <= 0.0 {
-        return f32_grid_like(source, moment, out);
+        return f32_field_like(source, product, out);
     }
     for row in 0..rows {
         let period = period_for_row(row);
@@ -1814,7 +2004,7 @@ where
             let left = (1..=2).find_map(|distance| {
                 gate.checked_sub(distance).and_then(|index| {
                     source
-                        .scaled_value(row, index)
+                        .value(row, index)
                         .filter(|value| value.is_finite())
                         .map(|value| (index, value))
                 })
@@ -1822,7 +2012,7 @@ where
             let right = (1..=2).find_map(|distance| {
                 let index = gate + distance;
                 (index < gates)
-                    .then(|| source.scaled_value(row, index))
+                    .then(|| source.value(row, index))
                     .flatten()
                     .filter(|value| value.is_finite())
                     .map(|value| (index, value))
@@ -1833,14 +2023,14 @@ where
                         / ((right_gate - left_gate) as f32 * spacing_km),
                 ),
                 (Some((left_gate, left_value)), None) => source
-                    .scaled_value(row, gate)
+                    .value(row, gate)
                     .filter(|value| value.is_finite())
                     .map(|center| {
                         range_delta(left_value, center, period)
                             / ((gate - left_gate) as f32 * spacing_km)
                     }),
                 (None, Some((right_gate, right_value))) => source
-                    .scaled_value(row, gate)
+                    .value(row, gate)
                     .filter(|value| value.is_finite())
                     .map(|center| {
                         range_delta(center, right_value, period)
@@ -1855,7 +2045,7 @@ where
             }
         }
     }
-    f32_grid_like(source, moment, out)
+    f32_field_like(source, product, out)
 }
 
 fn range_delta(left: f32, right: f32, period: Option<f32>) -> f32 {
@@ -1865,34 +2055,28 @@ fn range_delta(left: f32, right: f32, period: Option<f32>) -> f32 {
         .unwrap_or(delta)
 }
 
-fn meteorological_quality_grid(cut: &ElevationCut, moment: MomentType) -> Option<MomentGrid> {
-    let base = cut
-        .moments
-        .get(&MomentType::CorrelationCoefficient)
-        .or_else(|| cut.moments.get(&MomentType::Reflectivity))?;
-    let rho = cut
-        .moments
-        .get(&MomentType::CorrelationCoefficient)
-        .map(GridSampler::new);
-    let reflectivity = cut
-        .moments
-        .get(&MomentType::Reflectivity)
-        .map(GridSampler::new);
-    let rows = base.radial_count();
-    let gates = base.gate_range.gate_count;
+fn meteorological_quality_field(
+    sweep: &Sweep,
+    inputs: &Inputs<'_>,
+    product: DerivedSweepProduct,
+) -> Option<Field> {
+    let base = inputs.rho.or(inputs.reflectivity)?;
+    let rho = inputs.rho.and_then(|rho| FieldSampler::new(sweep, rho));
+    let reflectivity = inputs
+        .reflectivity
+        .and_then(|reflectivity| FieldSampler::new(sweep, reflectivity));
+    let (first_m, spacing_m) = base.native_geometry(&sweep.range)?;
+    let (rows, gates) = base.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
-        let Some(&radial_index) = base.radial_indices.get(row) else {
-            continue;
-        };
         for gate in 0..gates {
-            let range_m = gate_center_m(base, gate);
+            let range_m = gate_center_m(first_m, spacing_m, gate);
             let rho_value = rho
                 .as_ref()
-                .and_then(|sampler| sampler.sample(radial_index, range_m));
+                .and_then(|sampler| sampler.sample(row, range_m));
             let dbz = reflectivity
                 .as_ref()
-                .and_then(|sampler| sampler.sample(radial_index, range_m));
+                .and_then(|sampler| sampler.sample(row, range_m));
             if rho_value.is_none() && dbz.is_none() {
                 continue;
             }
@@ -1911,29 +2095,26 @@ fn meteorological_quality_grid(cut: &ElevationCut, moment: MomentType) -> Option
             };
         }
     }
-    Some(f32_grid_like(base, moment, out))
+    Some(f32_field_like(base, product, out))
 }
 
-fn meteorological_mask_grid(
-    cut: &ElevationCut,
-    moment: MomentType,
+fn meteorological_mask_field(
+    sweep: &Sweep,
+    inputs: &Inputs<'_>,
+    product: DerivedSweepProduct,
     config: &MeteoMaskConfig,
-) -> Option<MomentGrid> {
+) -> Option<Field> {
     let quality =
-        meteorological_quality_grid(cut, MomentType::Unknown("_INTERNAL_MET_QI".to_owned()))?;
-    let reflectivity = cut
-        .moments
-        .get(&MomentType::Reflectivity)
-        .map(GridSampler::new);
-    let rows = quality.radial_count();
-    let gates = quality.gate_range.gate_count;
+        meteorological_quality_field(sweep, inputs, DerivedSweepProduct::MeteorologicalQuality)?;
+    let reflectivity = inputs
+        .reflectivity
+        .and_then(|reflectivity| FieldSampler::new(sweep, reflectivity));
+    let (first_m, spacing_m) = quality.native_geometry(&sweep.range)?;
+    let (rows, gates) = quality.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
-        let Some(&radial_index) = quality.radial_indices.get(row) else {
-            continue;
-        };
         for gate in 0..gates {
-            let Some(score) = quality.scaled_value(row, gate) else {
+            let Some(score) = quality.value(row, gate) else {
                 continue;
             };
             if !score.is_finite() {
@@ -1941,7 +2122,7 @@ fn meteorological_mask_grid(
             }
             let reflectivity_ok = reflectivity.as_ref().is_none_or(|sampler| {
                 sampler
-                    .sample(radial_index, gate_center_m(&quality, gate))
+                    .sample(row, gate_center_m(first_m, spacing_m, gate))
                     .is_some_and(|dbz| dbz.is_finite() && dbz >= config.minimum_reflectivity_dbz)
             });
             out[row * gates + gate] = if score >= config.minimum_quality && reflectivity_ok {
@@ -1951,33 +2132,28 @@ fn meteorological_mask_grid(
             };
         }
     }
-    Some(f32_grid_like(&quality, moment, out))
+    Some(f32_field_like(&quality, product, out))
 }
 
-fn tds_score_grid(
-    cut: &ElevationCut,
-    moment: MomentType,
+fn tds_score_field(
+    sweep: &Sweep,
+    inputs: &Inputs<'_>,
+    product: DerivedSweepProduct,
     config: &DiagnosticConfig,
-) -> Option<MomentGrid> {
-    let reflectivity = cut.moments.get(&MomentType::Reflectivity)?;
-    let rho = GridSampler::new(cut.moments.get(&MomentType::CorrelationCoefficient)?);
-    let zdr = cut
-        .moments
-        .get(&MomentType::DifferentialReflectivity)
-        .map(GridSampler::new);
-    let rows = reflectivity.radial_count();
-    let gates = reflectivity.gate_range.gate_count;
+) -> Option<Field> {
+    let reflectivity = inputs.reflectivity?;
+    let rho = FieldSampler::new(sweep, inputs.rho?)?;
+    let zdr = inputs.zdr.and_then(|zdr| FieldSampler::new(sweep, zdr));
+    let (first_m, spacing_m) = reflectivity.native_geometry(&sweep.range)?;
+    let (rows, gates) = reflectivity.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
-        let Some(&radial_index) = reflectivity.radial_indices.get(row) else {
-            continue;
-        };
         for gate in 0..gates {
-            let Some(dbz) = reflectivity.scaled_value(row, gate) else {
+            let Some(dbz) = reflectivity.value(row, gate) else {
                 continue;
             };
-            let range_m = gate_center_m(reflectivity, gate);
-            let Some(rho_hv) = rho.sample(radial_index, range_m) else {
+            let range_m = gate_center_m(first_m, spacing_m, gate);
+            let Some(rho_hv) = rho.sample(row, range_m) else {
                 continue;
             };
             if !dbz.is_finite() || !rho_hv.is_finite() {
@@ -1992,39 +2168,31 @@ fn tds_score_grid(
             let rho_score = ((config.tds_rho_ceiling - rho_hv) / 0.25).clamp(0.0, 1.0);
             let zdr_score = zdr
                 .as_ref()
-                .and_then(|sampler| sampler.sample(radial_index, range_m))
+                .and_then(|sampler| sampler.sample(row, range_m))
                 .filter(|value| value.is_finite())
                 .map_or(0.5, |value| ((3.0 - value) / 5.0).clamp(0.0, 1.0));
             out[row * gates + gate] =
                 100.0 * reflectivity_score * rho_score * (0.5 + 0.5 * zdr_score);
         }
     }
-    Some(f32_grid_like(reflectivity, moment, out))
+    Some(f32_field_like(reflectivity, product, out))
 }
 
-fn hail_score_grid(
-    cut: &ElevationCut,
-    moment: MomentType,
+fn hail_score_field(
+    sweep: &Sweep,
+    inputs: &Inputs<'_>,
+    product: DerivedSweepProduct,
     config: &DiagnosticConfig,
-) -> Option<MomentGrid> {
-    let reflectivity = cut.moments.get(&MomentType::Reflectivity)?;
-    let rho = cut
-        .moments
-        .get(&MomentType::CorrelationCoefficient)
-        .map(GridSampler::new);
-    let zdr = cut
-        .moments
-        .get(&MomentType::DifferentialReflectivity)
-        .map(GridSampler::new);
-    let rows = reflectivity.radial_count();
-    let gates = reflectivity.gate_range.gate_count;
+) -> Option<Field> {
+    let reflectivity = inputs.reflectivity?;
+    let rho = inputs.rho.and_then(|rho| FieldSampler::new(sweep, rho));
+    let zdr = inputs.zdr.and_then(|zdr| FieldSampler::new(sweep, zdr));
+    let (first_m, spacing_m) = reflectivity.native_geometry(&sweep.range)?;
+    let (rows, gates) = reflectivity.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
-        let Some(&radial_index) = reflectivity.radial_indices.get(row) else {
-            continue;
-        };
         for gate in 0..gates {
-            let Some(dbz) = reflectivity.scaled_value(row, gate) else {
+            let Some(dbz) = reflectivity.value(row, gate) else {
                 continue;
             };
             if !dbz.is_finite() {
@@ -2034,139 +2202,171 @@ fn hail_score_grid(
                 out[row * gates + gate] = 0.0;
                 continue;
             }
-            let range_m = gate_center_m(reflectivity, gate);
+            let range_m = gate_center_m(first_m, spacing_m, gate);
             let reflectivity_score =
                 ((dbz - config.hail_min_reflectivity_dbz) / 20.0).clamp(0.0, 1.0);
             let zdr_score = zdr
                 .as_ref()
-                .and_then(|sampler| sampler.sample(radial_index, range_m))
+                .and_then(|sampler| sampler.sample(row, range_m))
                 .filter(|value| value.is_finite())
                 .map_or(0.5, |value| ((2.5 - value) / 3.5).clamp(0.0, 1.0));
             let rho_score = rho
                 .as_ref()
-                .and_then(|sampler| sampler.sample(radial_index, range_m))
+                .and_then(|sampler| sampler.sample(row, range_m))
                 .filter(|value| value.is_finite())
                 .map_or(0.5, |value| ((0.99 - value) / 0.12).clamp(0.0, 1.0));
             out[row * gates + gate] =
                 100.0 * reflectivity_score * (0.55 + 0.25 * zdr_score + 0.20 * rho_score);
         }
     }
-    Some(f32_grid_like(reflectivity, moment, out))
+    Some(f32_field_like(reflectivity, product, out))
 }
 
-fn turbulence_proxy_grid(
-    cut: &ElevationCut,
-    moment: MomentType,
+fn turbulence_proxy_field(
+    sweep: &Sweep,
+    inputs: &Inputs<'_>,
+    product: DerivedSweepProduct,
     texture_config: &TextureConfig,
-) -> Option<MomentGrid> {
-    let spectrum_width = cut.moments.get(&MomentType::SpectrumWidth);
-    let velocity = cut.moments.get(&MomentType::Velocity);
-    match (spectrum_width, velocity) {
+) -> Option<Field> {
+    match (inputs.spectrum_width, inputs.velocity) {
         (None, None) => None,
-        (Some(width), None) => Some(remap_grid(width, moment, |value| value.max(0.0))),
-        (None, Some(velocity)) => Some(texture_grid(
-            cut,
+        (Some(width), None) => Some(remap_field(width, product, |value| value.max(0.0))),
+        (None, Some(velocity)) => Some(texture_field(
+            sweep,
             velocity,
-            moment,
+            product,
             texture_config,
             TexturePeriod::NyquistVelocity,
         )),
         (Some(width), Some(velocity)) => {
-            let velocity_texture = texture_grid(
-                cut,
+            let velocity_texture = texture_field(
+                sweep,
                 velocity,
-                MomentType::Unknown("_INTERNAL_VEL_TEX".to_owned()),
+                DerivedSweepProduct::VelocityTexture,
                 texture_config,
                 TexturePeriod::NyquistVelocity,
             );
-            let velocity_texture = GridSampler::new(&velocity_texture);
-            let rows = width.radial_count();
-            let gates = width.gate_range.gate_count;
+            let velocity_texture = FieldSampler::new(sweep, &velocity_texture);
+            let (rows, gates) = width.shape();
             let mut out = vec![f32::NAN; rows * gates];
-            for row in 0..rows {
-                let Some(&radial_index) = width.radial_indices.get(row) else {
-                    continue;
-                };
-                for gate in 0..gates {
-                    let Some(sw) = width.scaled_value(row, gate) else {
-                        continue;
-                    };
-                    let texture = velocity_texture
-                        .sample(radial_index, gate_center_m(width, gate))
-                        .filter(|value| value.is_finite())
-                        .unwrap_or(0.0);
-                    if sw.is_finite() {
-                        out[row * gates + gate] = sw.max(0.0).hypot(texture.max(0.0));
+            if let (Some(velocity_texture), Some((first_m, spacing_m))) =
+                (velocity_texture, width.native_geometry(&sweep.range))
+            {
+                for row in 0..rows {
+                    for gate in 0..gates {
+                        let Some(sw) = width.value(row, gate) else {
+                            continue;
+                        };
+                        let texture = velocity_texture
+                            .sample(row, gate_center_m(first_m, spacing_m, gate))
+                            .filter(|value| value.is_finite())
+                            .unwrap_or(0.0);
+                        if sw.is_finite() {
+                            out[row * gates + gate] = sw.max(0.0).hypot(texture.max(0.0));
+                        }
                     }
                 }
             }
-            Some(f32_grid_like(width, moment, out))
+            Some(f32_field_like(width, product, out))
         }
     }
 }
 
-fn remap_grid(
-    source: &MomentGrid,
-    moment: MomentType,
+fn remap_field(
+    source: &Field,
+    product: DerivedSweepProduct,
     transform: impl Fn(f32) -> f32,
-) -> MomentGrid {
-    let rows = source.radial_count();
-    let gates = source.gate_range.gate_count;
+) -> Field {
+    let (rows, gates) = source.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            if let Some(value) = source.scaled_value(row, gate)
+            if let Some(value) = source.value(row, gate)
                 && value.is_finite()
             {
                 out[row * gates + gate] = transform(value);
             }
         }
     }
-    f32_grid_like(source, moment, out)
+    f32_field_like(source, product, out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, Radial};
+    use crate::test_support::{add_f32_field, sweep_with_rows};
 
-    fn gate_range(gates: usize, spacing_m: i32) -> GateRange {
-        GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: spacing_m,
-            gate_count: gates,
-        }
+    /// A PPI sweep of `rows` rays (azimuth = row · 360 / rows, Nyquist 25)
+    /// whose fields start at range 0 with `spacing_m` gates.
+    fn sweep(rows: usize, _spacing_m: f64) -> Sweep {
+        sweep_with_rows(rows, 0.5, Some(25.0))
     }
 
-    fn f32_grid(moment: MomentType, values: Vec<Vec<f32>>, spacing_m: i32) -> MomentGrid {
-        let rows = values.len();
+    fn add_rows(sweep: &mut Sweep, name: FieldName, values: Vec<Vec<f32>>, spacing_m: f64) {
         let gates = values.first().map_or(0, Vec::len);
         assert!(values.iter().all(|row| row.len() == gates));
-        MomentGrid {
-            moment,
-            gate_range: gate_range(gates, spacing_m),
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..rows).collect(),
-            storage: MomentStorage::F32(values.into_iter().flatten().collect()),
-        }
+        add_f32_field(
+            sweep,
+            name,
+            0.0,
+            spacing_m,
+            gates,
+            values.into_iter().flatten().collect(),
+        );
     }
 
-    fn cut_with_rows(rows: usize, gates: usize, spacing_m: i32) -> ElevationCut {
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        for row in 0..rows {
-            cut.radials.push(Radial {
-                azimuth_deg: row as f32 * 360.0 / rows.max(1) as f32,
-                elevation_deg: 0.5,
-                time_offset_ms: row as i32,
-                gate_range: gate_range(gates, spacing_m),
-                nyquist_velocity_mps: Some(25.0),
-                radial_status: None,
-            });
-        }
-        cut
+    fn value(sweep: &Sweep, name: &FieldName, row: usize, gate: usize) -> Option<f32> {
+        sweep.field(name).expect("field present").value(row, gate)
+    }
+
+    #[test]
+    fn product_names_follow_the_base_field() {
+        assert_eq!(
+            DerivedSweepProduct::ReflectivityTexture.field_name(Some(&FieldName::Dbz)),
+            FieldName::parse("DBZ_TEX")
+        );
+        assert_eq!(
+            DerivedSweepProduct::CorrectedReflectivity.canonical_field_name(),
+            FieldName::parse("DBZH_CORR")
+        );
+        assert_eq!(
+            DerivedSweepProduct::FilteredDifferentialPhase.canonical_field_name(),
+            FieldName::parse("PHIDP_CLEAN")
+        );
+        assert_eq!(
+            DerivedSweepProduct::LogCorrelationRatio.canonical_field_name(),
+            FieldName::parse("RHOHV_LOG")
+        );
+        assert_eq!(
+            DerivedSweepProduct::RainRateHybrid.canonical_field_name(),
+            FieldName::Rr
+        );
+        assert_eq!(
+            DerivedSweepProduct::Kdp.canonical_field_name(),
+            FieldName::Kdp
+        );
+        assert_eq!(
+            DerivedSweepProduct::for_name(&FieldName::parse("DBZ_CORR")),
+            Some(DerivedSweepProduct::CorrectedReflectivity)
+        );
+        assert_eq!(
+            DerivedSweepProduct::for_name(&FieldName::parse("VRADH_GRAD_R")),
+            Some(DerivedSweepProduct::VelocityRangeGradient)
+        );
+        assert_eq!(
+            DerivedSweepProduct::for_name(&FieldName::parse("met_qi")),
+            Some(DerivedSweepProduct::MeteorologicalQuality)
+        );
+        assert_eq!(DerivedSweepProduct::for_name(&FieldName::Kdp), None);
+        assert_eq!(DerivedSweepProduct::for_name(&FieldName::Dbzh), None);
+        // Every product has a distinct canonical name.
+        let mut names: Vec<String> = DerivedSweepProduct::ALL
+            .iter()
+            .map(|product| product.canonical_field_name().as_str().to_owned())
+            .collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), DerivedSweepProduct::ALL.len());
     }
 
     #[test]
@@ -2191,7 +2391,7 @@ mod tests {
     #[test]
     fn linear_wrapped_phi_retrieves_kdp() {
         let gates = 101;
-        let spacing_m = 250;
+        let spacing_m = 250.0;
         let expected_kdp = 2.0f32;
         let phi = (0..gates)
             .map(|gate| {
@@ -2199,32 +2399,27 @@ mod tests {
                 (350.0 + 2.0 * expected_kdp * range_km).rem_euclid(360.0)
             })
             .collect::<Vec<_>>();
-        let mut cut = cut_with_rows(1, gates, spacing_m);
-        cut.moments.insert(
-            MomentType::DifferentialPhase,
-            f32_grid(MomentType::DifferentialPhase, vec![phi], spacing_m),
+        let mut sweep = sweep(1, spacing_m);
+        add_rows(&mut sweep, FieldName::Phidp, vec![phi], spacing_m);
+        add_rows(
+            &mut sweep,
+            FieldName::Rhohv,
+            vec![vec![0.99; gates]],
+            spacing_m,
         );
-        cut.moments.insert(
-            MomentType::CorrelationCoefficient,
-            f32_grid(
-                MomentType::CorrelationCoefficient,
-                vec![vec![0.99; gates]],
-                spacing_m,
-            ),
-        );
-        cut.moments.insert(
-            MomentType::Reflectivity,
-            f32_grid(MomentType::Reflectivity, vec![vec![40.0; gates]], spacing_m),
+        add_rows(
+            &mut sweep,
+            FieldName::Dbzh,
+            vec![vec![40.0; gates]],
+            spacing_m,
         );
 
-        let report = derive_cut_in_place(&mut cut, &DerivationConfig::kdp_only());
+        let report = derive_sweep_in_place(&mut sweep, &DerivationConfig::kdp_only());
         assert_eq!(report.inserted, vec!["KDP"]);
-        let kdp = cut
-            .moments
-            .get(&MomentType::SpecificDifferentialPhase)
-            .unwrap();
+        let kdp = sweep.field(&FieldName::Kdp).unwrap();
+        assert_eq!(kdp.quantity, Quantity::SpecificDifferentialPhase);
         for gate in 10..(gates - 10) {
-            let value = kdp.scaled_value(0, gate).unwrap();
+            let value = kdp.value(0, gate).unwrap();
             assert!((value - expected_kdp).abs() < 0.02, "gate {gate}: {value}");
         }
     }
@@ -2232,61 +2427,47 @@ mod tests {
     #[test]
     fn short_gap_is_used_for_fit_but_not_emitted_by_default() {
         let gates = 41;
-        let spacing_m = 250;
+        let spacing_m = 250.0;
         let mut phi = (0..gates)
             .map(|gate| 20.0 + gate as f32)
             .collect::<Vec<_>>();
         phi[20] = f32::NAN;
         phi[21] = f32::NAN;
-        let mut cut = cut_with_rows(1, gates, spacing_m);
-        cut.moments.insert(
-            MomentType::DifferentialPhase,
-            f32_grid(MomentType::DifferentialPhase, vec![phi], spacing_m),
-        );
-        derive_cut_in_place(&mut cut, &DerivationConfig::kdp_only());
-        let kdp = cut
-            .moments
-            .get(&MomentType::SpecificDifferentialPhase)
-            .unwrap();
-        assert!(kdp.scaled_value(0, 19).unwrap().is_finite());
-        assert!(kdp.scaled_value(0, 20).unwrap().is_nan());
-        assert!(kdp.scaled_value(0, 21).unwrap().is_nan());
-        assert!(kdp.scaled_value(0, 22).unwrap().is_finite());
+        let mut sweep = sweep(1, spacing_m);
+        add_rows(&mut sweep, FieldName::Phidp, vec![phi], spacing_m);
+        derive_sweep_in_place(&mut sweep, &DerivationConfig::kdp_only());
+        assert!(value(&sweep, &FieldName::Kdp, 0, 19).is_some());
+        assert_eq!(value(&sweep, &FieldName::Kdp, 0, 20), None);
+        assert_eq!(value(&sweep, &FieldName::Kdp, 0, 21), None);
+        assert!(value(&sweep, &FieldName::Kdp, 0, 22).is_some());
     }
 
     #[test]
     fn native_kdp_is_preserved() {
         let gates = 20;
-        let spacing_m = 250;
-        let mut cut = cut_with_rows(1, gates, spacing_m);
-        cut.moments.insert(
-            MomentType::DifferentialPhase,
-            f32_grid(
-                MomentType::DifferentialPhase,
-                vec![vec![30.0; gates]],
-                spacing_m,
-            ),
+        let spacing_m = 250.0;
+        let mut sweep = sweep(1, spacing_m);
+        add_rows(
+            &mut sweep,
+            FieldName::Phidp,
+            vec![vec![30.0; gates]],
+            spacing_m,
         );
-        cut.moments.insert(
-            MomentType::SpecificDifferentialPhase,
-            f32_grid(
-                MomentType::SpecificDifferentialPhase,
-                vec![vec![9.0; gates]],
-                spacing_m,
-            ),
+        add_rows(
+            &mut sweep,
+            FieldName::Kdp,
+            vec![vec![9.0; gates]],
+            spacing_m,
         );
-        let report = derive_cut_in_place(&mut cut, &DerivationConfig::kdp_only());
+        let report = derive_sweep_in_place(&mut sweep, &DerivationConfig::kdp_only());
         assert_eq!(report.skipped_existing, vec!["KDP"]);
-        assert_eq!(
-            cut.moments[&MomentType::SpecificDifferentialPhase].scaled_value(0, 5),
-            Some(9.0)
-        );
+        assert_eq!(value(&sweep, &FieldName::Kdp, 0, 5), Some(9.0));
     }
 
     #[test]
     fn filtered_phase_survives_when_kdp_is_out_of_bounds() {
         let gates = 101;
-        let spacing_m = 250;
+        let spacing_m = 250.0;
         let too_large_kdp = 30.0f32;
         let phi = (0..gates)
             .map(|gate| {
@@ -2294,22 +2475,19 @@ mod tests {
                 (40.0 + 2.0 * too_large_kdp * range_km).rem_euclid(360.0)
             })
             .collect::<Vec<_>>();
-        let mut cut = cut_with_rows(1, gates, spacing_m);
-        cut.moments.insert(
-            MomentType::DifferentialPhase,
-            f32_grid(MomentType::DifferentialPhase, vec![phi], spacing_m),
+        let mut sweep = sweep(1, spacing_m);
+        add_rows(&mut sweep, FieldName::Phidp, vec![phi], spacing_m);
+        add_rows(
+            &mut sweep,
+            FieldName::Rhohv,
+            vec![vec![0.99; gates]],
+            spacing_m,
         );
-        cut.moments.insert(
-            MomentType::CorrelationCoefficient,
-            f32_grid(
-                MomentType::CorrelationCoefficient,
-                vec![vec![0.99; gates]],
-                spacing_m,
-            ),
-        );
-        cut.moments.insert(
-            MomentType::Reflectivity,
-            f32_grid(MomentType::Reflectivity, vec![vec![40.0; gates]], spacing_m),
+        add_rows(
+            &mut sweep,
+            FieldName::Dbzh,
+            vec![vec![40.0; gates]],
+            spacing_m,
         );
 
         let config = DerivationConfig::with_products(
@@ -2319,18 +2497,11 @@ mod tests {
                 DerivedSweepProduct::FilteredDifferentialPhase,
             ],
         );
-        let report = derive_cut_in_place(&mut cut, &config);
+        let report = derive_sweep_in_place(&mut sweep, &config);
         assert_eq!(report.inserted, vec!["KDP", "PHIF"]);
-        let phif = cut
-            .moments
-            .get(&DerivedSweepProduct::FilteredDifferentialPhase.moment_type())
-            .unwrap();
-        let kdp = cut
-            .moments
-            .get(&MomentType::SpecificDifferentialPhase)
-            .unwrap();
-        assert!(phif.scaled_value(0, 40).unwrap().is_finite());
-        assert!(kdp.scaled_value(0, 40).unwrap().is_nan());
+        let phif = FieldName::parse("PHIDP_CLEAN");
+        assert!(value(&sweep, &phif, 0, 40).is_some());
+        assert_eq!(value(&sweep, &FieldName::Kdp, 0, 40), None);
     }
 
     #[test]
@@ -2342,23 +2513,20 @@ mod tests {
 
     #[test]
     fn velocity_range_gradient_uses_nyquist_wrapped_delta() {
-        let mut cut = cut_with_rows(1, 3, 1000);
-        cut.moments.insert(
-            MomentType::Velocity,
-            f32_grid(MomentType::Velocity, vec![vec![24.0, -24.0, -23.0]], 1000),
+        let mut sweep = sweep(1, 1000.0);
+        add_rows(
+            &mut sweep,
+            FieldName::Vradh,
+            vec![vec![24.0, -24.0, -23.0]],
+            1000.0,
         );
         let config = DerivationConfig::with_products(
             RadarBand::S,
             [DerivedSweepProduct::VelocityRangeGradient],
         );
-        let report = derive_cut_in_place(&mut cut, &config);
+        let report = derive_sweep_in_place(&mut sweep, &config);
         assert_eq!(report.inserted, vec!["VEL_GRAD_R"]);
-        let gradient = cut
-            .moments
-            .get(&DerivedSweepProduct::VelocityRangeGradient.moment_type())
-            .unwrap()
-            .scaled_value(0, 1)
-            .unwrap();
+        let gradient = value(&sweep, &FieldName::parse("VRADH_GRAD_R"), 0, 1).unwrap();
         assert!(
             (gradient - 1.5).abs() < 0.01,
             "expected wrapped +1.5 m/s/km, got {gradient}"
@@ -2368,49 +2536,30 @@ mod tests {
     #[test]
     fn rho_qc_is_aligned_by_physical_range() {
         let gates = 31;
-        let spacing_m = 250;
-        let mut cut = cut_with_rows(1, gates, spacing_m);
-        cut.moments.insert(
-            MomentType::DifferentialPhase,
-            f32_grid(
-                MomentType::DifferentialPhase,
-                vec![(0..gates).map(|gate| gate as f32).collect()],
-                spacing_m,
-            ),
+        let spacing_m = 250.0;
+        let mut sweep = sweep(1, spacing_m);
+        add_rows(
+            &mut sweep,
+            FieldName::Phidp,
+            vec![(0..gates).map(|gate| gate as f32).collect()],
+            spacing_m,
         );
-        let mut rho = f32_grid(
-            MomentType::CorrelationCoefficient,
-            vec![vec![0.99; 16]],
-            500,
-        );
-        rho.gate_range.first_gate_m = 0;
-        if let MomentStorage::F32(values) = &mut rho.storage {
-            values[5] = 0.3;
-        }
-        cut.moments.insert(MomentType::CorrelationCoefficient, rho);
-        derive_cut_in_place(&mut cut, &DerivationConfig::kdp_only());
-        let kdp = &cut.moments[&MomentType::SpecificDifferentialPhase];
-        // 2.5 km in the PHI grid aligns with gate 5 in the 500 m RHO grid.
-        assert!(kdp.scaled_value(0, 10).unwrap().is_nan());
+        // RHO on 500 m gates sharing the PHI lattice's inner edge (centre
+        // 125 m): its gate 5 sits at 2625 m, nearest PHI gate 10 (2500 m).
+        let mut rho = vec![0.99; 16];
+        rho[5] = 0.3;
+        add_f32_field(&mut sweep, FieldName::Rhohv, 125.0, 500.0, 16, rho);
+        derive_sweep_in_place(&mut sweep, &DerivationConfig::kdp_only());
+        assert_eq!(value(&sweep, &FieldName::Kdp, 0, 10), None);
     }
 
     #[test]
     fn cdr_is_finite_for_valid_dual_pol_values() {
-        let mut cut = cut_with_rows(1, 1, 250);
-        cut.moments.insert(
-            MomentType::DifferentialReflectivity,
-            f32_grid(MomentType::DifferentialReflectivity, vec![vec![1.0]], 250),
-        );
-        cut.moments.insert(
-            MomentType::CorrelationCoefficient,
-            f32_grid(MomentType::CorrelationCoefficient, vec![vec![0.97]], 250),
-        );
-        let cdr = circular_depolarization_ratio_grid(
-            &cut,
-            DerivedSweepProduct::CircularDepolarizationRatio.moment_type(),
-        )
-        .unwrap();
-        assert!(cdr.scaled_value(0, 0).unwrap().is_finite());
+        let mut sweep = sweep(1, 250.0);
+        add_rows(&mut sweep, FieldName::Zdr, vec![vec![1.0]], 250.0);
+        add_rows(&mut sweep, FieldName::Rhohv, vec![vec![0.97]], 250.0);
+        let cdr = circular_depolarization_ratio_field(&sweep, &Inputs::of(&sweep)).unwrap();
+        assert!(cdr.value(0, 0).unwrap().is_finite());
     }
 
     #[test]
@@ -2421,14 +2570,12 @@ mod tests {
 
     #[test]
     fn unknown_band_blocks_band_sensitive_products_but_keeps_phif() {
-        let mut cut = cut_with_rows(1, 12, 250);
-        cut.moments.insert(
-            MomentType::DifferentialPhase,
-            f32_grid(
-                MomentType::DifferentialPhase,
-                vec![(0..12).map(|gate| gate as f32).collect()],
-                250,
-            ),
+        let mut sweep = sweep(1, 250.0);
+        add_rows(
+            &mut sweep,
+            FieldName::Phidp,
+            vec![(0..12).map(|gate| gate as f32).collect()],
+            250.0,
         );
         let config = DerivationConfig::with_products(
             RadarBand::Unknown,
@@ -2439,14 +2586,26 @@ mod tests {
             ],
         );
 
-        let report = derive_cut_in_place(&mut cut, &config);
+        let report = derive_sweep_in_place(&mut sweep, &config);
 
         assert!(report.inserted.contains(&"PHIF".to_owned()));
         assert!(report.unavailable.contains(&"KDP".to_owned()));
         assert!(report.unavailable.contains(&"RATE_KDP".to_owned()));
-        assert!(
-            !cut.moments
-                .contains_key(&MomentType::SpecificDifferentialPhase)
-        );
+        assert!(sweep.field(&FieldName::Kdp).is_none());
+    }
+
+    #[test]
+    fn derive_product_names_after_the_sweep_s_own_reflectivity() {
+        let mut sweep = sweep(4, 250.0);
+        add_rows(&mut sweep, FieldName::Dbz, vec![vec![30.0; 8]; 4], 250.0);
+        let texture = derive_product(
+            &sweep,
+            DerivedSweepProduct::ReflectivityTexture,
+            &DerivationConfig::all_supported(),
+        )
+        .expect("texture");
+        assert_eq!(texture.name, FieldName::parse("DBZ_TEX"));
+        assert_eq!(texture.gates, sweep.fields[0].gates);
+        assert_eq!(texture.attrs.units.as_deref(), Some("dB"));
     }
 }

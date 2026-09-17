@@ -17,10 +17,11 @@
 
 use rayon::prelude::*;
 use recast_radar_core::{
-    MomentGrid, MomentStorage, MomentType, RadarVolume, beam_ground_range_m,
-    beam_height_above_radar_m,
+    Field, FieldName, Quantity, Sweep, Volume, beam_ground_range_m, beam_height_above_radar_m,
 };
-use recast_radar_correct::dealias_velocity_grid;
+use recast_radar_correct::dealias_velocity;
+
+use crate::sweep::physical_field;
 
 /// MARC layer bounds (m above radar) — Schmocker et al. 1996 / NWS LMK.
 const MARC_LAYER_BOTTOM_M: f64 = 3000.0;
@@ -29,6 +30,11 @@ const MARC_LAYER_TOP_M: f64 = 7000.0;
 /// gate keeps the max inbound–outbound pair separation ≤ 6 km, matching the
 /// published "within 6 km along a single radial" definition.
 const MARC_HALF_WINDOW_M: f64 = 3000.0;
+
+/// Name of the MARC composite field.
+pub const MARC_NAME: &str = "MARC";
+/// Name of the low-level gust proxy field.
+pub const GUST_NAME: &str = "GUST";
 
 /// Sliding window max-inbound-vs-max-outbound convergence per gate.
 /// Convergent orientation: outbound (positive Vr) NEARER the radar than
@@ -87,8 +93,8 @@ fn radial_convergence_row(values: &[f32], half_window_gates: usize) -> Vec<f32> 
     out
 }
 
-/// One velocity cut prepared for the MARC composite.
-struct VelCut {
+/// One velocity sweep prepared for the MARC composite.
+struct VelSweep {
     elevation_deg: f32,
     az_rows: Vec<(f32, usize)>,
     conv: Vec<f32>, // rows x gates ΔV field
@@ -97,7 +103,7 @@ struct VelCut {
     gate_spacing_m: f64,
 }
 
-impl VelCut {
+impl VelSweep {
     fn nearest_row(&self, az: f32) -> Option<usize> {
         if self.az_rows.is_empty() {
             return None;
@@ -123,39 +129,48 @@ impl VelCut {
     }
 }
 
-fn velocity_cuts_from_dealiased(
-    volume: &RadarVolume,
-    dealiased_velocity: &[Option<&MomentGrid>],
-) -> Vec<VelCut> {
-    let mut cuts: Vec<VelCut> = volume
-        .cuts
+/// Per-row azimuths of a field's rows, normalized to `[0, 360)`.
+fn row_azimuths(sweep: &Sweep, field: &Field) -> Vec<f32> {
+    (0..field.nrays as usize)
+        .map(|r| {
+            sweep
+                .rays
+                .azimuth_deg
+                .get(r)
+                .map(|azimuth| azimuth.rem_euclid(360.0))
+                .unwrap_or(f32::NAN)
+        })
+        .collect()
+}
+
+fn velocity_sweeps_from_dealiased(
+    volume: &Volume,
+    dealiased_velocity: &[Option<&Field>],
+) -> Vec<VelSweep> {
+    let mut sweeps: Vec<VelSweep> = volume
+        .sweeps
         .iter()
         .enumerate()
-        .filter_map(|(cut_index, cut)| {
-            let dealiased = dealiased_velocity.get(cut_index).copied().flatten()?;
-            let gr = dealiased.gate_range.clone();
-            let rows = dealiased.radial_count();
-            if gr.gate_count == 0 || rows == 0 {
+        .filter_map(|(sweep_index, sweep)| {
+            let dealiased = dealiased_velocity.get(sweep_index).copied().flatten()?;
+            let (rows, gates) = dealiased.shape();
+            if gates == 0 || rows == 0 {
                 return None;
             }
-            let half_gates =
-                ((MARC_HALF_WINDOW_M / gr.gate_spacing_m as f64).round() as usize).max(2);
-            let mut az_rows: Vec<(f32, usize)> = dealiased
-                .radial_indices
-                .iter()
+            let (first_gate_m, gate_spacing_m) = dealiased.native_geometry(&sweep.range)?;
+            let half_gates = ((MARC_HALF_WINDOW_M / gate_spacing_m).round() as usize).max(2);
+            let mut az_rows: Vec<(f32, usize)> = row_azimuths(sweep, dealiased)
+                .into_iter()
                 .enumerate()
-                .filter_map(|(row, ri)| {
-                    let az = cut.radials.get(*ri)?.azimuth_deg.rem_euclid(360.0);
-                    Some((az, row))
-                })
+                .filter(|(_, az)| az.is_finite())
+                .map(|(row, az)| (az, row))
                 .collect();
             az_rows.sort_by(|a, b| a.0.total_cmp(&b.0));
             // Per-row convergence (parallel over rows).
-            let gates = gr.gate_count;
             let mut row_values = vec![f32::NAN; rows * gates];
             for row in 0..rows {
                 for gate in 0..gates {
-                    if let Some(v) = dealiased.scaled_value(row, gate) {
+                    if let Some(v) = dealiased.value(row, gate) {
                         row_values[row * gates + gate] = v;
                     }
                 }
@@ -164,72 +179,70 @@ fn velocity_cuts_from_dealiased(
                 .par_chunks(gates)
                 .flat_map_iter(|row| radial_convergence_row(row, half_gates))
                 .collect();
-            Some(VelCut {
-                elevation_deg: cut.elevation_deg,
+            Some(VelSweep {
+                elevation_deg: sweep.fixed_angle_deg,
                 az_rows,
                 conv,
                 gates,
-                first_gate_m: gr.first_gate_m as f64,
-                gate_spacing_m: gr.gate_spacing_m as f64,
+                first_gate_m,
+                gate_spacing_m,
             })
         })
         .collect();
-    cuts.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
-    // SAILS de-dupe: keep the first cut at each elevation (within 0.1°).
-    cuts.dedup_by(|b, a| (a.elevation_deg - b.elevation_deg).abs() < 0.1);
-    cuts
+    sweeps.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
+    // SAILS de-dupe: keep the first sweep at each elevation (within 0.1°).
+    sweeps.dedup_by(|b, a| (a.elevation_deg - b.elevation_deg).abs() < 0.1);
+    sweeps
+}
+
+/// Every sweep's velocity field ([`Quantity::RadialVelocity`]), dealiased
+/// with the region engine; indexed like `volume.sweeps`.
+fn dealias_all(volume: &Volume) -> Vec<Option<Field>> {
+    volume
+        .sweeps
+        .iter()
+        .map(|sweep| {
+            sweep
+                .find(Quantity::RadialVelocity)
+                .map(|velocity| dealias_velocity(sweep, velocity))
+        })
+        .collect()
 }
 
 /// MARC ΔV composite (m/s): the max windowed radial convergence across all
 /// velocity tilts whose beam centers the 3–7 km layer at that ground range.
 /// Display guidance: ≥ 25 m/s is the published damaging-wind precursor.
-pub fn marc_grid(volume: &RadarVolume) -> Option<MomentGrid> {
-    let owned: Vec<Option<MomentGrid>> = volume
-        .cuts
-        .iter()
-        .map(|cut| {
-            cut.moments
-                .get(&MomentType::Velocity)
-                .map(|velocity| dealias_velocity_grid(cut, velocity))
-        })
-        .collect();
-    let borrowed: Vec<Option<&MomentGrid>> = owned.iter().map(Option::as_ref).collect();
-    marc_grid_from_dealiased(volume, &borrowed)
+pub fn marc(volume: &Volume) -> Option<Field> {
+    let owned = dealias_all(volume);
+    let borrowed: Vec<Option<&Field>> = owned.iter().map(Option::as_ref).collect();
+    marc_from_dealiased(volume, &borrowed)
 }
 
-/// MARC composite from caller-provided, already-dealiased velocity grids.
-/// `dealiased_velocity` is indexed exactly like `volume.cuts`; missing entries
-/// are skipped. This function never chooses or runs a dealias engine.
-pub fn marc_grid_from_dealiased(
-    volume: &RadarVolume,
-    dealiased_velocity: &[Option<&MomentGrid>],
-) -> Option<MomentGrid> {
-    let cuts = velocity_cuts_from_dealiased(volume, dealiased_velocity);
-    if cuts.is_empty() {
+/// MARC composite from caller-provided, already-dealiased velocity fields.
+/// `dealiased_velocity` is indexed exactly like `volume.sweeps`, each entry a
+/// field on that sweep's rays and range; missing entries are skipped. This
+/// function never chooses or runs a dealias engine. The result (`MARC`) is on
+/// the lowest velocity sweep's rays and native gates.
+pub fn marc_from_dealiased(
+    volume: &Volume,
+    dealiased_velocity: &[Option<&Field>],
+) -> Option<Field> {
+    let sweeps = velocity_sweeps_from_dealiased(volume, dealiased_velocity);
+    if sweeps.is_empty() {
         return None;
     }
-    // Output geometry: the lowest velocity cut's grid.
+    // Output geometry: the lowest velocity sweep's field.
     let base_idx = volume
-        .cuts
+        .sweeps
         .iter()
         .enumerate()
-        .find_map(|(i, c)| c.moments.contains_key(&MomentType::Velocity).then_some(i))?;
-    let base_grid = dealiased_velocity.get(base_idx).copied().flatten()?;
-    let base_cut = volume.cuts.get(base_idx)?;
-    let rows = base_grid.radial_count();
-    let gates = base_grid.gate_range.gate_count;
-    let base_gr = &base_grid.gate_range;
-    let base_elev = base_cut.elevation_deg as f64;
-    let row_az: Vec<f32> = (0..rows)
-        .map(|r| {
-            base_grid
-                .radial_indices
-                .get(r)
-                .and_then(|ri| base_cut.radials.get(*ri))
-                .map(|radial| radial.azimuth_deg.rem_euclid(360.0))
-                .unwrap_or(f32::NAN)
-        })
-        .collect();
+        .find_map(|(i, s)| s.find(Quantity::RadialVelocity).is_some().then_some(i))?;
+    let base_field = dealiased_velocity.get(base_idx).copied().flatten()?;
+    let base_sweep = volume.sweeps.get(base_idx)?;
+    let (rows, gates) = base_field.shape();
+    let (base_first_m, base_spacing_m) = base_field.native_geometry(&base_sweep.range)?;
+    let base_elev = base_sweep.fixed_angle_deg as f64;
+    let row_az = row_azimuths(base_sweep, base_field);
     let mut out = vec![f32::NAN; rows * gates];
     out.par_chunks_mut(gates)
         .enumerate()
@@ -239,28 +252,27 @@ pub fn marc_grid_from_dealiased(
                 return;
             }
             for (gate, cell) in out_row.iter_mut().enumerate() {
-                let slant =
-                    base_gr.first_gate_m as f64 + gate as f64 * base_gr.gate_spacing_m as f64;
+                let slant = base_first_m + gate as f64 * base_spacing_m;
                 let ground = beam_ground_range_m(slant, base_elev);
                 let mut best = f32::NAN;
-                for cut in &cuts {
+                for sweep in &sweeps {
                     // Gate at this ground range on this tilt (slant ≈ ground
                     // at these elevations; refine via the inverse map).
-                    let cut_gate =
-                        ((ground - cut.first_gate_m) / cut.gate_spacing_m).round() as isize;
-                    if cut_gate < 0 || cut_gate as usize >= cut.gates {
+                    let sweep_gate =
+                        ((ground - sweep.first_gate_m) / sweep.gate_spacing_m).round() as isize;
+                    if sweep_gate < 0 || sweep_gate as usize >= sweep.gates {
                         continue;
                     }
-                    let cut_gate = cut_gate as usize;
-                    let cut_slant = cut.first_gate_m + cut_gate as f64 * cut.gate_spacing_m;
-                    let height = beam_height_above_radar_m(cut_slant, cut.elevation_deg as f64);
+                    let sweep_gate = sweep_gate as usize;
+                    let sweep_slant = sweep.first_gate_m + sweep_gate as f64 * sweep.gate_spacing_m;
+                    let height = beam_height_above_radar_m(sweep_slant, sweep.elevation_deg as f64);
                     if !(MARC_LAYER_BOTTOM_M..=MARC_LAYER_TOP_M).contains(&height) {
                         continue;
                     }
-                    let Some(cut_row) = cut.nearest_row(az) else {
+                    let Some(sweep_row) = sweep.nearest_row(az) else {
                         continue;
                     };
-                    let delta = cut.conv[cut_row * cut.gates + cut_gate];
+                    let delta = sweep.conv[sweep_row * sweep.gates + sweep_gate];
                     if delta.is_finite() && (!best.is_finite() || delta > best) {
                         best = delta;
                     }
@@ -270,83 +282,73 @@ pub fn marc_grid_from_dealiased(
                 }
             }
         });
-    Some(f32_grid_like(base_grid, MomentType::Velocity, out))
+    Some(physical_field(
+        base_field,
+        FieldName::parse(MARC_NAME),
+        Quantity::Other,
+        Some("m/s"),
+        Some("Mid-altitude radial convergence"),
+        out,
+    ))
 }
 
 /// Low-level gust proxy (m/s): |dealiased Vr| on the lowest velocity tilt,
 /// masked to beam-center heights < 1 km above the radar (Smith, Elmore &
 /// Dulin 2004: low-beam radial wind ≈ surface gust; ≥ 25 m/s ≈ severe).
-pub fn gust_proxy_grid(volume: &RadarVolume) -> Option<MomentGrid> {
-    let (cut_index, cut, velocity) = volume.cuts.iter().enumerate().find_map(|(index, c)| {
-        c.moments
-            .get(&MomentType::Velocity)
-            .map(|grid| (index, c, grid))
-    })?;
-    let dealiased = dealias_velocity_grid(cut, velocity);
-    gust_proxy_grid_from_dealiased(volume, cut_index, &dealiased)
+pub fn gust_proxy(volume: &Volume) -> Option<Field> {
+    let (sweep_index, sweep, velocity) =
+        volume.sweeps.iter().enumerate().find_map(|(index, s)| {
+            s.find(Quantity::RadialVelocity)
+                .map(|field| (index, s, field))
+        })?;
+    let dealiased = dealias_velocity(sweep, velocity);
+    gust_proxy_from_dealiased(volume, sweep_index, &dealiased)
 }
 
 /// Low-level gust proxy from one caller-provided, already-dealiased velocity
-/// grid. `cut_index` identifies the grid's geometry and reflectivity-support
-/// mask in `volume`. This function performs no dealiasing.
-pub fn gust_proxy_grid_from_dealiased(
-    volume: &RadarVolume,
-    cut_index: usize,
-    dealiased: &MomentGrid,
-) -> Option<MomentGrid> {
-    let cut = volume.cuts.get(cut_index)?;
-    if !cut.moments.contains_key(&MomentType::Velocity) {
-        return None;
-    }
+/// field on the rays and range of sweep `sweep_index`, which also supplies
+/// the reflectivity-support mask. This function performs no dealiasing. The
+/// result (`GUST`) is on the dealiased field's rays and native gates.
+pub fn gust_proxy_from_dealiased(
+    volume: &Volume,
+    sweep_index: usize,
+    dealiased: &Field,
+) -> Option<Field> {
+    let sweep = volume.sweeps.get(sweep_index)?;
+    sweep.find(Quantity::RadialVelocity)?;
     // Reflectivity-support mask: a gust claim needs an echo. Bird/insect
     // and clutter returns in clear air otherwise fabricate severe gusts
-    // (observed: 89 m/s "gusts" on an echo-free volume).
-    let reflectivity = cut.moments.get(&MomentType::Reflectivity);
-    // Moment grids can store the cut's radials in different orders (or as
-    // different subsets). Map by the owning cut's raw radial identity so
-    // the echo mask cannot sample reflectivity from another azimuth.
-    let reflectivity_rows =
-        reflectivity.map(|grid| rows_by_radial_identity(grid, cut.radials.len()));
-    let rows = dealiased.radial_count();
-    let gates = dealiased.gate_range.gate_count;
-    let gr = &dealiased.gate_range;
-    let elev = cut.elevation_deg as f64;
+    // (observed: 89 m/s "gusts" on an echo-free volume). Both fields are on
+    // the sweep's rays, so row `r` of each is ray `r`.
+    let reflectivity = sweep
+        .find(Quantity::Reflectivity)
+        .and_then(|field| Some((field, field.native_geometry(&sweep.range)?)));
+    let (rows, gates) = dealiased.shape();
+    let (first_m, spacing_m) = dealiased.native_geometry(&sweep.range)?;
+    let elev = sweep.fixed_angle_deg as f64;
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         let raw: Vec<f32> = (0..gates)
-            .map(|gate| dealiased.scaled_value(row, gate).unwrap_or(f32::NAN))
+            .map(|gate| dealiased.value(row, gate).unwrap_or(f32::NAN))
             .collect();
         let filtered = median3(&raw);
         for (gate, &v) in filtered.iter().enumerate() {
-            let slant = gr.first_gate_m as f64 + gate as f64 * gr.gate_spacing_m as f64;
+            let slant = first_m + gate as f64 * spacing_m;
             if beam_height_above_radar_m(slant, elev) >= 1000.0 {
                 // Past this range the lowest beam overshoots the surface
                 // layer — an honest product stops rather than extrapolates.
                 break;
             }
-            if let Some(ref_grid) = reflectivity {
+            if let Some((ref_field, (ref_first_m, ref_spacing_m))) = reflectivity {
                 // REF gates are coarser (1 km vs 0.25 km) — map by range.
-                let ref_gr = &ref_grid.gate_range;
-                let ref_gate = ((slant - ref_gr.first_gate_m as f64) / ref_gr.gate_spacing_m as f64)
-                    .round() as isize;
-                let ref_row = dealiased
-                    .radial_indices
-                    .get(row)
-                    .and_then(|raw_radial| {
-                        reflectivity_rows
-                            .as_ref()
-                            .and_then(|rows| rows.get(*raw_radial))
-                    })
-                    .copied()
-                    .flatten();
-                let supported = ref_row.is_some_and(|ref_row| {
-                    ref_gate >= 0
-                        && (ref_gate as usize) < ref_gr.gate_count
-                        && ref_grid
-                            .scaled_value(ref_row, ref_gate as usize)
-                            .map(|z| z >= 10.0)
-                            .unwrap_or(false)
-                });
+                let ref_gate = ((slant - ref_first_m) / ref_spacing_m).round() as isize;
+                let supported = row < ref_field.nrays as usize
+                    && ref_gate >= 0
+                    && (ref_gate as usize) < ref_field.ngates as usize
+                    && ref_field
+                        .value(row, ref_gate as usize)
+                        .map(|z| z >= 10.0)
+                        .unwrap_or(false);
                 if !supported {
                     continue;
                 }
@@ -356,58 +358,19 @@ pub fn gust_proxy_grid_from_dealiased(
             }
         }
     }
-    Some(f32_grid_like(dealiased, MomentType::Velocity, out))
-}
-
-/// Grid-row lookup keyed by the owning cut's raw radial index. Duplicate
-/// identities keep the first row, matching the first-wins moment convention.
-fn rows_by_radial_identity(grid: &MomentGrid, raw_radial_count: usize) -> Vec<Option<usize>> {
-    let mut rows = vec![None; raw_radial_count];
-    for (row, &raw_radial) in grid.radial_indices.iter().enumerate() {
-        if let Some(slot) = rows.get_mut(raw_radial)
-            && slot.is_none()
-        {
-            *slot = Some(row);
-        }
-    }
-    rows
-}
-
-/// Build an F32 output grid on the base tilt's geometry (NaN = no data).
-/// Same construction as `recast_radar_map`'s volume products use.
-fn f32_grid_like(base: &MomentGrid, moment: MomentType, values: Vec<f32>) -> MomentGrid {
-    MomentGrid {
-        moment,
-        gate_range: base.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: base.radial_indices.clone(),
-        storage: MomentStorage::F32(values),
-    }
+    Some(physical_field(
+        dealiased,
+        FieldName::parse(GUST_NAME),
+        Quantity::Other,
+        Some("m/s"),
+        Some("Low-level gust proxy"),
+        out,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn identity_grid(radial_indices: Vec<usize>) -> MomentGrid {
-        MomentGrid {
-            moment: MomentType::Reflectivity,
-            gate_range: recast_radar_core::GateRange {
-                first_gate_m: 0,
-                gate_spacing_m: 250,
-                gate_count: 1,
-            },
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            storage: recast_radar_core::MomentStorage::F32(vec![20.0; radial_indices.len()]),
-            radial_indices,
-        }
-    }
 
     #[test]
     fn convergence_window_finds_couplet() {
@@ -439,9 +402,35 @@ mod tests {
     }
 
     #[test]
-    fn reflectivity_rows_follow_raw_radial_identity_not_row_position() {
-        let grid = identity_grid(vec![2, 0, 3]);
-        let rows = rows_by_radial_identity(&grid, 4);
-        assert_eq!(rows, vec![Some(1), None, Some(0), Some(2)]);
+    fn gust_proxy_masks_to_echo_and_the_lowest_kilometre() {
+        use crate::test_support::{add_f32_field, sweep_with_rows, volume_with};
+        // 0.5°, 250 m gates from 250 m: the beam passes 1 km ARL near 80 km.
+        let rows = 8;
+        let gates = 400;
+        let mut sweep = sweep_with_rows(rows, 0.5, Some(60.0));
+        add_f32_field(
+            &mut sweep,
+            FieldName::Vradh,
+            250.0,
+            250.0,
+            gates,
+            vec![-30.0; rows * gates],
+        );
+        // Reflectivity on 1 km gates sharing the velocity lattice's inner
+        // edge (first centre 625 m): echo only in the first 40 km.
+        let mut dbz = vec![f32::NAN; rows * 100];
+        for row in 0..rows {
+            for gate in 0..40 {
+                dbz[row * 100 + gate] = 35.0;
+            }
+        }
+        add_f32_field(&mut sweep, FieldName::Dbzh, 625.0, 1000.0, 100, dbz);
+        let volume = volume_with(vec![sweep]);
+        let gust = gust_proxy(&volume).expect("gust");
+        assert_eq!(gust.name, FieldName::parse(GUST_NAME));
+        assert_eq!(gust.value(3, 10), Some(30.0));
+        // No echo past 40 km, and no product past the 1 km beam height.
+        assert_eq!(gust.value(3, 200), None);
+        assert_eq!(gust.value(3, 399), None);
     }
 }

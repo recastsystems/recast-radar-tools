@@ -10,10 +10,24 @@
 //! Miller et al. 2013 (28th Conf. IIPS); Smith et al. 2016 (BAMS 97,
 //! doi:10.1175/BAMS-D-14-00173.1).
 
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
 use recast_radar_track::tracks::{
     TracksGridSpec, detect_tds_gates, low_level_azshear_cartesian, max_composite_into,
     rotation_track_color,
 };
+
+/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
+/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
+#[allow(deprecated)]
+mod legacy_bridge {
+    use recast_radar_core::Volume;
+
+    pub fn decode_level2(bytes: &[u8]) -> Result<Volume, Box<dyn std::error::Error>> {
+        let legacy = recast_radar_io_nexrad::decode_volume_from_bytes(bytes)?;
+        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut paths = Vec::new();
@@ -41,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for path in &paths {
         let raw = std::fs::read(path)?;
-        let volume = recast_radar_io_nexrad::decode_volume_from_bytes(&raw)?;
+        let volume = legacy_bridge::decode_level2(&raw)?;
         let start = std::time::Instant::now();
         let frame = low_level_azshear_cartesian(&volume, &spec);
         let frame_ms = start.elapsed().as_secs_f32() * 1000.0;
@@ -60,7 +74,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .fold(0.0f32, |acc, &v| acc.max(v));
         println!(
             "{}: {} covered cells, {} display-strength, peak {:.1}e-3/s, {} rot sites, {} TDS gates ({frame_ms:.0} ms)",
-            volume.volume_time.format("%H:%M:%SZ"),
+            volume
+                .time_coverage
+                .map_or(volume.time_reference, |coverage| coverage.start)
+                .format("%H:%M:%SZ"),
             finite,
             display,
             peak,

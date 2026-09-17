@@ -12,15 +12,21 @@
 //!   JAM 11(8); the operational discretization in Witt et al. 1998, WAF 13(2),
 //!   with the 56 dBZ hail cap). VIL density = VIL / echo-top height.
 //!
-//! Output grids reuse the base tilt's geometry and `radial_indices`, so the
-//! existing renderer/azimuth lookup draws them unchanged.
+//! Output fields reuse the base sweep's rays and native gate geometry (with
+//! product ids as names: `CREF`, `ET`, `VIL`, `VILD`, `SHI`, `MESH`, `POSH`,
+//! `POH`), so the existing renderer/azimuth lookup draws them unchanged.
+//! Reflectivity is each sweep's preferred reflectivity field
+//! ([`Sweep::find`] of [`Quantity::Reflectivity`]); other inputs are
+//! selected by dataset variable name.
+
+use std::borrow::Cow;
 
 use rayon::prelude::*;
 use recast_radar_core::{
-    MomentGrid, MomentStorage, MomentType, RadarVolume, beam_ground_range_m,
-    beam_height_above_radar_m,
+    Field, FieldAttrs, FieldData, FieldName, FloatCoding, Polarization, Quantity, Sweep, Volume,
+    beam_ground_range_m, beam_height_above_radar_m,
 };
-use recast_radar_correct::dealias_velocity_grid;
+use recast_radar_correct::dealias_velocity;
 pub use recast_radar_filters::InterpPolicy;
 
 /// NWS echo-top reflectivity threshold (dBZ).
@@ -28,29 +34,26 @@ pub const ECHO_TOP_THRESHOLD_DBZ: f32 = 18.3;
 /// Hail cap applied to reflectivity before VIL integration (dBZ).
 const VIL_HAIL_CAP_DBZ: f32 = 56.0;
 
-/// A single elevation cut resampled for column walking: a ground-range table
+/// A single sweep's field resampled for column walking: a ground-range table
 /// and beam-height table per gate, plus an azimuth→row index.
 struct CutColumn<'a> {
     elevation_deg: f32,
-    grid: &'a MomentGrid,
+    field: &'a Field,
     az_rows: Vec<(f32, usize)>, // (azimuth_deg, row) sorted by azimuth
     ground_range_m: Vec<f64>,   // per gate
     height_m: Vec<f64>,         // beam-center height above radar per gate
 }
 
 impl<'a> CutColumn<'a> {
-    fn new(volume: &'a RadarVolume, cut_index: usize, grid: &'a MomentGrid) -> Option<Self> {
-        let cut = volume.cuts.get(cut_index)?;
-        let gr = &grid.gate_range;
-        if gr.gate_count == 0 {
+    fn new(sweep: &'a Sweep, field: &'a Field) -> Option<Self> {
+        let gates = field.ngates as usize;
+        if gates == 0 {
             return None;
         }
-        let mut az_rows: Vec<(f32, usize)> = grid
-            .radial_indices
-            .iter()
-            .enumerate()
-            .filter_map(|(row, ri)| {
-                let az = cut.radials.get(*ri)?.azimuth_deg.rem_euclid(360.0);
+        let (first_m, spacing_m) = field.native_geometry(&sweep.range)?;
+        let mut az_rows: Vec<(f32, usize)> = (0..field.nrays as usize)
+            .filter_map(|row| {
+                let az = sweep.rays.azimuth_deg.get(row)?.rem_euclid(360.0);
                 Some((az, row))
             })
             .collect();
@@ -59,10 +62,10 @@ impl<'a> CutColumn<'a> {
         }
         az_rows.sort_by(|a, b| a.0.total_cmp(&b.0));
 
-        let elevation_deg = cut.elevation_deg;
-        let (ground_range_m, height_m) = (0..gr.gate_count)
+        let elevation_deg = sweep.fixed_angle_deg;
+        let (ground_range_m, height_m) = (0..gates)
             .map(|g| {
-                let r = gr.first_gate_m as f64 + g as f64 * gr.gate_spacing_m as f64;
+                let r = first_m + g as f64 * spacing_m;
                 (
                     beam_ground_range_m(r, elevation_deg as f64),
                     beam_height_above_radar_m(r, elevation_deg as f64),
@@ -72,7 +75,7 @@ impl<'a> CutColumn<'a> {
 
         Some(Self {
             elevation_deg,
-            grid,
+            field,
             az_rows,
             ground_range_m,
             height_m,
@@ -139,7 +142,7 @@ impl<'a> CutColumn<'a> {
     fn sample(&self, az: f32, s: f64) -> Option<(f32, f64)> {
         let gate = self.gate_for_ground_range(s)?;
         let row = self.nearest_row(az);
-        let value = self.grid.scaled_value(row, gate)?;
+        let value = self.field.value(row, gate)?;
         if !value.is_finite() {
             return None;
         }
@@ -164,61 +167,62 @@ fn ang_dist(a: f32, b: f32) -> f32 {
     d.min(360.0 - d)
 }
 
-/// Lowest-elevation cut index that carries reflectivity, and its grid.
-fn base_reflectivity_cut(volume: &RadarVolume) -> Option<(usize, &MomentGrid)> {
+/// Lowest-elevation sweep that carries reflectivity, and its field.
+fn base_reflectivity_sweep(volume: &Volume) -> Option<(&Sweep, &Field)> {
     volume
-        .cuts
+        .sweeps
         .iter()
-        .enumerate()
-        .filter_map(|(i, c)| {
-            c.moments
-                .get(&MomentType::Reflectivity)
-                .map(|g| (i, c.elevation_deg, g))
-        })
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(i, _, g)| (i, g))
+        .filter_map(|s| s.find(Quantity::Reflectivity).map(|f| (s, f)))
+        .min_by(|a, b| a.0.fixed_angle_deg.total_cmp(&b.0.fixed_angle_deg))
 }
 
-/// All reflectivity-bearing cuts as column samplers, sorted by elevation.
-fn reflectivity_columns(volume: &RadarVolume) -> Vec<CutColumn<'_>> {
+/// All reflectivity-bearing sweeps as column samplers, sorted by elevation.
+fn reflectivity_columns(volume: &Volume) -> Vec<CutColumn<'_>> {
     let mut cols: Vec<CutColumn<'_>> = volume
-        .cuts
+        .sweeps
         .iter()
-        .enumerate()
-        .filter_map(|(i, c)| {
-            let g = c.moments.get(&MomentType::Reflectivity)?;
-            CutColumn::new(volume, i, g)
-        })
+        .filter_map(|s| CutColumn::new(s, s.find(Quantity::Reflectivity)?))
         .collect();
     cols.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
     cols
 }
 
-fn moment_columns<'a>(volume: &'a RadarVolume, moment: &MomentType) -> Vec<CutColumn<'a>> {
+fn field_columns<'a>(volume: &'a Volume, name: &FieldName) -> Vec<CutColumn<'a>> {
     let mut cols: Vec<CutColumn<'_>> = volume
-        .cuts
+        .sweeps
         .iter()
-        .enumerate()
-        .filter_map(|(i, c)| {
-            let g = c.moments.get(moment)?;
-            CutColumn::new(volume, i, g)
-        })
+        .filter_map(|s| CutColumn::new(s, s.field(name)?))
         .collect();
     cols.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
     cols
 }
 
-/// Build an F32 output grid on the base tilt's geometry (NaN = no data).
-fn f32_grid_like(base: &MomentGrid, moment: MomentType, values: Vec<f32>) -> MomentGrid {
-    MomentGrid {
-        moment,
-        gate_range: base.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: base.radial_indices.clone(),
-        storage: MomentStorage::F32(values),
+/// A physical `F32` field named `id` on the base field's rays, native gates
+/// and absent rows (NaN = no data).
+pub(crate) fn f32_field_like(
+    base: &Field,
+    id: &str,
+    quantity: Quantity,
+    units: &'static str,
+    values: Vec<f32>,
+) -> Field {
+    debug_assert_eq!(values.len(), base.nrays as usize * base.ngates as usize);
+    Field {
+        name: FieldName::parse(id),
+        quantity,
+        polarization: Polarization::Unspecified,
+        attrs: FieldAttrs {
+            units: Some(Cow::Borrowed(units)),
+            ..FieldAttrs::default()
+        },
+        nrays: base.nrays,
+        ngates: base.ngates,
+        gates: base.gates,
+        data: FieldData::F32 {
+            values,
+            coding: FloatCoding::default(),
+        },
+        absent_rows: base.absent_rows.clone(),
     }
 }
 
@@ -331,13 +335,13 @@ fn column_profile(cols: &[CutColumn<'_>], az: f32, s: f64) -> Vec<(f64, f32)> {
     prof
 }
 
-/// Composite (column-max) reflectivity, on the base tilt geometry.
-pub fn composite_reflectivity_grid(volume: &RadarVolume) -> Option<MomentGrid> {
-    let (base_idx, base_grid) = base_reflectivity_cut(volume)?;
-    let base = CutColumn::new(volume, base_idx, base_grid)?;
+/// Composite (column-max) reflectivity (`CREF`, dBZ), on the base sweep's
+/// geometry.
+pub fn composite_reflectivity(volume: &Volume) -> Option<Field> {
+    let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
+    let base = CutColumn::new(base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
-    let rows = base_grid.radial_indices.len();
-    let gates = base_grid.gate_range.gate_count;
+    let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
     let row_az = base.row_azimuths(rows);
     // Parallel row/gate column walk (rows are independent).
@@ -361,16 +365,22 @@ pub fn composite_reflectivity_grid(volume: &RadarVolume) -> Option<MomentGrid> {
                 }
             }
         });
-    Some(f32_grid_like(base_grid, MomentType::Reflectivity, out))
+    Some(f32_field_like(
+        base_field,
+        "CREF",
+        Quantity::Reflectivity,
+        "dBZ",
+        out,
+    ))
 }
 
-/// Echo-top height (metres above radar) of the highest tilt with Z ≥ threshold.
-pub fn echo_top_grid(volume: &RadarVolume, threshold_dbz: f32) -> Option<MomentGrid> {
-    let (base_idx, base_grid) = base_reflectivity_cut(volume)?;
-    let base = CutColumn::new(volume, base_idx, base_grid)?;
+/// Echo-top height (`ET`, metres above radar) of the highest tilt with
+/// Z ≥ threshold.
+pub fn echo_top(volume: &Volume, threshold_dbz: f32) -> Option<Field> {
+    let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
+    let base = CutColumn::new(base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
-    let rows = base_grid.radial_indices.len();
-    let gates = base_grid.gate_range.gate_count;
+    let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
     let row_az = base.row_azimuths(rows);
     out.par_chunks_mut(gates)
@@ -394,7 +404,7 @@ pub fn echo_top_grid(volume: &RadarVolume, threshold_dbz: f32) -> Option<MomentG
                 }
             }
         });
-    Some(f32_grid_like(base_grid, MomentType::Reflectivity, out))
+    Some(f32_field_like(base_field, "ET", Quantity::Other, "m", out))
 }
 
 /// Convert reflectivity factor in dBZ to linear (mm^6 m^-3).
@@ -403,15 +413,13 @@ fn dbz_to_z(dbz: f32) -> f64 {
     10f64.powf(dbz as f64 / 10.0)
 }
 
-/// Vertically Integrated Liquid (kg m^-2), Greene & Clark (1972) with the
-/// 56 dBZ hail cap (Witt et al. 1998). Returns (VIL grid, echo-top grid) so
-/// callers can also derive VIL density without a second column walk.
-pub fn vil_grid(volume: &RadarVolume) -> Option<MomentGrid> {
-    let (base_idx, base_grid) = base_reflectivity_cut(volume)?;
-    let base = CutColumn::new(volume, base_idx, base_grid)?;
+/// Vertically Integrated Liquid (`VIL`, kg m^-2), Greene & Clark (1972) with
+/// the 56 dBZ hail cap (Witt et al. 1998).
+pub fn vil(volume: &Volume) -> Option<Field> {
+    let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
+    let base = CutColumn::new(base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
-    let rows = base_grid.radial_indices.len();
-    let gates = base_grid.gate_range.gate_count;
+    let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
     let row_az = base.row_azimuths(rows);
     // VIL = Σ 3.44e-6 * Zbar^(4/7) * Δh ; cap reflectivity at hail cap.
@@ -450,7 +458,13 @@ pub fn vil_grid(volume: &RadarVolume) -> Option<MomentGrid> {
                 }
             }
         });
-    Some(f32_grid_like(base_grid, MomentType::Reflectivity, out))
+    Some(f32_field_like(
+        base_field,
+        "VIL",
+        Quantity::Other,
+        "kg m-2",
+        out,
+    ))
 }
 
 /// Maximum Expected Hail Size (mm) from the Severe Hail Index — the WSR-88D
@@ -492,29 +506,28 @@ impl MeshCalibration {
 }
 
 /// SHI + MESH + POSH in one column walk (Witt et al. 1998 Hail Detection
-/// Algorithm). `mehs_grid` remains as the Witt-calibrated MESH wrapper.
-pub struct HailGrids {
-    /// Severe Hail Index, J m^-1 s^-1.
-    pub shi: MomentGrid,
-    /// Maximum Estimated Size of Hail, mm (per `MeshCalibration`).
-    pub mesh_mm: MomentGrid,
-    /// Probability of Severe Hail, percent (continuous 0-100; Witt's
-    /// warning threshold WT = max(57.5*H0_km - 121, 20), POSH =
+/// Algorithm). [`mehs`] remains as the Witt-calibrated MESH wrapper.
+pub struct HailFields {
+    /// Severe Hail Index (`SHI`), J m^-1 s^-1.
+    pub shi: Field,
+    /// Maximum Estimated Size of Hail (`MESH`), mm (per `MeshCalibration`).
+    pub mesh_mm: Field,
+    /// Probability of Severe Hail (`POSH`), percent (continuous 0-100;
+    /// Witt's warning threshold WT = max(57.5*H0_km - 121, 20), POSH =
     /// 29*ln(SHI/WT) + 50 — SHI == WT gives exactly 50%).
-    pub posh_pct: MomentGrid,
+    pub posh_pct: Field,
 }
 
-pub fn hail_grids(
-    volume: &RadarVolume,
+pub fn hail(
+    volume: &Volume,
     freezing_level_m: f32,
     minus20c_level_m: f32,
     calibration: MeshCalibration,
-) -> Option<HailGrids> {
-    let (base_idx, base_grid) = base_reflectivity_cut(volume)?;
-    let base = CutColumn::new(volume, base_idx, base_grid)?;
+) -> Option<HailFields> {
+    let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
+    let base = CutColumn::new(base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
-    let rows = base_grid.radial_indices.len();
-    let gates = base_grid.gate_range.gate_count;
+    let (rows, gates) = base_field.shape();
     let mut shi_out = vec![f32::NAN; rows * gates];
     let mut mesh_out = vec![f32::NAN; rows * gates];
     let mut posh_out = vec![f32::NAN; rows * gates];
@@ -572,10 +585,10 @@ pub fn hail_grids(
                 }
             }
         });
-    Some(HailGrids {
-        shi: f32_grid_like(base_grid, MomentType::Reflectivity, shi_out),
-        mesh_mm: f32_grid_like(base_grid, MomentType::Reflectivity, mesh_out),
-        posh_pct: f32_grid_like(base_grid, MomentType::Reflectivity, posh_out),
+    Some(HailFields {
+        shi: f32_field_like(base_field, "SHI", Quantity::Other, "J m-1 s-1", shi_out),
+        mesh_mm: f32_field_like(base_field, "MESH", Quantity::Other, "mm", mesh_out),
+        posh_pct: f32_field_like(base_field, "POSH", Quantity::Other, "percent", posh_out),
     })
 }
 
@@ -583,7 +596,7 @@ pub fn hail_grids(
 /// (1979, J. Appl. Meteor. 18, 1521-1525) hailpad-validated curve on the
 /// height of the 45 dBZ echo top above the melting level. Linear
 /// interpolation between the published table rows.
-pub fn poh_grid(volume: &RadarVolume, freezing_level_m: f32) -> Option<MomentGrid> {
+pub fn poh(volume: &Volume, freezing_level_m: f32) -> Option<Field> {
     const TABLE: [(f64, f64); 11] = [
         (1.65, 0.0),
         (1.80, 10.0),
@@ -597,15 +610,14 @@ pub fn poh_grid(volume: &RadarVolume, freezing_level_m: f32) -> Option<MomentGri
         (5.00, 90.0),
         (5.80, 100.0),
     ];
-    let et45 = echo_top_grid(volume, 45.0)?;
-    let rows = et45.radial_count();
-    let gates = et45.gate_range.gate_count;
+    let et45 = echo_top(volume, 45.0)?;
+    let (rows, gates) = et45.shape();
     let mut out = vec![f32::NAN; rows * gates];
     let h0_km = freezing_level_m.max(0.0) as f64 / 1000.0;
     for row in 0..rows {
         for gate in 0..gates {
             let cell = &mut out[row * gates + gate];
-            let Some(top_m) = et45.scaled_value(row, gate) else {
+            let Some(top_m) = et45.value(row, gate) else {
                 continue;
             };
             if !top_m.is_finite() {
@@ -634,19 +646,21 @@ pub fn poh_grid(volume: &RadarVolume, freezing_level_m: f32) -> Option<MomentGri
             }
         }
     }
-    Some(f32_grid_like(&et45, MomentType::Reflectivity, out))
+    Some(f32_field_like(
+        &et45,
+        "POH",
+        Quantity::Other,
+        "percent",
+        out,
+    ))
 }
 
-pub fn mehs_grid(
-    volume: &RadarVolume,
-    freezing_level_m: f32,
-    minus20c_level_m: f32,
-) -> Option<MomentGrid> {
-    let (base_idx, base_grid) = base_reflectivity_cut(volume)?;
-    let base = CutColumn::new(volume, base_idx, base_grid)?;
+/// Witt-calibrated MESH (`MESH`, mm).
+pub fn mehs(volume: &Volume, freezing_level_m: f32, minus20c_level_m: f32) -> Option<Field> {
+    let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
+    let base = CutColumn::new(base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
-    let rows = base_grid.radial_indices.len();
-    let gates = base_grid.gate_range.gate_count;
+    let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
     let row_az = base.row_azimuths(rows);
     let h0 = freezing_level_m.max(0.0) as f64;
@@ -694,23 +708,28 @@ pub fn mehs_grid(
                 }
             }
         });
-    Some(f32_grid_like(base_grid, MomentType::Reflectivity, out))
+    Some(f32_field_like(
+        base_field,
+        "MESH",
+        Quantity::Other,
+        "mm",
+        out,
+    ))
 }
 
-/// VIL Density (g m^-3) = VIL / echo-top depth — a depth-normalized large-hail
-/// discriminator (values ≳ 3.5 g/m³ flag large hail far better than raw VIL;
-/// Amburn & Wolf 1997, WAF 12(3)). Reuses the VIL and echo-top grids (same base
-/// geometry); only computed where the echo top is meaningfully deep.
-pub fn vil_density_grid(volume: &RadarVolume) -> Option<MomentGrid> {
-    let vil = vil_grid(volume)?;
-    let echo = echo_top_grid(volume, ECHO_TOP_THRESHOLD_DBZ)?;
-    let rows = vil.radial_count();
-    let gates = vil.gate_range.gate_count;
+/// VIL Density (`VILD`, g m^-3) = VIL / echo-top depth — a depth-normalized
+/// large-hail discriminator (values ≳ 3.5 g/m³ flag large hail far better
+/// than raw VIL; Amburn & Wolf 1997, WAF 12(3)). Reuses the VIL and echo-top
+/// fields (same base geometry); only computed where the echo top is
+/// meaningfully deep.
+pub fn vil_density(volume: &Volume) -> Option<Field> {
+    let vil = self::vil(volume)?;
+    let echo = echo_top(volume, ECHO_TOP_THRESHOLD_DBZ)?;
+    let (rows, gates) = vil.shape();
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            let (Some(v), Some(h)) = (vil.scaled_value(row, gate), echo.scaled_value(row, gate))
-            else {
+            let (Some(v), Some(h)) = (vil.value(row, gate), echo.value(row, gate)) else {
                 continue;
             };
             // Need a meaningful echo depth (>1.5 km) to avoid blow-ups.
@@ -719,16 +738,7 @@ pub fn vil_density_grid(volume: &RadarVolume) -> Option<MomentGrid> {
             }
         }
     }
-    Some(MomentGrid {
-        moment: MomentType::Reflectivity,
-        gate_range: vil.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: vil.radial_indices.clone(),
-        storage: MomentStorage::F32(out),
-    })
+    Some(f32_field_like(&vil, "VILD", Quantity::Other, "g m-3", out))
 }
 
 /// A reconstructed vertical cross-section: `values[y * width + x]` in dBZ
@@ -746,15 +756,15 @@ pub struct CrossSection {
 /// the path with 4/3-Earth beam geometry (Doviak & Zrnić 1993) and linearly
 /// interpolates in height between tilt samples — the standard RHI-from-volume
 /// reconstruction used to see BWER/vault, overhang and descending cores.
-pub fn reflectivity_cross_section(
-    volume: &RadarVolume,
+pub fn reflectivity_section(
+    volume: &Volume,
     start_km: (f32, f32),
     end_km: (f32, f32),
     width: usize,
     height: usize,
     top_m: f32,
 ) -> Option<CrossSection> {
-    reflectivity_cross_section_with_smoothing(
+    reflectivity_section_with_smoothing(
         volume,
         start_km,
         end_km,
@@ -765,8 +775,8 @@ pub fn reflectivity_cross_section(
     )
 }
 
-pub fn reflectivity_cross_section_with_smoothing(
-    volume: &RadarVolume,
+pub fn reflectivity_section_with_smoothing(
+    volume: &Volume,
     start_km: (f32, f32),
     end_km: (f32, f32),
     width: usize,
@@ -791,8 +801,8 @@ pub fn reflectivity_cross_section_with_smoothing(
 /// (center_east_km, center_north_km), `nz` levels 0..top_m. Returns
 /// row-major \[z]\[y]\[x] values (NaN = no data), same MRMS-style
 /// per-column reconstruction as the cross-sections.
-pub fn volume_box_resample(
-    volume: &RadarVolume,
+pub fn box_resample(
+    volume: &Volume,
     center_east_km: f32,
     center_north_km: f32,
     half_km: f32,
@@ -800,9 +810,8 @@ pub fn volume_box_resample(
     nz: usize,
     top_m: f32,
 ) -> Option<Vec<f32>> {
-    volume_box_resample_moment(
-        volume,
-        &MomentType::Reflectivity,
+    box_resample_columns(
+        reflectivity_columns(volume),
         InterpPolicy::LinearAngle,
         center_east_km,
         center_north_km,
@@ -813,10 +822,34 @@ pub fn volume_box_resample(
     )
 }
 
+/// [`box_resample`] of the field named `name` with `policy`.
 #[allow(clippy::too_many_arguments)] // box geometry is explicit by design
-pub fn volume_box_resample_moment(
-    volume: &RadarVolume,
-    moment: &MomentType,
+pub fn box_resample_field(
+    volume: &Volume,
+    name: &FieldName,
+    policy: InterpPolicy,
+    center_east_km: f32,
+    center_north_km: f32,
+    half_km: f32,
+    n: usize,
+    nz: usize,
+    top_m: f32,
+) -> Option<Vec<f32>> {
+    box_resample_columns(
+        field_columns(volume, name),
+        policy,
+        center_east_km,
+        center_north_km,
+        half_km,
+        n,
+        nz,
+        top_m,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // box geometry is explicit by design
+fn box_resample_columns(
+    cols: Vec<CutColumn<'_>>,
     policy: InterpPolicy,
     center_east_km: f32,
     center_north_km: f32,
@@ -828,7 +861,6 @@ pub fn volume_box_resample_moment(
     if n < 8 || nz < 4 || half_km <= 1.0 {
         return None;
     }
-    let cols = moment_columns(volume, moment);
     if cols.is_empty() {
         return None;
     }
@@ -866,12 +898,13 @@ pub fn volume_box_resample_moment(
     Some(out)
 }
 
-/// Generic single-moment cross-section (CC, ZDR, …): same MRMS-style
-/// reconstruction with the moment's interpolation policy.
+/// Generic single-field cross-section (CC, ZDR, …) of the field named
+/// `name` in every sweep: same MRMS-style reconstruction with the field's
+/// interpolation policy.
 #[allow(clippy::too_many_arguments)] // section geometry is irreducibly 6 values
-pub fn moment_cross_section(
-    volume: &RadarVolume,
-    moment: MomentType,
+pub fn field_section(
+    volume: &Volume,
+    name: &FieldName,
     policy: InterpPolicy,
     start_km: (f32, f32),
     end_km: (f32, f32),
@@ -879,9 +912,9 @@ pub fn moment_cross_section(
     height: usize,
     top_m: f32,
 ) -> Option<CrossSection> {
-    moment_cross_section_with_smoothing(
+    field_section_with_smoothing(
         volume,
-        moment,
+        name,
         policy,
         start_km,
         end_km,
@@ -893,9 +926,9 @@ pub fn moment_cross_section(
 }
 
 #[allow(clippy::too_many_arguments)] // section geometry is irreducibly 6 values
-pub fn moment_cross_section_with_smoothing(
-    volume: &RadarVolume,
-    moment: MomentType,
+pub fn field_section_with_smoothing(
+    volume: &Volume,
+    name: &FieldName,
     policy: InterpPolicy,
     start_km: (f32, f32),
     end_km: (f32, f32),
@@ -904,16 +937,7 @@ pub fn moment_cross_section_with_smoothing(
     top_m: f32,
     smoothing: CrossSectionSmoothing,
 ) -> Option<CrossSection> {
-    let mut cols: Vec<CutColumn<'_>> = volume
-        .cuts
-        .iter()
-        .enumerate()
-        .filter_map(|(i, c)| {
-            let g = c.moments.get(&moment)?;
-            CutColumn::new(volume, i, g)
-        })
-        .collect();
-    cols.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
+    let cols = field_columns(volume, name);
     cross_section_from_columns(
         &cols,
         start_km,
@@ -929,8 +953,8 @@ pub fn moment_cross_section_with_smoothing(
 /// downdraft and inflow/outflow vertical structure. Same RHI reconstruction as
 /// the reflectivity section, but the columns sample each tilt's dealiased
 /// velocity. NaN = no data.
-pub fn velocity_cross_section(
-    volume: &RadarVolume,
+pub fn velocity_section(
+    volume: &Volume,
     start_km: (f32, f32),
     end_km: (f32, f32),
     width: usize,
@@ -938,7 +962,7 @@ pub fn velocity_cross_section(
     top_m: f32,
 ) -> Option<CrossSection> {
     let mut cache = VolumeDealiasCache::new();
-    velocity_cross_section_cached(volume, &mut cache, start_km, end_km, width, height, top_m)
+    velocity_section_cached(volume, &mut cache, start_km, end_km, width, height, top_m)
 }
 
 /// Per-volume memo of every tilt's dealiased velocity. Dealiasing all tilts
@@ -946,30 +970,30 @@ pub fn velocity_cross_section(
 /// frame, so the dealias must be paid ONCE per volume, not per frame.
 pub struct VolumeDealiasCache {
     volume_ptr: usize,
-    grids: Vec<(usize, MomentGrid)>,
+    fields: Vec<(usize, Field)>,
 }
 
 impl VolumeDealiasCache {
     pub fn new() -> Self {
         Self {
             volume_ptr: 0,
-            grids: Vec::new(),
+            fields: Vec::new(),
         }
     }
 
-    fn ensure(&mut self, volume: &RadarVolume) {
-        let ptr = volume as *const RadarVolume as usize;
-        if ptr == self.volume_ptr && !self.grids.is_empty() {
+    fn ensure(&mut self, volume: &Volume) {
+        let ptr = volume as *const Volume as usize;
+        if ptr == self.volume_ptr && !self.fields.is_empty() {
             return;
         }
         self.volume_ptr = ptr;
-        self.grids = volume
-            .cuts
+        self.fields = volume
+            .sweeps
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| {
-                let v = c.moments.get(&MomentType::Velocity)?;
-                Some((i, dealias_velocity_grid(c, v)))
+            .filter_map(|(i, s)| {
+                let v = s.find(Quantity::RadialVelocity)?;
+                Some((i, dealias_velocity(s, v)))
             })
             .collect();
     }
@@ -981,10 +1005,10 @@ impl Default for VolumeDealiasCache {
     }
 }
 
-/// `velocity_cross_section` with a caller-held dealias memo — the fast path
-/// for interactive section drags.
-pub fn velocity_cross_section_cached(
-    volume: &RadarVolume,
+/// [`velocity_section`] with a caller-held dealias memo — the fast path for
+/// interactive section drags.
+pub fn velocity_section_cached(
+    volume: &Volume,
     cache: &mut VolumeDealiasCache,
     start_km: (f32, f32),
     end_km: (f32, f32),
@@ -992,7 +1016,7 @@ pub fn velocity_cross_section_cached(
     height: usize,
     top_m: f32,
 ) -> Option<CrossSection> {
-    velocity_cross_section_cached_with_smoothing(
+    velocity_section_cached_with_smoothing(
         volume,
         cache,
         start_km,
@@ -1005,8 +1029,8 @@ pub fn velocity_cross_section_cached(
 }
 
 #[allow(clippy::too_many_arguments)] // cache plus section geometry keeps this call site explicit
-pub fn velocity_cross_section_cached_with_smoothing(
-    volume: &RadarVolume,
+pub fn velocity_section_cached_with_smoothing(
+    volume: &Volume,
     cache: &mut VolumeDealiasCache,
     start_km: (f32, f32),
     end_km: (f32, f32),
@@ -1017,9 +1041,9 @@ pub fn velocity_cross_section_cached_with_smoothing(
 ) -> Option<CrossSection> {
     cache.ensure(volume);
     let mut cols: Vec<CutColumn<'_>> = cache
-        .grids
+        .fields
         .iter()
-        .filter_map(|(i, g)| CutColumn::new(volume, *i, g))
+        .filter_map(|(i, f)| CutColumn::new(volume.sweeps.get(*i)?, f))
         .collect();
     cols.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
     cross_section_from_columns(
@@ -1156,44 +1180,19 @@ fn cross_section_from_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{ElevationCut, GateRange, Radial};
+    use crate::test_support::{sweep_with_field, volume_with};
 
-    fn cut_with_ref(elev: f32, az_count: usize, gates: usize, dbz: f32) -> ElevationCut {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(elev, None);
-        for k in 0..az_count {
-            cut.radials.push(Radial {
-                azimuth_deg: k as f32 * (360.0 / az_count as f32),
-                elevation_deg: elev,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
-        }
-        let grid = MomentGrid {
-            moment: MomentType::Reflectivity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..az_count).collect(),
-            storage: MomentStorage::F32(vec![dbz; az_count * gates]),
-        };
-        cut.moments.insert(MomentType::Reflectivity, grid);
-        cut
-    }
-
-    fn volume_with(cuts: Vec<ElevationCut>) -> RadarVolume {
-        RadarVolume {
-            cuts,
-            ..Default::default()
-        }
+    fn cut_with_ref(elev: f32, az_count: usize, gates: usize, dbz: f32) -> Sweep {
+        sweep_with_field(
+            elev,
+            az_count,
+            None,
+            FieldName::Dbzh,
+            0.0,
+            1000.0,
+            gates,
+            vec![dbz; az_count * gates],
+        )
     }
 
     #[test]
@@ -1203,9 +1202,10 @@ mod tests {
             cut_with_ref(0.5, 360, 60, 20.0),
             cut_with_ref(3.0, 360, 60, 45.0),
         ]);
-        let comp = composite_reflectivity_grid(&v).expect("composite");
+        let comp = composite_reflectivity(&v).expect("composite");
+        assert_eq!(comp.name, FieldName::parse("CREF"));
         // near range (gate 10 ~10km) both tilts overlap; max should be 45.
-        let val = comp.scaled_value(0, 10).expect("val");
+        let val = comp.value(0, 10).expect("val");
         assert!((val - 45.0).abs() < 0.6, "composite max was {val}");
     }
 
@@ -1215,9 +1215,9 @@ mod tests {
             cut_with_ref(0.5, 360, 120, 30.0),
             cut_with_ref(5.0, 360, 120, 30.0),
         ]);
-        let et = echo_top_grid(&v, ECHO_TOP_THRESHOLD_DBZ).expect("echo top");
+        let et = echo_top(&v, ECHO_TOP_THRESHOLD_DBZ).expect("echo top");
         // at ~30 km ground range the 5° beam is far higher than the 0.5° beam.
-        let h = et.scaled_value(0, 30).expect("h");
+        let h = et.value(0, 30).expect("h");
         assert!(h > 2000.0, "echo top height was {h} m");
     }
 
@@ -1229,7 +1229,7 @@ mod tests {
             cut_with_ref(0.5, 360, 200, 40.0),
             cut_with_ref(4.0, 360, 200, 40.0),
         ]);
-        let xs = reflectivity_cross_section(&v, (10.0, 0.0), (60.0, 0.0), 120, 80, 18_000.0)
+        let xs = reflectivity_section(&v, (10.0, 0.0), (60.0, 0.0), 120, 80, 18_000.0)
             .expect("cross section");
         assert_eq!(xs.values.len(), 120 * 80);
         // Some sampled cell must be ~40 dBZ.
@@ -1246,35 +1246,17 @@ mod tests {
         );
     }
 
-    fn cut_with_vel(elev: f32, az_count: usize, gates: usize, vel: f32) -> ElevationCut {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(elev, None);
-        for k in 0..az_count {
-            cut.radials.push(Radial {
-                azimuth_deg: k as f32 * (360.0 / az_count as f32),
-                elevation_deg: elev,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(60.0),
-                radial_status: None,
-            });
-        }
-        let grid = MomentGrid {
-            moment: MomentType::Velocity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..az_count).collect(),
-            storage: MomentStorage::F32(vec![vel; az_count * gates]),
-        };
-        cut.moments.insert(MomentType::Velocity, grid);
-        cut
+    fn cut_with_vel(elev: f32, az_count: usize, gates: usize, vel: f32) -> Sweep {
+        sweep_with_field(
+            elev,
+            az_count,
+            Some(60.0),
+            FieldName::Vradh,
+            0.0,
+            1000.0,
+            gates,
+            vec![vel; az_count * gates],
+        )
     }
 
     #[test]
@@ -1285,7 +1267,7 @@ mod tests {
             cut_with_vel(0.5, 360, 200, 15.0),
             cut_with_vel(4.0, 360, 200, 15.0),
         ]);
-        let xs = velocity_cross_section(&v, (10.0, 0.0), (60.0, 0.0), 120, 80, 18_000.0)
+        let xs = velocity_section(&v, (10.0, 0.0), (60.0, 0.0), 120, 80, 18_000.0)
             .expect("velocity cross section");
         assert_eq!(xs.values.len(), 120 * 80);
         assert!(
@@ -1300,40 +1282,33 @@ mod tests {
     fn derived_products_handle_degraded_inputs_without_panicking() {
         // Empty volume → None for everything.
         let empty = volume_with(vec![]);
-        assert!(composite_reflectivity_grid(&empty).is_none());
-        assert!(echo_top_grid(&empty, ECHO_TOP_THRESHOLD_DBZ).is_none());
-        assert!(vil_grid(&empty).is_none());
-        assert!(
-            reflectivity_cross_section(&empty, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_none()
-        );
-        assert!(
-            velocity_cross_section(&empty, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_none()
-        );
+        assert!(composite_reflectivity(&empty).is_none());
+        assert!(echo_top(&empty, ECHO_TOP_THRESHOLD_DBZ).is_none());
+        assert!(vil(&empty).is_none());
+        assert!(reflectivity_section(&empty, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_none());
+        assert!(velocity_section(&empty, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_none());
 
         // Velocity-only volume → reflectivity products None, velocity XS Some.
         let vel_only = volume_with(vec![cut_with_vel(0.5, 360, 80, 12.0)]);
-        assert!(composite_reflectivity_grid(&vel_only).is_none());
+        assert!(composite_reflectivity(&vel_only).is_none());
         assert!(
-            reflectivity_cross_section(&vel_only, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0)
-                .is_none()
+            reflectivity_section(&vel_only, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_none()
         );
-        assert!(
-            velocity_cross_section(&vel_only, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_some()
-        );
+        assert!(velocity_section(&vel_only, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_some());
 
         // Degenerate cross-section args → None (no panic).
         let v = volume_with(vec![cut_with_ref(0.5, 360, 80, 30.0)]);
-        assert!(reflectivity_cross_section(&v, (0.0, 0.0), (50.0, 0.0), 1, 32, 18_000.0).is_none());
-        assert!(reflectivity_cross_section(&v, (0.0, 0.0), (50.0, 0.0), 64, 32, 0.0).is_none());
+        assert!(reflectivity_section(&v, (0.0, 0.0), (50.0, 0.0), 1, 32, 18_000.0).is_none());
+        assert!(reflectivity_section(&v, (0.0, 0.0), (50.0, 0.0), 64, 32, 0.0).is_none());
 
-        // All-NaN reflectivity column → finite products return empty grids, no panic.
+        // All-NaN reflectivity column → finite products return empty fields, no panic.
         let nan = volume_with(vec![cut_with_ref(0.5, 360, 80, f32::NAN)]);
-        let comp = composite_reflectivity_grid(&nan).expect("grid built");
-        // No-data F32 cells read back as None or NaN; never a finite value.
-        assert!((0..comp.radial_count()).all(|r| {
-            (0..comp.gate_range.gate_count)
-                .all(|g| comp.scaled_value(r, g).is_none_or(|v| v.is_nan()))
-        }));
+        let comp = composite_reflectivity(&nan).expect("field built");
+        // No-data F32 cells read back as None; never a finite value.
+        assert!(
+            (0..comp.nrays as usize)
+                .all(|r| (0..comp.ngates as usize).all(|g| comp.value(r, g).is_none()))
+        );
     }
 
     #[test]
@@ -1343,8 +1318,8 @@ mod tests {
             cut_with_ref(2.0, 360, 120, 45.0),
             cut_with_ref(5.0, 360, 120, 45.0),
         ]);
-        let vil = vil_grid(&v).expect("vil");
-        let val = vil.scaled_value(0, 30).expect("vil val");
+        let liquid = vil(&v).expect("vil");
+        let val = liquid.value(0, 30).expect("vil val");
         assert!(val > 0.0 && val < 80.0, "vil was {val} kg/m2");
     }
 
@@ -1359,17 +1334,17 @@ mod tests {
             cut_with_ref(10.0, 360, 120, 60.0),
             cut_with_ref(19.5, 360, 120, 60.0),
         ]);
-        let mehs = mehs_grid(&hot, 3200.0, 6400.0).expect("mehs");
-        let v = mehs.scaled_value(0, 40).expect("value");
+        let hail_size = mehs(&hot, 3200.0, 6400.0).expect("mehs");
+        let v = hail_size.value(0, 40).expect("value");
         assert!(v > 25.0 && v < 200.0, "MEHS was {v} mm");
 
         let weak = volume_with(vec![
             cut_with_ref(0.5, 360, 120, 35.0),
             cut_with_ref(4.0, 360, 120, 35.0),
         ]);
-        let none = mehs_grid(&weak, 3200.0, 6400.0).expect("grid");
+        let none = mehs(&weak, 3200.0, 6400.0).expect("field");
         assert!(
-            none.scaled_value(0, 40).is_none_or(|v| v.is_nan()),
+            none.value(0, 40).is_none(),
             "35 dBZ should produce no hail signal"
         );
     }
@@ -1381,8 +1356,8 @@ mod tests {
             cut_with_ref(2.0, 360, 120, 50.0),
             cut_with_ref(5.0, 360, 120, 50.0),
         ]);
-        let d = vil_density_grid(&v).expect("vil density");
-        let val = d.scaled_value(0, 30).expect("density val");
+        let d = vil_density(&v).expect("vil density");
+        let val = d.value(0, 30).expect("density val");
         // g/m³; physical column densities are a few g/m³.
         assert!(val > 0.0 && val < 20.0, "vil density was {val} g/m3");
     }

@@ -1027,6 +1027,7 @@ dependencies = [
 name = "recast-radar-map"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "rayon",
  "recast-radar-core",
  "recast-radar-correct",
@@ -1117,9 +1118,12 @@ dependencies = [
  "image",
  "recast-radar-core",
  "recast-radar-correct",
+ "recast-radar-filters",
+ "recast-radar-io",
  "recast-radar-io-nexrad",
  "recast-radar-map",
  "recast-radar-retrieve",
+ "recast-radar-testdata",
 ]
 
 [[package]]

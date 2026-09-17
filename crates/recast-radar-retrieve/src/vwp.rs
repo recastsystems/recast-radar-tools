@@ -11,16 +11,14 @@
 //! near-constant vertical-wind projection on one PPI tilt; this retrieval does
 //! not claim to measure vertical velocity or divergence.
 //!
-//! The caller owns velocity dealiasing.  Passing the exact grids used by the
+//! The caller owns velocity dealiasing.  Passing the exact fields used by the
 //! display keeps the VWP consistent with the selected dealias engine and avoids
 //! a hidden second unfolding pass.  A low residual is not proof that the
 //! absolute Nyquist branch is correct, so the result also reports how much of
 //! the contributing geometry carried a Nyquist value.
 
 use chrono::{DateTime, Utc};
-use recast_radar_core::{
-    ElevationCut, MomentGrid, MomentType, RadarVolume, ScanMode, beam_height_above_radar_m,
-};
+use recast_radar_core::{Field, Quantity, Sweep, SweepMode, Volume, beam_height_above_radar_m};
 use thiserror::Error;
 
 const AZIMUTH_SECTORS: usize = 12;
@@ -99,7 +97,7 @@ pub enum VwpRejectionReason {
 /// Fit/coverage diagnostics shared by accepted and rejected candidates.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VwpCandidateDiagnostics {
-    pub cut_index: usize,
+    pub sweep_index: usize,
     pub height_m_agl: f32,
     pub slant_range_m: f32,
     pub elevation_deg: f32,
@@ -158,7 +156,7 @@ pub struct VwpProfile {
     pub site_id: String,
     pub valid_time: DateTime<Utc>,
     pub radar_elevation_m: Option<f32>,
-    pub velocity_cut_count: usize,
+    pub velocity_sweep_count: usize,
     /// One entry for every requested height, including explicit rejections so
     /// gaps in the plotted profile never look like an application failure.
     pub levels: Vec<VwpLevel>,
@@ -167,54 +165,62 @@ pub struct VwpProfile {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum VwpError {
     #[error(
-        "VWP needs one optional dealiased grid per volume cut (got {actual}, expected {expected})"
+        "VWP needs one optional dealiased field per volume sweep (got {actual}, expected {expected})"
     )]
     GridCountMismatch { expected: usize, actual: usize },
     #[error("VWP is defined for PPI volume scans, not {0:?}")]
-    UnsupportedScanMode(ScanMode),
+    UnsupportedScanMode(SweepMode),
     #[error("VWP configuration is invalid: {0}")]
     InvalidConfig(&'static str),
-    #[error("volume has no caller-supplied dealiased velocity grids")]
+    #[error("volume has no caller-supplied dealiased velocity fields")]
     NoVelocityGrids,
 }
 
-/// Compute a wind profile from caller-dealiased velocity grids.
+/// `true` for a raw or dealiased radial-velocity field.
+fn is_velocity(field: &Field) -> bool {
+    matches!(
+        field.quantity,
+        Quantity::RadialVelocity | Quantity::DealiasedRadialVelocity
+    )
+}
+
+/// Compute a wind profile from caller-dealiased velocity fields.
 ///
-/// `dealiased_velocity` is aligned one-for-one with `volume.cuts`; use `None`
-/// for cuts without velocity.  Grids are not required to be the same objects
-/// stored in `volume`, but their row indices must reference the corresponding
-/// cut's radials.
+/// `dealiased_velocity` is aligned one-for-one with `volume.sweeps`; use
+/// `None` for sweeps without velocity.  Fields are not required to be stored
+/// in `volume`, but each must be a field of the corresponding sweep (on its
+/// rays and range). Every sweep must be an azimuth surveillance (PPI) sweep.
 pub fn compute_vwp(
-    volume: &RadarVolume,
-    dealiased_velocity: &[Option<&MomentGrid>],
+    volume: &Volume,
+    dealiased_velocity: &[Option<&Field>],
     config: VwpConfig,
 ) -> Result<VwpProfile, VwpError> {
     validate_config(config)?;
-    if dealiased_velocity.len() != volume.cuts.len() {
+    if dealiased_velocity.len() != volume.sweeps.len() {
         return Err(VwpError::GridCountMismatch {
-            expected: volume.cuts.len(),
+            expected: volume.sweeps.len(),
             actual: dealiased_velocity.len(),
         });
     }
-    if let Some(mode) = volume.metadata.scan_mode
-        && mode != ScanMode::Ppi
+    if let Some(mode) = volume
+        .sweeps
+        .iter()
+        .map(|sweep| &sweep.sweep_mode)
+        .find(|mode| **mode != SweepMode::AzimuthSurveillance)
     {
-        return Err(VwpError::UnsupportedScanMode(mode));
+        return Err(VwpError::UnsupportedScanMode(mode.clone()));
     }
 
-    let velocity_cut_count = dealiased_velocity
+    let velocity_sweep_count = dealiased_velocity
         .iter()
-        .filter(|grid| {
-            grid.is_some_and(|grid| {
-                grid.moment == MomentType::Velocity
-                    && grid.radial_count() > 0
-                    && grid.gate_range.gate_count > 0
-            })
+        .filter(|field| {
+            field.is_some_and(|field| is_velocity(field) && field.nrays > 0 && field.ngates > 0)
         })
         .count();
-    if velocity_cut_count == 0 {
+    if velocity_sweep_count == 0 {
         return Err(VwpError::NoVelocityGrids);
     }
+    let radar_elevation_m = volume.location.altitude_m.map(|altitude| altitude as f32);
 
     let mut levels = Vec::new();
     let level_count = ((config.max_height_m_agl - config.min_height_m_agl) / config.height_step_m)
@@ -225,24 +231,24 @@ pub fn compute_vwp(
         let target_height = config.min_height_m_agl + level_index as f32 * config.height_step_m;
         let mut accepted = Vec::new();
         let mut rejected = Vec::new();
-        for (cut_index, (cut, grid)) in volume
-            .cuts
+        for (sweep_index, (sweep, field)) in volume
+            .sweeps
             .iter()
             .zip(dealiased_velocity.iter())
             .enumerate()
         {
-            let Some(grid) = *grid else {
+            let Some(field) = *field else {
                 continue;
             };
-            if grid.moment != MomentType::Velocity {
+            if !is_velocity(field) {
                 continue;
             }
             let Some(candidate) = candidate_for_height(
-                cut_index,
-                cut,
-                grid,
+                sweep_index,
+                sweep,
+                field,
                 target_height,
-                volume.site.elevation_m,
+                radar_elevation_m,
                 config,
             ) else {
                 continue;
@@ -276,10 +282,12 @@ pub fn compute_vwp(
     }
 
     Ok(VwpProfile {
-        site_id: volume.site.id.clone(),
-        valid_time: volume.volume_time,
-        radar_elevation_m: volume.site.elevation_m.filter(|value| value.is_finite()),
-        velocity_cut_count,
+        site_id: volume.attrs.instrument_name.clone(),
+        valid_time: volume
+            .time_coverage
+            .map_or(volume.time_reference, |coverage| coverage.start),
+        radar_elevation_m: radar_elevation_m.filter(|value| value.is_finite()),
+        velocity_sweep_count,
         levels,
     })
 }
@@ -344,20 +352,23 @@ enum CandidateOutcome {
 }
 
 fn candidate_for_height(
-    cut_index: usize,
-    cut: &ElevationCut,
-    grid: &MomentGrid,
+    sweep_index: usize,
+    sweep: &Sweep,
+    field: &Field,
     target_height_m_agl: f32,
     radar_elevation_m: Option<f32>,
     config: VwpConfig,
 ) -> Option<CandidateOutcome> {
-    if grid.radial_count() == 0
-        || grid.gate_range.gate_count == 0
-        || grid.gate_range.gate_spacing_m <= 0
-    {
+    let (first_gate_m, spacing_m) = field.native_geometry(&sweep.range)?;
+    if field.nrays == 0 || field.ngates == 0 || spacing_m <= 0.0 {
         return None;
     }
-    let elevation_deg = representative_elevation(cut, grid)?;
+    let geometry = FieldGeometry {
+        first_gate_m: first_gate_m.max(0.0) as f32,
+        spacing_m: spacing_m as f32,
+        gates: field.ngates as usize,
+    };
+    let elevation_deg = representative_elevation(sweep, field)?;
     if !(-1.0..89.0).contains(&elevation_deg) {
         return None;
     }
@@ -366,8 +377,8 @@ fn candidate_for_height(
     let mut best_height_error = f32::INFINITY;
     let mut center_height = f32::NAN;
     let mut center_range = f32::NAN;
-    for gate in 0..grid.gate_range.gate_count {
-        let range_m = gate_range_m(grid, gate);
+    for gate in 0..geometry.gates {
+        let range_m = geometry.range_m(gate);
         if !(config.min_slant_range_m..=config.max_slant_range_m).contains(&range_m) {
             continue;
         }
@@ -385,16 +396,16 @@ fn candidate_for_height(
         return None;
     }
 
-    let spacing_m = grid.gate_range.gate_spacing_m as f32;
+    let spacing_m = geometry.spacing_m;
     let gate_radius = (config.annulus_half_width_m / spacing_m).round() as usize;
     let gate_start = center_gate.saturating_sub(gate_radius);
     let gate_end = center_gate
         .saturating_add(gate_radius)
-        .min(grid.gate_range.gate_count - 1);
-    let samples = annulus_samples(cut, grid, gate_start, gate_end);
+        .min(geometry.gates - 1);
+    let samples = annulus_samples(sweep, field, gate_start, gate_end);
     let raw_coverage = coverage(&samples);
     let base_diagnostics = VwpCandidateDiagnostics {
-        cut_index,
+        sweep_index,
         height_m_agl: center_height,
         slant_range_m: center_range,
         elevation_deg,
@@ -536,57 +547,75 @@ fn reject(
     })
 }
 
-fn representative_elevation(cut: &ElevationCut, grid: &MomentGrid) -> Option<f32> {
-    let elevations: Vec<f32> = grid
-        .radial_indices
-        .iter()
-        .filter_map(|&radial_index| cut.radials.get(radial_index))
-        .map(|radial| radial.elevation_deg)
-        .filter(|elevation| elevation.is_finite())
-        .collect();
-    median(elevations).or_else(|| cut.elevation_deg.is_finite().then_some(cut.elevation_deg))
+/// A field's native gate geometry in the units the fit uses.
+struct FieldGeometry {
+    /// Centre of gate 0, clamped to the radar (a negative first gate has no
+    /// beam height).
+    first_gate_m: f32,
+    spacing_m: f32,
+    gates: usize,
 }
 
-fn gate_range_m(grid: &MomentGrid, gate: usize) -> f32 {
-    grid.gate_range.first_gate_m.max(0) as f32 + gate as f32 * grid.gate_range.gate_spacing_m as f32
+impl FieldGeometry {
+    fn range_m(&self, gate: usize) -> f32 {
+        self.first_gate_m + gate as f32 * self.spacing_m
+    }
+}
+
+fn representative_elevation(sweep: &Sweep, field: &Field) -> Option<f32> {
+    let elevations: Vec<f32> = sweep
+        .rays
+        .elevation_deg
+        .iter()
+        .take(field.nrays as usize)
+        .copied()
+        .filter(|elevation| elevation.is_finite())
+        .collect();
+    median(elevations).or_else(|| {
+        sweep
+            .fixed_angle_deg
+            .is_finite()
+            .then_some(sweep.fixed_angle_deg)
+    })
 }
 
 /// Reduce an annulus to at most one observation per integer azimuth degree.
 /// This prevents 0.5-degree NEXRAD and irregular sector scans from silently
 /// giving dense azimuths more leverage than sparse ones.
 fn annulus_samples(
-    cut: &ElevationCut,
-    grid: &MomentGrid,
+    sweep: &Sweep,
+    field: &Field,
     gate_start: usize,
     gate_end: usize,
 ) -> Vec<VadSample> {
     let mut bins: [Vec<VadSample>; 360] = std::array::from_fn(|_| Vec::new());
-    for row in 0..grid.radial_count() {
-        let Some(&radial_index) = grid.radial_indices.get(row) else {
+    let nyquist = sweep.ray_vars.nyquist_velocity_mps.as_deref();
+    for row in 0..field.nrays as usize {
+        let (Some(&azimuth), Some(&elevation)) = (
+            sweep.rays.azimuth_deg.get(row),
+            sweep.rays.elevation_deg.get(row),
+        ) else {
             continue;
         };
-        let Some(radial) = cut.radials.get(radial_index) else {
-            continue;
-        };
-        if !radial.azimuth_deg.is_finite() || !radial.elevation_deg.is_finite() {
+        if !azimuth.is_finite() || !elevation.is_finite() {
             continue;
         }
         let values: Vec<f32> = (gate_start..=gate_end)
-            .filter_map(|gate| grid.scaled_value(row, gate))
+            .filter_map(|gate| field.value(row, gate))
             .filter(|value| value.is_finite())
             .collect();
         let Some(velocity_mps) = median(values) else {
             continue;
         };
-        let azimuth_deg = radial.azimuth_deg.rem_euclid(360.0);
+        let azimuth_deg = azimuth.rem_euclid(360.0);
         let bin = (azimuth_deg.floor() as usize).min(359);
         bins[bin].push(VadSample {
             azimuth_deg,
-            elevation_deg: radial.elevation_deg,
+            elevation_deg: elevation,
             velocity_mps,
-            has_nyquist: radial
-                .nyquist_velocity_mps
-                .is_some_and(|value| value.is_finite() && value > 0.0),
+            has_nyquist: nyquist
+                .and_then(|nyquist| nyquist.get(row))
+                .is_some_and(|value| value.is_finite() && *value > 0.0),
         });
     }
 
@@ -880,45 +909,34 @@ fn compare_rejected_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, MomentStorage, RadarSite, RadarVolume, Radial};
+    use crate::test_support::{add_f32_field, sweep_with_rows};
+    use recast_radar_core::FieldName;
 
     fn synthetic_volume(
         elevations_deg: &[f32],
         radial_is_valid: impl Fn(usize) -> bool,
         wind_at_height: impl Fn(f32) -> (f32, f32),
         perturb: impl Fn(usize, usize, f32) -> f32,
-    ) -> RadarVolume {
+    ) -> Volume {
         let rows = 360usize;
         let gates = 601usize;
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 250,
-            gate_count: gates,
-        };
-        let mut site = RadarSite::new("KTST");
-        site.elevation_m = Some(300.0);
-        let mut volume = RadarVolume::new(site, DateTime::<Utc>::UNIX_EPOCH);
-        volume.metadata.scan_mode = Some(ScanMode::Ppi);
-        for (cut_index, &elevation_deg) in elevations_deg.iter().enumerate() {
-            let cut = volume.push_cut(elevation_deg, Some(cut_index as u8 + 1));
+        let spacing_m = 250.0f64;
+        let mut volume = Volume::new("KTST", DateTime::<Utc>::UNIX_EPOCH);
+        volume.location.altitude_m = Some(300.0);
+        for (sweep_index, &elevation_deg) in elevations_deg.iter().enumerate() {
+            let mut sweep = sweep_with_rows(rows, elevation_deg, Some(40.0));
+            sweep.sweep_number = sweep_index as u32;
+            sweep.elevation_number = Some(sweep_index as u16 + 1);
             let mut values = vec![f32::NAN; rows * gates];
             for row in 0..rows {
-                let azimuth_deg = row as f32;
-                cut.radials.push(Radial {
-                    azimuth_deg,
-                    elevation_deg,
-                    time_offset_ms: 0,
-                    gate_range: gate_range.clone(),
-                    nyquist_velocity_mps: Some(40.0),
-                    radial_status: None,
-                });
                 if !radial_is_valid(row) {
                     continue;
                 }
+                let azimuth_deg = row as f32;
                 let azimuth = azimuth_deg.to_radians();
                 let cos_elevation = elevation_deg.to_radians().cos();
                 for gate in 0..gates {
-                    let range_m = gate as f32 * gate_range.gate_spacing_m as f32;
+                    let range_m = gate as f32 * spacing_m as f32;
                     let height =
                         beam_height_above_radar_m(range_m as f64, elevation_deg as f64) as f32;
                     let (u, v) = wind_at_height(height);
@@ -926,28 +944,17 @@ mod tests {
                     values[row * gates + gate] = perturb(row, gate, base);
                 }
             }
-            cut.moments.insert(
-                MomentType::Velocity,
-                MomentGrid {
-                    moment: MomentType::Velocity,
-                    gate_range: gate_range.clone(),
-                    scale: 1.0,
-                    offset: 0.0,
-                    nodata: None,
-                    range_folded: None,
-                    radial_indices: (0..rows).collect(),
-                    storage: MomentStorage::F32(values),
-                },
-            );
+            add_f32_field(&mut sweep, FieldName::Vradh, 0.0, spacing_m, gates, values);
+            volume.sweeps.push(sweep);
         }
         volume
     }
 
-    fn grids(volume: &RadarVolume) -> Vec<Option<&MomentGrid>> {
+    fn grids(volume: &Volume) -> Vec<Option<&Field>> {
         volume
-            .cuts
+            .sweeps
             .iter()
-            .map(|cut| cut.moments.get(&MomentType::Velocity))
+            .map(|sweep| sweep.find(Quantity::RadialVelocity))
             .collect()
     }
 
@@ -1083,13 +1090,13 @@ mod tests {
                 actual: 0,
             })
         );
-        volume.metadata.scan_mode = Some(ScanMode::Rhi);
+        volume.sweeps[0].sweep_mode = SweepMode::Rhi;
         assert_eq!(
             compute_vwp(&volume, &grids(&volume), one_level_config(1_000.0)),
-            Err(VwpError::UnsupportedScanMode(ScanMode::Rhi))
+            Err(VwpError::UnsupportedScanMode(SweepMode::Rhi))
         );
 
-        volume.metadata.scan_mode = Some(ScanMode::Ppi);
+        volume.sweeps[0].sweep_mode = SweepMode::AzimuthSurveillance;
         let too_many_levels = VwpConfig {
             min_height_m_agl: 0.0,
             max_height_m_agl: 20_000.0,

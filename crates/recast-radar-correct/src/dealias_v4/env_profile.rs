@@ -106,22 +106,27 @@ impl EnvironmentalWindProfile {
     }
 }
 
-/// Predicted radial velocity field for one cut, on its velocity grid's
-/// lattice.  Used by the eval harness for the reference-RMS metric; the
-/// engine itself projects internally.
-pub fn project_environmental_winds(
+/// Predicted radial velocity for one velocity field of `sweep`, on the
+/// field's lattice (`values[row * ngates + gate]`, native gates; NaN where
+/// the profile gives no wind).  Used by the eval harness for the
+/// reference-RMS metric; the engine itself projects internally.
+pub fn project_environmental_winds_onto(
     profile: &EnvironmentalWindProfile,
-    cut: &recast_radar_core::ElevationCut,
-    grid: &recast_radar_core::MomentGrid,
+    sweep: &recast_radar_core::Sweep,
+    field: &recast_radar_core::Field,
 ) -> Vec<f32> {
-    let azimuths = crate::radial_azimuths(cut, grid);
+    let azimuths = crate::radial_azimuths(sweep, field);
+    let gates = field.ngates as usize;
+    let Some((first_gate_m, gate_spacing_m)) = field.native_geometry(&sweep.range) else {
+        return vec![f32::NAN; azimuths.len().saturating_mul(gates)];
+    };
     project_profile_to_tilt(
         profile,
-        cut.elevation_deg,
+        sweep.fixed_angle_deg,
         &azimuths,
-        grid.gate_range.first_gate_m,
-        grid.gate_range.gate_spacing_m,
-        grid.gate_range.gate_count,
+        first_gate_m,
+        gate_spacing_m,
+        gates,
     )
 }
 
@@ -138,8 +143,8 @@ pub(crate) fn project_profile_to_tilt(
     profile: &EnvironmentalWindProfile,
     elevation_deg: f32,
     azimuths_deg: &[f32],
-    first_gate_m: i32,
-    gate_spacing_m: i32,
+    first_gate_m: f64,
+    gate_spacing_m: f64,
     gates: usize,
 ) -> Vec<f32> {
     let rows = azimuths_deg.len();
@@ -153,7 +158,7 @@ pub(crate) fn project_profile_to_tilt(
     // gate, not once per (row, gate).
     let mut gate_wind = vec![(f32::NAN, f32::NAN); gates];
     for (gate, slot) in gate_wind.iter_mut().enumerate() {
-        let slant_range_m = first_gate_m as f64 + gate as f64 * gate_spacing_m as f64;
+        let slant_range_m = first_gate_m + gate as f64 * gate_spacing_m;
         let height = beam_height_above_radar_m(slant_range_m.max(0.0), elevation_deg as f64);
         if let Some((u, v)) = profile.wind_at(height as f32) {
             *slot = (u, v);
@@ -202,7 +207,7 @@ mod tests {
         // Radial velocity at azimuth az is 20·cos(az − 90°) at 0° elevation.
         let p = profile(vec![level(0.0, 20.0, 0.0), level(10_000.0, 20.0, 0.0)]);
         let azimuths: Vec<f32> = (0..360).map(|az| az as f32).collect();
-        let projected = project_profile_to_tilt(&p, 0.0, &azimuths, 1000, 250, 4);
+        let projected = project_profile_to_tilt(&p, 0.0, &azimuths, 1000.0, 250.0, 4);
         for (row, azimuth) in azimuths.iter().enumerate() {
             let expected = 20.0 * (azimuth - 90.0).to_radians().cos();
             let got = projected[row * 4 + 2];
@@ -227,9 +232,9 @@ mod tests {
         // near 4.1 km ARL, so the projection must sample the upper wind.
         let p = profile(vec![level(0.0, 0.0, 10.0), level(4000.0, 0.0, 40.0)]);
         let azimuths = vec![0.0f32]; // v̂ = v at azimuth 0, elevation ~0.
-        let gate_spacing = 250;
+        let gate_spacing = 250.0;
         let gates = 801; // gate 800 → 1000 + 800·250 = 201 km slant range
-        let projected = project_profile_to_tilt(&p, 0.5, &azimuths, 1000, gate_spacing, gates);
+        let projected = project_profile_to_tilt(&p, 0.5, &azimuths, 1000.0, gate_spacing, gates);
         let near = projected[4]; // 2 km range: beam essentially at 0 m ARL
         let far = projected[800];
         assert!((near - 10.0).abs() < 1.0, "near gate got {near}");

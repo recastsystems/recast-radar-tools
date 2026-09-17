@@ -1,47 +1,73 @@
 //! RHI panel math validated against a REAL DOW8 native RHI sweep.
 //!
 //! The unit tests in `src/rhi.rs` use synthetic beam fans; this exercises
-//! the same entry points the app's RHI panel calls (`cut_looks_like_rhi`,
-//! `rhi_fixed_azimuth_deg`, `rhi_coverage_*`, `rhi_section`) on the FARM
-//! DOW8 truck RHI fixture decoded through the real CfRadial path. See
+//! the same entry points the app's RHI panel calls (`sweep_looks_like_rhi`,
+//! `rhi_fixed_azimuth`, `rhi_coverage_*`, `rhi_panel`) on the FARM DOW8
+//! truck RHI fixture decoded through the real CfRadial path. See
 //! `recast-radar-io-cfradial/tests/cfradial_real_files.rs` for fixture provenance
 //! (open-radar-data, MIT; netCDF-4 -> classic container conversion,
 //! 3 of 8 fields kept).
+//!
+//! The decoder is still the legacy one, bridged to the FM301 model with
+//! `recast_radar_core::legacy::volume_from_legacy` (design note 13.3) until
+//! `fm301-io` lands; the bridge places CfRadial gate centres at the file's
+//! `range` values, half a gate past the legacy decoder's start-of-gate
+//! reading (design note 6.6), so the expected extents come from the sweep's
+//! own range coordinate.
 
-use recast_radar_core::{MomentType, ScanMode};
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
+use recast_radar_core::{Quantity, SweepMode, Volume};
 
 const DOW8_RHI: &[u8] = include_bytes!(
     "../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc"
 );
 
+#[allow(deprecated)]
+mod legacy_bridge {
+    use super::Volume;
+
+    pub fn decode_cfradial(bytes: &[u8]) -> Result<Volume, String> {
+        let legacy = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(bytes)
+            .map_err(|e| e.to_string())?;
+        recast_radar_core::legacy::volume_from_legacy(legacy)
+            .map(|(volume, _residue)| volume)
+            .map_err(|e| e.to_string())
+    }
+}
+
 #[test]
 fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
-    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(DOW8_RHI)
-        .expect("decode DOW8 RHI");
-    // The app's panel gate: declared scan mode wins (volume_is_rhi).
-    assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Rhi));
-    let cut = &volume.cuts[0];
+    let volume = legacy_bridge::decode_cfradial(DOW8_RHI).expect("decode DOW8 RHI");
+    let sweep = &volume.sweeps[0];
+    // The app's panel gate: the declared sweep mode wins.
+    assert_eq!(sweep.sweep_mode, SweepMode::Rhi);
 
     // The geometric fallback must also recognize the real sweep.
-    assert!(recast_radar_map::cut_looks_like_rhi(cut));
-    let azimuth = recast_radar_map::rhi_fixed_azimuth_deg(cut);
+    assert!(recast_radar_map::sweep_looks_like_rhi(sweep));
+    let azimuth = recast_radar_map::rhi_fixed_azimuth(sweep);
     assert!(
         (azimuth - 184.08).abs() < 0.1,
         "fixed azimuth was {azimuth}"
     );
 
-    let grid = cut.moments.get(&MomentType::Reflectivity).expect("REF");
+    let field = sweep.find(Quantity::Reflectivity).expect("reflectivity");
+    let (first_m, spacing_m) = field.native_geometry(&sweep.range).expect("geometry");
+    assert_eq!(field.ngates, 950);
+    assert_eq!(spacing_m, 125.0);
 
-    // Coverage extents: 950 gates x 125 m = 118.75 km of slant range, top
-    // beam at 70 deg elevation -> ~112 km of height, lowest beam slightly
-    // below the horizon -> ground range just under the full slant range.
-    let top = recast_radar_map::rhi_coverage_top_m(cut, grid);
-    let expected_top = recast_radar_core::beam_height_above_radar_m(118_750.0, 70.0) as f32;
+    // Coverage extents: 950 gates x 125 m of slant range past the first
+    // centre, top beam at 70 deg elevation -> ~112 km of height, lowest
+    // beam slightly below the horizon -> ground range just under the full
+    // slant range.
+    let max_slant_m = first_m + spacing_m * 950.0;
+    let top = recast_radar_map::rhi_coverage_top(sweep, field);
+    let expected_top = recast_radar_core::beam_height_above_radar_m(max_slant_m, 70.0) as f32;
     assert!(
         (top - expected_top).abs() < 1.0,
         "coverage top {top} != {expected_top}"
     );
-    let range = recast_radar_map::rhi_coverage_range_m(cut, grid);
+    let range = recast_radar_map::rhi_coverage_range(sweep, field);
     assert!(
         (110_000.0..=119_000.0).contains(&range),
         "coverage range was {range}"
@@ -50,7 +76,7 @@ fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
     // Resample the panel the way the app does (768x320 texture).
     let (width, height) = (768usize, 320usize);
     let (top_m, max_range_m) = (15_000.0f32, 60_000.0f32);
-    let section = recast_radar_map::rhi_section(cut, grid, width, height, top_m, max_range_m)
+    let section = recast_radar_map::rhi_panel(sweep, field, width, height, top_m, max_range_m)
         .expect("section");
     assert_eq!(section.values.len(), width * height);
 
@@ -60,10 +86,9 @@ fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
     // (+/- 2 gates: 60 km / 768 px = 78 m/px vs 125 m gates).
     let beam = 37usize;
     let gate = 316usize;
-    let elevation = f64::from(cut.radials[beam].elevation_deg);
-    let slant_m = f64::from(grid.gate_range.first_gate_m)
-        + f64::from(grid.gate_range.gate_spacing_m) * gate as f64;
-    let expected = grid.scaled_value(beam, gate).expect("echo at [37,316]");
+    let elevation = f64::from(sweep.rays.elevation_deg[beam]);
+    let slant_m = first_m + spacing_m * gate as f64;
+    let expected = field.value(beam, gate).expect("echo at [37,316]");
     assert!(
         (expected - 0.79).abs() < 1e-3,
         "fixture drifted: {expected}"
@@ -75,7 +100,7 @@ fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
     let y = ((1.0 - z / top_m) * (height - 1) as f32).round() as usize;
     let sampled = section.values[y * width + x];
     let candidates: Vec<f32> = (gate.saturating_sub(2)..=gate + 2)
-        .filter_map(|g| grid.scaled_value(beam, g))
+        .filter_map(|g| field.value(beam, g))
         .collect();
     assert!(
         candidates.contains(&sampled),

@@ -1,23 +1,37 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Validate TEMPORAL-reference dealiasing: dealias volume A (plain region
 // engine), fit the range-band reference from its lowest tilt, then dealias
 // volume B's lowest tilt WITH that reference. Reports B's largest positive
 // (outbound) clusters — the fold-branch failure mode.
 // usage: dealias_temporal_probe <volume_A> <volume_B>
-use recast_radar_core::{MomentType, RadarVolume};
+use recast_radar_core::{Quantity, Volume};
 use recast_radar_correct::{
-    dealias_velocity_grid, dealias_velocity_grid_with_reference, fit_range_band_reference,
+    dealias_velocity, dealias_velocity_with_reference, range_band_reference,
 };
 
-fn lowest_velocity_cut(volume: &RadarVolume) -> Option<usize> {
+/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
+/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
+#[allow(deprecated)]
+mod legacy_bridge {
+    use recast_radar_core::Volume;
+    use std::path::Path;
+
+    pub fn decode_level2(path: &Path) -> Result<Volume, Box<dyn std::error::Error>> {
+        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path)?;
+        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
+    }
+}
+
+fn lowest_velocity_sweep(volume: &Volume) -> Option<usize> {
     volume
-        .cuts
+        .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.moments.contains_key(&MomentType::Velocity))
-        .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
+        .filter(|(_, s)| s.find(Quantity::RadialVelocity).is_some())
+        .min_by(|a, b| a.1.fixed_angle_deg.total_cmp(&b.1.fixed_angle_deg))
         .map(|(i, _)| i)
 }
 
@@ -26,15 +40,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path_a = args.next().ok_or("usage: <volA> <volB>")?;
     let path_b = args.next().ok_or("usage: <volA> <volB>")?;
 
-    let volume_a: RadarVolume =
-        recast_radar_io_nexrad::decode_volume_from_path(path_a.as_ref() as &std::path::Path)?;
-    let cut_a = lowest_velocity_cut(&volume_a).ok_or("A: no velocity")?;
-    let grid_a = volume_a.cuts[cut_a]
-        .moments
-        .get(&MomentType::Velocity)
-        .unwrap();
-    let dealiased_a = dealias_velocity_grid(&volume_a.cuts[cut_a], grid_a);
-    let reference = fit_range_band_reference(&volume_a.cuts[cut_a], &dealiased_a);
+    let volume_a = legacy_bridge::decode_level2(path_a.as_ref() as &std::path::Path)?;
+    let sweep_a = &volume_a.sweeps[lowest_velocity_sweep(&volume_a).ok_or("A: no velocity")?];
+    let field_a = sweep_a.find(Quantity::RadialVelocity).unwrap();
+    let dealiased_a = dealias_velocity(sweep_a, field_a);
+    let reference = range_band_reference(sweep_a, &dealiased_a);
     let valid = reference.fits.iter().filter(|f| f.is_some()).count();
     println!(
         "reference from {}: {}/{} bands",
@@ -43,23 +53,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         reference.fits.len()
     );
 
-    let volume_b: RadarVolume =
-        recast_radar_io_nexrad::decode_volume_from_path(path_b.as_ref() as &std::path::Path)?;
-    let cut_b = lowest_velocity_cut(&volume_b).ok_or("B: no velocity")?;
-    let cut = &volume_b.cuts[cut_b];
-    let grid_b = cut.moments.get(&MomentType::Velocity).unwrap();
-    let dealiased = dealias_velocity_grid_with_reference(cut, grid_b, Some(&reference));
+    let volume_b = legacy_bridge::decode_level2(path_b.as_ref() as &std::path::Path)?;
+    let sweep = &volume_b.sweeps[lowest_velocity_sweep(&volume_b).ok_or("B: no velocity")?];
+    let field_b = sweep.find(Quantity::RadialVelocity).unwrap();
+    let dealiased = dealias_velocity_with_reference(sweep, field_b, Some(&reference));
 
     // Largest positive clusters within 80 km (the failure signature).
-    let rows = dealiased.radial_count();
-    let gates = dealiased.gate_range.gate_count;
-    let spacing = dealiased.gate_range.gate_spacing_m.max(1) as f64;
-    let first = dealiased.gate_range.first_gate_m as f64;
+    let (rows, gates) = dealiased.shape();
+    let (first, spacing) = dealiased.native_geometry(&sweep.range).unwrap();
+    let spacing = spacing.max(1.0);
     let max_gate = (((80_000.0 - first) / spacing) as usize).min(gates);
     let mut flagged = vec![false; rows * gates];
     for row in 0..rows {
         for gate in 0..max_gate {
-            if let Some(v) = dealiased.scaled_value(row, gate).filter(|v| v.is_finite())
+            if let Some(v) = dealiased.value(row, gate).filter(|v| v.is_finite())
                 && v > 10.0
             {
                 flagged[row * gates + gate] = true;
@@ -82,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         while let Some(cell) = stack.pop() {
             size += 1;
             let (r, g) = (cell / gates, cell % gates);
-            if let Some(v) = dealiased.scaled_value(r, g)
+            if let Some(v) = dealiased.value(r, g)
                 && v > peak
             {
                 peak = v;
@@ -107,14 +114,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("B largest positive clusters (within 80 km):");
     for (size, peak_cell) in clusters.iter().take(5) {
         let (row, gate) = (peak_cell / gates, peak_cell % gates);
-        let az = dealiased
-            .radial_indices
-            .get(row)
-            .and_then(|&i| cut.radials.get(i))
-            .map(|r| r.azimuth_deg)
-            .unwrap_or(0.0);
-        let raw = grid_b.scaled_value(row, gate);
-        let dl = dealiased.scaled_value(row, gate);
+        let az = sweep.rays.azimuth_deg.get(row).copied().unwrap_or(0.0);
+        let raw = field_b.value(row, gate);
+        let dl = dealiased.value(row, gate);
         println!(
             "  {size} gates @ az {az:.1} rng {:.1} km: raw {raw:?} -> dealiased {dl:?}",
             (first + gate as f64 * spacing) / 1000.0

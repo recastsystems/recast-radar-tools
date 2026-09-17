@@ -1,5 +1,6 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Quantitative + visual diagnostic for velocity dealias spokes.
 //
@@ -16,19 +17,35 @@ use std::f32::consts::PI;
 use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
-use recast_radar_core::{ElevationCut, MomentGrid, MomentType, RadarVolume};
-use recast_radar_correct::dealias_velocity_grid;
+use recast_radar_core::{Field, Quantity, Sweep, Volume};
+use recast_radar_correct::dealias_velocity;
 
-fn row_nyquist(cut: &ElevationCut, grid: &MomentGrid, row: usize) -> Option<f32> {
-    let ri = *grid.radial_indices.get(row)?;
-    cut.radials.get(ri)?.nyquist_velocity_mps
+/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
+/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
+#[allow(deprecated)]
+mod legacy_bridge {
+    use recast_radar_core::Volume;
+    use std::path::Path;
+
+    pub fn decode_level2(path: &Path) -> Result<Volume, Box<dyn std::error::Error>> {
+        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path)?;
+        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
+    }
 }
 
-fn median_nyquist(cut: &ElevationCut, grid: &MomentGrid) -> f32 {
-    let mut v: Vec<f32> = grid
-        .radial_indices
-        .iter()
-        .filter_map(|ri| cut.radials.get(*ri)?.nyquist_velocity_mps)
+fn row_nyquist(sweep: &Sweep, row: usize) -> Option<f32> {
+    sweep
+        .ray_vars
+        .nyquist_velocity_mps
+        .as_ref()?
+        .get(row)
+        .copied()
+        .filter(|value| !value.is_nan())
+}
+
+fn median_nyquist(sweep: &Sweep, field: &Field) -> f32 {
+    let mut v: Vec<f32> = (0..field.nrays as usize)
+        .filter_map(|row| row_nyquist(sweep, row))
         .filter(|x| x.is_finite() && *x > 0.0)
         .collect();
     v.sort_by(f32::total_cmp);
@@ -41,18 +58,17 @@ fn fold_of(observed: f32, dealiased: f32, nyq: f32) -> i32 {
 
 /// Compute + print the spoke metric for one velocity cut. Returns the
 /// azimuthal fold-discontinuity rate (%) used to pick the worst cut.
-fn analyze_cut(volume: &RadarVolume, cut_index: usize) -> f64 {
-    let cut = &volume.cuts[cut_index];
-    let grid = cut.moments.get(&MomentType::Velocity).unwrap();
-    let nyq_med = median_nyquist(cut, grid);
-    let dealiased = dealias_velocity_grid(cut, grid);
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
+fn analyze_cut(volume: &Volume, cut_index: usize) -> f64 {
+    let sweep = &volume.sweeps[cut_index];
+    let field = sweep.find(Quantity::RadialVelocity).unwrap();
+    let nyq_med = median_nyquist(sweep, field);
+    let dealiased = dealias_velocity(sweep, field);
+    let (rows, gates) = field.shape();
 
     let fold_at = |row: usize, gate: usize| -> Option<i32> {
-        let obs = grid.scaled_value(row, gate)?;
-        let deal = dealiased.scaled_value(row, gate)?;
-        let nyq = row_nyquist(cut, grid, row).filter(|v| v.is_finite() && *v > 0.0)?;
+        let obs = field.value(row, gate)?;
+        let deal = dealiased.value(row, gate)?;
+        let nyq = row_nyquist(sweep, row).filter(|v| v.is_finite() && *v > 0.0)?;
         Some(fold_of(obs, deal, nyq))
     };
 
@@ -62,8 +78,8 @@ fn analyze_cut(volume: &RadarVolume, cut_index: usize) -> f64 {
     // unresolved OR newly created spokes). A good dealiaser drives the
     // dealiased count far below the raw count.
     let jump_thresh = 1.3f32;
-    let obs_at = |row: usize, gate: usize| grid.scaled_value(row, gate);
-    let deal_at = |row: usize, gate: usize| dealiased.scaled_value(row, gate);
+    let obs_at = |row: usize, gate: usize| field.value(row, gate);
+    let deal_at = |row: usize, gate: usize| dealiased.value(row, gate);
 
     let mut raw_pairs = 0u64;
     let mut raw_jumps = 0u64;
@@ -73,7 +89,7 @@ fn analyze_cut(volume: &RadarVolume, cut_index: usize) -> f64 {
     let mut data_gates = 0u64;
 
     for row in 0..rows {
-        let nyq = match row_nyquist(cut, grid, row).filter(|v| v.is_finite() && *v > 0.0) {
+        let nyq = match row_nyquist(sweep, row).filter(|v| v.is_finite() && *v > 0.0) {
             Some(n) => n,
             None => continue,
         };
@@ -110,7 +126,7 @@ fn analyze_cut(volume: &RadarVolume, cut_index: usize) -> f64 {
     let deal_rate = 100.0 * deal_jumps as f64 / deal_pairs.max(1) as f64;
     println!(
         "cut#{cut_index:<2} elev={:>4.2} nyq={:.1} | folded={:>4.1}% | RAW fold-boundaries={:.3}% ({}) -> DEALIASED={:.3}% ({}) | {}",
-        cut.elevation_deg,
+        sweep.fixed_angle_deg,
         nyq_med,
         100.0 * folded_gates as f64 / data_gates.max(1) as f64,
         raw_rate,
@@ -140,20 +156,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "veldiag".into());
 
-    let volume: RadarVolume = recast_radar_io_nexrad::decode_volume_from_path(&input)?;
+    let volume = legacy_bridge::decode_level2(&input)?;
 
-    // analyze EVERY velocity cut; render the fold image for the worst one.
+    // analyze EVERY velocity sweep; render the fold image for the worst one.
     let vel_cuts: Vec<usize> = volume
-        .cuts
+        .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.moments.contains_key(&MomentType::Velocity))
+        .filter(|(_, s)| s.find(Quantity::RadialVelocity).is_some())
         .map(|(i, _)| i)
         .collect();
     let vcp = volume
-        .vcp
-        .as_ref()
-        .map(|v| v.pattern.to_string())
+        .scan
+        .vcp_pattern
+        .map(|pattern| pattern.to_string())
         .unwrap_or_default();
     println!(
         "== {} vcp={vcp} velocity cuts: {:?} ==",
@@ -171,19 +187,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cut_index = worst.0;
     println!("-- rendering fold field for worst cut #{cut_index} --");
 
-    let cut = &volume.cuts[cut_index];
-    let grid = cut.moments.get(&MomentType::Velocity).unwrap();
-    let nyq_med = median_nyquist(cut, grid);
-    let dealiased = dealias_velocity_grid(cut, grid);
+    let sweep = &volume.sweeps[cut_index];
+    let field = sweep.find(Quantity::RadialVelocity).unwrap();
+    let nyq_med = median_nyquist(sweep, field);
+    let dealiased = dealias_velocity(sweep, field);
 
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
+    let (rows, gates) = field.shape();
 
     // ---- spoke metric: azimuthal fold discontinuities ----
     let fold_at = |row: usize, gate: usize| -> Option<i32> {
-        let obs = grid.scaled_value(row, gate)?;
-        let deal = dealiased.scaled_value(row, gate)?;
-        let nyq = row_nyquist(cut, grid, row).filter(|v| v.is_finite() && *v > 0.0)?;
+        let obs = field.value(row, gate)?;
+        let deal = dealiased.value(row, gate)?;
+        let nyq = row_nyquist(sweep, row).filter(|v| v.is_finite() && *v > 0.0)?;
         Some(fold_of(obs, deal, nyq))
     };
 
@@ -196,15 +211,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // azimuth -> row lookup (nearest)
     let mut az_rows: Vec<(f32, usize)> = (0..rows)
         .filter_map(|r| {
-            let ri = *grid.radial_indices.get(r)?;
-            let az = cut.radials.get(ri)?.azimuth_deg.rem_euclid(360.0);
+            let az = sweep.rays.azimuth_deg.get(r)?.rem_euclid(360.0);
             Some((az, r))
         })
         .collect();
     az_rows.sort_by(|a, b| a.0.total_cmp(&b.0));
 
-    let first_m = grid.gate_range.first_gate_m as f32;
-    let spacing = grid.gate_range.gate_spacing_m as f32;
+    let (first_m, spacing) = field.native_geometry(&sweep.range).unwrap();
+    let first_m = first_m as f32;
+    let spacing = spacing as f32;
     let max_range = first_m + spacing * gates as f32;
     let view_range = max_range * 0.70;
     let cx = (size as f32 - 1.0) / 2.0;

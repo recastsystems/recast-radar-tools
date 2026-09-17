@@ -426,7 +426,7 @@ fn tilt_pairs(tilts: &[TiltField]) -> Vec<TiltPair> {
         tilts[*a]
             .elevation_deg
             .total_cmp(&tilts[*b].elevation_deg)
-            .then_with(|| tilts[*a].cut_index.cmp(&tilts[*b].cut_index))
+            .then_with(|| tilts[*a].sweep_index.cmp(&tilts[*b].sweep_index))
     });
     let mut pairs = Vec::new();
     for window in order.windows(2) {
@@ -452,7 +452,7 @@ fn tilt_pairs(tilts: &[TiltField]) -> Vec<TiltPair> {
 /// Accumulate the 25-label co-location tables between two tilts.  The upper
 /// tilt is mapped onto the lower tilt's lattice by nearest azimuth row and
 /// nearest range gate (the `hybrid.rs` mapping, reimplemented on raw arrays
-/// so it can run before any `MomentGrid` is materialized).
+/// so it can run before any output field is materialized).
 fn pair_evidence(lower: &TiltField, upper: &TiltField, weight: f64) -> Vec<PairwiseEdge> {
     let row_map = nearest_row_map(&lower.azimuths, &upper.azimuths);
     let gate_map = nearest_gate_map(
@@ -631,17 +631,17 @@ fn angular_distance_deg(left: f32, right: f32) -> f32 {
 /// Nearest-range gate map (target gate → source gate), `None` beyond 0.6×
 /// the coarser spacing.  Mirrors `hybrid.rs::nearest_range_gate_map`.
 pub(crate) fn nearest_gate_map(
-    target_first_m: i32,
-    target_spacing_m: i32,
+    target_first_m: f64,
+    target_spacing_m: f64,
     target_gates: usize,
-    source_first_m: i32,
-    source_spacing_m: i32,
+    source_first_m: f64,
+    source_spacing_m: f64,
     source_gates: usize,
 ) -> Vec<Option<usize>> {
-    let target_first = f64::from(target_first_m);
-    let target_spacing = f64::from(target_spacing_m.max(1));
-    let source_first = f64::from(source_first_m);
-    let source_spacing = f64::from(source_spacing_m.max(1));
+    let target_first = target_first_m;
+    let target_spacing = target_spacing_m.max(1.0);
+    let source_first = source_first_m;
+    let source_spacing = source_spacing_m.max(1.0);
     let tolerance = 0.60 * target_spacing.max(source_spacing) + 1.0;
 
     (0..target_gates)
