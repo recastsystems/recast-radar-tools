@@ -6,16 +6,31 @@
 //! OPERA Working Document WD_2008_03 (v2.2, 2014; v2.4, 2021). Layout:
 //! `/what` (object, date, time, source), `/where` (lat, lon, height),
 //! `/datasetN` per sweep with `where` (elangle, nbins, nrays, rstart,
-//! rscale) and `dataM` per quantity with `what` (quantity, gain, offset,
-//! nodata, undetect) and the `data` plane (nrays x nbins).
+//! rscale, a1gate), `what` (start/end date and time), `how` (per-ray angle
+//! and time arrays, `NI`) and `dataM` per quantity with `what` (quantity,
+//! gain, offset, nodata, undetect) and the `data` plane (nrays x nbins).
 //!
-//! Decodes `PVOL` (polar volume) and `SCAN` (single sweep) objects into
-//! [`RadarVolume`]. Conventions honored from the spec:
-//! - physical = `gain * raw + offset` (Table 6 "what" group attributes) —
-//!   inverted into the moment grid's `(raw - offset) / scale` storage.
-//! - `nodata` and `undetect` both display as "no echo"; `undetect` cells
-//!   are remapped onto the `nodata` sentinel so compact storage keeps one
-//!   transparent code.
+//! Decodes `PVOL` (polar volume) and `SCAN` (single sweep) objects into the
+//! FM301 model ([`Volume`]; `docs/design/fm301-model.md` sections 5.2, 7.2
+//! and 8.1), following what xradar's `open_odim_datatree` returns for the
+//! same file:
+//! - One sweep per `datasetN` in file order; every `dataM` plane is a field
+//!   named by its `what/quantity` verbatim (`DBZH`, `TH`, `VRAD`, ...).
+//! - Planes keep their stored encoding: `u8`/`u16` with the CF packing
+//!   `physical = gain * raw + offset` and `nodata` as `_FillValue`,
+//!   `undetect` as `_Undetect` (kept distinct; Table 301-10); `float32` and
+//!   `float64` planes verbatim with their sentinels as float codings.
+//! - Ray azimuths are `(how/startazA + how/stopazA) / 2` when present, else
+//!   the storage-order centres `(i + 0.5) * 360 / nrays`; ray elevations
+//!   `(how/startelA + how/stopelA) / 2`, else `how/elangles`, else
+//!   `where/elangle`; ray times `(how/startazT + how/stopazT) / 2`, else
+//!   spread evenly between `what/starttime` and `endtime` starting at
+//!   `where/a1gate` (all rays at `starttime` when the two are equal).
+//! - The `range` coordinate holds gate centres: `rstart` (km to the start of
+//!   the first bin) plus half a `rscale` (bin spacing in metres). Implausibly
+//!   large `rstart` values are reinterpreted as metres — see
+//!   [`first_gate_m_from_rstart`] for the writer quirk that requires it.
+//! - `nyquist_velocity(time)` broadcasts `how/NI` (dataset, else root).
 //! - Doppler-velocity no-data recovery: some IRIS exporters (AEMET Spain,
 //!   IRIS 10.3) copy the REFLECTIVITY `what` group onto the velocity plane —
 //!   the VRADH `nodata`/`undetect` carry the dBZ sentinels (e.g. 95.5 / -32)
@@ -27,35 +42,31 @@
 //!   and only when the velocity sentinels equal the reflectivity sentinels
 //!   (the copied-what-group signature) — genuine 0 m/s gates with echo, and
 //!   conformant writers with distinct velocity sentinels, are untouched.
-//! - `rstart` is km to the start of the first bin; `rscale` is the bin
-//!   spacing in metres (Table 5 "where" for polar data). Implausibly large
-//!   `rstart` values are reinterpreted as metres — see
-//!   `first_gate_m_from_rstart` for the writer quirk that requires it.
-//! - Rays are stored north-relative in scan order: ray `i` spans
-//!   `[i, i+1) * 360/nrays` degrees, so its center azimuth is
-//!   `(i + 0.5) * 360 / nrays` (the `a1gate` index only records where the
-//!   antenna started radiating in time, not a storage rotation).
+//!
+//! The pre-FM301 [`decode_odim_h5_volume`] (legacy `RadarVolume`) lives in
+//! [`crate::legacy_api`] during the migration.
 //!
 //! Known limitations (explicit, not silent): non-polar objects (ELEV/RHI
 //! cross-section products, CVOL, IMAGE) are rejected with a clear error;
 //! 8/16-bit unsigned and float data planes are supported (the only types
 //! OPERA members emit).
 
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use recast_radar_core::bounded_read::{
-    DecodeBudget, check_gate_count, check_sweep_count, moment_grid_capacity_bytes,
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
+use recast_radar_core::model::{
+    Field, FieldData, FieldName, FloatCoding, FloatWidth, FollowMode, GateMapping, IntCoding,
+    LinearTransform, PackedInt, Quantity, RangeCoord, SourceFormat, Sweep, SweepMode, Volume,
+    floor_to_second,
 };
-use recast_radar_core::{
-    GateRange, MomentGrid, MomentRow, MomentType, RadarSite, RadarVolume, Radial, ScanMode,
-};
-use std::collections::BTreeMap;
 
 pub use crate::hdf5lite::looks_like_hdf5_bytes;
 use crate::hdf5lite::{H5Attr, H5Data, H5File};
+#[allow(deprecated)]
+pub use crate::legacy_api::decode_odim_h5_volume;
 use crate::{OdimError, Result};
 
-/// Decode an ODIM_H5 PVOL/SCAN byte buffer into the shared radar model.
-pub fn decode_odim_h5_volume(bytes: &[u8]) -> Result<RadarVolume> {
+/// Decode an ODIM_H5 PVOL/SCAN byte buffer into the FM301 model.
+pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
     let file = H5File::open(bytes)?;
     let object = file
         .attr("/what", "object")
@@ -72,20 +83,35 @@ pub fn decode_odim_h5_volume(bytes: &[u8]) -> Result<RadarVolume> {
         )));
     }
 
-    let mut volume = RadarVolume {
-        site: parse_site(&file),
-        ..RadarVolume::default()
-    };
-    if let Some(time) = parse_datetime(&file, "/what") {
-        volume.volume_time = time;
-    }
-    volume.metadata.archive_version = file
+    let source = file
+        .attr("/what", "source")
+        .and_then(|attr| attr.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    let identity = site_identity_from_source(&source);
+    let nominal_time = parse_datetime(&file, "/what");
+    let mut volume = Volume::new(
+        identity.id,
+        nominal_time.unwrap_or(DateTime::<Utc>::UNIX_EPOCH),
+    );
+    volume.attrs.site_name = identity.name;
+    volume.attrs.source = (!source.is_empty()).then_some(source);
+    volume.attrs.wmo.id = identity.wmo;
+    volume.attrs.wmo.wsi = identity.wigos;
+    volume.location.latitude_deg = attr_f64(&file, "/where", "lat");
+    volume.location.longitude_deg = attr_f64(&file, "/where", "lon");
+    volume.location.altitude_m = attr_f64(&file, "/where", "height");
+    volume.provenance.source_format = SourceFormat::OdimH5;
+    volume.provenance.source_version = file
         .attr("/what", "version")
         .and_then(|attr| attr.as_str().map(str::to_owned))
         .or(Some("ODIM_H5".to_owned()));
-    volume.metadata.compression = Some("odim-h5".to_owned());
-    volume.metadata.scan_mode = Some(ScanMode::Ppi);
-    volume.metadata.radar_frequency_mhz = odim_radar_frequency_mhz(&file);
+    volume.provenance.source_conventions = file
+        .attr("/", "Conventions")
+        .and_then(|attr| attr.as_str().map(str::to_owned));
+    volume.provenance.compression = Some("odim-h5".to_owned());
+    if let Some(mhz) = odim_radar_frequency_mhz(&file) {
+        volume.radar_parameters.frequency_hz = vec![f64::from(mhz) * 1e6];
+    }
     let root_nyquist = attr_f64(&file, "/how", "NI");
 
     let mut dataset_names: Vec<String> = file
@@ -103,31 +129,66 @@ pub fn decode_odim_h5_volume(bytes: &[u8]) -> Result<RadarVolume> {
     check_sweep_count(dataset_names.len(), "ODIM_H5 volume").map_err(OdimError::LimitExceeded)?;
 
     let mut budget = DecodeBudget::volume();
-    for name in &dataset_names {
-        decode_sweep(&file, name, root_nyquist, &mut volume, &mut budget)?;
+    // Absolute ray times (seconds since the Unix epoch) until the reference
+    // is known.
+    let mut ray_epoch_s: Vec<Vec<f64>> = Vec::with_capacity(dataset_names.len());
+    let mut skipped_planes = 0usize;
+    for (index, name) in dataset_names.iter().enumerate() {
+        let (sweep, times) = decode_sweep(&file, name, index, root_nyquist, &mut budget)?;
+        skipped_planes += sweep.skipped_planes;
+        ray_epoch_s.push(times);
+        volume.sweeps.push(sweep.sweep);
     }
-    volume
-        .cuts
-        .sort_by(|left, right| left.elevation_deg.total_cmp(&right.elevation_deg));
-    volume.metadata.decoded_radial_count = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
-    volume.metadata.message_count = dataset_names.len();
+
+    // Time reference: the nominal volume time, else the earliest ray.
+    if nominal_time.is_none() {
+        let earliest = ray_epoch_s
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|time| time.is_finite())
+            .fold(f64::INFINITY, f64::min);
+        if earliest.is_finite()
+            && let Some(instant) =
+                DateTime::<Utc>::from_timestamp_millis((earliest * 1000.0).floor() as i64)
+        {
+            volume.time_reference = floor_to_second(instant);
+        }
+    }
+    let reference_s = volume.time_reference.timestamp() as f64;
+    for (sweep, times) in volume.sweeps.iter_mut().zip(ray_epoch_s) {
+        sweep.rays.time_s = times.into_iter().map(|time| time - reference_s).collect();
+    }
+
+    volume.provenance.decode.decoded_ray_count = volume.sweeps.iter().map(Sweep::nrays).sum();
+    volume.provenance.decode.message_count = dataset_names.len();
+    volume.provenance.decode.skipped_message_count = skipped_planes;
+    volume.seal().map_err(|err| invalid(err.to_string()))?;
+    volume.time_coverage = volume.ray_time_extent();
     Ok(volume)
+}
+
+struct DecodedSweep {
+    sweep: Sweep,
+    skipped_planes: usize,
 }
 
 fn decode_sweep(
     file: &H5File<'_>,
     dataset: &str,
+    index: usize,
     root_nyquist: Option<f64>,
-    volume: &mut RadarVolume,
     budget: &mut DecodeBudget,
-) -> Result<()> {
+) -> Result<(DecodedSweep, Vec<f64>)> {
     let where_path = format!("/{dataset}/where");
+    let what_path = format!("/{dataset}/what");
+    let how_path = format!("/{dataset}/how");
     let elangle = attr_f64(file, &where_path, "elangle")
         .ok_or_else(|| invalid(format!("{dataset} has no where/elangle")))?
         as f32;
     let rstart_km = attr_f64(file, &where_path, "rstart").unwrap_or(0.0);
     let rscale_m = attr_f64(file, &where_path, "rscale").unwrap_or(0.0);
-    let nyquist = attr_f64(file, &format!("/{dataset}/how"), "NI")
+    let nyquist = attr_f64(file, &how_path, "NI")
         .or(root_nyquist)
         .map(|value| value as f32)
         .filter(|value| *value > 0.0);
@@ -160,44 +221,101 @@ fn decode_sweep(
         return Err(invalid(format!("{dataset} data plane is empty")));
     }
     check_gate_count(nbins, dataset).map_err(OdimError::LimitExceeded)?;
-    let gate_range = GateRange {
-        first_gate_m: first_gate_m_from_rstart(rstart_km),
-        gate_spacing_m: (rscale_m.round() as i32).max(1),
-        gate_count: nbins,
+    let ngates = u32::try_from(nbins).map_err(|_| invalid(format!("{dataset} nbins overflow")))?;
+    let spacing_m = if rscale_m > 0.0 && rscale_m.is_finite() {
+        rscale_m
+    } else {
+        1.0
     };
+    let first_center_m = f64::from(first_gate_m_from_rstart(rstart_km)) + spacing_m / 2.0;
 
-    let mut skipped_planes = 0usize;
-    let mut cut = recast_radar_core::ElevationCut::new(elangle, None);
+    let mut sweep = Sweep::new(index as u32, SweepMode::AzimuthSurveillance, elangle);
+    sweep.follow_mode = Some(FollowMode::None);
+    sweep.range = RangeCoord::Uniform {
+        first_center_m,
+        spacing_m,
+        ngates,
+    };
     budget
-        .charge(nrays, size_of::<Radial>(), "ODIM_H5 sweep radials")
+        .charge(nrays, 4 * size_of::<f64>(), "ODIM_H5 sweep rays")
         .map_err(OdimError::LimitExceeded)?;
-    cut.radials.reserve_exact(nrays);
-    let mut first_plane = Some(first_plane);
-    for ray in 0..nrays {
-        cut.radials.push(Radial {
-            azimuth_deg: ((ray as f32 + 0.5) * 360.0 / nrays as f32).rem_euclid(360.0),
-            elevation_deg: elangle,
-            time_offset_ms: 0,
-            gate_range: gate_range.clone(),
-            nyquist_velocity_mps: nyquist,
-            radial_status: None,
-        });
+
+    // Ray coordinates (xradar's rules; module docs).
+    sweep.rays.azimuth_deg = match (
+        attr_array(file, &how_path, "startazA"),
+        attr_array(file, &how_path, "stopazA"),
+    ) {
+        (Some(start), stop)
+            if start.len() == nrays && stop.as_ref().is_none_or(|s| s.len() == nrays) =>
+        {
+            let stop = stop.unwrap_or_else(|| {
+                let mut next: Vec<f64> = start[1..].to_vec();
+                next.push(start[0] + 360.0);
+                next
+            });
+            start
+                .iter()
+                .zip(&stop)
+                .map(|(start, stop)| {
+                    let stop = if *stop < *start { stop + 360.0 } else { *stop };
+                    let mut azimuth = (start + stop) / 2.0;
+                    if azimuth >= 360.0 {
+                        azimuth -= 360.0;
+                    }
+                    azimuth as f32
+                })
+                .collect()
+        }
+        _ => (0..nrays)
+            .map(|ray| ((ray as f32 + 0.5) * 360.0 / nrays as f32).rem_euclid(360.0))
+            .collect(),
+    };
+    sweep.rays.elevation_deg = match (
+        attr_array(file, &how_path, "startelA"),
+        attr_array(file, &how_path, "stopelA"),
+    ) {
+        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => start
+            .iter()
+            .zip(&stop)
+            .map(|(start, stop)| ((start + stop) / 2.0) as f32)
+            .collect(),
+        _ => match attr_array(file, &how_path, "elangles") {
+            Some(angles) if angles.len() == nrays => {
+                angles.iter().map(|angle| *angle as f32).collect()
+            }
+            _ => vec![elangle; nrays],
+        },
+    };
+    let times = match (
+        attr_array(file, &how_path, "startazT"),
+        attr_array(file, &how_path, "stopazT"),
+    ) {
+        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => start
+            .iter()
+            .zip(&stop)
+            .map(|(start, stop)| (start + stop) / 2.0)
+            .collect(),
+        _ => ray_times_from_what(file, &what_path, &where_path, nrays),
+    };
+    sweep.rays.time_s = vec![0.0; nrays];
+    if let Some(nyquist) = nyquist {
+        sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyquist; nrays]);
     }
 
-    let mut canonical_priorities = BTreeMap::<MomentType, u8>::new();
-    let mut plane_meta = BTreeMap::<MomentType, PlaneNoData>::new();
+    let mut skipped_planes = 0usize;
+    let mut plane_meta: Vec<PlaneNoData> = Vec::with_capacity(data_names.len());
+    let mut first_plane = Some(first_plane);
     for (plane_index, plane_name) in data_names.iter().enumerate() {
-        let what_path = format!("/{dataset}/{plane_name}/what");
+        let plane_what = format!("/{dataset}/{plane_name}/what");
         let quantity = file
-            .attr(&what_path, "quantity")
+            .attr(&plane_what, "quantity")
             .and_then(|attr| attr.as_str().map(str::to_owned))
             .unwrap_or_else(|| plane_name.to_uppercase());
-        let gain = attr_f64(file, &what_path, "gain").unwrap_or(1.0);
+        let gain = attr_f64(file, &plane_what, "gain").unwrap_or(1.0);
         let gain = if gain.abs() > 1.0e-9 { gain } else { 1.0 };
-        let offset = attr_f64(file, &what_path, "offset").unwrap_or(0.0);
-        let nodata = attr_f64(file, &what_path, "nodata");
-        let undetect = attr_f64(file, &what_path, "undetect");
-
+        let offset = attr_f64(file, &plane_what, "offset").unwrap_or(0.0);
+        let nodata = attr_f64(file, &plane_what, "nodata");
+        let undetect = attr_f64(file, &plane_what, "undetect");
         let plane = match (plane_index, first_plane.take()) {
             (0, Some(plane)) => plane,
             _ => file.dataset(&format!("/{dataset}/{plane_name}/data"))?,
@@ -206,148 +324,153 @@ fn decode_sweep(
             skipped_planes += 1;
             continue;
         }
-
-        let canonical = canonical_quantity(&quantity);
-        let Some(moment) = decode_moment_for_quantity(
-            &quantity,
-            canonical.clone(),
-            &canonical_priorities,
-            &cut.moments,
-        ) else {
+        let name = FieldName::parse(&quantity);
+        if sweep.field(&name).is_some() {
+            // A second plane of the same quantity: malformed; the first wins.
+            skipped_planes += 1;
             continue;
-        };
-        // ODIM physical = gain·raw + offset ⇔ grid (raw − o)/s with
-        // s = 1/gain, o = −offset/gain.
-        let scale = (1.0 / gain) as f32;
-        let grid_offset = (-offset / gain) as f32;
+        }
+
         let word_bytes = match &plane.data {
             H5Data::U8(_) => 1,
             H5Data::U16(_) => 2,
-            H5Data::F32(_) | H5Data::F64(_) => 4,
+            H5Data::F32(_) => 4,
+            H5Data::F64(_) => 8,
         };
-        let grid_bytes = nbins
-            .checked_mul(word_bytes)
-            .and_then(|row| row.checked_add(size_of::<usize>()))
-            .ok_or_else(|| invalid(format!("{dataset} grid size overflow")))?;
         budget
-            .charge(nrays, grid_bytes, "ODIM_H5 moment grid")
+            .charge(nrays, nbins.saturating_mul(word_bytes), "ODIM_H5 field")
             .map_err(OdimError::LimitExceeded)?;
-        let mut grid = match &plane.data {
-            H5Data::U8(values) => {
-                let nodata_raw = nodata.map(|value| value as u8);
-                let undetect_raw = undetect.map(|value| value as u8);
-                let sentinel = nodata_raw.or(undetect_raw);
-                let mut grid = MomentGrid::new_u8(
-                    moment.clone(),
-                    gate_range.clone(),
-                    scale,
-                    grid_offset,
-                    sentinel,
-                    None,
-                );
-                grid.reserve_rows(nrays);
-                for (ray, row) in values.chunks_exact(nbins).enumerate() {
-                    let row: Vec<u8> = row
-                        .iter()
-                        .map(|raw| remap_sentinel(*raw, undetect_raw, sentinel))
-                        .collect();
-                    grid.push_row(ray, MomentRow::U8(row))?;
-                }
-                grid
-            }
-            H5Data::U16(values) => {
-                let nodata_raw = nodata.map(|value| value as u16);
-                let undetect_raw = undetect.map(|value| value as u16);
-                let sentinel = nodata_raw.or(undetect_raw);
-                let mut grid = MomentGrid::new_u16(
-                    moment.clone(),
-                    gate_range.clone(),
-                    scale,
-                    grid_offset,
-                    sentinel,
-                    None,
-                );
-                grid.reserve_rows(nrays);
-                for (ray, row) in values.chunks_exact(nbins).enumerate() {
-                    let row: Vec<u16> = row
-                        .iter()
-                        .map(|raw| remap_sentinel(*raw, undetect_raw, sentinel))
-                        .collect();
-                    grid.push_row(ray, MomentRow::U16(row))?;
-                }
-                grid
-            }
-            H5Data::F32(values) => {
-                let mut grid = float_grid(&moment, &gate_range, nrays);
-                let physical = physical_value(gain, offset, nodata, undetect);
-                for (ray, row) in values.chunks_exact(nbins).enumerate() {
-                    let row = row.iter().map(|raw| physical(f64::from(*raw))).collect();
-                    grid.push_row(ray, MomentRow::F32(row))?;
-                }
-                grid
-            }
-            H5Data::F64(values) => {
-                let mut grid = float_grid(&moment, &gate_range, nrays);
-                let physical = physical_value(gain, offset, nodata, undetect);
-                for (ray, row) in values.chunks_exact(nbins).enumerate() {
-                    let row = row.iter().map(|raw| physical(*raw)).collect();
-                    grid.push_row(ray, MomentRow::F32(row))?;
-                }
-                grid
-            }
+        let transform = LinearTransform::CfScaleOffset {
+            scale_factor: gain,
+            add_offset: offset,
+            attr_width: FloatWidth::F64,
         };
-        grid.moment = moment.clone();
-        if let Some(canonical) = canonical {
-            canonical_priorities.insert(canonical, canonical_quantity_priority(&quantity));
-        }
-        plane_meta.insert(
-            moment.clone(),
-            PlaneNoData {
-                nodata,
-                undetect,
-                offset,
+        // Float planes with the identity packing hold physical values.
+        let float_transform = (gain != 1.0 || offset != 0.0).then_some(transform);
+        let data = match plane.data {
+            H5Data::U8(values) => FieldData::U8 {
+                values,
+                coding: int_coding(transform, nodata, undetect),
             },
-        );
-        if let Some(replaced) = cut.moments.insert(moment, grid) {
-            budget.release(moment_grid_capacity_bytes(&replaced));
+            H5Data::U16(values) => FieldData::U16 {
+                values,
+                coding: int_coding(transform, nodata, undetect),
+            },
+            H5Data::F32(values) => FieldData::F32 {
+                values,
+                coding: FloatCoding {
+                    transform: float_transform,
+                    fill_value: nodata.map(|value| value as f32),
+                    undetect: undetect.map(|value| value as f32),
+                },
+            },
+            H5Data::F64(values) => FieldData::F64 {
+                values,
+                coding: FloatCoding {
+                    transform: float_transform,
+                    fill_value: nodata,
+                    undetect,
+                },
+            },
+        };
+        let mut field = Field::new(name, GateMapping::IDENTITY, ngates, data);
+        if field.name == FieldName::Th {
+            // ODIM TH is logarithmic total power in dBZ (design note 8.2,
+            // note 1), whatever FM301 Table 301-9 says about the spelling.
+            field.quantity = Quantity::TotalPower;
+            field.attrs.units = Some("dBZ".into());
         }
+        plane_meta.push(PlaneNoData {
+            name: field.name.clone(),
+            nodata,
+            undetect,
+            offset,
+        });
+        sweep
+            .add_field(field)
+            .map_err(|err| invalid(format!("{dataset}/{plane_name}: {err}")))?;
     }
-    recover_copied_whatgroup_velocity_nodata(&mut cut, &plane_meta);
-    volume.cuts.push(cut);
-    volume.metadata.skipped_message_count += skipped_planes;
-    Ok(())
+    recover_copied_whatgroup_velocity_nodata(&mut sweep, &plane_meta);
+    Ok((
+        DecodedSweep {
+            sweep,
+            skipped_planes,
+        },
+        times,
+    ))
 }
 
-/// An empty float grid with room for `nrays` rows.
-fn float_grid(moment: &MomentType, gate_range: &GateRange, nrays: usize) -> MomentGrid {
-    let mut grid = MomentGrid {
-        moment: moment.clone(),
-        gate_range: gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: Vec::new(),
-        storage: recast_radar_core::MomentStorage::F32(Vec::new()),
-    };
-    grid.reserve_rows(nrays);
-    grid
+/// Integer types ODIM planes are stored in, with the saturating `as` cast
+/// the sentinel attributes need (writers disagree about whether `nodata` is
+/// a long or a double).
+trait OdimCode: PackedInt {
+    fn from_f64(value: f64) -> Self;
 }
 
-/// ODIM physical value (`gain·raw + offset`), NaN for `nodata`/`undetect`.
-fn physical_value(
-    gain: f64,
-    offset: f64,
+impl OdimCode for u8 {
+    fn from_f64(value: f64) -> Self {
+        value as u8
+    }
+}
+
+impl OdimCode for u16 {
+    fn from_f64(value: f64) -> Self {
+        value as u16
+    }
+}
+
+/// Integer plane coding: `nodata` is `_FillValue`, `undetect` is
+/// `_Undetect`. A plane that declares only `undetect` uses it as the fill
+/// code too (the view needs one for padding).
+fn int_coding<T: OdimCode>(
+    transform: LinearTransform,
     nodata: Option<f64>,
     undetect: Option<f64>,
-) -> impl Fn(f64) -> f32 {
-    move |raw| {
-        if Some(raw) == nodata || Some(raw) == undetect {
-            f32::NAN
-        } else {
-            (gain * raw + offset) as f32
-        }
+) -> IntCoding<T> {
+    let nodata = nodata.map(T::from_f64);
+    let undetect = undetect.map(T::from_f64);
+    IntCoding {
+        transform,
+        fill_value: nodata.or(undetect),
+        undetect,
+        range_folded: None,
+        valid_range: None,
     }
+}
+
+/// Ray times from the dataset's `what/startdate,starttime,enddate,endtime`
+/// (seconds since the Unix epoch): spread evenly over the rays starting at
+/// `where/a1gate`; every ray at `starttime` when start and end are equal.
+fn ray_times_from_what(
+    file: &H5File<'_>,
+    what_path: &str,
+    where_path: &str,
+    nrays: usize,
+) -> Vec<f64> {
+    let start = parse_datetime_pair(file, what_path, "startdate", "starttime");
+    let end = parse_datetime_pair(file, what_path, "enddate", "endtime").or(start);
+    let (Some(start), Some(end)) = (start, end) else {
+        return vec![f64::NAN; nrays];
+    };
+    let start = start.timestamp() as f64;
+    let end = end.timestamp() as f64;
+    if start == end {
+        return vec![start; nrays];
+    }
+    let delta = (end - start) / nrays as f64;
+    let a1gate = file
+        .attr(where_path, "a1gate")
+        .as_ref()
+        .and_then(H5Attr::as_i64)
+        .unwrap_or(0)
+        .rem_euclid(nrays as i64) as usize;
+    (0..nrays)
+        .map(|ray| {
+            // Storage index `ray` was radiated `(ray - a1gate) mod nrays`-th.
+            let order = (ray + nrays - a1gate) % nrays;
+            start + delta / 2.0 + order as f64 * delta
+        })
+        .collect()
 }
 
 /// A first bin starting this many km downrange is physically implausible
@@ -371,7 +494,7 @@ const RSTART_SANE_MAX_KM: f64 = 20.0;
 /// (Metre-valued quirk output below the threshold is indistinguishable from
 /// km, but IRIS range starts sit at gate-size scale — hundreds of metres —
 /// and 0 reads identically in either unit.)
-fn first_gate_m_from_rstart(rstart: f64) -> i32 {
+pub(crate) fn first_gate_m_from_rstart(rstart: f64) -> i32 {
     if rstart > RSTART_SANE_MAX_KM {
         // Reinterpret as metres (writer quirk documented above).
         rstart.round() as i32
@@ -380,17 +503,11 @@ fn first_gate_m_from_rstart(rstart: f64) -> i32 {
     }
 }
 
-/// Remap `undetect` onto the grid's single transparent sentinel.
-fn remap_sentinel<T: Copy + PartialEq>(raw: T, undetect: Option<T>, sentinel: Option<T>) -> T {
-    match (undetect, sentinel) {
-        (Some(undetect), Some(sentinel)) if raw == undetect => sentinel,
-        _ => raw,
-    }
-}
-
-/// The `what` no-data attributes of the plane a moment was decoded from,
-/// captured alongside its grid so a sweep-level pass can cross-reference them.
+/// The `what` no-data attributes of the plane a field was decoded from,
+/// captured alongside its field so a sweep-level pass can cross-reference
+/// them.
 struct PlaneNoData {
+    name: FieldName,
     nodata: Option<f64>,
     undetect: Option<f64>,
     offset: f64,
@@ -415,18 +532,22 @@ const VELOCITY_OFFSET_EPS: f32 = 1.0e-6;
 /// no-data code; the same value where reflectivity IS present is a real
 /// 0 m/s reading and is preserved.
 ///
-/// Guarded by the copied-what-group signature (velocity sentinels equal the
-/// reflectivity sentinels) so conformant writers — which give velocity its own
-/// distinct sentinels, already masked by the base decode — are never touched.
-/// Also a no-op unless both planes share ray/gate geometry.
-fn recover_copied_whatgroup_velocity_nodata(
-    cut: &mut recast_radar_core::ElevationCut,
-    plane_meta: &BTreeMap<MomentType, PlaneNoData>,
-) {
-    let (Some(vel_meta), Some(ref_meta)) = (
-        plane_meta.get(&MomentType::Velocity),
-        plane_meta.get(&MomentType::Reflectivity),
+/// The velocity and reflectivity planes are the ones the pre-FM301 decoder
+/// folded onto its canonical moments ([`canonical_field`], highest
+/// [`canonical_quantity_priority`] first). Guarded by the copied-what-group
+/// signature (velocity sentinels equal the reflectivity sentinels) so
+/// conformant writers — which give velocity its own distinct sentinels,
+/// already masked by the base decode — are never touched. Also a no-op
+/// unless both planes share ray/gate geometry.
+fn recover_copied_whatgroup_velocity_nodata(sweep: &mut Sweep, plane_meta: &[PlaneNoData]) {
+    let (Some(velocity_name), Some(reflectivity_name)) = (
+        canonical_field(sweep, CanonicalMoment::Velocity),
+        canonical_field(sweep, CanonicalMoment::Reflectivity),
     ) else {
+        return;
+    };
+    let meta = |name: &FieldName| plane_meta.iter().find(|meta| meta.name == *name);
+    let (Some(vel_meta), Some(ref_meta)) = (meta(&velocity_name), meta(&reflectivity_name)) else {
         return;
     };
     // Copied-what-group signature: the velocity plane carries the reflectivity
@@ -437,96 +558,129 @@ fn recover_copied_whatgroup_velocity_nodata(
     if !sentinels_copied {
         return;
     }
-
-    // Mask in place (reflectivity borrowed, velocity owned for the pass) so
-    // no gate-index list proportional to the sweep is built.
-    let Some(mut velocity) = cut.moments.remove(&MomentType::Velocity) else {
+    let offset = vel_meta.offset as f32;
+    let (Some(velocity_index), Some(reflectivity_index)) = (
+        sweep.field_index(&velocity_name),
+        sweep.field_index(&reflectivity_name),
+    ) else {
         return;
     };
-    if let Some(reflectivity) = cut.moments.get(&MomentType::Reflectivity) {
-        mask_offset_fill_without_echo(&mut velocity, reflectivity, vel_meta.offset as f32);
-    }
-    cut.moments.insert(MomentType::Velocity, velocity);
+    // Mask in place (reflectivity borrowed, velocity taken out for the pass)
+    // so no gate-index list proportional to the sweep is built.
+    let mut velocity = std::mem::replace(
+        &mut sweep.fields[velocity_index],
+        Field::new(
+            velocity_name.clone(),
+            GateMapping::IDENTITY,
+            0,
+            FieldData::U8 {
+                values: Vec::new(),
+                coding: IntCoding::new(LinearTransform::IcdScaleOffset {
+                    scale: 1.0,
+                    offset: 0.0,
+                }),
+            },
+        ),
+    );
+    mask_offset_fill_without_echo(&mut velocity, &sweep.fields[reflectivity_index], offset);
+    sweep.fields[velocity_index] = velocity;
 }
 
 /// Set velocity gates that sit on the plane's physical `offset` where the
-/// reflectivity grid has no echo to the velocity grid's no-data code. A
-/// no-op unless both grids share ray/gate geometry.
-fn mask_offset_fill_without_echo(
-    velocity: &mut MomentGrid,
-    reflectivity: &MomentGrid,
-    offset: f32,
-) {
-    let rows = velocity.radial_indices.len();
-    let gates = velocity.gate_range.gate_count;
-    if reflectivity.radial_indices.len() != rows || reflectivity.gate_range.gate_count != gates {
+/// reflectivity field has no echo to the velocity field's fill code. A no-op
+/// unless both fields share ray/gate geometry.
+fn mask_offset_fill_without_echo(velocity: &mut Field, reflectivity: &Field, offset: f32) {
+    let (rows, gates) = velocity.shape();
+    if reflectivity.shape() != (rows, gates) {
         return; // differing geometry: do not risk mis-masking
     }
-    let sentinel = velocity.nodata;
     for row in 0..rows {
         for gate in 0..gates {
-            // Reflectivity no-echo: None (u8/u16 sentinel) or NaN (float).
-            let ref_no_echo = reflectivity
-                .scaled_value(row, gate)
-                .is_none_or(|z| !z.is_finite());
+            // Reflectivity no-echo: no value (sentinel) or NaN.
+            let ref_no_echo = reflectivity.value(row, gate).is_none_or(|z| !z.is_finite());
             if !ref_no_echo {
                 continue;
             }
-            if let Some(value) = velocity.scaled_value(row, gate)
+            if let Some(value) = velocity.value(row, gate)
                 && value.is_finite()
                 && (value - offset).abs() <= VELOCITY_OFFSET_EPS
             {
-                mask_gate_no_data(&mut velocity.storage, sentinel, row * gates + gate);
+                mask_gate_no_data(velocity, row * gates + gate);
             }
         }
     }
 }
 
-/// Set one flat gate index to the transparent no-data code: NaN for float
-/// storage, the `nodata` sentinel for integer storage (integer grids with no
-/// sentinel are left unchanged — nothing transparent to write).
-fn mask_gate_no_data(
-    storage: &mut recast_radar_core::MomentStorage,
-    sentinel: Option<u16>,
-    index: usize,
-) {
-    match storage {
-        recast_radar_core::MomentStorage::F32(values) => {
+/// Set one flat gate index to the field's fill code: `_FillValue` for
+/// integer storage (unchanged when the plane declares none — nothing
+/// transparent to write), `_FillValue` else NaN for float storage.
+fn mask_gate_no_data(field: &mut Field, index: usize) {
+    match &mut field.data {
+        FieldData::U8 { values, coding } => {
+            if let (Some(fill), Some(slot)) = (coding.fill_value, values.get_mut(index)) {
+                *slot = fill;
+            }
+        }
+        FieldData::U16 { values, coding } => {
+            if let (Some(fill), Some(slot)) = (coding.fill_value, values.get_mut(index)) {
+                *slot = fill;
+            }
+        }
+        FieldData::I8 { values, coding } => {
+            if let (Some(fill), Some(slot)) = (coding.fill_value, values.get_mut(index)) {
+                *slot = fill;
+            }
+        }
+        FieldData::I16 { values, coding } => {
+            if let (Some(fill), Some(slot)) = (coding.fill_value, values.get_mut(index)) {
+                *slot = fill;
+            }
+        }
+        FieldData::F32 { values, coding } => {
             if let Some(slot) = values.get_mut(index) {
-                *slot = f32::NAN;
+                *slot = coding.fill_code();
             }
         }
-        recast_radar_core::MomentStorage::U8(values) => {
-            if let (Some(sentinel), Some(slot)) = (sentinel, values.get_mut(index)) {
-                *slot = sentinel as u8;
-            }
-        }
-        recast_radar_core::MomentStorage::U16(values) => {
-            if let (Some(sentinel), Some(slot)) = (sentinel, values.get_mut(index)) {
-                *slot = sentinel;
+        FieldData::F64 { values, coding } => {
+            if let Some(slot) = values.get_mut(index) {
+                *slot = coding.fill_code();
             }
         }
     }
+}
+
+/// The canonical moments the pre-FM301 decoder folded ODIM quantity codes
+/// (spec Table 16) onto. Still used to pick the reflectivity and velocity
+/// planes of the copied-what-group recovery and by the legacy wrapper.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum CanonicalMoment {
+    Reflectivity,
+    Velocity,
+    SpectrumWidth,
+    DifferentialReflectivity,
+    CorrelationCoefficient,
+    DifferentialPhase,
+    SpecificDifferentialPhase,
 }
 
 /// Map ODIM quantity codes (spec Table 16) onto the canonical moment set.
-fn canonical_quantity(quantity: &str) -> Option<MomentType> {
+pub(crate) fn canonical_quantity(quantity: &str) -> Option<CanonicalMoment> {
     match quantity {
-        "DBZH" | "DBZV" | "TH" | "TV" | "DBZ" => Some(MomentType::Reflectivity),
-        "VRADH" | "VRADV" | "VRAD" | "VRADDH" => Some(MomentType::Velocity),
-        "WRADH" | "WRADV" | "WRAD" => Some(MomentType::SpectrumWidth),
+        "DBZH" | "DBZV" | "TH" | "TV" | "DBZ" => Some(CanonicalMoment::Reflectivity),
+        "VRADH" | "VRADV" | "VRAD" | "VRADDH" => Some(CanonicalMoment::Velocity),
+        "WRADH" | "WRADV" | "WRAD" => Some(CanonicalMoment::SpectrumWidth),
         // The unfiltered dual-pol spellings come in both orders in the
         // wild: spec-style trailing U (ZDRU) and DWD's leading U (UZDR,
         // URHOHV — live opendata.dwd.de sweep files, 2026-06-12).
-        "ZDR" | "ZDRU" | "UZDR" => Some(MomentType::DifferentialReflectivity),
-        "RHOHV" | "RHOHVU" | "URHOHV" => Some(MomentType::CorrelationCoefficient),
-        "PHIDP" | "PHIDPU" | "UPHIDP" => Some(MomentType::DifferentialPhase),
-        "KDP" | "KDPU" => Some(MomentType::SpecificDifferentialPhase),
+        "ZDR" | "ZDRU" | "UZDR" => Some(CanonicalMoment::DifferentialReflectivity),
+        "RHOHV" | "RHOHVU" | "URHOHV" => Some(CanonicalMoment::CorrelationCoefficient),
+        "PHIDP" | "PHIDPU" | "UPHIDP" => Some(CanonicalMoment::DifferentialPhase),
+        "KDP" | "KDPU" => Some(CanonicalMoment::SpecificDifferentialPhase),
         _ => None,
     }
 }
 
-fn canonical_quantity_priority(quantity: &str) -> u8 {
+pub(crate) fn canonical_quantity_priority(quantity: &str) -> u8 {
     match quantity {
         // Prefer filtered reflectivity when a file carries both DBZH and
         // unfiltered TH/TV. ODIM writers do not guarantee plane order.
@@ -540,42 +694,30 @@ fn canonical_quantity_priority(quantity: &str) -> u8 {
     }
 }
 
-fn decode_moment_for_quantity(
-    quantity: &str,
-    canonical: Option<MomentType>,
-    canonical_priorities: &BTreeMap<MomentType, u8>,
-    existing_moments: &BTreeMap<MomentType, MomentGrid>,
-) -> Option<MomentType> {
-    match canonical {
-        Some(moment) => {
-            let priority = canonical_quantity_priority(quantity);
-            let existing_priority = canonical_priorities.get(&moment).copied();
-            if existing_priority.is_none_or(|existing| priority > existing) {
-                Some(moment)
-            } else {
-                None
-            }
+/// The field of `sweep` the pre-FM301 decoder used as `moment`: the plane
+/// with the highest [`canonical_quantity_priority`], earliest first among
+/// equals.
+pub(crate) fn canonical_field(sweep: &Sweep, moment: CanonicalMoment) -> Option<FieldName> {
+    let mut best: Option<(u8, &FieldName)> = None;
+    for field in &sweep.fields {
+        let name = field.name.as_str();
+        if canonical_quantity(name) != Some(moment) {
+            continue;
         }
-        None => {
-            let unknown = MomentType::Unknown(quantity.to_owned());
-            (!existing_moments.contains_key(&unknown)).then_some(unknown)
+        let priority = canonical_quantity_priority(name);
+        if best.is_none_or(|(existing, _)| priority > existing) {
+            best = Some((priority, &field.name));
         }
     }
+    best.map(|(_, name)| name.clone())
 }
 
-fn parse_site(file: &H5File<'_>) -> RadarSite {
-    let source = file
-        .attr("/what", "source")
-        .and_then(|attr| attr.as_str().map(str::to_owned))
-        .unwrap_or_default();
-    let (id, name) = site_identity_from_source(&source);
-    RadarSite {
-        id,
-        name,
-        latitude_deg: attr_f64(file, "/where", "lat").map(|value| value as f32),
-        longitude_deg: attr_f64(file, "/where", "lon").map(|value| value as f32),
-        elevation_m: attr_f64(file, "/where", "height").map(|value| value as f32),
-    }
+/// Identifiers from the `/what` `source` attribute.
+pub(crate) struct SiteIdentity {
+    pub id: String,
+    pub name: Option<String>,
+    pub wmo: Option<String>,
+    pub wigos: Option<String>,
 }
 
 /// Pick site id + display name out of the `/what` `source` attribute:
@@ -584,8 +726,8 @@ fn parse_site(file: &H5File<'_>) -> RadarSite {
 /// NOD > RAD > WMO regardless of pair order — operational files (RMI
 /// Belgium, met.no) list WMO first but NOD is the canonical OPERA site
 /// code (validated against bejab/norst sample volumes).
-fn site_identity_from_source(source: &str) -> (String, Option<String>) {
-    let (mut nod, mut rad, mut wmo, mut name) = (None, None, None, None);
+pub(crate) fn site_identity_from_source(source: &str) -> SiteIdentity {
+    let (mut nod, mut rad, mut wmo, mut name, mut wigos) = (None, None, None, None, None);
     for pair in source.split(',') {
         let Some((key, value)) = pair.split_once(':') else {
             continue;
@@ -599,16 +741,34 @@ fn site_identity_from_source(source: &str) -> (String, Option<String>) {
             "RAD" => rad = Some(value.to_owned()),
             "WMO" => wmo = Some(value.to_owned()),
             "PLC" => name = Some(value.to_owned()),
+            "WIGOS" => wigos = Some(value.to_owned()),
             _ => {}
         }
     }
-    let id = nod.or(rad).or(wmo).unwrap_or_else(|| "ODIM".to_owned());
-    (id, name)
+    let id = nod
+        .or(rad)
+        .or_else(|| wmo.clone())
+        .unwrap_or_else(|| "ODIM".to_owned());
+    SiteIdentity {
+        id,
+        name,
+        wmo,
+        wigos,
+    }
 }
 
-fn parse_datetime(file: &H5File<'_>, group: &str) -> Option<chrono::DateTime<Utc>> {
-    let date = file.attr(group, "date")?.as_str()?.to_owned();
-    let time = file.attr(group, "time")?.as_str()?.to_owned();
+fn parse_datetime(file: &H5File<'_>, group: &str) -> Option<DateTime<Utc>> {
+    parse_datetime_pair(file, group, "date", "time")
+}
+
+fn parse_datetime_pair(
+    file: &H5File<'_>,
+    group: &str,
+    date_attr: &str,
+    time_attr: &str,
+) -> Option<DateTime<Utc>> {
+    let date = file.attr(group, date_attr)?.as_str()?.to_owned();
+    let time = file.attr(group, time_attr)?.as_str()?.to_owned();
     let date = NaiveDate::parse_from_str(&date, "%Y%m%d").ok()?;
     let time = NaiveTime::parse_from_str(&time, "%H%M%S").ok()?;
     Some(Utc.from_utc_datetime(&NaiveDateTime::new(date, time)))
@@ -616,6 +776,17 @@ fn parse_datetime(file: &H5File<'_>, group: &str) -> Option<chrono::DateTime<Utc
 
 fn attr_f64(file: &H5File<'_>, path: &str, name: &str) -> Option<f64> {
     file.attr(path, name).as_ref().and_then(H5Attr::as_f64)
+}
+
+/// A numeric array attribute as f64 (a scalar counts as a one-element array).
+fn attr_array(file: &H5File<'_>, path: &str, name: &str) -> Option<Vec<f64>> {
+    match file.attr(path, name)? {
+        H5Attr::F64Array(values) => Some(values),
+        H5Attr::I64Array(values) => Some(values.into_iter().map(|v| v as f64).collect()),
+        H5Attr::F64(value) => Some(vec![value]),
+        H5Attr::I64(value) => Some(vec![value as f64]),
+        H5Attr::Str(_) => None,
+    }
 }
 
 fn odim_radar_frequency_mhz(file: &H5File<'_>) -> Option<u32> {
@@ -663,7 +834,7 @@ fn frequency_mhz_from_wavelength(value: f64) -> Option<u32> {
         .then_some(mhz.round() as u32)
 }
 
-fn invalid(reason: impl Into<String>) -> OdimError {
+pub(crate) fn invalid(reason: impl Into<String>) -> OdimError {
     OdimError::InvalidMessage {
         offset: 0,
         reason: reason.into(),
@@ -676,56 +847,64 @@ mod tests {
 
     #[test]
     fn quantity_codes_map_to_moments() {
-        assert_eq!(canonical_quantity("DBZH"), Some(MomentType::Reflectivity));
-        assert_eq!(canonical_quantity("VRADH"), Some(MomentType::Velocity));
-        assert_eq!(canonical_quantity("WRADH"), Some(MomentType::SpectrumWidth));
+        assert_eq!(
+            canonical_quantity("DBZH"),
+            Some(CanonicalMoment::Reflectivity)
+        );
+        assert_eq!(canonical_quantity("VRADH"), Some(CanonicalMoment::Velocity));
+        assert_eq!(
+            canonical_quantity("WRADH"),
+            Some(CanonicalMoment::SpectrumWidth)
+        );
         assert_eq!(
             canonical_quantity("RHOHV"),
-            Some(MomentType::CorrelationCoefficient)
+            Some(CanonicalMoment::CorrelationCoefficient)
         );
         assert_eq!(canonical_quantity("QIND"), None);
     }
 
     #[test]
     fn filtered_odim_quantities_win_duplicate_canonical_moments() {
-        let mut priorities = BTreeMap::new();
-        let moments = BTreeMap::new();
-        let reflectivity = Some(MomentType::Reflectivity);
-
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        for name in ["TH", "DBZH", "TV"] {
+            sweep
+                .add_field(Field::new(
+                    FieldName::parse(name),
+                    GateMapping::IDENTITY,
+                    1,
+                    FieldData::U8 {
+                        values: Vec::new(),
+                        coding: IntCoding::new(LinearTransform::IcdScaleOffset {
+                            scale: 1.0,
+                            offset: 0.0,
+                        }),
+                    },
+                ))
+                .unwrap();
+        }
         assert_eq!(
-            decode_moment_for_quantity("TH", reflectivity.clone(), &priorities, &moments),
-            Some(MomentType::Reflectivity)
+            canonical_field(&sweep, CanonicalMoment::Reflectivity),
+            Some(FieldName::Dbzh)
         );
-        priorities.insert(MomentType::Reflectivity, canonical_quantity_priority("TH"));
-        assert_eq!(
-            decode_moment_for_quantity("DBZH", reflectivity.clone(), &priorities, &moments),
-            Some(MomentType::Reflectivity)
-        );
-        priorities.insert(
-            MomentType::Reflectivity,
-            canonical_quantity_priority("DBZH"),
-        );
-        assert_eq!(
-            decode_moment_for_quantity("TH", reflectivity, &priorities, &moments),
-            None
-        );
+        assert_eq!(canonical_field(&sweep, CanonicalMoment::Velocity), None);
     }
 
     #[test]
     fn site_identity_prefers_nod_over_wmo_regardless_of_pair_order() {
         // Real operational source strings put WMO first; NOD must win.
-        let (id, name) = site_identity_from_source(
+        let identity = site_identity_from_source(
             "WMO:06410,RAD:BX42,PLC:Jabbeke,NOD:bejab,CTY:605,CMT:bejab_scan_v3_Z_dBZ",
         );
-        assert_eq!(id, "BEJAB");
-        assert_eq!(name.as_deref(), Some("Jabbeke"));
+        assert_eq!(identity.id, "BEJAB");
+        assert_eq!(identity.name.as_deref(), Some("Jabbeke"));
+        assert_eq!(identity.wmo.as_deref(), Some("06410"));
         // No NOD: fall back RAD, then WMO; empty values are skipped.
-        let (id, _) = site_identity_from_source("RAD:AU40,PLC:CapFlat,CTY:500,STN:70341");
-        assert_eq!(id, "AU40");
-        let (id, _) = site_identity_from_source("WMO:01104,NOD:");
-        assert_eq!(id, "01104");
-        let (id, _) = site_identity_from_source("CMT:whatever");
-        assert_eq!(id, "ODIM");
+        let identity = site_identity_from_source("RAD:AU40,PLC:CapFlat,CTY:500,STN:70341");
+        assert_eq!(identity.id, "AU40");
+        let identity = site_identity_from_source("WMO:01104,NOD:");
+        assert_eq!(identity.id, "01104");
+        let identity = site_identity_from_source("CMT:whatever");
+        assert_eq!(identity.id, "ODIM");
     }
 
     #[test]
@@ -745,81 +924,92 @@ mod tests {
     }
 
     #[test]
-    fn undetect_remaps_to_the_nodata_sentinel() {
-        assert_eq!(remap_sentinel(0u8, Some(0), Some(255)), 255);
-        assert_eq!(remap_sentinel(7u8, Some(0), Some(255)), 7);
-        assert_eq!(remap_sentinel(0u8, None, Some(255)), 0);
+    fn integer_coding_keeps_nodata_and_undetect_apart() {
+        let coding: IntCoding<u8> = int_coding(
+            LinearTransform::CfScaleOffset {
+                scale_factor: 0.5,
+                add_offset: -32.0,
+                attr_width: FloatWidth::F64,
+            },
+            Some(255.0),
+            Some(0.0),
+        );
+        assert_eq!(coding.fill_value, Some(255));
+        assert_eq!(coding.undetect, Some(0));
+        // Only `undetect` declared: it doubles as the fill code.
+        let coding: IntCoding<u16> = int_coding(
+            LinearTransform::CfScaleOffset {
+                scale_factor: 1.0,
+                add_offset: 0.0,
+                attr_width: FloatWidth::F64,
+            },
+            None,
+            Some(3.0),
+        );
+        assert_eq!(coding.fill_value, Some(3));
+        assert_eq!(coding.undetect, Some(3));
     }
 
-    /// Build a one-ray float moment grid (offset 0, scale 1) for the recovery
-    /// tests: NaN encodes no-echo, finite values are physical readings.
-    fn float_grid(moment: MomentType, row: Vec<f32>) -> MomentGrid {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 500,
-            gate_count: row.len(),
-        };
-        let mut grid = MomentGrid {
-            moment,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: Vec::new(),
-            storage: recast_radar_core::MomentStorage::F32(Vec::new()),
-        };
-        grid.push_row(0, MomentRow::F32(row)).expect("push row");
-        grid
+    /// Build a one-ray float field (physical values) for the recovery tests:
+    /// NaN encodes no-echo, finite values are physical readings.
+    fn float_field(name: FieldName, row: Vec<f32>) -> Field {
+        let mut field = Field::new(
+            name,
+            GateMapping::IDENTITY,
+            row.len() as u32,
+            FieldData::F32 {
+                values: Vec::new(),
+                coding: FloatCoding::default(),
+            },
+        );
+        field.push_row_f32(0, &row).expect("push row");
+        field
     }
 
-    fn copied_sentinel_cut() -> recast_radar_core::ElevationCut {
+    fn copied_sentinel_sweep() -> Sweep {
         // gate0: Z no-echo, V=0  -> collapsed no-data fill (must mask)
         // gate1: Z echo,    V=0  -> genuine 0 m/s reading (must keep)
         // gate2: Z no-echo, V=5  -> velocity off `offset` (must keep)
         // gate3: Z echo,    V=3  -> ordinary gate (must keep)
-        let reflectivity = float_grid(
-            MomentType::Reflectivity,
-            vec![f32::NAN, 10.0, f32::NAN, 20.0],
-        );
-        let velocity = float_grid(MomentType::Velocity, vec![0.0, 0.0, 5.0, 3.0]);
-        let mut cut = recast_radar_core::ElevationCut::new(0.5, None);
-        cut.moments.insert(MomentType::Reflectivity, reflectivity);
-        cut.moments.insert(MomentType::Velocity, velocity);
-        cut
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        sweep
+            .add_field(float_field(
+                FieldName::Dbzh,
+                vec![f32::NAN, 10.0, f32::NAN, 20.0],
+            ))
+            .unwrap();
+        sweep
+            .add_field(float_field(FieldName::Vradh, vec![0.0, 0.0, 5.0, 3.0]))
+            .unwrap();
+        sweep
     }
 
     #[test]
     fn copied_whatgroup_recovery_masks_only_no_echo_offset_gates() {
-        let mut cut = copied_sentinel_cut();
+        let mut sweep = copied_sentinel_sweep();
         // Copied-what-group signature: velocity carries the reflectivity
         // sentinels (the AEMET/IRIS bug), so recovery engages.
-        let mut plane_meta = BTreeMap::new();
-        let sentinels = |offset| PlaneNoData {
+        let sentinels = |name: FieldName, offset| PlaneNoData {
+            name,
             nodata: Some(95.5),
             undetect: Some(-32.0),
             offset,
         };
-        plane_meta.insert(MomentType::Reflectivity, sentinels(-32.0));
-        plane_meta.insert(MomentType::Velocity, sentinels(0.0));
+        let plane_meta = vec![
+            sentinels(FieldName::Dbzh, -32.0),
+            sentinels(FieldName::Vradh, 0.0),
+        ];
 
-        recover_copied_whatgroup_velocity_nodata(&mut cut, &plane_meta);
-        let vel = cut.moments.get(&MomentType::Velocity).unwrap();
-        assert!(
-            vel.scaled_value(0, 0).unwrap().is_nan(),
-            "no-echo 0 m/s fill masked"
-        );
+        recover_copied_whatgroup_velocity_nodata(&mut sweep, &plane_meta);
+        let vel = sweep.field(&FieldName::Vradh).unwrap();
+        assert_eq!(vel.value(0, 0), None, "no-echo 0 m/s fill masked");
+        assert_eq!(vel.value(0, 1), Some(0.0), "genuine 0 m/s with echo kept");
         assert_eq!(
-            vel.scaled_value(0, 1),
-            Some(0.0),
-            "genuine 0 m/s with echo kept"
-        );
-        assert_eq!(
-            vel.scaled_value(0, 2),
+            vel.value(0, 2),
             Some(5.0),
             "velocity off offset kept even without echo"
         );
-        assert_eq!(vel.scaled_value(0, 3), Some(3.0), "ordinary gate kept");
+        assert_eq!(vel.value(0, 3), Some(3.0), "ordinary gate kept");
     }
 
     #[test]
@@ -827,29 +1017,26 @@ mod tests {
         // Velocity declares its OWN sentinels (not the reflectivity ones):
         // a conformant writer. Recovery must not touch the plane, so the
         // 0 m/s gate co-located with no-echo reflectivity survives unchanged.
-        let mut cut = copied_sentinel_cut();
-        let mut plane_meta = BTreeMap::new();
-        plane_meta.insert(
-            MomentType::Reflectivity,
+        let mut sweep = copied_sentinel_sweep();
+        let plane_meta = vec![
             PlaneNoData {
+                name: FieldName::Dbzh,
                 nodata: Some(95.5),
                 undetect: Some(-32.0),
                 offset: -32.0,
             },
-        );
-        plane_meta.insert(
-            MomentType::Velocity,
             PlaneNoData {
+                name: FieldName::Vradh,
                 nodata: Some(-999.0),
                 undetect: Some(888.0),
                 offset: 0.0,
             },
-        );
+        ];
 
-        recover_copied_whatgroup_velocity_nodata(&mut cut, &plane_meta);
-        let vel = cut.moments.get(&MomentType::Velocity).unwrap();
+        recover_copied_whatgroup_velocity_nodata(&mut sweep, &plane_meta);
+        let vel = sweep.field(&FieldName::Vradh).unwrap();
         assert_eq!(
-            vel.scaled_value(0, 0),
+            vel.value(0, 0),
             Some(0.0),
             "distinct-sentinel writer left untouched"
         );

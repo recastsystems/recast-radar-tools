@@ -1,7 +1,9 @@
 //! ODIM_H5 decoding through a pure-Rust HDF5 subset.
 //!
-//! - [`odim`]: polar `PVOL`/`SCAN` objects into
-//!   [`recast_radar_core::RadarVolume`].
+//! - [`odim`]: polar `PVOL`/`SCAN` objects into the FM301
+//!   [`recast_radar_core::model::Volume`] ([`odim::read_odim_h5_volume`]);
+//!   the pre-FM301 [`decode_odim_h5_volume`] lives in [`legacy_api`] during
+//!   the migration.
 //! - [`odim_cartesian`]: Cartesian `IMAGE`/`MAX` products into a gridded
 //!   [`odim_cartesian::OdimCartesianGrid`].
 //! - [`hdf5lite`]: the minimal read-only HDF5 parser both decoders use.
@@ -39,14 +41,20 @@
 //! Every limit violation is an [`OdimError::LimitExceeded`] error.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 pub mod hdf5lite;
+#[allow(deprecated)]
+pub mod legacy_api;
 pub mod odim;
 pub mod odim_cartesian;
 
 use thiserror::Error;
 
-pub use odim::{decode_odim_h5_volume, looks_like_hdf5_bytes};
+#[allow(deprecated)]
+pub use legacy_api::decode_odim_h5_volume;
+pub use odim::{looks_like_hdf5_bytes, read_odim_h5_volume};
 pub use odim_cartesian::{OdimCartesianGrid, decode_odim_h5_cartesian_max};
 
 /// Result type for ODIM_H5 and HDF5 decoding.
@@ -75,9 +83,6 @@ pub enum OdimError {
         /// Human-readable description.
         reason: String,
     },
-    /// Decoded gates did not fit the moment grid.
-    #[error("moment grid error: {0}")]
-    MomentGrid(#[from] recast_radar_core::MomentGridError),
     /// The file declares more data than a documented resource limit allows
     /// (see the crate-level `# Limits` section).
     #[error("decode limit exceeded: {0}")]
