@@ -17,7 +17,7 @@ The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crate
 | Type | Module | Struct (`MessageBody` variant) | Verified against |
 |---|---|---|---|
 | 1 | `lib.rs` (volume decoder) | radials of `RadarVolume`; walker: `Unparsed` | Py-ART: rays per elevation in 4 files, 1991-2005 (`volume_metadata.rs`) |
-| 2 | `rda_status.rs` | `RdaStatus` (`Orda`/`Legacy`) (`RdaStatus`) | MetPy, 27 files (`messages_status.rs`); hex for halfwords 26 and 59 |
+| 2 | `rda_status.rs` | `RdaStatus` (`Orda`/`Legacy`) (`RdaStatus`) | MetPy, 27 files (`messages_status.rs`); halfword positions against the body bytes in the same 27 files (22 ORDA and 18 legacy halfwords pinned by non-zero values, the rest verified as zero) |
 | 3 | `performance.rs` | `PerformanceMaintenance` (`Performance`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 21 Build 24.0 halfwords MetPy lacks. Legacy layout: not decoded |
 | 4, 10 | `console.rs` | `ConsoleMessage` (`Console`) | **no real sample** |
 | 5 | `vcp.rs` | `VolumeCoveragePattern` (`Vcp`) | MetPy, 22 metadata records (`messages_vcp.rs`); Py-ART pattern and cut angles, 22 sources (`volume_metadata.rs`) |
@@ -188,6 +188,16 @@ Real samples: every archive volume in the corpus (not the `_MDM` file or interme
   1991, 1999, 2005 and 2008, ORDA Builds 10.0 to 24.1, and TDWR. Halfwords 26 and 59, which MetPy skips, are
   0000 in every corpus file; the KLIX 2005 legacy fields and several Build 22 codes are checked against values
   read from the file bytes.
+- Halfword positions (`halfword_positions_pinned_by_nonzero_corpus_values`): in all 27 files with a status
+  golden, every decoded field equals the halfword read from the message 2 body at its Table IV position, through
+  the same code mapping. A position is pinned only where some file has a non-zero value there; a zero matches any
+  position. Pinned by non-zero values: ORDA halfwords 1-8, 10-15, 19-24, 41 and 60 (23 files, Build 10.0 to
+  24.1 and TDWR); legacy halfwords 1-8, 10-14, 19-22 and 24 (4 files: KTLX 1991 and 1999, KLIX 2005, KVWX 2008).
+  Verified only as zero, because no corpus file sets them: ORDA 9 (control authorization), 16 (command
+  acknowledgment), 17 (channel control), 18 (spot blanking), 25 (RMS control), 26 (performance check), 27-40
+  (alarm codes), 42-58 (spare) and 59 (downloaded pattern number); legacy 9, 15 (alarm summary), 16, 17, 18, 25
+  and 27-40. The test pins both lists, so a new corpus file that sets one of these fields fails it until the
+  lists and this paragraph are updated.
 
 ## Message 3: Performance/Maintenance Data (Table V)
 

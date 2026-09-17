@@ -1006,6 +1006,343 @@ fn icd_ranges_from_build_19() {
     common::assert_checked_every_available("ICD ranges from Build 19", checked, &sources);
 }
 
+// --- halfword positions ---------------------------------------------------------
+
+/// ORDA halfwords (Table IV) with a non-zero value in at least one corpus
+/// file: 1-8, 10-15, 19-24, 41 and 60. The others are zero in every file, so
+/// their positions are verified only as zero: 9 (control authorization), 16
+/// (command acknowledgment), 17 (channel control), 18 (spot blanking), 25
+/// (RMS control), 26 (performance check), 27-40 (alarm codes), 42-58 (spare)
+/// and 59 (downloaded pattern number).
+const ORDA_NONZERO_HALFWORDS: &[usize] = &[
+    1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24, 41, 60,
+];
+
+/// Legacy halfwords (ICD 2620002B Table IV) with a non-zero value in at least
+/// one of the 4 legacy files (KTLX 1991 and 1999, KLIX 2005, KVWX 2008):
+/// 1-8, 10-14, 19-22 and 24. Verified only as zero: 9 (control
+/// authorization), 15 (alarm summary), 16, 17, 18, 25 (RMS control) and
+/// 27-40 (alarm codes).
+const LEGACY_NONZERO_HALFWORDS: &[usize] = &[
+    1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 19, 20, 21, 22, 24,
+];
+
+/// Every decoded field against the halfword read from the body bytes at its
+/// Table IV position, through the same code mapping. Returns the halfword
+/// numbers with a non-zero value in this body.
+fn assert_orda_halfwords(id: &str, status: &OrdaRdaStatus, body: &[u8]) -> Vec<usize> {
+    let halfwords = body.len() / 2;
+    let hw =
+        |number: usize| u16::from_be_bytes([body[(number - 1) * 2], body[(number - 1) * 2 + 1]]);
+    let hundredths = |number: usize| f32::from(hw(number) as i16) / 100.0;
+    assert_eq!(
+        status.rda_state,
+        RdaState::from_code(hw(1)),
+        "{id}: halfword 1"
+    );
+    assert_eq!(
+        status.operability,
+        OperabilityStatus::from_code(hw(2)),
+        "{id}: halfword 2"
+    );
+    assert_eq!(
+        status.control_status,
+        ControlStatus::from_code(hw(3)),
+        "{id}: halfword 3"
+    );
+    assert_eq!(status.auxiliary_power.0, hw(4), "{id}: halfword 4");
+    assert_eq!(status.average_transmitter_power, hw(5), "{id}: halfword 5");
+    assert_eq!(
+        status.horizontal_reflectivity_calibration_correction,
+        hundredths(6),
+        "{id}: halfword 6"
+    );
+    assert_eq!(status.data_transmission.0, hw(7), "{id}: halfword 7");
+    assert_eq!(
+        status.volume_coverage_pattern,
+        VcpSelection::from_code(hw(8)),
+        "{id}: halfword 8"
+    );
+    assert_eq!(
+        status.control_authorization,
+        ControlAuthorization::from_code(hw(9)),
+        "{id}: halfword 9"
+    );
+    assert_eq!(status.rda_build.0, hw(10), "{id}: halfword 10");
+    assert_eq!(
+        status.operational_mode,
+        OperationalMode::from_code(hw(11)),
+        "{id}: halfword 11"
+    );
+    assert_eq!(
+        status.super_resolution,
+        EnableStatus::from_code(hw(12)),
+        "{id}: halfword 12"
+    );
+    assert_eq!(
+        status.clutter_mitigation_decision.0,
+        hw(13),
+        "{id}: halfword 13"
+    );
+    assert_eq!(status.scan_data_flags.0, hw(14), "{id}: halfword 14");
+    assert_eq!(status.alarm_summary.0, hw(15), "{id}: halfword 15");
+    assert_eq!(
+        status.command_acknowledgment,
+        CommandAcknowledgment::from_code(hw(16)),
+        "{id}: halfword 16"
+    );
+    assert_eq!(
+        status.channel_control,
+        ChannelControlStatus::from_code(hw(17)),
+        "{id}: halfword 17"
+    );
+    assert_eq!(
+        status.spot_blanking,
+        SpotBlanking::from_code(hw(18)),
+        "{id}: halfword 18"
+    );
+    assert_eq!(
+        (
+            status.bypass_map_generation.date,
+            status.bypass_map_generation.minutes
+        ),
+        (hw(19), hw(20)),
+        "{id}: halfwords 19-20"
+    );
+    assert_eq!(
+        (
+            status.clutter_filter_map_generation.date,
+            status.clutter_filter_map_generation.minutes
+        ),
+        (hw(21), hw(22)),
+        "{id}: halfwords 21-22"
+    );
+    assert_eq!(
+        status.vertical_reflectivity_calibration_correction,
+        hundredths(23),
+        "{id}: halfword 23"
+    );
+    assert_eq!(
+        status.transition_power_source,
+        TransitionPowerSource::from_code(hw(24)),
+        "{id}: halfword 24"
+    );
+    assert_eq!(
+        status.rms_control,
+        RmsControl::from_code(hw(25)),
+        "{id}: halfword 25"
+    );
+    assert_eq!(
+        status.performance_check,
+        PerformanceCheckStatus::from_code(hw(26)),
+        "{id}: halfword 26"
+    );
+    for slot in 0..14 {
+        assert_eq!(
+            status.alarm_codes[slot],
+            hw(27 + slot),
+            "{id}: halfword {}",
+            27 + slot
+        );
+    }
+    if halfwords >= 60 {
+        assert_eq!(
+            status.signal_processing_options.map(|options| options.0),
+            Some(hw(41)),
+            "{id}: halfword 41"
+        );
+        assert_eq!(
+            status.downloaded_pattern_number,
+            Some(hw(59)),
+            "{id}: halfword 59"
+        );
+        assert_eq!(status.status_version, Some(hw(60)), "{id}: halfword 60");
+    } else {
+        assert_eq!(halfwords, 40, "{id}: body halfwords");
+        assert_eq!(status.signal_processing_options, None, "{id}");
+        assert_eq!(status.downloaded_pattern_number, None, "{id}");
+        assert_eq!(status.status_version, None, "{id}");
+    }
+    (1..=halfwords).filter(|&number| hw(number) != 0).collect()
+}
+
+/// [`assert_orda_halfwords`] for the legacy layout (40 halfwords).
+fn assert_legacy_halfwords(id: &str, status: &LegacyRdaStatus, body: &[u8]) -> Vec<usize> {
+    assert_eq!(body.len() / 2, 40, "{id}: body halfwords");
+    let hw =
+        |number: usize| u16::from_be_bytes([body[(number - 1) * 2], body[(number - 1) * 2 + 1]]);
+    assert_eq!(
+        status.rda_state,
+        RdaState::from_code(hw(1)),
+        "{id}: halfword 1"
+    );
+    assert_eq!(
+        status.operability,
+        OperabilityStatus::from_code(hw(2)),
+        "{id}: halfword 2"
+    );
+    assert_eq!(
+        status.control_status,
+        ControlStatus::from_code(hw(3)),
+        "{id}: halfword 3"
+    );
+    assert_eq!(status.auxiliary_power.0, hw(4), "{id}: halfword 4");
+    assert_eq!(status.average_transmitter_power, hw(5), "{id}: halfword 5");
+    assert_eq!(
+        status.reflectivity_calibration_correction_raw,
+        hw(6) as i16,
+        "{id}: halfword 6"
+    );
+    assert_eq!(status.data_transmission.0, hw(7), "{id}: halfword 7");
+    assert_eq!(
+        status.volume_coverage_pattern,
+        VcpSelection::from_code(hw(8)),
+        "{id}: halfword 8"
+    );
+    assert_eq!(
+        status.control_authorization,
+        ControlAuthorization::from_code(hw(9)),
+        "{id}: halfword 9"
+    );
+    assert_eq!(
+        status.interference_detection_rate,
+        hw(10),
+        "{id}: halfword 10"
+    );
+    assert_eq!(
+        status.operational_mode,
+        OperationalMode::from_code(hw(11)),
+        "{id}: halfword 11"
+    );
+    assert_eq!(
+        status.interference_suppression_unit,
+        EnableStatus::from_code(hw(12)),
+        "{id}: halfword 12"
+    );
+    assert_eq!(status.archive_ii_status, hw(13), "{id}: halfword 13");
+    assert_eq!(
+        status.archive_ii_remaining_capacity,
+        hw(14),
+        "{id}: halfword 14"
+    );
+    assert_eq!(status.alarm_summary.0, hw(15), "{id}: halfword 15");
+    assert_eq!(
+        status.command_acknowledgment,
+        CommandAcknowledgment::from_code(hw(16)),
+        "{id}: halfword 16"
+    );
+    assert_eq!(
+        status.channel_control,
+        ChannelControlStatus::from_code(hw(17)),
+        "{id}: halfword 17"
+    );
+    assert_eq!(
+        status.spot_blanking,
+        SpotBlanking::from_code(hw(18)),
+        "{id}: halfword 18"
+    );
+    assert_eq!(
+        (
+            status.bypass_map_generation.date,
+            status.bypass_map_generation.minutes
+        ),
+        (hw(19), hw(20)),
+        "{id}: halfwords 19-20"
+    );
+    assert_eq!(
+        (
+            status.notch_width_map_generation.date,
+            status.notch_width_map_generation.minutes
+        ),
+        (hw(21), hw(22)),
+        "{id}: halfwords 21-22"
+    );
+    assert_eq!(
+        status.transition_power_source,
+        TransitionPowerSource::from_code(hw(24)),
+        "{id}: halfword 24"
+    );
+    assert_eq!(
+        status.rms_control,
+        RmsControl::from_code(hw(25)),
+        "{id}: halfword 25"
+    );
+    for slot in 0..14 {
+        assert_eq!(
+            status.alarm_codes[slot],
+            hw(27 + slot),
+            "{id}: halfword {}",
+            27 + slot
+        );
+    }
+    (1..=40).filter(|&number| hw(number) != 0).collect()
+}
+
+/// Halfword positions pinned by real bytes: in every file with a status
+/// golden, each decoded field equals the halfword read from the message 2
+/// body at its Table IV position (through the same code mapping). A field
+/// whose halfword is non-zero in some file is thereby verified at its
+/// position; a field that is zero in every file is verified only as zero.
+/// The two lists of non-zero halfwords are pinned so that the documentation
+/// ("verified only as zero") tracks the corpus.
+#[test]
+fn halfword_positions_pinned_by_nonzero_corpus_values() {
+    let ids: Vec<String> =
+        std::fs::read_dir(recast_radar_testdata::testdata_dir().join("level2/golden/status"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter_map(|name| name.strip_suffix(".json").map(str::to_owned))
+            .collect();
+    assert_eq!(ids.len(), 27, "status goldens");
+    let mut checked = 0;
+    let mut orda_nonzero = std::collections::BTreeSet::new();
+    let mut legacy_nonzero = std::collections::BTreeSet::new();
+    let mut legacy_files = 0;
+    for id in &ids {
+        let Some(raw) = load(id) else { continue };
+        checked += 1;
+        let meta = metadata(&raw);
+        let First::Decoded(header, status) = &meta.status else {
+            panic!("{id}: no message 2");
+        };
+        let body = &meta.bodies[&2];
+        assert_eq!(
+            header.channels & 8 != 0,
+            matches!(status, RdaStatus::Orda(_)),
+            "{id}: layout"
+        );
+        match status {
+            RdaStatus::Orda(status) => orda_nonzero.extend(assert_orda_halfwords(id, status, body)),
+            RdaStatus::Legacy(status) => {
+                legacy_files += 1;
+                legacy_nonzero.extend(assert_legacy_halfwords(id, status, body));
+            }
+        }
+    }
+    let sources: Vec<Vec<&str>> = ids.iter().map(|id| vec![id.as_str()]).collect();
+    common::assert_checked_every_available("halfword positions", checked, &sources);
+    let orda_nonzero: Vec<usize> = orda_nonzero.into_iter().collect();
+    let legacy_nonzero: Vec<usize> = legacy_nonzero.into_iter().collect();
+    if checked == ids.len() {
+        assert_eq!(legacy_files, 4);
+        assert_eq!(orda_nonzero, ORDA_NONZERO_HALFWORDS);
+        assert_eq!(legacy_nonzero, LEGACY_NONZERO_HALFWORDS);
+    } else {
+        assert!(
+            orda_nonzero
+                .iter()
+                .all(|n| ORDA_NONZERO_HALFWORDS.contains(n)),
+            "{orda_nonzero:?}"
+        );
+        assert!(
+            legacy_nonzero
+                .iter()
+                .all(|n| LEGACY_NONZERO_HALFWORDS.contains(n)),
+            "{legacy_nonzero:?}"
+        );
+    }
+}
+
 // --- layouts and walker behaviour ---------------------------------------------
 
 /// The site position in message 18 matches the message 31 volume data block of
