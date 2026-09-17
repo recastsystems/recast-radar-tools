@@ -1,6 +1,10 @@
 //! Research-radar field-name mapping shared by the DORADE and CfRadial
 //! decoders.
 
+// Names the legacy `MomentType`; deleted with the legacy model at the end of
+// FM301 migration task F.3 (`model::Quantity::classify` replaces it).
+#![allow(deprecated)]
+
 use crate::MomentType;
 
 /// Map a DORADE parameter name or CfRadial field name onto the canonical
@@ -12,6 +16,10 @@ use crate::MomentType;
 /// Suffixes are stripped iteratively until a stem matches or no suffix
 /// remains, so `DBZHC_F` → `DBZHC` → `DBZ`. CfRadial field names follow the
 /// same lineage (Radx writes both), so both decoders share this map.
+#[cfg_attr(
+    recast_legacy_deprecation,
+    deprecated(note = "FM301 migration: use model::Quantity::classify")
+)]
 pub fn canonical_moment(name: &str) -> Option<MomentType> {
     let normalized = name.trim().to_ascii_uppercase();
     let mut stem = normalized.as_str();

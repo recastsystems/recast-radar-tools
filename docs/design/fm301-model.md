@@ -2259,6 +2259,79 @@ None of the resolutions adds work at decode:
 
 ---
 
+## 17. F.2 implementation notes
+
+F.2 implemented this note in `recast-radar-core`: `src/model/` (sections 2 to 4, 9, 10, plus
+`merge_volumes`), `src/fm301/` (section 12.1 and `layout()`), `src/legacy.rs` and
+`src/legacy/{convert,bit_identical}.rs` (section 13.2). Where the code differs from the text
+above, the code is authoritative and the difference is listed here.
+
+**API refinements**
+
+1. `legacy::field_from_grid(grid, sweep, convention)` takes the `LegacyConvention`. The
+   legacy `first_gate_m` means the gate start for ODIM and CfRadial and the centre elsewhere
+   (6.6), so attaching a grid's geometry needs the convention.
+2. `lib.rs` re-exports the legacy model items by an explicit list, not `pub use legacy::*`,
+   so the conversion items (`volume_from_legacy`, `LegacyResidue`, ...) stay under
+   `recast_radar_core::legacy::` only. Every old path still resolves.
+3. The borrowed `legacy::sweep_from_cut` / `cut_from_sweep` have no volume time, so their ray
+   times are relative: `time_s = time_offset_ms / 1000` and back. `volume_from_legacy` /
+   `legacy_from_volume` use the per-decoder rules of 5.2.
+4. `FieldResidue` gained `name` (a residue applies to the field of that name, not to a
+   position, so a migrated algorithm that adds or reorders fields cannot misapply it) and
+   `float_scale_offset` (legacy `F32` grids built by algorithm crates carry `scale`/`offset`
+   other than 1/0, which the float coding has no slot for).
+5. `Values::Mapped` and `DataRef::Field` carry `nrays`, `Variable` carries
+   `source: Option<FieldSource>`, and `VolumeView` keeps a private reference to its volume
+   (for `layout()` and `volume()`). A field with zero native gates would otherwise have no
+   row count.
+6. `NameInfo::xradar: Option<XradarAttrs>` holds xradar 0.12's `sweep_vars_mapping` entry
+   verbatim (including its `ZV` standard-name typo); the Xradar flavor writes
+   `standard_name`, `long_name` and `units` from it, and nothing when xradar has no entry.
+   `units_xradar` is kept as specified.
+7. Additional constructors and checks used by decoders: `Volume::new`, `Volume::seal`,
+   `Sweep::add_field` (rejects duplicate names), `Field::push_absent_rows_to`,
+   `IntCoding::nexrad(scale, offset)`, `SourceFormat::infer_from_markers`,
+   `LegacyConvention::of_metadata`, `floor_to_second`. A row longer than `ngates` widens the
+   field's existing rows (the legacy behaviour); `Sweep::seal` grows a uniform range to cover
+   every field.
+8. `model::merge_volumes` / `MergeReport { merged_fields, skipped_geometry,
+   field_collisions }` / `MergeError` are the FM301 counterpart of `merge_radar_volumes`
+   (6.5), added now so the F.3 sub-worktrees do not both edit core. They are not re-exported
+   at the crate root while the legacy `MergeReport` is.
+
+**Choices the text left open**
+
+9. JMA legacy `first_gate_m` (GRIB2 template 3.50120 "range start") is treated as a gate
+   centre, like NEXRAD, DORADE and generic volumes. Round trips are exact either way; F.3
+   confirms the meaning when io-jma decodes natively.
+10. A sweep with an explicit range has no legacy form: `cut_from_sweep` and
+    `legacy_from_volume` return `ExplicitRange`; `grid_from_field` approximates the gate range
+    from the first two centres.
+11. Xradar flavor details not pinned by appendix A are provisional until F.4's goldens:
+    `version` (source version for CfRadial, else "None"), `platform_is_mobile` (CfRadial
+    only), `scan_id` (omitted for NEXRAD), `nyquist_velocity` attributes, ray-variable units,
+    and the `elevation` ray dimension for non-CfRadial RHI sweeps.
+
+**Acceptance evidence (13.4)**
+
+- `tools/fm301_legacy_items.py` passes: 41 model items and 28 of 30 test items of
+  `lib.rs@1989a03` are in `legacy.rs` verbatim apart from 21 `cfg_attr` deprecation
+  attributes; the 4 geometry items and 2 geometry tests stay in `lib.rs` unchanged.
+- `RUSTFLAGS="--cfg recast_legacy_deprecation" cargo check -p recast-radar-core --all-targets`
+  reports no warning from core (the io crates it pulls in as dev-dependencies warn, as
+  un-migrated crates should).
+- Round trip (`crates/recast-radar-core/tests/legacy_round_trip.rs`): 31 committed fixtures,
+  and 119 volumes of the full corpus (release, `-- --ignored`), are bit-identical after
+  legacy -> FM301 -> legacy. Five corpus files are refused with `UnalignedGates`, and the
+  test checks independently that their legacy geometry cannot share one range: the legacy
+  decoder turns the headerless model-data file `l2-klix-20210829-175748-mdm` and the
+  intermediate real-time chunks `l2chunk-kiwa-307-20260917-003629-{002,003,014,030}-i` into
+  a few "Message 1" radials of garbage (gate spacings such as 52966 m and 27686 m in one
+  radial). That is a decoder issue (stream A), not a model limitation.
+
+---
+
 ## Appendix A. Observed structure on real files
 
 ### A.1 Environment and files

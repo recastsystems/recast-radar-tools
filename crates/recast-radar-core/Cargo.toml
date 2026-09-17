@@ -7,6 +7,15 @@ license.workspace = true
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# Legacy round-trip and FM301 view tests over the real corpus
+# (tests/legacy_round_trip.rs, tests/fm301_view.rs). A dev-dependency cycle
+# (io depends on core) is fine for integration tests.
+recast-radar-io = { path = "../recast-radar-io" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+serde_json.workspace = true
 
 [lints]
 workspace = true
