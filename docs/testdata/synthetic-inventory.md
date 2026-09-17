@@ -249,82 +249,62 @@ Deviations from the proposals above them in C.1:
 
 ## correct
 
-### `crates/recast-radar-correct/src/dealias_v4/merge.rs`
+Converted in C.2 (branch `real-tests-correct`): all 28 tests read real Level II volumes and the 4
+helpers (`velocity_cut`, `wind_cut`, `tilt_with_uniform_wind`, `test_velocity_grid_rows`) are deleted;
+the group has no allowlist entries. One test was added (`v4_passes_nyquist_less_tdwr_through`) and
+three were renamed because their real-data assertions no longer match the synthetic names.
 
-`vec![f32::NAN; rows * gates]` velocity fields filled by hand: an aliased island across a gap, a +-14 m/s couplet, an isolated speck, a wrapped uniform wind.
+Shared pieces:
 
-| test | real input | assertion source |
+- `crates/recast-radar-correct/src/real_data.rs` (test-only): decoded corpus volumes, the velocity
+  sweep as the solvers see it, and the goldens.
+- `tools/correct_golden.py` writes `crates/recast-radar-correct/tests/golden/<case>.txt` (13 sweeps,
+  about 515 KB of text): Py-ART 2.2.5 `dealias_region_based` folds per gate, run-length encoded, plus
+  per-ray valid-gate count, gate-position sum and raw-velocity sum. Every test first checks those
+  per-ray sums against its own decoded rows, so the folds are compared gate for gate. For sweeps with
+  an HRRR/RAP fixture (`crates/recast-radar-bench/fixtures/dealias/`), `env_offset` is the global fold
+  that puts Py-ART's output closest to the projected model wind; Py-ART's folds plus that offset are
+  the absolute-branch reference. Regenerating the goldens reproduces them byte for byte.
+- Corpus additions: `l2-klix-20210829-175748` (the volume before `l2-klix-20210829-180425`) and
+  `l2-klix-20210829-173117` (33 min before), for the temporal-prior tests.
+- `l2-klix-20050829-130035-trim` (Katrina) is not used: on `real-tests`, `recast-radar-io-nexrad` reads
+  the Message 1 Nyquist velocity at body offset 46 (a spare field, always 0) instead of offset 60, so
+  every Message 1 radial decodes with `nyquist_velocity_mps = None` and every engine passes legacy
+  velocity through (Py-ART and MetPy read 32.1 m/s; offset 60 holds 3210 on all 362 Doppler radials of
+  the file). Branch `real-tests-io-nexrad` (d075340) moves the read to offset 60; after C.3 the Katrina
+  sweep can join the goldens (`tools/correct_golden.py` needs only a new `CASES` entry).
+
+| test | real input | assertion (measured value) |
 |---|---|---|
-| `tests::bridged_pairs_resolve_an_isolated_island_across_a_gap` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-pahg-20250909-212549` (stratiform; Py-ART region-based unfolds 4,120 of 404,963 gates at 0.53 deg) around an aliased echo island separated by no-data gates | island fold from Py-ART region-based on the same sweep |
-| `tests::aggregation_preserves_an_embedded_shear_couplet` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-ktlx-20130520-201643-trim` sweep 2 around the Moore tornado couplet | no region unfolded where Py-ART also leaves the couplet unfolded |
-| `tests::uncorroborated_bridge_welds_without_unwrapping` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) containing a speck across a gap from strong outbound flow | speck fold 0; Py-ART region-based agrees |
-| `tests::merge_solve_is_deterministic` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) | two solves identical |
-
-
-### `crates/recast-radar-correct/src/dealias_v4/mod.rs`
-
-`velocity_cut`/`wind_cut` build 360- or 720-radial velocity tilts from closures (analytic uniform wind, patches, islands) wrapped into +-Nyquist, assembled into `RadarVolume`s with hand-set times.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::v4_temporal_reference_recovers_a_topmost_aliased_high_tilt` | needs corpus addition: the KLIX volume before `l2-klix-20210829-180425` (about 17:58Z, same VCP), as the previous volume | current-tilt branch agrees with Py-ART region-based and with the previous volume's dealiased tilt |
-| `tests::v4_lower_current_tilt_can_reference_a_folded_higher_tilt` | `l2-klix-20210829-180425` (full volume, VCP 112 with MPDA: the 0.48 deg cut at Nyquist 32.1 m/s and the 0.53 deg cut at 23.2 m/s, where Py-ART region-based unfolds 70,140 and 152,673 gates) | Py-ART `pyart.correct.dealias_region_based` on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically |
-| `tests::v4_current_lower_tilt_fixes_an_isolated_high_tilt_branch` | `l2-klix-20210829-180425`, an isolated echo region on a higher tilt | Py-ART `pyart.correct.dealias_region_based` on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically |
-| `tests::v4_repairs_a_folded_patch_fused_into_legitimate_inbound` | `l2-kdvn-20200810-180401` (full volume; Py-ART region-based unfolds 79,228 of 337,846 gates at 0.44 deg) | Py-ART `pyart.correct.dealias_region_based` on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically |
-| `tests::v4_stale_temporal_volume_is_ignored` | needs corpus addition: a KLIX volume 30 min or more before `l2-klix-20210829-180425` | output identical with and without the stale previous volume |
-| `tests::v4_weak_edge_subgraph_rebranches_only_with_environmental_evidence` | `l2-klix-20210829-180425` with `crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json` (real HRRR profile) | without the profile equals the v1 region engine exactly; with it the rebranched regions agree with the profile projection and Py-ART |
-| `tests::v4_branch_degenerate_volume_is_decided_by_the_environment` | `l2-ktlx-20130520-201643` with `crates/recast-radar-bench/fixtures/dealias/env_ktlx.json` (RAP analysis 2013-05-20 20Z) | with the profile, error against the profile projection below tolerance on both tilts |
-| `tests::v4_stale_environment_profile_is_ignored` | `l2-klix-20210829-180425` with `crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json` (real HRRR profile) whose `valid_time` is moved 4 h earlier (edit of a real fixture) | output identical to no profile |
-| `tests::v4_solve_is_deterministic_across_runs` | `l2-klix-20210829-180425` with `crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json` (real HRRR profile) | two solves byte-identical (grids and confidence) |
-| `tests::v4_confidence_grid_reflects_decision_margins` | `l2-klix-20210829-180425` with `crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json` (real HRRR profile) | confidence above the interior-only level where the profile covers; diagnostics report the profile |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::velocity_cut` | velocity tilt from a value closure | `tests::wind_cut`, `tests::v4_current_lower_tilt_fixes_an_isolated_high_tilt_branch`, `tests::v4_repairs_a_folded_patch_fused_into_legitimate_inbound`, `tests::v4_weak_edge_subgraph_rebranches_only_with_environmental_evidence`, `tests::v4_stale_environment_profile_is_ignored` |
-| `tests::wind_cut` | wrapped analytic uniform-wind tilt | `tests::v4_temporal_reference_recovers_a_topmost_aliased_high_tilt`, `tests::v4_lower_current_tilt_can_reference_a_folded_higher_tilt`, `tests::v4_stale_temporal_volume_is_ignored`, `tests::v4_branch_degenerate_volume_is_decided_by_the_environment`, `tests::v4_solve_is_deterministic_across_runs`, `tests::v4_confidence_grid_reflects_decision_margins` |
-
-
-### `crates/recast-radar-correct/src/dealias_v4/repair.rs`
-
-Hand-filled observed/reference/truth velocity arrays: a +-17 m/s couplet, a folded lobe with reference holes, an everywhere-disagreeing reference, a 2-gate speck.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::meso_couplet_survives_untouched` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-ktlx-20130520-201643-trim` sweep 2 around the Moore couplet | gauntlet leaves every couplet gate at fold 0 |
-| `tests::patch_repair_closes_its_ring` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from the 0.53 deg cut of `l2-klix-20210829-180425` (Nyquist 23.2 m/s), with the Py-ART region-based output of that cut as the reference (its missing gates are the holes) | boundary pairs after repair do not exceed those of the Py-ART field |
-| `tests::change_cap_aborts_the_patch_module` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) with the reference set to the observed field plus 2N (edit of real values) | module aborts, no fold changes |
-| `tests::box_median_ladder_snaps_speckle_and_converges` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-pgua-20230524-030945-trim` sweep 2 (Mawar; Py-ART region-based unfolds 22,560 of 165,809 gates) containing isolated aliased specks | specks snapped to Py-ART's branch; converges within the round budget |
-
-
-### `crates/recast-radar-correct/src/dealias_v4/super_regions.rs`
-
-Hand-filled 8x8 and 16x8 velocity blocks joined by one contact or a long fold boundary.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::single_contact_edge_is_weak_and_splits_super_regions` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) where `solve_region_folds` finds two regions touching along one gate pair | weak edge with support below 12; two super-regions |
-| `tests::high_support_edge_welds_a_super_region` | a real velocity window (rows x gates, per-row Nyquist, azimuths) cut from `l2-kbox-20220129-150537-trim` sweep 2 (Py-ART region-based unfolds 13,900 of 189,629 gates) where two regions share a long unanimous fold boundary | one super-region, no weak edges; fold vote from Py-ART region-based |
-
-
-### `crates/recast-radar-correct/src/lib.rs`
-
-`test_velocity_grid_rows` and `tilt_with_uniform_wind` build velocity `ElevationCut`/`MomentGrid`s from hand-written rows, folded ramps, LCG noise patches, or an analytic uniform wind wrapped into +-Nyquist.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::lightweight_velocity_dealias_unfolds_radial_continuity` | `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates), a radial crossing a fold | Py-ART `pyart.correct.dealias_region_based` on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically |
-| `tests::dealias_skip_detection_reports_nyquist_less_feeds` | `jma-n6-20191012-090000-rs47773` (JMA radial velocity; the test comment says the decoder leaves Nyquist unset: confirm on the decoded cut) and `l2-tstl-20230331-230314-trim` sweep 2 (TDWR; Py-ART reports Nyquist 0); `l2-kdvn-20200810-180401-trim` as the positive control | skip reported and output equal to the decoded input; control not skipped |
-| `tests::region_dealias_recovers_smooth_folded_ramp` | `l2-klix-20050829-130035-trim` sweep 2 (Katrina, 362 radials over the full circle, Nyquist 32.1 m/s; Py-ART region-based unfolds 53,164 of 153,501 gates) and `l2-kbox-20220129-150537-trim` sweep 2 (Py-ART region-based unfolds 13,900 of 189,629 gates) | Py-ART `pyart.correct.dealias_region_based` on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically |
-| `tests::region_dealias_does_not_propagate_errors_down_a_radial` | `l2-klix-20210829-180425-trim` sweep 2 (nearly alias-free: Py-ART region-based unfolds 11 of 63,544 gates) | every gate Py-ART leaves unchanged stays unchanged |
-| `tests::region_dealias_is_deterministic_across_runs` | `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) | 16 runs byte-identical |
-| `tests::region_dealias_unfolds_geometrically_supported_fold` | `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates), a folded patch surrounded by unfolded gates | Py-ART `pyart.correct.dealias_region_based` on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically |
-| `tests::external_harmonic_reference_selects_the_absolute_branch` | `l2-klix-20210829-180425` (full volume, VCP 112 with MPDA: the 0.48 deg cut at Nyquist 32.1 m/s and the 0.53 deg cut at 23.2 m/s, where Py-ART region-based unfolds 70,140 and 152,673 gates): reference fit on the 32.1 m/s cut, target the 23.2 m/s cut | branch agrees with Py-ART region-based output and with `crates/recast-radar-bench/fixtures/dealias/env_klix_hrrr.json` projected along the beams |
-| `tests::velocity_dealias_preserves_supported_adjacent_folds` | `l2-klix-20050829-130035-trim` sweep 2 (Katrina, 362 radials over the full circle, Nyquist 32.1 m/s; Py-ART region-based unfolds 53,164 of 153,501 gates) | Py-ART `pyart.correct.dealias_region_based` on the same sweep: agreement modulo one global 2N offset, and no gate-to-gate jump above Nyquist inside regions Py-ART unfolds identically |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::tilt_with_uniform_wind` | 360-radial tilt of an analytic uniform wind, wrapped | `tests::external_harmonic_reference_selects_the_absolute_branch` |
-| `tests::test_velocity_grid_rows` | velocity cut and grid from hand-written rows | `tests::dealias_skip_detection_reports_nyquist_less_feeds`, `tests::region_dealias_recovers_smooth_folded_ramp`, `tests::region_dealias_does_not_propagate_errors_down_a_radial`, `tests::region_dealias_is_deterministic_across_runs`, `tests::region_dealias_unfolds_geometrically_supported_fold`, `tests::velocity_dealias_preserves_supported_adjacent_folds` |
+| `lib.rs` `lightweight_velocity_dealias_unfolds_radial_continuity` | `l2-kdvn-20200810-180401-trim`, `l2-kbox-20220129-150537-trim` Doppler cuts | along-ray raw jumps > N that Py-ART makes continuous, also made continuous by the region engine: >= 89% (3,402 of 3,735) and >= 99% (6,672 of 6,713) |
+| `lib.rs` `dealias_skip_detection_reports_nyquist_less_feeds` | `l2-tstl-20230331-230314-trim` (Nyquist 0 per Py-ART), `jma-n6-20191012-090000-rs47773` (13 sweeps), KDVN trim as control; Nyquist edits of the decoded TDWR cut | skip reported, output equals input within 0.05 m/s on every gate; JMA valid gates = 547,108 (manifest, GRIB2 walker); control not skipped |
+| `lib.rs` `region_dealias_recovers_smooth_folded_ramp` | KBOX trim; `l2-klix-20210829-180425` 0.48 deg cut at 23.2 m/s | fold agreement with Py-ART modulo one global offset >= 99.7% / 99.5% (99.835%, 99.629%); breaks where Py-ART is continuous <= 0.1% / 0.05% of pairs |
+| `lib.rs` `region_dealias_does_not_propagate_errors_down_a_radial` | `l2-klix-20210829-180425-trim` (Py-ART moves 13 of 63,544 gates) | gates Py-ART keeps that the engine moves <= 12 (6); longest run along a ray <= 4 (3) |
+| `lib.rs` `region_dealias_is_deterministic_across_runs` | KDVN trim | 16 runs byte-identical; > 4,000 gates moved (4,845) |
+| `lib.rs` `region_dealias_unfolds_geometrically_supported_fold` | KDVN trim, the 18 Py-ART patches of >= 6 gates enclosed by dominant-branch gates | patch gates >= 97% (97.5%), ring gates >= 97.5% (98.4%) on Py-ART's branch |
+| `lib.rs` `external_harmonic_reference_selects_the_absolute_branch` | Ida full volume: reference fitted on the 32.1 m/s cut, applied to the 23.2 m/s cut | absolute agreement >= 99.8% (477,793 of 478,616) and >= 500 gates better than without (476,841) |
+| `lib.rs` `velocity_dealias_preserves_supported_adjacent_folds` | KBOX trim, enclosed Py-ART patches spanning >= 3 rays (46) | patch and ring gates >= 99% (100%) |
+| `merge.rs` `bridged_pairs_resolve_an_isolated_island_across_a_gap` | KDVN 0.48 deg (18 aliased islands) and Ida 23.2 m/s cut (8) | merge on Py-ART's branch >= 90% (773 of 811, 599 of 605); plain vote graph <= 20% (74, 3) |
+| `merge.rs` `aggregation_preserves_an_embedded_shear_couplet` | `l2-ktlx-20130520-201643-trim`, Moore couplet (Py-ART max opposite-sign azimuthal shear 10-40 km: 98.0 m/s) | merge couplet shear >= Py-ART's (120.7 m/s) within 4 rays / 8 gates |
+| `merge.rs` `uncorroborated_bridge_welds_without_unwrapping` | KDVN 0.48 deg, 1-2 gate specks whose bridge partners mostly differ by > N (36) | merge keeps >= 95% on a partner's branch (36); Py-ART unwraps >= 75% (33) |
+| `merge.rs` `merge_solve_is_deterministic` | KDVN trim | two solves identical |
+| `mod.rs` `v4_temporal_reference_recovers_a_topmost_aliased_high_tilt` | Ida 1.80 deg tilt alone, previous volume `l2-klix-20210829-175748` | prior used; absolute agreement >= 99.4% (159,902 of 160,762) and >= 300 gates better than without (159,448) |
+| `mod.rs` `v4_lower_current_tilt_can_reference_a_folded_higher_tilt` | Ida cuts up to 1.80 deg vs the 1.80 deg tilt alone | >= 99.4% (160,066) and >= 300 better (159,448) |
+| `mod.rs` `v4_current_lower_tilt_fixes_an_isolated_high_tilt_branch` | Ida 1.80 and 2.42 deg tilts, isolated echo of 64-1,000 gates | volume solve >= 94% / 90% (1,821 of 1,903; 980 of 1,071), >= 15 / 5 points above the tilt alone (1,389; 896); no invented gates |
+| `mod.rs` `v4_repairs_folded_patches_inside_inbound_flow` (was `..._fused_into_legitimate_inbound`) | KDVN full volume, 0.48 deg cut | agreement >= 93.5% (94.2%), per echo >= 98.5% (98.9%), >= 8 points above the region engine (82.9%); inbound enclosed patches >= 70% (121 of 156) |
+| `mod.rs` `v4_stale_temporal_volume_is_ignored` | Ida 1.80 deg tilt with `l2-klix-20210829-173117` (33 min) and `-175748` | stale: prior unused, grid and confidence byte-identical to none; fresh: used, grid differs |
+| `mod.rs` `v4_rebranches_onto_the_absolute_branch_only_with_environmental_evidence` (was `v4_weak_edge_subgraph_...`) | `l2-ktlx-20130520-201643` + `env_ktlx.json` (RAP 20Z) | gates the profile rebranches >= 40 (53); with profile >= 85% absolute (49), without <= 15% (4); no-profile confidence never above interior-only |
+| `mod.rs` `v4_environment_decides_the_absolute_branch_on_both_tilts` (was `v4_branch_degenerate_...`) | Moore volume + RAP | both lowest Doppler tilts >= 99.8% / 99.7% absolute (99.90%, 99.84%); Py-ART's branch within N of RAP on >= 99% |
+| `mod.rs` `v4_stale_environment_profile_is_ignored` | Ida trim + `env_klix_hrrr.json` with `valid_time` moved 4 h earlier | identical to no profile; unedited profile used |
+| `mod.rs` `v4_solve_is_deterministic_across_runs` | Ida full volume + HRRR | 19 velocity tilts (Py-ART count); grids, confidence and diagnostics identical |
+| `mod.rs` `v4_confidence_grid_reflects_decision_margins` | Ida full volume + HRRR, 4 tilts | gates above interior-only >= 90% of valid and >= 99.5% absolute (100%, 100%, 99.97%, 99.70%), more often right than the rest |
+| `mod.rs` `v4_passes_nyquist_less_tdwr_through` (new) | TSTL trim | pass-through within 0.05 m/s |
+| `repair.rs` `meso_couplet_survives_untouched` | Moore trim from Py-ART's solution | couplet masked; gates within the 2-gate dilation of the couplet pair unchanged |
+| `repair.rs` `patch_repair_closes_its_ring` | Ida 0.48 deg cuts: isolated smooth one-branch regions of 100-1,000 gates with no echo in couplet reach (2), shifted one interval, Py-ART reference with holes (25) | restored >= 99% (269 of 270), holes >= 90% (24), ring closure >= holes filled, boundary pairs only around unrestored gates |
+| `repair.rs` `change_cap_aborts_the_patch_module` | KDVN trim, reference = observed + 2N | abort; patch/ring/revert counts 0; every change comes from other modules; changes below the cap |
+| `repair.rs` `box_median_ladder_snaps_speckle_and_converges` | `l2-pahg-20250909-212549` 0.48 deg: Py-ART's 1-2 gate enclosed specks reset (159) | >= 93% snapped back (153), confidence demoted; a second pass leaves the folds unchanged |
+| `super_regions.rs` `single_contact_edge_is_weak_and_splits_super_regions` | KDVN trim region solve (3,285 regions) | partition = independent union-find over the documented strong rule; >= 1,000 single-contact edges (1,332), all across super-regions; weak edge list as documented |
+| `super_regions.rs` `high_support_edge_welds_a_super_region` | KBOX trim region solve | every strong edge (118) welds; its fold vote equals Py-ART's fold difference >= 99% (100%) |
 
 
 ## filters-map
@@ -845,7 +825,7 @@ section):
 | group | input | for |
 |---|---|---|
 | io-nexrad | a real GR2 `.msg31` export (back-to-back Message 31 records) | `decodes_gr2_style_variable_framed_msg31_records` |
-| correct | the KLIX volume before `l2-klix-20210829-180425` (about 17:58Z) and one 30 min or more earlier | v4 temporal-reference tests |
+| correct | added in C.2: `l2-klix-20210829-175748` and `l2-klix-20210829-173117` | v4 temporal-reference tests |
 | track | 30-60 min sequences of consecutive WSR-88D volumes (crossing, splitting, merging cells; a QLCS) with the Level III Storm Tracking Information product for the same volumes | `tracking.rs` |
 | core-data-scattering | one scan delivered as per-quantity files (MeteoRomania or DWD) | `merge_three_product_parts_assembles_full_dual_pol_cut` |
 | core-data-scattering | same-time NHC `CurrentStorms.json` and GDACS event-list captures sharing a storm | `tropical.rs` merge tests |

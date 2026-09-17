@@ -944,7 +944,10 @@ dependencies = [
  "image",
  "rayon",
  "recast-radar-core",
+ "recast-radar-io-jma",
  "recast-radar-io-nexrad",
+ "recast-radar-testdata",
+ "serde_json",
 ]
 
 [[package]]

@@ -986,161 +986,430 @@ fn median_small(values: &mut [f32; 4], count: usize) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    //! Repair-gauntlet tests on real Level II sweeps. The starting fold state
+    //! and the covering reference come from Py-ART 2.2.5
+    //! `dealias_region_based` on the same sweep (`tools/correct_golden.py`).
 
-    fn uniform_ctx<'a>(
-        observed: &'a [f32],
-        nyq: &'a [f32],
-        rows: usize,
-        gates: usize,
+    use super::*;
+    use crate::real_data::{
+        VelocitySweep, echo_components, enclosed_patches, golden_volume, strongest_azimuthal_shear,
+    };
+
+    fn context<'a>(
+        sweep: &'a VelocitySweep,
+        wraps: bool,
         reference: Option<&'a [f32]>,
     ) -> RepairContext<'a> {
         RepairContext {
-            observed,
-            nyq,
-            rows,
-            gates,
-            wraps: true,
+            observed: &sweep.observed,
+            nyq: &sweep.nyq,
+            rows: sweep.rows,
+            gates: sweep.gates,
+            wraps,
             reference,
         }
     }
 
-    /// F11: a synthetic mesocyclone couplet (opposite-sign gate-to-gate
-    /// azimuthal shear near 2N) must survive the whole gauntlet untouched.
-    #[test]
-    fn meso_couplet_survives_untouched() {
-        let (rows, gates) = (60, 40);
-        let nyq = vec![20.0f32; rows];
-        let mut observed = vec![-2.0f32; rows * gates];
-        // Couplet: rows 28-29 vs 30-31 at gates 18..22, ±17 m/s.
-        for row in 28..30 {
-            for gate in 18..22 {
-                observed[row * gates + gate] = -17.0;
-            }
-        }
-        for row in 30..32 {
-            for gate in 18..22 {
-                observed[row * gates + gate] = 17.0;
-            }
-        }
-        let ctx = uniform_ctx(&observed, &nyq, rows, gates, None);
-        let mut folds = vec![0i32; rows * gates];
-        let mut confidence = vec![200u8; rows * gates];
-        let diagnostics = run_gauntlet(&ctx, &mut folds, &mut confidence);
-        assert!(diagnostics.couplet_masked > 0, "couplet must be masked");
-        assert!(
-            folds.iter().all(|fold| *fold == 0),
-            "no gauntlet module may touch the couplet"
-        );
+    /// Py-ART's folds as a solver state (0 where Py-ART has no gate).
+    fn pyart_state(pyart: &[Option<i32>]) -> Vec<i32> {
+        pyart.iter().map(|fold| fold.unwrap_or(0)).collect()
     }
 
-    /// The §1.4 finding-2 pin: when the covering reference has holes inside
-    /// a folded lobe (exactly how the hybrid's quorum left ring/hole
-    /// artifacts), R2 + ring closure must flip the WHOLE lobe — the repaired
-    /// field may carry no more boundary pairs than the truth field does.
-    #[test]
-    fn patch_repair_closes_its_ring() {
-        let (rows, gates) = (40, 40);
-        let nyquist = 20.0f32;
-        let nyq = vec![nyquist; rows];
-        // Background truth −5; folded lobe truth +35 (observed −5 after
-        // wrapping) in rows 10..20, gates 10..20.  Reference sees truth
-        // except at three interior holes.
-        let observed = vec![-5.0f32; rows * gates];
-        let mut truth = vec![-5.0f32; rows * gates];
-        let mut reference = vec![-5.0f32; rows * gates];
-        for row in 10..20 {
-            for gate in 10..20 {
-                truth[row * gates + gate] = 35.0;
-                reference[row * gates + gate] = 35.0;
+    /// Residual fold-boundary pairs (|dv| > 1.2 N, rows adjacent across the
+    /// wrap when the sweep closes) of `folds` over `gates` and their
+    /// 4-neighbours.
+    fn boundary_pairs(sweep: &VelocitySweep, folds: &[i32], wraps: bool, gates: &[usize]) -> usize {
+        let mut pairs = std::collections::BTreeSet::new();
+        for &idx in gates {
+            let (row, gate) = (idx / sweep.gates, idx % sweep.gates);
+            let mut neighbours = Vec::with_capacity(4);
+            if gate > 0 {
+                neighbours.push(idx - 1);
             }
-        }
-        let holes = [12 * gates + 13, 15 * gates + 16, 17 * gates + 12];
-        for &hole in &holes {
-            reference[hole] = f32::NAN;
-        }
-        let ctx = uniform_ctx(&observed, &nyq, rows, gates, Some(&reference));
-        let mut folds = vec![0i32; rows * gates];
-        let mut confidence = vec![200u8; rows * gates];
-        let diagnostics = run_gauntlet(&ctx, &mut folds, &mut confidence);
-        assert!(diagnostics.patch_changed > 0, "patch must flip");
-        assert!(
-            diagnostics.ring_closed >= holes.len(),
-            "reference holes must be closed by the ring pass: {diagnostics:?}"
-        );
-        for &hole in &holes {
-            assert_eq!(folds[hole], 1, "hole gate must join the patch");
-        }
-        let count_boundaries = |field: &dyn Fn(usize) -> f32| {
-            let mut boundaries = 0;
-            for row in 0..rows {
-                for gate in 0..gates {
-                    let idx = row * gates + gate;
-                    if gate + 1 < gates {
-                        boundaries +=
-                            usize::from((field(idx) - field(idx + 1)).abs() > 1.2 * nyquist);
-                    }
-                    let below = ((row + 1) % rows) * gates + gate;
-                    boundaries += usize::from((field(idx) - field(below)).abs() > 1.2 * nyquist);
+            if gate + 1 < sweep.gates {
+                neighbours.push(idx + 1);
+            }
+            if row > 0 {
+                neighbours.push(idx - sweep.gates);
+            } else if wraps {
+                neighbours.push((sweep.rows - 1) * sweep.gates + gate);
+            }
+            if row + 1 < sweep.rows {
+                neighbours.push(idx + sweep.gates);
+            } else if wraps {
+                neighbours.push(gate);
+            }
+            for other in neighbours {
+                if !sweep.observed[idx].is_finite() || !sweep.observed[other].is_finite() {
+                    continue;
+                }
+                let threshold = 1.2 * sweep.nyq[row].min(sweep.nyq[other / sweep.gates]);
+                if (sweep.unfolded(idx, folds[idx]) - sweep.unfolded(other, folds[other])).abs()
+                    > threshold
+                {
+                    pairs.insert((idx.min(other), idx.max(other)));
                 }
             }
-            boundaries
+        }
+        pairs.len()
+    }
+
+    /// The 20 May 2013 Moore tornado couplet (KTLX 0.48 deg, Nyquist 26.1
+    /// m/s): starting from Py-ART's solution, whose strongest opposite-sign
+    /// azimuthal shear 10-40 km out is the couplet (98.0 m/s), the gauntlet
+    /// must mask it and leave every gate within the mask's 2-gate dilation of
+    /// the couplet pair untouched.
+    #[test]
+    fn meso_couplet_survives_untouched() {
+        let Some((volume, golden)) = golden_volume("ktlx_20130520_trim_s1") else {
+            return;
         };
-        let repaired = |idx: usize| observed[idx] + 2.0 * nyquist * folds[idx] as f32;
-        let truth_field = |idx: usize| truth[idx];
-        assert_eq!(
-            count_boundaries(&repaired),
-            count_boundaries(&truth_field),
-            "repair must not leave EXTRA boundary pairs beyond the truth lobe's own perimeter"
+        let cut = &volume.cuts[golden.sweep];
+        let sweep = VelocitySweep::of_cut(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let (row, gate, shear) = strongest_azimuthal_shear(&sweep, &pyart, 10_000, 40_000);
+        assert!(shear >= COUPLET_MIN_DELTA_NYQUIST_FRAC * golden.nyquist_mps);
+
+        let start = pyart_state(&pyart);
+        let mut folds = start.clone();
+        let mut confidence = vec![200u8; folds.len()];
+        let diagnostics = run_gauntlet(
+            &context(&sweep, golden.rays_wrap_around, None),
+            &mut folds,
+            &mut confidence,
+        );
+        eprintln!("couplet at row {row} gate {gate} ({shear} m/s): {diagnostics:?}");
+        assert!(diagnostics.couplet_masked > 0, "couplet must be masked");
+        let dilate = COUPLET_DILATE_GATES;
+        let core: Vec<usize> = (row.saturating_sub(dilate)
+            ..=(row + 1 + dilate).min(sweep.rows - 1))
+            .flat_map(|r| {
+                (gate.saturating_sub(dilate)..=(gate + dilate).min(sweep.gates - 1))
+                    .map(move |g| r * sweep.gates + g)
+            })
+            .filter(|&idx| sweep.observed[idx].is_finite())
+            .collect();
+        assert!(core.len() >= 20, "couplet core gates {}", core.len());
+        for &idx in &core {
+            assert_eq!(folds[idx], start[idx], "couplet gate {idx} was modified");
+        }
+
+        // A covering reference that puts the couplet core one interval up (a
+        // misaligned reference, an edit of Py-ART's field) must not move it
+        // either: the mask exempts it from the reference-driven modules too.
+        let reference: Vec<f32> = (0..start.len())
+            .map(|idx| {
+                let shift = if core.contains(&idx) { 1 } else { 0 };
+                sweep.unfolded(idx, start[idx] + shift)
+            })
+            .collect();
+        let mut referenced = start.clone();
+        let diagnostics = run_gauntlet(
+            &context(&sweep, golden.rays_wrap_around, Some(&reference)),
+            &mut referenced,
+            &mut confidence,
+        );
+        eprintln!("with a misaligned reference: {diagnostics:?}");
+        for &idx in &core {
+            assert_eq!(
+                referenced[idx], start[idx],
+                "couplet gate {idx} was modified"
+            );
+        }
+    }
+
+    /// Isolated echo regions whose branch the reference must decide: every
+    /// valid-gate component of 100-1,000 gates that Py-ART puts on one branch,
+    /// that is smooth inside (adjacent gates within N/2) and that has no other
+    /// echo within the couplet mask's reach (6 rays, 2 gates). Each starts
+    /// one whole interval off Py-ART's branch; Py-ART's output is the covering
+    /// reference, with holes at a quarter of each region's interior gates.
+    /// Patch repair must move the regions back (measured: 269 of 270 gates,
+    /// Ida 0.48 deg cuts), ring closure must fill the holes (24 of 25), and
+    /// boundary pairs may remain only around gates left off the branch. (Regions under 100 gates are
+    /// left out: with holes and incoherent edges their patch can fall below
+    /// the 64-gate keep threshold, and the audit then reverts it by design.)
+    #[test]
+    fn patch_repair_closes_its_ring() {
+        let (mut total_regions, mut total_holes, mut total_gates, mut total_restored) =
+            (0, 0, 0, 0);
+        let (mut total_holes_restored, mut total_pairs, mut total_ring) = (0, 0, 0);
+        for case in [
+            "klix_20210829_s1",
+            "klix_20210829_s2",
+            "klix_20210829_s9",
+            "klix_20210829_s13",
+            "kdvn_20200810_s1",
+            "ktlx_20130520_s1",
+            "ktlx_20130520_s3",
+            "pahg_20250909_s1",
+        ] {
+            let Some((volume, golden)) = golden_volume(case) else {
+                return;
+            };
+            let cut = &volume.cuts[golden.sweep];
+            let sweep = VelocitySweep::of_cut(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let wraps = golden.rays_wrap_around;
+            let truth = pyart_state(&pyart);
+            let mut start = truth.clone();
+            let mut region_gates = Vec::new();
+            let mut holes = std::collections::BTreeSet::new();
+            let mut regions = 0;
+            for region in echo_regions(&sweep, wraps) {
+                if !(100..=1000).contains(&region.len())
+                    || !region.iter().all(|&idx| pyart[idx] == pyart[region[0]])
+                {
+                    continue;
+                }
+                let inside: std::collections::HashSet<usize> = region.iter().copied().collect();
+                let smooth = region.iter().all(|&idx| {
+                    let half = 0.5 * sweep.nyq[idx / sweep.gates];
+                    [idx + 1, idx + sweep.gates].iter().all(|other| {
+                        !inside.contains(other)
+                            || (sweep.observed[idx] - sweep.observed[*other]).abs() <= half
+                    })
+                });
+                let clear = region.iter().all(|&idx| {
+                    let (row, gate) = ((idx / sweep.gates) as i64, (idx % sweep.gates) as i64);
+                    (-6i64..=6).all(|dr| {
+                        (-2i64..=2).all(|dg| {
+                            let r = if wraps {
+                                (row + dr).rem_euclid(sweep.rows as i64)
+                            } else {
+                                row + dr
+                            };
+                            let g = gate + dg;
+                            if r < 0 || r >= sweep.rows as i64 || g < 0 || g >= sweep.gates as i64 {
+                                return true;
+                            }
+                            let other = r as usize * sweep.gates + g as usize;
+                            inside.contains(&other) || !sweep.observed[other].is_finite()
+                        })
+                    })
+                });
+                if !smooth || !clear {
+                    continue;
+                }
+                regions += 1;
+                let branch = truth[region[0]];
+                for &idx in &region {
+                    start[idx] = if branch >= 0 { branch - 1 } else { branch + 1 };
+                    let (row, gate) = (idx / sweep.gates, idx % sweep.gates);
+                    let interior = row > 0
+                        && row + 1 < sweep.rows
+                        && gate > 0
+                        && gate + 1 < sweep.gates
+                        && [idx - 1, idx + 1, idx - sweep.gates, idx + sweep.gates]
+                            .iter()
+                            .all(|neighbour| inside.contains(neighbour));
+                    if interior && (row + gate) % 4 == 0 {
+                        holes.insert(idx);
+                    }
+                }
+                region_gates.extend(region);
+            }
+            if regions == 0 {
+                continue;
+            }
+            let reference: Vec<f32> = (0..truth.len())
+                .map(|idx| {
+                    if holes.contains(&idx) || !sweep.observed[idx].is_finite() {
+                        f32::NAN
+                    } else {
+                        sweep.unfolded(idx, truth[idx])
+                    }
+                })
+                .collect();
+            let mut folds = start.clone();
+            let mut confidence = vec![200u8; folds.len()];
+            let diagnostics = run_gauntlet(
+                &context(&sweep, wraps, Some(&reference)),
+                &mut folds,
+                &mut confidence,
+            );
+            let restored = region_gates
+                .iter()
+                .filter(|&&idx| folds[idx] == truth[idx])
+                .count();
+            let holes_restored = holes
+                .iter()
+                .filter(|&&idx| folds[idx] == truth[idx])
+                .count();
+            let pairs = boundary_pairs(&sweep, &folds, wraps, &region_gates);
+            eprintln!(
+                "{case}: {regions} regions, {} gates, {} holes: restored {restored}, holes {holes_restored}, boundary pairs {pairs}; {diagnostics:?}",
+                region_gates.len(),
+                holes.len()
+            );
+            assert!(diagnostics.patch_changed > 0, "{case}: patch must flip");
+            total_gates += region_gates.len();
+            total_restored += restored;
+            total_holes_restored += holes_restored;
+            total_pairs += pairs;
+            total_ring += diagnostics.ring_closed;
+            total_regions += regions;
+            total_holes += holes.len();
+        }
+        eprintln!(
+            "all: {total_regions} regions, {total_gates} gates, {total_holes} holes: restored {total_restored}, holes {total_holes_restored}, ring closed {total_ring}, boundary pairs {total_pairs}"
+        );
+        assert!(
+            total_regions >= 2 && total_holes >= 20,
+            "regions {total_regions}, holes {total_holes}"
+        );
+        assert!(
+            total_restored as f64 >= 0.99 * total_gates as f64,
+            "restored {total_restored} of {total_gates}"
+        );
+        assert!(
+            total_holes_restored as f64 >= 0.9 * total_holes as f64,
+            "holes {total_holes_restored} of {total_holes}"
+        );
+        assert!(
+            total_ring >= total_holes_restored,
+            "ring closure {total_ring} < holes filled {total_holes_restored}"
+        );
+        assert!(
+            total_pairs <= 4 * (total_gates - total_restored),
+            "boundary pairs {total_pairs} beyond the {} gates left off Py-ART's branch",
+            total_gates - total_restored
         );
     }
 
-    /// Rule (c): a module that wants to touch more than 15% of the finite
-    /// gates aborts and changes nothing.
+    /// Valid-gate components (4-neighbour) of a sweep, in label order.
+    fn echo_regions(sweep: &VelocitySweep, wraps: bool) -> Vec<Vec<usize>> {
+        let label = echo_components(sweep.rows, sweep.gates, wraps, |idx| {
+            sweep.observed[idx].is_finite()
+        });
+        let mut members: std::collections::BTreeMap<u32, Vec<usize>> = Default::default();
+        for (idx, component) in label.iter().enumerate() {
+            if let Some(component) = component {
+                members.entry(*component).or_default().push(idx);
+            }
+        }
+        members.into_values().collect()
+    }
+
+    /// Rule (c): a reference claiming every gate of the derecho sector sits a
+    /// whole interval above its observation (the observed field plus 2N, an
+    /// edit of the real values) would move far more than 15% of the gates, so
+    /// patch repair aborts and the gauntlet ends exactly where it ends with no
+    /// reference at all.
     #[test]
     fn change_cap_aborts_the_patch_module() {
-        let (rows, gates) = (20, 20);
-        let nyq = vec![20.0f32; rows];
-        let observed = vec![-5.0f32; rows * gates];
-        // Reference claims EVERYTHING is +35: flipping all 400 gates would
-        // exceed the 15% cap, so the module must abort.
-        let reference = vec![35.0f32; rows * gates];
-        let ctx = uniform_ctx(&observed, &nyq, rows, gates, Some(&reference));
-        let mut folds = vec![0i32; rows * gates];
-        let mut confidence = vec![200u8; rows * gates];
-        let diagnostics = run_gauntlet(&ctx, &mut folds, &mut confidence);
-        assert!(diagnostics.aborted_modules >= 1);
-        assert_eq!(diagnostics.patch_changed, 0);
-        assert!(folds.iter().all(|fold| *fold == 0));
+        let Some((volume, golden)) = golden_volume("kdvn_20200810_trim_s1") else {
+            return;
+        };
+        let cut = &volume.cuts[golden.sweep];
+        let sweep = VelocitySweep::of_cut(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let start = pyart_state(&pyart);
+        let shifted: Vec<f32> = sweep
+            .observed
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| value + 2.0 * sweep.nyq[idx / sweep.gates])
+            .collect();
+        let wraps = golden.rays_wrap_around;
+        let mut with_shifted = start.clone();
+        let mut confidence_shifted = vec![200u8; start.len()];
+        let aborted = run_gauntlet(
+            &context(&sweep, wraps, Some(&shifted)),
+            &mut with_shifted,
+            &mut confidence_shifted,
+        );
+        let changed = with_shifted
+            .iter()
+            .zip(&start)
+            .filter(|(a, b)| a != b)
+            .count();
+        let cap = (REPAIR_MAX_FRACTION * sweep.finite_gates() as f64).floor() as usize;
+        eprintln!("changed {changed} (cap {cap}): {aborted:?}");
+        assert!(aborted.aborted_modules >= 1);
+        assert_eq!(
+            (
+                aborted.patch_changed,
+                aborted.ring_closed,
+                aborted.patch_reverted
+            ),
+            (0, 0, 0)
+        );
+        assert!(
+            changed <= aborted.speck_snapped + aborted.box_moved + aborted.plane_moved,
+            "every change comes from the other modules"
+        );
+        assert!(changed < cap, "{changed} changes against a cap of {cap}");
     }
 
-    /// R3 ladder: an isolated 2-gate clump a full fold off snaps to the box
-    /// median and the ladder converges within its round budget.
+    /// Kenai stratiform rain on PAHG's 0.48 deg cut (Nyquist 24.1 m/s, little
+    /// shear for the couplet mask to protect): Py-ART unfolds isolated specks
+    /// of one or two gates enclosed by dominant-branch echo. Starting from
+    /// Py-ART's solution with those specks reset to the surrounding branch and
+    /// Py-ART's output as the covering reference, the gauntlet's speck snap
+    /// and box-median ladder must put them back on Py-ART's branch (demoting
+    /// their confidence), and a second pass over its own output must change
+    /// nothing (converged).
     #[test]
     fn box_median_ladder_snaps_speckle_and_converges() {
-        let (rows, gates) = (30, 30);
-        let nyquist = 15.0f32;
-        let nyq = vec![nyquist; rows];
-        let mut observed = vec![3.0f32; rows * gates];
-        // 2-gate clump wrapped a fold down: −27 observed (truth +3).
-        observed[15 * gates + 15] = 3.0 - 2.0 * nyquist;
-        observed[15 * gates + 16] = 3.0 - 2.0 * nyquist;
-        let ctx = uniform_ctx(&observed, &nyq, rows, gates, None);
-        let mut folds = vec![0i32; rows * gates];
-        let mut confidence = vec![200u8; rows * gates];
-        let diagnostics = run_gauntlet(&ctx, &mut folds, &mut confidence);
-        // R1 needs 3 finite neighbors agreeing; the pair survives it but the
-        // 5×2 box median catches both.
-        assert!(
-            diagnostics.speck_snapped + diagnostics.box_moved >= 2,
-            "clump must snap: {diagnostics:?}"
+        let Some((volume, golden)) = golden_volume("pahg_20250909_s1") else {
+            return;
+        };
+        let cut = &volume.cuts[golden.sweep];
+        let sweep = VelocitySweep::of_cut(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let wraps = golden.rays_wrap_around;
+        let dominant = crate::real_data::dominant_fold(&pyart);
+        let specks: Vec<usize> = enclosed_patches(&sweep, &pyart, 1)
+            .into_iter()
+            .filter(|patch| patch.gates.len() <= 2)
+            .flat_map(|patch| patch.gates)
+            .collect();
+        let truth = pyart_state(&pyart);
+        let mut folds = truth.clone();
+        for &idx in &specks {
+            folds[idx] = dominant;
+        }
+        let reference: Vec<f32> = (0..truth.len())
+            .map(|idx| sweep.unfolded(idx, truth[idx]))
+            .collect();
+        let mut confidence = vec![200u8; folds.len()];
+        let diagnostics = run_gauntlet(
+            &context(&sweep, wraps, Some(&reference)),
+            &mut folds,
+            &mut confidence,
         );
-        assert_eq!(folds[15 * gates + 15], 1);
-        assert_eq!(folds[15 * gates + 16], 1);
+        let snapped = specks
+            .iter()
+            .filter(|&&idx| folds[idx] == truth[idx])
+            .count();
+        let demoted = specks
+            .iter()
+            .filter(|&&idx| folds[idx] == truth[idx] && confidence[idx] < 200)
+            .count();
+        eprintln!(
+            "specks {}, snapped {snapped}, demoted {demoted}; {diagnostics:?}",
+            specks.len()
+        );
+        assert!(specks.len() >= 100, "specks {}", specks.len());
+        assert!(
+            snapped as f64 >= 0.93 * specks.len() as f64,
+            "snapped {snapped} of {}",
+            specks.len()
+        );
+        assert_eq!(demoted, snapped, "repaired gates are demoted");
+        assert!(diagnostics.speck_snapped + diagnostics.box_moved >= snapped);
+
+        let mut again = folds.clone();
+        let second = run_gauntlet(
+            &context(&sweep, wraps, Some(&reference)),
+            &mut again,
+            &mut confidence,
+        );
+        eprintln!("second pass {second:?}");
         assert_eq!(
-            confidence[15 * gates + 15],
-            confidence[15 * gates + 15].min(96),
-            "repaired gates are demoted"
+            again, folds,
+            "the gauntlet's output is a fixed point of the gauntlet"
         );
     }
 }

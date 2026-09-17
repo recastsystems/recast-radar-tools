@@ -875,137 +875,277 @@ impl Reducer {
 
 #[cfg(test)]
 mod tests {
+    //! Merge-solve tests on real Level II sweeps and windows cut from them;
+    //! expected folds from Py-ART 2.2.5 `dealias_region_based` on the same
+    //! files (`tools/correct_golden.py`).
+
     use super::*;
+    use crate::real_data::{
+        VelocitySweep, echo_components, fold_agreement, golden_volume, strongest_azimuthal_shear,
+    };
+    use crate::region_core::solve_region_folds;
 
-    const N: f32 = 20.0;
+    const SPLIT: f32 = 0.5;
 
-    fn wrap(value: f32, nyquist: f32) -> f32 {
-        (value + nyquist).rem_euclid(2.0 * nyquist) - nyquist
+    /// Per-gate fold of a region solve (`None` outside every region).
+    fn solve_folds(solve: &RegionSolve) -> Vec<Option<i32>> {
+        solve
+            .region_of
+            .iter()
+            .map(|&rid| (rid != u32::MAX).then(|| solve.region_fold[rid as usize]))
+            .collect()
     }
 
-    fn unfolded(observed: &[f32], solve: &RegionSolve, nyq: f32, idx: usize) -> f32 {
-        let rid = solve.region_of[idx];
-        assert_ne!(rid, u32::MAX);
-        observed[idx] + 2.0 * nyq * solve.region_fold[rid as usize] as f32
+    fn merge_solve(sweep: &VelocitySweep) -> RegionSolve {
+        solve_region_folds_merge(
+            &sweep.observed,
+            &sweep.nyq,
+            sweep.rows,
+            sweep.gates,
+            &sweep.azimuths,
+            SPLIT,
+        )
     }
 
-    /// An aliased echo island separated from the main field by a NaN gap has
-    /// NO touching votes; only the bridged pairs can resolve its relative
-    /// fold (the Py-ART skip mechanism, measured decisive on Case E).
+    fn majority(folds: impl Iterator<Item = i32>) -> i32 {
+        let mut counts = std::collections::HashMap::new();
+        for fold in folds {
+            *counts.entry(fold).or_insert(0usize) += 1;
+        }
+        counts
+            .into_iter()
+            .max_by_key(|(fold, count)| (*count, -fold.abs()))
+            .map_or(0, |(fold, _)| fold)
+    }
+
+    /// Echo islands (valid-gate components of 20 to 5,000 gates) separated
+    /// by no-data gaps from the main echo, on a branch Py-ART puts apart from
+    /// the main echo's: the KDVN derecho's 0.48 deg cut (18 islands) and Ida's
+    /// 0.48 deg cut at Nyquist 23.2 m/s (8 islands). Nothing touches them, so
+    /// only bridged pairs across the gap can resolve their fold: the merge
+    /// solve must put them on Py-ART's branch, which the plain vote graph (no
+    /// bridges) cannot.
     #[test]
     fn bridged_pairs_resolve_an_isolated_island_across_a_gap() {
-        let rows = 40;
-        let gates = 80;
-        let azimuths: Vec<f32> = (0..rows).map(|row| row as f32 * 9.0).collect();
-        let nyq = vec![N; rows];
-        let mut observed = vec![f32::NAN; rows * gates];
-        // Main field: gates 0..30 at −18 (truth −18).  Island: gates 40..64
-        // at truth −25, observed wrapped to +15.  Gap of 10 NaN gates.
-        for row in 0..rows {
-            for gate in 0..30 {
-                observed[row * gates + gate] = -18.0;
-            }
-            for gate in 40..64 {
-                observed[row * gates + gate] = wrap(-25.0, N);
-            }
-        }
-        let solve = solve_region_folds_merge(&observed, &nyq, rows, gates, &azimuths, 0.5);
-        assert!(
-            (unfolded(&observed, &solve, N, 10 * gates + 50) - -25.0).abs() < 0.1,
-            "island must unfold to −25 via bridged votes"
-        );
-        assert!(
-            (unfolded(&observed, &solve, N, 10 * gates + 10) - -18.0).abs() < 0.1,
-            "main field must stay"
-        );
-    }
+        for (case, min_islands) in [("kdvn_20200810_s1", 15), ("klix_20210829_s2", 6)] {
+            let Some((volume, golden)) = golden_volume(case) else {
+                return;
+            };
+            let cut = &volume.cuts[golden.sweep];
+            let sweep = VelocitySweep::of_cut(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let members = echo_members(&sweep, golden.rays_wrap_around);
+            let main = members
+                .iter()
+                .max_by_key(|gates| gates.len())
+                .expect("echo");
+            let main_fold = majority(main.iter().filter_map(|&idx| pyart[idx]));
 
-    /// A genuine storm-scale shear couplet (opposite signs, cross-couplet
-    /// |Δv| = 1.4·N — a fold candidate on its own) must NOT be unfolded:
-    /// the lobes' seams to the background resolve first in v1's
-    /// strongest-boundary order (fold 0), the lobe-to-lobe seam closes a
-    /// cycle and is dropped, and the couplet freeze pins the v1 answer.
-    /// Case B's couplet ΔV pins the same property on the real Moore volume.
-    #[test]
-    fn aggregation_preserves_an_embedded_shear_couplet() {
-        let rows = 60;
-        let gates = 60;
-        let azimuths: Vec<f32> = (0..rows).map(|row| row as f32 * 6.0).collect();
-        let nyq = vec![N; rows];
-        let mut observed = vec![f32::NAN; rows * gates];
-        for row in 0..rows {
-            for gate in 0..gates {
-                // Background −2 everywhere; couplet: rows 21..25 at +14,
-                // rows 25..29 at −14, gates 15..45 (real shear, not a fold).
-                let value = if (15..45).contains(&gate) && (21..25).contains(&row) {
-                    14.0
-                } else if (15..45).contains(&gate) && (25..29).contains(&row) {
-                    -14.0
-                } else {
-                    -2.0
-                };
-                observed[row * gates + gate] = value;
+            let merge = solve_folds(&merge_solve(&sweep));
+            let plain = solve_folds(&solve_region_folds(
+                &sweep.observed,
+                &sweep.nyq,
+                sweep.rows,
+                sweep.gates,
+                &sweep.azimuths,
+            ));
+            let merge_offset =
+                fold_agreement(&sweep, &merge, &pyart, golden.rays_wrap_around).offset;
+            let plain_offset =
+                fold_agreement(&sweep, &plain, &pyart, golden.rays_wrap_around).offset;
+            let (mut islands, mut gates, mut merge_ok, mut plain_ok) = (0, 0, 0, 0);
+            for island in &members {
+                if !(20..=5000).contains(&island.len())
+                    || majority(island.iter().filter_map(|&idx| pyart[idx])) == main_fold
+                {
+                    continue;
+                }
+                islands += 1;
+                gates += island.len();
+                for &idx in island {
+                    let truth = pyart[idx].expect("valid gate");
+                    merge_ok += usize::from(merge[idx] == Some(truth + merge_offset));
+                    plain_ok += usize::from(plain[idx] == Some(truth + plain_offset));
+                }
             }
-        }
-        let solve = solve_region_folds_merge(&observed, &nyq, rows, gates, &azimuths, 0.5);
-        for &idx in &[23 * gates + 30, 27 * gates + 30, 5 * gates + 5] {
-            let rid = solve.region_of[idx];
-            assert_eq!(
-                solve.region_fold[rid as usize], 0,
-                "no region may be unfolded in a pure-shear scene"
+            eprintln!(
+                "{case}: aliased islands {islands}, gates {gates}, merge {merge_ok}, plain {plain_ok}"
+            );
+            assert!(islands >= min_islands, "{case}: aliased islands {islands}");
+            assert!(
+                merge_ok as f64 >= 0.9 * gates as f64,
+                "{case}: merge {merge_ok} of {gates}"
+            );
+            assert!(
+                plain_ok as f64 <= 0.2 * gates as f64,
+                "{case}: without bridges {plain_ok} of {gates} (the islands must need them)"
             );
         }
     }
 
-    /// A lone speck across a gap from a strongly-sheared field must NOT be
-    /// unwrapped by its uncorroborated bridge (the corroboration floor):
-    /// a handful of bridge pairs reading real near-2N shear as a fold is
-    /// the measured KEAX jet-bridge / Moore speck failure class.
-    #[test]
-    fn uncorroborated_bridge_welds_without_unwrapping() {
-        let rows = 12;
-        let gates = 60;
-        let azimuths: Vec<f32> = (0..rows).map(|row| row as f32 * 0.5).collect();
-        let nyq = vec![N; rows];
-        let mut observed = vec![f32::NAN; rows * gates];
-        // Main field observed +19 (strong outbound); a 2-gate speck at −19
-        // across a 20-gate gap.  Bridge jump = (+19 − (−19))/40 = 0.95 →
-        // decisive +1, but only two bridge pairs support it (< 12): the
-        // speck must weld at fold 0, not unwrap.
-        for row in 0..rows {
-            for gate in 0..30 {
-                observed[row * gates + gate] = 19.0;
+    /// Valid-gate components (4-neighbour) of a sweep.
+    fn echo_members(sweep: &VelocitySweep, wraps: bool) -> Vec<Vec<usize>> {
+        let label = echo_components(sweep.rows, sweep.gates, wraps, |idx| {
+            sweep.observed[idx].is_finite()
+        });
+        let mut members: std::collections::BTreeMap<u32, Vec<usize>> = Default::default();
+        for (idx, component) in label.iter().enumerate() {
+            if let Some(component) = component {
+                members.entry(*component).or_default().push(idx);
             }
         }
-        observed[5 * gates + 50] = -19.0;
-        observed[6 * gates + 50] = -19.0;
-        let solve = solve_region_folds_merge(&observed, &nyq, rows, gates, &azimuths, 0.5);
-        let speck = solve.region_of[5 * gates + 50];
-        assert_ne!(speck, u32::MAX);
-        assert_eq!(
-            solve.region_fold[speck as usize], 0,
-            "an uncorroborated bridge relation must weld without unwrapping"
+        members.into_values().collect()
+    }
+
+    /// The 20 May 2013 Moore tornado couplet on KTLX's 0.48 deg Doppler cut
+    /// (Nyquist 26.1 m/s): in Py-ART's output the strongest opposite-sign
+    /// azimuthal gate-to-gate shear 10-40 km from the radar is 98.0 m/s, at
+    /// 266 deg and 22.6 km. Genuine shear near 2N must not be averaged away by
+    /// the merge's aggregate re-branching: the merge solve keeps a couplet at
+    /// least that strong at the same place.
+    #[test]
+    fn aggregation_preserves_an_embedded_shear_couplet() {
+        let Some((volume, golden)) = golden_volume("ktlx_20130520_trim_s1") else {
+            return;
+        };
+        let cut = &volume.cuts[golden.sweep];
+        let sweep = VelocitySweep::of_cut(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let (row, gate, shear) = strongest_azimuthal_shear(&sweep, &pyart, 10_000, 40_000);
+        eprintln!(
+            "Py-ART couplet row {row} gate {gate} azimuth {} shear {shear}",
+            sweep.azimuths[row]
+        );
+        assert!(
+            shear > 1.4 * golden.nyquist_mps,
+            "Py-ART couplet shear {shear}"
+        );
+
+        let merge = solve_folds(&merge_solve(&sweep));
+        let (merge_row, merge_gate, merge_shear) =
+            strongest_azimuthal_shear(&sweep, &merge, 10_000, 40_000);
+        eprintln!("merge couplet row {merge_row} gate {merge_gate} shear {merge_shear}");
+        assert!(
+            merge_shear >= shear,
+            "couplet shear {shear} -> {merge_shear}"
+        );
+        assert!(
+            merge_row.abs_diff(row) <= 4 && merge_gate.abs_diff(gate) <= 8,
+            "couplet moved from ({row}, {gate}) to ({merge_row}, {merge_gate})"
         );
     }
 
-    /// Byte-determinism of the merge path on a wrapped uniform-wind sweep
-    /// (spec §5.4 discipline applies to the baseline too).
+    /// Specks of one or two gates (at most 8 bridge pairs, below the 12-pair
+    /// corroboration floor) whose nearest echo in most bridge directions
+    /// differs by more than the Nyquist velocity. Py-ART, which has no floor,
+    /// unwraps most of them toward those neighbours; the merge must weld them
+    /// without unwrapping, keeping each on the branch of a bridge neighbour.
+    #[test]
+    fn uncorroborated_bridge_welds_without_unwrapping() {
+        let Some((volume, golden)) = golden_volume("kdvn_20200810_s1") else {
+            return;
+        };
+        let cut = &volume.cuts[golden.sweep];
+        let sweep = VelocitySweep::of_cut(cut);
+        let pyart = golden.aligned_folds(cut, &sweep);
+        let wraps = golden.rays_wrap_around;
+        let label = echo_components(sweep.rows, sweep.gates, wraps, |idx| {
+            sweep.observed[idx].is_finite()
+        });
+        let merge = solve_folds(&merge_solve(&sweep));
+        let (mut specks, mut merge_kept, mut pyart_unwrapped) = (0, 0, 0);
+        for speck in echo_members(&sweep, wraps)
+            .iter()
+            .filter(|gates| gates.len() <= 2)
+        {
+            let idx = speck[0];
+            let (row, gate) = (idx / sweep.gates, idx % sweep.gates);
+            let outside =
+                |other: usize| sweep.observed[other].is_finite() && label[other] != label[idx];
+            let along = |steps: &mut dyn Iterator<Item = usize>| {
+                steps.map(|g| row * sweep.gates + g).find(|&o| outside(o))
+            };
+            let across = |forward: bool| {
+                (1..=BRIDGE_MAX_GAP_ROWS)
+                    .map_while(|step| {
+                        let r = if forward {
+                            row + step
+                        } else {
+                            row.wrapping_sub(step)
+                        };
+                        if r < sweep.rows {
+                            Some(r)
+                        } else if wraps {
+                            Some(if forward {
+                                r - sweep.rows
+                            } else {
+                                r.wrapping_add(sweep.rows)
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .map(|r| r * sweep.gates + gate)
+                    .find(|&o| outside(o))
+            };
+            let partners: Vec<usize> = [
+                along(&mut (gate + 1..(gate + 1 + BRIDGE_MAX_GAP_GATES).min(sweep.gates))),
+                along(&mut (gate.saturating_sub(BRIDGE_MAX_GAP_GATES)..gate).rev()),
+                across(true),
+                across(false),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            let n = sweep.nyq[row];
+            let shearing = partners
+                .iter()
+                .filter(|&&other| (sweep.observed[idx] - sweep.observed[other]).abs() > n)
+                .count();
+            if partners.is_empty() || 2 * shearing <= partners.len() {
+                continue;
+            }
+            specks += 1;
+            merge_kept += usize::from(
+                partners
+                    .iter()
+                    .any(|&other| merge[other].is_some() && merge[other] == merge[idx]),
+            );
+            let pyart_same = partners
+                .iter()
+                .filter(|&&other| pyart[other] == pyart[idx])
+                .count();
+            pyart_unwrapped += usize::from(2 * pyart_same < partners.len());
+        }
+        eprintln!("specks {specks}, merge kept {merge_kept}, Py-ART unwrapped {pyart_unwrapped}");
+        assert!(specks >= 30, "sheared specks {specks}");
+        assert!(
+            merge_kept as f64 >= 0.95 * specks as f64,
+            "merge kept {merge_kept} of {specks}"
+        );
+        assert!(
+            pyart_unwrapped as f64 >= 0.75 * specks as f64,
+            "Py-ART unwrapped {pyart_unwrapped} of {specks}"
+        );
+    }
+
+    /// Byte-determinism of the merge path over the derecho sector.
     #[test]
     fn merge_solve_is_deterministic() {
-        let rows = 30;
-        let gates = 30;
-        let azimuths: Vec<f32> = (0..rows).map(|row| row as f32 * 12.0).collect();
-        let nyq = vec![N; rows];
-        let mut observed = vec![f32::NAN; rows * gates];
-        for row in 0..rows {
-            for gate in 0..gates {
-                let truth = 30.0 * (row as f32 * 12.0).to_radians().cos();
-                observed[row * gates + gate] = wrap(truth, N);
-            }
-        }
-        let first = solve_region_folds_merge(&observed, &nyq, rows, gates, &azimuths, 0.5);
-        let second = solve_region_folds_merge(&observed, &nyq, rows, gates, &azimuths, 0.5);
+        let Some((volume, golden)) = golden_volume("kdvn_20200810_trim_s1") else {
+            return;
+        };
+        let sweep = VelocitySweep::of_cut(&volume.cuts[golden.sweep]);
+        let first = merge_solve(&sweep);
+        let second = merge_solve(&sweep);
+        assert!(
+            first.region_size.len() > 1_000,
+            "regions {}",
+            first.region_size.len()
+        );
+        assert_eq!(first.region_of, second.region_of);
         assert_eq!(first.region_fold, second.region_fold);
+        assert_eq!(first.region_offset, second.region_offset);
         assert_eq!(first.region_group, second.region_group);
     }
 }
