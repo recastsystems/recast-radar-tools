@@ -525,138 +525,112 @@ Hand-filled 8x8 and 16x8 velocity blocks joined by one contact or a long fold bo
 
 ## retrieve
 
-### `crates/recast-radar-retrieve/src/availability.rs`
+**Converted in C.2** (branch `real-tests-retrieve`): all 48 entries are gone from the allowlist (the
+counts table above is the C.1 snapshot). The 35 synthetic tests and 13 helpers were deleted from
+`src/`; their replacements are integration tests under `crates/recast-radar-retrieve/tests/` (one
+`<module>_real.rs` per module, plus one unit test in `wind.rs` for the private row lookup) that
+decode corpus files with the workspace readers and compare against JSON goldens under
+`testdata/golden/retrieve/`, written by `tools/retrieve_golden.py`. The script reads the same files
+with MetPy 1.7.1 (Level II moments, azimuths, Nyquist), Py-ART 2.2.5 (`read_nexrad_archive`,
+`dealias_region_based`, `compute_cdr`, `kdp_vulpiani`, `vad_browning`) and its own DORADE block
+walker; takes storm truth from the NHC HURDAT2 best track and the SPC tornado database (rows copied
+into the goldens); and computes expected outputs with numpy reference implementations of the
+documented algorithms (float32 arithmetic where the Rust code uses f32). The pure-math unit tests
+that stayed in `src/` (`detect.rs` Stumpf 1998 worked examples, `sweep.rs` 1-D unwrap/Hampel kernels
+and coefficient tables, `wind.rs` convergence-window rows, `availability.rs` threshold and id lookup)
+were never findings; the env-gated `gbvtd.rs::gbvtd_on_real_hurricane_volume` was replaced by
+`gbvtd_real.rs` and `pgua_frame_moment_audit` (an env-gated cache audit) is unchanged.
 
-`grid`/`cut` build cuts with zero-filled grids for chosen moment lists and radial counts.
+Edge cases mutate real decoded data in place and say so: a reflectivity grid truncated to 10 rows,
+a RHOHV grid thinned to 500 m gates, velocity blanked or cut to zero gates, reflectivity removed from
+a tornadic volume, +30 m/s spikes on every seventh radial, a 10 m/s sin(2 az) harmonic, reflectivity
+rows stored in reverse order, a duplicated radial identity.
 
-| test | real input | assertion source |
-|---|---|---|
-| `tests::derive_on_demand_admits_a_cut_the_presence_gate_rejects` | `l2-ktlx-20240315-000217-trim` sweep 1 (REF/ZDR/PHI/RHO/CFP) | derivable products from the moment list (MetPy moment names) |
-| `tests::derive_on_demand_never_admits_kdp` | `l2-ktlx-20240315-000217-trim` sweep 1 | KDP not admitted |
-| `tests::native_moments_route_straight_through_the_presence_gate` | `l2-ktlx-20240315-000217-trim` sweep 2 (REF/VEL/SW) | native moments listed by MetPy |
-| `tests::a_partial_sweep_carries_no_sources` | `l2-ktlx-19990503-230052` (68 radials of a truncated first cut) | no sources for the partial sweep |
-| `tests::unknown_names_that_match_nothing_are_not_derivable` | `l2-ktlx-20240315-000217-trim` | unknown product ids rejected |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::grid` | zero-filled moment grid | `tests::cut`, `tests::a_partial_sweep_carries_no_sources` |
-| `tests::cut` | cut with chosen moments | `tests::derive_on_demand_admits_a_cut_the_presence_gate_rejects`, `tests::derive_on_demand_never_admits_kdp`, `tests::native_moments_route_straight_through_the_presence_gate`, `tests::a_partial_sweep_carries_no_sources`, `tests::unknown_names_that_match_nothing_are_not_derivable` |
-
-
-### `crates/recast-radar-retrieve/src/detect.rs`
-
-`tilt` paints a +-velocity couplet and a reflectivity echo onto synthetic 360-radial tilts; `volume_of` stacks them.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::vertically_continuous_couplet_is_detected` | `l2-ktlx-20130520-201643` (full volume, Moore EF5 tornado at 20:16Z) and `l2-kdgx-20230325-010651` (Rolling Fork) | detection within a few km of the NWS damage-survey track position at the volume time |
-| `tests::explicit_rotation_api_never_falls_back_to_an_internal_engine` | `l2-ktlx-20130520-201643` (full volume, Moore EF5 tornado at 20:16Z) with the Py-ART region-based dealiased velocity passed explicitly | results computed from the supplied grid |
-| `tests::single_tilt_couplet_is_rejected` | `l2-ktlx-20130520-201643-trim` (one Doppler tilt) | no detection |
-| `tests::couplet_without_echo_is_rejected` | `l2-ktlx-20240515-000014` (clear air, biological returns) | no detection |
-| `tests::quiet_volume_detects_nothing` | `l2-ktlx-20240515-000014` and `l2-kmaf-20230331-230843` (clear air) | no detection |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::velocity_cut` | synthetic velocity tilt geometry | `tests::tilt` |
-| `tests::f32_grid` | float grid from values | `tests::tilt` |
-| `tests::tilt` | tilt with painted couplet and echo | `tests::vertically_continuous_couplet_is_detected`, `tests::explicit_rotation_api_never_falls_back_to_an_internal_engine`, `tests::single_tilt_couplet_is_rejected`, `tests::couplet_without_echo_is_rejected`, `tests::quiet_volume_detects_nothing` |
-| `tests::volume_of` | volume from tilts | `tests::vertically_continuous_couplet_is_detected`, `tests::explicit_rotation_api_never_falls_back_to_an_internal_engine`, `tests::single_tilt_couplet_is_rejected`, `tests::couplet_without_echo_is_rejected`, `tests::quiet_volume_detects_nothing` |
-
-
-### `crates/recast-radar-retrieve/src/gbvtd.rs`
-
-`synthetic_vortex(_asym)` builds a `PolarVelocityField` of an analytic Rankine vortex (optionally with an imposed wavenumber-1 asymmetry) seen from a radar.
+### `crates/recast-radar-retrieve/tests/availability_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::retrieves_rankine_profile_at_true_center` | `l2-klix-20210829-180425` (full volume, Ida eye about 140 km SW) and `l2-tjua-20220918-190621` (Fiona) | tangential wind maximum and radius consistent with the NHC best track (HURDAT2) intensity at the volume time |
-| `tests::simplex_recovers_the_storm_center` | `l2-klix-20210829-180425` (full volume, Ida eye about 140 km SW) | center within tolerance of the HURDAT2 position interpolated to 18:04Z |
-| `tests::recovers_imposed_wavenumber1_asymmetry` | `l2-klix-20210829-180425` (full volume, Ida eye about 140 km SW) | wavenumber-1 phase consistent with the HURDAT2 storm motion; amplitude finite and bounded |
+| `derive_on_demand_admits_a_dual_pol_sweep_the_presence_gate_rejects` | `l2-ktlx-20240315-000217-trim` sweep 1 (REF/ZDR/PHI/RHO/CFP) | MetPy data-block names and row counts; every product except the velocity/SW ones derivable |
+| `derive_on_demand_never_admits_kdp` | same sweep (PHI present, no KDP block in MetPy) | KDP not admitted through the derive-on-demand arm |
+| `native_moments_route_straight_through_the_presence_gate` | both sweeps of the split cut | presence equals MetPy's block list for all seven native moments |
+| `a_partial_sweep_carries_no_sources` | `l2-ktlx-19990503-230052` (68 radials, MetPy) | displayable at the relaxed threshold; not after the REF grid is truncated to 10 rows |
+| `unknown_names_that_match_nothing_are_not_derivable` | the split cut (CFP is a real unknown moment) | bogus ids rejected; CFP present but not derived |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_vortex` | analytic Rankine vortex velocity field | `tests::retrieves_rankine_profile_at_true_center`, `tests::simplex_recovers_the_storm_center` |
-| `tests::synthetic_vortex_asym` | analytic vortex with wavenumber-1 asymmetry | `tests::recovers_imposed_wavenumber1_asymmetry` |
-
-
-### `crates/recast-radar-retrieve/src/shear.rs`
-
-Tests build cuts with linear rotational or divergent velocity fields and degraded (NaN/sparse) variants.
+### `crates/recast-radar-retrieve/tests/detect_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::detects_linear_rotational_shear` | `l2-ktlx-20130520-201643-trim` sweep 2 (Moore couplet) | numpy linear least-squares derivative (Smith and Elmore 2004) on Py-ART region-dealiased velocity |
-| `tests::shear_handles_degraded_velocity_without_panicking` | `l2-ktlx-19990503-230052` (REF only), `jma-n6-20191012-090000-rs47773` (no Nyquist) | no panic; empty or NaN output |
-| `tests::detects_linear_radial_divergence` | `l2-kdvn-20200810-180401-trim` sweep 2 (derecho outflow) | numpy LLSD radial divergence on Py-ART dealiased velocity |
-| `tests::from_dealiased_derivative_does_not_run_a_second_engine` | `l2-ktlx-20130520-201643-trim` sweep 2 with a Py-ART dealiased grid supplied | shear computed from the supplied grid only |
+| `violent_tornadoes_are_detected_where_the_damage_survey_puts_them` | `l2-kdgx-20230325-010651` (Rolling Fork EF4, 108 km) and `l2-koax-20140616-205305` (Stanton EF4, 103 km) | SPC path (om 622315, 514013) interpolated to the Py-ART ray time: strongest site within 6 km, TVS/meso class, >= 3 tilts, no second site nearby |
+| `explicit_rotation_api_never_falls_back_to_an_internal_engine` | Rolling Fork volume | no grids -> nothing; the crate's dealiased grids -> the internal result; raw folded grids -> a different result |
+| `single_doppler_tilt_yields_features_but_no_site` | `l2-ktlx-20130520-201643-trim` (one Doppler tilt per MetPy) | 2D features on the tilt, no vertically continuous site |
+| `circulations_without_echo_are_rejected` | Rolling Fork volume with every REF grid removed | sites before, none after; zero features per tilt |
+| `quiet_volumes_detect_nothing` | `l2-ktlx-20240515-000014` (VCP 35), `l2-kmaf-20230331-230843` (VCP 31) | Py-ART max reflectivity 41.5 / 45.5 dBZ (clutter, biota); no sites |
 
+The Moore 2013-05-20 20:16Z volume (`l2-ktlx-20130520-201643`) is in `detect.json` with its SPC
+position (az 264.5 deg, 20.7 km) but is not asserted: `detect_rotation_sites` reports no site
+within 10 km of it (the debris region's velocity on the lowest tilts is folded and noisy; the
+region dealiaser over-unfolds gates to -73 m/s and the LLSD shear exceeds the 150 m/s/km
+plausibility cap), so that volume is a documented gap for the detector, not a test.
 
-### `crates/recast-radar-retrieve/src/sweep.rs`
-
-`f32_grid`/`cut_with_rows` build cuts from hand-written rows: linear wrapped PHIDP, gaps, out-of-bounds KDP, wrapped velocity, RHO/REF offsets, dual-pol values, unknown band.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::linear_wrapped_phi_retrieves_kdp` | `l2-ktlx-20130520-201643-trim` sweep 1 rays through the Moore core (69.5 dBZ at azimuth 268 deg, 23 km) and the lowest sweep of `l2-kewx-20160413-022531` through the hail core | Py-ART `kdp_vulpiani` (and `kdp_maesaka`) on the same rays, within tolerance |
-| `tests::short_gap_is_used_for_fit_but_not_emitted_by_default` | `l2-ktlx-20130520-201643-trim` sweep 1 rays with short runs of missing PHIDP gates | no KDP emitted at missing gates; neighbouring KDP close to Py-ART |
-| `tests::native_kdp_is_preserved` | a real file with valid native KDP: the KDP fields of `dorade-noxp-20090525-203211-sector` and `dorade-dow6-20211230-222139-rhi-head41` decode as all missing, so check `KDP_F` of the DOW6 sweep (decoded as an unknown moment); otherwise a corpus addition (e.g. an ODIM PVOL with KDP) | KDP equals the values read with the independent reader |
-| `tests::filtered_phase_survives_when_kdp_is_out_of_bounds` | `l2-ktlx-20130520-201643-trim` sweep 1 (Moore core) | filtered PHIDP present where KDP is rejected |
-| `tests::velocity_range_gradient_uses_nyquist_wrapped_delta` | `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) | numpy wrapped gate-to-gate difference with MetPy Nyquist |
-| `tests::rho_qc_is_aligned_by_physical_range` | `l2-kgwx-20130601-235640` (first gate 125 m) and `l2-ktlx-20240315-000217-trim` | RHO and REF gates matched by range from MetPy data-block headers |
-| `tests::cdr_is_finite_for_valid_dual_pol_values` | `l2-ktlx-20130520-201643-trim` sweep 1 | Py-ART `pyart.retrieve.compute_cdr` on the same gates |
-| `tests::unknown_band_blocks_band_sensitive_products_but_keeps_phif` | a real volume without wavelength metadata (check `odim-iesha-20260305-0115-pvol` `how/wavelength`; otherwise a corpus addition) | band-sensitive products absent, filtered PHIDP present |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::f32_grid` | float grid from rows | `tests::linear_wrapped_phi_retrieves_kdp`, `tests::short_gap_is_used_for_fit_but_not_emitted_by_default`, `tests::native_kdp_is_preserved`, `tests::filtered_phase_survives_when_kdp_is_out_of_bounds`, `tests::velocity_range_gradient_uses_nyquist_wrapped_delta`, `tests::rho_qc_is_aligned_by_physical_range`, `tests::cdr_is_finite_for_valid_dual_pol_values`, `tests::unknown_band_blocks_band_sensitive_products_but_keeps_phif` |
-| `tests::cut_with_rows` | cut geometry for rows | `tests::linear_wrapped_phi_retrieves_kdp`, `tests::short_gap_is_used_for_fit_but_not_emitted_by_default`, `tests::native_kdp_is_preserved`, `tests::filtered_phase_survives_when_kdp_is_out_of_bounds`, `tests::velocity_range_gradient_uses_nyquist_wrapped_delta`, `tests::rho_qc_is_aligned_by_physical_range`, `tests::cdr_is_finite_for_valid_dual_pol_values`, `tests::unknown_band_blocks_band_sensitive_products_but_keeps_phif` |
-
-
-### `crates/recast-radar-retrieve/src/volume.rs`
-
-`test_volume` builds a two-tilt volume with hand-set reflectivity.
+### `crates/recast-radar-retrieve/tests/gbvtd_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::column_max_finds_upper_tilt_value` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | numpy column maximum on Py-ART reflectivity |
-| `tests::echo_depth_is_nonnegative` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | numpy echo depth on Py-ART fields |
+| `axisymmetric_retrieval_at_the_best_track_centre_matches_intensity_and_reference_rings` | `l2-klix-20210829-180425` (Ida, sweep 2, Nyquist 32) and `l2-tjua-20220918-190621` (Fiona, sweep 2) | HURDAT2 centre interpolated to the sweep time: VT max within 15 m/s of the best-track wind (64.3 / 38.6 m/s), RMW within a factor 2 of the best-track RMW (18.5 / 46.3 km); numpy ring fits on Py-ART dealiased velocity match VT/VR/rms to 0.5 m/s on >= 2/3 of the rings (19/19 Fiona, 14/19 Ida) |
+| `simplex_centre_search_recovers_the_best_track_centre` | both | centre within 20 km of HURDAT2 (15.2 km Ida, 6.3 km Fiona); VT max within 0.6-1.4x the best-track wind |
+| `wavenumber_one_asymmetry_matches_the_reference_decomposition` | both | numpy wavenumber-1 terms (cos, sin, amplitude to 0.5 m/s, phase to 10 deg) on agreeing rings; Fiona's 24-40 km eyewall asymmetry 4-9 m/s with a steady phase |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::test_volume` | two-tilt synthetic volume | `tests::column_max_finds_upper_tilt_value`, `tests::echo_depth_is_nonnegative` |
-
-
-### `crates/recast-radar-retrieve/src/vwp.rs`
-
-`synthetic_volume` builds velocity tilts from an analytic wind profile (uniform, sheared, harmonic, outliers, sector coverage).
+### `crates/recast-radar-retrieve/tests/shear_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::uniform_wind_recovers_components_speed_and_from_direction` | `l2-kbox-20220129-150537` (widespread snow, strong winds) | Py-ART `pyart.retrieve.vad_browning` / `vad_michelson` on the same dealiased sweeps |
-| `tests::vertical_shear_is_sampled_at_four_thirds_earth_beam_height` | `l2-pahg-20250909-212549` (stratiform, all tilts) | VAD levels vs Py-ART VAD at 4/3-earth beam heights |
-| `tests::robust_refit_removes_large_convective_outliers` | `l2-kilx-20260418-013553` (dense convection) | refit wind closer to Py-ART VAD on the stratiform-only gates than the first fit |
-| `tests::sector_scan_is_explicitly_rejected_for_azimuth_coverage` | `dorade-noxp-20090525-203211-sector` (100 deg sector) | rejected for azimuth coverage |
-| `tests::unresolved_second_harmonic_is_rejected_by_residual_qc` | `l2-kilx-20260418-013553` levels where Py-ART VAD residuals are large | rejected by residual QC |
-| `tests::missing_height_coverage_is_a_level_rejection_not_a_profile_error` | `l2-ktlx-20240315-000217-trim` (lowest tilt only) | levels above the coverage rejected, profile returned |
-| `tests::input_contract_and_scan_mode_fail_loudly` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (already used by tests/rhi_real.rs) (RHI) and real grids of mismatched counts | scan-mode and grid-count errors |
+| `moore_couplet_azimuthal_shear_matches_the_llsd_reference` | `l2-ktlx-20130520-201643-trim` sweep 2 | numpy LLSD on MetPy raw velocity, every row and 450 sampled gates to 0.05 x 1e-3/s; Py-ART-dealiased reference on >= 97% of gates (99.3%) |
+| `derecho_radial_divergence_matches_the_llsd_reference` | `l2-kdvn-20200810-180401-trim` sweep 2 | numpy LLSD radial derivative on MetPy raw velocity, gate for gate |
+| `explicit_derivative_entry_points_never_run_a_second_dealias_pass` | same (Py-ART unfolds 38,656 gates) | explicit entry points equal the raw reference; the internal ones agree better with the Py-ART-dealiased reference (94-95%) than with the raw one (88%) |
+| `degraded_velocity_yields_no_data_without_panicking` | `jma-n6-20191012-090000-rs47773` (no Nyquist); the Moore sweep with velocity blanked / cut to zero gates | finite derivatives without Nyquist; all-NaN and empty outputs |
 
-| helper | builds | used by |
+### `crates/recast-radar-retrieve/tests/sweep_real.rs`
+
+| test | real input | assertion source |
 |---|---|---|
-| `tests::synthetic_volume` | analytic wind-profile volume | `tests::uniform_wind_recovers_components_speed_and_from_direction`, `tests::vertical_shear_is_sampled_at_four_thirds_earth_beam_height`, `tests::robust_refit_removes_large_convective_outliers`, `tests::sector_scan_is_explicitly_rejected_for_azimuth_coverage`, `tests::unresolved_second_harmonic_is_rejected_by_residual_qc`, `tests::missing_height_coverage_is_a_level_rejection_not_a_profile_error`, `tests::input_contract_and_scan_mode_fail_loudly` |
+| `moore_core_kdp_and_filtered_phase_match_the_reference` | `l2-ktlx-20130520-201643-trim` sweep 1 (480 x 1192 PHI) | numpy phase bundle (QC, unwrap, gap fill, Hampel, Huber fit) to 0.01 deg/km on every row and 450 cells; hail-core mean KDP > 1 deg/km and within 3x Py-ART Vulpiani |
+| `short_phidp_gaps_feed_the_fit_but_get_no_estimate` | same, 60 one-gate gaps after QC | no KDP/PHIF at the gap; neighbours equal the filled reference, not the unfilled one |
+| `native_kdp_is_preserved` | `dorade-noxp-20090525-203211-sector` (native KDP, all bad-data per the walker); the Moore sweep's own derived KDP | skipped_existing, grid unchanged; second pass, `derive_product` and overwrite give the same grid |
+| `filtered_phase_survives_where_kdp_is_out_of_bounds` | Moore sweep, 100 of 18,163 gates with slope/2 outside [-2, 14] | KDP NaN, PHIF finite |
+| `velocity_range_gradient_uses_the_nyquist_wrapped_difference` | `l2-kdvn-20200810-180401-trim` sweep 2 (Nyquist 21.03, MetPy) | numpy wrapped gradient, gate for gate; 100 fold cells differ from the plain difference |
+| `rho_gating_samples_by_physical_range` | Moore sweep with RHO thinned to 500 m gates | numpy reference with the thinned RHO; 100 gates change against the full-RHO result |
+| `cdr_matches_pyart_compute_cdr` | Moore sweep ZDR/RHO | Py-ART `compute_cdr`, every row and 450 cells to 0.02 dB |
+| `unknown_band_blocks_band_sensitive_products_but_keeps_phif` | Moore sweep with `RadarBand::Unknown` | KDP and RATE_KDP unavailable; PHIF equals the unbounded numpy intercept |
 
+Py-ART's Vulpiani and Maesaka KDP are heavily smoothed and run 2-10x lower than a 3 km windowed
+regression on the Moore core's noisy PHIDP (gate correlation near zero), so they serve only as a
+magnitude-class check, not a gate reference. The dkrom ODIM volume was tried as a second PHIDP input
+and dropped: the file stores PHIDP in radians and RHOHV with a 0.0028 gain (maximum 0.707), so the
+0.80 correlation floor gates every PHIDP sample.
+
+### `crates/recast-radar-retrieve/tests/volume_real.rs`
+
+| test | real input | assertion source |
+|---|---|---|
+| `column_maximum_and_echo_depth_match_the_column_walk_reference` | `l2-kewx-20160413-022531` (19 tilts) | numpy column walk on MetPy reflectivity at 469 sampled cells (300 random + the hail core block): CMAX to 0.01 dB, echo base/top/depth (18.3 dBZ) to 0.5 m, 267 cells whose maximum comes from an upper tilt; the 70.5 dBZ core column |
+
+### `crates/recast-radar-retrieve/tests/vwp_real.rs`
+
+| test | real input | assertion source |
+|---|---|---|
+| `blizzard_profile_recovers_the_reference_wind` | `l2-kbox-20220129-150537`, 8 levels 0.5-4 km | numpy VAD on Py-ART dealiased velocity: same tilt at >= 6 levels (8), u/v/speed to 1 m/s, direction to 5 deg; Py-ART `vad_browning` median 1.7 m/s, max 5.1 m/s; > 25 m/s jet at 1 km |
+| `stratiform_levels_sit_at_four_thirds_earth_beam_height` | `l2-pahg-20250909-212549`, 12 levels 0.5-6 km | same tilt at all 12 levels, winds to 1 m/s; level height equals the 4/3-Earth beam height of the annulus centre gate |
+| `robust_refit_removes_convective_outliers` | `l2-kilx-20260418-013553`, 23 levels (>= 4 with > 10% trimmed); KBOX with +30 m/s on every seventh radial | reference winds to 1.5 m/s; the spiked profile keeps u/v within 0.5 m/s of the clean one |
+| `sector_scan_is_explicitly_rejected_for_azimuth_coverage` | `dorade-noxp-20090525-203211-sector` (100 rays over 100 deg, walker) | InsufficientAzimuthCoverage with < 8 sectors and a gap > 120 deg |
+| `unresolved_second_harmonic_is_rejected_by_residual_qc` | KBOX with a 10 m/s sin(2 az) harmonic added | ResidualTooLarge, rms > 5.2 m/s (clean rms < 2) |
+| `missing_height_coverage_is_a_level_rejection_not_a_profile_error` | `l2-ktlx-20240315-000217-trim` (one Doppler tilt, 480 radials) | 1 km: rejected with the reference candidate (13 samples); 20 km: NoBeamCoverage, no candidate |
+| `input_contract_and_scan_mode_fail_loudly` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (RHI); the KTLX trim with 0 or 1 grids, 20,001 levels, no grids | UnsupportedScanMode, GridCountMismatch, InvalidConfig, NoVelocityGrids |
 
 ### `crates/recast-radar-retrieve/src/wind.rs`
 
-`identity_grid` builds a reflectivity grid with hand-picked `radial_indices`.
-
 | test | real input | assertion source |
 |---|---|---|
-| `tests::reflectivity_rows_follow_raw_radial_identity_not_row_position` | a real cut whose reflectivity grid covers a subset of the radials (check the decoded `radial_indices` of the Doppler cut of `l2-ktlx-19990504-002218-trim` or `l2-tstl-20230331-230314-trim`) | row mapping from the decoded radial indices and MetPy radial order |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::identity_grid` | grid with hand-picked radial indices | `tests::reflectivity_rows_follow_raw_radial_identity_not_row_position` |
-
+| `tests::reflectivity_rows_follow_raw_radial_identity_not_row_position` | `l2-ktlx-20130520-201643-trim` sweep 2 REF rows stored in reverse order; a duplicated radial identity | identity lookup inverts the permutation; the gust proxy is identical cell for cell; first row wins |
 
 ## track
 
@@ -1026,7 +1000,8 @@ groups can decide on them; the detector enforces none of them.
   - environment-gated: `crates/recast-radar-io-nexrad/src/lib.rs`
     `tests::decodes_real_public_level2_file_from_env` (`NEXRAD_LEVEL2_SAMPLE`),
     `crates/recast-radar-retrieve/src/gbvtd.rs` `tests::gbvtd_on_real_hurricane_volume`
-    (`BOWECHO_GBVTD_VOLUME`) and `tests::pgua_frame_moment_audit` (`BOWECHO_PGUA_DIR`),
+    (`BOWECHO_GBVTD_VOLUME`; replaced by `tests/gbvtd_real.rs` in C.2) and
+    `tests::pgua_frame_moment_audit` (`BOWECHO_PGUA_DIR`),
     `crates/recast-radar-bench/src/main.rs` `tests::smoke_bench_runs_one_iteration` (`BOWECHO_BENCH_FILE`);
   - `include_bytes!` of the copies under `crates/recast-radar-io-{odim,cfradial,dorade,nexrad}/tests/data/`,
     each byte-identical to a committed manifest entry.

@@ -392,23 +392,6 @@ fn f32_grid_like(base: &MomentGrid, moment: MomentType, values: Vec<f32>) -> Mom
 mod tests {
     use super::*;
 
-    fn identity_grid(radial_indices: Vec<usize>) -> MomentGrid {
-        MomentGrid {
-            moment: MomentType::Reflectivity,
-            gate_range: recast_radar_core::GateRange {
-                first_gate_m: 0,
-                gate_spacing_m: 250,
-                gate_count: 1,
-            },
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            storage: recast_radar_core::MomentStorage::F32(vec![20.0; radial_indices.len()]),
-            radial_indices,
-        }
-    }
-
     #[test]
     fn convergence_window_finds_couplet() {
         // Outbound +20 near, inbound -15 far — 3 gates wide each (the
@@ -438,10 +421,80 @@ mod tests {
         }
     }
 
+    /// The reflectivity support mask of the gust proxy follows each grid row's raw
+    /// radial identity, not its row position: the Moore Doppler tilt with its
+    /// reflectivity rows stored in reverse order (a permutation of the real grid)
+    /// yields the same product cell for cell, and the identity lookup inverts the
+    /// permutation. Duplicate identities keep the first row.
     #[test]
     fn reflectivity_rows_follow_raw_radial_identity_not_row_position() {
-        let grid = identity_grid(vec![2, 0, 3]);
-        let rows = rows_by_radial_identity(&grid, 4);
-        assert_eq!(rows, vec![Some(1), None, Some(0), Some(2)]);
+        let path = recast_radar_testdata::require_file!("l2-ktlx-20130520-201643-trim");
+        let volume = recast_radar_io_nexrad::decode_volume_from_path(&path).expect("decode");
+        let cut_index = 1;
+        let cut = &volume.cuts[cut_index];
+        let velocity = cut.moments.get(&MomentType::Velocity).expect("VEL");
+        let dealiased = dealias_velocity_grid(cut, velocity);
+        let reflectivity = cut.moments.get(&MomentType::Reflectivity).expect("REF");
+        let rows = reflectivity.radial_count();
+        assert_eq!(rows, cut.radials.len());
+        assert_eq!(reflectivity.radial_indices, (0..rows).collect::<Vec<_>>());
+        assert_eq!(
+            rows_by_radial_identity(reflectivity, rows),
+            (0..rows).map(Some).collect::<Vec<_>>()
+        );
+        let original =
+            gust_proxy_grid_from_dealiased(&volume, cut_index, &dealiased).expect("gust proxy");
+        let finite = (0..original.radial_count())
+            .flat_map(|row| (0..original.gate_range.gate_count).map(move |gate| (row, gate)))
+            .filter(|&(row, gate)| original.scaled_value(row, gate).is_some_and(f32::is_finite))
+            .count();
+        assert!(finite > 1_000, "{finite} finite gust cells");
+
+        // Reverse the row order of the real reflectivity grid, keeping each row's
+        // radial identity with its data.
+        let mut reversed = volume.clone();
+        let grid = reversed.cuts[cut_index]
+            .moments
+            .get_mut(&MomentType::Reflectivity)
+            .expect("REF");
+        let gates = grid.gate_range.gate_count;
+        grid.radial_indices.reverse();
+        match &mut grid.storage {
+            MomentStorage::U8(values) => {
+                let mut flipped = Vec::with_capacity(values.len());
+                for row in values.chunks(gates).rev() {
+                    flipped.extend_from_slice(row);
+                }
+                *values = flipped;
+            }
+            other => panic!("Level II reflectivity is 8-bit, got {other:?}"),
+        }
+        let grid = &reversed.cuts[cut_index].moments[&MomentType::Reflectivity];
+        let lookup = rows_by_radial_identity(grid, rows);
+        assert_eq!(
+            lookup,
+            (0..rows)
+                .map(|radial| Some(rows - 1 - radial))
+                .collect::<Vec<_>>()
+        );
+        let permuted =
+            gust_proxy_grid_from_dealiased(&reversed, cut_index, &dealiased).expect("gust proxy");
+        assert_eq!(permuted.radial_indices, original.radial_indices);
+        for row in 0..original.radial_count() {
+            for gate in 0..original.gate_range.gate_count {
+                let a = original.scaled_value(row, gate).filter(|v| v.is_finite());
+                let b = permuted.scaled_value(row, gate).filter(|v| v.is_finite());
+                assert_eq!(a, b, "row {row} gate {gate}");
+            }
+        }
+
+        // A duplicated identity (row 1 claiming radial 0) keeps the first row for
+        // radial 0 and leaves radial 1 without a row.
+        let mut duplicated = reflectivity.clone();
+        duplicated.radial_indices[1] = 0;
+        let lookup = rows_by_radial_identity(&duplicated, rows);
+        assert_eq!(lookup[0], Some(0));
+        assert_eq!(lookup[1], None);
+        assert_eq!(lookup[2], Some(2));
     }
 }
