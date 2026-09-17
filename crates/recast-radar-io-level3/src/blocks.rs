@@ -4,7 +4,8 @@
 //! section 4).
 //!
 //! The walkers locate blocks, layers and pages and hand each layer or page to
-//! the packet dispatcher. Tabular pages are kept as raw bytes here.
+//! the packet dispatcher. Tabular data is split into text pages and lines
+//! ([`TextPage`]).
 
 use crate::Level3Error;
 use crate::header::{HEADER_BYTES, MESSAGE_HEADER_BYTES, MessageHeader, ProductDescription};
@@ -67,6 +68,30 @@ pub struct TabularAlphanumeric {
     /// with -1). [`TabularLayout::RadarCodedMessage`]: the ASCII text starting
     /// `1234 ROBUU`.
     pub data: Vec<u8>,
+    /// The text decoded from [`data`](Self::data).
+    ///
+    /// - [`TabularLayout::Block`] and [`TabularLayout::StandAlone`]: the pages
+    ///   of the page block in file order (at most 17 lines of up to 80
+    ///   characters each per the ICD). Bytes after the last end-of-page flag are
+    ///   ignored.
+    /// - [`TabularLayout::RadarCodedMessage`]: one page whose lines are the
+    ///   message's 70-character records. Observed: every corpus message is a
+    ///   whole number of space-padded 70-character records and every section
+    ///   marker (`/NEXRAA`, `/ENDAA`, ...) starts a record; ICD 2620001P
+    ///   Appendix B does not state the record length.
+    pub pages: Vec<TextPage>,
+}
+
+/// One page of tabular alphanumeric text.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TextPage {
+    /// Lines in file order, one `char` per byte. The ICD defines the characters
+    /// as ASCII when the most significant bit is 0 and as special symbols
+    /// (numbered by the low 7 bits) when it is 1 (Figure 3-6 sheet 10); bytes
+    /// 0x80-0xFF therefore appear as U+0080-U+00FF, and `c as u8` gives back
+    /// every byte. Observed: products 78, 79 and 80 pad some lines with NUL
+    /// characters, which are kept.
+    pub lines: Vec<String>,
 }
 
 /// Source layout of a [`TabularAlphanumeric`].
@@ -120,6 +145,7 @@ pub(crate) fn read_blocks(
             message_header: None,
             description: None,
             data: text.to_vec(),
+            pages: vec![radar_coded_message_page(text)],
         });
     } else if let Some(o) = sym
         && is_standalone_candidate(product_code)
@@ -136,6 +162,7 @@ pub(crate) fn read_blocks(
             message_header: None,
             description: None,
             data: data[o..end].to_vec(),
+            pages: read_pages(&data[..end], o)?,
         });
         if let Some(start) = trend {
             blocks.graphic = Some(GraphicAlphanumeric {
@@ -253,7 +280,55 @@ fn read_tabular(data: &[u8], o: usize) -> Result<TabularAlphanumeric, Level3Erro
         message_header: Some(message_header),
         description,
         data: data[start..end].to_vec(),
+        pages: read_pages(&data[..end], start)?,
     })
+}
+
+/// Record length of a radar coded message (observed; see [`TabularAlphanumeric::pages`]).
+const RADAR_CODED_MESSAGE_RECORD: usize = 70;
+
+/// Pages of the page block starting at byte `start` of `data`, which ends where
+/// the block ends (ICD Figure 3-16 and Figure 3-6 sheet 10): divider -1, number
+/// of pages, then for each page lines of `INT*2` character count and
+/// characters, closed by the end of page flag -1.
+fn read_pages(data: &[u8], start: usize) -> Result<Vec<TextPage>, Level3Error> {
+    expect_i16(data, start, -1, "tabular page block divider")?;
+    // INT*2 1-48; read unsigned so a corrupt negative count runs out of data
+    // instead of being mistaken for zero pages.
+    let num_pages = be_u16(data, start + 2, "tabular page count")?;
+    let mut pages = Vec::new();
+    let mut q = start + 4;
+    for _ in 0..num_pages {
+        let mut lines = Vec::new();
+        loop {
+            let count = be_i16(data, q, "tabular line character count")?;
+            let Ok(len) = usize::try_from(count) else {
+                // Negative: must be the end of page flag.
+                expect_i16(data, q, -1, "tabular end of page flag")?;
+                q += 2;
+                break;
+            };
+            lines.push(latin1(slice(data, q + 2, len, "tabular line")?));
+            q += 2 + len;
+        }
+        pages.push(TextPage { lines });
+    }
+    Ok(pages)
+}
+
+/// Radar coded message text as one page of 70-character records.
+fn radar_coded_message_page(text: &[u8]) -> TextPage {
+    TextPage {
+        lines: text
+            .chunks(RADAR_CODED_MESSAGE_RECORD)
+            .map(latin1)
+            .collect(),
+    }
+}
+
+/// One `char` per byte (ISO 8859-1).
+fn latin1(bytes: &[u8]) -> String {
+    bytes.iter().copied().map(char::from).collect()
 }
 
 fn to_usize(value: u32) -> usize {
