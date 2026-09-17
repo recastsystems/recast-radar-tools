@@ -4,10 +4,15 @@ Tests in recast-radar-tools must read real radar files (spec section 5, plan str
 every test, helper and data file in the workspace that still feeds synthetic input, and proposes a real
 replacement for each one: a corpus file (manifest id) and an independent source for the expected values.
 
-The list is the detector's output on branch `real-tests` (from `main` at `c279db3`): **376 entries**,
-274 tests, 98 helpers and 4 data files. Every entry is also in
-`testdata/synthetic-allowlist.toml` with `status = "pending"`, under the conversion group (plan task C.2)
-that owns it.
+**State after C.3 (merge of the eight conversion branches and `main`): the allowlist is empty.** The
+detector's output on branch `real-tests` at C.1 (from `main` at `c279db3`) was **376 entries** (274
+tests, 98 helpers and 4 data files), every one allowlisted as `pending` under the conversion group (plan
+task C.2) that owned it. C.2 converted all 376 to real inputs (the group sections below record each
+test's real input and assertion source) and kept no exception. C.3 then merged `main` (safety, Level II
+completeness, level3-polish, packaging, data-access, l2-fixes and perf), whose new tests raised 76
+findings; the section [C.3: findings in tests merged from `main`](#c3-findings-in-tests-merged-from-main)
+lists how each was converted. `cargo test -p recast-radar-testdata --test no_synthetic` passes with
+zero findings and zero entries.
 
 ## Enforcement
 
@@ -96,17 +101,23 @@ so a row names the full volume when the feature is outside the trimmed sector.
 
 ## Counts by group
 
-| group | crates | tests | helpers | data files | entries |
-|---|---|---:|---:|---:|---:|
-| io-nexrad | `recast-radar-io-nexrad` | 21 | 11 | 0 | 32 |
-| io-formats | `recast-radar-io-odim`, `recast-radar-io-cfradial`, `recast-radar-io-dorade`, `recast-radar-io-jma`, `recast-radar-io` | 0 | 0 | 0 | 0 (79 converted) |
-| correct | `recast-radar-correct` | 28 | 4 | 0 | 32 |
-| filters-map | `recast-radar-filters`, `recast-radar-map` | 28 | 8 | 0 | 36 |
-| retrieve | `recast-radar-retrieve` | 35 | 13 | 0 | 48 |
-| track | `recast-radar-track` | 22 | 8 | 0 | 30 |
-| render-bench | `recast-radar-render`, `recast-radar-bench` | 27 | 5 | 0 | 32 |
-| core-data-scattering | `recast-radar-core`, `recast-radar-data`, `recast-radar-scattering` | 68 | 19 | 0 | 87 |
-| **all** | | **229** | **68** | **0** | **297** |
+C.1 entries per group, all converted in C.2 (branch `real-tests-<group>`), and the C.3 findings in the
+tests `main` added meanwhile (all converted in C.3). The crates `main` added after C.1 belong to the
+group of the crates they serve (`GROUPS` in `crates/recast-radar-testdata/src/synthetic/mod.rs`):
+`recast-radar-bzip2` and `recast-radar-io-level3` to io-nexrad, the `recast-radar-tools` facade to
+io-formats.
+
+| group | crates | C.1 entries (tests / helpers / data files) | remaining | C.3 findings from `main` |
+|---|---|---:|---:|---:|
+| io-nexrad | `recast-radar-io-nexrad`, `recast-radar-io-level3`, `recast-radar-bzip2` | 32 (21 / 11 / 0) | 0 | 46 |
+| io-formats | `recast-radar-io-odim`, `recast-radar-io-cfradial`, `recast-radar-io-dorade`, `recast-radar-io-jma`, `recast-radar-io`, `recast-radar-tools` | 79 (45 / 30 / 4) | 0 | 22 |
+| correct | `recast-radar-correct` | 32 (28 / 4 / 0) | 0 | 0 |
+| filters-map | `recast-radar-filters`, `recast-radar-map` | 36 (28 / 8 / 0) | 0 | 0 |
+| retrieve | `recast-radar-retrieve` | 48 (35 / 13 / 0) | 0 | 0 |
+| track | `recast-radar-track` | 30 (22 / 8 / 0) | 0 | 0 |
+| render-bench | `recast-radar-render`, `recast-radar-bench` | 32 (27 / 5 / 0) | 0 | 0 |
+| core-data-scattering | `recast-radar-core`, `recast-radar-data`, `recast-radar-scattering`, `recast-radar-testdata` | 87 (68 / 19 / 0) | 0 | 8 |
+| **all** | | **376 (274 / 98 / 4)** | **0** | **76** |
 
 ## io-nexrad
 
@@ -731,6 +742,56 @@ piecewise linear in D^6) and the omission budgets at 1e-4 (the sub-0.1 mm tail).
 was re-pinned on those inputs. The runtime tests reject a real but wrong law: the rain table's Atlas
 provenance.
 
+## C.3: findings in tests merged from `main`
+
+C.3 merged `main` (4047aa3: safety, Level II completeness, level3-polish, packaging, data-access,
+l2-fixes and perf) into `real-tests` after the eight group branches. The detector reported 76 findings
+in the tests `main` had added since C.1. All of them were on real data already or became so; none was
+allowlisted. Most were helpers that mutate real bytes but take the bytes from their caller, so the
+helper itself carried no real-data evidence: the fix folds the corpus read into the helper (it takes
+the manifest id and returns the mutated file), which is also how the C.2 groups shaped their corruption
+helpers.
+
+| crate / file | findings | what was done |
+|---|---:|---|
+| `recast-radar-bzip2/tests/common/mod.rs`, `corruption.rs`, `real_records.rs` (+ `examples/differential_fuzz.rs`) | 12 | `ldm_records` split real LDM files by their control words but took the bytes from the caller (`magic-literal` on the `AR2V`/`BZh` checks); it now takes the manifest id and reads the file, so the 10 tests and helpers using it are evidence-carrying. The crate joined the io-nexrad group in `GROUPS`. |
+| `recast-radar-io-level3/tests/*` | 25 | `common::sha256_hex` was a hand-written SHA-256 (`byte-encoding` on its padding), used by 22 items for golden digests; it now delegates to `recast_radar_testdata::sha256_hex` (new dev-dependency), with `sha256_hex_u16_be` for 16-bit level grids. `check_unknown_sizes` compares the packet code with `u16::from_be_bytes` instead of encoding it; `expected_threshold_label` splits the halfword with shifts; `generic_grid` no longer serialises decoded levels to bytes (the `Grid` carries the digest). |
+| `recast-radar-io-nexrad/src/gzip.rs` | 3 | The gzip decoder tests ran on a pseudo-random "radar-like" payload. `payload(len, seed)` now returns `len` bytes of the decompressed committed gzip archive `l2-ktlx-19990504-002218-trim` (offset from `seed`), so every member, limit, truncation and corruption case is real Archive II bytes recompressed with `flate2`; `real_gzip_archive_matches_gz_decoder_and_presizes_exactly` decodes the real file itself. |
+| `recast-radar-io-nexrad/src/lib.rs` (auto-merged from `main`) | 5 tests, not flagged by the detector because they merged in beside the converted helpers | `corrupt_bzip_block_error_names_the_record_path`, `whole_file_bzip2_archive_decodes_like_the_uncompressed_bytes`, `bzip2_stream_output_limit_is_exact_and_restores_the_buffer` and `oversized_bzip_block_is_rejected_at_the_per_block_limit` were rewritten from `synthetic_archive()` to real LDM records of `l2-ktlx-20240315-000217-trim` (zeroed after the bzip2 magic; the KTLX 2013 trim's decompressed bytes as one bzip2 stream; a real record's exact decoded length as the limit; a real record's bytes repeated past 16 MiB). `real_volume_exceeding_the_output_budget_is_rejected` (KIWA chunks 1-3) was kept. `bzip_buffer_pool_keeps_only_block_sized_buffers` holds no radar data. |
+| `recast-radar-io-nexrad/tests/messages_msg31.rs` | 3 | `zdr_block_encoding_from_bytes` found the ZDR block with the literal `b"DZDR"`; it now matches the block type byte and `DataMomentName::from_bytes` (the crate's Table XVII-I mapping). |
+| `recast-radar-io-nexrad/tests/volume_metadata.rs` | 3 | `rebuild_start_chunk` re-framed a mutated record into a start chunk passed by the caller; it now loads the committed KIWA start chunk itself. |
+| `recast-radar-io-cfradial/tests/limits_real.rs`, `fuzz_regressions.rs` | 9 | `set_dimension_len` / `set_sweep_dimension` became `irene_with_dimension_len(name, len)` and `with_sweep_dimension(id, sweeps)`, which read the Irene volume or the fuzz input and return the edited file. |
+| `recast-radar-io-dorade/tests/limits_real.rs` | 3 | `write_i32` became `with_i32(id, endian, at, value)`, reading the sweep and returning it with one `i32` replaced (the closures locate the block and check the real value first). |
+| `recast-radar-io-jma/tests/limits_real.rs` | 5 | `set_grid` became `rs47773_n5_with_grid(gates, radials)`; the `b"GRIB"` check moved from `first_grid_section` into the unmodified-tar test. |
+| `recast-radar-io-odim/tests/limits_real.rs` | 5 | `set_plane_dims` became `bejab_with_plane_dims(rays, bins)`. |
+| `recast-radar-data/tests/fixtures/listings/chunks/*` | 5 data files | The five TLAS chunks the recorded `ChunkIterator` cassettes downloaded (real S3 objects, hashes in the fixtures README) were binaries outside every manifest. They moved to `testdata/files/level2-chunks/` as `l2chunk-tlas-{998-20260917-012843-001-s, 999-20260917-013443-001-s, 3-20260917-015242-001-s, -002-i, -003-i}` in `testdata/level2/manifest.toml`; `tests/iterator.rs` resolves a cassette's `file` body through `recast_radar_testdata::path("l2chunk-<name>")`, and `tests/timing.rs` and `tests/volume_fetch_retry.rs` use the ids. |
+| `recast-radar-data/tests/volume_fetch_retry.rs` | 3 | `serve` wrote HTTP headers around a chunk passed in by the caller; it now reads `l2chunk-tlas-3-20260917-015242-003-i` itself and returns the bytes. |
+
+Other changes at the merge: `crates/recast-radar-io/tests/router_real_files.rs` kept the C.2 real
+Archive II tests over `main`'s edited synthetic one; `crates/recast-radar-data/src/international.rs`
+kept the C.2 captured-listing providers with `main`'s `#[cfg(feature = "net")]` gates; the
+`recast-radar-scattering` frozen-bits test keeps `main`'s per-target comparison over the C.2 real
+inputs; the `recast-radar-io-nexrad` `bzip2` dependency is a dev-dependency (the reference encoder for
+recompressing real bytes) now that the library decodes with `recast-radar-bzip2`.
+
+## Follow-ups
+
+- correct: `l2-klix-20050829-130035-trim` (Katrina, Message 1) can join `tools/correct_golden.py`
+  `CASES` and `region_dealias_recovers_smooth_folded_ramp` /
+  `velocity_dealias_preserves_supported_adjacent_folds` now that the Message 1 Nyquist offset fix
+  (io-nexrad C.2) is merged.
+- render-bench: `boundary_metric_counts_the_wrap_seam` can move to the committed KLIX 2005 fixture (18
+  seam pairs) for the same reason.
+- retrieve/track: `recast_radar_retrieve::detect_rotation_sites` does not detect the Moore 2013-05-20
+  20:16Z tornado circulation at 22 km in `l2-ktlx-20130520-201643` (library behaviour, documented in
+  the retrieve and track sections).
+- render: the compact sample-cache render path and the direct render disagree on transparent palette
+  entries (render-bench section).
+- track: `identify_storm_cells` assumes full-circle radials, inflating sector-scan cell areas.
+- core: `MomentGrid`'s gate-count expansion path has no real sample (no corpus sweep has its longest
+  radial after a shorter one).
+- scattering: `PsdFallSpeedAuthority::SyntheticTestOnly` remains as a library enum variant no test uses.
+
 ## Corpus additions needed
 
 Inputs proposed above that are not in the corpus yet (the io-formats additions were made; see that
@@ -778,17 +839,18 @@ groups can decide on them; the detector enforces none of them.
   beam inversion, `recast-radar-filters` factor policy, render palettes and viewport arithmetic.
 - Garbage input without radar structure: `crates/recast-radar-io/src/lib.rs`
   `tests::router_stringifies_level2_error_for_unrecognized_bytes` (`b"not radar"`),
-  `crates/recast-radar-io-nexrad/src/level3_vwp.rs` `tests::rejects_non_vwp_input` (120 zero bytes),
-  hdf5lite `tests::truncated_messages_return_errors_instead_of_indexing`.
+  hdf5lite `tests::truncated_messages_return_errors_instead_of_indexing`
+  (`crates/recast-radar-io-nexrad/src/level3_vwp.rs` `tests::rejects_non_vwp_input` went with that
+  module when `recast-radar-io-level3` subsumed it on `main`).
 - `recast-radar-data`: parsers read committed real captures (`tests/fixtures/`, `src/**/fixtures/`); a few
   unit tests use short inline HTML anchors (`src/international/listing.rs`,
   `src/international/meteoromania.rs`), which are not radar data.
-- Real data read outside the corpus crate (not synthetic; moving them to `require_file!` is C.2 cleanup):
-  - environment-gated: `crates/recast-radar-io-nexrad/src/lib.rs`
-    `tests::decodes_real_public_level2_file_from_env` (`NEXRAD_LEVEL2_SAMPLE`),
-    `crates/recast-radar-retrieve/src/gbvtd.rs` `tests::gbvtd_on_real_hurricane_volume`
-    (`BOWECHO_GBVTD_VOLUME`; replaced by `tests/gbvtd_real.rs` in C.2) and
-    `tests::pgua_frame_moment_audit` (`BOWECHO_PGUA_DIR`),
-    `crates/recast-radar-bench/src/main.rs` `tests::smoke_bench_runs_one_iteration` (`BOWECHO_BENCH_FILE`);
-  - `include_bytes!` of the copies under `crates/recast-radar-io-{odim,cfradial,dorade,nexrad}/tests/data/`,
-    each byte-identical to a committed manifest entry.
+- Real data read outside the corpus crate (not synthetic). Still present after C.3:
+  - environment-gated (ignored without the variable): `crates/recast-radar-retrieve/src/gbvtd.rs`
+    `tests::pgua_frame_moment_audit` (`BOWECHO_PGUA_DIR`) and `crates/recast-radar-bench/src/main.rs`
+    `tests::smoke_bench_runs_one_iteration` (`BOWECHO_BENCH_FILE`);
+    `tests::decodes_real_public_level2_file_from_env` and `tests::gbvtd_on_real_hurricane_volume` were
+    replaced by corpus tests in C.2;
+  - `include_bytes!` of the copies under `crates/recast-radar-io-{odim,cfradial,dorade}/tests/data/`,
+    each byte-identical to a committed manifest entry (the detector accepts them because their hashes
+    are in the manifests).

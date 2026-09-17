@@ -42,6 +42,9 @@
 //! OPERA members emit).
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use recast_radar_core::bounded_read::{
+    DecodeBudget, check_gate_count, check_sweep_count, moment_grid_capacity_bytes,
+};
 use recast_radar_core::{
     GateRange, MomentGrid, MomentRow, MomentType, RadarSite, RadarVolume, Radial, ScanMode,
 };
@@ -97,9 +100,11 @@ pub fn decode_odim_h5_volume(bytes: &[u8]) -> Result<RadarVolume> {
     if dataset_names.is_empty() {
         return Err(invalid("ODIM_H5 volume has no /datasetN groups"));
     }
+    check_sweep_count(dataset_names.len(), "ODIM_H5 volume").map_err(OdimError::LimitExceeded)?;
 
+    let mut budget = DecodeBudget::volume();
     for name in &dataset_names {
-        decode_sweep(&file, name, root_nyquist, &mut volume)?;
+        decode_sweep(&file, name, root_nyquist, &mut volume, &mut budget)?;
     }
     volume
         .cuts
@@ -114,6 +119,7 @@ fn decode_sweep(
     dataset: &str,
     root_nyquist: Option<f64>,
     volume: &mut RadarVolume,
+    budget: &mut DecodeBudget,
 ) -> Result<()> {
     let where_path = format!("/{dataset}/where");
     let elangle = attr_f64(file, &where_path, "elangle")
@@ -153,6 +159,7 @@ fn decode_sweep(
     if nrays == 0 || nbins == 0 {
         return Err(invalid(format!("{dataset} data plane is empty")));
     }
+    check_gate_count(nbins, dataset).map_err(OdimError::LimitExceeded)?;
     let gate_range = GateRange {
         first_gate_m: first_gate_m_from_rstart(rstart_km),
         gate_spacing_m: (rscale_m.round() as i32).max(1),
@@ -161,6 +168,11 @@ fn decode_sweep(
 
     let mut skipped_planes = 0usize;
     let mut cut = recast_radar_core::ElevationCut::new(elangle, None);
+    budget
+        .charge(nrays, size_of::<Radial>(), "ODIM_H5 sweep radials")
+        .map_err(OdimError::LimitExceeded)?;
+    cut.radials.reserve_exact(nrays);
+    let mut first_plane = Some(first_plane);
     for ray in 0..nrays {
         cut.radials.push(Radial {
             azimuth_deg: ((ray as f32 + 0.5) * 360.0 / nrays as f32).rem_euclid(360.0),
@@ -174,7 +186,7 @@ fn decode_sweep(
 
     let mut canonical_priorities = BTreeMap::<MomentType, u8>::new();
     let mut plane_meta = BTreeMap::<MomentType, PlaneNoData>::new();
-    for plane_name in &data_names {
+    for (plane_index, plane_name) in data_names.iter().enumerate() {
         let what_path = format!("/{dataset}/{plane_name}/what");
         let quantity = file
             .attr(&what_path, "quantity")
@@ -186,10 +198,9 @@ fn decode_sweep(
         let nodata = attr_f64(file, &what_path, "nodata");
         let undetect = attr_f64(file, &what_path, "undetect");
 
-        let plane = if plane_name == &data_names[0] {
-            first_plane.clone()
-        } else {
-            file.dataset(&format!("/{dataset}/{plane_name}/data"))?
+        let plane = match (plane_index, first_plane.take()) {
+            (0, Some(plane)) => plane,
+            _ => file.dataset(&format!("/{dataset}/{plane_name}/data"))?,
         };
         if plane.dims.as_slice() != [nrays, nbins] {
             skipped_planes += 1;
@@ -209,6 +220,18 @@ fn decode_sweep(
         // s = 1/gain, o = −offset/gain.
         let scale = (1.0 / gain) as f32;
         let grid_offset = (-offset / gain) as f32;
+        let word_bytes = match &plane.data {
+            H5Data::U8(_) => 1,
+            H5Data::U16(_) => 2,
+            H5Data::F32(_) | H5Data::F64(_) => 4,
+        };
+        let grid_bytes = nbins
+            .checked_mul(word_bytes)
+            .and_then(|row| row.checked_add(size_of::<usize>()))
+            .ok_or_else(|| invalid(format!("{dataset} grid size overflow")))?;
+        budget
+            .charge(nrays, grid_bytes, "ODIM_H5 moment grid")
+            .map_err(OdimError::LimitExceeded)?;
         let mut grid = match &plane.data {
             H5Data::U8(values) => {
                 let nodata_raw = nodata.map(|value| value as u8);
@@ -222,6 +245,7 @@ fn decode_sweep(
                     sentinel,
                     None,
                 );
+                grid.reserve_rows(nrays);
                 for (ray, row) in values.chunks_exact(nbins).enumerate() {
                     let row: Vec<u8> = row
                         .iter()
@@ -243,6 +267,7 @@ fn decode_sweep(
                     sentinel,
                     None,
                 );
+                grid.reserve_rows(nrays);
                 for (ray, row) in values.chunks_exact(nbins).enumerate() {
                     let row: Vec<u16> = row
                         .iter()
@@ -252,33 +277,21 @@ fn decode_sweep(
                 }
                 grid
             }
-            H5Data::F32(_) | H5Data::F64(_) => {
-                let physical = |raw: f64| -> f32 {
-                    if Some(raw) == nodata || Some(raw) == undetect {
-                        f32::NAN
-                    } else {
-                        (gain * raw + offset) as f32
-                    }
-                };
-                let values: Vec<f32> = match &plane.data {
-                    H5Data::F32(values) => {
-                        values.iter().map(|raw| physical(f64::from(*raw))).collect()
-                    }
-                    H5Data::F64(values) => values.iter().map(|raw| physical(*raw)).collect(),
-                    _ => unreachable!("outer match covers integer planes"),
-                };
-                let mut grid = MomentGrid {
-                    moment: moment.clone(),
-                    gate_range: gate_range.clone(),
-                    scale: 1.0,
-                    offset: 0.0,
-                    nodata: None,
-                    range_folded: None,
-                    radial_indices: Vec::new(),
-                    storage: recast_radar_core::MomentStorage::F32(Vec::new()),
-                };
+            H5Data::F32(values) => {
+                let mut grid = float_grid(&moment, &gate_range, nrays);
+                let physical = physical_value(gain, offset, nodata, undetect);
                 for (ray, row) in values.chunks_exact(nbins).enumerate() {
-                    grid.push_row(ray, MomentRow::F32(row.to_vec()))?;
+                    let row = row.iter().map(|raw| physical(f64::from(*raw))).collect();
+                    grid.push_row(ray, MomentRow::F32(row))?;
+                }
+                grid
+            }
+            H5Data::F64(values) => {
+                let mut grid = float_grid(&moment, &gate_range, nrays);
+                let physical = physical_value(gain, offset, nodata, undetect);
+                for (ray, row) in values.chunks_exact(nbins).enumerate() {
+                    let row = row.iter().map(|raw| physical(*raw)).collect();
+                    grid.push_row(ray, MomentRow::F32(row))?;
                 }
                 grid
             }
@@ -295,12 +308,46 @@ fn decode_sweep(
                 offset,
             },
         );
-        cut.moments.insert(moment, grid);
+        if let Some(replaced) = cut.moments.insert(moment, grid) {
+            budget.release(moment_grid_capacity_bytes(&replaced));
+        }
     }
     recover_copied_whatgroup_velocity_nodata(&mut cut, &plane_meta);
     volume.cuts.push(cut);
     volume.metadata.skipped_message_count += skipped_planes;
     Ok(())
+}
+
+/// An empty float grid with room for `nrays` rows.
+fn float_grid(moment: &MomentType, gate_range: &GateRange, nrays: usize) -> MomentGrid {
+    let mut grid = MomentGrid {
+        moment: moment.clone(),
+        gate_range: gate_range.clone(),
+        scale: 1.0,
+        offset: 0.0,
+        nodata: None,
+        range_folded: None,
+        radial_indices: Vec::new(),
+        storage: recast_radar_core::MomentStorage::F32(Vec::new()),
+    };
+    grid.reserve_rows(nrays);
+    grid
+}
+
+/// ODIM physical value (`gain·raw + offset`), NaN for `nodata`/`undetect`.
+fn physical_value(
+    gain: f64,
+    offset: f64,
+    nodata: Option<f64>,
+    undetect: Option<f64>,
+) -> impl Fn(f64) -> f32 {
+    move |raw| {
+        if Some(raw) == nodata || Some(raw) == undetect {
+            f32::NAN
+        } else {
+            (gain * raw + offset) as f32
+        }
+    }
 }
 
 /// A first bin starting this many km downrange is physically implausible
@@ -391,20 +438,31 @@ fn recover_copied_whatgroup_velocity_nodata(
         return;
     }
 
-    let (Some(velocity), Some(reflectivity)) = (
-        cut.moments.get(&MomentType::Velocity),
-        cut.moments.get(&MomentType::Reflectivity),
-    ) else {
+    // Mask in place (reflectivity borrowed, velocity owned for the pass) so
+    // no gate-index list proportional to the sweep is built.
+    let Some(mut velocity) = cut.moments.remove(&MomentType::Velocity) else {
         return;
     };
+    if let Some(reflectivity) = cut.moments.get(&MomentType::Reflectivity) {
+        mask_offset_fill_without_echo(&mut velocity, reflectivity, vel_meta.offset as f32);
+    }
+    cut.moments.insert(MomentType::Velocity, velocity);
+}
+
+/// Set velocity gates that sit on the plane's physical `offset` where the
+/// reflectivity grid has no echo to the velocity grid's no-data code. A
+/// no-op unless both grids share ray/gate geometry.
+fn mask_offset_fill_without_echo(
+    velocity: &mut MomentGrid,
+    reflectivity: &MomentGrid,
+    offset: f32,
+) {
     let rows = velocity.radial_indices.len();
     let gates = velocity.gate_range.gate_count;
     if reflectivity.radial_indices.len() != rows || reflectivity.gate_range.gate_count != gates {
         return; // differing geometry: do not risk mis-masking
     }
-
-    let offset = vel_meta.offset as f32;
-    let mut targets: Vec<usize> = Vec::new();
+    let sentinel = velocity.nodata;
     for row in 0..rows {
         for gate in 0..gates {
             // Reflectivity no-echo: None (u8/u16 sentinel) or NaN (float).
@@ -418,46 +476,34 @@ fn recover_copied_whatgroup_velocity_nodata(
                 && value.is_finite()
                 && (value - offset).abs() <= VELOCITY_OFFSET_EPS
             {
-                targets.push(row * gates + gate);
+                mask_gate_no_data(&mut velocity.storage, sentinel, row * gates + gate);
             }
         }
-    }
-    if targets.is_empty() {
-        return;
-    }
-    if let Some(velocity) = cut.moments.get_mut(&MomentType::Velocity) {
-        mask_gates_no_data(velocity, &targets);
     }
 }
 
-/// Set the given flat gate indices to the grid's transparent no-data code:
-/// NaN for float storage, the `nodata` sentinel for integer storage (integer
-/// grids with no sentinel are left unchanged — nothing transparent to write).
-fn mask_gates_no_data(grid: &mut MomentGrid, targets: &[usize]) {
-    let sentinel = grid.nodata;
-    match &mut grid.storage {
+/// Set one flat gate index to the transparent no-data code: NaN for float
+/// storage, the `nodata` sentinel for integer storage (integer grids with no
+/// sentinel are left unchanged — nothing transparent to write).
+fn mask_gate_no_data(
+    storage: &mut recast_radar_core::MomentStorage,
+    sentinel: Option<u16>,
+    index: usize,
+) {
+    match storage {
         recast_radar_core::MomentStorage::F32(values) => {
-            for &index in targets {
-                if let Some(slot) = values.get_mut(index) {
-                    *slot = f32::NAN;
-                }
+            if let Some(slot) = values.get_mut(index) {
+                *slot = f32::NAN;
             }
         }
         recast_radar_core::MomentStorage::U8(values) => {
-            let Some(sentinel) = sentinel else { return };
-            let sentinel = sentinel as u8;
-            for &index in targets {
-                if let Some(slot) = values.get_mut(index) {
-                    *slot = sentinel;
-                }
+            if let (Some(sentinel), Some(slot)) = (sentinel, values.get_mut(index)) {
+                *slot = sentinel as u8;
             }
         }
         recast_radar_core::MomentStorage::U16(values) => {
-            let Some(sentinel) = sentinel else { return };
-            for &index in targets {
-                if let Some(slot) = values.get_mut(index) {
-                    *slot = sentinel;
-                }
+            if let (Some(sentinel), Some(slot)) = (sentinel, values.get_mut(index)) {
+                *slot = sentinel;
             }
         }
     }

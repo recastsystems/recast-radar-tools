@@ -1011,6 +1011,63 @@ ephemeral = true
 tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:end", "build:24.1", "vcp:215", "elev:15", "radial-status:4"]
 description = "KIWA real-time chunk volume 307, chunk 70/70 (End): one LDM bzip2 record, 120 Message 31 radials of elevation 15 (~8.0 deg), radial times 00:41:42.589-00:41:47.217Z, azimuth 310.5-69.5 deg, radial status [1, 4]. S3 LastModified 2026-09-17T00:41:50.000Z."
 
+# TDWR real-time chunks (stream E, data-access): downloaded by the recorded ChunkIterator cassettes
+# in crates/recast-radar-data/tests/fixtures/listings/ (README.md there) and replayed from these copies.
+[[file]]
+id = "l2chunk-tlas-998-20260917-012843-001-s"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/998/20260917-012843-001-S"]
+sha256 = "4c738b8c3f9bc723fc7190053687e31441b881114a777b2c50bbb9da1aa18371"
+size = 263
+committed = "files/level2-chunks/TLAS-998-20260917-012843-001-S"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-998", "chunk:start", "vcp:90", "msg:2", "msg:5"]
+description = "TLAS (Las Vegas TDWR) real-time chunk volume 998, chunk 1 (Start), captured live 2026-09-17 by the tlas-chunk-too-large cassette: 24-byte AR2V0008.998 volume header (01:28:43Z) + one LDM bzip2 record with Messages 2 and 5 (VCP 90); no radials. S3 LastModified 2026-09-17T01:29:11Z."
+
+[[file]]
+id = "l2chunk-tlas-999-20260917-013443-001-s"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/999/20260917-013443-001-S"]
+sha256 = "dfeec3fd45f3e6aac91a448432539f9fc463ade0db4d0a4d59d67f80f00dfa66"
+size = 265
+committed = "files/level2-chunks/TLAS-999-20260917-013443-001-S"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-999", "chunk:start", "vcp:90", "msg:2", "msg:5"]
+description = "TLAS real-time chunk volume 999, chunk 1 (Start), captured live 2026-09-17 by the tlas-chunk-too-large cassette: 24-byte AR2V0008.999 volume header (01:34:43Z) + one LDM bzip2 record with Messages 2 and 5 (VCP 90); no radials. S3 LastModified 2026-09-17T01:35:17Z."
+
+[[file]]
+id = "l2chunk-tlas-3-20260917-015242-001-s"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/3/20260917-015242-001-S"]
+sha256 = "e9e1587d18515a1374698f090652f9222bd3d6702ba685b4ddecb25233a9830b"
+size = 262
+committed = "files/level2-chunks/TLAS-3-20260917-015242-001-S"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-3", "chunk:start", "vcp:90", "msg:2", "msg:5"]
+description = "TLAS real-time chunk volume 3 (the id after 999), chunk 1 (Start), captured live 2026-09-17 by the tlas-next-volume-bytes cassette: 24-byte AR2V0008.003 volume header (01:52:42Z) + one LDM bzip2 record with Messages 2 and 5 (VCP 90); no radials. S3 LastModified 2026-09-17T01:53:10Z."
+
+[[file]]
+id = "l2chunk-tlas-3-20260917-015242-002-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/3/20260917-015242-002-I"]
+sha256 = "a17bcffe02bcb8bf88752551437411f88d134f87beeb990340637598d8f56a33"
+size = 7363
+committed = "files/level2-chunks/TLAS-3-20260917-015242-002-I"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-3", "chunk:intermediate", "vcp:90", "msg:31", "elev:1", "radial-status:3"]
+description = "TLAS real-time chunk volume 3, chunk 2 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (0.79 deg), azimuth 9.2-128.2 deg, radial status [1, 3]. S3 LastModified 2026-09-17T01:53:13Z."
+
+[[file]]
+id = "l2chunk-tlas-3-20260917-015242-003-i"
+format = "nexrad-level2-chunk"
+urls = ["https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/3/20260917-015242-003-I"]
+sha256 = "60156285869bcdf98e2b804ba1c305c44adf893cfe1a11c0446aa46b2d4affba"
+size = 24018
+committed = "files/level2-chunks/TLAS-3-20260917-015242-003-I"
+ephemeral = true
+tags = ["era:2026", "site:tlas", "radar:tdwr", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:tlas-3", "chunk:intermediate", "vcp:90", "msg:31", "elev:1"]
+description = "TLAS real-time chunk volume 3, chunk 3 (Intermediate): one LDM bzip2 record, 120 Message 31 radials of elevation 1 (0.79 deg), azimuth 129.2-248.2 deg, radial status [1]. S3 LastModified 2026-09-17T01:53:20Z."
+
 # Trimmed fixtures (TD.3): committed files made by trim-level2 (crates/recast-radar-testdata/src/bin/trim-level2.rs)
 # from the entries tagged `trim` above. Each `derivation` starts with the trim-level2 options that reproduce the
 # file byte for byte from `derived_from` (tests/trim.rs); tools/validate_trimmed.py checks them with Py-ART and MetPy.

@@ -2,7 +2,12 @@
 name = "recast-radar-io-odim"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Pure-Rust ODIM_H5 weather radar decoder (polar volumes and Cartesian products) over a minimal HDF5 reader"
+readme.workspace = true
+keywords = ["odim", "hdf5", "radar", "weather", "opera"]
+categories = ["science::geo", "parser-implementations", "encoding"]
 
 [dependencies]
 chrono.workspace = true

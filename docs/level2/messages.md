@@ -1,0 +1,506 @@
+# Level II messages
+
+Status of each message type in `recast-radar-io-nexrad` (`src/messages/`). References are to the RDA/RPG
+ICD, document 2620002AA (Build 24.0, 19 August 2025), the latest revision published by the NOAA Radar
+Operations Center.
+
+A decoder is **verified** only when tests check it against real files. A decoder written from the ICD with
+no real sample in the corpus is marked **no real sample** and is not claimed as verified.
+
+## Summary
+
+"Verified against" names the independent source each test compares with: **MetPy** (1.7.1 `Level2File`) and
+**Py-ART** (2.2.5 `NEXRADLevel2File`) golden files written by `tools/level2_golden.py`, or **hex**: values
+read from the file bytes at documented offsets, quoted in the tests or read with a separate Python script.
+The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crates/recast-radar-io-nexrad/tests/`.
+
+| Type | Module | Struct (`MessageBody` variant) | Verified against |
+|---|---|---|---|
+| 1 | `lib.rs` (volume decoder) | radials of `RadarVolume`; walker: `Unparsed` | Py-ART: rays per elevation in 4 files, 1991-2005 (`volume_metadata.rs`) |
+| 2 | `rda_status.rs` | `RdaStatus` (`Orda`/`Legacy`) (`RdaStatus`) | MetPy, 27 files (`messages_status.rs`); halfword positions against the body bytes in the same 27 files (22 ORDA and 18 legacy halfwords pinned by non-zero values, the rest verified as zero) |
+| 3 | `performance.rs` | `PerformanceMaintenance` (`Performance`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 21 Build 24.0 halfwords MetPy lacks. Legacy layout: not decoded |
+| 4, 10 | `console.rs` | `ConsoleMessage` (`Console`) | **no real sample** |
+| 5 | `vcp.rs` | `VolumeCoveragePattern` (`Vcp`) | MetPy, 22 metadata records (`messages_vcp.rs`); Py-ART pattern and cut angles, 22 sources (`volume_metadata.rs`) |
+| 6 | `control.rs` | `RdaControlCommands` (`ControlCommands`) | **no real sample** |
+| 7 | `vcp.rs` | `VolumeCoveragePattern` (`Vcp`) | **no real sample** (a relabelled message 5 checks the dispatch only) |
+| 8 | `clutter_censor.rs` | `ClutterCensorZones` (`ClutterCensorZones`) | **no real sample** |
+| 9 | `request.rs` | `RequestForData` (`RequestForData`) | **no real sample** |
+| 11, 12 | `loopback.rs` | `LoopbackTest` (`Loopback`) | **no real sample** |
+| 13 | `bypass_map.rs` | `ClutterFilterBypassMap` (`BypassMap`) | MetPy, 12 files (time, counts, radial 0); hex for other radials (`messages_clutter.rs`) |
+| 15 | `clutter_filter_map.rs` | `ClutterFilterMap` (`ClutterFilterMap`) | MetPy, 25 files, every range zone (`messages_clutter.rs`) |
+| 18 | `adaptation.rs` | `RdaAdaptationData` (`Adaptation`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 49 Build 24.0 offsets MetPy lacks. Legacy layout: not decoded |
+| 29 | none | `Unparsed` | framing only, against `tools/level2_message_scan.py` |
+| 31 | `msg31_blocks.rs` | `DigitalRadarDataGeneric` (`DigitalRadarDataGeneric`) | MetPy, 13 volumes and the KIWA chunks (`messages_msg31.rs`); hex (one radial); Py-ART VOL/ELV/RAD of each elevation's first ray, 23 sources (`volume_metadata.rs`); Py-ART rays and moment codes, 4 sources (`volume_pyart.rs`). Compressed radials: **no real sample** |
+| 32 | `prf.rs` | `RdaPrfData` (`Prf`) | hex, 3 volumes; PRFs checked against MetPy's message 31 unambiguous ranges (no reader decodes message 32) |
+| 33 | `rda_log.rs` | `RdaLogData` (`RdaLog`) | **no real sample** |
+
+`decode_volume_with_metadata` (below) collects messages 2, 3, 5/7, 8, 13, 15, 18 and 32 and the per-sweep
+message 31 constant blocks into `NexradMetadata`.
+
+## Golden files
+
+`tools/level2_golden.py` writes every file under `testdata/level2/golden/` (groups `status`, `vcp`, `clutter`,
+`msg31`, `metadata`, `volume`) with MetPy 1.7.1 and Py-ART (arm_pyart) 2.2.5, and refuses other versions. It reads each
+source from its committed path or the testdata download cache and checks the manifest sha256 first. The module
+docstring describes each group.
+
+- `python tools/level2_golden.py <group|all> [source ...]` writes the files.
+- `python tools/level2_golden.py --check <group|all> [source ...]` writes nothing. It regenerates the documents in
+  memory and exits with status 1 unless every committed file is reproduced byte for byte. With a group's default
+  sources it also fails on committed files the script no longer produces, and on files it would write that are not
+  committed.
+- `python tools/level2_golden.py --list-sources all` prints the manifest ids the default sources read.
+
+The check runs as an ignored Rust test, which first fetches every listed source into the cache (a file that cannot
+be fetched fails the test) and then runs `--check all`:
+
+```sh
+RECAST_RADAR_GOLDEN_PYTHON=/path/to/python cargo test -p recast-radar-io-nexrad --test golden_script -- --ignored
+# or, for CI:
+RECAST_RADAR_GOLDEN_PYTHON=/path/to/python bash tools/ci/level2-golden-check.sh
+```
+
+The clutter group's default ids leave out trimmed fixtures (`derived_from` in the manifest). Their clutter messages
+are compared with their source files instead (see Message 15).
+
+Corpus coverage: every test that loops over corpus files pins the number of sources it applies to (from the
+golden directory or the manifest) and ends with `assert_checked_every_available` (`tests/common/mod.rs`), which
+requires that every source whose files are present locally after the loop was checked. A source is skipped only
+when it is neither committed nor cached and cannot be downloaded, and the skip is printed with the ids. With the
+cache filled (one `cargo test` online), every loop checks every source. Tests of one uncommitted file use
+`require_file!` (the out-of-order chunk test, for chunk 014) or the same `load` helper.
+
+## Framing and reassembly
+
+`messages::RawMessages` walks decompressed record bytes; `messages::MessageWalker` also decodes the bodies.
+Helpers: `messages::metadata_record(raw)` (first LDM record, or the first 134 frames of raw-record files)
+and `messages::record_bytes(raw)` (every record, decompressed and concatenated).
+
+- Each frame is a 12-byte CTM header, the 16-byte message header (Table II), then the body.
+- Messages 29 and 31 are variable length (`size_halfwords * 2` bytes). A size of 65535 means header bytes
+  12-15 hold the message size in bytes (Table II notes 6 and 7). Every other message is in a fixed
+  2432-byte frame. A size of 0 is an empty frame.
+- Segmented messages (13, 15, 18) are joined from consecutive frames numbered 1..N.
+- Verified: `tests/message_walker.rs` checks frame counts and message sequences against
+  `tools/level2_message_scan.py`, a separate Python scanner. It covers 11 metadata records (1991 ARCHIVE2
+  to Build 24.1, TDWR, a status-only stub) and 8 whole files, including the 65535-size Message 29 in the
+  KLIX `_MDM` file. For volumes with radials, it also checks that the Message 1/31 count equals the radial
+  count from `decode_volume_from_bytes`.
+
+Quirks found in the real corpus:
+
+- **KPAH 2008-04-15 (Build 10.0).** Message 15 segment 1 says 5 segments, and segments 2-77 say 77. All 77
+  have the same generation time. The walker joins all 77, because reassembly does not require the segment
+  counts to agree.
+- **KVWX 2008-04-15.** The first frames of Messages 15 and 13 have segment count and number 0. Their
+  continuation frames therefore have no first segment, and are reported as orphan runs. Stale frames with
+  message type 0 continue the numbering.
+- **KLIX 2005-08-29.** Message 13 frames 1-14 say 14 segments and make a complete message. Frames 15-48 say
+  48 and hold zero date, time and data, so they are reported as an orphan run.
+- **KDMX and KPAH 2008.** The fixed metadata record keeps stale frames with message type 0, left over from an
+  earlier, longer message.
+- **KTLX 2003-05-08.** The first record has message type 202, which the ICD does not define. It is yielded
+  unparsed.
+
+## Volume with metadata: `decode_volume_with_metadata`
+
+`decode_volume_with_metadata(bytes) -> Result<NexradVolume>` (`src/metadata.rs`) returns
+`NexradVolume { volume, metadata }`. `volume` is the `RadarVolume` that `decode_volume_from_bytes` returns for the
+same bytes, with the same errors (including `MissingVolumeHeader` for headerless input, see Message 29).
+`metadata` is a `NexradMetadata`:
+
+| Field | Type | Source |
+|---|---|---|
+| `rda_status` | `Option<RdaStatus>` | message 2 |
+| `performance` | `Option<Box<PerformanceMaintenance>>` | message 3 |
+| `vcp` | `Option<VolumeCoveragePattern>` | message 5 (or 7) |
+| `adaptation` | `Option<Box<RdaAdaptationData>>` | message 18 |
+| `clutter_filter_map` | `Option<ClutterFilterMap>` | message 15 |
+| `bypass_map` | `Option<ClutterFilterBypassMap>` | message 13 |
+| `clutter_censor_zones` | `Option<ClutterCensorZones>` | message 8 |
+| `prf` | `Option<RdaPrfData>` | message 32 |
+| `per_sweep_elevation_data` | `Option<Vec<SweepElevationData>>` | message 31 VOL, ELV and RAD blocks of each cut's first radial, and its ZDR bias estimate in dB |
+| `build` | `Option<RdaBuild>` | `RdaStatus::rda_build` of the message 2 above (`None` for the legacy RDA) |
+| `errors` | `Vec<String>` | problems met while reading the metadata |
+
+- Metadata messages come from the metadata record only (`messages::metadata_record`), never from the data
+  records. For each field, the first message of that type that decodes is kept. A message that cannot be framed
+  or decoded leaves its field `None` and is listed in `errors`; it does not fail the call.
+  `NexradMetadata::from_metadata_record(bytes)` reads these fields without decoding the volume, for example for a
+  real-time start chunk or a status-only stub.
+- `per_sweep_elevation_data` has one `SweepElevationData { cut_index, elevation_number, elevation_angle_deg,
+  elevation, volume, radial, zdr_bias_estimate_db }` per cut, in `volume.cuts` order. It is `None` when no radial is a message 31
+  (message 1 volumes). The blocks come from each cut's first radial. The ELV block is constant within a cut; VOL
+  and RAD are sent with every radial, so the stored values are those at the start of the cut.
+- One decode pass. The volume decoders call an internal observer after each message 31 radial. When the radial
+  opens a cut (the decoder appends a cut only for the radial that opens it), the observer decodes that radial's
+  constant blocks with `DigitalRadarDataGeneric::decode`. `decode_volume_from_bytes` passes a no-op observer
+  that compiles away: its release binary differs from the one before the change in 66 bytes of 1.79 MB,
+  and the bench checksums are unchanged. Only the metadata record (the first LDM record) is decompressed a
+  second time. On KTLX 2024-03-15 with one thread, that costs about 1 ms of a 310-370 ms decode
+  (`NexradMetadata::from_metadata_record` alone: 0.8-0.9 ms).
+- Verified (`tests/volume_metadata.rs`):
+  - The Py-ART goldens cover 27 sources, and all 27 decode: 23 message 31 volumes and chunk sets from 2008 to
+    2026 (including KVWX 2008, whose radials carry a blank radar identifier), and 4 message 1 files from 1991 to
+    2005. For each, `volume` equals `decode_volume_from_bytes`, every metadata field equals the first message of
+    its type the walker decodes, and the rays per elevation number equal Py-ART's. For message 31 sources, these
+    also equal Py-ART's raw values: the VCP number, the message 5 target angles, and, for each elevation, the
+    first ray's time, azimuth and elevation and every VOL, ELV and RAD field.
+  - For the 27 files with MetPy status goldens: message 2 layout, build and VCP; presence of messages 3 and 18;
+    message 5 pattern and cut count; message 32 in the three volumes that have it and in no volume before
+    Build 23; message 15 and 13 generation times and segment counts.
+  - For the 14 MetPy message 31 goldens: one entry per MetPy sweep, with the same radial count, first radial
+    time and elevation, and VOL, ELV and RAD values.
+  - Mutations of the committed KIWA chunks (they run offline): a message 15 with 9 elevation segments is reported
+    in `errors` and leaves `clutter_filter_map` `None`, while the volume and every other field are unchanged. A
+    second message 2 inserted before the real one is the one kept. When elevation 3's first chunk is decoded
+    before the rest of elevation 1, the late elevation 1 radials go back to cut 0 and the per-sweep data stays
+    with the radials that opened each cut.
+  - KLIX 2005 lists its zero-filled messages 5 and 15 and the message 13 orphan run in `errors`; KDMX 2008 lists
+    its stale frames and decodes every metadata message.
+- KVWX 2008-04-15, whose 2500 radials all record four spaces as the radar identifier, was rejected with "empty
+  message 31 id" until wave 3. MetPy and Py-ART read it, and both decoders now do (see Message 31).
+
+## Message 1: Digital Radar Data (Table III)
+
+Status: decoded by the volume decoder (`decode_volume_from_bytes`). The walker yields the body unparsed.
+Real samples: ARCHIVE2 files 1991-2003 and KLIX 2005. `tests/volume_metadata.rs` checks the rays per elevation
+number of KTLX 1991, 1999 and 2003 and KLIX 2005 against Py-ART.
+
+## Message 2: RDA Status Data (Table IV)
+
+Module: `rda_status.rs`. Status: decoded, **verified** against MetPy on 27 real files.
+Real samples: every archive volume in the corpus (not the `_MDM` file or intermediate chunks).
+
+- The RDA channel byte of the message header picks the layout: bit 3 set is an Open RDA (`OrdaRdaStatus`, ICD
+  2620002AA Table IV), clear is a legacy RDA (`LegacyRdaStatus`, ICD 2620002B Table IV, the last revision that
+  documents it). The walker passes the header to the decoder for messages 2, 3 and 18.
+- ORDA bodies are 40 halfwords up to Build 17 and 60 from Build 18 (first seen in KDVN 2020, Build 18.2);
+  halfwords 41, 59 and 60 decode to `None` for 40-halfword bodies. TDWR files set bit 3 and use the ORDA layout
+  (build 2.0, local VCP 80 or 90).
+- Legacy halfwords 10 to 14 are interference detection rate, operational mode, interference suppression unit,
+  Archive II status and remaining capacity; 21-22 is the notch width map time. The legacy calibration
+  correction (halfword 6) is kept raw, because ICD 2620002B does not state its scale.
+- Codes are enums with `Unknown(raw)` or bit-field newtypes with named accessors. Alarm codes (27-40) are kept as
+  numbers; the Table IV-A alarm text is not included.
+- Verified: `tests/messages_status.rs` compares every halfword MetPy 1.7.1 reads (golden files from
+  `tools/level2_golden.py status`, including raw codes before MetPy's name converters) for legacy files from
+  1991, 1999, 2005 and 2008, ORDA Builds 10.0 to 24.1, and TDWR. Halfwords 26 and 59, which MetPy skips, are
+  0000 in every corpus file; the KLIX 2005 legacy fields and several Build 22 codes are checked against values
+  read from the file bytes.
+- Halfword positions (`halfword_positions_pinned_by_nonzero_corpus_values`): in all 27 files with a status
+  golden, every decoded field equals the halfword read from the message 2 body at its Table IV position, through
+  the same code mapping. A position is pinned only where some file has a non-zero value there; a zero matches any
+  position. Pinned by non-zero values: ORDA halfwords 1-8, 10-15, 19-24, 41 and 60 (23 files, Build 10.0 to
+  24.1 and TDWR); legacy halfwords 1-8, 10-14, 19-22 and 24 (4 files: KTLX 1991 and 1999, KLIX 2005, KVWX 2008).
+  Verified only as zero, because no corpus file sets them: ORDA 9 (control authorization), 16 (command
+  acknowledgment), 17 (channel control), 18 (spot blanking), 25 (RMS control), 26 (performance check), 27-40
+  (alarm codes), 42-58 (spare) and 59 (downloaded pattern number); legacy 9, 15 (alarm summary), 16, 17, 18, 25
+  and 27-40. The test pins both lists, so a new corpus file that sets one of these fields fails it until the
+  lists and this paragraph are updated.
+
+## Message 3: Performance/Maintenance Data (Table V)
+
+Module: `performance.rs`. Status: decoded per ICD 2620002AA (Build 24.0), **verified** against MetPy and file
+bytes. Real samples: metadata records from 2005 on, except KVWX 2008 and the TDWR files.
+
+- `PerformanceMaintenance` has one struct per Table V section (communications, AME, RCP/SPIP, power,
+  transmitter, tower/utilities, equipment shelter, antenna/pedestal, RF generator/receiver, calibration, file
+  status, device status) plus the version halfword. Every field documents its halfword, units, range and codes.
+- Table V has reassigned locations over the builds: the DAU-to-SPIP change in Build 17.0, NTP/GPS counters
+  removed in 18.0, IFDR and RSP status added in 19.0, CSU alarm counts removed in 20.0, T1/Ethernet port status
+  added in 23.0. The module documentation lists the locations. Files from earlier builds decode with the
+  Build 24.0 names, so those fields carry the older content. There is no per-build layout.
+- The legacy RDA layout (ICD 2620002B, 520 halfwords, bit-packed, non-IEEE floating point) is not decoded. The
+  walker yields the KLIX 2005 body unparsed.
+- Verified: MetPy's message 3 layout predates Build 17, so the test compares by halfword and type. Each of the
+  237 MetPy fields whose location and type match a Build 24.0 field matches exactly in all 20 ORDA volumes
+  (Builds 10.0 to 24.1). The 32 MetPy locations with no Build 24.0 counterpart and the 21 Build 24.0 locations
+  MetPy does not read are fixed lists in the test. Those 21 are checked against hex values from the KIWA 2026
+  volume (Build 24.1), and against ICD ranges in the 12 volumes from Build 19.0 on.
+
+## Messages 4 and 10: Console Message (Table VI)
+
+Module: `console.rs`. Status: decoded per ICD. **No real sample.**
+Both are operator messages (4 from the RDA, 10 from the RPG). Neither appears in any corpus file.
+
+## Messages 5 and 7: Volume Coverage Pattern (Table XI)
+
+Module: `vcp.rs` (`VolumeCoveragePattern`, one `VcpCut` per elevation cut). Status: message 5 **verified**;
+message 7 shares the decoder and has **no real sample** (it goes from the RPG to the RDA).
+Real samples: Message 5 in metadata records from 2005 on (not in KVWX 2008), including TDWR.
+
+- Verified: `tests/messages_vcp.rs` compares every field with MetPy 1.7.1 `Level2File.vcp_info` on 22 metadata
+  records (Build 10.0 to 24.1, TDWR VCP 80, the KIWA real-time start chunk). The goldens are
+  `testdata/level2/golden/vcp/<id>.json`, written by `tools/level2_golden.py vcp`. The script maps MetPy's decoded
+  names back to codes with MetPy's own tables. A second test checks the halfword 10 SAILS, MRLE, MPDA and base tilt
+  flags against the per-cut E15 flags and elevations, and against the manifest tags. The message 7 test relabels
+  a real message 5 frame, so it checks the dispatch only, not a real message 7.
+- Layout: halfword 1 counts the body only (11 + 23 per cut in every sample; the message header size is 8 more).
+  Cuts are read with a stride of (halfword 1 - 11) / cuts, which must be a whole number of at least 23.
+- Angles: elevation (E1) and EBC (E19) codes above 90 degrees are negative, per the Table III-A note. Angle and
+  azimuth rate codes are decoded from all 16 bits, like MetPy, Py-ART and xradar; the ICD marks bits 0-2 not
+  applicable, and they are clear in every sample.
+- Super resolution (E3) bits follow Build 24.0: bit 0 0.5 degree azimuth, bit 1 1/4 km reflectivity, bit 2 Doppler
+  to 300 km, bit 3 dual polarization to 300 km. MetPy 1.7.1 names bits 1 and 2 differently. In dual-polarization
+  volumes, split-cut surveillance cuts carry 11 and their Doppler partners 7, which fits the Build 24.0 names.
+- Halfword 10 bit 10 is "MPDA cuts added" in the Table XI body, while note 16 calls bits 8-10 spare. It is exposed
+  as `mpda_cuts_added()` and is clear in every sample.
+
+Quirks found in the real corpus:
+
+- **KLIX 2005-08-29.** The Message 5 frame declares 1208 halfwords, but every body byte is zero. The decoder returns
+  an error (`VCP message size is 0`). MetPy skips the message.
+- **Builds 10.0 to 16.1** (2008-2016 files). The VCP version is 0, and halfword 10 is 0 even in SAILS volumes
+  (KOAX 2014, KEWX 2016). The per-cut E15 word is 0 as well.
+- **KDGX 2023-03-25.** Halfword 10 is 0x5005: SAILS x2, base tilt VCP, and 2 base tilts in bits 13-15, although
+  note 16 says only one base tilt is supported. The base tilt flag (E15 bit 10) is set on 3 split-cut pairs at
+  0.31 degrees, 2 of them SAILS. EBC angles are -0.088 and -0.132 degrees (codes 65520 and 65512).
+- **KDVN 2020-08-10.** Halfword 9 (sequencing) is 0x47: 7 elevations and up to 2 SAILS cuts, with the sequence
+  not active.
+- **KMTX 2024-03-01.** The base tilt split cut is commanded at 0.0 degrees.
+
+## Message 6: RDA Control Commands (Table X)
+
+Module: `control.rs`. Status: decoded per ICD. **No real sample.**
+The RPG sends this to the RDA, so Archive II files do not record it. Only the code-to-enum mappings are
+unit tested (ZDR bias encoding, restart cut number); no bytes are tested.
+
+## Message 8: Clutter Censor Zones (Table XII)
+
+Module: `clutter_censor.rs` (`ClutterCensorZones`). Status: decoded per ICD. **No real sample.**
+The RPG sends this to the RDA, so Archive II files do not record it. Halfword 1 is the number of override
+regions (0 to 25). Each region is 6 halfwords: start and stop range (km), start and stop azimuth (degrees),
+elevation segment number, and operator select code. The operator select code is the `OperatorSelectCode` enum
+shared with Message 15. The decoder rejects more than 25 regions and a body too short for the declared count;
+field values are kept as sent. The legacy layout in ICD 2620002B (8 halfwords per region, scaled azimuths) is
+not decoded. The only real-byte test relabels the committed start chunk's Message 15 as Message 8. The decoder
+rejects it (the map date, 20713, is read as the region count) and the walk continues. That tests the range
+check, not the layout.
+
+## Message 9: Request for Data (Table XIII)
+
+Module: `request.rs`. Status: decoded per ICD. **No real sample.**
+The RPG sends this to the RDA. Only the code mapping is unit tested.
+
+## Messages 11 and 12: Loop Back Test (Table VIII)
+
+Module: `loopback.rs`. Status: decoded per ICD. **No real sample.**
+These are exchanged on wideband connection and not recorded in Archive II files.
+
+## Message 13: Clutter Filter Bypass Map (Table IX)
+
+Module: `bypass_map.rs` (`ClutterFilterBypassMap`). Status: **verified** (`tests/messages_clutter.rs`).
+Real samples: 49 segments in KPAH and KDMX 2008 through Build 18.2 (KDVN 2020); 14 segments plus an orphan
+run in KLIX 2005. The ICD says it has not been sent since Build 19.
+
+- Layouts: `Current` (2620002AA: generation date and time, 1 to 5 elevation segments of 360 one-degree
+  radials) and `Legacy` (2620002B, 2001: no generation time, 256 radials of 1.40625 degrees, radial 0 centred
+  on north). KLIX 2005 uses the legacy layout with 2 segments. When halfword 1 is between 1 and 5, the decoder
+  reads the legacy layout, as MetPy does. Each radial is 32 halfwords of 512 range bins, 1 km each. A 1 bit
+  means bypass the clutter filters, and `BypassMapSegment::bypass(radial, bin)` reads it.
+- MetPy 1.7.1 goldens (`tools/level2_golden.py`, `testdata/level2/golden/clutter/`): generation time, segment
+  and radial counts, and radial 0 of every segment in 12 files. MetPy has two differences from the ICD, so no
+  other values are compared: it reads every radial of a segment from radial 0's halfwords, and it orders each
+  halfword's bits least significant first, while note 4 puts bin 0 in the MSB.
+- Checked beyond MetPy: halfwords at documented record offsets for 4 radials each in KTLX 2013, KDVN 2020
+  and KLIX 2005, and per-segment bypass-bin counts computed from the file bytes. The note 4 bit order is
+  checked on all 9 maps by range continuity. Among neighbouring bins with at least one filtered, both are
+  filtered across halfword boundaries at 71% or more of the rate inside a halfword when bits are read MSB
+  first. Read LSB first, the boundary rate is lower by a factor of 1.97 or more.
+- KVWX 2008 has only zero-filled frames whose first segment is numbered 0. MetPy joins them and the walker
+  does not.
+
+## Message 15: Clutter Filter Map (Table XIV)
+
+Module: `clutter_filter_map.rs` (`ClutterFilterMap`). Status: **verified** (`tests/messages_clutter.rs`).
+Real samples: every WSR-88D metadata record from 2005 on (not TDWR). Segment counts: 5 (most), 6 (KMAF 2023),
+7 (KTLX 2013), 62 (KLIX 2005), 77 (KPAH 2008, see quirks); KVWX 2008 has only broken segments.
+
+- The map has 1 to 5 elevation segments. Each segment has 360 azimuth segments, and each azimuth segment
+  has 1 to 20 range zones of (op code, end range in km). The decoder rejects segment and zone counts
+  outside those ranges. Op codes and end ranges are kept as sent (unknown op codes as `Unknown`). Bytes
+  after the map are counted in `trailing_bytes`.
+- MetPy 1.7.1 goldens: generation time and every range zone of every azimuth, in 25 files from 2008 to
+  2026. Every decoded map has 360 azimuths per segment, ends strictly increasing, a last end range of 511
+  and known op codes. The generation time is before the volume time. KTLX 2013 and KMAF 2023 have
+  3-zone azimuths. All other maps are one zone ending at 511 with "bypass map in control".
+- KPAH 2008: the 77 joined segments hold a 5 403-halfword map followed by 172 800 stale bytes, which go in
+  `trailing_bytes`. MetPy reports the same split ("Used: 5400 Avail: 91800").
+- KLIX 2005 and KVWX 2008 are zero-filled: date, time and elevation segment count are 0. MetPy skips them,
+  and the decoder rejects them. Legacy RDAs used a different Message 15, the "Clutter Filter Notchwidth
+  Map" (2620002B Table XIV: 256 azimuths, 16 range zones, byte fields). It is not decoded because the corpus
+  has no populated sample. The 32 772-byte KVWX message has that layout's length, but all its bytes are
+  zero.
+- Trimmed fixtures (`derived_from` in the manifest) keep their source's non-radial messages. For all 16, the
+  message 13 and 15 maps the walker finds equal the source file's; 11 of them carry clutter filter maps
+  (`trimmed_fixtures_keep_the_source_clutter_messages`).
+
+## Message 18: RDA Adaptation Data (Table XV)
+
+Module: `adaptation.rs`. Status: decoded per ICD 2620002AA (Build 24.0), **verified** against MetPy and file
+bytes. Real samples: 4 segments in every metadata record from 2005 on, except KVWX 2008 and the TDWR files.
+
+- `RdaAdaptationData` has one field per Table XV entry, named after the ICD mnemonic, with its byte location,
+  units and range. Arrays: `a_fuel_conv`, `atten_table`, `h_rnscale`, `atmos`, `el_index`, `v_rnscale` (whose
+  last two elements follow VEL/WIDTH_DATA_TOVER). "T"/"F" strings decode to `Option<bool>`. Helpers give site
+  latitude and longitude in decimal degrees and the manual setup binary angles in degrees.
+- The ICD assigns bytes 8828-8843 to one Real*4 (BASELINE_ZDR_OFFSET); only the first four bytes are read.
+- Reassigned locations since Build 10: the default VCP tables (bytes 1328-8359) are spare from Build 18, and
+  DIG_RCVR_CLOCK_FREQ and COHO_FREQ (2500-2515) appear in files from Build 23.1. K1/K3 became the pre-limit
+  angles, and the pedestal/DAU regulation limits became dead limits and SPIP limits, in Build 17. The noise
+  temperature maintenance limits (Real*4) became H/V_MIN_NOISETEMP (Integer*4). The module documentation lists
+  them; the VCP tables are not decoded.
+- The legacy RDA's 9600-byte message 18 is documented by no available ICD revision (2620002B lists type 18 as
+  reserved), so the walker yields it unparsed.
+- Verified: each of the 320 MetPy locations (without the VCP tables) whose location and type match a Build 24.0
+  field matches exactly in all 20 ORDA volumes. The 31 MetPy-only and 49 Build-24.0-only offsets are fixed
+  lists. The Build-24.0-only fields are checked against KIWA 2026 hex values and ICD ranges from Build 19.0 on.
+  REFINED_PARK is zero before Build 21.0. Two blocked sites exceed the ICD's 1.800 maximum for H_RNSCALE and
+  V_RNSCALE (KMAF 2023: 1.981 and 2.059; KMTX 2024: 2.539 and 2.233). The site position matches the message 31
+  volume data block of the same volume.
+
+## Message 29: Model Data
+
+Status: yielded unparsed. Table I lists type 29 as reserved.
+Real sample: the KLIX 2021-08-29 `_MDM` file, where it is one 809,229-byte message with a size of 65535.
+
+The volume decoders (`tests/headerless_inputs.rs`):
+
+- The `_MDM` file has no volume header: it is one LDM record. `decode_volume_from_bytes`,
+  `decode_volume_with_metadata` and the preview decoders return `NexradError::MissingVolumeHeader`, which
+  names the first 8 input bytes. Py-ART 2.2.5 raises `OSError: unknown compression record`; MetPy 1.7.1 logs
+  "Unable to read volume header" and returns a `Level2File` with 0 sweeps and no `stid` or `dt`. A `RadarVolume`
+  needs the site and volume time of the header, so an error is returned rather than an empty volume with
+  invented values. The walker and `NexradMetadata::from_metadata_record` still read the file (no metadata
+  message). An intermediate real-time chunk on its own gets the same error. Before wave 3, the decoder read
+  the compressed bytes as a volume header and uncompressed records, and failed only when a random "message 1"
+  tripped the gate limit.
+- A Message 29 inside a volume stream (the committed KIWA start chunk, the `_MDM` record, then chunk 002) is
+  skipped by its extended size, like every message whose size is the 0xFFFF sentinel (Table II notes 6 and 7).
+  The volume is the one decoded without it, plus one skipped message. Before wave 3, the decoder advanced one
+  2432-byte frame into the message and read its bytes as message headers: an `Ok` volume with VCP 52942, a
+  volume time in 2104 and a cut at 339 degrees.
+
+## Message 31: Digital Radar Data Generic Format (Table XVII)
+
+Module: `msg31_blocks.rs` (`DigitalRadarDataGeneric`). Status: **verified**. The walker decodes every block:
+the Data Header Block (Table XVII-A), VOL (XVII-E), ELV (XVII-F), RAD (XVII-H), and every data moment block
+(XVII-B) including CFP. Moment blocks with names the ICD does not define are kept as moments with their name.
+Blocks of any other type or name are kept as bytes. `decode_volume_from_bytes` still builds the moment grids
+on its own fast path; the two decoders agree radial by radial (`volume_decoder_agrees_with_typed_radials`).
+Real samples: every volume from 2008 on (not the status-only stub or the `_MDM` file).
+
+Layouts are chosen from the sizes in the message, not from the build:
+
+| Structure | Layout | Selected by | Builds in the corpus |
+|---|---|---|---|
+| Data Header Block | 68 bytes, 9 pointer slots | first block pointer | 10.0 to 18.2, TDWR |
+| Data Header Block | 72 bytes, 10 slots (CFP) | first block pointer | 19.1 on |
+| VOL | 44 bytes | LRTUP 44 to 51 | 10.0 to 19.1, TDWR |
+| VOL | 52 bytes, adds the ZDR bias estimate | LRTUP 52 or more | 20.1 on |
+| RAD | 20 bytes | LRTUP 20 to 27 | 10.0 to 13.2, TDWR |
+| RAD | 28 bytes, adds H and V calibration constants | LRTUP 28 or more | 14.0 on |
+| ELV | 12 bytes | LRTUP | all |
+
+VOL major version: 1 through Build 13 and on TDWR, 2 from Build 14, 3 from Build 20. Processing status: 0
+before Build 14, 1 (RxR noise) from Build 14, 3 (RxR noise and CBT) from Build 19. A block larger than the
+newest layout decodes with that layout, because ICD note 32 allows fields to be appended. A block smaller than
+the oldest layout is an error.
+
+Verification (`tests/messages_msg31.rs`):
+
+- **MetPy goldens.** `tools/level2_golden.py msg31` writes `testdata/level2/golden/msg31/*.json` from MetPy
+  1.7.1. The files are 13 volumes (Builds 10.0, 12.0, 13.1, 14.0, 18.2, 19.1, 20.1, 21.0, 22.0 and 24.1,
+  TDWR, and KVWX 2008) plus the committed KIWA chunks. For every sweep, the test compares the first radial
+  field by field. It compares every radial through per-field distinct values, or through count, min, max and
+  sum. MetPy's RDA build is compared as well.
+- **SNR threshold.** Table XVII-B scales the SNR threshold by 0.125 dB; MetPy uses 0.1 dB. On 13 golden
+  sources, each moment's threshold at 0.125 dB equals the message 5 threshold for its elevation cut. The only
+  exception is TDWR TSTL's last cut, which records 0 dB for REF, VEL and SW where message 5 says 1.0 dB.
+- **Fields MetPy does not read.** These are the VOL ZDR bias estimate, RAD radial flags, and spare bytes. The
+  expected values come from the file bytes, read with a separate Python script: ZDR bias raw 407 to 430 (-0.34
+  to +0.375 dB), or 0 (not available) for KMAF 2023 and both KTLX 2024 files. Radial flags and spares are 0.
+- **ZDR bias estimate in dB.** Table XVII-E note 33 says the estimate is encoded like the "ZDR" data moment,
+  and note 20 says conversions must use the scale and offset in the Data Moment Block of the same radial, which
+  could change from radial to radial. `VolumeDataBlock::zdr_bias_estimate_db(zdr)` takes that radial's ZDR
+  block; `DigitalRadarDataGeneric::zdr_bias_estimate_db()` passes it, and `SweepElevationData::zdr_bias_estimate_db`
+  holds the first radial's value. Radials without a ZDR block (the Doppler cuts of split cuts carry REF, VEL and
+  SW only) and blocks with scale 0 (floating-point gates, note 15) use the Table XVII-I typical values, offset 418
+  and scale 32. The encoding has changed between builds: Builds 12.0 to 18.2 (KVNX 2011 to KDVN 2020) write
+  8-bit ZDR with scale 16 and offset 128, and Build 19.1 on writes 16-bit ZDR with scale 32 and offset 418
+  (`check_file` pins the word size, scale and offset of every ZDR block in the 14 golden sources). Every volume
+  with the 52-byte VOL layout uses the Table XVII-I values, so in real data the fallback and the note 20
+  conversion agree. Verified (`zdr_bias_estimate_in_other_builds`): in 8 volumes from Build 20.1 to 24.1 the
+  first radial's ZDR block, located through the Data Header Block pointers in the record bytes, carries scale 32
+  and offset 418, and the decoded value equals `(raw - offset) / scale` from those bytes. On KILX 2026 every
+  sweep's first radial has the same raw code, and Doppler sweeps get the same value through the fallback. A
+  mutation of the committed KIWA radial's ZDR block bytes (scale 16, offset 256) moves the estimate to 10.5 dB,
+  and a scale of 0 or a renamed ZDR block falls back to the typical values; that mutation is the only exercise of
+  a 52-byte VOL with a non-typical ZDR encoding.
+- **Every field of one radial.** The first radial of the committed KIWA chunk 002 is checked field by field
+  against its hex. The same radial's gate code counts (REF below threshold, CFP filter states 0-2, CFP values
+  0-73 dB) are checked against the separate Python reader.
+- **Mutations of that radial.** Renamed blocks and a changed block type exercise unknown-block handling. Changed
+  LRTUP sizes exercise layout selection. Re-encoding the real blocks with zlib and BZIP2 exercises compression.
+  Pointer, count, word-size and truncation errors are also covered.
+- **Py-ART.** `tests/volume_metadata.rs` compares every VOL, ELV and RAD field of each elevation's first radial,
+  as `decode_volume_with_metadata` stores it, with Py-ART 2.2.5's raw values on 23 sources. That includes the
+  RAD radial flags, which MetPy skips. Py-ART reads a 44-byte VOL block, so the ZDR bias estimate is not compared.
+- **Py-ART rays and moments.** `tests/volume_pyart.rs` compares `decode_volume_from_bytes` with the `volume`
+  goldens (`tools/level2_golden.py volume`, Py-ART 2.2.5 `NEXRADLevel2File`) on KVWX 2008, KPAH 2008 (Build 10.0,
+  the same evening), the KTLX 2024-03-15 benchmark volume and the committed KIWA chunks: the site id is the volume
+  header ICAO; per elevation number, the ray count and the sums of the rays' collection times and azimuths; and
+  per moment, the rays that carry it, gate count, first gate, gate spacing, word size, scale, offset, and the sum
+  of the raw gate codes with the counts of codes 0 and 1 (grid rows shorter than the widest radial are padded
+  with code 0).
+
+Quirks found in the real corpus:
+
+- The data block count is the number of pointers in use, not the number of slots. Radials write their
+  nonzero pointers first, then zero slots up to the fixed 68- or 72-byte header. For example, a Build 10
+  reflectivity-only radial has 4 pointers and 5 zero slots.
+- Build 10 KDMX 2008: 2520 radials declare a radial length one byte shorter than the halfword-padded body.
+- KVWX 2008 has a blank (four-space) radar identifier in every radial, no azimuth indexing, and no message 5.
+  A blank identifier (spaces or NULs) is accepted; `DataHeaderBlock::radar_identifier` and
+  `Message31Header::radar_identifier` keep the bytes as recorded, `radar_identifier_str()` trims them to "", and
+  `radar_identifier_or(volume_header_icao)` falls back to the volume header ICAO ("KVWX" here) and then to "".
+  The volume's site id comes from the volume header, as in Py-ART and MetPy.
+
+**No real sample:** compressed radials (compression indicator 1 BZIP2, 2 zlib). The decoder inflates from the
+first block pointer, where the Data Header Block ends in every uncompressed radial. The inflated size is
+limited by the radial length. The mutation test checks only that the decoder reads its own re-encoding; no real
+file confirms this layout.
+
+RDA build (`rda_status::RdaBuild`, re-exported as `msg31_blocks::RdaBuild`; message 2 halfword 10, note 6): the
+value divided by 100 when that is greater than 2, otherwise the value divided by 10. `rda_build_from_metadata_records` checks the raw value and
+build of the 26 corpus files whose metadata record has a message 2, and compares the build with the manifest
+`build:` tags. KVWX 2008 records 1996 ("19.96", a build that did not exist in 2008). TDWR records 20
+("2.0"). Files from 1991 and 2005 record 0. The golden tests compare the build with MetPy's `rda_build`.
+
+## Message 32: RDA PRF Data (Table XVIII)
+
+Module: `prf.rs` (`RdaPrfData`; `surveillance_prf_hz` and `doppler_prf_hz` resolve a `VcpCut`'s PRF numbers).
+Status: **verified**.
+Real samples: PAHG 2025 (Build 23.1), KILX 2026, KIWA 2026 (Build 24.1, including the committed start
+chunk).
+
+- Layout: each waveform section is variable length. It holds the waveform type, a count N, then N 32-bit PRFs in
+  mHz. Every sample has 3 sections of 8 PRFs, for waveforms 1, 2 and 5 (56 body halfwords). The PAHG and KILX
+  waveform 5 tables are identical; KIWA's differs.
+- Verified: MetPy, Py-ART and xradar do not decode this message. `tests/messages_vcp.rs` checks exact values against
+  the message bytes, which are quoted in the tests. It also takes, for every sweep of the three volumes, the PRF
+  that messages 5 and 32 select (waveform 1 table for surveillance; waveform 2 table for waveforms 2, 3 and 4, per
+  note 1). It checks that PRF against the unambiguous range MetPy reads from the Message 31 radial blocks: c / (2
+  PRF) must be within 0.5%, and every other PRF in the table must be more than 3% off. The radial blocks hold whole
+  km. For Doppler sweeps they equal c / (2 PRF) rounded up; for surveillance sweeps they are 1.30-1.33 km above it.
+- The waveform 5 (staggered pulse pair) table is verified against the bytes only, because no corpus VCP has an SPP
+  cut.
+
+## Message 33: RDA Log Data (Table XVIV)
+
+Module: `rda_log.rs`. Status: decoded per ICD, and compressed log data is inflated with pure-Rust decoders
+(gzip, bzip2, the first member of a ZIP). Inflated data is capped at 64 MiB. **No real sample.**
+The message is not recorded in Archive II files. Table XVIV numbers halfwords from 0, so the data starts
+at body byte 68. A mutation test relabels a real Message 32 frame as 33 and checks that the decoder's error
+does not stop the walk. That test checks the walker's error handling, not the ICD layout.

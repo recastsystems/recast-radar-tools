@@ -171,15 +171,21 @@ impl<'a> Cursor<'a> {
         Ok(&self.bytes[start..data_end])
     }
 
+    fn take_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        let start = self.at;
+        let raw = self.take(N)?;
+        raw.first_chunk::<N>()
+            .copied()
+            .ok_or_else(|| truncated(start, N, self.bytes.len()))
+    }
+
     fn u32(&mut self) -> Result<u32> {
-        let raw = self.take(4)?;
-        Ok(u32::from_be_bytes(raw.try_into().expect("4 bytes")))
+        Ok(u32::from_be_bytes(self.take_array()?))
     }
 
     fn offset(&mut self) -> Result<u64> {
         if self.offset64 {
-            let raw = self.take(8)?;
-            Ok(u64::from_be_bytes(raw.try_into().expect("8 bytes")))
+            Ok(u64::from_be_bytes(self.take_array()?))
         } else {
             Ok(u64::from(self.u32()?))
         }
@@ -188,10 +194,9 @@ impl<'a> Cursor<'a> {
     fn name(&mut self) -> Result<String> {
         let len = self.u32()? as usize;
         if len > MAX_NC_NAME_BYTES {
-            return Err(invalid(
-                self.at,
-                format!("netCDF name is {len} bytes (limit {MAX_NC_NAME_BYTES})"),
-            ));
+            return Err(limit(format!(
+                "netCDF name is {len} bytes (limit {MAX_NC_NAME_BYTES})"
+            )));
         }
         let raw = self.take_padded_4(len)?;
         Ok(String::from_utf8_lossy(raw).into_owned())
@@ -204,10 +209,9 @@ impl<'a> Cursor<'a> {
             return Err(invalid(self.at, "malformed attribute list tag"));
         }
         if count > MAX_NC_ATTRIBUTES {
-            return Err(invalid(
-                self.at,
-                format!("netCDF attribute count {count} exceeds {MAX_NC_ATTRIBUTES}"),
-            ));
+            return Err(limit(format!(
+                "netCDF attribute count is {count} (limit {MAX_NC_ATTRIBUTES})"
+            )));
         }
         let mut attrs = BTreeMap::new();
         for _ in 0..count {
@@ -219,12 +223,9 @@ impl<'a> Cursor<'a> {
                 .checked_mul(elem_size)
                 .ok_or_else(|| invalid(self.at, "netCDF attribute size overflow"))?;
             if byte_len > MAX_NC_ATTRIBUTE_BYTES {
-                return Err(invalid(
-                    self.at,
-                    format!(
-                        "netCDF attribute is {byte_len} bytes (limit {MAX_NC_ATTRIBUTE_BYTES})"
-                    ),
-                ));
+                return Err(limit(format!(
+                    "netCDF attribute is {byte_len} bytes (limit {MAX_NC_ATTRIBUTE_BYTES})"
+                )));
             }
             let raw = self.take_padded_4(byte_len)?;
             let value = match nc_type {
@@ -248,23 +249,31 @@ impl<'a> Cursor<'a> {
                 }
                 4 => {
                     let mut values = reserve_vec(nelems, "netCDF int attribute")?;
-                    values.extend(raw.chunks_exact(4).map(|quad| {
-                        i64::from(i32::from_be_bytes(quad.try_into().expect("4 bytes")))
-                    }));
+                    values.extend(
+                        raw.as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|quad| i64::from(i32::from_be_bytes(*quad))),
+                    );
                     NcValue::Ints(values)
                 }
                 5 => {
                     let mut values = reserve_vec(nelems, "netCDF float attribute")?;
-                    values.extend(raw.chunks_exact(4).map(|quad| {
-                        f64::from(f32::from_be_bytes(quad.try_into().expect("4 bytes")))
-                    }));
+                    values.extend(
+                        raw.as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|quad| f64::from(f32::from_be_bytes(*quad))),
+                    );
                     NcValue::Doubles(values)
                 }
                 6 => {
                     let mut values = reserve_vec(nelems, "netCDF double attribute")?;
                     values.extend(
-                        raw.chunks_exact(8)
-                            .map(|oct| f64::from_be_bytes(oct.try_into().expect("8 bytes"))),
+                        raw.as_chunks::<8>()
+                            .0
+                            .iter()
+                            .map(|oct| f64::from_be_bytes(*oct)),
                     );
                     NcValue::Doubles(values)
                 }
@@ -299,10 +308,9 @@ impl<'a> Nc3File<'a> {
             if raw == u32::MAX { 0 } else { raw as usize }
         };
         if numrecs > MAX_NC_DIMENSION_LEN {
-            return Err(invalid(
-                cursor.at,
-                format!("netCDF record count {numrecs} exceeds {MAX_NC_DIMENSION_LEN}"),
-            ));
+            return Err(limit(format!(
+                "netCDF record count is {numrecs} (limit {MAX_NC_DIMENSION_LEN})"
+            )));
         }
 
         // Dimension list.
@@ -312,10 +320,9 @@ impl<'a> Nc3File<'a> {
             return Err(invalid(cursor.at, "malformed dimension list tag"));
         }
         if dim_count > MAX_NC_DIMENSIONS {
-            return Err(invalid(
-                cursor.at,
-                format!("netCDF dimension count {dim_count} exceeds {MAX_NC_DIMENSIONS}"),
-            ));
+            return Err(limit(format!(
+                "netCDF dimension count is {dim_count} (limit {MAX_NC_DIMENSIONS})"
+            )));
         }
         let mut dims = Vec::with_capacity(dim_count);
         let mut record_dim = None;
@@ -323,12 +330,9 @@ impl<'a> Nc3File<'a> {
             let name = cursor.name()?;
             let len = cursor.u32()? as usize;
             if len > MAX_NC_DIMENSION_LEN {
-                return Err(invalid(
-                    cursor.at,
-                    format!(
-                        "netCDF dimension '{name}' length {len} exceeds {MAX_NC_DIMENSION_LEN}"
-                    ),
-                ));
+                return Err(limit(format!(
+                    "netCDF dimension '{name}' length is {len} (limit {MAX_NC_DIMENSION_LEN})"
+                )));
             }
             if len == 0 {
                 if record_dim.is_some() {
@@ -353,20 +357,18 @@ impl<'a> Nc3File<'a> {
             return Err(invalid(cursor.at, "malformed variable list tag"));
         }
         if var_count > MAX_NC_VARIABLES {
-            return Err(invalid(
-                cursor.at,
-                format!("netCDF variable count {var_count} exceeds {MAX_NC_VARIABLES}"),
-            ));
+            return Err(limit(format!(
+                "netCDF variable count is {var_count} (limit {MAX_NC_VARIABLES})"
+            )));
         }
         let mut vars = BTreeMap::new();
         for _ in 0..var_count {
             let name = cursor.name()?;
             let ndims = cursor.u32()? as usize;
             if ndims > MAX_NC_VAR_DIMS {
-                return Err(invalid(
-                    cursor.at,
-                    format!("netCDF variable '{name}' rank {ndims} exceeds {MAX_NC_VAR_DIMS}"),
-                ));
+                return Err(limit(format!(
+                    "netCDF variable '{name}' rank is {ndims} (limit {MAX_NC_VAR_DIMS})"
+                )));
             }
             let mut dim_ids = Vec::with_capacity(ndims);
             for _ in 0..ndims {
@@ -446,13 +448,10 @@ impl<'a> Nc3File<'a> {
             .checked_mul(elem)
             .ok_or_else(|| invalid(0, "netCDF variable byte-size overflow"))?;
         if bytes > MAX_NC_ARRAY_BYTES {
-            return Err(invalid(
-                0,
-                format!(
-                    "netCDF variable '{}' is {bytes} bytes per slab (limit {MAX_NC_ARRAY_BYTES})",
-                    var.name
-                ),
-            ));
+            return Err(limit(format!(
+                "netCDF variable '{}' is {bytes} bytes per slab (limit {MAX_NC_ARRAY_BYTES})",
+                var.name
+            )));
         }
         Ok(bytes)
     }
@@ -495,16 +494,29 @@ impl<'a> Nc3File<'a> {
                 .checked_mul(self.numrecs)
                 .ok_or_else(|| invalid(0, "netCDF record variable size overflow"))?;
             if total > MAX_NC_ARRAY_BYTES {
-                return Err(invalid(
-                    0,
-                    format!(
-                        "netCDF variable '{name}' expands to {total} bytes (limit {MAX_NC_ARRAY_BYTES})"
-                    ),
-                ));
+                return Err(limit(format!(
+                    "netCDF variable '{name}' expands to {total} bytes (limit {MAX_NC_ARRAY_BYTES})"
+                )));
             }
-            let mut raw = reserve_vec(total, "netCDF record variable")?;
             let begin = usize::try_from(var.begin)
                 .map_err(|_| invalid(0, "netCDF variable offset overflows usize"))?;
+            // Reserve only after proving every record slab lies in the file,
+            // so a record count the bytes cannot back allocates nothing.
+            if let Some(last_record) = self.numrecs.checked_sub(1) {
+                let last_end = last_record
+                    .checked_mul(recsize)
+                    .and_then(|offset| begin.checked_add(offset))
+                    .and_then(|start| start.checked_add(slab))
+                    .ok_or_else(|| invalid(0, "netCDF record offset overflow"))?;
+                if last_end > self.bytes.len() {
+                    return Err(truncated(
+                        begin,
+                        last_end - begin,
+                        self.bytes.len().saturating_sub(begin),
+                    ));
+                }
+            }
+            let mut raw = reserve_vec(total, "netCDF record variable")?;
             for record in 0..self.numrecs {
                 let record_offset = record
                     .checked_mul(recsize)
@@ -563,24 +575,30 @@ fn decode_array(raw: &[u8], nc_type: u32) -> Result<NcArray> {
         4 => {
             let mut values = reserve_vec(raw.len() / 4, "netCDF i32 array")?;
             values.extend(
-                raw.chunks_exact(4)
-                    .map(|quad| i32::from_be_bytes(quad.try_into().expect("4 bytes"))),
+                raw.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|quad| i32::from_be_bytes(*quad)),
             );
             NcArray::I32(values)
         }
         5 => {
             let mut values = reserve_vec(raw.len() / 4, "netCDF f32 array")?;
             values.extend(
-                raw.chunks_exact(4)
-                    .map(|quad| f32::from_be_bytes(quad.try_into().expect("4 bytes"))),
+                raw.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|quad| f32::from_be_bytes(*quad)),
             );
             NcArray::F32(values)
         }
         6 => {
             let mut values = reserve_vec(raw.len() / 8, "netCDF f64 array")?;
             values.extend(
-                raw.chunks_exact(8)
-                    .map(|oct| f64::from_be_bytes(oct.try_into().expect("8 bytes"))),
+                raw.as_chunks::<8>()
+                    .0
+                    .iter()
+                    .map(|oct| f64::from_be_bytes(*oct)),
             );
             NcArray::F64(values)
         }
@@ -607,6 +625,10 @@ fn type_size(nc_type: u32, offset: usize) -> Result<usize> {
         6 => Ok(8),
         other => Err(invalid(offset, format!("netCDF type {other} unsupported"))),
     }
+}
+
+fn limit(reason: String) -> CfRadialError {
+    CfRadialError::LimitExceeded(reason)
 }
 
 fn invalid(offset: usize, reason: impl Into<String>) -> CfRadialError {
@@ -773,6 +795,7 @@ mod tests {
         let Err(err) = Nc3File::open(&bytes) else {
             panic!("dimension bomb must fail");
         };
+        assert!(matches!(err, CfRadialError::LimitExceeded(_)), "{err}");
         assert!(err.to_string().contains("dimension count"), "{err}");
     }
 

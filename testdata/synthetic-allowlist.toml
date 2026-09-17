@@ -1,5 +1,10 @@
 # Synthetic test inputs still in the workspace (plan task C.1).
 #
+# Empty since C.3: every C.1 entry was converted to real inputs in C.2, and the
+# tests merged from main in C.3 were converted too (docs/testdata/synthetic-inventory.md).
+# New findings must be converted; an entry may be added only as a justified
+# exception (see `status` below).
+#
 # `crates/recast-radar-testdata/tests/no_synthetic.rs` scans test code and data
 # files (rules: `recast_radar_testdata::synthetic`) and fails on any finding
 # that is not listed here, and on any entry that no longer matches a finding.

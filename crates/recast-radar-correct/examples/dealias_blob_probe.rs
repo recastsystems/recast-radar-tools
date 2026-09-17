@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Hunt dealiasing failures: find large clusters where the DEALIASED velocity
 // is strongly positive (outbound) and report their raw values — a cluster
 // whose dealiased = raw + 2·Nyq with negative surroundings is an over-unfold;

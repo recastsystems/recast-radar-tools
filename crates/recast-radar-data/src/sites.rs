@@ -72,7 +72,7 @@ pub enum SiteRef {
 pub enum SiteKind {
     /// WSR-88D, incl. TJUA — the exception becomes catalog data.
     Wsr88d,
-    /// Terminal Doppler, from [`TDWR_SITES`] — NOT a `'T'`-prefix
+    /// Terminal Doppler, from `TDWR_SITES` — NOT a `'T'`-prefix
     /// heuristic.
     Tdwr,
     /// Community research feed (`community_feeds.rs` — what
@@ -97,7 +97,7 @@ pub struct SiteRecord {
     pub origin: Option<String>,
     pub lat_lon: Option<(f32, f32)>,
     /// The operating network's country ([`IntlSite::country`] for
-    /// international rows; [`US_NETWORK_COUNTRY`] for the US catalog).
+    /// international rows; `US_NETWORK_COUNTRY` for the US catalog).
     ///
     /// [`IntlSite::country`]: crate::international::IntlSite
     pub country: String,

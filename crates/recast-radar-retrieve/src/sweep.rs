@@ -1670,14 +1670,15 @@ impl AzimuthNeighborhood {
                 rank_by_row[row] = rank;
             }
         }
-        let largest_gap = if azimuth_rows.len() >= 2 {
-            let mut largest = 0.0f32;
-            for pair in azimuth_rows.windows(2) {
-                largest = largest.max(pair[1].0 - pair[0].0);
+        let largest_gap = match (azimuth_rows.first(), azimuth_rows.last()) {
+            (Some(first), Some(last)) if azimuth_rows.len() >= 2 => {
+                let mut largest = 0.0f32;
+                for pair in azimuth_rows.windows(2) {
+                    largest = largest.max(pair[1].0 - pair[0].0);
+                }
+                largest.max(360.0 - last.0 + first.0)
             }
-            largest.max(360.0 - azimuth_rows.last().unwrap().0 + azimuth_rows[0].0)
-        } else {
-            360.0
+            _ => 360.0,
         };
         Self {
             sorted_rows,

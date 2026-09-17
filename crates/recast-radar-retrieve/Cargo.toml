@@ -2,7 +2,12 @@
 name = "recast-radar-retrieve"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Derived weather radar products: sweep and column products, CAPPI, rotation and shear, GBVTD, VAD wind profile"
+readme.workspace = true
+keywords = ["radar", "weather", "meteorology", "vad", "nexrad"]
+categories = ["science::geo", "algorithms"]
 
 [dependencies]
 chrono.workspace = true

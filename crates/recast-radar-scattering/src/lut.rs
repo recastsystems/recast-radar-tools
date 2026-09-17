@@ -672,7 +672,7 @@ impl OfflineLut {
         let generator_config_utf8 = generator_config_utf8.into();
         let payload = encode_payload(&values)?;
         let header = LutHeader {
-            magic: String::from_utf8(LUT_MAGIC.to_vec()).expect("LUT magic is ASCII"),
+            magic: String::from_utf8_lossy(&LUT_MAGIC).into_owned(),
             schema_version: LUT_SCHEMA_VERSION,
             axes,
             outputs: canonical_outputs(),
@@ -728,18 +728,30 @@ impl OfflineLut {
                 actual: bytes.len(),
             });
         }
-        let actual_magic: [u8; 8] = bytes[0..8].try_into().expect("slice length checked");
+        let truncated = || LutError::TruncatedPrefix {
+            actual: bytes.len(),
+        };
+        let actual_magic: [u8; 8] = *bytes.first_chunk::<8>().ok_or_else(truncated)?;
         if actual_magic != LUT_MAGIC {
             return Err(LutError::FileMagic {
                 actual: actual_magic,
             });
         }
-        let schema = u16::from_le_bytes(bytes[8..10].try_into().expect("slice length checked"));
+        let schema = u16::from_le_bytes(
+            *bytes
+                .get(8..)
+                .and_then(<[u8]>::first_chunk::<2>)
+                .ok_or_else(truncated)?,
+        );
         if schema != LUT_SCHEMA_VERSION {
             return Err(LutError::UnsupportedSchema { actual: schema });
         }
-        let header_length =
-            u32::from_le_bytes(bytes[10..14].try_into().expect("slice length checked")) as usize;
+        let header_length = u32::from_le_bytes(
+            *bytes
+                .get(10..)
+                .and_then(<[u8]>::first_chunk::<4>)
+                .ok_or_else(truncated)?,
+        ) as usize;
         if header_length == 0 || header_length > MAX_HEADER_BYTES {
             return Err(LutError::HeaderSize {
                 actual: header_length,
@@ -1004,13 +1016,8 @@ fn decode_payload(payload: &[u8], points: usize) -> Result<Vec<AdditiveScatterin
     let mut values = Vec::with_capacity(points);
     for (point, bytes) in payload.chunks_exact(point_bytes).enumerate() {
         let mut components = [0.0; AdditiveScattering::COMPONENT_COUNT];
-        for (index, component) in components.iter_mut().enumerate() {
-            let start = index * size_of::<f64>();
-            *component = f64::from_le_bytes(
-                bytes[start..start + size_of::<f64>()]
-                    .try_into()
-                    .expect("fixed component width"),
-            );
+        for (component, word) in components.iter_mut().zip(bytes.as_chunks::<8>().0) {
+            *component = f64::from_le_bytes(*word);
         }
         values.push(
             AdditiveScattering::from_components(components)

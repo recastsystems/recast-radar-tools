@@ -1785,20 +1785,24 @@ impl PsdIntegrationConfig {
 }
 
 impl Default for PsdIntegrationConfig {
+    /// The versioned built-in configuration. Its values satisfy
+    /// [`Self::new`]'s checks (pinned by `default_config_passes_validation`).
     fn default() -> Self {
-        Self::new(
-            8,
-            256,
-            96.0,
-            1.0e-10,
-            5.0e-8,
-            5.0e-3,
-            DEFAULT_ADDITIVE_ABSOLUTE_TOLERANCES,
-            1.0e-6,
-            1.0e-6,
-            1.0e-6,
-        )
-        .expect("the versioned built-in PSD integration config is valid")
+        Self {
+            revision: SchemePsdRevision::IshmaelGammaFinalCheckV3,
+            quadrature: PsdQuadratureRule::CompositeGaussLegendre8AdaptiveRefinedV2,
+            coarse_panels: 8,
+            maximum_refined_nodes: 256,
+            maximum_scaled_a: 96.0,
+            maximum_tail_fraction: 1.0e-10,
+            maximum_quadrature_closure_error: 5.0e-8,
+            maximum_additive_convergence_error: 5.0e-3,
+            additive_absolute_tolerances: DEFAULT_ADDITIVE_ABSOLUTE_TOLERANCES,
+            maximum_domain_omitted_number_fraction: 1.0e-6,
+            maximum_domain_omitted_mass_fraction: 1.0e-6,
+            maximum_domain_omitted_d6_fraction: 1.0e-6,
+            small_sphere_scattering_policy: IshmaelSmallSphereScatteringPolicy::Disabled,
+        }
     }
 }
 
@@ -3221,12 +3225,46 @@ mod tests {
     use super::*;
     use crate::{AxisCoordinate, AxisKind, InterpolationError, OfflineLut};
 
+    #[track_caller]
     fn assert_relative(actual: f64, expected: f64, tolerance: f64) {
         let error = relative_error(actual, expected, f64::MIN_POSITIVE);
         assert!(
             error <= tolerance,
             "actual={actual:e}, expected={expected:e}, relative error={error:e}"
         );
+    }
+
+    /// Relative tolerance for [`assert_frozen_bits`] away from the platform
+    /// that froze the bits. These values pass through `powf`, `exp`, `ln` and
+    /// `cbrt`, which call the platform math library, and math libraries round
+    /// the last bits differently. On x86_64-unknown-linux-gnu (glibc 2.39,
+    /// Ubuntu 24.04) the largest difference in these tests is 70 ULPs (relative
+    /// 2e-14). Other math libraries have not been measured.
+    const OTHER_LIBM_RELATIVE_TOLERANCE: f64 = 1.0e-12;
+
+    /// Asserts a result against bits frozen on x86_64-pc-windows-msvc (UCRT
+    /// math library): the exact bits there, and agreement within
+    /// [`OTHER_LIBM_RELATIVE_TOLERANCE`] on other targets.
+    #[track_caller]
+    fn assert_frozen_bits(actual: f64, frozen_bits: u64) {
+        if cfg!(all(
+            target_arch = "x86_64",
+            target_os = "windows",
+            target_env = "msvc"
+        )) {
+            assert_eq!(
+                actual.to_bits(),
+                frozen_bits,
+                "actual={actual:e}, frozen={:e}",
+                f64::from_bits(frozen_bits)
+            );
+        } else {
+            assert_relative(
+                actual,
+                f64::from_bits(frozen_bits),
+                OTHER_LIBM_RELATIVE_TOLERANCE,
+            );
+        }
     }
 
     fn input_from_scales(
@@ -4160,24 +4198,21 @@ mod tests {
         assert!(!audit.source_axis_floor_applied);
         assert!(!audit.source_var_check_small_ice_applied);
         assert!(!audit.source_var_check_large_ice_applied);
-        assert_eq!(checked.a_scale_m().to_bits(), 0x3f12_abe1_2cdc_d7cc);
-        assert_eq!(checked.c_at_a_scale_m().to_bits(), 0x3ef6_312b_b658_2af7);
-        assert_eq!(
-            checked.aspect_power_delta().to_bits(),
-            0x3fea_167c_939e_a245
-        );
+        assert_frozen_bits(checked.a_scale_m(), 0x3f12_abe1_2cdc_d7cc);
+        assert_frozen_bits(checked.c_at_a_scale_m(), 0x3ef6_312b_b658_2af7);
+        assert_frozen_bits(checked.aspect_power_delta(), 0x3fea_167c_939e_a245);
         assert_eq!(checked.bulk_density_kg_m3().to_bits(), 50.0_f64.to_bits());
-        assert_eq!(
-            audit.qvoli_source_projection_relative_change.to_bits(),
-            0xbfc4_ad7e_02a2_1f1c
+        assert_frozen_bits(
+            audit.qvoli_source_projection_relative_change,
+            0xbfc4_ad7e_02a2_1f1c,
         );
-        assert_eq!(
-            audit.qaoli_source_projection_relative_change.to_bits(),
-            0x3fe6_c292_f813_1077
+        assert_frozen_bits(
+            audit.qaoli_source_projection_relative_change,
+            0x3fe6_c292_f813_1077,
         );
-        assert_eq!(
-            checked.mean_equivolume_diameter_sixth_m6().to_bits(),
-            0x3bd7_1749_cab5_af82
+        assert_frozen_bits(
+            checked.mean_equivolume_diameter_sixth_m6(),
+            0x3bd7_1749_cab5_af82,
         );
         assert_eq!(
             checked.input().qice_kgkg().to_bits(),
@@ -4701,6 +4736,8 @@ mod tests {
         // `table_config()`: ZH 2.1421e6, ZV 1.8374e6 mm^6 m^-3, KDP 1.899
         // deg/km, ZH-weighted fall moments 3.1027e7 and 4.6143e8; maximum
         // additive convergence error 5.384e-3 on component 1 (ZV).
+        // Bit-identical on x86_64-pc-windows-msvc, where these were frozen;
+        // other targets compare within a tolerance (see `assert_frozen_bits`).
         const EXPECTED_COMPONENT_BITS: [u64; AdditiveScattering::COMPONENT_COUNT] = [
             4_701_854_596_218_879_931,
             4_700_642_511_187_517_770,
@@ -4728,22 +4765,28 @@ mod tests {
         let direct = prepared
             .finish(|_, _, node| table.per_particle(node))
             .unwrap();
+        for (actual, frozen) in direct
+            .additive()
+            .components()
+            .into_iter()
+            .zip(EXPECTED_COMPONENT_BITS)
+        {
+            assert_frozen_bits(actual, frozen);
+        }
         let audit = direct.audit();
-        assert_eq!(
-            direct.additive().components().map(f64::to_bits),
-            EXPECTED_COMPONENT_BITS
-        );
-        assert_eq!(
-            [
-                audit.number_closure_relative_error.to_bits(),
-                audit.mass_closure_relative_error.to_bits(),
-                audit.d6_closure_relative_error.to_bits(),
-            ],
-            EXPECTED_CLOSURE_BITS
-        );
-        assert_eq!(
-            audit.maximum_additive_convergence_error.to_bits(),
-            EXPECTED_CONVERGENCE_BITS
+        for (actual, frozen) in [
+            audit.number_closure_relative_error,
+            audit.mass_closure_relative_error,
+            audit.d6_closure_relative_error,
+        ]
+        .into_iter()
+        .zip(EXPECTED_CLOSURE_BITS)
+        {
+            assert_frozen_bits(actual, frozen);
+        }
+        assert_frozen_bits(
+            audit.maximum_additive_convergence_error,
+            EXPECTED_CONVERGENCE_BITS,
         );
         assert_eq!(audit.maximum_additive_convergence_component, 1);
 
@@ -4752,5 +4795,23 @@ mod tests {
         })
         .unwrap();
         assert_eq!(delegated, direct);
+    }
+
+    #[test]
+    fn default_config_passes_validation() {
+        let validated = PsdIntegrationConfig::new(
+            8,
+            256,
+            96.0,
+            1.0e-10,
+            5.0e-8,
+            5.0e-3,
+            DEFAULT_ADDITIVE_ABSOLUTE_TOLERANCES,
+            1.0e-6,
+            1.0e-6,
+            1.0e-6,
+        )
+        .expect("versioned PSD config validates");
+        assert_eq!(validated, PsdIntegrationConfig::default());
     }
 }

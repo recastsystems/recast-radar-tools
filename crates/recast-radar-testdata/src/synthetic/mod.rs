@@ -50,11 +50,19 @@ pub use rules::MODEL_TYPES;
 pub const ALLOWLIST_FILE_NAME: &str = "synthetic-allowlist.toml";
 
 /// Conversion groups from plan task C.2 and the crates each one owns. Every
-/// allowlist entry sits under the group that owns its path.
+/// allowlist entry sits under the group that owns its path. Crates added
+/// after C.1 join the group of the crates they serve: `recast-radar-bzip2`
+/// (the Level II LDM record decoder) and `recast-radar-io-level3` are
+/// io-nexrad; the `recast-radar-tools` facade is io-formats (its tests route
+/// real files through the readers).
 pub const GROUPS: &[(&str, &[&str])] = &[
     (
         "io-nexrad",
-        &["recast-radar-io-nexrad", "recast-radar-io-level3"],
+        &[
+            "recast-radar-io-nexrad",
+            "recast-radar-io-level3",
+            "recast-radar-bzip2",
+        ],
     ),
     (
         "io-formats",
@@ -64,6 +72,7 @@ pub const GROUPS: &[(&str, &[&str])] = &[
             "recast-radar-io-dorade",
             "recast-radar-io-jma",
             "recast-radar-io",
+            "recast-radar-tools",
         ],
     ),
     ("correct", &["recast-radar-correct"]),

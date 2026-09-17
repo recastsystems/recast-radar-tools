@@ -2,14 +2,35 @@
 name = "recast-radar-data"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Weather radar data access: NEXRAD Level II archive and real-time chunks on AWS, site catalogs, international and community feeds"
+readme.workspace = true
+keywords = ["nexrad", "radar", "weather", "aws", "realtime"]
+categories = ["science::geo", "web-programming::http-client"]
+
+[features]
+default = ["net"]
+# Blocking HTTPS client (reqwest + rustls): AWS Level II archive and
+# real-time chunk listing/download, international provider catalog probes,
+# GDEX, grid-product and tropical feeds. Without it the crate keeps only
+# network-free code (types, site catalogs, key/listing parsers, selection
+# logic, local cache helpers) and builds for wasm32-unknown-unknown.
+net = ["dep:reqwest"]
+# `realtime::stream::ChunkStream`, a `futures_core::Stream` over the same
+# real-time chunk planner as the blocking `ChunkIterator`, generic over an
+# `AsyncChunkTransport`. Runtime-agnostic: it never sleeps or spawns.
+async = ["dep:futures-core"]
+# `realtime::stream::AsyncReqwestTransport`: a non-blocking HTTPS client for
+# `ChunkStream` (reqwest's async client; Tokio on native targets, the browser's
+# fetch on wasm32-unknown-unknown). Does not enable the blocking client (`net`).
+async-client = ["async", "dep:reqwest"]
 
 [dependencies]
 chrono.workspace = true
+futures-core = { version = "0.3", optional = true }
 quick-xml.workspace = true
-# JMA station catalog: parses station headers out of the national GRIB2 tar.
-recast-radar-io-jma = { path = "../recast-radar-io-jma" }
-reqwest.workspace = true
+reqwest = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -18,6 +39,43 @@ thiserror.workspace = true
 # Decode checks in unit tests and examples/intl_probe.rs (live download +
 # decode smoke); the library itself does not use the format router.
 recast-radar-io = { path = "../recast-radar-io" }
+# JMA station headers for the caller-provided JmaCatalogProvider station
+# table tests; the library itself never parses GRIB2.
+recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+# Message 5 from real Start chunks for the timing model tests
+# (tests/timing.rs); the library itself does not decode Level II messages.
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+
+# Drives AsyncReqwestTransport in tests/iterator.rs (already in the lockfile
+# through reqwest).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["net", "rt", "time"] }
+
+# Every example talks to live endpoints.
+[[example]]
+name = "intl_probe"
+required-features = ["net"]
+
+[[example]]
+name = "live_decode"
+required-features = ["net"]
+
+[[example]]
+name = "kmkx_fetch"
+required-features = ["net"]
+
+[[example]]
+name = "probe_sources"
+required-features = ["net"]
+
+[[example]]
+name = "site_list_probe"
+required-features = ["net"]
+
+[[example]]
+name = "tile_fetch_probe"
+required-features = ["net"]
 
 [lints]
 workspace = true

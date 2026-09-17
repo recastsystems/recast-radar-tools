@@ -1,0 +1,294 @@
+{
+ "id": "l3-tlx-nco-20130520-1816",
+ "sha256": "ed06e9faab55ca17417300bb1e18ac9e993ff787e848e54dae801202706bd0f1",
+ "size": 5476,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS64 KOUN 201816",
+  "awips_id": "NCOTLX",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 5446
+ },
+ "message_header": {
+  "code": 36,
+  "date": 15846,
+  "time": 66386,
+  "length": 5446,
+  "source_id": 1,
+  "destination_id": 0,
+  "num_blocks": 4
+ },
+ "halfwords": [
+  36,
+  15846,
+  1,
+  850,
+  0,
+  5446,
+  1,
+  0,
+  4,
+  65535,
+  0,
+  35333,
+  65534,
+  33794,
+  1277,
+  36,
+  1,
+  32,
+  1203,
+  1,
+  15846,
+  1,
+  275,
+  15846,
+  1,
+  844,
+  0,
+  0,
+  0,
+  0,
+  32770,
+  5,
+  18,
+  30,
+  41,
+  46,
+  50,
+  57,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  47,
+  0,
+  0,
+  0,
+  49705,
+  0,
+  0,
+  256,
+  0,
+  60,
+  0,
+  2441,
+  0,
+  0
+ ],
+ "product_code": 36,
+ "compression": {
+  "hw51": 49705,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 4762,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 4746,
+     "packets": [
+      47623
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": {
+   "length": 564,
+   "num_pages": 1,
+   "pages": [
+    {
+     "page": 1,
+     "length": 550,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": null,
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  8,
+  10,
+  47623
+ ],
+ "data": [
+  {
+   "layer": 0,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 1,
+    "j_start": 1,
+    "x_scale_int": 2,
+    "x_scale_frac": 0,
+    "y_scale_int": 2,
+    "y_scale_frac": 0,
+    "num_rows": 232,
+    "packing": 2
+   },
+   "rows": 232,
+   "cols": 232,
+   "dtype": "u8",
+   "raw_sha256": "ecbfa40fdddcf8409f0a3d35f8d6a2ee16f13df1a5d5e0908256b9e2baff5398",
+   "histogram": {
+    "0": 52897,
+    "1": 652,
+    "2": 213,
+    "3": 50,
+    "4": 10,
+    "5": 2
+   },
+   "physical": {
+    "finite": 927,
+    "masked": 52897,
+    "min": 5.0,
+    "max": 46.0,
+    "mean": 9.812297734627832
+   }
+  }
+ ],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Composite Reflectivity",
+  "max_range": 460.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 36,
+   "date": 15846,
+   "time": 66386,
+   "msg_len": 5446,
+   "src_id": 1,
+   "dest_id": 0,
+   "num_blks": 4
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 35333,
+   "lon": -97278,
+   "height": 1277,
+   "prod_code": 36,
+   "op_mode": 1,
+   "vcp": 32,
+   "seq_num": 1203,
+   "vol_num": 1,
+   "vol_date": 15846,
+   "vol_start_time": 65811,
+   "prod_gen_date": 15846,
+   "prod_gen_time": 66380,
+   "dep1": 0,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 0,
+   "thr1": -32766,
+   "thr2": 5,
+   "thr3": 18,
+   "thr4": 30,
+   "thr5": 41,
+   "thr6": 46,
+   "thr7": 50,
+   "thr8": 57,
+   "thr9": -32768,
+   "thr10": -32768,
+   "thr11": -32768,
+   "thr12": -32768,
+   "thr13": -32768,
+   "thr14": -32768,
+   "thr15": -32768,
+   "thr16": -32768,
+   "dep4": 47,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": -15831,
+   "dep9": 0,
+   "dep10": 0,
+   "version": 1,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 2441,
+   "tab_off": 0
+  },
+  "thresholds": [
+   -32766,
+   5,
+   18,
+   30,
+   41,
+   46,
+   50,
+   57,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768
+  ],
+  "dep_vals": [
+   0,
+   0,
+   0,
+   47,
+   0,
+   0,
+   0,
+   -15831,
+   0,
+   0
+  ],
+  "metadata": {
+   "msg_time": "2013-05-20T18:26:26.000000Z",
+   "vol_time": "2013-05-20T18:16:51.000000Z",
+   "prod_time": "2013-05-20T18:26:20.000000Z",
+   "el_angle": 0.0,
+   "max": 47,
+   "calib_const": -42.25
+  },
+  "sym_layer_packet_counts": [
+   1
+  ],
+  "graph_page_packet_counts": [
+   7
+  ],
+  "tab_pages": null,
+  "crosscheck": true
+ }
+}

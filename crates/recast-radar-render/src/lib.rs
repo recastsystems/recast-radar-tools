@@ -3,6 +3,8 @@
 //! The long-term renderer will be GPU-backed, but this crate already provides a
 //! CPU raster path for smoke tests, screenshots, and early visual validation.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 use std::f32::consts::PI;
 use std::ops::Range;
 use std::path::Path;
@@ -195,6 +197,20 @@ pub enum RenderError {
 
 pub type Result<T> = std::result::Result<T, RenderError>;
 
+/// Wrap a rendered RGBA pixel buffer as an image, reporting a size mismatch
+/// as [`RenderError::BufferSizeMismatch`].
+fn rgba_image(width: u32, height: u32, pixels: Vec<u8>) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    let actual = pixels.len();
+    ImageBuffer::from_raw(width, height, pixels).ok_or(RenderError::BufferSizeMismatch {
+        actual,
+        expected: (width as usize)
+            .saturating_mul(height as usize)
+            .saturating_mul(4),
+        width,
+        height,
+    })
+}
+
 /// Render a decoded polar moment to a simple radar PNG.
 pub fn render_moment_png(
     volume: &RadarVolume,
@@ -305,10 +321,7 @@ pub fn render_moment_image(
         ),
     }
 
-    Ok(
-        ImageBuffer::from_raw(width, height, pixels)
-            .expect("RGBA buffer matches raster dimensions"),
-    )
+    rgba_image(width, height, pixels)
 }
 
 pub fn render_moment_viewport_image(
@@ -318,10 +331,7 @@ pub fn render_moment_viewport_image(
     options: ViewportRasterOptions,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
     let (width, height, pixels) = render_moment_viewport_rgba(volume, cut_index, moment, options)?;
-    Ok(
-        ImageBuffer::from_raw(width, height, pixels)
-            .expect("RGBA buffer matches raster dimensions"),
-    )
+    rgba_image(width, height, pixels)
 }
 
 pub fn render_moment_viewport_rgba(
@@ -1466,10 +1476,7 @@ pub fn render_storm_relative_velocity_image(
         ),
     }
 
-    Ok(
-        ImageBuffer::from_raw(width, height, pixels)
-            .expect("RGBA buffer matches raster dimensions"),
-    )
+    rgba_image(width, height, pixels)
 }
 
 pub fn render_storm_relative_velocity_viewport_image(
@@ -1480,10 +1487,7 @@ pub fn render_storm_relative_velocity_viewport_image(
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
     let (width, height, pixels) =
         render_storm_relative_velocity_viewport_rgba(volume, cut_index, storm_motion, options)?;
-    Ok(
-        ImageBuffer::from_raw(width, height, pixels)
-            .expect("RGBA buffer matches raster dimensions"),
-    )
+    rgba_image(width, height, pixels)
 }
 
 pub fn render_storm_relative_velocity_viewport_rgba(
@@ -2737,14 +2741,14 @@ where
                     next_x = x + 1;
                 }
             }
-            if samples.is_empty() {
-                CachedRowBuild::empty()
-            } else {
-                CachedRowBuild {
-                    start: start.expect("non-empty row has a start"),
+            // `start` is set exactly when the first sample is pushed.
+            match start {
+                Some(start) if !samples.is_empty() => CachedRowBuild {
+                    start,
                     samples,
                     sample_count: count,
-                }
+                },
+                _ => CachedRowBuild::empty(),
             }
         })
         .collect()
@@ -2786,14 +2790,14 @@ fn build_geometry_cache_rows(
                     next_x = x + 1;
                 }
             }
-            if samples.is_empty() {
-                CachedRowBuild::empty()
-            } else {
-                CachedRowBuild {
-                    start: start.expect("non-empty geometry row has a start"),
+            // `start` is set exactly when the first sample is pushed.
+            match start {
+                Some(start) if !samples.is_empty() => CachedRowBuild {
+                    start,
                     samples,
                     sample_count: count,
-                }
+                },
+                _ => CachedRowBuild::empty(),
             }
         })
         .collect()
@@ -2843,14 +2847,14 @@ where
                 }
                 x += 1;
             }
-            if samples.is_empty() {
-                CachedRowBuild::empty()
-            } else {
-                CachedRowBuild {
-                    start: start.expect("non-empty resolved geometry row has a start"),
+            // `start` is set exactly when the first sample is pushed.
+            match start {
+                Some(start) if !samples.is_empty() => CachedRowBuild {
+                    start,
                     samples,
                     sample_count: count,
-                }
+                },
+                _ => CachedRowBuild::empty(),
             }
         })
         .collect()
@@ -2909,7 +2913,10 @@ fn flatten_cached_rows(
 fn push_cached_sample_skip(samples: &mut Vec<CachedSample>, mut pixel_count: u32) {
     while pixel_count > 0 {
         let chunk = pixel_count.min(CachedSample::SKIP_MASK);
-        samples.push(CachedSample::skip(chunk).expect("positive skip chunk fits"));
+        // `chunk` is in 1..=SKIP_MASK, which `skip` always encodes.
+        if let Some(skip) = CachedSample::skip(chunk) {
+            samples.push(skip);
+        }
         pixel_count -= chunk;
     }
 }

@@ -16,6 +16,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
+#[cfg(feature = "net")]
 use reqwest::header::{ACCEPT, REFERER};
 
 /// Public IMGW file-datastore page and request referer.
@@ -339,6 +340,7 @@ pub fn parse_imgw_cmax_listing(site: ImgwPolradSite, html: &str) -> Vec<ImgwCmax
 /// Fetch and parse up to `max_cycles` newest cycles, returned oldest-first.
 ///
 /// This performs one listing POST and downloads no HDF5 object bytes.
+#[cfg(feature = "net")]
 pub fn imgw_polrad_recent_cycles(
     site: ImgwPolradSite,
     max_cycles: usize,
@@ -348,6 +350,7 @@ pub fn imgw_polrad_recent_cycles(
     }
     let path = site.cmax_path();
     let response = crate::metadata_http_client()
+        .map_err(|err| format!("IMGW POLRAD {} listing: {err}", site.code()))?
         .post(IMGW_DATASTORE_LIST_URL)
         .header(ACCEPT, "text/html,*/*")
         .header(REFERER, IMGW_DATASTORE_URL)
@@ -378,6 +381,7 @@ pub fn imgw_polrad_recent_cycles(
 }
 
 /// Fetch the newest cycle currently present in the site's listing.
+#[cfg(feature = "net")]
 pub fn imgw_polrad_latest_cycle(site: ImgwPolradSite) -> Result<ImgwCmaxCycle, String> {
     imgw_polrad_recent_cycles(site, 1)?
         .pop()
@@ -461,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn cmax_filename_parser_rejects_unsafe_or_unknown_names() {
+    fn cmax_filename_parser_rejects_path_like_or_unknown_names() {
         let site = ImgwPolradSite::Ramza;
         for invalid in [
             "../../2026071100150601KDP.max.h5",
@@ -546,6 +550,7 @@ mod tests {
 
     /// Listing-only live proof. The request downloads the portal's HTML
     /// fragment and constructs plans; it deliberately fetches no HDF5 body.
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "network: lists current IMGW RAM CMAX files without downloading them"]
     fn imgw_polrad_live_listing_builds_current_download_plans() {

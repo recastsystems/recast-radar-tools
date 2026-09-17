@@ -80,11 +80,13 @@ impl IntlProvider for KaiaEstoniaProvider {
         "Estonia"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         self.sites
             .get_or_fill(|| Ok(static_sites(self.id(), self.country())))
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         self.recent(site_id, 1)?
             .pop()
@@ -101,6 +103,7 @@ impl IntlProvider for KaiaEstoniaProvider {
 }
 
 impl RecentFrames for KaiaEstoniaProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         let site = kaia_site(site_id)?;
         let since = Utc::now()
@@ -132,6 +135,7 @@ fn kaia_site(site_id: &str) -> Result<&'static KaiaSite, String> {
         .ok_or_else(|| format!("KAIA: unknown site '{site_id}'"))
 }
 
+#[cfg(feature = "net")]
 fn query_recent_entries(
     site: &'static KaiaSite,
     since: DateTime<Utc>,

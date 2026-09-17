@@ -324,7 +324,7 @@ const EARTH_RADIUS_KM: f32 = 111.32 * 180.0 / std::f32::consts::PI;
 
 /// Great-circle destination from `origin`, a `distance_km` along a compass
 /// `bearing_deg` (0° = true N, clockwise). The standard spherical "direct"
-/// (destination-point) formula on a sphere of radius [`EARTH_RADIUS_KM`].
+/// (destination-point) formula on a sphere of radius `EARTH_RADIUS_KM`.
 pub fn destination_point(origin: GeoPoint, bearing_deg: f32, distance_km: f32) -> GeoPoint {
     let ang = distance_km / EARTH_RADIUS_KM; // angular distance (radians)
     let (phi1, lam1) = (origin.lat.to_radians(), origin.lon.to_radians());
@@ -564,7 +564,7 @@ fn arc_interior_points(
 /// is emitted left edge forward → end cap → right edge backward → start cap,
 /// closed (first point repeated).
 ///
-/// Consecutive points closer than [`ENVELOPE_MIN_SEG_KM`], or whose circle
+/// Consecutive points closer than `ENVELOPE_MIN_SEG_KM`, or whose circle
 /// lies entirely inside a neighbor's (`d ≤ |r_a − r_b|`), are merged keeping
 /// the larger circle, so duplicate forecast positions can't orient an offset
 /// from noise. One surviving circle returns just that circle; an empty input
@@ -732,9 +732,11 @@ pub fn track_circle_envelope(points_nm: &[(GeoPoint, f32)]) -> Vec<GeoPoint> {
     let left = side_chain(-1.0);
     let right = side_chain(1.0);
     let first_seg = &segs[0];
-    let last_seg = segs.last().expect("two discs make a segment");
+    // At least two discs remain here, so there is at least one segment.
+    let (Some(last_seg), Some(&(end_center, end_r))) = (segs.last(), discs.last()) else {
+        return Vec::new();
+    };
     let (start_center, start_r) = discs[0];
-    let (end_center, end_r) = *discs.last().expect("at least two discs");
     let mut ring = left;
     ring.extend(arc_interior_points(
         end_center,
@@ -1187,7 +1189,7 @@ fn nhc_block_after<'a>(lines: &'a [&'a str], i: usize) -> &'a [&'a str] {
 /// `34/50/64 KT` quadrant lines directly under `MAX SUSTAINED WINDS`, valid at
 /// the advisory's `CENTER LOCATED NEAR` position. Empty when the storm carries
 /// no radii (below 34 kt). The block is bounded at the first blank line, and
-/// [`parse_nhc_radii_line`] gates on the 34/50/64-kt thresholds, so the
+/// `parse_nhc_radii_line` gates on the 34/50/64-kt thresholds, so the
 /// adjacent `12 FT SEAS..` line (same columnar shape, different quantity) is
 /// never mistaken for wind radii.
 pub fn parse_nhc_current_radii(text: &str) -> Vec<WindRadii> {
@@ -1475,7 +1477,7 @@ pub struct JtwcWarningRef {
 /// We pair each storm-warning URL with the storm header that immediately
 /// precedes it. Non-storm `web.txt` products (the basin-wide "Significant
 /// Tropical Weather Advisory" outlooks `abpwweb.txt`/`abioweb.txt`, which have
-/// no storm number) are rejected by [`is_jtwc_warning_url`].
+/// no storm number) are rejected by `is_jtwc_warning_url`.
 pub fn parse_jtwc_rss(xml: &str) -> Vec<JtwcWarningRef> {
     let mut out: Vec<JtwcWarningRef> = Vec::new();
     let needle = "web.txt";
@@ -2111,7 +2113,7 @@ fn gdacs_to_cyclone(feature: GdacsFeature) -> Option<TropicalCyclone> {
 /// stamp and a `todate` analysis time. GDACS repeats only the storm's *current*
 /// severity on every point (not a per-point forecast), so forecast points get
 /// `max_wind_kt = None` and are colored by the storm's current category — unless
-/// [`fetch_storm_geometry`] later replaces them with the JTWC warning's honest
+/// `fetch_storm_geometry` later replaces them with the JTWC warning's honest
 /// per-point intensity. We keep the points strictly AFTER the analysis time (the
 /// forecast; earlier points are the observed past already drawn as `Line_Line`
 /// segments).
@@ -2351,6 +2353,7 @@ pub fn merge_sources(
 /// is an error. As a best-effort last step, active JTWC warnings are matched to
 /// the GDACS storms so each carries a `forecast_url` for per-point intensity —
 /// a JTWC outage silently leaves the honest GDACS-only fallback in place.
+#[cfg(feature = "net")]
 pub fn fetch_active_cyclones(
     client: &reqwest::blocking::Client,
 ) -> Result<Vec<TropicalCyclone>, String> {
@@ -2413,6 +2416,7 @@ pub fn combine_source_results(
 /// intensity-less GDACS forecast points, so the West-Pacific dots color by the
 /// official JTWC per-point Saffir–Simpson category. The GDACS track and cone are
 /// always kept. A failed/empty JTWC fetch leaves the GDACS fallback untouched.
+#[cfg(feature = "net")]
 pub fn fetch_storm_geometry(
     client: &reqwest::blocking::Client,
     source: Source,
@@ -2435,7 +2439,7 @@ pub fn fetch_storm_geometry(
 }
 
 /// Apply a fetched JTWC Tropical Cyclone Warning bulletin to a GDACS storm's
-/// geometry — the pure core of [`fetch_storm_geometry`]'s enrichment, split
+/// geometry — the pure core of `fetch_storm_geometry`'s enrichment, split
 /// out so a warning-N → warning-N+1 replacement is provable without a
 /// network. The warning's per-point forecast REPLACES the intensity-less
 /// GDACS points, the analysis-point 34/50/64-kt radii anchor the wind-rose /
@@ -2520,6 +2524,7 @@ pub fn nhc_geometry_from_forecast_advisory(text: &str) -> StormGeometry {
     }
 }
 
+#[cfg(feature = "net")]
 fn fetch_text(client: &reqwest::blocking::Client, url: &str) -> Result<String, String> {
     let response = client
         .get(url)
@@ -3957,6 +3962,7 @@ REMARKS:
     /// manually: `cargo test -p recast-radar-data --release -- --ignored live_tropical`).
     /// Fetches + merges NHC/GDACS/JTWC and then every storm's geometry, so a
     /// live format drift in any product is caught before it ships.
+    #[cfg(feature = "net")]
     #[test]
     #[ignore]
     fn live_tropical_feeds_end_to_end() {

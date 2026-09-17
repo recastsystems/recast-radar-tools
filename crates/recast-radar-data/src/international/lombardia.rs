@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::listing::{fnv1a64, join_url, parse_autoindex};
 use super::{FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames};
+#[cfg(feature = "net")]
 use crate::fetch_text;
 
 const ROOT: &str = "https://radarlive.arpalombardia.it/Volumi/";
@@ -70,10 +71,12 @@ impl IntlProvider for LombardiaProvider {
         "Italy"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         Ok(self.static_sites())
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         let site = lombardia_site(site_id)?;
         let files = lombardia_product_files(site)?;
@@ -106,6 +109,7 @@ impl IntlProvider for LombardiaProvider {
 }
 
 impl RecentFrames for LombardiaProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         let site = lombardia_site(site_id)?;
         let files = lombardia_product_files(site)?;
@@ -129,6 +133,7 @@ fn site_url(site: &LombardiaSite) -> String {
     format!("{ROOT}{}/", site.dir)
 }
 
+#[cfg(feature = "net")]
 fn lombardia_product_files(
     site: &LombardiaSite,
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
@@ -300,6 +305,7 @@ mod tests {
         assert_eq!(sites[1].site_id, "fle");
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live ARPA Lombardia endpoint probe"]
     fn live_lombardia_latest_resolves_split_gz_hdf5_parts() {
@@ -313,6 +319,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live ARPA Lombardia download/decode probe"]
     fn live_lombardia_gzip_hdf5_part_decodes_through_router() {

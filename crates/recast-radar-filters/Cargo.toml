@@ -2,7 +2,12 @@
 name = "recast-radar-filters"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Weather radar gate filters, polar smoothing and display interpolation"
+readme.workspace = true
+keywords = ["radar", "weather", "filter", "qc", "meteorology"]
+categories = ["science::geo", "algorithms"]
 
 [dependencies]
 rayon.workspace = true

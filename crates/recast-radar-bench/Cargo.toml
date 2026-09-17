@@ -2,7 +2,14 @@
 name = "recast-radar-bench"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Single- and multi-core decode and render benchmark harness for recast-radar-tools"
+readme = "README.md"
+keywords = ["radar", "benchmark", "nexrad", "weather"]
+categories = ["development-tools::profiling", "science::geo"]
+# Benchmark harness binary; not a library to publish.
+publish = false
 
 [dependencies]
 chrono.workspace = true

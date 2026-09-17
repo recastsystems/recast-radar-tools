@@ -1,0 +1,14 @@
+{
+  "id": "l2-klix-20210829-173117",
+  "sha256": "202f8fc940a5cee5b430d7c648662bfbf9067b936cc39f35086bfd865c4fcd54",
+  "generator": "tools/level2_golden.py",
+  "metpy": "1.7.1",
+  "input": "volume header + metadata record; messages 1 and 31 skipped",
+  "clutter_filter_map": {
+    "generation_time": "2021-08-29T00:42:00Z",
+    "elevation_segments": 5,
+    "azimuths_per_segment": [360,360,360,360,360],
+    "azimuth_runs": [[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]]]
+  },
+  "metpy_log": []
+}

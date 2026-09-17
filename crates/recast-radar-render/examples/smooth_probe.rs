@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Render native vs smoothed reflectivity PNGs for visual comparison.
 // usage: smooth_probe <l2-file> <out-dir>
 use image::{ImageBuffer, Rgba};

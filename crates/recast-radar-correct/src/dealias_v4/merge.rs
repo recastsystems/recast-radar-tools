@@ -550,12 +550,10 @@ fn accumulate_pair_stats(
         }
     }
 
-    // Drain through sorted keys so edge ids are deterministic.
-    let mut keys: Vec<(u32, u32)> = pairs.keys().copied().collect();
-    keys.sort_unstable();
-    keys.into_iter()
-        .map(|key| (key, pairs.remove(&key).expect("key from map")))
-        .collect()
+    // Drain in sorted key order so edge ids are deterministic.
+    let mut pairs: Vec<((u32, u32), PairStats)> = pairs.into_iter().collect();
+    pairs.sort_unstable_by_key(|(key, _)| *key);
+    pairs
 }
 
 struct MergeEdge {

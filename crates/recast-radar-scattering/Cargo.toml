@@ -2,8 +2,12 @@
 name = "recast-radar-scattering"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Typed, validated radar-scattering primitives and offline LUTs"
+readme = "README.md"
+keywords = ["radar", "scattering", "t-matrix", "microphysics", "polarimetric"]
+categories = ["science", "science::geo", "simulation"]
 
 [dependencies]
 serde.workspace = true

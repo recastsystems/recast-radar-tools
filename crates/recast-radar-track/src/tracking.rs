@@ -172,7 +172,11 @@ impl StormTracker {
             .tracks
             .iter()
             .map(|t| {
-                let (t0, e, n) = t.last_fix().expect("track has a fix");
+                // Tracks are created with a fix and never lose history; a
+                // track without one predicts nowhere and matches nothing.
+                let Some((t0, e, n)) = t.last_fix() else {
+                    return (f64::NAN, f64::NAN);
+                };
                 let dt_pred = (time - t0).num_milliseconds() as f64 / 1000.0;
                 let (ve, vn) = t.motion().unwrap_or((0.0, 0.0));
                 (e + ve * dt_pred / 1000.0, n + vn * dt_pred / 1000.0)
@@ -187,10 +191,8 @@ impl StormTracker {
             let (pe, pn) = predictions[ti];
             let cell = &cells[cj];
             let d = ((cell.east_km - pe).powi(2) + (cell.north_km - pn).powi(2)).sqrt();
-            let dt_pred = {
-                let (t0, ..) = track.last_fix().expect("fix");
-                ((time - t0).num_milliseconds() as f64 / 1000.0).max(1.0)
-            };
+            let (t0, ..) = track.last_fix()?;
+            let dt_pred = ((time - t0).num_milliseconds() as f64 / 1000.0).max(1.0);
             let v_gate = if track.fitted_motion.is_some() {
                 V_GATE_FITTED_MPS
             } else {

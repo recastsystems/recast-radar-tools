@@ -6,10 +6,23 @@
 //! matching decoder crate. [`decode_mobile_archive_from_path`] and
 //! [`decode_mobile_dir_from_path`] wire the NEXRAD Level II decoder into the
 //! DORADE crate's mobile-radar archive ingest.
+//!
+//! # Limits
+//!
+//! The router expands a whole-file gzip wrapper (every member of a
+//! multi-member file) and a single-member ZIP local record (declared and
+//! actual size) to at most `MAX_DECODED_RADAR_BYTES` (512 MiB) each; a gzip
+//! stream inside a ZIP record holds both buffers. The expanded bytes then
+//! meet the limits of the decoder they route to, whose limit errors pass
+//! through unchanged inside [`IoError`] (`NexradError::LimitExceeded`,
+//! `OdimError::LimitExceeded`, and so on). The mobile archive wrappers
+//! inherit the DORADE crate's archive limits.
+
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 use std::path::Path;
 
-use flate2::read::{DeflateDecoder, GzDecoder};
+use flate2::read::DeflateDecoder;
 use recast_radar_core::RadarVolume;
 use recast_radar_core::bounded_read::{
     MAX_DECODED_RADAR_BYTES, copy_bytes_limited, read_to_end_limited,
@@ -174,9 +187,12 @@ pub fn decode_mobile_dir_from_path(dir: &Path) -> Result<Vec<MobileVolume>, IoEr
     )?)
 }
 
+/// Inflate a whole-file gzip wrapper, every member, in one pass: the same
+/// path the Level II decoder takes for `.gz` volumes, so a multi-member file
+/// decodes the same whichever way it is opened.
 fn decompress_gzip_bytes(raw: &[u8]) -> Result<Vec<u8>, IoError> {
-    read_to_end_limited(
-        GzDecoder::new(raw),
+    recast_radar_io_nexrad::gzip::inflate_gzip_members_limited(
+        raw,
         MAX_DECODED_RADAR_BYTES,
         "gzip radar payload",
     )
@@ -258,6 +274,7 @@ fn decompress_zip_local_member_bytes(raw: &[u8]) -> Result<Vec<u8>, IoError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::read::GzDecoder;
     use std::io::Read;
 
     fn corpus(id: &str) -> Vec<u8> {

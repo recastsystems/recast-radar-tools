@@ -577,7 +577,7 @@ impl ColorTable {
             self.sample_mode.mirrored_values(),
             stops,
         )
-        .expect("mirrored table preserves valid stops");
+        .unwrap_or_else(invalid_table_fallback);
         table.display_threshold = self.display_threshold;
         table.threshold_is_symmetric = self.threshold_is_symmetric;
         table
@@ -948,6 +948,29 @@ impl Default for ColorTableSet {
     }
 }
 
+/// Stand-in for a table whose construction failed. Every shipped table is
+/// built from constant data that parses (the `builtin_*` tests construct each
+/// one, and in test builds this panics), so release code never sees it; it
+/// exists so table construction has no panic path.
+fn invalid_table_fallback(error: ColorTableError) -> ColorTable {
+    #[cfg(test)]
+    panic!("built-in color table failed to construct: {error}");
+    #[cfg(not(test))]
+    {
+        let _ = error;
+        ColorTable {
+            name: "Invalid color table".to_owned(),
+            product: None,
+            units: None,
+            range_folded: default_range_folded_color(),
+            sample_mode: SampleMode::Interpolated,
+            stops: vec![stop(0.0, 0, 0, 0), stop(1.0, 255, 255, 255)],
+            display_threshold: None,
+            threshold_is_symmetric: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ColorTableError {
     InvalidColor { line: usize, reason: &'static str },
@@ -979,7 +1002,7 @@ pub fn builtin_reflectivity_table() -> ColorTable {
 /// Clear-air junk below ~10 dBZ is transparent.
 pub fn analyst_reflectivity_hd_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Reflectivity HD", ANALYST_REFLECTIVITY_HD_TABLE)
-        .expect("built-in HD reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn builtin_velocity_table() -> ColorTable {
@@ -998,17 +1021,17 @@ pub fn builtin_velocity_table() -> ColorTable {
 /// (Thyng et al. 2016) / CET-D (Kovesi 2015) — a future preset.
 pub fn analyst_hd_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Velocity HD", ANALYST_HD_VELOCITY_TABLE)
-        .expect("built-in HD velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn tornado_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Tornado VEL", TORNADO_VELOCITY_TABLE)
-        .expect("built-in tornado velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn vortex_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("WxTools Vortex Velo", VORTEX_VELO_TABLE)
-        .expect("built-in velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Back-compat table list (picker order). Single-sourced from the catalog
@@ -1284,7 +1307,7 @@ pub fn builtin_echo_tops_table() -> ColorTable {
             stop(18_300.0, 236, 236, 246), // ~60 kft white
         ],
     )
-    .expect("built-in echo-tops color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// VIL palette (kg m^-2). Blue→cyan→green→yellow→orange→red→magenta→white;
@@ -1306,7 +1329,7 @@ pub fn builtin_vil_table() -> ColorTable {
             stop(70.0, 236, 236, 246),
         ],
     )
-    .expect("built-in VIL color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// VIL Density palette (g m^-3). Blue→green→yellow below the large-hail
@@ -1327,7 +1350,7 @@ pub fn builtin_vil_density_table() -> ColorTable {
             stop(7.0, 240, 200, 235),
         ],
     )
-    .expect("built-in VIL density color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// MEHS palette (mm). Breaks at report thresholds: 19 mm (3/4"), the 25 mm
@@ -1348,7 +1371,7 @@ pub fn builtin_hail_size_table() -> ColorTable {
             stop(100.0, 250, 245, 250),
         ],
     )
-    .expect("built-in hail size color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Probability palette (%). Sequential, capped at 100 so POH/POSH legends
@@ -1372,7 +1395,7 @@ pub fn builtin_probability_table() -> ColorTable {
             stop(100.0, 244, 232, 238),
         ],
     )
-    .expect("built-in probability color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Azimuthal-shear palette (×10^-3 s^-1), diverging about zero: near-zero is
@@ -1396,7 +1419,7 @@ pub fn builtin_azimuthal_shear_table() -> ColorTable {
             stop(32.0, 252, 220, 150),
         ],
     )
-    .expect("built-in azimuthal-shear color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Differential phase (ΦDP, degrees) palette — a monotonic perceptual ramp over
@@ -1418,7 +1441,7 @@ pub fn builtin_differential_phase_table() -> ColorTable {
             stop(360.0, 232, 200, 230),
         ],
     )
-    .expect("built-in differential-phase color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Specific differential phase (KDP, °/km) palette. Diverging about zero:
@@ -1440,7 +1463,7 @@ pub fn builtin_specific_differential_phase_table() -> ColorTable {
             stop(7.0, 180, 30, 96),
         ],
     )
-    .expect("built-in specific-differential-phase color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Default Correlation Coefficient (ρhv) palette, ~0.2–1.05. Standard rainbow
@@ -1467,7 +1490,7 @@ pub fn builtin_correlation_coefficient_table() -> ColorTable {
             stop(1.05, 255, 255, 255),
         ],
     )
-    .expect("built-in CC color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// CC variant tuned for tornadic-debris hunting: exaggerates the 0.7–0.95 drop
@@ -1487,7 +1510,7 @@ pub fn tornado_cc_table() -> ColorTable {
             stop(1.02, 230, 232, 245),
         ],
     )
-    .expect("built-in CC debris color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Default Differential Reflectivity (ZDR) palette, ~−2…+8 dB. Diverging about
@@ -1514,7 +1537,7 @@ pub fn builtin_differential_reflectivity_table() -> ColorTable {
             stop(8.0, 240, 200, 240),
         ],
     )
-    .expect("built-in ZDR color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn analyst_reflectivity_table() -> ColorTable {
@@ -1535,42 +1558,42 @@ pub fn analyst_reflectivity_table() -> ColorTable {
             stop(75.0, 245, 245, 245),
         ],
     )
-    .expect("built-in analyst reflectivity color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn nws_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("NWS Classic REF", NWS_CLASSIC_REFLECTIVITY_TABLE)
-        .expect("built-in nws reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn analyst_classic_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Classic REF", ANALYST_CLASSIC_REFLECTIVITY_TABLE)
-        .expect("built-in analyst classic reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn gr2_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("GR2Analyst Classic REF", GR2_REFLECTIVITY_TABLE)
-        .expect("built-in GR2 reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn storm_detail_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Storm Detail REF", STORM_DETAIL_REFLECTIVITY_TABLE)
-        .expect("built-in storm detail reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn hail_core_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Hail Core REF", HAIL_CORE_REFLECTIVITY_TABLE)
-        .expect("built-in hail core reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn low_precip_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Low Precip REF", LOW_PRECIP_REFLECTIVITY_TABLE)
-        .expect("built-in low precip reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn dark_scope_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Dark Scope REF", DARK_SCOPE_REFLECTIVITY_TABLE)
-        .expect("built-in dark scope reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn awips_wilson_edit_reflectivity_table() -> ColorTable {
@@ -1578,17 +1601,17 @@ pub fn awips_wilson_edit_reflectivity_table() -> ColorTable {
         "AWIPS Wilson Edit REF",
         AWIPS_WILSON_EDIT_REFLECTIVITY_TABLE,
     )
-    .expect("built-in AWIPS Wilson Edit reflectivity color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn tornado_debris_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Tornado Debris REF", TORNADO_DEBRIS_REFLECTIVITY_TABLE)
-        .expect("built-in tornado debris reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn clean_light_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Clean Light REF", CLEAN_LIGHT_REFLECTIVITY_TABLE)
-        .expect("built-in clean light reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Smooth turbo-derived reflectivity ramp for fine echo-structure work
@@ -1602,27 +1625,27 @@ pub fn clean_light_reflectivity_table() -> ColorTable {
 /// Deliberately interpolated, not stepped — this is the "smooth" badge.
 pub fn turbo_reflectivity_table() -> ColorTable {
     ColorTable::parse("Turbo REF (smooth)", TURBO_REFLECTIVITY_TABLE)
-        .expect("built-in turbo reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn analyst_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Pro VEL", ANALYST_PRO_VELOCITY_TABLE)
-        .expect("built-in analyst velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn nws_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("NWS Classic VEL", NWS_VELOCITY_TABLE)
-        .expect("built-in nws velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn gr2_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("GR2Analyst Classic VEL", GR2_VELOCITY_TABLE)
-        .expect("built-in GR2 velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn tight_couplet_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Tight Couplet VEL", TIGHT_COUPLET_VELOCITY_TABLE)
-        .expect("built-in tight couplet velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn radarscope_contrast_velocity_table() -> ColorTable {
@@ -1630,32 +1653,32 @@ pub fn radarscope_contrast_velocity_table() -> ColorTable {
         "RadarScope Contrast VEL",
         RADARSCOPE_CONTRAST_VELOCITY_TABLE,
     )
-    .expect("built-in radarscope contrast velocity color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn wdt_radarscope_velocity_table() -> ColorTable {
     ColorTable::parse_gr_pal("WDT RadarScope VEL", WDT_RADARSCOPE_VELOCITY_TABLE)
-        .expect("built-in WDT RadarScope velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn sign_check_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Sign Check VEL", SIGN_CHECK_VELOCITY_TABLE)
-        .expect("built-in sign-check velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn couplet_pop_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Couplet Pop VEL", COUPLET_POP_VELOCITY_TABLE)
-        .expect("built-in couplet pop velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn gr2_ish_analyst_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("GR2-ish Analyst VEL", GR2_ISH_ANALYST_VELOCITY_TABLE)
-        .expect("built-in GR2-ish analyst velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn subtle_srv_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Subtle SRV VEL", SUBTLE_SRV_VELOCITY_TABLE)
-        .expect("built-in subtle SRV velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Colorblind-safe, perceptually-uniform diverging velocity palette modeled on
@@ -1681,17 +1704,17 @@ pub fn balance_velocity_table() -> ColorTable {
             stop(70.0, 110, 14, 30),
         ],
     )
-    .expect("built-in balance velocity color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn nws_split_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("NWS Split VEL", NWS_SPLIT_VELOCITY_TABLE)
-        .expect("built-in split velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn dark_analyst_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Dark Analyst VEL", DARK_ANALYST_VELOCITY_TABLE)
-        .expect("built-in dark analyst velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn builtin_spectrum_width_table() -> ColorTable {
@@ -1711,7 +1734,7 @@ pub fn builtin_spectrum_width_table() -> ColorTable {
             stop(24.0, 235, 235, 235),
         ],
     )
-    .expect("built-in spectrum width color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 pub fn builtin_generic_table() -> ColorTable {
@@ -1728,7 +1751,7 @@ pub fn builtin_generic_table() -> ColorTable {
             stop(100.0, 210, 64, 68),
         ],
     )
-    .expect("built-in generic color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// Purpose-built palette resolver for a BowEcho synthetic-radar diagnostic
@@ -1769,7 +1792,7 @@ pub fn builtin_quality_fraction_table() -> ColorTable {
             stop(1.00, 202, 250, 222),
         ],
     )
-    .expect("built-in synthetic-radar quality table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 fn validation_difference_table(
@@ -1791,7 +1814,7 @@ fn validation_difference_table(
             stop(outer, 112, 20, 40),
         ],
     )
-    .expect("built-in synthetic-minus-observed difference table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 // ─── GURT V3 research-radar palettes ────────────────────────────────────────
@@ -1880,14 +1903,14 @@ pub fn gurt_reflectivity_table() -> ColorTable {
         "GURT Reflectivity",
         gurt_stops(-20.0, 70.0, &GURT_VELOCITY_HEX),
     )
-    .expect("built-in GURT reflectivity color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// GURT V3 velocity over ±30 m/s (FIELD_DEFAULTS "VEL", GurtV3.3.py line
 /// 1262) — matched to the low Nyquist velocities of X-band research radars.
 pub fn gurt_velocity_table() -> ColorTable {
     ColorTable::new("GURT Velocity", gurt_stops(-30.0, 30.0, &GURT_VELOCITY_HEX))
-        .expect("built-in GURT velocity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 /// GURT V3 dealiased velocity over ±60 m/s (FIELD_DEFAULTS "VELD",
@@ -1898,7 +1921,7 @@ pub fn gurt_velocity_dealiased_table() -> ColorTable {
         "GURT Velocity Dealiased",
         gurt_stops(-60.0, 60.0, &GURT_VELOCITY_HEX),
     )
-    .expect("built-in GURT dealiased velocity color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// GURT V3 spectrum width over 0..15 m/s (FIELD_DEFAULTS "SW", GurtV3.3.py
@@ -1908,28 +1931,28 @@ pub fn gurt_spectrum_width_table() -> ColorTable {
         "GURT Spectrum Width",
         gurt_stops(0.0, 15.0, &GURT_SPECTRUM_WIDTH_HEX),
     )
-    .expect("built-in GURT spectrum width color table is valid")
+    .unwrap_or_else(invalid_table_fallback)
 }
 
 /// GURT V3 RhoHV/CC over 0..1 (FIELD_DEFAULTS "RHOHV", GurtV3.3.py line
 /// 1267).
 pub fn gurt_correlation_coefficient_table() -> ColorTable {
     ColorTable::new("GURT CC", gurt_stops(0.0, 1.0, &GURT_CC_HEX))
-        .expect("built-in GURT correlation coefficient color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 /// GURT V3 differential reflectivity over -2..8 dB (FIELD_DEFAULTS "ZDR",
 /// GurtV3.3.py line 1266).
 pub fn gurt_differential_reflectivity_table() -> ColorTable {
     ColorTable::new("GURT ZDR", gurt_stops(-2.0, 8.0, &GURT_ZDR_HEX))
-        .expect("built-in GURT differential reflectivity color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 /// GURT V3 specific differential phase over -2..12 °/km (FIELD_DEFAULTS
 /// "KDP", GurtV3.3.py line 1268).
 pub fn gurt_specific_differential_phase_table() -> ColorTable {
     ColorTable::new("GURT KDP", gurt_stops(-2.0, 12.0, &GURT_KDP_HEX))
-        .expect("built-in GURT specific differential phase color table is valid")
+        .unwrap_or_else(invalid_table_fallback)
 }
 
 fn stop(value: f32, r: u8, g: u8, b: u8) -> ColorStop {

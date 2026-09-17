@@ -3252,7 +3252,10 @@ fn bind_radar(
         .axes()
         .iter()
         .find(|axis| axis.kind() == AxisKind::RadarElevation)
-        .expect("axis contract requires radar elevation")
+        .ok_or_else(|| TMatrixLoadError::InvalidConfig {
+            field: "radar.elevation_deg",
+            detail: "the LUT header has no radar elevation axis".to_owned(),
+        })?
         .coordinates();
     let view_applicability = if elevations == [0.0] {
         exact_text(
@@ -3345,7 +3348,10 @@ fn bind_terminal_speed(
                 .axes()
                 .iter()
                 .find(|axis| axis.kind() == AxisKind::EquivolumeDiameter)
-                .expect("axis contract requires diameter");
+                .ok_or_else(|| TMatrixLoadError::InvalidConfig {
+                    field: "terminal_velocity.valid_diameter_range_m",
+                    detail: "the LUT header has no equivolume diameter axis".to_owned(),
+                })?;
             if valid_diameter_range_m[0] >= valid_diameter_range_m[1]
                 || diameter.coordinates()[0] < valid_diameter_range_m[0]
                 || diameter.coordinates()[diameter.coordinates().len() - 1]

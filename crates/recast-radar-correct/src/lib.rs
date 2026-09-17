@@ -8,6 +8,8 @@
 //! - a literal port of Py-ART's region dealiaser
 //!   ([`dealias_velocity_grid_pyart_region`]).
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 mod dealias_pyart;
 mod dealias_v4;
 #[cfg(test)]
@@ -334,11 +336,7 @@ fn region_based_dealias_folds(
             if *total_gates == 0 || (*covered as f64) < 0.5 * *total_gates as f64 {
                 continue;
             }
-            let (best_slot, _) = costs
-                .iter()
-                .enumerate()
-                .min_by(|a, b| a.1.total_cmp(b.1))
-                .expect("five branches");
+            let best_slot = first_minimum_index(costs);
             let branch = best_slot as i32 - 2;
             for rid in 0..region_count {
                 if region_group[rid] as usize == group {
@@ -379,11 +377,8 @@ fn region_based_dealias_folds(
                 continue;
             }
             let current = cost[rid][1];
-            let (best_slot, best_cost) = cost[rid]
-                .iter()
-                .enumerate()
-                .min_by(|a, b| a.1.total_cmp(b.1))
-                .expect("three slots");
+            let best_slot = first_minimum_index(&cost[rid]);
+            let best_cost = &cost[rid][best_slot];
             if best_slot != 1 && *best_cost < 0.6 * current {
                 let dg = best_slot as i32 - 1;
                 region_fold[rid] = (region_fold[rid] + dg)
@@ -543,6 +538,19 @@ fn median_small_f32(values: &mut [f32], count: usize) -> f32 {
     debug_assert!(count > 0 && count <= values.len());
     values[..count].sort_by(f32::total_cmp);
     values[count / 2]
+}
+
+/// Index of the first minimum under [`f64::total_cmp`] (0 for an empty
+/// slice) — the element `Iterator::min_by` returns, which is the first of
+/// equal minima.
+fn first_minimum_index(values: &[f64]) -> usize {
+    let mut best = 0;
+    for (index, value) in values.iter().enumerate().skip(1) {
+        if value.total_cmp(&values[best]).is_lt() {
+            best = index;
+        }
+    }
+    best
 }
 
 #[cfg(test)]

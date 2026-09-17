@@ -1,5 +1,9 @@
 //! Probe the site catalog exactly as the app builds it: how many sites,
 //! how many TDWRs (Txxx), and whether they carry coordinates.
+
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 fn main() {
     let sites = recast_radar_data::fetch_level2_radar_sites(7).expect("catalog");
     let tdwr: Vec<_> = sites

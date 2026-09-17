@@ -445,6 +445,14 @@ justification = "fuzz regression input"
         group_for_path("crates/recast-radar-bench/src/main.rs"),
         Some("render-bench")
     );
+    assert_eq!(
+        group_for_path("crates/recast-radar-bzip2/tests/real_records.rs"),
+        Some("io-nexrad")
+    );
+    assert_eq!(
+        group_for_path("crates/recast-radar-tools/tests/facade_real_files.rs"),
+        Some("io-formats")
+    );
     assert_eq!(group_for_path("testdata/files/x"), None);
     assert_eq!(GROUPS.len(), 8);
 }

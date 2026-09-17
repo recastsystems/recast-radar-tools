@@ -2,11 +2,23 @@
 name = "recast-radar-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Weather radar data model for recast-radar-tools: volumes, sweeps, radials, moment grids, beam geometry and field names"
+readme.workspace = true
+keywords = ["radar", "weather", "meteorology", "remote-sensing", "cfradial"]
+categories = ["science", "science::geo", "data-structures"]
 
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
+
+[features]
+# Serde derives on the data model. Reserved switch: the derives are still
+# unconditional today; once the model settles (stream F), `serde` becomes
+# optional and this feature turns into `["dep:serde"]`. The facade's `serde`
+# feature already forwards here.
+serde = []
 
 [dev-dependencies]
 # Real-data model tests (tests/real_model.rs): corpus files decoded with the

@@ -6,27 +6,77 @@
 //!
 //! Other radar formats live in their own crates (`recast-radar-io-odim`,
 //! `-io-cfradial`, `-io-dorade`, `-io-jma`); `recast-radar-io` routes byte
-//! buffers of unknown format to the right decoder. [`level3_vwp`] holds the
-//! Level III VAD Wind Profile decoder until the full Level III crate
-//! subsumes it.
+//! buffers of unknown format to the right decoder, and
+//! `recast-radar-io-level3` decodes Level III products (including the VAD Wind
+//! Profile, `recast_radar_io_level3::vwp`).
+//! [`messages`] walks the Level II message stream and decodes the message
+//! bodies (message 1 radials are left to the volume decoder).
+//! [`decode_volume_with_metadata`] ([`metadata`]) returns the decoded volume
+//! together with its metadata messages and per-sweep message 31 constant
+//! blocks.
+//!
+//! # Compression
+//!
+//! LDM block-bzip2 records and whole-file bzip2 volumes are decoded by
+//! `recast-radar-bzip2` (this repository's decoder without unsafe code, one
+//! reusable decoder per thread; the `paired-bzip2` feature decodes two
+//! records at a time on one thread). Decoded record buffers are recycled
+//! through a bounded process-wide pool. gzip volumes are inflated by
+//! [`gzip`]: whole-buffer input in one pass into a buffer presized from the
+//! gzip trailer, streaming input through a reader; both decode every member
+//! of a multi-member file and ignore bytes after the last member.
+//!
+//! # Limits
+//!
+//! Allocations never follow header values past these caps (shared values in
+//! [`recast_radar_core::bounded_read`]):
+//!
+//! - **Expanded input**: gzip, whole-file bzip2, and uncompressed buffers at
+//!   most `MAX_DECODED_RADAR_BYTES` (512 MiB). LDM block-bzip2 volumes: at
+//!   most 4,096 blocks, 16 MiB per decompressed block, 512 MiB in total.
+//!   Violations are [`NexradError::Compression`] errors.
+//! - **Messages**: sizes are 16-bit halfword counts (at most 131,070 bytes);
+//!   every block pointer and gate array is checked against its message.
+//! - **Gates**: a Message 1 row or Message 31 moment block may declare at
+//!   most `MAX_GATES_PER_RADIAL` (16,384) gates; real volumes reach 1,840.
+//! - **Cuts**: at most `MAX_SWEEPS_PER_VOLUME` (1,024) elevation cuts; real
+//!   volumes reach 23.
+//! - **Decoded moments**: grid reservations and growth are checked against a
+//!   `DecodeBudget` of `MAX_DECODED_VOLUME_BYTES` (1 GiB) per volume before
+//!   allocating; real volumes need at most 80 MiB. Radial tables are not
+//!   charged: every radial consumes at least 88 bytes of expanded input and
+//!   occupies 40, so the expanded-input cap bounds them.
+//!
+//! Gate, cut, and budget violations are [`NexradError::LimitExceeded`]
+//! errors. Preview callbacks receive a clone of the partial volume, so memory
+//! briefly doubles while one runs. [`decode_volume_from_path`] reads the
+//! whole file first; callers choose which files to open.
 
-pub mod level3_vwp;
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
-use std::cell::UnsafeCell;
+pub mod gzip;
+pub mod messages;
+pub mod metadata;
+
+pub use metadata::{NexradMetadata, NexradVolume, SweepElevationData, decode_volume_with_metadata};
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fs;
-use std::io::{Cursor, Read};
+use std::io::{BufReader, Read};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 
-use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, TimeZone, Utc};
-use flate2::read::GzDecoder;
 use rayon::prelude::*;
-use recast_radar_core::bounded_read::{self, MAX_DECODED_RADAR_BYTES};
+use recast_radar_core::bounded_read::{
+    self, DecodeBudget, MAX_DECODED_RADAR_BYTES, MAX_SWEEPS_PER_VOLUME, moment_grid_capacity_bytes,
+};
 use recast_radar_core::{
-    GateRange, MomentGrid, MomentType, RadarSite, RadarVolume, Radial, RadialStatus, VcpInfo,
+    CUT_ELEVATION_MATCH_TOLERANCE_DEG, ElevationCut, GateRange, MomentGrid, MomentType, RadarSite,
+    RadarVolume, Radial, RadialStatus, VcpInfo,
 };
 use thiserror::Error;
 
@@ -48,6 +98,18 @@ const MAX_MESSAGE_31_MOMENTS: usize = 10;
 /// attacker-controlled block all the way to the full-volume budget.
 const MAX_BZIP_BLOCK_DECODED_BYTES: usize = 16 * 1024 * 1024;
 const MAX_BZIP_BLOCKS: usize = 4096;
+/// Decoded LDM block buffers kept for reuse by later blocks and later
+/// volumes. Operational blocks decode to about 0.3-1.2 MiB, so a bounded pool
+/// removes the allocate-and-page-fault cost of ~100 fresh block buffers per
+/// volume while retaining at most a few tens of MiB.
+const BZIP_BUFFER_POOL_MAX_BUFFERS: usize = 64;
+const BZIP_BUFFER_POOL_MAX_BYTES: usize = 64 * 1024 * 1024;
+/// Buffers smaller than this are not worth pooling (they would be regrown by
+/// the next block anyway).
+const BZIP_BUFFER_POOL_MIN_CAPACITY: usize = 64 * 1024;
+/// Largest buffer the pool keeps; a pathological block that decoded to many
+/// MiB is freed instead of being pinned for the life of the process.
+const BZIP_BUFFER_POOL_MAX_CAPACITY: usize = 8 * 1024 * 1024;
 
 pub type Result<T> = std::result::Result<T, NexradError>;
 
@@ -61,6 +123,20 @@ pub enum NexradError {
     },
     #[error("input is too short for an Archive II volume header: {actual} bytes")]
     ShortVolumeHeader { actual: usize },
+    /// The input does not start with an Archive II volume header (`AR2V` or
+    /// `ARCHIVE2`, Table I of the Archive II ICD 2620010). Model-data
+    /// (`_MDM`) files, intermediate real-time chunks and bare records have
+    /// none: their messages are read with [`messages::record_bytes`] and
+    /// [`messages::MessageWalker`], and their metadata with
+    /// [`NexradMetadata::from_metadata_record`]. Without a header there is no
+    /// site or volume time, so no [`RadarVolume`] is built from them.
+    #[error(
+        "no Archive II volume header: the input starts with `{found}`, not AR2V or ARCHIVE2 (model-data _MDM files and intermediate real-time chunks have no header; read their messages with messages::MessageWalker)"
+    )]
+    MissingVolumeHeader {
+        /// The first 8 input bytes, ASCII-escaped.
+        found: String,
+    },
     #[error("truncated {what} at offset {offset}: need {needed} bytes, have {available}")]
     Truncated {
         what: &'static str,
@@ -74,6 +150,10 @@ pub enum NexradError {
     InvalidMessage { offset: usize, reason: String },
     #[error("moment grid error: {0}")]
     MomentGrid(#[from] recast_radar_core::MomentGridError),
+    /// The file declares more data than a documented resource limit allows
+    /// (see the crate-level `# Limits` section).
+    #[error("decode limit exceeded: {0}")]
+    LimitExceeded(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,6 +188,25 @@ pub fn decode_volume_from_path(path: &Path) -> Result<RadarVolume> {
 
 /// Decode a byte slice. This is public to support fixtures and embedded tests.
 pub fn decode_volume_from_bytes(bytes: &[u8]) -> Result<RadarVolume> {
+    decode_volume_observed(bytes, &mut ())
+}
+
+/// Receives each message 31 body the volume decoders turn into a radial,
+/// right after the radial is added, with the volume as it then stands.
+/// [`metadata::decode_volume_with_metadata`] uses it to read the constant
+/// blocks of each sweep's first radial during the single decode pass; the
+/// plain decoders pass `()`, whose empty implementation compiles away.
+trait RadialObserver {
+    fn message_31(&mut self, body: &[u8], volume: &RadarVolume);
+}
+
+impl RadialObserver for () {
+    #[inline(always)]
+    fn message_31(&mut self, _body: &[u8], _volume: &RadarVolume) {}
+}
+
+/// [`decode_volume_from_bytes`] with a [`RadialObserver`].
+fn decode_volume_observed(bytes: &[u8], observer: &mut impl RadialObserver) -> Result<RadarVolume> {
     if bytes.len() < VOLUME_HEADER_LEN {
         return Err(NexradError::ShortVolumeHeader {
             actual: bytes.len(),
@@ -117,16 +216,19 @@ pub fn decode_volume_from_bytes(bytes: &[u8]) -> Result<RadarVolume> {
         && !bytes.starts_with(b"BZh")
         && let Some(blocks) = collect_bzip_block_slices(bytes)?
     {
-        return decode_bzip_blocks_pipelined(bytes, blocks, None, false, |_| {})
+        return decode_bzip_blocks_pipelined(bytes, blocks, None, false, |_| {}, observer)
             .map(|outcome| outcome.volume);
     }
 
     let (bytes, compression) = normalize_archive_bytes(bytes)?;
-    decode_normalized_volume_bytes(&bytes, compression)
+    decode_normalized_volume_bytes_observed(&bytes, compression, observer)
 }
 
+/// Decode a gzip-compressed Archive II volume from a reader, inflating as
+/// it parses. Every gzip member is decoded; bytes after the last member that
+/// do not start another one are ignored.
 pub fn decode_gzip_volume_from_reader(reader: impl Read) -> Result<RadarVolume> {
-    let decoder = GzDecoder::new(reader);
+    let decoder = gzip::MultiGzReader::new(BufReader::new(reader));
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
     decode_volume_from_stream_until(&mut decoder, ArchiveCompression::Gzip, None).map(|result| {
         debug_assert!(!result.stopped_at_preview);
@@ -149,7 +251,7 @@ where
         return decode_volume_from_bytes(raw);
     }
 
-    let decoder = GzDecoder::new(raw);
+    let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
     decode_volume_from_stream(
         &mut decoder,
@@ -175,7 +277,7 @@ pub fn decode_gzip_preview_from_bytes(
         return Ok(None);
     }
 
-    let decoder = GzDecoder::new(raw);
+    let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
     let result = decode_volume_from_stream_until(
         &mut decoder,
@@ -202,8 +304,14 @@ pub fn decode_bzip_block_preview_from_bytes(
         return Ok(None);
     };
 
-    let outcome =
-        decode_bzip_blocks_pipelined(raw, blocks, Some(min_displayable_radials), true, |_| {})?;
+    let outcome = decode_bzip_blocks_pipelined(
+        raw,
+        blocks,
+        Some(min_displayable_radials),
+        true,
+        |_| {},
+        &mut (),
+    )?;
     Ok(outcome.stopped_at_preview.then_some(outcome.volume))
 }
 
@@ -237,6 +345,7 @@ where
         |preview| {
             on_preview(preview.clone());
         },
+        &mut (),
     )?;
     Ok(outcome.volume)
 }
@@ -253,8 +362,10 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
     }
 
     if raw.starts_with(b"BZh") {
-        let decoded = read_to_end_limited(
-            BzDecoder::new(Cursor::new(raw)),
+        let mut decoded = Vec::new();
+        decompress_bzip2_stream_into(
+            raw,
+            &mut decoded,
             MAX_DECODED_RADAR_BYTES,
             "whole-file bzip2 radar payload",
         )?;
@@ -271,18 +382,11 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
     ))
 }
 
+/// Inflate a whole in-memory gzip file (every member) into one buffer
+/// presized from its ISIZE trailer. See [`gzip::inflate_gzip_members_limited`].
 fn decompress_gzip_bytes(raw: &[u8]) -> Result<Vec<u8>> {
-    read_to_end_limited(
-        GzDecoder::new(raw),
-        MAX_DECODED_RADAR_BYTES,
-        "gzip radar payload",
-    )
-}
-
-/// [`bounded_read::read_to_end_limited`] with its message wrapped as a
-/// compression error.
-fn read_to_end_limited(reader: impl Read, limit: usize, context: &'static str) -> Result<Vec<u8>> {
-    bounded_read::read_to_end_limited(reader, limit, context).map_err(NexradError::Compression)
+    gzip::inflate_gzip_members_limited(raw, MAX_DECODED_RADAR_BYTES, "gzip radar payload")
+        .map_err(NexradError::Compression)
 }
 
 /// [`bounded_read::copy_bytes_limited`] with its message wrapped as a
@@ -385,20 +489,11 @@ fn read_exact_into_buffer<R: Read>(
     what: &'static str,
     offset: usize,
 ) -> Result<()> {
-    buffer.clear();
-    if buffer.capacity() < len {
-        buffer.reserve_exact(len);
-    }
-    let spare = buffer.spare_capacity_mut();
-    let target = &mut spare[..len];
-    // SAFETY: u8 has no invalid bit patterns, and the slice is within spare capacity.
-    let target = unsafe { std::slice::from_raw_parts_mut(target.as_mut_ptr().cast::<u8>(), len) };
-    read_exact_required(reader, target, what, offset)?;
-    // SAFETY: read_exact_required returned Ok, so every byte in target was initialized.
-    unsafe {
-        buffer.set_len(len);
-    }
-    Ok(())
+    // The buffer is reused across records without clearing: `resize` only
+    // zero-fills bytes past the previous length, and every byte below `len`
+    // is overwritten by the read (or the caller discards the buffer on error).
+    buffer.resize(len, 0);
+    read_exact_required(reader, buffer, what, offset)
 }
 
 fn skip_record_padding<R: Read>(
@@ -434,6 +529,46 @@ pub fn decode_normalized_volume_bytes(
     bytes: &[u8],
     compression: ArchiveCompression,
 ) -> Result<RadarVolume> {
+    decode_normalized_volume_bytes_within_observed(
+        bytes,
+        compression,
+        DecodeBudget::volume(),
+        &mut (),
+    )
+}
+
+/// [`decode_normalized_volume_bytes`] with an explicit output budget.
+#[cfg(test)]
+fn decode_normalized_volume_bytes_within(
+    bytes: &[u8],
+    compression: ArchiveCompression,
+    budget: DecodeBudget,
+) -> Result<RadarVolume> {
+    decode_normalized_volume_bytes_within_observed(bytes, compression, budget, &mut ())
+}
+
+/// [`decode_normalized_volume_bytes`] with a [`RadialObserver`].
+fn decode_normalized_volume_bytes_observed(
+    bytes: &[u8],
+    compression: ArchiveCompression,
+    observer: &mut impl RadialObserver,
+) -> Result<RadarVolume> {
+    decode_normalized_volume_bytes_within_observed(
+        bytes,
+        compression,
+        DecodeBudget::volume(),
+        observer,
+    )
+}
+
+/// [`decode_normalized_volume_bytes`] with an explicit output budget and a
+/// [`RadialObserver`].
+fn decode_normalized_volume_bytes_within_observed(
+    bytes: &[u8],
+    compression: ArchiveCompression,
+    mut budget: DecodeBudget,
+    observer: &mut impl RadialObserver,
+) -> Result<RadarVolume> {
     let volume_header = parse_volume_header(bytes)?;
     let mut volume = RadarVolume::new(
         RadarSite::new(volume_header.icao.clone()),
@@ -463,7 +598,7 @@ pub fn decode_normalized_volume_bytes(
             break;
         }
 
-        let message_total_len = usize::from(header.size_halfwords) * 2;
+        let (message_total_len, variable_framing) = message_framing(&header);
         if message_total_len < MESSAGE_HEADER_LEN {
             return Err(NexradError::InvalidMessage {
                 offset: header_offset,
@@ -488,7 +623,7 @@ pub fn decode_normalized_volume_bytes(
                     });
                 }
                 let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
-                parse_message_1(body, &header, &mut volume)?;
+                parse_message_1(body, &header, &mut volume, &mut budget)?;
             }
             31 => {
                 let message_end = header_offset + message_total_len;
@@ -505,7 +640,8 @@ pub fn decode_normalized_volume_bytes(
                     });
                 }
                 let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
-                parse_message_31(body, &header, &mut volume)?;
+                parse_message_31(body, &header, &mut volume, &mut budget)?;
+                observer.message_31(body, &volume);
             }
             5 => {
                 let body_offset = header_offset + MESSAGE_HEADER_LEN;
@@ -519,7 +655,9 @@ pub fn decode_normalized_volume_bytes(
             _ => volume.metadata.skipped_message_count += 1,
         }
 
-        let record_len = if header.message_type != 31 {
+        let record_len = if variable_framing {
+            message_total_len + CONTROL_WORD_LEN
+        } else if header.message_type != 31 {
             RECORD_BYTES
         } else if record_index >= 134 || early_variable_msg31 {
             message_total_len + CONTROL_WORD_LEN
@@ -594,6 +732,7 @@ where
     let mut prefix = [0; CONTROL_WORD_LEN + MESSAGE_HEADER_LEN];
     let mut body_buffer = Vec::with_capacity(RECORD_BYTES);
     let mut preview_emitted = false;
+    let mut budget = DecodeBudget::volume();
     while read_record_prefix(reader, &mut prefix, cursor)? {
         let header_offset = cursor + CONTROL_WORD_LEN;
         let header = parse_message_header_bytes(&prefix[CONTROL_WORD_LEN..]);
@@ -613,7 +752,7 @@ where
             break;
         }
 
-        let message_total_len = usize::from(header.size_halfwords) * 2;
+        let (message_total_len, variable_framing) = message_framing(&header);
         if message_total_len < MESSAGE_HEADER_LEN {
             return Err(NexradError::InvalidMessage {
                 offset: header_offset,
@@ -621,7 +760,9 @@ where
             });
         }
 
-        let record_len = if record_index < 134 || header.message_type != 31 {
+        let record_len = if variable_framing {
+            message_total_len + CONTROL_WORD_LEN
+        } else if record_index < 134 || header.message_type != 31 {
             RECORD_BYTES
         } else {
             message_total_len + CONTROL_WORD_LEN
@@ -644,7 +785,7 @@ where
                     }
                     return Err(err);
                 }
-                parse_message_1(&body_buffer, &header, &mut volume)?;
+                parse_message_1(&body_buffer, &header, &mut volume, &mut budget)?;
                 skip_record_padding(reader, record_len, prefix.len() + body_len, cursor)?;
                 if let Some(min_radials) = preview_min_radials
                     && !preview_emitted
@@ -674,7 +815,7 @@ where
                     }
                     return Err(err);
                 }
-                parse_message_31(&body_buffer, &header, &mut volume)?;
+                parse_message_31(&body_buffer, &header, &mut volume, &mut budget)?;
                 skip_record_padding(reader, record_len, prefix.len() + body_len, cursor)?;
                 if let Some(min_radials) = preview_min_radials
                     && !preview_emitted
@@ -740,6 +881,9 @@ pub struct MessageHeader {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message31Header {
+    /// Bytes 0-3: radar identifier as recorded. It can be blank (KVWX
+    /// 2008-04-15 records four spaces); see [`Self::radar_identifier_or`].
+    pub radar_identifier: [u8; 4],
     pub collect_ms: u32,
     pub collect_date: u16,
     pub azimuth_number: u16,
@@ -755,35 +899,86 @@ pub struct Message31Header {
 
 #[derive(Clone, Debug, PartialEq)]
 struct MomentBlock<'a> {
-    moment: MomentType,
+    /// Raw 3-byte moment name; resolved to a `MomentType` only when a grid
+    /// has to be created (see `moment_grid_for_block`).
+    name: &'a [u8],
     gate_range: GateRange,
     scale: f32,
     offset: f32,
     row: MomentPayload<'a>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum MomentPayload<'a> {
     U8(&'a [u8]),
     U16(&'a [u8]),
 }
 
-const BLOCK_PENDING: u8 = 0;
-const BLOCK_READY: u8 = 1;
-const BLOCK_FAILED: u8 = 2;
+/// Outcome of decompressing one LDM block: its bytes, taken once by the
+/// parser and then recycled, or the error message.
+type BlockResult = std::result::Result<Mutex<Option<Vec<u8>>>, String>;
+
+/// Process-wide pool of decoded LDM block buffers. A block decoded into a
+/// recycled buffer neither allocates nor page-faults; without the pool every
+/// volume allocated (and the allocator returned to the OS) ~100 fresh ~1 MiB
+/// block buffers. Bounded by `BZIP_BUFFER_POOL_MAX_BUFFERS` and
+/// `BZIP_BUFFER_POOL_MAX_BYTES`.
+struct BzipBufferPool {
+    buffers: Vec<Vec<u8>>,
+    retained_bytes: usize,
+}
+
+static BZIP_BUFFER_POOL: Mutex<BzipBufferPool> = Mutex::new(BzipBufferPool {
+    buffers: Vec::new(),
+    retained_bytes: 0,
+});
+
+/// An empty buffer for one decoded block, recycled when the pool has one.
+fn take_bzip_buffer() -> Vec<u8> {
+    let mut pool = BZIP_BUFFER_POOL
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    match pool.buffers.pop() {
+        Some(mut buffer) => {
+            pool.retained_bytes = pool.retained_bytes.saturating_sub(buffer.capacity());
+            buffer.clear();
+            buffer
+        }
+        None => Vec::new(),
+    }
+}
+
+/// Return a decoded block buffer to the pool, or free it when the pool is
+/// full or the buffer is outside the pooled capacity range.
+fn recycle_bzip_buffer(mut buffer: Vec<u8>) {
+    let capacity = buffer.capacity();
+    if !(BZIP_BUFFER_POOL_MIN_CAPACITY..=BZIP_BUFFER_POOL_MAX_CAPACITY).contains(&capacity) {
+        return;
+    }
+    buffer.clear();
+    let mut pool = BZIP_BUFFER_POOL
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if pool.buffers.len() >= BZIP_BUFFER_POOL_MAX_BUFFERS
+        || pool.retained_bytes.saturating_add(capacity) > BZIP_BUFFER_POOL_MAX_BYTES
+    {
+        return;
+    }
+    pool.retained_bytes += capacity;
+    pool.buffers.push(buffer);
+}
 
 /// Slot store connecting parallel LDM-block decompression workers to the
 /// in-order streaming parser.
 ///
-/// Indices are claimed in parse order through `next_claim`, so each slot has
-/// exactly one writer. A slot is published with a `Release` store on its state
-/// flag and readers dereference it only after an `Acquire` load observes
-/// `BLOCK_READY`, after which the slot is never written again.
+/// Indices are claimed in parse order through `next_claim`, so each slot is
+/// filled by exactly one thread. A slot is a `OnceLock` that is set once with
+/// the block's bytes (or error) and never written again. The parser takes
+/// the bytes out of a published slot exactly once, parses past them, and
+/// hands the buffer back to the buffer pool for a later block.
 struct BlockSlots<'a> {
     compressed: Vec<&'a [u8]>,
-    slots: Box<[UnsafeCell<Vec<u8>>]>,
-    states: Box<[AtomicU8]>,
-    errors: Mutex<Vec<Option<String>>>,
+    slots: Box<[OnceLock<BlockResult>]>,
     next_claim: AtomicUsize,
     decoded_bytes: AtomicUsize,
     canceled: AtomicBool,
@@ -791,19 +986,12 @@ struct BlockSlots<'a> {
     published: Condvar,
 }
 
-// SAFETY: each `UnsafeCell` slot is written by exactly one thread (the unique
-// claimant of its index) before being published via the matching `AtomicU8`
-// with Release/Acquire ordering; every other field is already `Sync`.
-unsafe impl Sync for BlockSlots<'_> {}
-
 impl<'a> BlockSlots<'a> {
     fn new(compressed: Vec<&'a [u8]>) -> Self {
         let len = compressed.len();
         Self {
             compressed,
-            slots: (0..len).map(|_| UnsafeCell::new(Vec::new())).collect(),
-            states: (0..len).map(|_| AtomicU8::new(BLOCK_PENDING)).collect(),
-            errors: Mutex::new(vec![None; len]),
+            slots: (0..len).map(|_| OnceLock::new()).collect(),
             next_claim: AtomicUsize::new(0),
             decoded_bytes: AtomicUsize::new(0),
             canceled: AtomicBool::new(false),
@@ -822,85 +1010,173 @@ impl<'a> BlockSlots<'a> {
 
     fn run_worker(&self) {
         while !self.canceled.load(Ordering::Relaxed) {
-            let index = self.next_claim.fetch_add(1, Ordering::Relaxed);
+            let index = self.claim();
             if index >= self.len() {
                 break;
             }
-            self.decompress_index(index);
+            self.decompress_claimed(index);
         }
     }
 
-    fn decompress_index(&self, index: usize) {
-        let state = match decompress_bzip_block(self.compressed[index]) {
+    /// Claim the next index in parse order (with `paired-bzip2`, the next
+    /// two indices; the claimant decodes both).
+    fn claim(&self) -> usize {
+        let step = if cfg!(feature = "paired-bzip2") { 2 } else { 1 };
+        self.next_claim.fetch_add(step, Ordering::Relaxed)
+    }
+
+    #[cfg(not(feature = "paired-bzip2"))]
+    fn decompress_claimed(&self, index: usize) {
+        let mut decoded = take_bzip_buffer();
+        match decompress_bzip_block_into(self.compressed[index], &mut decoded) {
+            Ok(()) => self.publish(index, Ok(decoded)),
+            Err(err) => {
+                recycle_bzip_buffer(decoded);
+                self.publish(index, Err(err.to_string()));
+            }
+        }
+    }
+
+    #[cfg(feature = "paired-bzip2")]
+    fn decompress_claimed(&self, index: usize) {
+        let mut first = take_bzip_buffer();
+        let Some(&second_compressed) = self.compressed.get(index + 1) else {
+            match decompress_bzip_block_into(self.compressed[index], &mut first) {
+                Ok(()) => self.publish(index, Ok(first)),
+                Err(err) => {
+                    recycle_bzip_buffer(first);
+                    self.publish(index, Err(err.to_string()));
+                }
+            }
+            return;
+        };
+        let mut second = take_bzip_buffer();
+        let (first_result, second_result) = decompress_bzip_block_pair_into(
+            self.compressed[index],
+            &mut first,
+            second_compressed,
+            &mut second,
+        );
+        for (index, result, buffer) in [
+            (index, first_result, first),
+            (index + 1, second_result, second),
+        ] {
+            match result {
+                Ok(()) => self.publish(index, Ok(buffer)),
+                Err(err) => {
+                    recycle_bzip_buffer(buffer);
+                    self.publish(index, Err(err.to_string()));
+                }
+            }
+        }
+    }
+
+    /// Publish a block's decoded bytes (after charging them to the aggregate
+    /// budget) or its error, then wake the parser.
+    fn publish(&self, index: usize, decoded: std::result::Result<Vec<u8>, String>) {
+        let result = match decoded {
             Ok(decoded) => {
-                if !reserve_atomic_budget(
+                if reserve_atomic_budget(
                     &self.decoded_bytes,
                     decoded.len(),
                     MAX_DECODED_RADAR_BYTES,
                 ) {
-                    self.errors.lock().unwrap()[index] = Some(format!(
-                        "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
-                    ));
-                    self.states[index].store(BLOCK_FAILED, Ordering::Release);
-                    drop(self.wakeup.lock().unwrap());
-                    self.published.notify_all();
+                    Ok(Mutex::new(Some(decoded)))
+                } else {
+                    recycle_bzip_buffer(decoded);
                     self.cancel();
-                    return;
+                    Err(format!(
+                        "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
+                    ))
                 }
-                // SAFETY: `index` was claimed exactly once via `next_claim`,
-                // so this thread is the slot's unique writer; readers wait for
-                // the Release store below before touching it.
-                unsafe {
-                    *self.slots[index].get() = decoded;
-                }
-                BLOCK_READY
             }
-            Err(err) => {
-                self.errors.lock().unwrap()[index] = Some(err.to_string());
-                BLOCK_FAILED
-            }
+            Err(message) => Err(message),
         };
-        self.states[index].store(state, Ordering::Release);
-        // Take the wakeup lock so a parser that has checked the state but not
-        // yet parked cannot miss this notification.
-        drop(self.wakeup.lock().unwrap());
+        // `index` was claimed exactly once via `next_claim`, so the slot is
+        // still empty; `set` cannot fail here and would never overwrite.
+        let _ = self.slots[index].set(result);
+        // Take the wakeup lock so a parser that has checked the slot but not
+        // yet parked cannot miss this notification. The mutex guards no data,
+        // so a poisoned lock is still usable.
+        drop(self.wakeup.lock().unwrap_or_else(PoisonError::into_inner));
         self.published.notify_all();
     }
 
-    /// Block until the decompressed contents of `index` are available.
+    /// Block until the decompressed contents of `index` are available, then
+    /// take ownership of them. Each index is taken at most once, in parse
+    /// order, by the single parsing cursor.
     ///
     /// The caller participates in decompression while it waits (claims advance
     /// in parse order), so the pipeline makes progress even when no rayon
     /// worker ever runs — e.g. on a single-threaded pool.
-    fn wait_block(&self, index: usize) -> Result<&[u8]> {
+    fn take_block(&self, index: usize) -> Result<Vec<u8>> {
         loop {
-            match self.states[index].load(Ordering::Acquire) {
-                BLOCK_READY => {
-                    // SAFETY: published with Release by the unique writer and
-                    // never written again; the slot box itself is pre-sized
-                    // and never reallocated.
-                    return Ok(unsafe { (*self.slots[index].get()).as_slice() });
-                }
-                BLOCK_FAILED => {
-                    let message = self.errors.lock().unwrap()[index]
-                        .clone()
-                        .unwrap_or_else(|| "bzip2 block decompression failed".to_owned());
-                    return Err(NexradError::Compression(message));
-                }
-                _ => {}
+            if let Some(result) = self.slots[index].get() {
+                return match result {
+                    Ok(cell) => cell
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .take()
+                        .ok_or_else(|| {
+                            NexradError::Compression("bzip2 block was already consumed".to_owned())
+                        }),
+                    Err(message) => Err(NexradError::Compression(message.clone())),
+                };
             }
-            let claimed = self.next_claim.fetch_add(1, Ordering::Relaxed);
+            let claimed = self.claim();
             if claimed < self.len() {
-                self.decompress_index(claimed);
+                self.decompress_claimed(claimed);
                 continue;
             }
             // Everything is claimed, so `index` is in flight on another
             // thread; park until the next publish.
-            let mut guard = self.wakeup.lock().unwrap();
-            while self.states[index].load(Ordering::Acquire) == BLOCK_PENDING {
-                guard = self.published.wait(guard).unwrap();
+            let mut guard = self.wakeup.lock().unwrap_or_else(PoisonError::into_inner);
+            while self.slots[index].get().is_none() {
+                guard = self
+                    .published
+                    .wait(guard)
+                    .unwrap_or_else(PoisonError::into_inner);
             }
         }
+    }
+}
+
+impl Drop for BlockSlots<'_> {
+    fn drop(&mut self) {
+        // Blocks decoded ahead of an early return (preview stop, error) go
+        // back to the pool instead of being freed.
+        for slot in self.slots.iter_mut() {
+            if let Some(Ok(cell)) = slot.get_mut()
+                && let Some(buffer) = cell
+                    .get_mut()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take()
+            {
+                recycle_bzip_buffer(buffer);
+            }
+        }
+    }
+}
+
+/// The chunk a [`BzipBlockCursor`] is reading.
+enum CursorChunk<'a> {
+    /// The borrowed 24-byte volume header (chunk 0).
+    Header(&'a [u8]),
+    /// A decoded block, owned while it is parsed and recycled on advance.
+    Block(Vec<u8>),
+    /// Past the last block.
+    End,
+}
+
+/// Bytes of the loaded chunk; empty when nothing is loaded or past the end.
+///
+/// A free function over the `current` field (rather than a `&self` method) so
+/// callers can keep the returned slice while updating the cursor offsets.
+fn cursor_chunk_bytes<'c>(current: &'c Option<CursorChunk<'_>>) -> &'c [u8] {
+    match current {
+        Some(CursorChunk::Header(bytes)) => bytes,
+        Some(CursorChunk::Block(buffer)) => buffer.as_slice(),
+        Some(CursorChunk::End) | None => &[],
     }
 }
 
@@ -910,7 +1186,8 @@ struct BzipBlockCursor<'a> {
     chunk_index: usize,
     chunk_offset: usize,
     absolute_offset: usize,
-    current: Option<&'a [u8]>,
+    /// `None` until `chunk_index` has been loaded.
+    current: Option<CursorChunk<'a>>,
 }
 
 impl<'a> BzipBlockCursor<'a> {
@@ -925,33 +1202,39 @@ impl<'a> BzipBlockCursor<'a> {
         }
     }
 
-    fn current_chunk(&mut self) -> Result<Option<&'a [u8]>> {
-        if let Some(chunk) = self.current {
-            return Ok(Some(chunk));
+    /// Load `chunk_index` if needed. Returns `false` past the last block.
+    fn load_current(&mut self) -> Result<bool> {
+        if self.current.is_none() {
+            let chunk = match self.chunk_index {
+                0 => CursorChunk::Header(self.volume_header),
+                index if index - 1 < self.blocks.len() => {
+                    CursorChunk::Block(self.blocks.take_block(index - 1)?)
+                }
+                _ => CursorChunk::End,
+            };
+            self.current = Some(chunk);
         }
-        let chunk = match self.chunk_index {
-            0 => Some(self.volume_header),
-            index if index - 1 < self.blocks.len() => Some(self.blocks.wait_block(index - 1)?),
-            _ => None,
-        };
-        self.current = chunk;
-        Ok(chunk)
+        Ok(!matches!(self.current, Some(CursorChunk::End)))
     }
 
     fn advance_chunk(&mut self) {
+        if let Some(CursorChunk::Block(buffer)) = self.current.take() {
+            recycle_bzip_buffer(buffer);
+        }
         self.chunk_index += 1;
         self.chunk_offset = 0;
-        self.current = None;
     }
 
-    fn skip_empty_chunks(&mut self) -> Result<()> {
-        while let Some(chunk) = self.current_chunk()? {
-            if self.chunk_offset < chunk.len() {
-                break;
+    /// Advance past exhausted chunks. Returns `true` when a chunk with unread
+    /// bytes is loaded, `false` at the end of the block stream.
+    fn skip_empty_chunks(&mut self) -> Result<bool> {
+        while self.load_current()? {
+            if self.chunk_offset < cursor_chunk_bytes(&self.current).len() {
+                return Ok(true);
             }
             self.advance_chunk();
         }
-        Ok(())
+        Ok(false)
     }
 
     fn read_exact_into(
@@ -962,16 +1245,15 @@ impl<'a> BzipBlockCursor<'a> {
     ) -> Result<()> {
         let mut written = 0;
         while !output.is_empty() {
-            self.skip_empty_chunks()?;
-            let Some(chunk) = self.current_chunk()? else {
+            if !self.skip_empty_chunks()? {
                 return Err(NexradError::Truncated {
                     what,
                     offset,
                     needed: written + output.len(),
                     available: written,
                 });
-            };
-            let available = &chunk[self.chunk_offset..];
+            }
+            let available = &cursor_chunk_bytes(&self.current)[self.chunk_offset..];
             let count = available.len().min(output.len());
             output[..count].copy_from_slice(&available[..count]);
             self.chunk_offset += count;
@@ -984,8 +1266,18 @@ impl<'a> BzipBlockCursor<'a> {
     }
 
     fn read_optional_prefix(&mut self, output: &mut [u8], offset: usize) -> Result<bool> {
-        self.skip_empty_chunks()?;
-        if self.current_chunk()?.is_none() {
+        // Fast path: the whole prefix lies inside the loaded chunk (nearly
+        // every record), so skip the chunk bookkeeping.
+        let start = self.chunk_offset;
+        if !output.is_empty()
+            && let Some(bytes) = cursor_chunk_bytes(&self.current).get(start..start + output.len())
+        {
+            output.copy_from_slice(bytes);
+            self.chunk_offset += output.len();
+            self.absolute_offset += output.len();
+            return Ok(true);
+        }
+        if !self.skip_empty_chunks()? {
             return Ok(false);
         }
         self.read_exact_into(output, "record prefix", offset)?;
@@ -1003,37 +1295,33 @@ impl<'a> BzipBlockCursor<'a> {
         if len == 0 {
             return Ok(&[]);
         }
-        self.skip_empty_chunks()?;
-        let Some(chunk) = self.current_chunk()? else {
+        if !self.skip_empty_chunks()? {
             return Err(NexradError::Truncated {
                 what,
                 offset,
                 needed: len,
                 available: 0,
             });
-        };
-        if self.chunk_offset + len <= chunk.len() {
-            let start = self.chunk_offset;
+        }
+        let start = self.chunk_offset;
+        if start + len <= cursor_chunk_bytes(&self.current).len() {
             self.chunk_offset += len;
             self.absolute_offset += len;
-            return Ok(&chunk[start..start + len]);
+            return Ok(&cursor_chunk_bytes(&self.current)[start..start + len]);
         }
 
-        if scratch.capacity() < len {
-            scratch.reserve_exact(len - scratch.capacity());
-        }
+        scratch.reserve_exact(len);
         let mut remaining = len;
         while remaining > 0 {
-            self.skip_empty_chunks()?;
-            let Some(chunk) = self.current_chunk()? else {
+            if !self.skip_empty_chunks()? {
                 return Err(NexradError::Truncated {
                     what,
                     offset,
                     needed: len,
                     available: scratch.len(),
                 });
-            };
-            let available = &chunk[self.chunk_offset..];
+            }
+            let available = &cursor_chunk_bytes(&self.current)[self.chunk_offset..];
             let count = available.len().min(remaining);
             scratch.extend_from_slice(&available[..count]);
             self.chunk_offset += count;
@@ -1044,23 +1332,37 @@ impl<'a> BzipBlockCursor<'a> {
     }
 
     fn skip_exact(&mut self, len: usize, what: &'static str, offset: usize) -> Result<()> {
+        // Fast path: the skip ends inside the loaded chunk.
+        if self.chunk_offset + len <= cursor_chunk_bytes(&self.current).len() {
+            self.chunk_offset += len;
+            self.absolute_offset += len;
+            return Ok(());
+        }
         let mut skipped = 0;
         while skipped < len {
-            self.skip_empty_chunks()?;
-            let Some(chunk) = self.current_chunk()? else {
+            if !self.skip_empty_chunks()? {
                 return Err(NexradError::Truncated {
                     what,
                     offset,
                     needed: len,
                     available: skipped,
                 });
-            };
-            let count = (len - skipped).min(chunk.len() - self.chunk_offset);
+            }
+            let count =
+                (len - skipped).min(cursor_chunk_bytes(&self.current).len() - self.chunk_offset);
             self.chunk_offset += count;
             self.absolute_offset += count;
             skipped += count;
         }
         Ok(())
+    }
+}
+
+impl Drop for BzipBlockCursor<'_> {
+    fn drop(&mut self) {
+        if let Some(CursorChunk::Block(buffer)) = self.current.take() {
+            recycle_bzip_buffer(buffer);
+        }
     }
 }
 
@@ -1080,14 +1382,16 @@ fn decode_bzip_blocks_pipelined(
     min_displayable_radials: Option<usize>,
     stop_at_preview: bool,
     on_preview: impl FnMut(&RadarVolume),
+    observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
     let slots = BlockSlots::new(blocks);
     rayon::in_place_scope(|scope| {
         // Leave one hardware thread for the parsing thread below; it also
-        // steals decompression work whenever it would otherwise wait.
+        // steals decompression work whenever it would otherwise wait. A
+        // one-thread pool spawns no worker at all: the parser decodes every
+        // block itself instead of time-slicing against a worker on one core.
         let workers = rayon::current_num_threads()
             .saturating_sub(1)
-            .max(1)
             .min(slots.len());
         for _ in 0..workers {
             scope.spawn(|_| slots.run_worker());
@@ -1098,6 +1402,7 @@ fn decode_bzip_blocks_pipelined(
             min_displayable_radials,
             stop_at_preview,
             on_preview,
+            observer,
         );
         // Stop idle claims if the parse returned early (preview-only or error).
         slots.cancel();
@@ -1111,6 +1416,7 @@ fn parse_bzip_block_volume(
     min_displayable_radials: Option<usize>,
     stop_at_preview: bool,
     mut on_preview: impl FnMut(&RadarVolume),
+    observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
     let mut preview_pending = min_displayable_radials;
     let mut cursor_reader = BzipBlockCursor::new(volume_header, blocks);
@@ -1133,6 +1439,7 @@ fn parse_bzip_block_volume(
     let mut record_index = 0usize;
     let mut prefix = [0; CONTROL_WORD_LEN + MESSAGE_HEADER_LEN];
     let mut body_buffer = Vec::with_capacity(RECORD_BYTES);
+    let mut budget = DecodeBudget::volume();
     loop {
         match cursor_reader.read_optional_prefix(&mut prefix, cursor) {
             Ok(true) => {}
@@ -1164,7 +1471,7 @@ fn parse_bzip_block_volume(
             break;
         }
 
-        let message_total_len = usize::from(header.size_halfwords) * 2;
+        let (message_total_len, variable_framing) = message_framing(&header);
         if message_total_len < MESSAGE_HEADER_LEN {
             return Err(NexradError::InvalidMessage {
                 offset: header_offset,
@@ -1172,7 +1479,9 @@ fn parse_bzip_block_volume(
             });
         }
 
-        let record_len = if record_index < 134 || header.message_type != 31 {
+        let record_len = if variable_framing {
+            message_total_len + CONTROL_WORD_LEN
+        } else if record_index < 134 || header.message_type != 31 {
             RECORD_BYTES
         } else {
             message_total_len + CONTROL_WORD_LEN
@@ -1197,7 +1506,7 @@ fn parse_bzip_block_volume(
                         return Err(err);
                     }
                 };
-                parse_message_1(body, &header, &mut volume)?;
+                parse_message_1(body, &header, &mut volume, &mut budget)?;
                 if let Some(min_radials) = preview_pending
                     && has_complete_displayable_cut(&volume, min_radials)
                 {
@@ -1232,7 +1541,8 @@ fn parse_bzip_block_volume(
                         return Err(err);
                     }
                 };
-                parse_message_31(body, &header, &mut volume)?;
+                parse_message_31(body, &header, &mut volume, &mut budget)?;
+                observer.message_31(body, &volume);
                 if let Some(min_radials) = preview_pending
                     && has_complete_displayable_cut(&volume, min_radials)
                 {
@@ -1330,7 +1640,8 @@ fn try_decode_bzip_blocks(raw: &[u8]) -> Result<Option<Vec<u8>>> {
     })?;
     output.extend_from_slice(&raw[..VOLUME_HEADER_LEN]);
     for block in decoded_blocks {
-        output.extend(block);
+        output.extend_from_slice(&block);
+        recycle_bzip_buffer(block);
     }
 
     Ok(Some(output))
@@ -1345,12 +1656,17 @@ fn try_decompress_bzip_blocks(raw: &[u8]) -> Result<Option<Vec<Vec<u8>>>> {
     let decoded_blocks = blocks
         .par_iter()
         .map(|compressed| {
-            let decoded = decompress_bzip_block(compressed)?;
+            let mut decoded = take_bzip_buffer();
+            if let Err(err) = decompress_bzip_block_into(compressed, &mut decoded) {
+                recycle_bzip_buffer(decoded);
+                return Err(err);
+            }
             if !reserve_atomic_budget(
                 &decoded_bytes,
                 decoded.len(),
                 MAX_DECODED_RADAR_BYTES,
             ) {
+                recycle_bzip_buffer(decoded);
                 return Err(NexradError::Compression(format!(
                     "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
                 )));
@@ -1411,12 +1727,82 @@ fn collect_bzip_block_slices(raw: &[u8]) -> Result<Option<Vec<&[u8]>>> {
     Ok(Some(blocks))
 }
 
-fn decompress_bzip_block(compressed: &[u8]) -> Result<Vec<u8>> {
-    read_to_end_limited(
-        BzDecoder::new(Cursor::new(compressed)),
+thread_local! {
+    /// Per-thread bzip2 decoder: its block work buffers (about 7 MiB of
+    /// address space, resident as far as the largest block touched them) are
+    /// reused across every LDM record and whole-file stream this thread
+    /// decodes.
+    static BZIP2_DECODER: RefCell<recast_radar_bzip2::Decoder> =
+        RefCell::new(recast_radar_bzip2::Decoder::new());
+}
+
+/// Wrap a decoder error for `context`. The output limit keeps the wording of
+/// `bounded_read::read_to_end_limited`, which this path used before.
+fn bzip2_error(err: recast_radar_bzip2::Error, limit: usize, context: &'static str) -> NexradError {
+    NexradError::Compression(match err {
+        recast_radar_bzip2::Error::OutputLimit => {
+            format!("{context} expands beyond the {limit}-byte limit")
+        }
+        other => format!("{context}: {other}"),
+    })
+}
+
+/// Decode one bzip2 stream (`BZh1`..`BZh9` header through the end-of-stream
+/// marker) with this thread's decoder and append it to `output`. Block CRCs
+/// and the combined stream CRC are verified; bytes after the end-of-stream
+/// marker are ignored. At most `limit` bytes are appended: the limit is
+/// checked against each block's exact decoded size before that block's
+/// output is allocated, and on any error `output` is back at its original
+/// length.
+fn decompress_bzip2_stream_into(
+    compressed: &[u8],
+    output: &mut Vec<u8>,
+    limit: usize,
+    context: &'static str,
+) -> Result<()> {
+    BZIP2_DECODER.with(|decoder| {
+        let mut decoder = decoder.borrow_mut();
+        decoder.set_max_output(limit);
+        decoder
+            .decode_stream_into(compressed, output)
+            .map_err(|err| bzip2_error(err, limit, context))
+    })
+}
+
+/// Decode one LDM block-bzip record (a complete bzip2 stream) into `output`,
+/// replacing its contents but keeping its capacity.
+fn decompress_bzip_block_into(compressed: &[u8], output: &mut Vec<u8>) -> Result<()> {
+    output.clear();
+    decompress_bzip2_stream_into(
+        compressed,
+        output,
         MAX_BZIP_BLOCK_DECODED_BYTES,
         "block-bzip chunk",
     )
+}
+
+/// Two LDM records decoded in lockstep on this thread, each into its own
+/// buffer (contents replaced, capacity kept). The results are independent:
+/// a corrupt record does not affect the other.
+#[cfg(feature = "paired-bzip2")]
+fn decompress_bzip_block_pair_into(
+    first: &[u8],
+    first_output: &mut Vec<u8>,
+    second: &[u8],
+    second_output: &mut Vec<u8>,
+) -> (Result<()>, Result<()>) {
+    first_output.clear();
+    second_output.clear();
+    BZIP2_DECODER.with(|decoder| {
+        let mut decoder = decoder.borrow_mut();
+        decoder.set_max_output(MAX_BZIP_BLOCK_DECODED_BYTES);
+        let (first_result, second_result) =
+            decoder.decode_two_into(first, first_output, second, second_output);
+        let wrap = |result: std::result::Result<(), recast_radar_bzip2::Error>| {
+            result.map_err(|err| bzip2_error(err, MAX_BZIP_BLOCK_DECODED_BYTES, "block-bzip chunk"))
+        };
+        (wrap(first_result), wrap(second_result))
+    })
 }
 
 fn reserve_atomic_budget(total: &AtomicUsize, additional: usize, limit: usize) -> bool {
@@ -1429,8 +1815,23 @@ fn reserve_atomic_budget(total: &AtomicUsize, additional: usize, limit: usize) -
         .is_ok()
 }
 
+/// True when `bytes` start with an Archive II volume header tape name:
+/// `AR2V` (Build 5 on, 2004) or `ARCHIVE2` (1991-2003).
+pub(crate) fn starts_with_volume_header(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"AR2V") || bytes.starts_with(b"ARCHIVE2")
+}
+
+/// Parse the 24-byte volume header. Bytes that do not start with `AR2V` or
+/// `ARCHIVE2` are [`NexradError::MissingVolumeHeader`]: the volume decoders
+/// never treat headerless bytes (a model-data file, an intermediate
+/// real-time chunk, compressed data) as a header followed by records.
 fn parse_volume_header(bytes: &[u8]) -> Result<VolumeHeader> {
     require_len(bytes, 0, VOLUME_HEADER_LEN, "volume header")?;
+    if !starts_with_volume_header(bytes) {
+        return Err(NexradError::MissingVolumeHeader {
+            found: bytes[..8].escape_ascii().to_string(),
+        });
+    }
     let tape = ascii_trim(&bytes[0..9]);
     let extension = ascii_trim(&bytes[9..12]);
     let date = u32_at(bytes, 12)?;
@@ -1442,6 +1843,21 @@ fn parse_volume_header(bytes: &[u8]) -> Result<VolumeHeader> {
         volume_time: nexrad_date_ms_to_datetime(date, milliseconds),
         icao,
     })
+}
+
+/// Framing of one message in the volume decoders: the message length from
+/// its header (Table II: the size halfwords, or the byte count in the segment
+/// fields when the size is the 0xFFFF sentinel, notes 6 and 7) and whether
+/// the message has its own variable-length record instead of a fixed
+/// 2432-byte frame. Message 29 (model data) and every extended-size message
+/// are variable length, like the walker treats them; message 31 framing is
+/// decided by the caller (fixed inside the metadata record, variable after
+/// it). Without this, a message 29 was skipped as one 2432-byte frame and
+/// its remaining bytes were parsed as message headers and radials.
+fn message_framing(header: &MessageHeader) -> (usize, bool) {
+    let total_len = header.message_len();
+    let variable = header.has_extended_size() || header.message_type == 29;
+    (total_len, variable)
 }
 
 pub fn parse_message_header(bytes: &[u8], offset: usize) -> Result<MessageHeader> {
@@ -1478,6 +1894,7 @@ fn parse_message_1(
     body: &[u8],
     _message_header: &MessageHeader,
     volume: &mut RadarVolume,
+    budget: &mut DecodeBudget,
 ) -> Result<()> {
     require_len(body, 0, MSG_1_HEADER_LEN, "message 1 header")?;
 
@@ -1527,6 +1944,13 @@ fn parse_message_1(
         volume.metadata.skipped_message_count += 1;
         return Ok(());
     }
+    for row in [reflectivity_row, velocity_row, spectrum_width_row]
+        .into_iter()
+        .flatten()
+    {
+        bounded_read::check_gate_count(row.len(), "message 1 moment")
+            .map_err(NexradError::LimitExceeded)?;
+    }
 
     let gate_range = if reflectivity_row.is_some() {
         reflectivity_range.clone()
@@ -1542,30 +1966,7 @@ fn parse_message_1(
         radial_status: Some(radial_status),
     };
 
-    let starts_elevation = matches!(
-        radial_status,
-        RadialStatus::StartElevation
-            | RadialStatus::StartVolume
-            | RadialStatus::StartElevationLastCut
-    );
-    let last_cut_has_radials = volume
-        .cuts
-        .last()
-        .is_some_and(|cut| !cut.radials.is_empty());
-    let last_cut_matches = volume.cuts.last().is_some_and(|cut| {
-        cut.elevation_number == Some(elevation_number)
-            || (cut.elevation_deg - elevation_angle).abs() <= 0.05
-    });
-    let cut = if starts_elevation && last_cut_has_radials {
-        volume.push_cut(elevation_angle, Some(elevation_number))
-    } else if last_cut_matches {
-        volume
-            .cuts
-            .last_mut()
-            .expect("last cut existence was checked before borrowing")
-    } else {
-        volume.find_or_insert_cut(elevation_angle, Some(elevation_number))
-    };
+    let cut = cut_for_radial(volume, radial_status, elevation_angle, elevation_number)?;
     if cut.radials.is_empty() {
         cut.radials.reserve(ONE_DEGREE_RADIALS_PER_CUT);
     }
@@ -1580,8 +1981,9 @@ fn parse_message_1(
             2.0,
             66.0,
             ONE_DEGREE_RADIALS_PER_CUT,
-        );
-        grid.push_u8_row_slice(radial_index, row)?;
+            budget,
+        )?;
+        push_moment_row(grid, radial_index, MomentPayload::U8(row), budget)?;
     }
     if let Some(row) = velocity_row {
         let grid = legacy_u8_grid(
@@ -1591,8 +1993,9 @@ fn parse_message_1(
             legacy_message_1_velocity_scale(velocity_resolution),
             129.0,
             ONE_DEGREE_RADIALS_PER_CUT,
-        );
-        grid.push_u8_row_slice(radial_index, row)?;
+            budget,
+        )?;
+        push_moment_row(grid, radial_index, MomentPayload::U8(row), budget)?;
     }
     if let Some(row) = spectrum_width_row {
         // ICD 2620002 message 1 encodes SW like velocity at 0.5 m/s resolution:
@@ -1604,37 +2007,153 @@ fn parse_message_1(
             2.0,
             129.0,
             ONE_DEGREE_RADIALS_PER_CUT,
-        );
-        grid.push_u8_row_slice(radial_index, row)?;
+            budget,
+        )?;
+        push_moment_row(grid, radial_index, MomentPayload::U8(row), budget)?;
     }
 
     volume.metadata.decoded_radial_count += 1;
     Ok(())
 }
 
-fn legacy_u8_grid(
-    cut: &mut recast_radar_core::ElevationCut,
+fn legacy_u8_grid<'c>(
+    cut: &'c mut ElevationCut,
     moment: MomentType,
     gate_range: GateRange,
     scale: f32,
     offset: f32,
     expected_radials: usize,
-) -> &mut MomentGrid {
-    match cut.moments.entry(moment) {
+    budget: &mut DecodeBudget,
+) -> Result<&'c mut MomentGrid> {
+    Ok(match cut.moments.entry(moment) {
         Entry::Occupied(entry) => entry.into_mut(),
         Entry::Vacant(entry) => {
-            let mut grid = MomentGrid::new_u8(
+            let grid = new_moment_grid(
                 entry.key().clone(),
                 gate_range,
                 scale,
                 offset,
-                Some(0),
-                Some(1),
-            );
-            grid.reserve_rows(expected_radials);
+                false,
+                expected_radials,
+                budget,
+            )?;
             entry.insert(grid)
         }
+    })
+}
+
+/// Select the cut a radial belongs to: a new cut when the radial starts an
+/// elevation after the last cut already holds radials, the last cut when it
+/// matches, and otherwise the most recent matching cut (created if none).
+/// Errors rather than creating a cut beyond [`MAX_SWEEPS_PER_VOLUME`].
+fn cut_for_radial(
+    volume: &mut RadarVolume,
+    radial_status: RadialStatus,
+    elevation_angle: f32,
+    elevation_number: u8,
+) -> Result<&mut ElevationCut> {
+    let matches_cut = |cut: &ElevationCut| {
+        cut.elevation_number == Some(elevation_number)
+            || (cut.elevation_deg - elevation_angle).abs() <= CUT_ELEVATION_MATCH_TOLERANCE_DEG
+    };
+    let starts_elevation = matches!(
+        radial_status,
+        RadialStatus::StartElevation
+            | RadialStatus::StartVolume
+            | RadialStatus::StartElevationLastCut
+    );
+    let last_cut_has_radials = volume
+        .cuts
+        .last()
+        .is_some_and(|cut| !cut.radials.is_empty());
+    let push_new_cut = starts_elevation && last_cut_has_radials;
+    if !push_new_cut && volume.cuts.last().is_some_and(matches_cut) {
+        return volume
+            .cuts
+            .last_mut()
+            .ok_or_else(|| NexradError::InvalidMessage {
+                offset: 0,
+                reason: "matching last cut vanished".to_owned(),
+            });
     }
+    if volume.cuts.len() >= MAX_SWEEPS_PER_VOLUME
+        && (push_new_cut || !volume.cuts.iter().any(matches_cut))
+    {
+        return Err(NexradError::LimitExceeded(format!(
+            "Level II volume starts more than {MAX_SWEEPS_PER_VOLUME} elevation cuts"
+        )));
+    }
+    Ok(if push_new_cut {
+        volume.push_cut(elevation_angle, Some(elevation_number))
+    } else {
+        volume.find_or_insert_cut(elevation_angle, Some(elevation_number))
+    })
+}
+
+/// Create a moment grid with room for `expected_radials` rows, checking the
+/// reservation against `budget` before allocating and charging it after.
+fn new_moment_grid(
+    moment: MomentType,
+    gate_range: GateRange,
+    scale: f32,
+    offset: f32,
+    sixteen_bit: bool,
+    expected_radials: usize,
+    budget: &mut DecodeBudget,
+) -> Result<MomentGrid> {
+    let word_bytes = if sixteen_bit { 2 } else { 1 };
+    let reservation = expected_radials
+        .saturating_mul(gate_range.gate_count.saturating_mul(word_bytes))
+        .saturating_add(expected_radials.saturating_mul(size_of::<usize>()));
+    budget
+        .check(reservation, "Level II moment grid")
+        .map_err(NexradError::LimitExceeded)?;
+    let mut grid = if sixteen_bit {
+        MomentGrid::new_u16(moment, gate_range, scale, offset, Some(0), Some(1))
+    } else {
+        MomentGrid::new_u8(moment, gate_range, scale, offset, Some(0), Some(1))
+    };
+    grid.reserve_rows(expected_radials);
+    budget
+        .charge(moment_grid_capacity_bytes(&grid), 1, "Level II moment grid")
+        .map_err(NexradError::LimitExceeded)?;
+    Ok(grid)
+}
+
+/// Append one row to `grid`, checking the growth it needs against `budget`
+/// before the push and recording the grid's new allocated size after it.
+fn push_moment_row(
+    grid: &mut MomentGrid,
+    radial_index: usize,
+    row: MomentPayload<'_>,
+    budget: &mut DecodeBudget,
+) -> Result<()> {
+    let before = moment_grid_capacity_bytes(grid);
+    let (row_gates, word_bytes) = match row {
+        MomentPayload::U8(bytes) => (bytes.len(), 1),
+        MomentPayload::U16(bytes) => (bytes.len() / 2, 2),
+    };
+    let rows = grid.radial_count().saturating_add(1);
+    let needed = rows
+        .saturating_mul(grid.gate_range.gate_count.max(row_gates))
+        .saturating_mul(word_bytes)
+        .saturating_add(rows.saturating_mul(size_of::<usize>()));
+    if needed > before {
+        budget
+            .check(needed - before, "Level II moment grid")
+            .map_err(NexradError::LimitExceeded)?;
+    }
+    match row {
+        MomentPayload::U8(bytes) => grid.push_u8_row_slice(radial_index, bytes)?,
+        MomentPayload::U16(bytes) => grid.push_u16_be_row_bytes(radial_index, bytes)?,
+    }
+    let after = moment_grid_capacity_bytes(grid);
+    if after != before {
+        budget
+            .update(before, after, "Level II moment grid")
+            .map_err(NexradError::LimitExceeded)?;
+    }
+    Ok(())
 }
 
 fn legacy_message_1_row(body: &[u8], pointer: usize, gate_count: usize) -> Option<&[u8]> {
@@ -1660,6 +2179,7 @@ fn parse_message_31(
     body: &[u8],
     _message_header: &MessageHeader,
     volume: &mut RadarVolume,
+    budget: &mut DecodeBudget,
 ) -> Result<()> {
     let header = parse_message_31_header(body, 0)?;
     let expected_radials = expected_radials_for_azimuth_resolution(header.azimuth_resolution);
@@ -1723,81 +2243,97 @@ fn parse_message_31(
         radial_status: Some(header.radial_status),
     };
 
-    let starts_elevation = matches!(
+    let cut = cut_for_radial(
+        volume,
         header.radial_status,
-        RadialStatus::StartElevation
-            | RadialStatus::StartVolume
-            | RadialStatus::StartElevationLastCut
-    );
-    let last_cut_has_radials = volume
-        .cuts
-        .last()
-        .is_some_and(|cut| !cut.radials.is_empty());
-    let last_cut_matches = volume.cuts.last().is_some_and(|cut| {
-        cut.elevation_number == Some(header.elevation_number)
-            || (cut.elevation_deg - header.elevation_angle).abs() <= 0.05
-    });
-    let cut = if starts_elevation && last_cut_has_radials {
-        volume.push_cut(header.elevation_angle, Some(header.elevation_number))
-    } else if last_cut_matches {
-        volume
-            .cuts
-            .last_mut()
-            .expect("last cut existence was checked before borrowing")
-    } else {
-        volume.find_or_insert_cut(header.elevation_angle, Some(header.elevation_number))
-    };
+        header.elevation_angle,
+        header.elevation_number,
+    )?;
     if cut.radials.is_empty() {
         cut.radials.reserve(expected_radials);
     }
     let radial_index = cut.radials.len();
     cut.radials.push(radial);
 
-    for moment in moments.into_iter().take(moment_count).flatten() {
-        let MomentBlock {
-            moment,
-            gate_range,
-            scale,
-            offset,
-            row,
-        } = moment;
-        let grid = match cut.moments.entry(moment) {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => match &row {
-                MomentPayload::U8(_) => {
-                    let mut grid = MomentGrid::new_u8(
-                        entry.key().clone(),
-                        gate_range.clone(),
-                        scale,
-                        offset,
-                        Some(0),
-                        Some(1),
-                    );
-                    grid.reserve_rows(expected_radials);
-                    entry.insert(grid)
-                }
-                MomentPayload::U16(_) => {
-                    let mut grid = MomentGrid::new_u16(
-                        entry.key().clone(),
-                        gate_range.clone(),
-                        scale,
-                        offset,
-                        Some(0),
-                        Some(1),
-                    );
-                    grid.reserve_rows(expected_radials);
-                    entry.insert(grid)
-                }
-            },
-        };
-        match row {
-            MomentPayload::U8(row) => grid.push_u8_row_slice(radial_index, row)?,
-            MomentPayload::U16(row) => grid.push_u16_be_row_bytes(radial_index, row)?,
-        }
+    // Iterate by reference: moving the whole `[Option<MomentBlock>; 10]`
+    // array into an iterator copied it for every radial.
+    for moment in moments[..moment_count].iter().flatten() {
+        let grid = moment_grid_for_block(&mut cut.moments, moment, expected_radials, budget)?;
+        push_moment_row(grid, radial_index, moment.row, budget)?;
     }
 
     volume.metadata.decoded_radial_count += 1;
     Ok(())
+}
+
+/// Find or create the grid for a moment block in a cut.
+///
+/// `MomentType::from_nexrad_bytes` allocates a `String` for every name it
+/// does not know (the `CFP` block of every modern radial, for example), so
+/// an existing `Unknown` grid is looked up by name first and the key is
+/// built only when a grid has to be inserted.
+fn moment_grid_for_block<'m>(
+    grids: &'m mut BTreeMap<MomentType, MomentGrid>,
+    moment: &MomentBlock<'_>,
+    expected_radials: usize,
+    budget: &mut DecodeBudget,
+) -> Result<&'m mut MomentGrid> {
+    let trimmed = trim_nexrad_moment_name(moment.name);
+    if !matches!(
+        trimmed,
+        b"REF" | b"VEL" | b"SW" | b"ZDR" | b"RHO" | b"PHI" | b"KDP"
+    ) {
+        // The key `from_nexrad_bytes` builds for a name outside its known
+        // set is `Unknown(lossy UTF-8 of the trimmed name)`; borrowed here
+        // when the name is valid UTF-8, so no allocation.
+        let name = String::from_utf8_lossy(trimmed);
+        let is_named =
+            |key: &MomentType| matches!(key, MomentType::Unknown(existing) if *existing == name);
+        // `Unknown` sorts after every known variant and `""` is the smallest
+        // string, so this range covers exactly the `Unknown` keys.
+        let unknown_keys = MomentType::Unknown(String::new());
+        if grids.range(&unknown_keys..).any(|(key, _)| is_named(key)) {
+            debug_assert_eq!(
+                MomentType::from_nexrad_bytes(moment.name),
+                MomentType::Unknown(name.clone().into_owned())
+            );
+            // Two walks over the (one or two) `Unknown` keys: the borrow
+            // checker cannot yet pair a conditional `range_mut` return with
+            // the insert below (NLL problem case 3), so the existence check
+            // comes first and this lookup cannot fail.
+            return Ok(grids
+                .range_mut(unknown_keys..)
+                .find_map(|(key, grid)| is_named(key).then_some(grid))
+                .unwrap_or_else(|| unreachable!("the grid named {name:?} was found just above")));
+        }
+    }
+
+    match grids.entry(MomentType::from_nexrad_bytes(moment.name)) {
+        Entry::Occupied(entry) => Ok(entry.into_mut()),
+        Entry::Vacant(entry) => {
+            let grid = new_moment_grid(
+                entry.key().clone(),
+                moment.gate_range.clone(),
+                moment.scale,
+                moment.offset,
+                matches!(moment.row, MomentPayload::U16(_)),
+                expected_radials,
+                budget,
+            )?;
+            Ok(entry.insert(grid))
+        }
+    }
+}
+
+/// The trimming `MomentType::from_nexrad_bytes` applies before matching names.
+fn trim_nexrad_moment_name(mut bytes: &[u8]) -> &[u8] {
+    while let [0 | b' ' | b'\t' | b'\r' | b'\n', rest @ ..] = bytes {
+        bytes = rest;
+    }
+    while let [rest @ .., 0 | b' ' | b'\t' | b'\r' | b'\n'] = bytes {
+        bytes = rest;
+    }
+    bytes
 }
 
 fn expected_radials_for_azimuth_resolution(azimuth_resolution: u8) -> usize {
@@ -1815,18 +2351,34 @@ fn volume_needs_constant_block(volume: &RadarVolume) -> bool {
         || volume.vcp.is_none()
 }
 
+impl Message31Header {
+    /// The radar identifier: the message 31 identifier with spaces and NULs
+    /// trimmed, or, when that is blank, `volume_header_icao` trimmed (which
+    /// may be empty too).
+    pub fn radar_identifier_or(&self, volume_header_icao: &str) -> String {
+        radar_identifier_or(&self.radar_identifier, volume_header_icao)
+    }
+}
+
+/// A message 31 radar identifier, falling back to the volume header ICAO when
+/// the identifier is blank (spaces or NULs), and then to the empty string.
+pub(crate) fn radar_identifier_or(identifier: &[u8; 4], volume_header_icao: &str) -> String {
+    let identifier = ascii_trim(identifier);
+    if identifier.is_empty() {
+        volume_header_icao
+            .trim_matches(|c: char| c == '\0' || c.is_whitespace())
+            .to_owned()
+    } else {
+        identifier
+    }
+}
+
+/// Parse the Data Header Block of a message 31 body. A blank radar
+/// identifier (spaces or NULs) is accepted: real files have one (KVWX
+/// 2008-04-15), and MetPy and Py-ART read them.
 pub fn parse_message_31_header(bytes: &[u8], offset: usize) -> Result<Message31Header> {
     require_len(bytes, offset, MSG_31_HEADER_LEN, "message 31 header")?;
     let bytes = &bytes[offset..offset + MSG_31_HEADER_LEN];
-    if bytes[..4]
-        .iter()
-        .all(|byte| *byte == 0 || byte.is_ascii_whitespace())
-    {
-        return Err(NexradError::InvalidMessage {
-            offset,
-            reason: "empty message 31 id".to_owned(),
-        });
-    }
 
     let mut block_pointers = [0; 10];
     for (index, pointer) in block_pointers.iter_mut().enumerate() {
@@ -1834,6 +2386,7 @@ pub fn parse_message_31_header(bytes: &[u8], offset: usize) -> Result<Message31H
     }
 
     Ok(Message31Header {
+        radar_identifier: [bytes[0], bytes[1], bytes[2], bytes[3]],
         collect_ms: be_u32(bytes, 4),
         collect_date: be_u16(bytes, 8),
         azimuth_number: be_u16(bytes, 10),
@@ -1893,8 +2446,10 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
         "generic moment block",
     )?;
     let header = &bytes[offset..offset + GENERIC_DATA_BLOCK_LEN];
-    let moment = MomentType::from_nexrad_bytes(&header[1..4]);
+    let name = &header[1..4];
     let gate_count = usize::from(be_u16(header, 8));
+    bounded_read::check_gate_count(gate_count, "message 31 moment block")
+        .map_err(NexradError::LimitExceeded)?;
     let first_gate_m = i32::from(be_i16(header, 10));
     let gate_spacing_m = i32::from(be_i16(header, 12));
     let word_size = header[19];
@@ -1908,12 +2463,15 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
             MomentPayload::U8(&bytes[data_offset..data_offset + gate_count])
         }
         16 => {
-            let byte_count = gate_count
-                .checked_mul(2)
-                .ok_or(NexradError::InvalidMessage {
-                    offset,
-                    reason: "16-bit moment gate count overflow".to_owned(),
-                })?;
+            // `ok_or_else`: `ok_or` built this error's `String` for every
+            // 16-bit block of every radial.
+            let byte_count =
+                gate_count
+                    .checked_mul(2)
+                    .ok_or_else(|| NexradError::InvalidMessage {
+                        offset,
+                        reason: "16-bit moment gate count overflow".to_owned(),
+                    })?;
             require_len(bytes, data_offset, byte_count, "16-bit moment gates")?;
             MomentPayload::U16(&bytes[data_offset..data_offset + byte_count])
         }
@@ -1926,7 +2484,7 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
     };
 
     Ok(MomentBlock {
-        moment,
+        name,
         gate_range: GateRange {
             first_gate_m,
             gate_spacing_m,
@@ -2027,6 +2585,7 @@ mod tests {
     //! use, and their tests are skipped when that is not possible.
 
     use super::*;
+    use bzip2::read::BzDecoder;
     use recast_radar_core::{ElevationCut, MomentStorage};
     use serde_json::Value;
     use std::collections::BTreeSet;
@@ -2051,6 +2610,7 @@ mod tests {
     /// first intermediate chunk (the first 120 radials of a 720-radial cut).
     const KIWA_CHUNK_START: &str = "l2chunk-kiwa-307-20260917-003629-001-s";
     const KIWA_CHUNK_002: &str = "l2chunk-kiwa-307-20260917-003629-002-i";
+    const KIWA_CHUNK_003: &str = "l2chunk-kiwa-307-20260917-003629-003-i";
     const KIWA_CHUNKS_GOLDEN: &str = "l2chunk-kiwa-307-20260917-003629-001-s+002-i";
 
     // ------------------------------------------------------------ inputs ---
@@ -3086,6 +3646,185 @@ mod tests {
             Err(NexradError::Compression(_))
         ));
         assert!(decode_bzip_block_preview_from_bytes(&corrupt, 1).is_err());
+    }
+
+    #[test]
+    fn corrupt_bzip_block_error_names_the_record_path() {
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        // The metadata record's bzip2 data zeroed after its stream and block
+        // magic, decoded on its own: the error names the record path.
+        let (_, block) = ldm_records(&file)[0];
+        let mut bad = block.to_vec();
+        bad[8..].fill(0);
+        let mut decoded = Vec::new();
+        let error = decompress_bzip_block_into(&bad, &mut decoded).unwrap_err();
+        assert!(
+            matches!(&error, NexradError::Compression(reason) if reason.starts_with("block-bzip chunk: bzip2:")),
+            "unexpected error: {error}"
+        );
+        assert!(decoded.is_empty(), "output restored on error");
+    }
+
+    #[test]
+    fn whole_file_bzip2_archive_decodes_like_the_uncompressed_bytes() {
+        // No corpus file is a whole-file bzip2 stream; the KTLX 2013 trim's
+        // decompressed bytes (header, metadata and radial messages) wrapped
+        // in one bzip2 stream stand in for one.
+        let Some(file) = corpus_bytes(KTLX_2013_TRIM) else {
+            return;
+        };
+        let (bytes, _) = normalize_archive_bytes(&file).unwrap();
+        let compressed = bzip2_compress(&bytes);
+        assert!(compressed.starts_with(b"BZh"));
+
+        let (normalized, compression) = normalize_archive_bytes(&compressed).unwrap();
+        assert_eq!(compression, ArchiveCompression::Bzip2WholeFile);
+        assert_eq!(normalized, bytes);
+
+        let mut expected = decode_volume_from_bytes(&bytes).unwrap();
+        assert_eq!(
+            expected.metadata.compression.as_deref(),
+            Some("uncompressed")
+        );
+        expected.metadata.compression = Some("bzip2-whole-file".to_owned());
+        let volume = decode_volume_from_bytes(&compressed).unwrap();
+        assert_eq!(volume, expected);
+        assert_volume_matches_golden(&volume, &golden(KTLX_2013_TRIM));
+
+        // Bytes after the end-of-stream marker are ignored, as before.
+        let mut trailing = compressed.clone();
+        trailing.extend_from_slice(&[0u8; 64]);
+        assert_eq!(decode_volume_from_bytes(&trailing).unwrap(), expected);
+    }
+
+    #[test]
+    fn bzip2_stream_output_limit_is_exact_and_restores_the_buffer() {
+        // The KTLX 2024 trim's first radial record: a real LDM bzip2 stream
+        // whose decoded size is the exact limit.
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let (_, compressed) = ldm_records(&file)[1];
+        let payload = bzip2_decompress(compressed);
+        assert!(
+            payload.len() > 100_000,
+            "real record: {} bytes",
+            payload.len()
+        );
+        let context = "limit test";
+
+        let mut output = b"kept".to_vec();
+        decompress_bzip2_stream_into(compressed, &mut output, payload.len(), context).unwrap();
+        assert_eq!(&output[..4], b"kept");
+        assert_eq!(&output[4..], &payload[..]);
+
+        let mut output = b"kept".to_vec();
+        let error =
+            decompress_bzip2_stream_into(compressed, &mut output, payload.len() - 1, context)
+                .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "unsupported or corrupt compression wrapper: {context} expands beyond the {}-byte limit",
+                payload.len() - 1
+            )
+        );
+        assert_eq!(output, b"kept", "output restored to its original length");
+    }
+
+    #[test]
+    fn oversized_bzip_block_is_rejected_at_the_per_block_limit() {
+        // A real radial record's decoded bytes repeated past the 16 MiB block
+        // cap and recompressed: the record's own messages, only more of them.
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let radials = bzip2_decompress(ldm_records(&file)[1].1);
+        let mut payload = Vec::with_capacity(MAX_BZIP_BLOCK_DECODED_BYTES + radials.len());
+        while payload.len() <= MAX_BZIP_BLOCK_DECODED_BYTES {
+            payload.extend_from_slice(&radials);
+        }
+        let compressed = bzip2_compress(&payload);
+        let mut decoded = Vec::new();
+        let error = decompress_bzip_block_into(&compressed, &mut decoded).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "unsupported or corrupt compression wrapper: block-bzip chunk expands beyond the {MAX_BZIP_BLOCK_DECODED_BYTES}-byte limit"
+            )
+        );
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn bzip_buffer_pool_keeps_only_block_sized_buffers() {
+        // Too small and too large buffers are dropped, never pooled. The pool
+        // is process-wide and other tests use it concurrently, so only the
+        // invariants are checked, not the exact contents.
+        recycle_bzip_buffer(Vec::with_capacity(BZIP_BUFFER_POOL_MIN_CAPACITY - 1));
+        recycle_bzip_buffer(Vec::with_capacity(BZIP_BUFFER_POOL_MAX_CAPACITY + 1));
+        recycle_bzip_buffer(Vec::with_capacity(BZIP_BUFFER_POOL_MIN_CAPACITY));
+        {
+            let pool = BZIP_BUFFER_POOL.lock().unwrap();
+            assert!(pool.buffers.len() <= BZIP_BUFFER_POOL_MAX_BUFFERS);
+            assert!(pool.retained_bytes <= BZIP_BUFFER_POOL_MAX_BYTES);
+            assert_eq!(
+                pool.retained_bytes,
+                pool.buffers.iter().map(Vec::capacity).sum::<usize>()
+            );
+            for buffer in &pool.buffers {
+                assert!(buffer.is_empty());
+                assert!(
+                    (BZIP_BUFFER_POOL_MIN_CAPACITY..=BZIP_BUFFER_POOL_MAX_CAPACITY)
+                        .contains(&buffer.capacity())
+                );
+            }
+        }
+        let taken = take_bzip_buffer();
+        assert!(taken.is_empty());
+        assert!(taken.capacity() == 0 || taken.capacity() >= BZIP_BUFFER_POOL_MIN_CAPACITY);
+    }
+
+    /// Committed KIWA volume 307 Start chunk plus its first two intermediate
+    /// chunks, decompressed (240 real Message 31 radials).
+    fn kiwa_chunk_prefix_normalized() -> Vec<u8> {
+        let mut raw = Vec::new();
+        for id in [KIWA_CHUNK_START, KIWA_CHUNK_002, KIWA_CHUNK_003] {
+            let path = recast_radar_testdata::path(id).unwrap_or_else(|e| panic!("{e}"));
+            raw.extend(fs::read(path).expect("read committed chunk"));
+        }
+        normalize_archive_bytes(&raw)
+            .expect("real chunks decompress")
+            .0
+    }
+
+    #[test]
+    fn real_volume_exceeding_the_output_budget_is_rejected() {
+        let bytes = kiwa_chunk_prefix_normalized();
+        let volume = decode_normalized_volume_bytes_within(
+            &bytes,
+            ArchiveCompression::Bzip2Blocks,
+            DecodeBudget::volume(),
+        )
+        .expect("real chunks fit the default budget");
+        let needed = bounded_read::volume_moment_capacity_bytes(&volume);
+        assert!(
+            needed > 1024 * 1024,
+            "240 super-resolution radials: {needed}"
+        );
+
+        let error = decode_normalized_volume_bytes_within(
+            &bytes,
+            ArchiveCompression::Bzip2Blocks,
+            DecodeBudget::new(needed / 2),
+        )
+        .expect_err("half the needed budget must fail");
+        assert!(
+            matches!(&error, NexradError::LimitExceeded(reason) if reason.contains("limit")),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
