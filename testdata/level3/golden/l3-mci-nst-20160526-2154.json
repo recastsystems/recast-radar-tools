@@ -1,0 +1,1257 @@
+{
+ "id": "l3-mci-nst-20160526-2154",
+ "sha256": "c1c00e3a19c4a086e85367e9d5a0df32f24e11e077d71d352448fb34dfe6de76",
+ "size": 4836,
+ "framing": {
+  "noaaport_soh": true,
+  "noaaport_sequence": "466",
+  "wmo_heading": "SDUS33 KEAX 262154",
+  "awips_id": "NSTMCI",
+  "trailer": "noaaport-etx",
+  "zlib_frames": 4,
+  "zlib_uncompressed_bytes": 14744,
+  "ccb_bytes": 24,
+  "inner_wmo_heading": "SDUS33 KEAX 262154",
+  "inner_awips_id": "NSTMCI",
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 14690
+ },
+ "message_header": {
+  "code": 58,
+  "date": 16948,
+  "time": 78995,
+  "length": 14690,
+  "source_id": 3025,
+  "destination_id": 0,
+  "num_blocks": 5
+ },
+ "halfwords": [
+  58,
+  16948,
+  1,
+  13459,
+  0,
+  14690,
+  3025,
+  0,
+  5,
+  65535,
+  0,
+  39498,
+  65534,
+  36330,
+  1090,
+  58,
+  2,
+  80,
+  473,
+  35,
+  16948,
+  1,
+  13346,
+  16948,
+  1,
+  13458,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  44,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  256,
+  0,
+  60,
+  0,
+  2378,
+  0,
+  4117
+ ],
+ "product_code": 58,
+ "compression": {
+  "hw51": 0,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 4636,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 4620,
+     "packets": [
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      2,
+      15,
+      23,
+      2,
+      15,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      2,
+      15,
+      23,
+      2,
+      15,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15,
+      23,
+      24,
+      2,
+      15
+     ]
+    }
+   ],
+   "nested": [
+    {
+     "layer": 0,
+     "index": 2,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 3,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 6,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 7,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 10,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 11,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 14,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 15,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 18,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 19,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 22,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 25,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 26,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 29,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 30,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 33,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 34,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 39,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 40,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 43,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 44,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 47,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 50,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 51,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 54,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 55,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 58,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 59,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 62,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 63,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 66,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 67,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 70,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 71,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 76,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 81,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 82,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 85,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 86,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 89,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 90,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 93,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 94,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 97,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 98,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 101,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 102,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 105,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 106,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 109,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 110,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 115,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 120,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 121,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 124,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 127,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 128,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 131,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 132,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 135,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 136,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 139,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 140,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 145,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 146,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 149,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 150,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 153,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 154,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    }
+   ]
+  },
+  "graphic": {
+   "length": 3478,
+   "num_pages": 6,
+   "pages": [
+    {
+     "page": 1,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 2,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 3,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 4,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 5,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 6,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": {
+   "length": 6456,
+   "message_code": 101,
+   "product_code": 101,
+   "num_pages": 5,
+   "lines_per_page": [
+    16,
+    16,
+    16,
+    16,
+    13
+   ],
+   "text_sha256": "7ef76ddd637c9c8b830f8c0f3eb4eafa7a02d2d00f4cb53de1040928fb3664c1"
+  },
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  2,
+  6,
+  8,
+  10,
+  15,
+  23,
+  24
+ ],
+ "data": [],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Storm Tracking Information",
+  "max_range": 460.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 58,
+   "date": 16948,
+   "time": 78995,
+   "msg_len": 14690,
+   "src_id": 3025,
+   "dest_id": 0,
+   "num_blks": 5
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 39498,
+   "lon": -94742,
+   "height": 1090,
+   "prod_code": 58,
+   "op_mode": 2,
+   "vcp": 80,
+   "seq_num": 473,
+   "vol_num": 35,
+   "vol_date": 16948,
+   "vol_start_time": 78882,
+   "prod_gen_date": 16948,
+   "prod_gen_time": 78994,
+   "dep1": 1,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 0,
+   "thr1": 0,
+   "thr2": 0,
+   "thr3": 0,
+   "thr4": 0,
+   "thr5": 0,
+   "thr6": 0,
+   "thr7": 0,
+   "thr8": 0,
+   "thr9": 0,
+   "thr10": 0,
+   "thr11": 0,
+   "thr12": 0,
+   "thr13": 0,
+   "thr14": 0,
+   "thr15": 0,
+   "thr16": 0,
+   "dep4": 44,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": 0,
+   "dep9": 0,
+   "dep10": 0,
+   "version": 1,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 2378,
+   "tab_off": 4117
+  },
+  "thresholds": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "dep_vals": [
+   1,
+   0,
+   0,
+   44,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "metadata": {
+   "msg_time": "2016-05-26T21:56:35.000000Z",
+   "vol_time": "2016-05-26T21:54:42.000000Z",
+   "prod_time": "2016-05-26T21:56:34.000000Z",
+   "num_storms": 44
+  },
+  "sym_layer_packet_counts": [
+   157
+  ],
+  "graph_page_packet_counts": [
+   7,
+   7,
+   7,
+   7,
+   7,
+   7
+  ],
+  "tab_pages": 5,
+  "crosscheck": true
+ }
+}
