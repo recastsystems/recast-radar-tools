@@ -15,6 +15,17 @@
 //! together with its metadata messages and per-sweep message 31 constant
 //! blocks.
 //!
+//! # Compression
+//!
+//! LDM block-bzip2 records and whole-file bzip2 volumes are decoded by
+//! `recast-radar-bzip2` (this repository's decoder without unsafe code, one
+//! reusable decoder per thread; the `paired-bzip2` feature decodes two
+//! records at a time on one thread). Decoded record buffers are recycled
+//! through a bounded process-wide pool. gzip volumes are inflated by
+//! [`gzip`]: whole-buffer input in one pass into a buffer presized from the
+//! gzip trailer, streaming input through a reader; both decode every member
+//! of a multi-member file and ignore bytes after the last member.
+//!
 //! # Limits
 //!
 //! Allocations never follow header values past these caps (shared values in
@@ -43,21 +54,22 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod gzip;
 pub mod messages;
 pub mod metadata;
 
 pub use metadata::{NexradMetadata, NexradVolume, SweepElevationData, decode_volume_with_metadata};
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fs;
-use std::io::{Cursor, Read};
+use std::io::{BufReader, Read};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 
-use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, TimeZone, Utc};
-use flate2::read::GzDecoder;
 use rayon::prelude::*;
 use recast_radar_core::bounded_read::{
     self, DecodeBudget, MAX_DECODED_RADAR_BYTES, MAX_SWEEPS_PER_VOLUME, moment_grid_capacity_bytes,
@@ -86,6 +98,18 @@ const MAX_MESSAGE_31_MOMENTS: usize = 10;
 /// attacker-controlled block all the way to the full-volume budget.
 const MAX_BZIP_BLOCK_DECODED_BYTES: usize = 16 * 1024 * 1024;
 const MAX_BZIP_BLOCKS: usize = 4096;
+/// Decoded LDM block buffers kept for reuse by later blocks and later
+/// volumes. Operational blocks decode to about 0.3-1.2 MiB, so a bounded pool
+/// removes the allocate-and-page-fault cost of ~100 fresh block buffers per
+/// volume while retaining at most a few tens of MiB.
+const BZIP_BUFFER_POOL_MAX_BUFFERS: usize = 64;
+const BZIP_BUFFER_POOL_MAX_BYTES: usize = 64 * 1024 * 1024;
+/// Buffers smaller than this are not worth pooling (they would be regrown by
+/// the next block anyway).
+const BZIP_BUFFER_POOL_MIN_CAPACITY: usize = 64 * 1024;
+/// Largest buffer the pool keeps; a pathological block that decoded to many
+/// MiB is freed instead of being pinned for the life of the process.
+const BZIP_BUFFER_POOL_MAX_CAPACITY: usize = 8 * 1024 * 1024;
 
 pub type Result<T> = std::result::Result<T, NexradError>;
 
@@ -186,8 +210,11 @@ fn decode_volume_observed(bytes: &[u8], observer: &mut impl RadialObserver) -> R
     decode_normalized_volume_bytes_observed(&bytes, compression, observer)
 }
 
+/// Decode a gzip-compressed Archive II volume from a reader, inflating as
+/// it parses. Every gzip member is decoded; bytes after the last member that
+/// do not start another one are ignored.
 pub fn decode_gzip_volume_from_reader(reader: impl Read) -> Result<RadarVolume> {
-    let decoder = GzDecoder::new(reader);
+    let decoder = gzip::MultiGzReader::new(BufReader::new(reader));
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
     decode_volume_from_stream_until(&mut decoder, ArchiveCompression::Gzip, None).map(|result| {
         debug_assert!(!result.stopped_at_preview);
@@ -210,7 +237,7 @@ where
         return decode_volume_from_bytes(raw);
     }
 
-    let decoder = GzDecoder::new(raw);
+    let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
     decode_volume_from_stream(
         &mut decoder,
@@ -236,7 +263,7 @@ pub fn decode_gzip_preview_from_bytes(
         return Ok(None);
     }
 
-    let decoder = GzDecoder::new(raw);
+    let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
     let result = decode_volume_from_stream_until(
         &mut decoder,
@@ -321,8 +348,10 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
     }
 
     if raw.starts_with(b"BZh") {
-        let decoded = read_to_end_limited(
-            BzDecoder::new(Cursor::new(raw)),
+        let mut decoded = Vec::new();
+        decompress_bzip2_stream_into(
+            raw,
+            &mut decoded,
             MAX_DECODED_RADAR_BYTES,
             "whole-file bzip2 radar payload",
         )?;
@@ -339,18 +368,11 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
     ))
 }
 
+/// Inflate a whole in-memory gzip file (every member) into one buffer
+/// presized from its ISIZE trailer. See [`gzip::inflate_gzip_members_limited`].
 fn decompress_gzip_bytes(raw: &[u8]) -> Result<Vec<u8>> {
-    read_to_end_limited(
-        GzDecoder::new(raw),
-        MAX_DECODED_RADAR_BYTES,
-        "gzip radar payload",
-    )
-}
-
-/// [`bounded_read::read_to_end_limited`] with its message wrapped as a
-/// compression error.
-fn read_to_end_limited(reader: impl Read, limit: usize, context: &'static str) -> Result<Vec<u8>> {
-    bounded_read::read_to_end_limited(reader, limit, context).map_err(NexradError::Compression)
+    gzip::inflate_gzip_members_limited(raw, MAX_DECODED_RADAR_BYTES, "gzip radar payload")
+        .map_err(NexradError::Compression)
 }
 
 /// [`bounded_read::copy_bytes_limited`] with its message wrapped as a
@@ -856,29 +878,83 @@ pub struct Message31Header {
 
 #[derive(Clone, Debug, PartialEq)]
 struct MomentBlock<'a> {
-    moment: MomentType,
+    /// Raw 3-byte moment name; resolved to a `MomentType` only when a grid
+    /// has to be created (see `moment_grid_for_block`).
+    name: &'a [u8],
     gate_range: GateRange,
     scale: f32,
     offset: f32,
     row: MomentPayload<'a>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum MomentPayload<'a> {
     U8(&'a [u8]),
     U16(&'a [u8]),
 }
 
-/// Outcome of decompressing one LDM block: its bytes, or the error message.
-type BlockResult = std::result::Result<Vec<u8>, String>;
+/// Outcome of decompressing one LDM block: its bytes, taken once by the
+/// parser and then recycled, or the error message.
+type BlockResult = std::result::Result<Mutex<Option<Vec<u8>>>, String>;
+
+/// Process-wide pool of decoded LDM block buffers. A block decoded into a
+/// recycled buffer neither allocates nor page-faults; without the pool every
+/// volume allocated (and the allocator returned to the OS) ~100 fresh ~1 MiB
+/// block buffers. Bounded by `BZIP_BUFFER_POOL_MAX_BUFFERS` and
+/// `BZIP_BUFFER_POOL_MAX_BYTES`.
+struct BzipBufferPool {
+    buffers: Vec<Vec<u8>>,
+    retained_bytes: usize,
+}
+
+static BZIP_BUFFER_POOL: Mutex<BzipBufferPool> = Mutex::new(BzipBufferPool {
+    buffers: Vec::new(),
+    retained_bytes: 0,
+});
+
+/// An empty buffer for one decoded block, recycled when the pool has one.
+fn take_bzip_buffer() -> Vec<u8> {
+    let mut pool = BZIP_BUFFER_POOL
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    match pool.buffers.pop() {
+        Some(mut buffer) => {
+            pool.retained_bytes = pool.retained_bytes.saturating_sub(buffer.capacity());
+            buffer.clear();
+            buffer
+        }
+        None => Vec::new(),
+    }
+}
+
+/// Return a decoded block buffer to the pool, or free it when the pool is
+/// full or the buffer is outside the pooled capacity range.
+fn recycle_bzip_buffer(mut buffer: Vec<u8>) {
+    let capacity = buffer.capacity();
+    if !(BZIP_BUFFER_POOL_MIN_CAPACITY..=BZIP_BUFFER_POOL_MAX_CAPACITY).contains(&capacity) {
+        return;
+    }
+    buffer.clear();
+    let mut pool = BZIP_BUFFER_POOL
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if pool.buffers.len() >= BZIP_BUFFER_POOL_MAX_BUFFERS
+        || pool.retained_bytes.saturating_add(capacity) > BZIP_BUFFER_POOL_MAX_BYTES
+    {
+        return;
+    }
+    pool.retained_bytes += capacity;
+    pool.buffers.push(buffer);
+}
 
 /// Slot store connecting parallel LDM-block decompression workers to the
 /// in-order streaming parser.
 ///
 /// Indices are claimed in parse order through `next_claim`, so each slot is
 /// filled by exactly one thread. A slot is a `OnceLock` that is set once with
-/// the block's bytes (or error) and never written again, so the parser can
-/// borrow published bytes for the lifetime of the store without copying.
+/// the block's bytes (or error) and never written again. The parser takes
+/// the bytes out of a published slot exactly once, parses past them, and
+/// hands the buffer back to the buffer pool for a later block.
 struct BlockSlots<'a> {
     compressed: Vec<&'a [u8]>,
     slots: Box<[OnceLock<BlockResult>]>,
@@ -913,38 +989,88 @@ impl<'a> BlockSlots<'a> {
 
     fn run_worker(&self) {
         while !self.canceled.load(Ordering::Relaxed) {
-            let index = self.next_claim.fetch_add(1, Ordering::Relaxed);
+            let index = self.claim();
             if index >= self.len() {
                 break;
             }
-            self.decompress_index(index);
+            self.decompress_claimed(index);
         }
     }
 
-    fn decompress_index(&self, index: usize) {
-        match decompress_bzip_block(self.compressed[index]) {
+    /// Claim the next index in parse order (with `paired-bzip2`, the next
+    /// two indices; the claimant decodes both).
+    fn claim(&self) -> usize {
+        let step = if cfg!(feature = "paired-bzip2") { 2 } else { 1 };
+        self.next_claim.fetch_add(step, Ordering::Relaxed)
+    }
+
+    #[cfg(not(feature = "paired-bzip2"))]
+    fn decompress_claimed(&self, index: usize) {
+        let mut decoded = take_bzip_buffer();
+        match decompress_bzip_block_into(self.compressed[index], &mut decoded) {
+            Ok(()) => self.publish(index, Ok(decoded)),
+            Err(err) => {
+                recycle_bzip_buffer(decoded);
+                self.publish(index, Err(err.to_string()));
+            }
+        }
+    }
+
+    #[cfg(feature = "paired-bzip2")]
+    fn decompress_claimed(&self, index: usize) {
+        let mut first = take_bzip_buffer();
+        let Some(&second_compressed) = self.compressed.get(index + 1) else {
+            match decompress_bzip_block_into(self.compressed[index], &mut first) {
+                Ok(()) => self.publish(index, Ok(first)),
+                Err(err) => {
+                    recycle_bzip_buffer(first);
+                    self.publish(index, Err(err.to_string()));
+                }
+            }
+            return;
+        };
+        let mut second = take_bzip_buffer();
+        let (first_result, second_result) = decompress_bzip_block_pair_into(
+            self.compressed[index],
+            &mut first,
+            second_compressed,
+            &mut second,
+        );
+        for (index, result, buffer) in [
+            (index, first_result, first),
+            (index + 1, second_result, second),
+        ] {
+            match result {
+                Ok(()) => self.publish(index, Ok(buffer)),
+                Err(err) => {
+                    recycle_bzip_buffer(buffer);
+                    self.publish(index, Err(err.to_string()));
+                }
+            }
+        }
+    }
+
+    /// Publish a block's decoded bytes (after charging them to the aggregate
+    /// budget) or its error, then wake the parser.
+    fn publish(&self, index: usize, decoded: std::result::Result<Vec<u8>, String>) {
+        let result = match decoded {
             Ok(decoded) => {
                 if reserve_atomic_budget(
                     &self.decoded_bytes,
                     decoded.len(),
                     MAX_DECODED_RADAR_BYTES,
                 ) {
-                    self.publish(index, Ok(decoded));
+                    Ok(Mutex::new(Some(decoded)))
                 } else {
-                    self.publish(
-                        index,
-                        Err(format!(
-                            "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
-                        )),
-                    );
+                    recycle_bzip_buffer(decoded);
                     self.cancel();
+                    Err(format!(
+                        "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
+                    ))
                 }
             }
-            Err(err) => self.publish(index, Err(err.to_string())),
-        }
-    }
-
-    fn publish(&self, index: usize, result: BlockResult) {
+            Err(message) => Err(message),
+        };
         // `index` was claimed exactly once via `next_claim`, so the slot is
         // still empty; `set` cannot fail here and would never overwrite.
         let _ = self.slots[index].set(result);
@@ -955,22 +1081,30 @@ impl<'a> BlockSlots<'a> {
         self.published.notify_all();
     }
 
-    /// Block until the decompressed contents of `index` are available.
+    /// Block until the decompressed contents of `index` are available, then
+    /// take ownership of them. Each index is taken at most once, in parse
+    /// order, by the single parsing cursor.
     ///
     /// The caller participates in decompression while it waits (claims advance
     /// in parse order), so the pipeline makes progress even when no rayon
     /// worker ever runs — e.g. on a single-threaded pool.
-    fn wait_block(&self, index: usize) -> Result<&[u8]> {
+    fn take_block(&self, index: usize) -> Result<Vec<u8>> {
         loop {
             if let Some(result) = self.slots[index].get() {
                 return match result {
-                    Ok(bytes) => Ok(bytes.as_slice()),
+                    Ok(cell) => cell
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .take()
+                        .ok_or_else(|| {
+                            NexradError::Compression("bzip2 block was already consumed".to_owned())
+                        }),
                     Err(message) => Err(NexradError::Compression(message.clone())),
                 };
             }
-            let claimed = self.next_claim.fetch_add(1, Ordering::Relaxed);
+            let claimed = self.claim();
             if claimed < self.len() {
-                self.decompress_index(claimed);
+                self.decompress_claimed(claimed);
                 continue;
             }
             // Everything is claimed, so `index` is in flight on another
@@ -986,13 +1120,53 @@ impl<'a> BlockSlots<'a> {
     }
 }
 
+impl Drop for BlockSlots<'_> {
+    fn drop(&mut self) {
+        // Blocks decoded ahead of an early return (preview stop, error) go
+        // back to the pool instead of being freed.
+        for slot in self.slots.iter_mut() {
+            if let Some(Ok(cell)) = slot.get_mut()
+                && let Some(buffer) = cell
+                    .get_mut()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take()
+            {
+                recycle_bzip_buffer(buffer);
+            }
+        }
+    }
+}
+
+/// The chunk a [`BzipBlockCursor`] is reading.
+enum CursorChunk<'a> {
+    /// The borrowed 24-byte volume header (chunk 0).
+    Header(&'a [u8]),
+    /// A decoded block, owned while it is parsed and recycled on advance.
+    Block(Vec<u8>),
+    /// Past the last block.
+    End,
+}
+
+/// Bytes of the loaded chunk; empty when nothing is loaded or past the end.
+///
+/// A free function over the `current` field (rather than a `&self` method) so
+/// callers can keep the returned slice while updating the cursor offsets.
+fn cursor_chunk_bytes<'c>(current: &'c Option<CursorChunk<'_>>) -> &'c [u8] {
+    match current {
+        Some(CursorChunk::Header(bytes)) => bytes,
+        Some(CursorChunk::Block(buffer)) => buffer.as_slice(),
+        Some(CursorChunk::End) | None => &[],
+    }
+}
+
 struct BzipBlockCursor<'a> {
     volume_header: &'a [u8],
     blocks: &'a BlockSlots<'a>,
     chunk_index: usize,
     chunk_offset: usize,
     absolute_offset: usize,
-    current: Option<&'a [u8]>,
+    /// `None` until `chunk_index` has been loaded.
+    current: Option<CursorChunk<'a>>,
 }
 
 impl<'a> BzipBlockCursor<'a> {
@@ -1007,33 +1181,39 @@ impl<'a> BzipBlockCursor<'a> {
         }
     }
 
-    fn current_chunk(&mut self) -> Result<Option<&'a [u8]>> {
-        if let Some(chunk) = self.current {
-            return Ok(Some(chunk));
+    /// Load `chunk_index` if needed. Returns `false` past the last block.
+    fn load_current(&mut self) -> Result<bool> {
+        if self.current.is_none() {
+            let chunk = match self.chunk_index {
+                0 => CursorChunk::Header(self.volume_header),
+                index if index - 1 < self.blocks.len() => {
+                    CursorChunk::Block(self.blocks.take_block(index - 1)?)
+                }
+                _ => CursorChunk::End,
+            };
+            self.current = Some(chunk);
         }
-        let chunk = match self.chunk_index {
-            0 => Some(self.volume_header),
-            index if index - 1 < self.blocks.len() => Some(self.blocks.wait_block(index - 1)?),
-            _ => None,
-        };
-        self.current = chunk;
-        Ok(chunk)
+        Ok(!matches!(self.current, Some(CursorChunk::End)))
     }
 
     fn advance_chunk(&mut self) {
+        if let Some(CursorChunk::Block(buffer)) = self.current.take() {
+            recycle_bzip_buffer(buffer);
+        }
         self.chunk_index += 1;
         self.chunk_offset = 0;
-        self.current = None;
     }
 
-    fn skip_empty_chunks(&mut self) -> Result<()> {
-        while let Some(chunk) = self.current_chunk()? {
-            if self.chunk_offset < chunk.len() {
-                break;
+    /// Advance past exhausted chunks. Returns `true` when a chunk with unread
+    /// bytes is loaded, `false` at the end of the block stream.
+    fn skip_empty_chunks(&mut self) -> Result<bool> {
+        while self.load_current()? {
+            if self.chunk_offset < cursor_chunk_bytes(&self.current).len() {
+                return Ok(true);
             }
             self.advance_chunk();
         }
-        Ok(())
+        Ok(false)
     }
 
     fn read_exact_into(
@@ -1044,16 +1224,15 @@ impl<'a> BzipBlockCursor<'a> {
     ) -> Result<()> {
         let mut written = 0;
         while !output.is_empty() {
-            self.skip_empty_chunks()?;
-            let Some(chunk) = self.current_chunk()? else {
+            if !self.skip_empty_chunks()? {
                 return Err(NexradError::Truncated {
                     what,
                     offset,
                     needed: written + output.len(),
                     available: written,
                 });
-            };
-            let available = &chunk[self.chunk_offset..];
+            }
+            let available = &cursor_chunk_bytes(&self.current)[self.chunk_offset..];
             let count = available.len().min(output.len());
             output[..count].copy_from_slice(&available[..count]);
             self.chunk_offset += count;
@@ -1066,8 +1245,18 @@ impl<'a> BzipBlockCursor<'a> {
     }
 
     fn read_optional_prefix(&mut self, output: &mut [u8], offset: usize) -> Result<bool> {
-        self.skip_empty_chunks()?;
-        if self.current_chunk()?.is_none() {
+        // Fast path: the whole prefix lies inside the loaded chunk (nearly
+        // every record), so skip the chunk bookkeeping.
+        let start = self.chunk_offset;
+        if !output.is_empty()
+            && let Some(bytes) = cursor_chunk_bytes(&self.current).get(start..start + output.len())
+        {
+            output.copy_from_slice(bytes);
+            self.chunk_offset += output.len();
+            self.absolute_offset += output.len();
+            return Ok(true);
+        }
+        if !self.skip_empty_chunks()? {
             return Ok(false);
         }
         self.read_exact_into(output, "record prefix", offset)?;
@@ -1085,37 +1274,33 @@ impl<'a> BzipBlockCursor<'a> {
         if len == 0 {
             return Ok(&[]);
         }
-        self.skip_empty_chunks()?;
-        let Some(chunk) = self.current_chunk()? else {
+        if !self.skip_empty_chunks()? {
             return Err(NexradError::Truncated {
                 what,
                 offset,
                 needed: len,
                 available: 0,
             });
-        };
-        if self.chunk_offset + len <= chunk.len() {
-            let start = self.chunk_offset;
+        }
+        let start = self.chunk_offset;
+        if start + len <= cursor_chunk_bytes(&self.current).len() {
             self.chunk_offset += len;
             self.absolute_offset += len;
-            return Ok(&chunk[start..start + len]);
+            return Ok(&cursor_chunk_bytes(&self.current)[start..start + len]);
         }
 
-        if scratch.capacity() < len {
-            scratch.reserve_exact(len - scratch.capacity());
-        }
+        scratch.reserve_exact(len);
         let mut remaining = len;
         while remaining > 0 {
-            self.skip_empty_chunks()?;
-            let Some(chunk) = self.current_chunk()? else {
+            if !self.skip_empty_chunks()? {
                 return Err(NexradError::Truncated {
                     what,
                     offset,
                     needed: len,
                     available: scratch.len(),
                 });
-            };
-            let available = &chunk[self.chunk_offset..];
+            }
+            let available = &cursor_chunk_bytes(&self.current)[self.chunk_offset..];
             let count = available.len().min(remaining);
             scratch.extend_from_slice(&available[..count]);
             self.chunk_offset += count;
@@ -1126,23 +1311,37 @@ impl<'a> BzipBlockCursor<'a> {
     }
 
     fn skip_exact(&mut self, len: usize, what: &'static str, offset: usize) -> Result<()> {
+        // Fast path: the skip ends inside the loaded chunk.
+        if self.chunk_offset + len <= cursor_chunk_bytes(&self.current).len() {
+            self.chunk_offset += len;
+            self.absolute_offset += len;
+            return Ok(());
+        }
         let mut skipped = 0;
         while skipped < len {
-            self.skip_empty_chunks()?;
-            let Some(chunk) = self.current_chunk()? else {
+            if !self.skip_empty_chunks()? {
                 return Err(NexradError::Truncated {
                     what,
                     offset,
                     needed: len,
                     available: skipped,
                 });
-            };
-            let count = (len - skipped).min(chunk.len() - self.chunk_offset);
+            }
+            let count =
+                (len - skipped).min(cursor_chunk_bytes(&self.current).len() - self.chunk_offset);
             self.chunk_offset += count;
             self.absolute_offset += count;
             skipped += count;
         }
         Ok(())
+    }
+}
+
+impl Drop for BzipBlockCursor<'_> {
+    fn drop(&mut self) {
+        if let Some(CursorChunk::Block(buffer)) = self.current.take() {
+            recycle_bzip_buffer(buffer);
+        }
     }
 }
 
@@ -1167,10 +1366,11 @@ fn decode_bzip_blocks_pipelined(
     let slots = BlockSlots::new(blocks);
     rayon::in_place_scope(|scope| {
         // Leave one hardware thread for the parsing thread below; it also
-        // steals decompression work whenever it would otherwise wait.
+        // steals decompression work whenever it would otherwise wait. A
+        // one-thread pool spawns no worker at all: the parser decodes every
+        // block itself instead of time-slicing against a worker on one core.
         let workers = rayon::current_num_threads()
             .saturating_sub(1)
-            .max(1)
             .min(slots.len());
         for _ in 0..workers {
             scope.spawn(|_| slots.run_worker());
@@ -1417,7 +1617,8 @@ fn try_decode_bzip_blocks(raw: &[u8]) -> Result<Option<Vec<u8>>> {
     })?;
     output.extend_from_slice(&raw[..VOLUME_HEADER_LEN]);
     for block in decoded_blocks {
-        output.extend(block);
+        output.extend_from_slice(&block);
+        recycle_bzip_buffer(block);
     }
 
     Ok(Some(output))
@@ -1432,12 +1633,17 @@ fn try_decompress_bzip_blocks(raw: &[u8]) -> Result<Option<Vec<Vec<u8>>>> {
     let decoded_blocks = blocks
         .par_iter()
         .map(|compressed| {
-            let decoded = decompress_bzip_block(compressed)?;
+            let mut decoded = take_bzip_buffer();
+            if let Err(err) = decompress_bzip_block_into(compressed, &mut decoded) {
+                recycle_bzip_buffer(decoded);
+                return Err(err);
+            }
             if !reserve_atomic_budget(
                 &decoded_bytes,
                 decoded.len(),
                 MAX_DECODED_RADAR_BYTES,
             ) {
+                recycle_bzip_buffer(decoded);
                 return Err(NexradError::Compression(format!(
                     "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
                 )));
@@ -1498,12 +1704,82 @@ fn collect_bzip_block_slices(raw: &[u8]) -> Result<Option<Vec<&[u8]>>> {
     Ok(Some(blocks))
 }
 
-fn decompress_bzip_block(compressed: &[u8]) -> Result<Vec<u8>> {
-    read_to_end_limited(
-        BzDecoder::new(Cursor::new(compressed)),
+thread_local! {
+    /// Per-thread bzip2 decoder: its block work buffers (about 7 MiB of
+    /// address space, resident as far as the largest block touched them) are
+    /// reused across every LDM record and whole-file stream this thread
+    /// decodes.
+    static BZIP2_DECODER: RefCell<recast_radar_bzip2::Decoder> =
+        RefCell::new(recast_radar_bzip2::Decoder::new());
+}
+
+/// Wrap a decoder error for `context`. The output limit keeps the wording of
+/// `bounded_read::read_to_end_limited`, which this path used before.
+fn bzip2_error(err: recast_radar_bzip2::Error, limit: usize, context: &'static str) -> NexradError {
+    NexradError::Compression(match err {
+        recast_radar_bzip2::Error::OutputLimit => {
+            format!("{context} expands beyond the {limit}-byte limit")
+        }
+        other => format!("{context}: {other}"),
+    })
+}
+
+/// Decode one bzip2 stream (`BZh1`..`BZh9` header through the end-of-stream
+/// marker) with this thread's decoder and append it to `output`. Block CRCs
+/// and the combined stream CRC are verified; bytes after the end-of-stream
+/// marker are ignored. At most `limit` bytes are appended: the limit is
+/// checked against each block's exact decoded size before that block's
+/// output is allocated, and on any error `output` is back at its original
+/// length.
+fn decompress_bzip2_stream_into(
+    compressed: &[u8],
+    output: &mut Vec<u8>,
+    limit: usize,
+    context: &'static str,
+) -> Result<()> {
+    BZIP2_DECODER.with(|decoder| {
+        let mut decoder = decoder.borrow_mut();
+        decoder.set_max_output(limit);
+        decoder
+            .decode_stream_into(compressed, output)
+            .map_err(|err| bzip2_error(err, limit, context))
+    })
+}
+
+/// Decode one LDM block-bzip record (a complete bzip2 stream) into `output`,
+/// replacing its contents but keeping its capacity.
+fn decompress_bzip_block_into(compressed: &[u8], output: &mut Vec<u8>) -> Result<()> {
+    output.clear();
+    decompress_bzip2_stream_into(
+        compressed,
+        output,
         MAX_BZIP_BLOCK_DECODED_BYTES,
         "block-bzip chunk",
     )
+}
+
+/// Two LDM records decoded in lockstep on this thread, each into its own
+/// buffer (contents replaced, capacity kept). The results are independent:
+/// a corrupt record does not affect the other.
+#[cfg(feature = "paired-bzip2")]
+fn decompress_bzip_block_pair_into(
+    first: &[u8],
+    first_output: &mut Vec<u8>,
+    second: &[u8],
+    second_output: &mut Vec<u8>,
+) -> (Result<()>, Result<()>) {
+    first_output.clear();
+    second_output.clear();
+    BZIP2_DECODER.with(|decoder| {
+        let mut decoder = decoder.borrow_mut();
+        decoder.set_max_output(MAX_BZIP_BLOCK_DECODED_BYTES);
+        let (first_result, second_result) =
+            decoder.decode_two_into(first, first_output, second, second_output);
+        let wrap = |result: std::result::Result<(), recast_radar_bzip2::Error>| {
+            result.map_err(|err| bzip2_error(err, MAX_BZIP_BLOCK_DECODED_BYTES, "block-bzip chunk"))
+        };
+        (wrap(first_result), wrap(second_result))
+    })
 }
 
 fn reserve_atomic_budget(total: &AtomicUsize, additional: usize, limit: usize) -> bool {
@@ -1924,34 +2200,85 @@ fn parse_message_31(
     let radial_index = cut.radials.len();
     cut.radials.push(radial);
 
-    for moment in moments.into_iter().take(moment_count).flatten() {
-        let MomentBlock {
-            moment,
-            gate_range,
-            scale,
-            offset,
-            row,
-        } = moment;
-        let grid = match cut.moments.entry(moment) {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                let grid = new_moment_grid(
-                    entry.key().clone(),
-                    gate_range,
-                    scale,
-                    offset,
-                    matches!(row, MomentPayload::U16(_)),
-                    expected_radials,
-                    budget,
-                )?;
-                entry.insert(grid)
-            }
-        };
-        push_moment_row(grid, radial_index, row, budget)?;
+    // Iterate by reference: moving the whole `[Option<MomentBlock>; 10]`
+    // array into an iterator copied it for every radial.
+    for moment in moments[..moment_count].iter().flatten() {
+        let grid = moment_grid_for_block(&mut cut.moments, moment, expected_radials, budget)?;
+        push_moment_row(grid, radial_index, moment.row, budget)?;
     }
 
     volume.metadata.decoded_radial_count += 1;
     Ok(())
+}
+
+/// Find or create the grid for a moment block in a cut.
+///
+/// `MomentType::from_nexrad_bytes` allocates a `String` for every name it
+/// does not know (the `CFP` block of every modern radial, for example), so
+/// an existing `Unknown` grid is looked up by name first and the key is
+/// built only when a grid has to be inserted.
+fn moment_grid_for_block<'m>(
+    grids: &'m mut BTreeMap<MomentType, MomentGrid>,
+    moment: &MomentBlock<'_>,
+    expected_radials: usize,
+    budget: &mut DecodeBudget,
+) -> Result<&'m mut MomentGrid> {
+    let trimmed = trim_nexrad_moment_name(moment.name);
+    if !matches!(
+        trimmed,
+        b"REF" | b"VEL" | b"SW" | b"ZDR" | b"RHO" | b"PHI" | b"KDP"
+    ) {
+        // The key `from_nexrad_bytes` builds for a name outside its known
+        // set is `Unknown(lossy UTF-8 of the trimmed name)`; borrowed here
+        // when the name is valid UTF-8, so no allocation.
+        let name = String::from_utf8_lossy(trimmed);
+        let is_named =
+            |key: &MomentType| matches!(key, MomentType::Unknown(existing) if *existing == name);
+        // `Unknown` sorts after every known variant and `""` is the smallest
+        // string, so this range covers exactly the `Unknown` keys.
+        let unknown_keys = MomentType::Unknown(String::new());
+        if grids.range(&unknown_keys..).any(|(key, _)| is_named(key)) {
+            debug_assert_eq!(
+                MomentType::from_nexrad_bytes(moment.name),
+                MomentType::Unknown(name.clone().into_owned())
+            );
+            // Two walks over the (one or two) `Unknown` keys: the borrow
+            // checker cannot yet pair a conditional `range_mut` return with
+            // the insert below (NLL problem case 3), so the existence check
+            // comes first and this lookup cannot fail.
+            return Ok(grids
+                .range_mut(unknown_keys..)
+                .find_map(|(key, grid)| is_named(key).then_some(grid))
+                .unwrap_or_else(|| unreachable!("the grid named {name:?} was found just above")));
+        }
+    }
+
+    match grids.entry(MomentType::from_nexrad_bytes(moment.name)) {
+        Entry::Occupied(entry) => Ok(entry.into_mut()),
+        Entry::Vacant(entry) => {
+            let grid = new_moment_grid(
+                entry.key().clone(),
+                moment.gate_range.clone(),
+                moment.scale,
+                moment.offset,
+                matches!(moment.row, MomentPayload::U16(_)),
+                expected_radials,
+                budget,
+            )?;
+            Ok(entry.insert(grid))
+        }
+    }
+}
+
+/// The trimming `MomentType::from_nexrad_bytes` applies before matching names.
+fn trim_nexrad_moment_name(mut bytes: &[u8]) -> &[u8] {
+    while let [0 | b' ' | b'\t' | b'\r' | b'\n', rest @ ..] = bytes {
+        bytes = rest;
+    }
+    while let [rest @ .., 0 | b' ' | b'\t' | b'\r' | b'\n'] = bytes {
+        bytes = rest;
+    }
+    bytes
 }
 
 fn expected_radials_for_azimuth_resolution(azimuth_resolution: u8) -> usize {
@@ -2047,7 +2374,7 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
         "generic moment block",
     )?;
     let header = &bytes[offset..offset + GENERIC_DATA_BLOCK_LEN];
-    let moment = MomentType::from_nexrad_bytes(&header[1..4]);
+    let name = &header[1..4];
     let gate_count = usize::from(be_u16(header, 8));
     bounded_read::check_gate_count(gate_count, "message 31 moment block")
         .map_err(NexradError::LimitExceeded)?;
@@ -2064,12 +2391,15 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
             MomentPayload::U8(&bytes[data_offset..data_offset + gate_count])
         }
         16 => {
-            let byte_count = gate_count
-                .checked_mul(2)
-                .ok_or(NexradError::InvalidMessage {
-                    offset,
-                    reason: "16-bit moment gate count overflow".to_owned(),
-                })?;
+            // `ok_or_else`: `ok_or` built this error's `String` for every
+            // 16-bit block of every radial.
+            let byte_count =
+                gate_count
+                    .checked_mul(2)
+                    .ok_or_else(|| NexradError::InvalidMessage {
+                        offset,
+                        reason: "16-bit moment gate count overflow".to_owned(),
+                    })?;
             require_len(bytes, data_offset, byte_count, "16-bit moment gates")?;
             MomentPayload::U16(&bytes[data_offset..data_offset + byte_count])
         }
@@ -2082,7 +2412,7 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
     };
 
     Ok(MomentBlock {
-        moment,
+        name,
         gate_range: GateRange {
             first_gate_m,
             gate_spacing_m,
@@ -2553,6 +2883,113 @@ mod tests {
         compressed.extend_from_slice(&bad);
 
         assert!(decode_volume_from_bytes(&compressed).is_err());
+    }
+
+    #[test]
+    fn corrupt_bzip_block_error_names_the_record_path() {
+        let archive = synthetic_archive(false);
+        let mut bad = bzip_compress(&archive[VOLUME_HEADER_LEN..]);
+        for byte in bad.iter_mut().skip(8) {
+            *byte = 0;
+        }
+        let mut decoded = Vec::new();
+        let error = decompress_bzip_block_into(&bad, &mut decoded).unwrap_err();
+        assert!(
+            matches!(&error, NexradError::Compression(reason) if reason.starts_with("block-bzip chunk: bzip2:")),
+            "unexpected error: {error}"
+        );
+        assert!(decoded.is_empty(), "output restored on error");
+    }
+
+    #[test]
+    fn whole_file_bzip2_archive_decodes_like_the_uncompressed_bytes() {
+        let bytes = synthetic_archive(true);
+        let compressed = bzip_compress(&bytes);
+        assert!(compressed.starts_with(b"BZh"));
+
+        let (normalized, compression) = normalize_archive_bytes(&compressed).unwrap();
+        assert_eq!(compression, ArchiveCompression::Bzip2WholeFile);
+        assert_eq!(normalized, bytes);
+
+        let mut expected = decode_volume_from_bytes(&bytes).unwrap();
+        expected.metadata.compression = Some("bzip2-whole-file".to_owned());
+        let volume = decode_volume_from_bytes(&compressed).unwrap();
+        assert_eq!(volume, expected);
+
+        // Bytes after the end-of-stream marker are ignored, as before.
+        let mut trailing = compressed.clone();
+        trailing.extend_from_slice(&[0u8; 64]);
+        assert_eq!(decode_volume_from_bytes(&trailing).unwrap(), expected);
+    }
+
+    #[test]
+    fn bzip2_stream_output_limit_is_exact_and_restores_the_buffer() {
+        let payload = synthetic_archive(false);
+        let compressed = bzip_compress(&payload);
+        let context = "limit test";
+
+        let mut output = b"kept".to_vec();
+        decompress_bzip2_stream_into(&compressed, &mut output, payload.len(), context).unwrap();
+        assert_eq!(&output[..4], b"kept");
+        assert_eq!(&output[4..], &payload[..]);
+
+        let mut output = b"kept".to_vec();
+        let error =
+            decompress_bzip2_stream_into(&compressed, &mut output, payload.len() - 1, context)
+                .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "unsupported or corrupt compression wrapper: {context} expands beyond the {}-byte limit",
+                payload.len() - 1
+            )
+        );
+        assert_eq!(output, b"kept", "output restored to its original length");
+    }
+
+    #[test]
+    fn oversized_bzip_block_is_rejected_at_the_per_block_limit() {
+        // 16 MiB + 1 of a repeated byte: tiny compressed, over the block cap.
+        let payload = vec![0x2a; MAX_BZIP_BLOCK_DECODED_BYTES + 1];
+        let compressed = bzip_compress(&payload);
+        let mut decoded = Vec::new();
+        let error = decompress_bzip_block_into(&compressed, &mut decoded).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "unsupported or corrupt compression wrapper: block-bzip chunk expands beyond the {MAX_BZIP_BLOCK_DECODED_BYTES}-byte limit"
+            )
+        );
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn bzip_buffer_pool_keeps_only_block_sized_buffers() {
+        // Too small and too large buffers are dropped, never pooled. The pool
+        // is process-wide and other tests use it concurrently, so only the
+        // invariants are checked, not the exact contents.
+        recycle_bzip_buffer(Vec::with_capacity(BZIP_BUFFER_POOL_MIN_CAPACITY - 1));
+        recycle_bzip_buffer(Vec::with_capacity(BZIP_BUFFER_POOL_MAX_CAPACITY + 1));
+        recycle_bzip_buffer(Vec::with_capacity(BZIP_BUFFER_POOL_MIN_CAPACITY));
+        {
+            let pool = BZIP_BUFFER_POOL.lock().unwrap();
+            assert!(pool.buffers.len() <= BZIP_BUFFER_POOL_MAX_BUFFERS);
+            assert!(pool.retained_bytes <= BZIP_BUFFER_POOL_MAX_BYTES);
+            assert_eq!(
+                pool.retained_bytes,
+                pool.buffers.iter().map(Vec::capacity).sum::<usize>()
+            );
+            for buffer in &pool.buffers {
+                assert!(buffer.is_empty());
+                assert!(
+                    (BZIP_BUFFER_POOL_MIN_CAPACITY..=BZIP_BUFFER_POOL_MAX_CAPACITY)
+                        .contains(&buffer.capacity())
+                );
+            }
+        }
+        let taken = take_bzip_buffer();
+        assert!(taken.is_empty());
+        assert!(taken.capacity() == 0 || taken.capacity() >= BZIP_BUFFER_POOL_MIN_CAPACITY);
     }
 
     #[test]

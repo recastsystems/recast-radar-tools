@@ -13,9 +13,7 @@
 //! (stored or deflate).
 
 use std::borrow::Cow;
-use std::io::Cursor;
 
-use bzip2::bufread::BzDecoder;
 use flate2::read::{DeflateDecoder, GzDecoder};
 
 use super::MessageBody;
@@ -69,7 +67,7 @@ impl RdaLogData {
         let appended = &body[RDA_LOG_DATA_OFFSET..RDA_LOG_DATA_OFFSET + appended_len];
         let data = match compression {
             RdaLogCompression::Gzip => inflate(GzDecoder::new(appended), "gzip")?,
-            RdaLogCompression::Bzip2 => inflate(BzDecoder::new(Cursor::new(appended)), "bzip2")?,
+            RdaLogCompression::Bzip2 => inflate_bzip2(appended)?,
             RdaLogCompression::Zip => inflate_zip_first_member(appended)?,
             RdaLogCompression::Uncompressed | RdaLogCompression::Unknown(_) => appended.to_vec(),
         };
@@ -128,6 +126,12 @@ impl RdaLogCompression {
 fn inflate(reader: impl std::io::Read, format: &str) -> Result<Vec<u8>> {
     recast_radar_core::bounded_read::read_to_end_limited(reader, MAX_RDA_LOG_BYTES, "RDA log data")
         .map_err(|message| NexradError::Compression(format!("{format}: {message}")))
+}
+
+fn inflate_bzip2(compressed: &[u8]) -> Result<Vec<u8>> {
+    let mut data = Vec::new();
+    crate::decompress_bzip2_stream_into(compressed, &mut data, MAX_RDA_LOG_BYTES, "RDA log data")?;
+    Ok(data)
 }
 
 /// Inflate the first member of a ZIP archive from its local file header.

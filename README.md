@@ -289,8 +289,10 @@ keywords, categories and a readme.
 
 Without `net`, nothing in the build compiles C or C++, for any target:
 
-- bzip2 through the `bzip2` crate's Rust backend (`libbz2-rs-sys` is a Rust
-  port, despite its name), gzip and zlib through `flate2` with `zlib-rs`.
+- Level II bzip2 (LDM records and whole-file) through `recast-radar-bzip2`,
+  this repository's decoder without unsafe code; Level III bzip2 through the
+  `bzip2` crate's Rust backend (`libbz2-rs-sys` is a Rust port, despite its
+  name); gzip and zlib through `flate2` with `zlib-rs`.
 - HDF5 (for ODIM_H5) and classic netCDF (for CfRadial) are read by parsers in
   this repository, not by the C libraries.
 - chrono is built with its `now` feature instead of `clock`. `clock` would add

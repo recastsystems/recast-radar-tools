@@ -9,15 +9,26 @@ readme.workspace = true
 keywords = ["nexrad", "radar", "weather", "level2", "wsr-88d"]
 categories = ["science::geo", "parser-implementations", "encoding"]
 
+[features]
+# Decode consecutive LDM records two at a time on one thread with
+# `recast_radar_bzip2::Decoder::decode_two_into`, overlapping their
+# memory-latency-bound inverse-BWT chases. Same output; about 14% faster on
+# volumes with large records (KILX20260418) and no change on KTLX20240315 in
+# the single-core decode study. Doubles the per-thread decoder workspace.
+paired-bzip2 = []
+
 [dependencies]
-bzip2.workspace = true
 chrono.workspace = true
 flate2.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
 rayon.workspace = true
+recast-radar-bzip2 = { path = "../recast-radar-bzip2" }
+recast-radar-core = { path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]
+# Test fixtures only: the reference encoder for synthetic LDM records and
+# whole-file bzip2 volumes.
+bzip2.workspace = true
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 serde_json.workspace = true
 

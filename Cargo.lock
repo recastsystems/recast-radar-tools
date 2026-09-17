@@ -1009,6 +1009,7 @@ dependencies = [
  "chrono",
  "flate2",
  "rayon",
+ "recast-radar-bzip2",
  "recast-radar-core",
  "recast-radar-testdata",
  "serde_json",
