@@ -1026,6 +1026,7 @@ dependencies = [
  "rayon",
  "recast-radar-core",
  "recast-radar-testdata",
+ "serde_json",
  "thiserror",
 ]
 

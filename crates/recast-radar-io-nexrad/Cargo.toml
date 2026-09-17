@@ -14,3 +14,4 @@ thiserror.workspace = true
 
 [dev-dependencies]
 recast-radar-testdata = { path = "../recast-radar-testdata" }
+serde_json.workspace = true

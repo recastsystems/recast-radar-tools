@@ -110,8 +110,68 @@ Real sample: the KLIX 2021-08-29 `_MDM` file, where it is one 809,229-byte messa
 
 ## Message 31: Digital Radar Data Generic Format (Table XVII)
 
-Status: decoded by the volume decoder. The walker yields the body unparsed.
+Module: `msg31_blocks.rs` (`DigitalRadarDataGeneric`). Status: **verified**. The walker decodes every block:
+the Data Header Block (Table XVII-A), VOL (XVII-E), ELV (XVII-F), RAD (XVII-H), and every data moment block
+(XVII-B) including CFP. Moment blocks with names the ICD does not define are kept as moments with their name.
+Blocks of any other type or name are kept as bytes. `decode_volume_from_bytes` still builds the moment grids
+on its own fast path; the two decoders agree radial by radial (`volume_decoder_agrees_with_typed_radials`).
 Real samples: every volume from 2008 on (not the status-only stub or the `_MDM` file).
+
+Layouts are chosen from the sizes in the message, not from the build:
+
+| Structure | Layout | Selected by | Builds in the corpus |
+|---|---|---|---|
+| Data Header Block | 68 bytes, 9 pointer slots | first block pointer | 10.0 to 18.2, TDWR |
+| Data Header Block | 72 bytes, 10 slots (CFP) | first block pointer | 19.1 on |
+| VOL | 44 bytes | LRTUP 44 to 51 | 10.0 to 19.1, TDWR |
+| VOL | 52 bytes, adds the ZDR bias estimate | LRTUP 52 or more | 20.1 on |
+| RAD | 20 bytes | LRTUP 20 to 27 | 10.0 to 13.2, TDWR |
+| RAD | 28 bytes, adds H and V calibration constants | LRTUP 28 or more | 14.0 on |
+| ELV | 12 bytes | LRTUP | all |
+
+VOL major version: 1 through Build 13 and on TDWR, 2 from Build 14, 3 from Build 20. Processing status: 0
+before Build 14, 1 (RxR noise) from Build 14, 3 (RxR noise and CBT) from Build 19. A block larger than the
+newest layout decodes with that layout, because ICD note 32 allows fields to be appended. A block smaller than
+the oldest layout is an error.
+
+Verification (`tests/messages_msg31.rs`):
+
+- **MetPy goldens.** `tools/level2_golden.py msg31` writes `testdata/level2/golden/msg31/*.json` from MetPy
+  1.7.1. The files are 13 volumes (Builds 10.0, 12.0, 13.1, 14.0, 18.2, 19.1, 20.1, 21.0, 22.0 and 24.1,
+  TDWR, and KVWX 2008) plus the committed KIWA chunks. For every sweep, the test compares the first radial
+  field by field. It compares every radial through per-field distinct values, or through count, min, max and
+  sum. MetPy's RDA build is compared as well.
+- **SNR threshold.** Table XVII-B scales the SNR threshold by 0.125 dB; MetPy uses 0.1 dB. On 13 golden
+  sources, each moment's threshold at 0.125 dB equals the message 5 threshold for its elevation cut. The only
+  exception is TDWR TSTL's last cut, which records 0 dB for REF, VEL and SW where message 5 says 1.0 dB.
+- **Fields MetPy does not read.** These are the VOL ZDR bias estimate, RAD radial flags, and spare bytes. The
+  expected values come from the file bytes, read with a separate Python script: ZDR bias raw 407 to 430 (-0.34
+  to +0.375 dB), or 0 (not available) for KMAF 2023 and both KTLX 2024 files. Radial flags and spares are 0.
+- **Every field of one radial.** The first radial of the committed KIWA chunk 002 is checked field by field
+  against its hex. The same radial's gate code counts (REF below threshold, CFP filter states 0-2, CFP values
+  0-73 dB) are checked against the separate Python reader.
+- **Mutations of that radial.** Renamed blocks and a changed block type exercise unknown-block handling. Changed
+  LRTUP sizes exercise layout selection. Re-encoding the real blocks with zlib and BZIP2 exercises compression.
+  Pointer, count, word-size and truncation errors are also covered.
+
+Quirks found in the real corpus:
+
+- The data block count is the number of pointers in use, not the number of slots. Radials write their
+  nonzero pointers first, then zero slots up to the fixed 68- or 72-byte header. For example, a Build 10
+  reflectivity-only radial has 4 pointers and 5 zero slots.
+- Build 10 KDMX 2008: 2520 radials declare a radial length one byte shorter than the halfword-padded body.
+- KVWX 2008 has a blank (four-space) ICAO in every radial, no azimuth indexing, and no message 5.
+
+**No real sample:** compressed radials (compression indicator 1 BZIP2, 2 zlib). The decoder inflates from the
+first block pointer, where the Data Header Block ends in every uncompressed radial. The inflated size is
+limited by the radial length. The mutation test checks only that the decoder reads its own re-encoding; no real
+file confirms this layout.
+
+RDA build (`msg31_blocks::RdaBuild`, message 2 halfword 10, note 6): the value divided by 100 when that is
+greater than 2, otherwise the value divided by 10. `rda_build_from_metadata_records` checks the raw value and
+build of the 26 corpus files whose metadata record has a message 2, and compares the build with the manifest
+`build:` tags. KVWX 2008 records 1996 ("19.96", a build that did not exist in 2008). TDWR records 20
+("2.0"). Files from 1991 and 2005 record 0. The golden tests compare the build with MetPy's `rda_build`.
 
 ## Message 32: RDA PRF Data (Table XVIII)
 
