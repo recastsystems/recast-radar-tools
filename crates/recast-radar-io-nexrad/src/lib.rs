@@ -18,11 +18,7 @@ use std::cell::UnsafeCell;
 use std::collections::btree_map::Entry;
 use std::fs;
 use std::io::{Cursor, Read};
-#[cfg(not(target_arch = "wasm32"))]
-use std::mem::MaybeUninit;
 use std::path::Path;
-#[cfg(not(target_arch = "wasm32"))]
-use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
@@ -48,8 +44,6 @@ const HALF_DEGREE_RADIALS_PER_CUT: usize = 720;
 const ONE_DEGREE_RADIALS_PER_CUT: usize = 360;
 const FALLBACK_RADIALS_PER_CUT: usize = 760;
 const MAX_MESSAGE_31_MOMENTS: usize = 10;
-const GZIP_TRAILER_LEN: usize = 8;
-const MAX_GZIP_PREALLOC_RATIO: usize = 128;
 const ZIP_LOCAL_FILE_HEADER_LEN: usize = 30;
 /// Hard ceiling for one expanded radar payload. Operational Level II,
 /// ODIM, CfRadial, and DORADE files are far smaller; this remains generous
@@ -456,91 +450,12 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
     ))
 }
 
-fn gzip_decoded_capacity_hint(raw: &[u8]) -> Option<usize> {
-    let trailer = raw.get(raw.len().checked_sub(GZIP_TRAILER_LEN)?..)?;
-    let isize = u32::from_le_bytes([trailer[4], trailer[5], trailer[6], trailer[7]]) as usize;
-    let max_reasonable = raw.len().saturating_mul(MAX_GZIP_PREALLOC_RATIO);
-    (isize <= max_reasonable && isize <= MAX_DECODED_RADAR_BYTES).then_some(isize)
-}
-
 fn decompress_gzip_bytes(raw: &[u8]) -> Result<Vec<u8>> {
-    if let Some(expected_len) = gzip_decoded_capacity_hint(raw)
-        && let Some(decoded) = decompress_gzip_bytes_libdeflate(raw, expected_len)
-    {
-        return Ok(decoded);
-    }
-
     read_to_end_limited(
         GzDecoder::new(raw),
         MAX_DECODED_RADAR_BYTES,
         "gzip radar payload",
     )
-}
-
-/// wasm32 has no libdeflate (no libc/sysroot for its C sources), so the fast
-/// path is simply absent and `decompress_gzip_bytes` falls through to flate2.
-#[cfg(target_arch = "wasm32")]
-fn decompress_gzip_bytes_libdeflate(_raw: &[u8], _expected_len: usize) -> Option<Vec<u8>> {
-    None
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-struct LibdeflateDecompressor {
-    ptr: NonNull<libdeflate_sys::libdeflate_decompressor>,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-thread_local! {
-    static LIBDEFLATE_DECOMPRESSOR: Option<LibdeflateDecompressor> =
-        LibdeflateDecompressor::new();
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl LibdeflateDecompressor {
-    fn new() -> Option<Self> {
-        NonNull::new(unsafe { libdeflate_sys::libdeflate_alloc_decompressor() })
-            .map(|ptr| Self { ptr })
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl Drop for LibdeflateDecompressor {
-    fn drop(&mut self) {
-        unsafe {
-            libdeflate_sys::libdeflate_free_decompressor(self.ptr.as_ptr());
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn decompress_gzip_bytes_libdeflate(raw: &[u8], expected_len: usize) -> Option<Vec<u8>> {
-    if expected_len > MAX_DECODED_RADAR_BYTES {
-        return None;
-    }
-    let mut decoded = Vec::<MaybeUninit<u8>>::new();
-    decoded.try_reserve_exact(expected_len).ok()?;
-    let mut actual_len = 0usize;
-    let result = LIBDEFLATE_DECOMPRESSOR.with(|decompressor| {
-        let decompressor = decompressor.as_ref()?;
-        Some(unsafe {
-            libdeflate_sys::libdeflate_gzip_decompress(
-                decompressor.ptr.as_ptr(),
-                raw.as_ptr().cast(),
-                raw.len(),
-                decoded.as_mut_ptr().cast(),
-                expected_len,
-                &mut actual_len,
-            )
-        })
-    })?;
-    if result != libdeflate_sys::libdeflate_result_LIBDEFLATE_SUCCESS || actual_len > expected_len {
-        return None;
-    }
-
-    let ptr = decoded.as_mut_ptr().cast::<u8>();
-    let capacity = decoded.capacity();
-    std::mem::forget(decoded);
-    Some(unsafe { Vec::from_raw_parts(ptr, actual_len, capacity) })
 }
 
 /// Read an expanded stream without ever growing the destination beyond
@@ -2439,24 +2354,6 @@ mod tests {
             header.volume_time,
             Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 1).unwrap()
         );
-    }
-
-    #[test]
-    fn gzip_capacity_hint_reads_isize_footer() {
-        let mut bytes = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0, 1, 2];
-        bytes.extend_from_slice(&0xfeed_beefu32.to_le_bytes());
-        bytes.extend_from_slice(&1_024u32.to_le_bytes());
-
-        assert_eq!(gzip_decoded_capacity_hint(&bytes), Some(1_024));
-    }
-
-    #[test]
-    fn gzip_capacity_hint_rejects_wildly_large_trailer() {
-        let mut bytes = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0];
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
-
-        assert_eq!(gzip_decoded_capacity_hint(&bytes), None);
     }
 
     #[test]
