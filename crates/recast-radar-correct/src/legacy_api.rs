@@ -232,9 +232,9 @@ impl V4VolumeSolution {
 /// semantics: integer codes are `(raw - offset) / scale` with `nodata` and
 /// `range_folded` as no value, `F32` grids are physical.
 ///
-/// Names: a [`Naming`] maps each legacy moment to its field name. The
-/// default is the design note's 5.4 table ([`field_name`]); the retrieve
-/// crate adds its derived-product ids on top.
+/// Names: a [`convert::Naming`] maps each legacy moment to its field name.
+/// The default is the design note's 5.4 table ([`convert::field_name`]); the
+/// retrieve crate adds its derived-product ids on top.
 #[doc(hidden)]
 pub mod convert {
     use chrono::{DateTime, Utc};

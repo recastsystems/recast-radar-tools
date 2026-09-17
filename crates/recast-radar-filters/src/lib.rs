@@ -2,8 +2,8 @@
 //!
 //! Every function works on the FM301 model of `recast-radar-core`: a
 //! [`Sweep`](recast_radar_core::Sweep) supplies the ray coordinates and the
-//! range coordinate, a [`Field`](recast_radar_core::Field) the values in its
-//! native gate geometry. Outputs are new physical (`F32`) fields.
+//! range coordinate, a [`recast_radar_core::Field`] the values in its native
+//! gate geometry. Outputs are new physical (`F32`) fields.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #![cfg_attr(recast_legacy_deprecation, deny(deprecated))]

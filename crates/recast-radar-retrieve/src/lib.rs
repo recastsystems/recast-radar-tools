@@ -10,10 +10,10 @@
 //! physical `F32` fields named per the design note's section 8.3.
 //!
 //! The engine has deliberately separate layers:
-//! - [`sweep`] derives products that live on one sweep and can therefore be
-//!   added to its fields.
-//! - [`volume`] derives products that require the vertical column from
-//!   multiple sweeps.
+//! - `sweep` ([`derive_sweep_in_place`]) derives products that live on one
+//!   sweep and can therefore be added to its fields.
+//! - `volume` ([`cappi`], [`column_max`], ...) derives products that require
+//!   the vertical column from multiple sweeps.
 //! - temporal products (combining already co-registered fields from multiple
 //!   volumes) live in `recast_radar_track`.
 //!
@@ -25,10 +25,10 @@
 //! circulation, the VAD wind profile ([`compute_vwp`]) and damaging-wind
 //! products ([`wind`]).
 //!
-//! [`availability`] sits alongside them and answers the question a UI asks
-//! *before* deriving anything: which sweeps can show a given field, counting
-//! both the fields a sweep already carries and the ones [`sweep`] could
-//! derive from them on demand.
+//! `availability` ([`sweep_can_materialize_field`]) sits alongside them and
+//! answers the question a UI asks *before* deriving anything: which sweeps
+//! can show a given field, counting both the fields a sweep already carries
+//! and the ones the derivation could produce from them on demand.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
@@ -132,7 +132,7 @@ pub fn derived_products() -> Vec<ProductDescriptor> {
 }
 
 /// Volume products provided by `recast_radar_map` (the first eight ids) and
-/// by [`volume`].
+/// by this crate ([`cappi`], [`column_max`], [`echo_base`], ...).
 pub fn volume_products() -> Vec<ProductDescriptor> {
     [
         ("CREF", "Composite Reflectivity"),

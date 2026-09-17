@@ -4,8 +4,8 @@
 //! Every function works on the FM301 model of `recast-radar-core`
 //! (`docs/design/fm301-model.md`): [`Volume`](recast_radar_core::Volume)s of
 //! [`Sweep`](recast_radar_core::Sweep)s whose
-//! [`Field`](recast_radar_core::Field)s carry the values in their native
-//! gate geometry.
+//! [`recast_radar_core::Field`]s carry the values in their native gate
+//! geometry.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 #![cfg_attr(recast_legacy_deprecation, deny(deprecated))]

@@ -2,10 +2,9 @@
 //! hail), cross sections, volume box resampling, and native RHI panels.
 //!
 //! Every function works on the FM301 model of `recast-radar-core`
-//! (`docs/design/fm301-model.md`): a [`Volume`](recast_radar_core::Volume)
-//! of [`Sweep`](recast_radar_core::Sweep)s whose
-//! [`Field`](recast_radar_core::Field)s carry the values in their native
-//! gate geometry. Column products return physical `F32` fields on the base
+//! (`docs/design/fm301-model.md`): a [`recast_radar_core::Volume`] of
+//! [`recast_radar_core::Sweep`]s whose [`recast_radar_core::Field`]s carry
+//! the values in their native gate geometry. Column products return physical `F32` fields on the base
 //! sweep's rays and native gates, named by product id.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]

@@ -129,7 +129,7 @@ fn invert_beam_geometry(ground_range_m: f64, height_m: f64) -> (f64, f64) {
 /// above the radar (NaN = no data) — the same layout as
 /// [`CrossSection`], so panels can share rendering code. Each pixel is
 /// inverse-mapped to (slant range, elevation) and filled from the nearest
-/// recorded beam within [`MAX_BEAM_GAP_DEG`] and the nearest gate.
+/// recorded beam within `MAX_BEAM_GAP_DEG` (1°) and the nearest gate.
 pub fn rhi_panel(
     sweep: &Sweep,
     field: &Field,

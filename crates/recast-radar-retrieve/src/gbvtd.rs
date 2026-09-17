@@ -344,7 +344,7 @@ fn ring_is_core_candidate(ring: &RingFit) -> bool {
 /// radii (km). `n_azimuths` ring samples (72 = every 5°) is a good default.
 /// `wind_ms` is the external environmental (storm-motion) wind removed from
 /// each Doppler sample; pass `(0.0, 0.0)` when none is available (see
-/// [`fit_ring`]).
+/// `fit_ring`).
 pub fn retrieve_axisymmetric(
     field: &PolarVelocityField,
     center_km: (f32, f32),
@@ -379,7 +379,7 @@ pub fn retrieve_axisymmetric(
 /// candidate yields a usable circulation.
 /// `wind_ms` is the external environmental (storm-motion) wind (Um east, Vm
 /// north, m/s) removed from every Doppler sample before fitting; pass
-/// `(0.0, 0.0)` when no storm motion is available (see [`fit_ring`]).
+/// `(0.0, 0.0)` when no storm motion is available (see `fit_ring`).
 pub fn find_center_and_retrieve(
     field: &PolarVelocityField,
     guess_km: (f32, f32),
