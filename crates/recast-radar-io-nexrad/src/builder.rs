@@ -241,6 +241,7 @@ impl VolumeBuilder {
         azimuth_deg: f32,
         elevation_deg: f32,
         nyquist_velocity_mps: Option<f32>,
+        unambiguous_range_m: Option<f32>,
         status: RadialStatus,
         expected_rays: usize,
     ) -> usize {
@@ -263,6 +264,11 @@ impl VolumeBuilder {
             .nyquist_velocity_mps
             .get_or_insert_with(|| Vec::with_capacity(expected_rays));
         nyquist.push(nyquist_velocity_mps.unwrap_or(f32::NAN));
+        let unambiguous = model
+            .ray_vars
+            .unambiguous_range_m
+            .get_or_insert_with(|| Vec::with_capacity(expected_rays));
+        unambiguous.push(unambiguous_range_m.unwrap_or(f32::NAN));
         let state = &mut self.sweeps[sweep];
         state.last_status = Some(status);
         ray
@@ -380,13 +386,16 @@ impl VolumeBuilder {
 /// the VCP fixed angles, scan name and time coverage.
 fn finalize(volume: &mut Volume, vcp_cut_angles_deg: &[f32]) -> Result<()> {
     for sweep in &mut volume.sweeps {
-        if sweep
-            .ray_vars
-            .nyquist_velocity_mps
-            .as_ref()
-            .is_some_and(|values| values.iter().all(|value| value.is_nan()))
-        {
-            sweep.ray_vars.nyquist_velocity_mps = None;
+        for values in [
+            &mut sweep.ray_vars.nyquist_velocity_mps,
+            &mut sweep.ray_vars.unambiguous_range_m,
+        ] {
+            if values
+                .as_ref()
+                .is_some_and(|values| values.iter().all(|value| value.is_nan()))
+            {
+                *values = None;
+            }
         }
         let dual_pol = sweep.fields.iter().any(|field| {
             matches!(

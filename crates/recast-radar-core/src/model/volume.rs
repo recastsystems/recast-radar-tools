@@ -368,6 +368,65 @@ impl RadarCalibration {
             ("receiver_slope_vx", self.receiver_slope_vx),
         ]
     }
+
+    /// Set the float entry with the Table 301-14a `name` (one of the names
+    /// [`Self::float_entries`] returns). Returns `false`, leaving `self`
+    /// unchanged, when `name` is not one of them.
+    pub fn set_float_entry(&mut self, name: &str, value: Option<f32>) -> bool {
+        let slot: &mut Option<f32> = match name {
+            "pulse_width" => &mut self.pulse_width_s,
+            "antenna_gain_h" => &mut self.antenna_gain_h_db,
+            "antenna_gain_v" => &mut self.antenna_gain_v_db,
+            "xmit_power_h" => &mut self.xmit_power_h_dbm,
+            "xmit_power_v" => &mut self.xmit_power_v_dbm,
+            "two_way_waveguide_loss_h" => &mut self.two_way_waveguide_loss_h_db,
+            "two_way_waveguide_loss_v" => &mut self.two_way_waveguide_loss_v_db,
+            "two_way_radome_loss_h" => &mut self.two_way_radome_loss_h_db,
+            "two_way_radome_loss_v" => &mut self.two_way_radome_loss_v_db,
+            "receiver_mismatch_loss" => &mut self.receiver_mismatch_loss_db,
+            "receiver_mismatch_loss_h" => &mut self.receiver_mismatch_loss_h_db,
+            "receiver_mismatch_loss_v" => &mut self.receiver_mismatch_loss_v_db,
+            "radar_constant_h" => &mut self.radar_constant_h,
+            "radar_constant_v" => &mut self.radar_constant_v,
+            "probert_jones_correction" => &mut self.probert_jones_correction,
+            "dielectric_factor_used" => &mut self.dielectric_factor_used,
+            "noise_hc" => &mut self.noise_hc_dbm,
+            "noise_vc" => &mut self.noise_vc_dbm,
+            "noise_hx" => &mut self.noise_hx_dbm,
+            "noise_vx" => &mut self.noise_vx_dbm,
+            "receiver_gain_hc" => &mut self.receiver_gain_hc_db,
+            "receiver_gain_vc" => &mut self.receiver_gain_vc_db,
+            "receiver_gain_hx" => &mut self.receiver_gain_hx_db,
+            "receiver_gain_vx" => &mut self.receiver_gain_vx_db,
+            "base_1km_hc" => &mut self.base_1km_hc_dbz,
+            "base_1km_vc" => &mut self.base_1km_vc_dbz,
+            "base_1km_hx" => &mut self.base_1km_hx_dbz,
+            "base_1km_vx" => &mut self.base_1km_vx_dbz,
+            "sun_power_hc" => &mut self.sun_power_hc_dbm,
+            "sun_power_vc" => &mut self.sun_power_vc_dbm,
+            "sun_power_hx" => &mut self.sun_power_hx_dbm,
+            "sun_power_vx" => &mut self.sun_power_vx_dbm,
+            "noise_source_power_h" => &mut self.noise_source_power_h_dbm,
+            "noise_source_power_v" => &mut self.noise_source_power_v_dbm,
+            "power_measure_loss_h" => &mut self.power_measure_loss_h_db,
+            "power_measure_loss_v" => &mut self.power_measure_loss_v_db,
+            "coupler_forward_loss_h" => &mut self.coupler_forward_loss_h_db,
+            "coupler_forward_loss_v" => &mut self.coupler_forward_loss_v_db,
+            "zdr_correction" => &mut self.zdr_correction_db,
+            "ldr_correction_h" => &mut self.ldr_correction_h_db,
+            "ldr_correction_v" => &mut self.ldr_correction_v_db,
+            "system_phidp" => &mut self.system_phidp_deg,
+            "test_power_h" => &mut self.test_power_h_dbm,
+            "test_power_v" => &mut self.test_power_v_dbm,
+            "receiver_slope_hc" => &mut self.receiver_slope_hc,
+            "receiver_slope_vc" => &mut self.receiver_slope_vc,
+            "receiver_slope_hx" => &mut self.receiver_slope_hx,
+            "receiver_slope_vx" => &mut self.receiver_slope_vx,
+            _ => return false,
+        };
+        *slot = value;
+        true
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

@@ -44,8 +44,8 @@ use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_swee
 use recast_radar_core::model::{
     ArrayBuf, AttrValue, ExtraVariable, Field, FieldData, FieldName, FloatCoding, FloatWidth,
     FollowMode, GateMapping, InstrumentType, IntCoding, LinearTransform, PlatformTrack,
-    PlatformType, PolarizationMode, PrimaryAxis, PrtMode, Quantity, RangeCoord, Scalar,
-    ScanDefinition, ScanLeg, SimulationProvenance, SourceFormat, Sweep, SweepMode, Volume,
+    PlatformType, PolarizationMode, PrimaryAxis, PrtMode, Quantity, RadarCalibration, RangeCoord,
+    Scalar, ScanDefinition, ScanLeg, SimulationProvenance, SourceFormat, Sweep, SweepMode, Volume,
 };
 
 pub use crate::netcdf3::looks_like_netcdf3_bytes;
@@ -333,6 +333,7 @@ pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget) -> Result<Volume> {
     volume.radar_parameters.prt_s = cfradial_prt_s(&file);
     volume.radar_parameters.unambiguous_range_m =
         cfradial_unambiguous_range_km(&file).map(|km| km * 1000.0);
+    volume.radar_calibration = read_radar_calibration(&file, time_reference);
 
     // Scan strategy (BowEcho export attributes).
     volume.scan.name = metadata_text(&file, "scan_name");
@@ -1358,6 +1359,85 @@ fn cfradial_unambiguous_range_km(file: &Nc3File<'_>) -> Option<f32> {
             file.gattr_f64("unambiguous_range")
                 .and_then(|meters| positive_f32(meters / 1000.0))
         })
+}
+
+/// The `r_calib_*(r_calib)` variables as one [`RadarCalibration`] per
+/// `r_calib` entry (design note 12.4: `r_calib_<name>` is Table 301-14a
+/// `<name>`, `r_calib_base_dbz_1km_*` is `base_1km_*`; every other name goes
+/// to `RadarCalibration::extra` verbatim). A value equal to the variable's
+/// `_FillValue` (or not finite) is left unset. `r_calib_time` (ISO text or
+/// seconds) becomes seconds since the volume time reference. `r_calib_index`
+/// is a per-ray variable and is read with the ray variables. Empty when the
+/// file has no `r_calib` dimension.
+fn read_radar_calibration(
+    file: &Nc3File<'_>,
+    time_reference: DateTime<Utc>,
+) -> Vec<RadarCalibration> {
+    let Some(&(_, count)) = file.dims.iter().find(|(name, _)| name == "r_calib") else {
+        return Vec::new();
+    };
+    if count == 0 || count > 4096 {
+        return Vec::new();
+    }
+    let mut entries = vec![RadarCalibration::default(); count];
+    for (name, var) in &file.vars {
+        let Some(suffix) = name.strip_prefix("r_calib_") else {
+            continue;
+        };
+        if suffix == "index"
+            || var.dim_ids.first().map(|dim| file.dims[*dim].0.as_str()) != Some("r_calib")
+        {
+            continue;
+        }
+        let Ok(array) = file.read_var(name) else {
+            continue;
+        };
+        if suffix == "time" {
+            match &array {
+                NcArray::Char(chars) => {
+                    let width = chars.len() / count;
+                    for (entry, text) in entries.iter_mut().zip(chars.chunks(width.max(1))) {
+                        let text = text.split(|byte| *byte == 0).next().unwrap_or_default();
+                        entry.time_s = parse_iso_instant(String::from_utf8_lossy(text).trim()).map(
+                            |instant| (instant - time_reference).num_milliseconds() as f64 / 1000.0,
+                        );
+                    }
+                }
+                _ => {
+                    let scale = time_units_scale(var.attr_str("units"));
+                    for (index, entry) in entries.iter_mut().enumerate() {
+                        entry.time_s = array
+                            .get_f64(index)
+                            .filter(|value| value.is_finite())
+                            .map(|value| value * scale);
+                    }
+                }
+            }
+            continue;
+        }
+        let fill = var.attr_f64("_FillValue");
+        let table_name = match suffix {
+            "base_dbz_1km_hc" => "base_1km_hc",
+            "base_dbz_1km_vc" => "base_1km_vc",
+            "base_dbz_1km_hx" => "base_1km_hx",
+            "base_dbz_1km_vx" => "base_1km_vx",
+            other => other,
+        };
+        for (index, entry) in entries.iter_mut().enumerate() {
+            let value = array
+                .get_f64(index)
+                .filter(|value| value.is_finite() && Some(*value) != fill);
+            let Some(value) = value else {
+                continue;
+            };
+            if !entry.set_float_entry(table_name, Some(value as f32)) {
+                entry
+                    .extra
+                    .push((suffix.into(), AttrValue::Scalar(Scalar::F32(value as f32))));
+            }
+        }
+    }
+    entries
 }
 
 fn numeric_var_first(file: &Nc3File<'_>, name: &str) -> Option<f64> {

@@ -796,19 +796,16 @@ impl<'a> Builder<'a> {
             elevation_attrs,
         ));
         if !frequency.is_empty() {
-            let standard_name = if self.wmo() {
-                "radiation_frequency"
-            } else {
-                ""
-            };
+            let mut frequency_attrs: Attrs<'a> = Vec::new();
+            if self.wmo() {
+                frequency_attrs.push(("standard_name".into(), text("radiation_frequency")));
+            }
+            frequency_attrs.push(("units".into(), text("s-1")));
             variables.push(variable(
                 "frequency",
                 vec!["frequency".into()],
                 Values::Borrowed(ArrayRef::F64(frequency)),
-                vec![
-                    ("standard_name".into(), text(standard_name)),
-                    ("units".into(), text("s-1")),
-                ],
+                frequency_attrs,
             ));
         }
 
@@ -1294,12 +1291,25 @@ impl<'a> Builder<'a> {
         if let Some(xml) = &model.thresholding_xml {
             attrs.push(("thresholding_xml".into(), text(xml.as_str())));
         }
+        // The Xradar flavor keeps a source's own `coordinates` (xradar leaves
+        // CfRadial's in the encoding); the flavor default otherwise.
+        let source_coordinates = (!self.wmo())
+            .then(|| {
+                model
+                    .other
+                    .iter()
+                    .find(|(name, _)| &**name == "coordinates")
+                    .map(|(_, value)| value.clone())
+            })
+            .flatten();
         attrs.push((
             "coordinates".into(),
-            text(if self.wmo() {
-                "elevation azimuth range"
-            } else {
-                "elevation azimuth range latitude longitude altitude time"
+            source_coordinates.unwrap_or_else(|| {
+                text(if self.wmo() {
+                    "elevation azimuth range"
+                } else {
+                    "elevation azimuth range latitude longitude altitude time"
+                })
             }),
         ));
         if field.gates.stride > 1
@@ -1315,12 +1325,14 @@ impl<'a> Builder<'a> {
             ));
         }
         if self.xradar_items() {
-            attrs.extend(
-                model
-                    .other
-                    .iter()
-                    .map(|(name, value)| (Cow::Borrowed(&**name), value.clone())),
-            );
+            // Source attributes without a slot, verbatim; one the flavor
+            // already wrote (a CfRadial `coordinates`) is not repeated.
+            for (name, value) in &model.other {
+                if attrs.iter().any(|(key, _)| key == &**name) {
+                    continue;
+                }
+                attrs.push((Cow::Borrowed(&**name), value.clone()));
+            }
         }
         Ok(attrs)
     }

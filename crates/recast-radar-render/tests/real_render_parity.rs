@@ -18,7 +18,10 @@
 //! removal the volumes come from the native decoder, whose `fixed_angle_deg`
 //! is the VCP cut angle (design note 5.2): the lowest reflectivity sweep of
 //! KTLX 2024 is now sweep 0 (0.5 deg surveillance), not sweep 1 (whose first
-//! ray sat at 0.48 deg); the derived-product labels moved with it.
+//! ray sat at 0.48 deg); the derived-product labels moved with it. KLIX
+//! 2005's dealiased velocity (`DVEL`) was re-recorded when the Message 1
+//! Nyquist velocity moved from spare bytes 46-47 to halfword 31 (bytes
+//! 60-61, ICD Table III, as MetPy and Py-ART read it).
 
 // Test code: a panic is the failure report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

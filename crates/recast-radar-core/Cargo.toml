@@ -15,10 +15,11 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-# Legacy round-trip and FM301 view tests over the real corpus
-# (tests/legacy_round_trip.rs, tests/fm301_view.rs). A dev-dependency cycle
-# (io depends on core) is fine for integration tests.
+# FM301 view and conformance tests over the real corpus (tests/fm301_view.rs,
+# tests/fm301_conformance.rs). A dev-dependency cycle (io depends on core) is
+# fine for integration tests.
 recast-radar-io = { path = "../recast-radar-io" }
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 serde_json.workspace = true
 

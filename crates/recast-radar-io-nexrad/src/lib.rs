@@ -55,6 +55,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod builder;
+mod fm301_attrs;
 pub mod messages;
 pub mod metadata;
 
@@ -1638,7 +1639,14 @@ fn parse_message_1(
     let velocity_resolution = be_u16(body, 42);
 
     builder.set_vcp(be_u16(body, 44));
-    let nyquist_velocity_mps = match be_i16(body, 46) {
+    // Table III halfword 4: unambiguous range in 0.1 km; halfword 31: Nyquist
+    // velocity in 0.01 m/s (bytes 6 and 60 of the body, as MetPy and Py-ART
+    // read them). Halfwords 24 to 30 are spare.
+    let unambiguous_range_m = match be_u16(body, 6) {
+        0 => None,
+        raw => Some(f32::from(raw) * 100.0),
+    };
+    let nyquist_velocity_mps = match be_i16(body, 60) {
         raw if raw > 0 => Some(raw as f32 / 100.0),
         _ => None,
     };
@@ -1668,6 +1676,7 @@ fn parse_message_1(
         azimuth_angle,
         elevation_angle,
         nyquist_velocity_mps,
+        unambiguous_range_m,
         radial_status,
         ONE_DEGREE_RADIALS_PER_CUT,
     );
@@ -1741,6 +1750,7 @@ fn parse_message_31(
     }
 
     let mut nyquist_velocity_mps = None;
+    let mut unambiguous_range_m = None;
     let mut moments: [Option<MomentBlock<'_>>; MAX_MESSAGE_31_MOMENTS] =
         std::array::from_fn(|_| None);
     let mut moment_count = 0;
@@ -1762,7 +1772,9 @@ fn parse_message_31(
                 }
             }
             b'R' if &body[pointer + 1..pointer + 4] == b"RAD" => {
-                nyquist_velocity_mps = parse_radial_constant_block(body, pointer)?;
+                let (nyquist, unambiguous) = parse_radial_constant_block(body, pointer)?;
+                nyquist_velocity_mps = nyquist;
+                unambiguous_range_m = unambiguous;
             }
             b'D' if moment_count < moments.len() => {
                 moments[moment_count] = Some(parse_generic_moment_block(body, pointer)?);
@@ -1784,6 +1796,7 @@ fn parse_message_31(
         header.azimuth_angle,
         header.elevation_angle,
         nyquist_velocity_mps,
+        unambiguous_range_m,
         header.radial_status,
         expected_radials,
     );
@@ -1879,15 +1892,23 @@ fn parse_volume_constant_block(
     Ok(())
 }
 
-fn parse_radial_constant_block(bytes: &[u8], offset: usize) -> Result<Option<f32>> {
+/// The Radial Data Constant block (Table XVII-H): Nyquist velocity (0.01 m/s
+/// at bytes 16-17) and unambiguous range (0.1 km at bytes 6-7), each `None`
+/// when zero.
+fn parse_radial_constant_block(bytes: &[u8], offset: usize) -> Result<(Option<f32>, Option<f32>)> {
     require_len(
         bytes,
         offset,
         RADIAL_CONSTANT_BLOCK_LEN,
         "radial constant block",
     )?;
-    let raw = be_i16(&bytes[offset..offset + RADIAL_CONSTANT_BLOCK_LEN], 16);
-    Ok((raw > 0).then_some(raw as f32 / 100.0))
+    let block = &bytes[offset..offset + RADIAL_CONSTANT_BLOCK_LEN];
+    let nyquist = be_i16(block, 16);
+    let unambiguous = be_u16(block, 6);
+    Ok((
+        (nyquist > 0).then_some(nyquist as f32 / 100.0),
+        (unambiguous > 0).then_some(f32::from(unambiguous) * 100.0),
+    ))
 }
 
 fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock<'_>> {
@@ -2119,7 +2140,8 @@ mod tests {
         body[38..40].copy_from_slice(&103u16.to_be_bytes());
         body[42..44].copy_from_slice(&2u16.to_be_bytes());
         body[44..46].copy_from_slice(&31u16.to_be_bytes());
-        body[46..48].copy_from_slice(&1500i16.to_be_bytes());
+        body[6..8].copy_from_slice(&1165u16.to_be_bytes()); // unambiguous range 116.5 km
+        body[60..62].copy_from_slice(&1500i16.to_be_bytes()); // Nyquist 15 m/s
         body[100..103].copy_from_slice(&[0, 66, 86]);
         body[103..106].copy_from_slice(&[129, 131, 127]);
         let header = MessageHeader {
@@ -2153,6 +2175,10 @@ mod tests {
         assert_eq!(
             volume.sweeps[0].ray_vars.nyquist_velocity_mps,
             Some(vec![15.0])
+        );
+        assert_eq!(
+            volume.sweeps[0].ray_vars.unambiguous_range_m,
+            Some(vec![116_500.0])
         );
 
         // REF 1 km gates centred from 0 m and Doppler 250 m gates centred
