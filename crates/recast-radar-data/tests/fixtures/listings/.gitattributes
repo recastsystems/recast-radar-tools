@@ -1,0 +1,3 @@
+# Recorded bytes must stay exactly as captured.
+*.jsonl -text
+chunks/** binary
