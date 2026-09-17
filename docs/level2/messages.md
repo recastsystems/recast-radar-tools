@@ -99,7 +99,8 @@ Quirks found in the real corpus:
 
 `decode_volume_with_metadata(bytes) -> Result<NexradVolume>` (`src/metadata.rs`) returns
 `NexradVolume { volume, metadata }`. `volume` is the `RadarVolume` that `decode_volume_from_bytes` returns for the
-same bytes, with the same errors. `metadata` is a `NexradMetadata`:
+same bytes, with the same errors (including `MissingVolumeHeader` for headerless input, see Message 29).
+`metadata` is a `NexradMetadata`:
 
 | Field | Type | Source |
 |---|---|---|
@@ -346,6 +347,23 @@ bytes. Real samples: 4 segments in every metadata record from 2005 on, except KV
 
 Status: yielded unparsed. Table I lists type 29 as reserved.
 Real sample: the KLIX 2021-08-29 `_MDM` file, where it is one 809,229-byte message with a size of 65535.
+
+The volume decoders (`tests/headerless_inputs.rs`):
+
+- The `_MDM` file has no volume header: it is one LDM record. `decode_volume_from_bytes`,
+  `decode_volume_with_metadata` and the preview decoders return `NexradError::MissingVolumeHeader`, which
+  names the first 8 input bytes. Py-ART 2.2.5 raises `OSError: unknown compression record`; MetPy 1.7.1 logs
+  "Unable to read volume header" and returns a `Level2File` with 0 sweeps and no `stid` or `dt`. A `RadarVolume`
+  needs the site and volume time of the header, so an error is returned rather than an empty volume with
+  invented values. The walker and `NexradMetadata::from_metadata_record` still read the file (no metadata
+  message). An intermediate real-time chunk on its own gets the same error. Before wave 3, the decoder read
+  the compressed bytes as a volume header and uncompressed records, and failed only when a random "message 1"
+  tripped the gate limit.
+- A Message 29 inside a volume stream (the committed KIWA start chunk, the `_MDM` record, then chunk 002) is
+  skipped by its extended size, like every message whose size is the 0xFFFF sentinel (Table II notes 6 and 7).
+  The volume is the one decoded without it, plus one skipped message. Before wave 3, the decoder advanced one
+  2432-byte frame into the message and read its bytes as message headers: an `Ok` volume with VCP 52942, a
+  volume time in 2104 and a cut at 339 degrees.
 
 ## Message 31: Digital Radar Data Generic Format (Table XVII)
 
