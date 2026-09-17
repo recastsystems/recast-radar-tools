@@ -1,6 +1,6 @@
 # NEXRAD Level II corpus (TD.1): archive volumes across eras, RDA builds, VCPs and weather regimes,
 # plus one real-time chunk volume captured live. Loaded by recast-radar-testdata together with
-# testdata/manifest.toml; schema documented there. Provenance and verification: docs/testdata/corpus-level2.md
+# testdata/manifest.toml; schema documented there. Provenance and verification: docs/testdata/corpus.md
 
 [[file]]
 id = "l2-ktlx-19910605-162126"
