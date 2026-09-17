@@ -104,6 +104,12 @@ pub struct SweepElevationData {
     pub volume: Option<VolumeDataBlock>,
     /// Radial Data Constant block (Table XVII-H).
     pub radial: Option<RadialDataBlock>,
+    /// The VOL block's ZDR bias estimate in dB, converted with the same
+    /// radial's ZDR moment block (Table XVII-E notes 20 and 33; see
+    /// [`VolumeDataBlock::zdr_bias_estimate_db`]). `None` without a VOL
+    /// block, in the 44-byte VOL layout (before Build 20), or when the RPG
+    /// reports it as not available.
+    pub zdr_bias_estimate_db: Option<f32>,
 }
 
 /// Decode a Level II volume and its NEXRAD metadata.
@@ -206,6 +212,7 @@ impl RadialObserver for SweepCollector {
                 elevation: radial.elevation,
                 volume: radial.volume,
                 radial: radial.radial,
+                zdr_bias_estimate_db: radial.zdr_bias_estimate_db(),
             }),
             Err(error) => self
                 .errors

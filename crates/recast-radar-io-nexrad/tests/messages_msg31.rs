@@ -24,6 +24,8 @@
 //! intermediate chunk and change single fields to exercise unknown blocks,
 //! layout selection by size, compression and pointer errors.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
@@ -375,6 +377,11 @@ struct FileCase {
     /// VOL bytes 44-45 of every radial (a volume constant); `None` for the
     /// 44-byte layout.
     zdr_bias_raw: Option<u16>,
+    /// Word size, scale and offset of every ZDR moment block (Table XVII-B
+    /// bytes 19-27); `None` when no radial carries ZDR. Builds 12 to 18 write
+    /// 8-bit ZDR with scale 16 and offset 128; Build 19 on writes the 16-bit
+    /// Table XVII-I encoding, scale 32 and offset 418.
+    zdr_encoding: Option<(u8, f32, f32)>,
     /// Elevation number and moment pairs whose message 31 SNR threshold
     /// differs from message 5.
     snr_exceptions: &'static [(u8, &'static str)],
@@ -540,6 +547,7 @@ fn check_layouts(case: &FileCase, radials: &[DigitalRadarDataGeneric<'_>]) {
     if let Some(size) = manifest_size("rad-block:") {
         assert_eq!(size, case.rad_size, "{name}: manifest RAD size");
     }
+    let mut zdr_radials = 0;
     for radial in radials {
         let header = &radial.header;
         assert_eq!(header.blocks_offset(), case.header_len, "{name}");
@@ -564,7 +572,36 @@ fn check_layouts(case: &FileCase, radials: &[DigitalRadarDataGeneric<'_>]) {
         assert_eq!(vol.version_major, case.vol_major, "{name}");
         assert_eq!(vol.processing_status.0, case.processing_status, "{name}");
         assert_eq!(vol.zdr_bias_estimate_raw, case.zdr_bias_raw, "{name}");
-        if let Some(db) = vol.zdr_bias_estimate_db() {
+        // Notes 20 and 33: converted with this radial's ZDR block. Every
+        // volume with the 52-byte VOL layout writes the Table XVII-I
+        // encoding, so the fallback for radials without a ZDR block (Doppler
+        // cuts) gives the same value there.
+        let zdr = radial.moment(DataMomentName::DifferentialReflectivity);
+        if let Some(zdr) = zdr {
+            let expected = case
+                .zdr_encoding
+                .unwrap_or_else(|| panic!("{name}: unexpected ZDR block"));
+            assert_eq!(
+                (zdr.data_word_size, zdr.scale, zdr.offset),
+                expected,
+                "{name}: ZDR encoding"
+            );
+            zdr_radials += 1;
+        }
+        assert_eq!(
+            radial.zdr_bias_estimate_db(),
+            vol.zdr_bias_estimate_db(zdr),
+            "{name}"
+        );
+        if let Some(db) = radial.zdr_bias_estimate_db() {
+            if let Some(zdr) = zdr {
+                assert_eq!((zdr.scale, zdr.offset), (32.0, 418.0), "{name}");
+            }
+            assert_eq!(
+                radial.zdr_bias_estimate_db(),
+                vol.zdr_bias_estimate_db(None),
+                "{name}"
+            );
             assert!((-13.0..=20.0).contains(&db), "{name}: ZDR bias {db}");
         }
 
@@ -580,6 +617,11 @@ fn check_layouts(case: &FileCase, radials: &[DigitalRadarDataGeneric<'_>]) {
         assert_eq!(rad.radial_flags, 0, "{name}");
         assert_eq!(radial.elevation.unwrap().block_size, 12, "{name}");
     }
+    assert_eq!(
+        zdr_radials > 0,
+        case.zdr_encoding.is_some(),
+        "{name}: {zdr_radials} radials with ZDR"
+    );
 }
 
 // Real files against MetPy goldens --------------------------------------------------------
@@ -595,6 +637,7 @@ fn file_kvwx_2008_blank_icao_no_message_5() {
         vol_major: 1,
         processing_status: 0,
         zdr_bias_raw: None,
+        zdr_encoding: None,
         snr_exceptions: &[],
     });
 }
@@ -610,6 +653,7 @@ fn file_kpah_2008_build_10() {
         vol_major: 1,
         processing_status: 0,
         zdr_bias_raw: None,
+        zdr_encoding: None,
         snr_exceptions: &[],
     });
 }
@@ -625,6 +669,7 @@ fn file_kdmx_2008_build_10_super_resolution() {
         vol_major: 1,
         processing_status: 0,
         zdr_bias_raw: None,
+        zdr_encoding: None,
         snr_exceptions: &[],
     });
 }
@@ -640,6 +685,7 @@ fn file_kvnx_2011_build_12() {
         vol_major: 1,
         processing_status: 0,
         zdr_bias_raw: None,
+        zdr_encoding: Some((8, 16.0, 128.0)),
         snr_exceptions: &[],
     });
 }
@@ -655,6 +701,7 @@ fn file_kgwx_2013_build_13_recombined() {
         vol_major: 1,
         processing_status: 0,
         zdr_bias_raw: None,
+        zdr_encoding: Some((8, 16.0, 128.0)),
         snr_exceptions: &[],
     });
 }
@@ -670,6 +717,7 @@ fn file_koax_2014_build_14_rad_28() {
         vol_major: 2,
         processing_status: 1,
         zdr_bias_raw: None,
+        zdr_encoding: Some((8, 16.0, 128.0)),
         snr_exceptions: &[],
     });
 }
@@ -685,6 +733,7 @@ fn file_kdvn_2020_build_18() {
         vol_major: 2,
         processing_status: 1,
         zdr_bias_raw: None,
+        zdr_encoding: Some((8, 16.0, 128.0)),
         snr_exceptions: &[],
     });
 }
@@ -700,6 +749,7 @@ fn file_klix_2021_build_19_cfp_72_byte_header() {
         vol_major: 2,
         processing_status: 3,
         zdr_bias_raw: None,
+        zdr_encoding: Some((16, 32.0, 418.0)),
         snr_exceptions: &[],
     });
 }
@@ -716,6 +766,7 @@ fn file_kbox_2022_build_20_vol_52() {
         processing_status: 3,
         // -0.125 dB.
         zdr_bias_raw: Some(0x019e),
+        zdr_encoding: Some((16, 32.0, 418.0)),
         snr_exceptions: &[],
     });
 }
@@ -731,6 +782,7 @@ fn file_kmaf_2023_build_21_zdr_bias_not_available() {
         vol_major: 3,
         processing_status: 3,
         zdr_bias_raw: Some(0),
+        zdr_encoding: Some((16, 32.0, 418.0)),
         snr_exceptions: &[],
     });
 }
@@ -746,6 +798,7 @@ fn file_tstl_2023_tdwr() {
         vol_major: 1,
         processing_status: 0,
         zdr_bias_raw: None,
+        zdr_encoding: None,
         // The last cut records 0 dB for its three moments where message 5
         // says 1.0 dB.
         snr_exceptions: &[(23, "REF"), (23, "VEL"), (23, "SW")],
@@ -763,6 +816,7 @@ fn file_ktlx_2024_build_22() {
         vol_major: 3,
         processing_status: 3,
         zdr_bias_raw: Some(0),
+        zdr_encoding: Some((16, 32.0, 418.0)),
         snr_exceptions: &[],
     });
 }
@@ -779,6 +833,7 @@ fn file_kiwa_2026_build_24() {
         processing_status: 3,
         // +0.1875 dB.
         zdr_bias_raw: Some(0x01a8),
+        zdr_encoding: Some((16, 32.0, 418.0)),
         snr_exceptions: &[],
     });
 }
@@ -794,6 +849,7 @@ fn file_kiwa_committed_chunks() {
         vol_major: 3,
         processing_status: 3,
         zdr_bias_raw: Some(0x01a8),
+        zdr_encoding: Some((16, 32.0, 418.0)),
         snr_exceptions: &[],
     });
 }
@@ -919,7 +975,9 @@ fn first_radial_of_committed_chunk_decodes_every_field() {
     assert_eq!(vol.processing_status, ProcessingStatus(3));
     assert!(vol.processing_status.rxr_noise() && vol.processing_status.cbt());
     assert_eq!(vol.zdr_bias_estimate_raw, Some(424));
-    assert_eq!(vol.zdr_bias_estimate_db(), Some(0.1875));
+    // (424 - 418) / 32 with the ZDR block's offset and scale (notes 20, 33).
+    assert_eq!(radial.zdr_bias_estimate_db(), Some(0.1875));
+    assert_eq!(vol.zdr_bias_estimate_db(None), Some(0.1875));
 
     // RELV 000c fff4 c22c8000
     let elv = radial.elevation.unwrap();
@@ -1104,10 +1162,31 @@ fn second_ldm_record(raw: &[u8]) -> Vec<u8> {
     record
 }
 
+/// The "DZDR" moment block of a message 31 body, located through the Data
+/// Header Block pointers: `(block offset, scale, offset)` read from the
+/// bytes (Table XVII-B bytes 20-23 and 24-27).
+fn zdr_block_encoding_from_bytes(body: &[u8]) -> Option<(usize, f32, f32)> {
+    let count = usize::from(u16::from_be_bytes([body[30], body[31]]));
+    (0..count)
+        .map(|slot| {
+            let at = 32 + 4 * slot;
+            u32::from_be_bytes([body[at], body[at + 1], body[at + 2], body[at + 3]]) as usize
+        })
+        .find(|&pointer| &body[pointer..pointer + 4] == b"DZDR")
+        .map(|pointer| {
+            let real = |at: usize| {
+                f32::from_be_bytes([body[at], body[at + 1], body[at + 2], body[at + 3]])
+            };
+            (pointer, real(pointer + 20), real(pointer + 24))
+        })
+}
+
 /// VOL bytes 44-45 of the first radial of volumes without a golden. In each
 /// file that radial is the first message of the second LDM record, with its
 /// VOL block at body offset 72, so the estimate sits at offset
-/// 12 + 16 + 72 + 44 = 144 of the decompressed record.
+/// 12 + 16 + 72 + 44 = 144 of the decompressed record. The dB value follows
+/// Table XVII-E notes 20 and 33: `(raw - offset) / scale` with the offset
+/// and scale of the same radial's ZDR block, read here from the bytes.
 #[test]
 fn zdr_bias_estimate_in_other_builds() {
     let expected: &[(&str, u16, Option<f32>)] = &[
@@ -1118,9 +1197,12 @@ fn zdr_bias_estimate_in_other_builds() {
         ("l2-ktlx-20240515-000014", 0, None),
         ("l2-pahg-20250909-212549", 0x019b, Some(-0.218_75)),
         ("l2-kilx-20260418-013553", 0x019c, Some(-0.1875)),
+        ("l2-kiwa-20260917-003629", 0x01a8, Some(0.1875)),
     ];
+    let mut checked = 0;
     for (id, raw_bias, db) in expected {
         let Some(raw) = load(id) else { continue };
+        checked += 1;
         let record = second_ldm_record(&raw);
         assert_eq!(
             u16::from_be_bytes([record[144], record[145]]),
@@ -1137,8 +1219,139 @@ fn zdr_bias_estimate_in_other_builds() {
         let vol = radial.volume.unwrap();
         assert_eq!(vol.layout(), VolumeBlockLayout::ZdrBias52, "{id}");
         assert_eq!(vol.zdr_bias_estimate_raw, Some(*raw_bias), "{id}");
-        assert_eq!(vol.zdr_bias_estimate_db(), *db, "{id}");
+
+        // The first radial of every one of these volumes is a surveillance
+        // radial with a ZDR block; its bytes give the encoding.
+        let (pointer, scale, offset) = zdr_block_encoding_from_bytes(&record[28..])
+            .unwrap_or_else(|| panic!("{id}: no ZDR block"));
+        assert!(
+            radial
+                .header
+                .block_pointers
+                .contains(&u32::try_from(pointer).unwrap()),
+            "{id}: ZDR pointer {pointer}"
+        );
+        let zdr = radial
+            .moment(DataMomentName::DifferentialReflectivity)
+            .unwrap();
+        assert_eq!(
+            (zdr.scale, zdr.offset),
+            (scale, offset),
+            "{id}: ZDR encoding"
+        );
+        assert_eq!((scale, offset), (32.0, 418.0), "{id}: Table XVII-I values");
+        let from_bytes = (*raw_bias != 0).then(|| (f32::from(*raw_bias) - offset) / scale);
+        assert_eq!(from_bytes, *db, "{id}");
+        assert_eq!(radial.zdr_bias_estimate_db(), from_bytes, "{id}");
+        assert_eq!(vol.zdr_bias_estimate_db(Some(zdr)), from_bytes, "{id}");
+        assert_eq!(vol.zdr_bias_estimate_db(None), from_bytes, "{id}");
     }
+    let sources: Vec<Vec<&str>> = expected.iter().map(|(id, _, _)| vec![*id]).collect();
+    common::assert_checked_every_available("ZDR bias estimates", checked, &sources);
+}
+
+/// Per sweep, on a real volume with split cuts: surveillance radials carry
+/// a ZDR block, Doppler radials do not. The estimate of a Doppler sweep's
+/// first radial uses the Table XVII-I values, and equals the value the same
+/// raw code gives with the surveillance radials' ZDR blocks.
+#[test]
+fn zdr_bias_estimate_per_sweep_with_and_without_a_zdr_block() {
+    let id = "l2-kilx-20260418-013553";
+    let Some(raw) = load(id) else { return };
+    let decoded = recast_radar_io_nexrad::decode_volume_with_metadata(&raw).unwrap();
+    let sweeps = decoded.metadata.per_sweep_elevation_data.unwrap();
+    let cuts = &decoded.volume.cuts;
+    assert!(sweeps.len() >= 4, "{id}: {} sweeps", sweeps.len());
+    let mut with_zdr = 0;
+    let mut without_zdr = 0;
+    for sweep in &sweeps {
+        let cut = &cuts[sweep.cut_index];
+        let has_zdr = cut
+            .moments
+            .contains_key(&MomentType::DifferentialReflectivity);
+        let vol = sweep.volume.unwrap();
+        let raw = vol.zdr_bias_estimate_raw.unwrap();
+        assert_eq!(
+            raw, 0x019c,
+            "{id} cut {}: same raw estimate",
+            sweep.cut_index
+        );
+        assert_eq!(
+            sweep.zdr_bias_estimate_db,
+            Some((f32::from(raw) - 418.0) / 32.0),
+            "{id} cut {}",
+            sweep.cut_index
+        );
+        assert_eq!(
+            sweep.zdr_bias_estimate_db,
+            vol.zdr_bias_estimate_db(None),
+            "{id} cut {}",
+            sweep.cut_index
+        );
+        if has_zdr {
+            with_zdr += 1;
+        } else {
+            without_zdr += 1;
+        }
+    }
+    assert!(
+        with_zdr >= 2 && without_zdr >= 2,
+        "{id}: {with_zdr} with ZDR, {without_zdr} without"
+    );
+}
+
+/// The note 20 path on the committed KIWA radial: changing the ZDR block's
+/// scale and offset bytes changes the estimate; a scale of 0 (floating-point
+/// gates) and a radial without a ZDR block fall back to the Table XVII-I
+/// values.
+#[test]
+fn zdr_bias_estimate_follows_the_radial_zdr_block_encoding() {
+    let Some(body) = chunk_radial_body() else {
+        return;
+    };
+    let (pointer, scale, offset) = zdr_block_encoding_from_bytes(&body).unwrap();
+    assert_eq!((scale, offset), (32.0, 418.0));
+    let original = DigitalRadarDataGeneric::decode(&body).unwrap();
+    assert_eq!(original.volume.unwrap().zdr_bias_estimate_raw, Some(424));
+    assert_eq!(original.zdr_bias_estimate_db(), Some(0.1875));
+
+    // Scale 16, offset 256: (424 - 256) / 16.
+    let mut rescaled = body.clone();
+    rescaled[pointer + 20..pointer + 24].copy_from_slice(&16.0f32.to_be_bytes());
+    rescaled[pointer + 24..pointer + 28].copy_from_slice(&256.0f32.to_be_bytes());
+    let radial = DigitalRadarDataGeneric::decode(&rescaled).unwrap();
+    let zdr = radial
+        .moment(DataMomentName::DifferentialReflectivity)
+        .unwrap();
+    assert_eq!((zdr.scale, zdr.offset), (16.0, 256.0));
+    assert_eq!(radial.zdr_bias_estimate_db(), Some(10.5));
+    let vol = radial.volume.unwrap();
+    assert_eq!(vol.zdr_bias_estimate_db(Some(zdr)), Some(10.5));
+    assert_eq!(vol.zdr_bias_estimate_db(None), Some(0.1875));
+
+    // Scale 0 means floating-point gates (note 15): the typical values.
+    let mut floating = body.clone();
+    floating[pointer + 20..pointer + 24].copy_from_slice(&0.0f32.to_be_bytes());
+    let radial = DigitalRadarDataGeneric::decode(&floating).unwrap();
+    assert_eq!(radial.zdr_bias_estimate_db(), Some(0.1875));
+
+    // The ZDR block renamed: no ZDR block in the radial, the typical values.
+    let mut renamed = body.clone();
+    renamed[pointer + 1..pointer + 4].copy_from_slice(b"XYZ");
+    let radial = DigitalRadarDataGeneric::decode(&renamed).unwrap();
+    assert!(
+        radial
+            .moment(DataMomentName::DifferentialReflectivity)
+            .is_none()
+    );
+    assert_eq!(radial.zdr_bias_estimate_db(), Some(0.1875));
+
+    // Not available (raw 0) is None whatever the encoding.
+    let mut unavailable = rescaled.clone();
+    unavailable[72 + 44..72 + 46].copy_from_slice(&[0, 0]);
+    let radial = DigitalRadarDataGeneric::decode(&unavailable).unwrap();
+    assert_eq!(radial.volume.unwrap().zdr_bias_estimate_raw, Some(0));
+    assert_eq!(radial.zdr_bias_estimate_db(), None);
 }
 
 // The volume decoder agrees ----------------------------------------------------------------

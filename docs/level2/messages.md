@@ -112,7 +112,7 @@ same bytes, with the same errors (including `MissingVolumeHeader` for headerless
 | `bypass_map` | `Option<ClutterFilterBypassMap>` | message 13 |
 | `clutter_censor_zones` | `Option<ClutterCensorZones>` | message 8 |
 | `prf` | `Option<RdaPrfData>` | message 32 |
-| `per_sweep_elevation_data` | `Option<Vec<SweepElevationData>>` | message 31 VOL, ELV and RAD blocks of each cut's first radial |
+| `per_sweep_elevation_data` | `Option<Vec<SweepElevationData>>` | message 31 VOL, ELV and RAD blocks of each cut's first radial, and its ZDR bias estimate in dB |
 | `build` | `Option<RdaBuild>` | `RdaStatus::rda_build` of the message 2 above (`None` for the legacy RDA) |
 | `errors` | `Vec<String>` | problems met while reading the metadata |
 
@@ -122,7 +122,7 @@ same bytes, with the same errors (including `MissingVolumeHeader` for headerless
   `NexradMetadata::from_metadata_record(bytes)` reads these fields without decoding the volume, for example for a
   real-time start chunk or a status-only stub.
 - `per_sweep_elevation_data` has one `SweepElevationData { cut_index, elevation_number, elevation_angle_deg,
-  elevation, volume, radial }` per cut, in `volume.cuts` order. It is `None` when no radial is a message 31
+  elevation, volume, radial, zdr_bias_estimate_db }` per cut, in `volume.cuts` order. It is `None` when no radial is a message 31
   (message 1 volumes). The blocks come from each cut's first radial. The ELV block is constant within a cut; VOL
   and RAD are sent with every radial, so the stored values are those at the start of the cut.
 - One decode pass. The volume decoders call an internal observer after each message 31 radial. When the radial
@@ -404,6 +404,23 @@ Verification (`tests/messages_msg31.rs`):
 - **Fields MetPy does not read.** These are the VOL ZDR bias estimate, RAD radial flags, and spare bytes. The
   expected values come from the file bytes, read with a separate Python script: ZDR bias raw 407 to 430 (-0.34
   to +0.375 dB), or 0 (not available) for KMAF 2023 and both KTLX 2024 files. Radial flags and spares are 0.
+- **ZDR bias estimate in dB.** Table XVII-E note 33 says the estimate is encoded like the "ZDR" data moment,
+  and note 20 says conversions must use the scale and offset in the Data Moment Block of the same radial, which
+  could change from radial to radial. `VolumeDataBlock::zdr_bias_estimate_db(zdr)` takes that radial's ZDR
+  block; `DigitalRadarDataGeneric::zdr_bias_estimate_db()` passes it, and `SweepElevationData::zdr_bias_estimate_db`
+  holds the first radial's value. Radials without a ZDR block (the Doppler cuts of split cuts carry REF, VEL and
+  SW only) and blocks with scale 0 (floating-point gates, note 15) use the Table XVII-I typical values, offset 418
+  and scale 32. The encoding has changed between builds: Builds 12.0 to 18.2 (KVNX 2011 to KDVN 2020) write
+  8-bit ZDR with scale 16 and offset 128, and Build 19.1 on writes 16-bit ZDR with scale 32 and offset 418
+  (`check_file` pins the word size, scale and offset of every ZDR block in the 14 golden sources). Every volume
+  with the 52-byte VOL layout uses the Table XVII-I values, so in real data the fallback and the note 20
+  conversion agree. Verified (`zdr_bias_estimate_in_other_builds`): in 8 volumes from Build 20.1 to 24.1 the
+  first radial's ZDR block, located through the Data Header Block pointers in the record bytes, carries scale 32
+  and offset 418, and the decoded value equals `(raw - offset) / scale` from those bytes. On KILX 2026 every
+  sweep's first radial has the same raw code, and Doppler sweeps get the same value through the fallback. A
+  mutation of the committed KIWA radial's ZDR block bytes (scale 16, offset 256) moves the estimate to 10.5 dB,
+  and a scale of 0 or a renamed ZDR block falls back to the typical values; that mutation is the only exercise of
+  a 52-byte VOL with a non-typical ZDR encoding.
 - **Every field of one radial.** The first radial of the committed KIWA chunk 002 is checked field by field
   against its hex. The same radial's gate code counts (REF below threshold, CFP filter states 0-2, CFP values
   0-73 dB) are checked against the separate Python reader.
