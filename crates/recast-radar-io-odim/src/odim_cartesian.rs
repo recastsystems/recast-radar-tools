@@ -14,6 +14,7 @@
 //! and leaves those side products untouched.
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use recast_radar_core::bounded_read::DecodeBudget;
 
 use crate::hdf5lite::{H5Attr, H5Data, H5File};
 use crate::{OdimError, Result};
@@ -235,6 +236,9 @@ pub fn decode_odim_h5_cartesian_max(bytes: &[u8]) -> Result<OdimCartesianGrid> {
             plane.data.len()
         )));
     }
+    DecodeBudget::volume()
+        .charge(expected_len, size_of::<f32>(), "ODIM_H5 Cartesian grid")
+        .map_err(OdimError::LimitExceeded)?;
     let values = decode_physical_values(&plane.data, encoding);
 
     Ok(OdimCartesianGrid {

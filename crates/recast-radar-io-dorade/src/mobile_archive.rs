@@ -38,11 +38,14 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
-use recast_radar_core::RadarVolume;
-use recast_radar_core::bounded_read::read_to_end_limited;
+use recast_radar_core::bounded_read::{
+    MAX_DECODED_BATCH_BYTES, read_to_end_limited, volume_moment_capacity_bytes,
+};
+use recast_radar_core::{RadarVolume, Radial};
 use zip::ZipArchive;
 
 use crate::dorade::{
@@ -110,7 +113,7 @@ where
             ),
         });
     }
-    decode_members(path, members, &decode_level2)
+    decode_members(path, members, &decode_level2, MAX_DECODED_BATCH_BYTES)
 }
 
 /// Decode every radar volume under a deployment FOLDER (recursive, a few
@@ -136,7 +139,7 @@ where
         });
     }
     members.sort_by(|left, right| left.name.cmp(&right.name));
-    decode_members(dir, members, &decode_level2)
+    decode_members(dir, members, &decode_level2, MAX_DECODED_BATCH_BYTES)
 }
 
 /// Deployment trees are shallow (day/instrument levels); the cap only
@@ -344,10 +347,14 @@ fn segment_volume_runs<T>(mut sweeps: Vec<GroupableSweep<T>>) -> Vec<Vec<Groupab
     runs
 }
 
+/// Decode grouped members in parallel. The retained size of every decoded
+/// volume counts against `batch_limit` (normally [`MAX_DECODED_BATCH_BYTES`]);
+/// in-flight decodes on other threads may briefly hold more.
 fn decode_members<F, E>(
     archive_path: &Path,
     members: Vec<RadarMember>,
     decode_level2: &F,
+    batch_limit: usize,
 ) -> Result<Vec<MobileVolume>>
 where
     F: Fn(&[u8]) -> std::result::Result<RadarVolume, E> + Sync,
@@ -377,6 +384,7 @@ where
 
     let archive_label = archive_path.display().to_string();
     let mut volumes: Vec<MobileVolume> = Vec::new();
+    let decoded_bytes = AtomicUsize::new(0);
 
     let runs: Vec<Vec<GroupableSweep<RadarMember>>> = per_instrument
         .into_values()
@@ -391,6 +399,7 @@ where
                     .map_err(|err| with_member(&sweep.payload.name, err))?;
             }
             finalize_dorade_volume(&mut volume);
+            charge_batch(&decoded_bytes, &volume, batch_limit)?;
             let member_label = run[0].payload.name.clone();
             volume.metadata.source_path = Some(format!("{archive_label}::{member_label}"));
             Ok(MobileVolume {
@@ -407,6 +416,7 @@ where
         .map(|member| {
             let mut volume =
                 decode_level2(&member.bytes).map_err(|err| with_member(&member.name, err))?;
+            charge_batch(&decoded_bytes, &volume, batch_limit)?;
             volume.metadata.source_path = Some(format!("{archive_label}::{}", member.name));
             Ok(MobileVolume {
                 volume,
@@ -424,6 +434,25 @@ where
             .then_with(|| left.member_label.cmp(&right.member_label))
     });
     Ok(volumes)
+}
+
+/// Add a decoded volume's retained size (moment grids and radial tables) to
+/// the archive-wide total, failing once it would pass `limit`.
+fn charge_batch(total: &AtomicUsize, volume: &RadarVolume, limit: usize) -> Result<()> {
+    let radials: usize = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
+    let bytes = volume_moment_capacity_bytes(volume)
+        .saturating_add(radials.saturating_mul(size_of::<Radial>()));
+    total
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+            used.checked_add(bytes).filter(|next| *next <= limit)
+        })
+        .map(|_| ())
+        .map_err(|used| {
+            DoradeError::LimitExceeded(format!(
+                "mobile archive decodes to more than {limit} bytes (limit); {used} bytes \
+                 were already decoded before a {bytes}-byte volume"
+            ))
+        })
 }
 
 fn with_member(name: &str, err: impl Display) -> DoradeError {
@@ -780,6 +809,46 @@ mod tests {
         assert_eq!(volume.cuts.len(), 2);
         for path in [&low, &high, &other] {
             std::fs::remove_file(path).ok();
+        }
+    }
+
+    #[test]
+    fn archive_decoding_beyond_the_batch_limit_is_rejected() {
+        // The five committed real DORADE sweepfiles, as a deployment folder.
+        let dir = recast_radar_testdata::testdata_dir().join("files/other/dorade");
+        let mut members = Vec::new();
+        let mut budget = MemberBudget::default();
+        collect_dir_members(&dir, &dir, &mut members, &mut budget, 0)
+            .expect("read committed sweepfiles");
+        assert_eq!(members.len(), 5);
+        members.sort_by(|left, right| left.name.cmp(&right.name));
+        let volumes = decode_members(
+            &dir,
+            members.iter().map(clone_member).collect(),
+            &no_level2_members,
+            MAX_DECODED_BATCH_BYTES,
+        )
+        .expect("real sweepfiles fit the default batch limit");
+        let needed: usize = volumes
+            .iter()
+            .map(|mobile| {
+                let radials: usize = mobile.volume.cuts.iter().map(|cut| cut.radials.len()).sum();
+                volume_moment_capacity_bytes(&mobile.volume) + radials * size_of::<Radial>()
+            })
+            .sum();
+
+        let error = decode_members(&dir, members, &no_level2_members, needed - 1)
+            .expect_err("one byte short of the decoded size must fail");
+        assert!(
+            matches!(&error, DoradeError::LimitExceeded(reason) if reason.contains("limit")),
+            "unexpected error: {error}"
+        );
+    }
+
+    fn clone_member(member: &RadarMember) -> RadarMember {
+        RadarMember {
+            name: member.name.clone(),
+            bytes: member.bytes.clone(),
         }
     }
 

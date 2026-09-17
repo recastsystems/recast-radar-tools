@@ -60,6 +60,9 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
+use recast_radar_core::bounded_read::{
+    DecodeBudget, check_gate_count, check_sweep_count, volume_moment_capacity_bytes,
+};
 use recast_radar_core::{
     GateRange, MomentGrid, MomentRow, MomentType, RadarSite, RadarVolume, Radial, ScanMode,
     canonical_moment,
@@ -71,11 +74,6 @@ const BLOCK_HEADER_LEN: usize = 8;
 const DORADE_BAD_F32: f32 = -9999.0;
 /// DORADE altitude fields are kilometres MSL.
 const KM_TO_M: f64 = 1000.0;
-/// Real mobile-radar sweepfiles in the validation corpus are below 2,000
-/// gates per radial. This allows unusually long/high-resolution research
-/// rays while rejecting attacker-controlled PARM/CSFD counts before RLE
-/// allocates a multi-gigabyte row.
-const MAX_DORADE_GATES_PER_RADIAL: usize = 16 * 1024;
 /// Aggregate decoded cells retained while assembling one sweep. The cap is
 /// independent of input compression and bounds the combined moment rows.
 const MAX_DORADE_CELLS_PER_SWEEP: usize = 64 * 1024 * 1024;
@@ -227,7 +225,26 @@ pub fn decode_dorade_volume_from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<Ra
 pub fn append_dorade_sweep(bytes: &[u8], volume: &mut RadarVolume) -> Result<()> {
     let mut parse = SweepParse::new(detect_endian(bytes)?);
     parse.run(bytes, false)?;
-    parse.finish_into(volume)
+    check_sweep_count(volume.cuts.len() + 1, "DORADE volume")
+        .map_err(DoradeError::LimitExceeded)?;
+    // The volume budget covers every sweep appended so far.
+    let mut budget = DecodeBudget::volume();
+    let existing_radials: usize = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
+    budget
+        .charge(
+            volume_moment_capacity_bytes(volume),
+            1,
+            "DORADE volume grids",
+        )
+        .and_then(|()| {
+            budget.charge(
+                existing_radials,
+                size_of::<Radial>(),
+                "DORADE volume radials",
+            )
+        })
+        .map_err(DoradeError::LimitExceeded)?;
+    parse.finish_into(volume, &mut budget)
 }
 
 /// Sort cuts by elevation and refresh volume-level bookkeeping. Called once
@@ -666,6 +683,14 @@ impl SweepParse {
             validate_gate_count(gates, offset, "RDAT")?;
         }
         let param = &self.params[param_index];
+        let stored_gates = match param.binary_format {
+            1 => payload.len(),
+            2 => payload.len() / 2,
+            _ => payload.len() / 4,
+        };
+        if !(compressed && param.binary_format == 2) {
+            validate_gate_count(stored_gates, offset, "RDAT")?;
+        }
         let row = match param.binary_format {
             1 => {
                 // i8 → u8 storage; +128 keeps (raw − offset)/scale intact.
@@ -740,10 +765,9 @@ impl SweepParse {
             .checked_add(row.len())
             .ok_or_else(|| invalid(offset, "DORADE decoded-cell count overflow"))?;
         if decoded_cells > MAX_DORADE_CELLS_PER_SWEEP {
-            return Err(invalid(
-                offset,
-                format!("DORADE sweep exceeds the {MAX_DORADE_CELLS_PER_SWEEP}-cell decode limit"),
-            ));
+            return Err(DoradeError::LimitExceeded(format!(
+                "DORADE sweep exceeds the {MAX_DORADE_CELLS_PER_SWEEP}-cell decode limit"
+            )));
         }
         self.decoded_cells = decoded_cells;
         self.params[param_index].pending_row = Some(row);
@@ -830,7 +854,7 @@ impl SweepParse {
         }
     }
 
-    fn finish_into(mut self, volume: &mut RadarVolume) -> Result<()> {
+    fn finish_into(mut self, volume: &mut RadarVolume, budget: &mut DecodeBudget) -> Result<()> {
         let mut skipped_transition_rays = self.transition_rays.len();
         if self.rays.is_empty() {
             if self.transition_rays.is_empty() {
@@ -908,9 +932,47 @@ impl SweepParse {
             param.grid = Some(new_grid(param, gate_range.clone()));
         }
 
+        // Charge the finished grids before building them: every row is padded
+        // to the widest row of its field, so the retained size follows from
+        // the row counts and widths, not from the (possibly compressed) input.
+        let mut rows_per_param = vec![(0usize, 0usize); self.params.len()];
+        for (_, rows) in &self.rays {
+            for (param_index, row) in rows {
+                if let Some((count, widest)) = rows_per_param.get_mut(*param_index) {
+                    *count += 1;
+                    *widest = (*widest).max(row.len());
+                }
+            }
+        }
+        for (param, (rows, widest)) in self.params.iter_mut().zip(&rows_per_param) {
+            if *rows == 0 {
+                continue;
+            }
+            let word_bytes = match param.binary_format {
+                1 => 1,
+                2 => 2,
+                _ => 4,
+            };
+            let row_bytes = gate_range
+                .gate_count
+                .max(*widest)
+                .checked_mul(word_bytes)
+                .and_then(|bytes| bytes.checked_add(size_of::<usize>()))
+                .ok_or_else(|| invalid(0, "DORADE grid size overflow"))?;
+            budget
+                .charge(*rows, row_bytes, "DORADE moment grid")
+                .map_err(DoradeError::LimitExceeded)?;
+            if let Some(grid) = param.grid.as_mut() {
+                reserve_grid(grid, *rows, gate_range.gate_count.max(*widest));
+            }
+        }
+        budget
+            .charge(self.rays.len(), size_of::<Radial>(), "DORADE sweep radials")
+            .map_err(DoradeError::LimitExceeded)?;
+
         let elevation_number = u8::try_from(self.sweep_number.clamp(0, 255)).ok();
         let cut = volume.push_cut(fixed_angle, elevation_number);
-        cut.radials.reserve(self.rays.len());
+        cut.radials.reserve_exact(self.rays.len());
         let rays = std::mem::take(&mut self.rays);
         for (ray, rows) in rays {
             let radial_index = cut.radials.len();
@@ -979,6 +1041,18 @@ fn new_grid(param: &ParamState, gate_range: GateRange) -> MomentGrid {
             radial_indices: Vec::new(),
             storage: recast_radar_core::MomentStorage::F32(Vec::new()),
         },
+    }
+}
+
+/// Reserve exactly `rows` rows of `gates` values (the widest row, which the
+/// grid pads every row to), so pushing them never reallocates.
+fn reserve_grid(grid: &mut MomentGrid, rows: usize, gates: usize) {
+    grid.radial_indices.reserve_exact(rows);
+    let values = rows.saturating_mul(gates);
+    match &mut grid.storage {
+        recast_radar_core::MomentStorage::U8(storage) => storage.reserve_exact(values),
+        recast_radar_core::MomentStorage::U16(storage) => storage.reserve_exact(values),
+        recast_radar_core::MomentStorage::F32(storage) => storage.reserve_exact(values),
     }
 }
 
@@ -1079,15 +1153,8 @@ fn require(block: &[u8], needed: usize, offset: usize, what: &'static str) -> Re
 }
 
 fn validate_gate_count(gates: usize, offset: usize, descriptor: &'static str) -> Result<()> {
-    if gates > MAX_DORADE_GATES_PER_RADIAL {
-        return Err(invalid(
-            offset,
-            format!(
-                "{descriptor} declares {gates} gates per radial (limit {MAX_DORADE_GATES_PER_RADIAL})"
-            ),
-        ));
-    }
-    Ok(())
+    check_gate_count(gates, &format!("{descriptor} at offset {offset}"))
+        .map_err(DoradeError::LimitExceeded)
 }
 
 fn invalid(offset: usize, reason: impl Into<String>) -> DoradeError {

@@ -65,6 +65,9 @@ const MAX_HDF5_DATASET_BYTES: usize = 256 * 1024 * 1024;
 const MAX_HDF5_ATTRIBUTE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_HDF5_FILTERS: usize = 32;
 const MAX_HDF5_FILTER_VALUES: usize = 1024;
+/// Most named objects (groups and datasets) indexed per file. Real ODIM_H5
+/// files hold 18-283 objects.
+const MAX_OBJECTS: usize = 1 << 14;
 
 /// `true` when the buffer starts with the HDF5 superblock signature.
 pub fn looks_like_hdf5_bytes(bytes: &[u8]) -> bool {
@@ -258,6 +261,12 @@ impl<'a> H5File<'a> {
             MAX_HDF5_DATASET_BYTES,
             "HDF5 dataset",
         )?;
+        checked_allocation_bytes(
+            element_count,
+            dtype.decoded_element_bytes(),
+            MAX_HDF5_DATASET_BYTES,
+            "decoded HDF5 dataset",
+        )?;
         let raw = match layout {
             Layout::Compact(data) => data,
             Layout::Contiguous { address, size } => {
@@ -295,7 +304,9 @@ impl<'a> H5File<'a> {
         depth: usize,
     ) -> Result<()> {
         if depth > MAX_GROUP_DEPTH {
-            return Err(invalid(0, "HDF5 group nesting too deep"));
+            return Err(limit(format!(
+                "HDF5 group nesting is deeper than {MAX_GROUP_DEPTH} levels (limit)"
+            )));
         }
         for message in &header.messages {
             if message.kind != 0x0011 {
@@ -313,6 +324,11 @@ impl<'a> H5File<'a> {
                 let path = format!("{prefix}/{name}");
                 if self.objects.contains_key(&path) {
                     continue; // hard-link cycle guard
+                }
+                if self.objects.len() >= MAX_OBJECTS {
+                    return Err(limit(format!(
+                        "HDF5 file indexes more than {MAX_OBJECTS} objects (limit)"
+                    )));
                 }
                 let child = self.parse_object_header(child_address)?;
                 self.objects.insert(path.clone(), child_address);
@@ -337,7 +353,9 @@ impl<'a> H5File<'a> {
             ));
         }
         if visited.len() > MAX_BTREE_NODES {
-            return Err(invalid(0, "HDF5 group B-tree too large"));
+            return Err(limit(format!(
+                "HDF5 group B-tree has more than {MAX_BTREE_NODES} nodes (limit)"
+            )));
         }
         let node = self.slice(node_address, 8 + 2 * self.offset_size)?;
         if &node[..4] != b"TREE" {
@@ -376,10 +394,9 @@ impl<'a> H5File<'a> {
             let name_offset = read_offset(self.bytes, cursor, self.length_size)?;
             let header = read_offset(self.bytes, cursor + self.offset_size, self.offset_size)?;
             if out.len() >= MAX_GROUP_ENTRIES {
-                return Err(invalid(
-                    address_to_usize(address)?,
-                    "HDF5 group has too many entries",
-                ));
+                return Err(limit(format!(
+                    "HDF5 group has more than {MAX_GROUP_ENTRIES} entries (limit)"
+                )));
             }
             out.push((name_offset, header));
             cursor = cursor
@@ -415,19 +432,15 @@ impl<'a> H5File<'a> {
         }
         let total_messages = u16::from_le_bytes([head[2], head[3]]) as usize;
         if total_messages > MAX_OBJECT_MESSAGES {
-            return Err(invalid(
-                address_to_usize(address)?,
-                format!(
-                    "HDF5 object header declares {total_messages} messages (limit {MAX_OBJECT_MESSAGES})"
-                ),
-            ));
+            return Err(limit(format!(
+                "HDF5 object header declares {total_messages} messages (limit {MAX_OBJECT_MESSAGES})"
+            )));
         }
         let block_size = u32::from_le_bytes([head[8], head[9], head[10], head[11]]) as usize;
         if block_size > MAX_OBJECT_MESSAGE_BYTES {
-            return Err(invalid(
-                address_to_usize(address)?,
-                "HDF5 object-header message block is too large",
-            ));
+            return Err(limit(format!(
+                "HDF5 object-header message block is {block_size} bytes (limit {MAX_OBJECT_MESSAGE_BYTES})"
+            )));
         }
         let mut messages = Vec::with_capacity(total_messages);
         // (start, length) message blocks; the first follows 4 pad bytes.
@@ -474,13 +487,14 @@ impl<'a> H5File<'a> {
                     let length = usize::try_from(length)
                         .map_err(|_| invalid(cursor, "HDF5 continuation length overflows usize"))?;
                     if length > MAX_OBJECT_MESSAGE_BYTES {
-                        return Err(invalid(cursor, "HDF5 continuation block is too large"));
+                        return Err(limit(format!(
+                            "HDF5 continuation block is {length} bytes (limit {MAX_OBJECT_MESSAGE_BYTES})"
+                        )));
                     }
                     if blocks.len() >= MAX_HEADER_BLOCKS {
-                        return Err(invalid(
-                            address_to_usize(address)?,
-                            "HDF5 object header has too many continuation blocks",
-                        ));
+                        return Err(limit(format!(
+                            "HDF5 object header has more than {MAX_HEADER_BLOCKS} continuation blocks (limit)"
+                        )));
                     }
                     if !scheduled_blocks.insert(offset) {
                         return Err(invalid(offset, "cycle in HDF5 object-header continuations"));
@@ -491,10 +505,9 @@ impl<'a> H5File<'a> {
                         invalid(cursor, "HDF5 object-header message size overflow")
                     })?;
                     if message_bytes > MAX_OBJECT_MESSAGE_BYTES {
-                        return Err(invalid(
-                            address_to_usize(address)?,
-                            "HDF5 object header contains too much message data",
-                        ));
+                        return Err(limit(format!(
+                            "HDF5 object header holds more than {MAX_OBJECT_MESSAGE_BYTES} bytes of messages (limit)"
+                        )));
                     }
                     messages.push(Message { kind, body });
                 }
@@ -547,7 +560,9 @@ impl<'a> H5File<'a> {
         let chunk0_size = usize::try_from(read_uint(self.bytes, cursor, size_width)?)
             .map_err(|_| invalid(cursor, "HDF5 v2 chunk size overflows usize"))?;
         if chunk0_size > MAX_OBJECT_MESSAGE_BYTES {
-            return Err(invalid(cursor, "HDF5 v2 header message block is too large"));
+            return Err(limit(format!(
+                "HDF5 v2 header message block is {chunk0_size} bytes (limit {MAX_OBJECT_MESSAGE_BYTES})"
+            )));
         }
         cursor = cursor
             .checked_add(size_width)
@@ -563,10 +578,9 @@ impl<'a> H5File<'a> {
         let mut message_bytes = 0usize;
         while block_index < blocks.len() {
             if blocks.len() > MAX_HEADER_BLOCKS {
-                return Err(invalid(
-                    address,
-                    "HDF5 v2 header has too many continuation blocks",
-                ));
+                return Err(limit(format!(
+                    "HDF5 v2 header has more than {MAX_HEADER_BLOCKS} continuation blocks (limit)"
+                )));
             }
             let (start, len, chunk_start) = blocks[block_index];
             block_index += 1;
@@ -617,7 +631,9 @@ impl<'a> H5File<'a> {
                         return Err(invalid(cursor, "HDF5 v2 continuation block too short"));
                     }
                     if length > MAX_OBJECT_MESSAGE_BYTES {
-                        return Err(invalid(cursor, "HDF5 v2 continuation block is too large"));
+                        return Err(limit(format!(
+                            "HDF5 v2 continuation block is {length} bytes (limit {MAX_OBJECT_MESSAGE_BYTES})"
+                        )));
                     }
                     if self.slice(offset as u64, 4)? != OCHK_SIGNATURE {
                         return Err(invalid(offset, "expected OCHK signature"));
@@ -632,19 +648,17 @@ impl<'a> H5File<'a> {
                     blocks.push((message_start, length - 8, offset));
                 } else {
                     if messages.len() >= MAX_OBJECT_MESSAGES {
-                        return Err(invalid(
-                            address,
-                            "HDF5 v2 object header has too many messages",
-                        ));
+                        return Err(limit(format!(
+                            "HDF5 v2 object header has more than {MAX_OBJECT_MESSAGES} messages (limit)"
+                        )));
                     }
                     message_bytes = message_bytes
                         .checked_add(size)
                         .ok_or_else(|| invalid(cursor, "HDF5 v2 message byte count overflow"))?;
                     if message_bytes > MAX_OBJECT_MESSAGE_BYTES {
-                        return Err(invalid(
-                            address,
-                            "HDF5 v2 object header contains too much message data",
-                        ));
+                        return Err(limit(format!(
+                            "HDF5 v2 object header holds more than {MAX_OBJECT_MESSAGE_BYTES} bytes of messages (limit)"
+                        )));
                     }
                     messages.push(Message { kind, body });
                 }
@@ -660,10 +674,9 @@ impl<'a> H5File<'a> {
         let version = *body.first().ok_or_else(|| truncated(0, 1, 0))?;
         let rank = *body.get(1).ok_or_else(|| truncated(1, 1, body.len()))? as usize;
         if rank > MAX_DATASPACE_RANK {
-            return Err(invalid(
-                1,
-                format!("HDF5 dataspace rank {rank} exceeds {MAX_DATASPACE_RANK}"),
-            ));
+            return Err(limit(format!(
+                "HDF5 dataspace rank is {rank} (limit {MAX_DATASPACE_RANK})"
+            )));
         }
         let dims_start: usize = match version {
             1 => 8, // version, rank, flags, reserved[5]
@@ -681,10 +694,9 @@ impl<'a> H5File<'a> {
             let dim = usize::try_from(read_offset(body, at, self.length_size)?)
                 .map_err(|_| invalid(at, "HDF5 dimension overflows usize"))?;
             if dim > MAX_DATASPACE_DIM {
-                return Err(invalid(
-                    at,
-                    format!("HDF5 dimension {dim} exceeds {MAX_DATASPACE_DIM}"),
-                ));
+                return Err(limit(format!(
+                    "HDF5 dataspace dimension is {dim} (limit {MAX_DATASPACE_DIM})"
+                )));
             }
             dims.push(dim);
         }
@@ -742,7 +754,9 @@ impl<'a> H5File<'a> {
             0 => {
                 let size = usize::from(read_le_u16(body, 2)?);
                 if size > MAX_HDF5_DATASET_BYTES {
-                    return Err(invalid(2, "HDF5 compact dataset is too large"));
+                    return Err(limit(format!(
+                        "HDF5 compact dataset is {size} bytes (limit {MAX_HDF5_DATASET_BYTES})"
+                    )));
                 }
                 let end = 4usize
                     .checked_add(size)
@@ -773,8 +787,13 @@ impl<'a> H5File<'a> {
                         .get(at..at + 4)
                         .ok_or_else(|| truncated(at, 4, body.len()))?;
                     let dim = u32::from_le_bytes(dim.try_into().expect("4 bytes")) as usize;
-                    if dim == 0 || dim > MAX_DATASPACE_DIM {
+                    if dim == 0 {
                         return Err(invalid(at, "invalid HDF5 chunk dimension"));
+                    }
+                    if dim > MAX_DATASPACE_DIM {
+                        return Err(limit(format!(
+                            "HDF5 chunk dimension is {dim} (limit {MAX_DATASPACE_DIM})"
+                        )));
                     }
                     chunk_dims.push(dim);
                 }
@@ -793,10 +812,9 @@ impl<'a> H5File<'a> {
         let version = *body.first().ok_or_else(|| truncated(0, 1, 0))?;
         let count = *body.get(1).ok_or_else(|| truncated(1, 1, body.len()))? as usize;
         if count > MAX_HDF5_FILTERS {
-            return Err(invalid(
-                1,
-                format!("HDF5 filter count {count} exceeds {MAX_HDF5_FILTERS}"),
-            ));
+            return Err(limit(format!(
+                "HDF5 filter pipeline has {count} filters (limit {MAX_HDF5_FILTERS})"
+            )));
         }
         let mut filters = Vec::with_capacity(count);
         let mut cursor = match version {
@@ -832,7 +850,9 @@ impl<'a> H5File<'a> {
                     .ok_or_else(|| invalid(after_id, "HDF5 filter cursor overflow"))?,
             )?);
             if value_count > MAX_HDF5_FILTER_VALUES {
-                return Err(invalid(after_id, "HDF5 filter has too many client values"));
+                return Err(limit(format!(
+                    "HDF5 filter has {value_count} client values (limit {MAX_HDF5_FILTER_VALUES})"
+                )));
             }
             let mut at = after_id
                 .checked_add(4)
@@ -944,6 +964,13 @@ impl<'a> H5File<'a> {
     }
 
     fn attr_value(&self, dtype: &Datatype, count: usize, data: &[u8]) -> Result<H5Attr> {
+        if matches!(dtype.class, DtClass::Int { .. } | DtClass::Float) {
+            // Reserve only for values the message actually holds.
+            let needed = count.saturating_mul(dtype.size);
+            if data.len() < needed {
+                return Err(truncated(0, needed, data.len()));
+            }
+        }
         match dtype.class {
             DtClass::FixedString => {
                 let bytes = data.get(..dtype.size.min(data.len())).unwrap_or_default();
@@ -1002,20 +1029,36 @@ impl<'a> H5File<'a> {
         if &head[..4] != b"GCOL" {
             return Err(invalid(collection as usize, "expected GCOL signature"));
         }
-        let total = read_offset(head, 8, self.length_size)? as usize;
-        let mut cursor = collection as usize + 8 + self.length_size;
-        let end = collection as usize + total;
-        while cursor + 8 + self.length_size <= end {
+        let overflow = || invalid(0, "HDF5 global heap offset overflow");
+        let total =
+            usize::try_from(read_offset(head, 8, self.length_size)?).map_err(|_| overflow())?;
+        let start = address_to_usize(collection)?;
+        let object_header = 8 + self.length_size;
+        // `slice` above proved the collection header lies inside the file.
+        let mut cursor = start + object_header;
+        let end = start
+            .checked_add(total)
+            .ok_or_else(overflow)?
+            .min(self.bytes.len());
+        while cursor
+            .checked_add(object_header)
+            .is_some_and(|header_end| header_end <= end)
+        {
             let object_index = u16::from_le_bytes([self.bytes[cursor], self.bytes[cursor + 1]]);
-            let size = read_offset(self.bytes, cursor + 8, self.length_size)? as usize;
+            let size = usize::try_from(read_offset(self.bytes, cursor + 8, self.length_size)?)
+                .map_err(|_| overflow())?;
             if object_index == 0 {
                 break; // free space marker terminates the collection
             }
-            let data_start = cursor + 8 + self.length_size;
-            if object_index as u32 == index {
+            let data_start = cursor + object_header;
+            if u32::from(object_index) == index {
                 return Ok(self.slice(data_start as u64, size)?.to_vec());
             }
-            cursor = data_start + size.div_ceil(8) * 8;
+            cursor = size
+                .div_ceil(8)
+                .checked_mul(8)
+                .and_then(|padded| data_start.checked_add(padded))
+                .ok_or_else(overflow)?;
         }
         Err(invalid(
             collection as usize,
@@ -1067,10 +1110,10 @@ impl<'a> H5File<'a> {
         )?;
         for chunk in chunks {
             if chunk.stored_size > MAX_HDF5_DATASET_BYTES {
-                return Err(invalid(
-                    address_to_usize(chunk.address)?,
-                    "HDF5 stored chunk is too large",
-                ));
+                return Err(limit(format!(
+                    "HDF5 stored chunk is {} bytes (limit {MAX_HDF5_DATASET_BYTES})",
+                    chunk.stored_size
+                )));
             }
             let stored = self.slice(chunk.address, chunk.stored_size)?;
             let raw = apply_inverse_filters(
@@ -1151,7 +1194,9 @@ impl<'a> H5File<'a> {
                 .ok_or_else(|| invalid(cursor, "HDF5 chunk B-tree child overflow"))?;
             if level == 0 {
                 if out.len() >= MAX_DATA_CHUNKS {
-                    return Err(invalid(0, "HDF5 dataset has too many chunks"));
+                    return Err(limit(format!(
+                        "HDF5 dataset has more than {MAX_DATA_CHUNKS} chunks (limit)"
+                    )));
                 }
                 out.push(ChunkRef {
                     address: child,
@@ -1202,6 +1247,16 @@ struct Datatype {
 }
 
 impl Datatype {
+    /// Bytes per element of the [`H5Data`] storage [`Self::convert`] produces.
+    fn decoded_element_bytes(&self) -> usize {
+        match self.class {
+            DtClass::Int { signed: false } if self.size <= 2 => self.size,
+            DtClass::Int { .. } => 8,
+            DtClass::Float => self.size,
+            DtClass::FixedString | DtClass::VlenString => self.size,
+        }
+    }
+
     /// Convert a raw element buffer into the closest [`H5Data`] storage.
     fn convert(&self, raw: &[u8]) -> Result<H5Data> {
         match self.class {
@@ -1286,7 +1341,10 @@ fn apply_inverse_filters(
     max_output: usize,
 ) -> Result<Vec<u8>> {
     if stored.len() > MAX_HDF5_DATASET_BYTES {
-        return Err(invalid(0, "HDF5 stored filter input is too large"));
+        return Err(limit(format!(
+            "HDF5 stored filter input is {} bytes (limit {MAX_HDF5_DATASET_BYTES})",
+            stored.len()
+        )));
     }
     let mut data = stored.to_vec();
     for (index, filter) in filters.iter().enumerate().rev() {
@@ -1307,10 +1365,9 @@ fn apply_inverse_filters(
                             .read(&mut probe)
                             .map_err(|err| invalid(0, format!("HDF5 deflate chunk: {err}")))?;
                         if count != 0 {
-                            return Err(invalid(
-                                0,
-                                format!("HDF5 deflate chunk expands beyond {max_output} bytes"),
-                            ));
+                            return Err(limit(format!(
+                                "HDF5 deflate chunk expands beyond its {max_output}-byte chunk size (limit)"
+                            )));
                         }
                         break;
                     }
@@ -1343,17 +1400,15 @@ fn apply_inverse_filters(
             }
         }
         if data.len() > max_output {
-            return Err(invalid(
-                0,
-                format!("HDF5 filter output exceeds {max_output} bytes"),
-            ));
+            return Err(limit(format!(
+                "HDF5 filter output exceeds its {max_output}-byte chunk size (limit)"
+            )));
         }
     }
     if data.len() > max_output {
-        return Err(invalid(
-            0,
-            format!("HDF5 filter output exceeds {max_output} bytes"),
-        ));
+        return Err(limit(format!(
+            "HDF5 filter output exceeds its {max_output}-byte chunk size (limit)"
+        )));
     }
     Ok(data)
 }
@@ -1411,7 +1466,10 @@ fn copy_chunk(
                 .max(1);
             let local = remaining / stride;
             remaining %= stride;
-            let global = offsets[dim] + local;
+            let Some(global) = offsets[dim].checked_add(local) else {
+                in_bounds = false;
+                break;
+            };
             if global >= dims[dim] {
                 in_bounds = false;
                 break;
@@ -1433,7 +1491,10 @@ fn copy_chunk(
 }
 
 fn heap_string(bytes: &[u8], heap_data: u64, name_offset: u64) -> Result<String> {
-    let start = (heap_data + name_offset) as usize;
+    let start = heap_data
+        .checked_add(name_offset)
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| invalid(0, "HDF5 local heap name offset overflow"))?;
     let tail = bytes
         .get(start..)
         .ok_or_else(|| truncated(start, 1, bytes.len()))?;
@@ -1484,10 +1545,9 @@ fn checked_allocation_bytes(
         .checked_mul(element_size)
         .ok_or_else(|| invalid(0, format!("{context} byte-size overflow")))?;
     if bytes > limit {
-        return Err(invalid(
-            0,
-            format!("{context} requires {bytes} bytes (limit {limit})"),
-        ));
+        return Err(OdimError::LimitExceeded(format!(
+            "{context} requires {bytes} bytes (limit {limit})"
+        )));
     }
     Ok(bytes)
 }
@@ -1608,6 +1668,10 @@ fn read_float(raw: &[u8], big_endian: bool) -> Result<f64> {
         }
         other => Err(invalid(0, format!("float width {other} unsupported"))),
     }
+}
+
+fn limit(reason: String) -> OdimError {
+    OdimError::LimitExceeded(reason)
 }
 
 fn invalid(offset: usize, reason: impl Into<String>) -> OdimError {

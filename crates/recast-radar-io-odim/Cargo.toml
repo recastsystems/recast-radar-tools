@@ -10,5 +10,8 @@ flate2.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 thiserror.workspace = true
 
+[dev-dependencies]
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+
 [lints]
 workspace = true

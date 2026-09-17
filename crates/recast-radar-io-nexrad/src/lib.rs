@@ -9,6 +9,33 @@
 //! buffers of unknown format to the right decoder. [`level3_vwp`] holds the
 //! Level III VAD Wind Profile decoder until the full Level III crate
 //! subsumes it.
+//!
+//! # Limits
+//!
+//! Allocations never follow header values past these caps (shared values in
+//! [`recast_radar_core::bounded_read`]):
+//!
+//! - **Expanded input**: gzip, whole-file bzip2, and uncompressed buffers at
+//!   most `MAX_DECODED_RADAR_BYTES` (512 MiB). LDM block-bzip2 volumes: at
+//!   most 4,096 blocks, 16 MiB per decompressed block, 512 MiB in total.
+//!   Violations are [`NexradError::Compression`] errors.
+//! - **Messages**: sizes are 16-bit halfword counts (at most 131,070 bytes);
+//!   every block pointer and gate array is checked against its message.
+//! - **Gates**: a Message 1 row or Message 31 moment block may declare at
+//!   most `MAX_GATES_PER_RADIAL` (16,384) gates; real volumes reach 1,840.
+//! - **Cuts**: at most `MAX_SWEEPS_PER_VOLUME` (1,024) elevation cuts; real
+//!   volumes reach 23.
+//! - **Decoded moments**: grid reservations and growth are checked against a
+//!   `DecodeBudget` of `MAX_DECODED_VOLUME_BYTES` (1 GiB) per volume before
+//!   allocating; real volumes need at most 80 MiB. Radial tables are not
+//!   charged: every radial consumes at least 88 bytes of expanded input and
+//!   occupies 40, so the expanded-input cap bounds them.
+//!
+//! Gate, cut, and budget violations are [`NexradError::LimitExceeded`]
+//! errors. Preview callbacks receive a clone of the partial volume, so memory
+//! briefly doubles while one runs. [`decode_volume_from_path`] reads the
+//! whole file first; callers choose which files to open. [`level3_vwp`]
+//! inflates at most 32 MiB and accepts blocks under 500,000 bytes.
 
 pub mod level3_vwp;
 
@@ -23,9 +50,12 @@ use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, TimeZone, Utc};
 use flate2::read::GzDecoder;
 use rayon::prelude::*;
-use recast_radar_core::bounded_read::{self, MAX_DECODED_RADAR_BYTES};
+use recast_radar_core::bounded_read::{
+    self, DecodeBudget, MAX_DECODED_RADAR_BYTES, MAX_SWEEPS_PER_VOLUME, moment_grid_capacity_bytes,
+};
 use recast_radar_core::{
-    GateRange, MomentGrid, MomentType, RadarSite, RadarVolume, Radial, RadialStatus, VcpInfo,
+    CUT_ELEVATION_MATCH_TOLERANCE_DEG, ElevationCut, GateRange, MomentGrid, MomentType, RadarSite,
+    RadarVolume, Radial, RadialStatus, VcpInfo,
 };
 use thiserror::Error;
 
@@ -73,6 +103,10 @@ pub enum NexradError {
     InvalidMessage { offset: usize, reason: String },
     #[error("moment grid error: {0}")]
     MomentGrid(#[from] recast_radar_core::MomentGridError),
+    /// The file declares more data than a documented resource limit allows
+    /// (see the crate-level `# Limits` section).
+    #[error("decode limit exceeded: {0}")]
+    LimitExceeded(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -424,6 +458,15 @@ pub fn decode_normalized_volume_bytes(
     bytes: &[u8],
     compression: ArchiveCompression,
 ) -> Result<RadarVolume> {
+    decode_normalized_volume_bytes_within(bytes, compression, DecodeBudget::volume())
+}
+
+/// [`decode_normalized_volume_bytes`] with an explicit output budget.
+fn decode_normalized_volume_bytes_within(
+    bytes: &[u8],
+    compression: ArchiveCompression,
+    mut budget: DecodeBudget,
+) -> Result<RadarVolume> {
     let volume_header = parse_volume_header(bytes)?;
     let mut volume = RadarVolume::new(
         RadarSite::new(volume_header.icao.clone()),
@@ -478,7 +521,7 @@ pub fn decode_normalized_volume_bytes(
                     });
                 }
                 let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
-                parse_message_1(body, &header, &mut volume)?;
+                parse_message_1(body, &header, &mut volume, &mut budget)?;
             }
             31 => {
                 let message_end = header_offset + message_total_len;
@@ -495,7 +538,7 @@ pub fn decode_normalized_volume_bytes(
                     });
                 }
                 let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
-                parse_message_31(body, &header, &mut volume)?;
+                parse_message_31(body, &header, &mut volume, &mut budget)?;
             }
             5 => {
                 let body_offset = header_offset + MESSAGE_HEADER_LEN;
@@ -584,6 +627,7 @@ where
     let mut prefix = [0; CONTROL_WORD_LEN + MESSAGE_HEADER_LEN];
     let mut body_buffer = Vec::with_capacity(RECORD_BYTES);
     let mut preview_emitted = false;
+    let mut budget = DecodeBudget::volume();
     while read_record_prefix(reader, &mut prefix, cursor)? {
         let header_offset = cursor + CONTROL_WORD_LEN;
         let header = parse_message_header_bytes(&prefix[CONTROL_WORD_LEN..]);
@@ -634,7 +678,7 @@ where
                     }
                     return Err(err);
                 }
-                parse_message_1(&body_buffer, &header, &mut volume)?;
+                parse_message_1(&body_buffer, &header, &mut volume, &mut budget)?;
                 skip_record_padding(reader, record_len, prefix.len() + body_len, cursor)?;
                 if let Some(min_radials) = preview_min_radials
                     && !preview_emitted
@@ -664,7 +708,7 @@ where
                     }
                     return Err(err);
                 }
-                parse_message_31(&body_buffer, &header, &mut volume)?;
+                parse_message_31(&body_buffer, &header, &mut volume, &mut budget)?;
                 skip_record_padding(reader, record_len, prefix.len() + body_len, cursor)?;
                 if let Some(min_radials) = preview_min_radials
                     && !preview_emitted
@@ -1104,6 +1148,7 @@ fn parse_bzip_block_volume(
     let mut record_index = 0usize;
     let mut prefix = [0; CONTROL_WORD_LEN + MESSAGE_HEADER_LEN];
     let mut body_buffer = Vec::with_capacity(RECORD_BYTES);
+    let mut budget = DecodeBudget::volume();
     loop {
         match cursor_reader.read_optional_prefix(&mut prefix, cursor) {
             Ok(true) => {}
@@ -1168,7 +1213,7 @@ fn parse_bzip_block_volume(
                         return Err(err);
                     }
                 };
-                parse_message_1(body, &header, &mut volume)?;
+                parse_message_1(body, &header, &mut volume, &mut budget)?;
                 if let Some(min_radials) = preview_pending
                     && has_complete_displayable_cut(&volume, min_radials)
                 {
@@ -1203,7 +1248,7 @@ fn parse_bzip_block_volume(
                         return Err(err);
                     }
                 };
-                parse_message_31(body, &header, &mut volume)?;
+                parse_message_31(body, &header, &mut volume, &mut budget)?;
                 if let Some(min_radials) = preview_pending
                     && has_complete_displayable_cut(&volume, min_radials)
                 {
@@ -1449,6 +1494,7 @@ fn parse_message_1(
     body: &[u8],
     _message_header: &MessageHeader,
     volume: &mut RadarVolume,
+    budget: &mut DecodeBudget,
 ) -> Result<()> {
     require_len(body, 0, MSG_1_HEADER_LEN, "message 1 header")?;
 
@@ -1496,6 +1542,13 @@ fn parse_message_1(
         volume.metadata.skipped_message_count += 1;
         return Ok(());
     }
+    for row in [reflectivity_row, velocity_row, spectrum_width_row]
+        .into_iter()
+        .flatten()
+    {
+        bounded_read::check_gate_count(row.len(), "message 1 moment")
+            .map_err(NexradError::LimitExceeded)?;
+    }
 
     let gate_range = if reflectivity_row.is_some() {
         reflectivity_range.clone()
@@ -1511,30 +1564,7 @@ fn parse_message_1(
         radial_status: Some(radial_status),
     };
 
-    let starts_elevation = matches!(
-        radial_status,
-        RadialStatus::StartElevation
-            | RadialStatus::StartVolume
-            | RadialStatus::StartElevationLastCut
-    );
-    let last_cut_has_radials = volume
-        .cuts
-        .last()
-        .is_some_and(|cut| !cut.radials.is_empty());
-    let last_cut_matches = volume.cuts.last().is_some_and(|cut| {
-        cut.elevation_number == Some(elevation_number)
-            || (cut.elevation_deg - elevation_angle).abs() <= 0.05
-    });
-    let cut = if starts_elevation && last_cut_has_radials {
-        volume.push_cut(elevation_angle, Some(elevation_number))
-    } else if last_cut_matches {
-        volume
-            .cuts
-            .last_mut()
-            .expect("last cut existence was checked before borrowing")
-    } else {
-        volume.find_or_insert_cut(elevation_angle, Some(elevation_number))
-    };
+    let cut = cut_for_radial(volume, radial_status, elevation_angle, elevation_number)?;
     if cut.radials.is_empty() {
         cut.radials.reserve(ONE_DEGREE_RADIALS_PER_CUT);
     }
@@ -1549,8 +1579,9 @@ fn parse_message_1(
             2.0,
             66.0,
             ONE_DEGREE_RADIALS_PER_CUT,
-        );
-        grid.push_u8_row_slice(radial_index, row)?;
+            budget,
+        )?;
+        push_moment_row(grid, radial_index, MomentPayload::U8(row), budget)?;
     }
     if let Some(row) = velocity_row {
         let grid = legacy_u8_grid(
@@ -1560,8 +1591,9 @@ fn parse_message_1(
             legacy_message_1_velocity_scale(velocity_resolution),
             129.0,
             ONE_DEGREE_RADIALS_PER_CUT,
-        );
-        grid.push_u8_row_slice(radial_index, row)?;
+            budget,
+        )?;
+        push_moment_row(grid, radial_index, MomentPayload::U8(row), budget)?;
     }
     if let Some(row) = spectrum_width_row {
         // ICD 2620002 message 1 encodes SW like velocity at 0.5 m/s resolution:
@@ -1573,37 +1605,153 @@ fn parse_message_1(
             2.0,
             129.0,
             ONE_DEGREE_RADIALS_PER_CUT,
-        );
-        grid.push_u8_row_slice(radial_index, row)?;
+            budget,
+        )?;
+        push_moment_row(grid, radial_index, MomentPayload::U8(row), budget)?;
     }
 
     volume.metadata.decoded_radial_count += 1;
     Ok(())
 }
 
-fn legacy_u8_grid(
-    cut: &mut recast_radar_core::ElevationCut,
+fn legacy_u8_grid<'c>(
+    cut: &'c mut ElevationCut,
     moment: MomentType,
     gate_range: GateRange,
     scale: f32,
     offset: f32,
     expected_radials: usize,
-) -> &mut MomentGrid {
-    match cut.moments.entry(moment) {
+    budget: &mut DecodeBudget,
+) -> Result<&'c mut MomentGrid> {
+    Ok(match cut.moments.entry(moment) {
         Entry::Occupied(entry) => entry.into_mut(),
         Entry::Vacant(entry) => {
-            let mut grid = MomentGrid::new_u8(
+            let grid = new_moment_grid(
                 entry.key().clone(),
                 gate_range,
                 scale,
                 offset,
-                Some(0),
-                Some(1),
-            );
-            grid.reserve_rows(expected_radials);
+                false,
+                expected_radials,
+                budget,
+            )?;
             entry.insert(grid)
         }
+    })
+}
+
+/// Select the cut a radial belongs to: a new cut when the radial starts an
+/// elevation after the last cut already holds radials, the last cut when it
+/// matches, and otherwise the most recent matching cut (created if none).
+/// Errors rather than creating a cut beyond [`MAX_SWEEPS_PER_VOLUME`].
+fn cut_for_radial(
+    volume: &mut RadarVolume,
+    radial_status: RadialStatus,
+    elevation_angle: f32,
+    elevation_number: u8,
+) -> Result<&mut ElevationCut> {
+    let matches_cut = |cut: &ElevationCut| {
+        cut.elevation_number == Some(elevation_number)
+            || (cut.elevation_deg - elevation_angle).abs() <= CUT_ELEVATION_MATCH_TOLERANCE_DEG
+    };
+    let starts_elevation = matches!(
+        radial_status,
+        RadialStatus::StartElevation
+            | RadialStatus::StartVolume
+            | RadialStatus::StartElevationLastCut
+    );
+    let last_cut_has_radials = volume
+        .cuts
+        .last()
+        .is_some_and(|cut| !cut.radials.is_empty());
+    let push_new_cut = starts_elevation && last_cut_has_radials;
+    if !push_new_cut && volume.cuts.last().is_some_and(matches_cut) {
+        return volume
+            .cuts
+            .last_mut()
+            .ok_or_else(|| NexradError::InvalidMessage {
+                offset: 0,
+                reason: "matching last cut vanished".to_owned(),
+            });
     }
+    if volume.cuts.len() >= MAX_SWEEPS_PER_VOLUME
+        && (push_new_cut || !volume.cuts.iter().any(matches_cut))
+    {
+        return Err(NexradError::LimitExceeded(format!(
+            "Level II volume starts more than {MAX_SWEEPS_PER_VOLUME} elevation cuts"
+        )));
+    }
+    Ok(if push_new_cut {
+        volume.push_cut(elevation_angle, Some(elevation_number))
+    } else {
+        volume.find_or_insert_cut(elevation_angle, Some(elevation_number))
+    })
+}
+
+/// Create a moment grid with room for `expected_radials` rows, checking the
+/// reservation against `budget` before allocating and charging it after.
+fn new_moment_grid(
+    moment: MomentType,
+    gate_range: GateRange,
+    scale: f32,
+    offset: f32,
+    sixteen_bit: bool,
+    expected_radials: usize,
+    budget: &mut DecodeBudget,
+) -> Result<MomentGrid> {
+    let word_bytes = if sixteen_bit { 2 } else { 1 };
+    let reservation = expected_radials
+        .saturating_mul(gate_range.gate_count.saturating_mul(word_bytes))
+        .saturating_add(expected_radials.saturating_mul(size_of::<usize>()));
+    budget
+        .check(reservation, "Level II moment grid")
+        .map_err(NexradError::LimitExceeded)?;
+    let mut grid = if sixteen_bit {
+        MomentGrid::new_u16(moment, gate_range, scale, offset, Some(0), Some(1))
+    } else {
+        MomentGrid::new_u8(moment, gate_range, scale, offset, Some(0), Some(1))
+    };
+    grid.reserve_rows(expected_radials);
+    budget
+        .charge(moment_grid_capacity_bytes(&grid), 1, "Level II moment grid")
+        .map_err(NexradError::LimitExceeded)?;
+    Ok(grid)
+}
+
+/// Append one row to `grid`, checking the growth it needs against `budget`
+/// before the push and recording the grid's new allocated size after it.
+fn push_moment_row(
+    grid: &mut MomentGrid,
+    radial_index: usize,
+    row: MomentPayload<'_>,
+    budget: &mut DecodeBudget,
+) -> Result<()> {
+    let before = moment_grid_capacity_bytes(grid);
+    let (row_gates, word_bytes) = match row {
+        MomentPayload::U8(bytes) => (bytes.len(), 1),
+        MomentPayload::U16(bytes) => (bytes.len() / 2, 2),
+    };
+    let rows = grid.radial_count().saturating_add(1);
+    let needed = rows
+        .saturating_mul(grid.gate_range.gate_count.max(row_gates))
+        .saturating_mul(word_bytes)
+        .saturating_add(rows.saturating_mul(size_of::<usize>()));
+    if needed > before {
+        budget
+            .check(needed - before, "Level II moment grid")
+            .map_err(NexradError::LimitExceeded)?;
+    }
+    match row {
+        MomentPayload::U8(bytes) => grid.push_u8_row_slice(radial_index, bytes)?,
+        MomentPayload::U16(bytes) => grid.push_u16_be_row_bytes(radial_index, bytes)?,
+    }
+    let after = moment_grid_capacity_bytes(grid);
+    if after != before {
+        budget
+            .update(before, after, "Level II moment grid")
+            .map_err(NexradError::LimitExceeded)?;
+    }
+    Ok(())
 }
 
 fn legacy_message_1_row(body: &[u8], pointer: usize, gate_count: usize) -> Option<&[u8]> {
@@ -1629,6 +1777,7 @@ fn parse_message_31(
     body: &[u8],
     _message_header: &MessageHeader,
     volume: &mut RadarVolume,
+    budget: &mut DecodeBudget,
 ) -> Result<()> {
     let header = parse_message_31_header(body, 0)?;
     let expected_radials = expected_radials_for_azimuth_resolution(header.azimuth_resolution);
@@ -1692,30 +1841,12 @@ fn parse_message_31(
         radial_status: Some(header.radial_status),
     };
 
-    let starts_elevation = matches!(
+    let cut = cut_for_radial(
+        volume,
         header.radial_status,
-        RadialStatus::StartElevation
-            | RadialStatus::StartVolume
-            | RadialStatus::StartElevationLastCut
-    );
-    let last_cut_has_radials = volume
-        .cuts
-        .last()
-        .is_some_and(|cut| !cut.radials.is_empty());
-    let last_cut_matches = volume.cuts.last().is_some_and(|cut| {
-        cut.elevation_number == Some(header.elevation_number)
-            || (cut.elevation_deg - header.elevation_angle).abs() <= 0.05
-    });
-    let cut = if starts_elevation && last_cut_has_radials {
-        volume.push_cut(header.elevation_angle, Some(header.elevation_number))
-    } else if last_cut_matches {
-        volume
-            .cuts
-            .last_mut()
-            .expect("last cut existence was checked before borrowing")
-    } else {
-        volume.find_or_insert_cut(header.elevation_angle, Some(header.elevation_number))
-    };
+        header.elevation_angle,
+        header.elevation_number,
+    )?;
     if cut.radials.is_empty() {
         cut.radials.reserve(expected_radials);
     }
@@ -1732,37 +1863,20 @@ fn parse_message_31(
         } = moment;
         let grid = match cut.moments.entry(moment) {
             Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => match &row {
-                MomentPayload::U8(_) => {
-                    let mut grid = MomentGrid::new_u8(
-                        entry.key().clone(),
-                        gate_range.clone(),
-                        scale,
-                        offset,
-                        Some(0),
-                        Some(1),
-                    );
-                    grid.reserve_rows(expected_radials);
-                    entry.insert(grid)
-                }
-                MomentPayload::U16(_) => {
-                    let mut grid = MomentGrid::new_u16(
-                        entry.key().clone(),
-                        gate_range.clone(),
-                        scale,
-                        offset,
-                        Some(0),
-                        Some(1),
-                    );
-                    grid.reserve_rows(expected_radials);
-                    entry.insert(grid)
-                }
-            },
+            Entry::Vacant(entry) => {
+                let grid = new_moment_grid(
+                    entry.key().clone(),
+                    gate_range,
+                    scale,
+                    offset,
+                    matches!(row, MomentPayload::U16(_)),
+                    expected_radials,
+                    budget,
+                )?;
+                entry.insert(grid)
+            }
         };
-        match row {
-            MomentPayload::U8(row) => grid.push_u8_row_slice(radial_index, row)?,
-            MomentPayload::U16(row) => grid.push_u16_be_row_bytes(radial_index, row)?,
-        }
+        push_moment_row(grid, radial_index, row, budget)?;
     }
 
     volume.metadata.decoded_radial_count += 1;
@@ -1864,6 +1978,8 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
     let header = &bytes[offset..offset + GENERIC_DATA_BLOCK_LEN];
     let moment = MomentType::from_nexrad_bytes(&header[1..4]);
     let gate_count = usize::from(be_u16(header, 8));
+    bounded_read::check_gate_count(gate_count, "message 31 moment block")
+        .map_err(NexradError::LimitExceeded)?;
     let first_gate_m = i32::from(be_i16(header, 10));
     let gate_spacing_m = i32::from(be_i16(header, 12));
     let word_size = header[19];
@@ -2076,7 +2192,7 @@ mod tests {
         };
         let mut volume = RadarVolume::new(RadarSite::new("KBPP"), DateTime::<Utc>::UNIX_EPOCH);
 
-        parse_message_1(&body, &header, &mut volume).unwrap();
+        parse_message_1(&body, &header, &mut volume, &mut DecodeBudget::volume()).unwrap();
 
         assert_eq!(
             volume.volume_time,
@@ -2122,7 +2238,7 @@ mod tests {
         };
         let mut volume = RadarVolume::new(RadarSite::new("KCRI"), DateTime::<Utc>::UNIX_EPOCH);
 
-        parse_message_1(&body, &header, &mut volume).unwrap();
+        parse_message_1(&body, &header, &mut volume, &mut DecodeBudget::volume()).unwrap();
 
         assert_eq!(volume.metadata.decoded_radial_count, 1);
         let spectrum_width = volume.cuts[0]
@@ -2464,6 +2580,50 @@ mod tests {
         assert!(
             !volume.cuts.is_empty(),
             "expected at least one decoded elevation cut"
+        );
+    }
+
+    /// Committed KIWA volume 307 Start chunk plus its first two intermediate
+    /// chunks, decompressed (240 real Message 31 radials).
+    fn kiwa_chunk_prefix_normalized() -> Vec<u8> {
+        let mut raw = Vec::new();
+        for id in [
+            "l2chunk-kiwa-307-20260917-003629-001-s",
+            "l2chunk-kiwa-307-20260917-003629-002-i",
+            "l2chunk-kiwa-307-20260917-003629-003-i",
+        ] {
+            let path = recast_radar_testdata::path(id).unwrap_or_else(|e| panic!("{e}"));
+            raw.extend(fs::read(path).expect("read committed chunk"));
+        }
+        normalize_archive_bytes(&raw)
+            .expect("real chunks decompress")
+            .0
+    }
+
+    #[test]
+    fn real_volume_exceeding_the_output_budget_is_rejected() {
+        let bytes = kiwa_chunk_prefix_normalized();
+        let volume = decode_normalized_volume_bytes_within(
+            &bytes,
+            ArchiveCompression::Bzip2Blocks,
+            DecodeBudget::volume(),
+        )
+        .expect("real chunks fit the default budget");
+        let needed = bounded_read::volume_moment_capacity_bytes(&volume);
+        assert!(
+            needed > 1024 * 1024,
+            "240 super-resolution radials: {needed}"
+        );
+
+        let error = decode_normalized_volume_bytes_within(
+            &bytes,
+            ArchiveCompression::Bzip2Blocks,
+            DecodeBudget::new(needed / 2),
+        )
+        .expect_err("half the needed budget must fail");
+        assert!(
+            matches!(&error, NexradError::LimitExceeded(reason) if reason.contains("limit")),
+            "unexpected error: {error}"
         );
     }
 

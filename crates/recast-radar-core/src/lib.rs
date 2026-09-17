@@ -3,6 +3,14 @@
 //! The model is intentionally data-oriented: radial geometry lives beside compact
 //! moment arrays so decoders, product algorithms, and GPU upload code can share a
 //! stable contract without per-gate heap objects.
+//!
+//! # Limits
+//!
+//! [`bounded_read`] holds the resource limits every decoder crate shares
+//! (expanded input size, decoded volume and batch budgets, gates per radial,
+//! sweeps per volume) and the [`bounded_read::DecodeBudget`] that enforces
+//! them. Each decoder crate documents its format-specific limits in its own
+//! `# Limits` section.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;

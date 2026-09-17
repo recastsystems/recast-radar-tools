@@ -6,6 +6,17 @@
 //! matching decoder crate. [`decode_mobile_archive_from_path`] and
 //! [`decode_mobile_dir_from_path`] wire the NEXRAD Level II decoder into the
 //! DORADE crate's mobile-radar archive ingest.
+//!
+//! # Limits
+//!
+//! The router expands a whole-file gzip wrapper and a single-member ZIP
+//! local record (declared and actual size) to at most
+//! `MAX_DECODED_RADAR_BYTES` (512 MiB) each; a gzip stream inside a ZIP
+//! record holds both buffers. The expanded bytes then meet the limits of the
+//! decoder they route to, whose limit errors pass through unchanged inside
+//! [`IoError`] (`NexradError::LimitExceeded`, `OdimError::LimitExceeded`, and
+//! so on). The mobile archive wrappers inherit the DORADE crate's archive
+//! limits.
 
 use std::path::Path;
 
