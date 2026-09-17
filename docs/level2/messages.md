@@ -37,6 +37,32 @@ The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crate
 `decode_volume_with_metadata` (below) collects messages 2, 3, 5/7, 8, 13, 15, 18 and 32 and the per-sweep
 message 31 constant blocks into `NexradMetadata`.
 
+## Golden files
+
+`tools/level2_golden.py` writes every file under `testdata/level2/golden/` (groups `status`, `vcp`, `clutter`,
+`msg31`, `metadata`) with MetPy 1.7.1 and Py-ART (arm_pyart) 2.2.5, and refuses other versions. It reads each
+source from its committed path or the testdata download cache and checks the manifest sha256 first. The module
+docstring describes each group.
+
+- `python tools/level2_golden.py <group|all> [source ...]` writes the files.
+- `python tools/level2_golden.py --check <group|all> [source ...]` writes nothing. It regenerates the documents in
+  memory and exits with status 1 unless every committed file is reproduced byte for byte. With a group's default
+  sources it also fails on committed files the script no longer produces, and on files it would write that are not
+  committed.
+- `python tools/level2_golden.py --list-sources all` prints the manifest ids the default sources read.
+
+The check runs as an ignored Rust test, which first fetches every listed source into the cache (a file that cannot
+be fetched fails the test) and then runs `--check all`:
+
+```sh
+RECAST_RADAR_GOLDEN_PYTHON=/path/to/python cargo test -p recast-radar-io-nexrad --test golden_script -- --ignored
+# or, for CI:
+RECAST_RADAR_GOLDEN_PYTHON=/path/to/python bash tools/ci/level2-golden-check.sh
+```
+
+The clutter group's default ids leave out trimmed fixtures (`derived_from` in the manifest). Their clutter messages
+are compared with their source files instead (see Message 15).
+
 ## Framing and reassembly
 
 `messages::RawMessages` walks decompressed record bytes; `messages::MessageWalker` also decodes the bodies.

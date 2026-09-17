@@ -4,20 +4,36 @@ Writes JSON files under testdata/level2/golden/<group>/, one per source. The
 Rust tests in crates/recast-radar-io-nexrad/tests/ compare their decoded values
 against these files.
 
-Needs MetPy (1.7.1 was used for the committed files) and, for the metadata
-group, Py-ART (arm_pyart 2.2.5). Test files are read from
-the shared download cache that recast-radar-testdata fills
-(%LOCALAPPDATA%\\recast-radar-tools\\testdata, or $RECAST_RADAR_TESTDATA).
-Run `cargo test -p recast-radar-io-nexrad` once to download them.
+Needs MetPy 1.7.1 and, for the metadata group, Py-ART (arm_pyart) 2.2.5: the
+versions the committed files were written with. Other versions are refused,
+because the files record them. Files come from the committed path in the
+manifest, or else from the shared download cache that recast-radar-testdata
+fills ($RECAST_RADAR_TESTDATA, else recast-radar-tools/testdata under
+%LOCALAPPDATA% on Windows, $XDG_CACHE_HOME, or ~/.cache), and their sha256
+must match the manifest. Run `cargo test -p recast-radar-io-nexrad` once to
+download them.
 
 Usage:
     python tools/level2_golden.py <group> [source ...]
     python tools/level2_golden.py all
+    python tools/level2_golden.py --check <group|all> [source ...]
+    python tools/level2_golden.py --list-sources <group|all>
 
-A source is a manifest id; the msg31 group also accepts several ids joined
-with "+", read as one concatenated file (a real-time volume is its chunks
-concatenated). With no sources, the group's default list is regenerated; `all`
-regenerates every group with its defaults.
+A source is a manifest id; the msg31 and metadata groups also accept several
+ids joined with "+", read as one concatenated file (a real-time volume is its
+chunks concatenated). With no sources, the group's default list is
+regenerated; `all` regenerates every group with its defaults.
+
+--check writes nothing. It generates the same documents in memory and
+compares them with the committed files byte for byte. With a group's default
+sources it also reports committed files the script does not produce (and, for
+the clutter group, files it would remove). It exits with status 1 on any
+difference. `cargo test -p recast-radar-io-nexrad --test golden_script --
+--ignored` (or tools/ci/level2-golden-check.sh) downloads every source listed
+by --list-sources and runs `--check all`; see docs/level2/messages.md.
+
+--list-sources prints the manifest ids a group reads with its defaults, one
+per line.
 
 Groups
 ------
@@ -74,11 +90,12 @@ clutter  (tests/messages_clutter.rs)
     the first 134 frames), with the file's 24-byte volume header in front.
     MetPy skips radial messages 1 and 31, because MetPy 1.7.1 raises an error
     on the Message 1 frames in the KLIX 2005 metadata record. The default ids
-    are every id with format "nexrad-level2" in testdata/level2/manifest.toml;
-    a golden file is written only where MetPy decoded one of the two messages
-    or logged a note about them (and removed otherwise). The file bytes are
-    checked against the manifest sha256, and MetPy must be 1.7.1. See
-    `clutter` below for where MetPy's output differs from the ICD.
+    are every id with format "nexrad-level2" in testdata/level2/manifest.toml
+    that is not derived from another entry (trimmed fixtures, which
+    tests/messages_clutter.rs compares with their source files instead); a
+    golden file is written only where MetPy decoded one of the two messages
+    or logged a note about them (and removed otherwise). See `clutter` below
+    for where MetPy's output differs from the ICD.
 
 msg31  (tests/messages_msg31.rs)
     Message 31 Data Header Block, VOL/ELV/RAD constant blocks and data moment
@@ -89,8 +106,7 @@ msg31  (tests/messages_msg31.rs)
     count/min/max/sum when there are more than 12). The JSON records what
     MetPy exposes, normalized only where MetPy's converters return
     Python-only types (bytes become text, BitField lists become "A|B"
-    strings, None becomes ""). Files come from the committed path in the
-    manifest or the download cache; a "+"-joined source is written as
+    strings, None becomes ""). A "+"-joined source is written as
     <first-id>..<last chunk number>.json.
 
 metadata  (tests/volume_metadata.rs)
@@ -103,11 +119,11 @@ metadata  (tests/volume_metadata.rs)
     number (scan i holds elevation number i + 1). Values are Py-ART's raw
     unpacked fields before its scaling; the two-byte spare fields (VOL
     processing status, RAD radial flags) are written as big-endian integers.
-    Files are read from the committed path in the manifest or the download
-    cache, decompressed as `read_nexrad_archive` does; sources joined with
+    Files are decompressed as `read_nexrad_archive` does; sources joined with
     "+" are concatenated and named as in msg31.
 """
 
+import argparse
 import bz2
 import gzip
 import hashlib
@@ -127,22 +143,112 @@ from metpy.io._nexrad_msgs import msg3 as metpy_msg3
 from metpy.io._nexrad_msgs import msg18 as metpy_msg18
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GOLDEN_DIR = os.path.join(ROOT, 'testdata', 'level2', 'golden')
+TESTDATA = os.path.join(ROOT, 'testdata')
+GOLDEN_DIR = os.path.join(TESTDATA, 'level2', 'golden')
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 sys.dont_write_bytecode = True  # keep tools/ free of __pycache__
 import level2_message_scan as scan  # noqa: E402
 
-
-def cache_path(file_id):
-    root = os.environ.get('RECAST_RADAR_TESTDATA') or os.path.join(
-        os.environ['LOCALAPPDATA'], 'recast-radar-tools', 'testdata')
-    return os.path.join(root, file_id)
+EXPECTED_METPY = '1.7.1'
+EXPECTED_PYART = '2.2.5'
 
 
-def golden_path(group, name):
-    directory = os.path.join(GOLDEN_DIR, group)
-    os.makedirs(directory, exist_ok=True)
-    return os.path.join(directory, f'{name}.json')
+# --- corpus files ---------------------------------------------------------------
+
+
+def cache_dir():
+    """The download cache, resolved like recast_radar_testdata::cache_dir."""
+    override = os.environ.get('RECAST_RADAR_TESTDATA')
+    if override:
+        return override
+    base = None
+    if os.name == 'nt' and os.environ.get('LOCALAPPDATA'):
+        base = os.environ['LOCALAPPDATA']
+    elif os.environ.get('XDG_CACHE_HOME'):
+        base = os.environ['XDG_CACHE_HOME']
+    elif os.environ.get('HOME'):
+        base = os.path.join(os.environ['HOME'], '.cache')
+    if base is None:
+        return os.path.join(ROOT, '.testdata-cache')
+    return os.path.join(base, 'recast-radar-tools', 'testdata')
+
+
+_ENTRIES = None
+
+
+def manifest_entries():
+    """Every manifest entry by id: testdata/manifest.toml, then
+    testdata/*/manifest.toml in directory order."""
+    global _ENTRIES
+    if _ENTRIES is None:
+        entries = {}
+        paths = [os.path.join(TESTDATA, 'manifest.toml')]
+        for name in sorted(os.listdir(TESTDATA)):
+            candidate = os.path.join(TESTDATA, name, 'manifest.toml')
+            if os.path.isfile(candidate):
+                paths.append(candidate)
+        for path in paths:
+            with open(path, 'rb') as f:
+                for entry in tomllib.load(f).get('file', []):
+                    entries[entry['id']] = entry
+        _ENTRIES = entries
+    return _ENTRIES
+
+
+_VERIFIED = {}
+
+
+def source_path(file_id):
+    """Path of a manifest id: its committed file, else the cached download.
+    The sha256 must match the manifest."""
+    if file_id in _VERIFIED:
+        return _VERIFIED[file_id]
+    entry = manifest_entries().get(file_id)
+    if entry is None:
+        raise SystemExit(f'{file_id}: not a manifest id')
+    committed = entry.get('committed')
+    if committed:
+        path = os.path.join(TESTDATA, committed.removeprefix('testdata/'))
+    else:
+        path = os.path.join(cache_dir(), file_id)
+    if not os.path.isfile(path):
+        raise SystemExit(f'{file_id}: {path} does not exist (run `cargo test -p '
+                         'recast-radar-io-nexrad` or the golden_script test to download it)')
+    with open(path, 'rb') as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    if digest != entry['sha256']:
+        raise SystemExit(f'{file_id}: sha256 {digest} does not match the manifest')
+    _VERIFIED[file_id] = path
+    return path
+
+
+def verified_bytes(file_id):
+    with open(source_path(file_id), 'rb') as f:
+        return f.read()
+
+
+def source_bytes(source):
+    """The bytes of a source: one id, or several joined with "+", concatenated."""
+    return b''.join(verified_bytes(file_id) for file_id in source.split('+'))
+
+
+def joined_source_name(source):
+    """File name of a source: the id, or <first-id>..<last chunk number>."""
+    ids = source.split('+')
+    return ids[0] if len(ids) == 1 else ids[0] + '..' + ids[-1].rsplit('-', 2)[-2]
+
+
+def require_metpy():
+    if metpy.__version__ != EXPECTED_METPY:
+        raise SystemExit(f'need metpy {EXPECTED_METPY}, found {metpy.__version__}')
+
+
+def import_pyart():
+    os.environ.setdefault('PYART_QUIET', '1')
+    import pyart
+    if pyart.__version__ != EXPECTED_PYART:
+        raise SystemExit(f'need arm_pyart {EXPECTED_PYART}, found {pyart.__version__}')
+    return pyart
 
 
 def jsonable(value):
@@ -258,7 +364,7 @@ def layout(fields):
 
 
 def status_golden(file_id):
-    with open(cache_path(file_id), 'rb') as f:
+    with open(source_path(file_id), 'rb') as f:
         level2 = StatusFile(f)
     doc = {'id': file_id, 'generator': 'tools/level2_golden.py status',
            'metpy': metpy.__version__}
@@ -323,11 +429,10 @@ def status_format(value, indent):
     return json.dumps(value, allow_nan=False)
 
 
-def run_status(ids):
-    for file_id in ids or STATUS_IDS:
-        with open(golden_path('status', file_id), 'w', newline='\n') as f:
-            f.write(status_format(status_golden(file_id), 0) + '\n')
-        print(f'status: {file_id}')
+def status_documents(ids):
+    require_metpy()
+    for file_id in ids:
+        yield file_id, status_format(status_golden(file_id), 0) + '\n'
 
 
 # --- group: vcp ---------------------------------------------------------------
@@ -370,7 +475,7 @@ PRF_IDS = {
 def open_level2(file_id):
     # A file object lets MetPy detect whole-file gzip/bzip2 by magic bytes;
     # cache files have no extension.
-    with open(cache_path(file_id), 'rb') as f:
+    with open(source_path(file_id), 'rb') as f:
         return Level2File(f)
 
 
@@ -459,8 +564,9 @@ def vcp_format(value, indent):
     return json.dumps(value)
 
 
-def run_vcp(ids):
-    for file_id in ids or VCP_IDS:
+def vcp_documents(ids):
+    require_metpy()
+    for file_id in ids:
         doc = vcp_golden(file_id)
         lines = ['{']
         items = list(doc.items())
@@ -468,15 +574,12 @@ def run_vcp(ids):
             comma = ',' if index + 1 < len(items) else ''
             lines.append(f'  {json.dumps(key)}: {vcp_format(value, 2)}{comma}')
         lines.append('}')
-        with open(golden_path('vcp', file_id), 'w', newline='\n') as f:
-            f.write('\n'.join(lines) + '\n')
-        print(f'vcp: {file_id}')
+        yield file_id, '\n'.join(lines) + '\n'
 
 
 # --- group: clutter -----------------------------------------------------------
 
-LEVEL2_MANIFEST = os.path.join(ROOT, 'testdata', 'level2', 'manifest.toml')
-EXPECTED_METPY = '1.7.1'
+LEVEL2_MANIFEST = os.path.join(TESTDATA, 'level2', 'manifest.toml')
 
 
 class MetadataOnly(Level2File):
@@ -505,22 +608,13 @@ class Capture(logging.Handler):
         self.messages.append(message)
 
 
-def level2_manifest_entries():
+def clutter_default_ids():
+    """Every nexrad-level2 id of testdata/level2/manifest.toml that is not
+    derived from another entry, in manifest order."""
     with open(LEVEL2_MANIFEST, 'rb') as f:
-        return {entry['id']: entry for entry in tomllib.load(f)['file']}
-
-
-def verified_file_bytes(entry):
-    if entry.get('committed'):
-        path = os.path.join(ROOT, 'testdata', entry['committed'].removeprefix('testdata/'))
-    else:
-        path = scan.cache_path(entry['id'])
-    with open(path, 'rb') as f:
-        raw = f.read()
-    digest = hashlib.sha256(raw).hexdigest()
-    if digest != entry['sha256']:
-        raise SystemExit(f"{entry['id']}: sha256 {digest} does not match the manifest")
-    return raw
+        entries = tomllib.load(f)['file']
+    return [entry['id'] for entry in entries
+            if entry['format'] == 'nexrad-level2' and not entry.get('derived_from')]
 
 
 def read_metadata(raw):
@@ -631,18 +725,15 @@ def clutter_dump(value, indent=0):
     return json.dumps(value, separators=(',', ':'))
 
 
-def run_clutter(ids):
-    if metpy.__version__ != EXPECTED_METPY:
-        raise SystemExit(f'need metpy {EXPECTED_METPY}, found {metpy.__version__}')
-    entries = level2_manifest_entries()
-    ids = ids or [i for i, e in entries.items() if e['format'] == 'nexrad-level2']
+def clutter_documents(ids):
+    """(id, text), or (id, None) where MetPy finds nothing: no golden file."""
+    require_metpy()
+    entries = manifest_entries()
     for id_ in ids:
-        level2, log = read_metadata(verified_file_bytes(entries[id_]))
+        level2, log = read_metadata(verified_bytes(id_))
         result = clutter(level2, log)
-        path = os.path.join(GOLDEN_DIR, 'clutter', f'{id_}.json')
         if result is None:
-            if os.path.exists(path):
-                os.remove(path)
+            yield id_, None
             continue
         document = {
             'id': id_,
@@ -652,15 +743,10 @@ def run_clutter(ids):
             'input': 'volume header + metadata record; messages 1 and 31 skipped',
             **result,
         }
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', newline='\n') as f:
-            f.write(clutter_dump(document) + '\n')
-        print(f'clutter: {id_}: {", ".join(k for k in result)}')
+        yield id_, clutter_dump(document) + '\n'
 
 
 # --- group: msg31 -------------------------------------------------------------
-
-TESTDATA = os.path.join(ROOT, 'testdata')
 
 # Message 5 elevation cut SNR threshold fields, listed per cut in this order.
 SNR_THRESHOLD_KEYS = ('ref_thresh', 'vel_thresh', 'sw_thresh', 'zdr_thresh', 'phidp_thresh',
@@ -690,35 +776,6 @@ MSG31_SOURCES = [
     '+l2chunk-kiwa-307-20260917-003629-002-i'
     '+l2chunk-kiwa-307-20260917-003629-003-i',
 ]
-
-
-def all_manifest_entries():
-    entries = {}
-    paths = [os.path.join(TESTDATA, 'manifest.toml')]
-    for name in sorted(os.listdir(TESTDATA)):
-        candidate = os.path.join(TESTDATA, name, 'manifest.toml')
-        if os.path.isfile(candidate):
-            paths.append(candidate)
-    for path in paths:
-        with open(path, 'rb') as f:
-            for entry in tomllib.load(f).get('file', []):
-                entries[entry['id']] = entry
-    return entries
-
-
-def source_bytes(source, entries):
-    data = b''
-    for file_id in source.split('+'):
-        entry = entries[file_id]
-        committed = entry.get('committed')
-        if committed:
-            committed = committed.removeprefix('testdata/')
-            path = os.path.join(TESTDATA, committed)
-        else:
-            path = cache_path(file_id)
-        with open(path, 'rb') as f:
-            data += f.read()
-    return data
 
 
 def normalize(value):
@@ -770,8 +827,8 @@ def msg31_fields(radial):
     return fields
 
 
-def msg31_golden(source, entries):
-    f = Level2File(io.BytesIO(source_bytes(source, entries)))
+def msg31_golden(source):
+    f = Level2File(io.BytesIO(source_bytes(source)))
     sweeps = []
     for index, sweep in enumerate(f.sweeps):
         radials = [msg31_fields(radial) for radial in sweep]
@@ -825,22 +882,10 @@ def msg31_to_json(value, depth=0):
     return json.dumps(value, separators=(', ', ': '))
 
 
-def run_msg31(sources):
-    entries = all_manifest_entries()
-    for source in sources or MSG31_SOURCES:
-        golden = msg31_golden(source, entries)
-        name = source.split('+')[0] if '+' not in source else (
-            source.split('+')[0] + '..' + source.split('+')[-1].rsplit('-', 2)[-2])
-        path = golden_path('msg31', name)
-        with open(path, 'w', encoding='utf-8', newline='\n') as out:
-            out.write(msg31_to_json(golden) + '\n')
-        print(f'msg31: {name}', flush=True)
-
-
-def joined_source_name(source):
-    """File name of a source: the id, or <first-id>..<last chunk number>."""
-    ids = source.split('+')
-    return ids[0] if len(ids) == 1 else ids[0] + '..' + ids[-1].rsplit('-', 2)[-2]
+def msg31_documents(sources):
+    require_metpy()
+    for source in sources:
+        yield joined_source_name(source), msg31_to_json(msg31_golden(source)) + '\n'
 
 
 # --- group: metadata ----------------------------------------------------------
@@ -895,21 +940,25 @@ def pyart_block(block):
     return out
 
 
-def metadata_golden(source, entries):
+def pyart_level2_file(source):
+    """Py-ART's NEXRADLevel2File on a source, decompressed as
+    read_nexrad_archive's prepare_for_read does (whole-file gzip or bzip2)."""
     import warnings
 
-    import pyart
     from pyart.io.nexrad_level2 import NEXRADLevel2File
 
-    data = source_bytes(source, entries)
-    # read_nexrad_archive's prepare_for_read: whole-file gzip or bzip2.
+    data = source_bytes(source)
     if data[:2] == b'\x1f\x8b':
         data = gzip.decompress(data)
     elif data[:3] == b'BZh':
         data = bz2.decompress(data)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        f = NEXRADLevel2File(io.BytesIO(data))
+        return NEXRADLevel2File(io.BytesIO(data))
+
+
+def metadata_golden(source, pyart):
+    f = pyart_level2_file(source)
     vcp = f.vcp
     cuts = vcp['cut_parameters'] if vcp is not None else []
     scans = []
@@ -933,10 +982,10 @@ def metadata_golden(source, entries):
     }
 
 
-def run_metadata(sources):
-    entries = all_manifest_entries()
-    for source in sources or METADATA_SOURCES:
-        doc = metadata_golden(source, entries)
+def metadata_documents(sources):
+    pyart = import_pyart()
+    for source in sources:
+        doc = metadata_golden(source, pyart)
         lines = ['{']
         items = list(doc.items())
         for index, (key, value) in enumerate(items):
@@ -947,33 +996,133 @@ def run_metadata(sources):
             else:
                 lines.append(f'  {json.dumps(key)}: {json.dumps(value)}{comma}')
         lines.append('}')
-        name = joined_source_name(source)
-        with open(golden_path('metadata', name), 'w', encoding='utf-8', newline='\n') as out:
-            out.write('\n'.join(lines) + '\n')
-        print(f'metadata: {name}', flush=True)
+        yield joined_source_name(source), '\n'.join(lines) + '\n'
 
 
 # --- dispatch -----------------------------------------------------------------
 
+# group -> (documents(sources), default sources)
 GROUPS = {
-    'status': run_status,
-    'vcp': run_vcp,
-    'clutter': run_clutter,
-    'msg31': run_msg31,
-    'metadata': run_metadata,
+    'status': (status_documents, lambda: STATUS_IDS),
+    'vcp': (vcp_documents, lambda: VCP_IDS),
+    'clutter': (clutter_documents, clutter_default_ids),
+    'msg31': (msg31_documents, lambda: MSG31_SOURCES),
+    'metadata': (metadata_documents, lambda: METADATA_SOURCES),
 }
 
 
+def golden_file(group, name):
+    return os.path.join(GOLDEN_DIR, group, f'{name}.json')
+
+
+def write_group(group, sources):
+    documents, defaults = GROUPS[group]
+    for name, text in documents(sources or defaults()):
+        path = golden_file(group, name)
+        if text is None:
+            if os.path.exists(path):
+                os.remove(path)
+                print(f'{group}: {name}: removed', flush=True)
+            continue
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8', newline='\n') as out:
+            out.write(text)
+        print(f'{group}: {name}', flush=True)
+
+
+def first_difference(committed, generated):
+    """Line number and both versions of the first differing line."""
+    old = committed.split(b'\n')
+    new = generated.split(b'\n')
+    for number, (a, b) in enumerate(zip(old, new), start=1):
+        if a != b:
+            return (f'line {number}:\n      committed: {a[:160]!r}\n'
+                    f'      generated: {b[:160]!r}')
+    return f'lengths differ: committed {len(committed)} bytes, generated {len(generated)} bytes'
+
+
+def check_group(group, sources):
+    """Problems found comparing generated documents with the committed files."""
+    documents, defaults = GROUPS[group]
+    problems = []
+    produced = set()
+    for name, text in documents(sources or defaults()):
+        produced.add(name)
+        path = golden_file(group, name)
+        label = f'{group}/{name}.json'
+        if text is None:
+            if os.path.exists(path):
+                problems.append(f'{label}: committed, but the script writes no file for it')
+            else:
+                print(f'ok {group}: {name} (no file)', flush=True)
+            continue
+        if not os.path.exists(path):
+            problems.append(f'{label}: generated but not committed')
+            continue
+        with open(path, 'rb') as f:
+            committed = f.read()
+        generated = text.encode('utf-8')
+        if committed == generated:
+            print(f'ok {label}', flush=True)
+        else:
+            problems.append(f'{label}: differs at {first_difference(committed, generated)}')
+    if not sources:
+        directory = os.path.join(GOLDEN_DIR, group)
+        committed_names = sorted(name[:-5] for name in os.listdir(directory)
+                                 if name.endswith('.json')) if os.path.isdir(directory) else []
+        for name in committed_names:
+            if name not in produced:
+                problems.append(f'{group}/{name}.json: committed, but not produced by the '
+                                'default sources')
+    return problems
+
+
+def list_sources(groups):
+    seen = []
+    for group in groups:
+        for source in GROUPS[group][1]():
+            for file_id in source.split('+'):
+                if file_id not in seen:
+                    seen.append(file_id)
+    return seen
+
+
 def main(argv):
-    if not argv or (argv[0] not in GROUPS and argv[0] != 'all'):
-        sys.exit(f'usage: level2_golden.py <{"|".join(GROUPS)}|all> [source ...]')
-    if argv[0] == 'all':
-        if argv[1:]:
-            sys.exit('level2_golden.py all takes no ids')
-        for run in GROUPS.values():
-            run([])
-    else:
-        GROUPS[argv[0]](argv[1:])
+    parser = argparse.ArgumentParser(
+        description='Write or check the Level II golden files (see the module docstring).')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--check', action='store_true',
+                      help='compare with the committed files instead of writing them')
+    mode.add_argument('--list-sources', action='store_true',
+                      help="print the manifest ids the groups' default sources read")
+    parser.add_argument('group', choices=[*GROUPS, 'all'])
+    parser.add_argument('sources', nargs='*')
+    args = parser.parse_args(argv)
+    groups = list(GROUPS) if args.group == 'all' else [args.group]
+    if args.group == 'all' and args.sources:
+        parser.error('`all` takes no sources')
+
+    if args.list_sources:
+        if args.sources:
+            parser.error('--list-sources takes no sources')
+        for file_id in list_sources(groups):
+            print(file_id)
+        return
+    if args.check:
+        # MetPy's warnings about the files are expected; keep the report short.
+        logging.getLogger('metpy').addHandler(logging.NullHandler())
+        problems = []
+        for group in groups:
+            problems.extend(check_group(group, args.sources))
+        if problems:
+            print(f'{len(problems)} golden file problem(s):', file=sys.stderr)
+            for problem in problems:
+                print(f'  {problem}', file=sys.stderr)
+            sys.exit(1)
+        print(f'every golden file of {", ".join(groups)} matches', flush=True)
+        return
+    for group in groups:
+        write_group(group, args.sources)
 
 
 if __name__ == '__main__':
