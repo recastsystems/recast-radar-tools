@@ -1019,6 +1019,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-radar-io-level3"
+version = "0.1.0"
+dependencies = [
+ "bzip2",
+ "chrono",
+ "flate2",
+ "thiserror",
+]
+
+[[package]]
 name = "recast-radar-io-nexrad"
 version = "0.1.0"
 dependencies = [
@@ -1095,6 +1105,8 @@ dependencies = [
 name = "recast-radar-testdata"
 version = "0.1.0"
 dependencies = [
+ "bzip2",
+ "flate2",
  "serde",
  "sha2",
  "toml",

@@ -1,0 +1,372 @@
+{
+ "id": "l3-tlx-ncz-20130520-2016",
+ "sha256": "4b6805f3de1b85cac5a2d53dc5d6efe07400a74f25966e52a67604bfbcc59be4",
+ "size": 9780,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS64 KOUN 202016",
+  "awips_id": "NCZTLX",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 9750
+ },
+ "message_header": {
+  "code": 38,
+  "date": 15846,
+  "time": 73260,
+  "length": 9750,
+  "source_id": 1,
+  "destination_id": 0,
+  "num_blocks": 4
+ },
+ "halfwords": [
+  38,
+  15846,
+  1,
+  7724,
+  0,
+  9750,
+  1,
+  0,
+  4,
+  65535,
+  0,
+  35333,
+  65534,
+  33794,
+  1277,
+  38,
+  2,
+  12,
+  1412,
+  28,
+  15846,
+  1,
+  7467,
+  15846,
+  1,
+  7719,
+  0,
+  0,
+  0,
+  195,
+  32770,
+  5,
+  10,
+  15,
+  20,
+  25,
+  30,
+  35,
+  40,
+  45,
+  50,
+  55,
+  60,
+  65,
+  70,
+  75,
+  68,
+  0,
+  0,
+  0,
+  49705,
+  49152,
+  0,
+  256,
+  0,
+  60,
+  0,
+  3208,
+  0,
+  0
+ ],
+ "product_code": 38,
+ "compression": {
+  "hw51": 49705,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 3221225472
+ },
+ "blocks": {
+  "symbology": {
+   "length": 6296,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 6280,
+     "packets": [
+      47623
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": {
+   "length": 3334,
+   "num_pages": 6,
+   "pages": [
+    {
+     "page": 1,
+     "length": 550,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 2,
+     "length": 550,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 3,
+     "length": 550,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 4,
+     "length": 550,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 5,
+     "length": 550,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 6,
+     "length": 550,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": null,
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  8,
+  10,
+  47623
+ ],
+ "data": [
+  {
+   "layer": 0,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 1,
+    "j_start": 1,
+    "x_scale_int": 2,
+    "x_scale_frac": 0,
+    "y_scale_int": 2,
+    "y_scale_frac": 0,
+    "num_rows": 232,
+    "packing": 2
+   },
+   "rows": 232,
+   "cols": 232,
+   "dtype": "u8",
+   "raw_sha256": "c55f8fba2d39ebfeb2d4d6dbb0548d83146f4e8da39b263a106db3a364f6ad69",
+   "histogram": {
+    "0": 49787,
+    "1": 358,
+    "2": 497,
+    "3": 925,
+    "4": 881,
+    "5": 377,
+    "6": 235,
+    "7": 169,
+    "8": 190,
+    "9": 154,
+    "10": 118,
+    "11": 83,
+    "12": 43,
+    "13": 7
+   },
+   "physical": {
+    "finite": 4037,
+    "masked": 49787,
+    "min": 5.0,
+    "max": 65.0,
+    "mean": 21.96556849145405
+   }
+  }
+ ],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Composite Reflectivity",
+  "max_range": 460.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 38,
+   "date": 15846,
+   "time": 73260,
+   "msg_len": 9750,
+   "src_id": 1,
+   "dest_id": 0,
+   "num_blks": 4
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 35333,
+   "lon": -97278,
+   "height": 1277,
+   "prod_code": 38,
+   "op_mode": 2,
+   "vcp": 12,
+   "seq_num": 1412,
+   "vol_num": 28,
+   "vol_date": 15846,
+   "vol_start_time": 73003,
+   "prod_gen_date": 15846,
+   "prod_gen_time": 73255,
+   "dep1": 0,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 195,
+   "thr1": -32766,
+   "thr2": 5,
+   "thr3": 10,
+   "thr4": 15,
+   "thr5": 20,
+   "thr6": 25,
+   "thr7": 30,
+   "thr8": 35,
+   "thr9": 40,
+   "thr10": 45,
+   "thr11": 50,
+   "thr12": 55,
+   "thr13": 60,
+   "thr14": 65,
+   "thr15": 70,
+   "thr16": 75,
+   "dep4": 68,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": -15831,
+   "dep9": -16384,
+   "dep10": 0,
+   "version": 1,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 3208,
+   "tab_off": 0
+  },
+  "thresholds": [
+   -32766,
+   5,
+   10,
+   15,
+   20,
+   25,
+   30,
+   35,
+   40,
+   45,
+   50,
+   55,
+   60,
+   65,
+   70,
+   75
+  ],
+  "dep_vals": [
+   0,
+   0,
+   195,
+   68,
+   0,
+   0,
+   0,
+   -15831,
+   -16384,
+   0
+  ],
+  "metadata": {
+   "msg_time": "2013-05-20T20:21:00.000000Z",
+   "vol_time": "2013-05-20T20:16:43.000000Z",
+   "prod_time": "2013-05-20T20:20:55.000000Z",
+   "el_angle": 19.5,
+   "max": 68,
+   "calib_const": -42.4375
+  },
+  "sym_layer_packet_counts": [
+   1
+  ],
+  "graph_page_packet_counts": [
+   7,
+   7,
+   7,
+   7,
+   7,
+   7
+  ],
+  "tab_pages": null,
+  "crosscheck": true
+ }
+}

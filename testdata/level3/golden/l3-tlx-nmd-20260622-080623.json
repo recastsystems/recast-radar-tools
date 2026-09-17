@@ -1,0 +1,611 @@
+{
+ "id": "l3-tlx-nmd-20260622-080623",
+ "sha256": "bfa68338a7635f0ad2e5407aa5a6ac662f6ba454f868488465f13451b6952404",
+ "size": 6038,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS34 KOUN 220806",
+  "awips_id": "NMDTLX",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 6008
+ },
+ "message_header": {
+  "code": 141,
+  "date": 20627,
+  "time": 29667,
+  "length": 6008,
+  "source_id": 1,
+  "destination_id": 0,
+  "num_blocks": 5
+ },
+ "halfwords": [
+  141,
+  20627,
+  0,
+  29667,
+  0,
+  6008,
+  1,
+  0,
+  5,
+  65535,
+  0,
+  35333,
+  65534,
+  33794,
+  1277,
+  141,
+  2,
+  212,
+  23746,
+  24,
+  20627,
+  0,
+  29183,
+  20627,
+  0,
+  29665,
+  0,
+  1,
+  0,
+  5,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  256,
+  0,
+  60,
+  0,
+  998,
+  0,
+  1870
+ ],
+ "product_code": 141,
+ "compression": {
+  "hw51": 0,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 1876,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 1860,
+     "packets": [
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      20,
+      8
+     ]
+    }
+   ],
+   "nested": [
+    {
+     "layer": 0,
+     "index": 2,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 3,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 6,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 7,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 12,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 13,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 16,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 17,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 20,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 21,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 24,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 25,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 28,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 29,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 32,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 33,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 36,
+     "code": 23,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 37,
+     "code": 24,
+     "packets": [
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 40,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 41,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 44,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 45,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    }
+   ]
+  },
+  "graphic": {
+   "length": 1744,
+   "num_pages": 3,
+   "pages": [
+    {
+     "page": 1,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 2,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 3,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": {
+   "length": 2268,
+   "message_code": 141,
+   "product_code": 141,
+   "num_pages": 2,
+   "lines_per_page": [
+    16,
+    10
+   ],
+   "text_sha256": "188010bd4a7af67548ba8435ff734c32a1f4ba8bcb6bc9e17db6d797eaad142b"
+  },
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  2,
+  6,
+  8,
+  10,
+  20,
+  23,
+  24
+ ],
+ "data": [],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Mesocyclone Detection",
+  "max_range": 230.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 141,
+   "date": 20627,
+   "time": 29667,
+   "msg_len": 6008,
+   "src_id": 1,
+   "dest_id": 0,
+   "num_blks": 5
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 35333,
+   "lon": -97278,
+   "height": 1277,
+   "prod_code": 141,
+   "op_mode": 2,
+   "vcp": 212,
+   "seq_num": 23746,
+   "vol_num": 24,
+   "vol_date": 20627,
+   "vol_start_time": 29183,
+   "prod_gen_date": 20627,
+   "prod_gen_time": 29665,
+   "dep1": 0,
+   "dep2": 1,
+   "el_num": 0,
+   "dep3": 5,
+   "thr1": 0,
+   "thr2": 0,
+   "thr3": 0,
+   "thr4": 0,
+   "thr5": 0,
+   "thr6": 0,
+   "thr7": 0,
+   "thr8": 0,
+   "thr9": 0,
+   "thr10": 0,
+   "thr11": 0,
+   "thr12": 0,
+   "thr13": 0,
+   "thr14": 0,
+   "thr15": 0,
+   "thr16": 0,
+   "dep4": 0,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": 0,
+   "dep9": 0,
+   "dep10": 0,
+   "version": 1,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 998,
+   "tab_off": 1870
+  },
+  "thresholds": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "dep_vals": [
+   0,
+   1,
+   5,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "metadata": {
+   "msg_time": "2026-06-22T08:14:27.000000Z",
+   "vol_time": "2026-06-22T08:06:23.000000Z",
+   "prod_time": "2026-06-22T08:14:25.000000Z",
+   "min_ref_thresh": 0,
+   "overlap_display_filter": 1,
+   "min_strength_rank": 5
+  },
+  "sym_layer_packet_counts": [
+   50
+  ],
+  "graph_page_packet_counts": [
+   7,
+   7,
+   7
+  ],
+  "tab_pages": 2,
+  "crosscheck": true
+ }
+}
