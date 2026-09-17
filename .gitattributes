@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.V06 binary
+*.V07 binary
+*.gz binary
+*.bz2 binary
+*.h5 binary
+*.hdf binary
+*.nc binary
+*.zip binary
+*.tar binary
+*.grib2 binary
+*.png binary
+testdata/files/** binary

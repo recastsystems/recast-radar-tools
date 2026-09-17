@@ -1,0 +1,6 @@
+target/
+*.profraw
+/fuzz/artifacts/
+/fuzz/corpus/
+/fuzz/coverage/
+.testdata-cache/

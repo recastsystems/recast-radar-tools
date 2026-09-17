@@ -1,0 +1,29 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+
+# Crates opt in with `[lints] workspace = true`.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.dev]
+debug = 0
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = false
