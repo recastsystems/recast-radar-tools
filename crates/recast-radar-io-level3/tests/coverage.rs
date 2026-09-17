@@ -9,7 +9,9 @@
 //! that owns it, that the codes found (including nested ones) are the codes the
 //! golden ICD walker found, and that the only files that do not decode to a
 //! product are the ones the golden JSON marks as text-only or as having no
-//! Product Description Block.
+//! Product Description Block, which `decode_message` decodes to
+//! `Level3Message::Text` and `Level3Message::GeneralStatus`
+//! (`tests/messages.rs` compares their contents).
 //!
 //! `docs/level3/coverage.md` must match what this test renders. After a corpus
 //! or decoder change, regenerate it with
@@ -28,7 +30,8 @@ use recast_radar_io_level3::levels::{DataLevels, LevelEncoding};
 use recast_radar_io_level3::packets::generic::GenericComponent;
 use recast_radar_io_level3::packets::symbols::SymbolPacket;
 use recast_radar_io_level3::{
-    GraphicLayout, Level3Error, Level3Product, Packet, TabularLayout, decode_product, product_info,
+    GraphicLayout, Level3Message, Level3Product, Packet, TabularLayout, decode_message,
+    product_info,
 };
 
 /// Environment variable that makes the test write `docs/level3/coverage.md`.
@@ -112,10 +115,6 @@ const KNOWN_GAPS: &[&str] = &[
      (precipitation rate data array, products 81 and 82) has no mapping either \
      (`DataLevels::for_packet` returns `None`): no halfword describes its 4-bit \
      levels, and MetPy maps none.",
-    "**Text-only messages.** Plain-text messages (WMO heading `NOUS..`, e.g. \
-     the Free Text Message) return `Level3Error::TextOnly` without their text.",
-    "**General Status Message** (message code 2) returns \
-     `Level3Error::NotAProduct`; its contents are not decoded.",
     "**Radar coded message** (product 74) is split into 70-character records \
      (`TabularAlphanumeric::pages`); the coded groups inside them (legacy ICD \
      Appendix B) are not decoded.",
@@ -163,8 +162,8 @@ struct FileOutcome {
 
 enum Outcome {
     Product(ProductSummary),
-    TextOnly,
-    NotAProduct { message_code: i16 },
+    Text,
+    GeneralStatus { message_code: i16 },
     Failed(String),
 }
 
@@ -198,8 +197,8 @@ fn decode_entry(entry: &Entry) -> FileOutcome {
     let product_code = golden_code
         .or_else(|| entry.tag("product").and_then(|t| t.parse().ok()))
         .map(|c| i16::try_from(c).unwrap());
-    let result = match decode_product(&entry.bytes()) {
-        Ok(product) => {
+    let result = match decode_message(&entry.bytes()) {
+        Ok(Level3Message::Product(product)) => {
             let mut summary = summarize(&product);
             if golden_code != Some(i64::from(product.description.product_code)) {
                 summary.golden_mismatches.push(format!(
@@ -221,12 +220,15 @@ fn decode_entry(entry: &Entry) -> FileOutcome {
             }
             Outcome::Product(summary)
         }
-        Err(Level3Error::TextOnly { .. }) if framing.get("text_only").as_bool() == Some(true) => {
-            Outcome::TextOnly
+        Ok(Level3Message::Text(_)) if framing.get("text_only").as_bool() == Some(true) => {
+            Outcome::Text
         }
-        Err(Level3Error::NotAProduct { code }) if golden_code.is_none() => {
-            Outcome::NotAProduct { message_code: code }
+        Ok(Level3Message::GeneralStatus(status)) if golden_code.is_none() => {
+            Outcome::GeneralStatus {
+                message_code: status.message_header.code,
+            }
         }
+        Ok(_) => Outcome::Failed("message kind differs from the golden JSON".to_string()),
         Err(e) => Outcome::Failed(e.to_string()),
     };
     FileOutcome {
@@ -372,7 +374,7 @@ fn every_corpus_file_decodes_without_unknown_packets() {
                 problems.extend(summary.wrong_variants.iter().cloned());
                 problems.extend(summary.golden_mismatches.iter().cloned());
             }
-            Outcome::TextOnly | Outcome::NotAProduct { .. } => {}
+            Outcome::Text | Outcome::GeneralStatus { .. } => {}
             Outcome::Failed(error) => problems.push(format!("decode failed: {error}")),
         }
         if !problems.is_empty() {
@@ -440,8 +442,10 @@ fn status(files: &[&FileOutcome]) -> String {
                 format!("**Unknown packets {}**", codes.join(", "))
             }
             Outcome::Product(_) => "**differs from golden**".to_string(),
-            Outcome::TextOnly => "text only (`Level3Error::TextOnly`)".to_string(),
-            Outcome::NotAProduct { .. } => "not a product (`Level3Error::NotAProduct`)".to_string(),
+            Outcome::Text => "decoded text (`Level3Message::Text`)".to_string(),
+            Outcome::GeneralStatus { .. } => {
+                "decoded status (`Level3Message::GeneralStatus`)".to_string()
+            }
             Outcome::Failed(error) => format!("**error: {error}**"),
         });
     }
@@ -471,7 +475,7 @@ fn render(outcomes: &[FileOutcome]) -> String {
     let mut messages: BTreeMap<i16, Vec<&FileOutcome>> = BTreeMap::new();
     for file in outcomes {
         match (&file.result, file.product_code) {
-            (Outcome::NotAProduct { message_code }, None) => {
+            (Outcome::GeneralStatus { message_code }, None) => {
                 messages.entry(*message_code).or_default().push(file);
             }
             (_, Some(code)) => by_product.entry(code).or_default().push(file),
@@ -509,8 +513,8 @@ fn render(outcomes: &[FileOutcome]) -> String {
     writeln!(
         w,
         "Corpus files: {}. Decoded products: {decoded_products} files, {} product \
-         codes. Messages without a Product Description Block: {}. Text-only \
-         messages: {}.",
+         codes. General Status Messages (no Product Description Block): {}. \
+         Plain-text messages: {}.",
         outcomes.len(),
         by_product
             .values()
@@ -520,11 +524,11 @@ fn render(outcomes: &[FileOutcome]) -> String {
             .count(),
         outcomes
             .iter()
-            .filter(|f| matches!(f.result, Outcome::NotAProduct { .. }))
+            .filter(|f| matches!(f.result, Outcome::GeneralStatus { .. }))
             .count(),
         outcomes
             .iter()
-            .filter(|f| matches!(f.result, Outcome::TextOnly))
+            .filter(|f| matches!(f.result, Outcome::Text))
             .count(),
     )
     .unwrap();
@@ -537,9 +541,13 @@ fn render(outcomes: &[FileOutcome]) -> String {
          packets nested in SCIT packets 23/24) decodes to its family's typed \
          variant: no `Packet::Unknown`, no `GenericComponent::Undecoded`, and \
          the packet codes found equal the golden ICD walker's.",
-        "- **text only** / **not a product**: the golden JSON marks the file as a \
-         plain-text message or a message without a Product Description Block, \
-         and `decode_product` returns the matching error.",
+        "- **decoded text** / **decoded status**: the golden JSON marks the file \
+         as a plain-text message or a message without a Product Description \
+         Block, and `decode_message` returns `Level3Message::Text` or \
+         `Level3Message::GeneralStatus` (`decode_product` returns \
+         `Level3Error::TextOnly` or `Level3Error::NotAProduct`). \
+         `tests/messages.rs` compares every General Status Message field and \
+         the text with the files' bytes and with MetPy 1.7.1.",
         "- **Values**: `tests/framing.rs` compares headers, blocks and packet \
          codes with the golden JSON for every file. The family tests \
          (`radial_generic.rs`, `raster.rs`, `symbols.rs`, `text_vectors.rs`) \
