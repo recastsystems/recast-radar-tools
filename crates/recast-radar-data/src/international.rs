@@ -405,7 +405,7 @@ pub fn intl_providers() -> Vec<Box<dyn IntlProvider>> {
         Box::new(ChmiProvider::new()),
         Box::new(PiemonteProvider::new()),
         Box::new(LombardiaProvider::new()),
-        Box::new(JmaProvider::new()),
+        Box::new(JmaProvider),
         Box::new(KaiaEstoniaProvider::new()),
         Box::new(MeteoRomaniaProvider::new()),
         Box::new(OrdProvider::new()),
@@ -719,14 +719,13 @@ const JMA_LOOKBACK_MINUTES: i64 = 40;
 /// 3.50120/4.51022/5.200 per the JMA technical format documentation).
 ///
 /// Catalog model: one tar carries every station of the network, and this
-/// crate does not parse GRIB2. [`JmaProvider::new`] serves the embedded
-/// station table (decoded from real tar headers); a caller that wants the
-/// live network passes its own table to [`JmaProvider::with_stations`]:
+/// crate does not parse GRIB2. `JmaProvider` serves the embedded station
+/// table (decoded from real tar headers). A caller that wants the live
+/// network builds a [`JmaCatalogProvider`] from its own table instead:
 /// download the N5 tar named by a frame plan's first part and map
 /// `recast_radar_io_jma::jma_tar_station_headers` rows into [`JmaStation`]s.
-/// [`IntlProvider::latest`] HEAD-probes backward over
-/// [`JMA_LOOKBACK_MINUTES`] of 5-minute stamps for the newest tar that
-/// exists.
+/// `latest` HEAD-probes backward over [`JMA_LOOKBACK_MINUTES`] of 5-minute
+/// stamps for the newest tar that exists.
 ///
 /// Decode contract: the plan's first part is the N5 (reflectivity) tar
 /// containing ALL stations — the poll consumer must decode JMA parts with
@@ -735,14 +734,21 @@ const JMA_LOOKBACK_MINUTES: i64 = 40;
 /// first station regardless of the selection. When the `_N6_` sibling exists
 /// at the same stamp, the plan includes it and requests a per-elevation merge
 /// so Japan exposes Doppler velocity in the same live frame.
-#[derive(Clone, Debug, Default)]
-pub struct JmaProvider {
-    /// Caller-provided station table; `None` serves the embedded
-    /// `JMA_STATIONS` table.
-    stations: Option<Vec<JmaStation>>,
+#[derive(Clone, Copy, Debug, Default)]
+pub struct JmaProvider;
+
+/// [`JmaProvider`] over a caller-provided station table.
+///
+/// Same provider id, frame plans and decode contract as [`JmaProvider`];
+/// only the catalog differs. `list_sites` serves the caller's stations
+/// (sorted by id, first row per id kept) and `latest` accepts those ids.
+/// `static_sites` stays the embedded table.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JmaCatalogProvider {
+    stations: Vec<JmaStation>,
 }
 
-/// One JMA radar station for a caller-provided [`JmaProvider`] catalog.
+/// One JMA radar station for a [`JmaCatalogProvider`] table.
 ///
 /// Field for field the station identity that
 /// `recast_radar_io_jma::JmaStationHeader` reads from a tar member's GRIB2
@@ -760,31 +766,29 @@ pub struct JmaStation {
 }
 
 impl JmaProvider {
-    /// Provider over the embedded station table (`JMA_STATIONS`, 20 stations
-    /// decoded from a 2026-06-12 N5 tar).
-    pub fn new() -> Self {
-        Self::default()
+    /// The provider over the embedded station table (`JMA_STATIONS`, 20
+    /// stations decoded from a 2026-06-12 N5 tar). Same as the unit value
+    /// `JmaProvider`.
+    pub const fn new() -> Self {
+        Self
     }
+}
 
-    /// Provider whose [`IntlProvider::list_sites`] serves `stations` instead
-    /// of the embedded table (sorted by id, first row per id kept).
-    /// [`IntlProvider::static_sites`] stays the embedded table.
-    pub fn with_stations(stations: impl IntoIterator<Item = JmaStation>) -> Self {
+impl JmaCatalogProvider {
+    /// A provider whose `list_sites` serves `stations`.
+    pub fn new(stations: impl IntoIterator<Item = JmaStation>) -> Self {
         Self {
-            stations: Some(stations.into_iter().collect()),
+            stations: stations.into_iter().collect(),
         }
     }
 
-    /// The catalog [`IntlProvider::list_sites`] serves: the caller's table
-    /// when one was provided, else the embedded one.
+    /// The caller's table as sites: sorted by id, first row per id kept.
     fn catalog_sites(&self) -> Vec<IntlSite> {
-        let Some(stations) = &self.stations else {
-            return self.static_sites();
-        };
-        let mut sites: Vec<IntlSite> = stations
+        let mut sites: Vec<IntlSite> = self
+            .stations
             .iter()
             .map(|station| {
-                self.site(
+                jma_site(
                     &station.id,
                     station.number,
                     station.latitude_deg as f32,
@@ -797,19 +801,47 @@ impl JmaProvider {
         sites.dedup_by(|later, first| later.site_id == first.site_id);
         sites
     }
+}
 
-    /// One site row; the embedded and caller-provided catalogs share the
-    /// label grammar.
-    fn site(&self, id: &str, number: u16, latitude_deg: f32, longitude_deg: f32) -> IntlSite {
-        IntlSite {
-            provider_id: self.id(),
-            site_id: id.to_owned(),
-            label: format!("{id} (RS{number})"),
-            country: self.country(),
-            latitude_deg: Some(latitude_deg),
-            longitude_deg: Some(longitude_deg),
-        }
+const JMA_PROVIDER_ID: &str = "jma";
+const JMA_PROVIDER_LABEL: &str = "JMA Japan";
+const JMA_COUNTRY: &str = "Japan";
+
+/// One site row; the embedded and caller-provided catalogs share the label
+/// grammar.
+fn jma_site(id: &str, number: u16, latitude_deg: f32, longitude_deg: f32) -> IntlSite {
+    IntlSite {
+        provider_id: JMA_PROVIDER_ID,
+        site_id: id.to_owned(),
+        label: format!("{id} (RS{number})"),
+        country: JMA_COUNTRY,
+        latitude_deg: Some(latitude_deg),
+        longitude_deg: Some(longitude_deg),
     }
+}
+
+/// The embedded station table as sites.
+fn jma_static_sites() -> Vec<IntlSite> {
+    JMA_STATIONS
+        .iter()
+        .map(|&(id, number, latitude_deg, longitude_deg)| {
+            jma_site(id, number, latitude_deg, longitude_deg)
+        })
+        .collect()
+}
+
+/// `latest` for either JMA provider, given its catalog.
+#[cfg(feature = "net")]
+fn jma_latest(sites: &[IntlSite], site_id: &str) -> Result<FramePlan, String> {
+    if !sites.iter().any(|site| site.site_id == site_id) {
+        return Err(format!("unknown JMA site '{site_id}'"));
+    }
+    let stamp = jma_newest_stamp()?;
+    Ok(jma_frame_plan(
+        stamp,
+        site_id,
+        jma_velocity_available(stamp),
+    ))
 }
 
 /// JMA operational radar stations: id, station number, latitude, longitude.
@@ -819,8 +851,8 @@ impl JmaProvider {
 /// 2026-06-12) via `recast_radar_io_jma::jma_tar_station_headers` — the same
 /// per-station GRIB2 product-section headers (JMA GRIB2 template 4.51022
 /// per the JMA technical format documentation) that a caller-provided
-/// [`JmaProvider::with_stations`] table is built from, so the static table
-/// and a live catalog agree on ids and coordinates. Regenerate by running
+/// [`JmaCatalogProvider`] table is built from, so the static table and a
+/// live catalog agree on ids and coordinates. Regenerate by running
 /// `cargo test -p recast-radar-data jma_regenerate_static_station_table -- --ignored --nocapture`
 /// and pasting the printed rows.
 const JMA_STATIONS: &[(&str, u16, f32, f32)] = &[
@@ -913,15 +945,43 @@ fn jma_frame_plan(stamp: DateTime<Utc>, site_id: &str, include_velocity: bool) -
 
 impl IntlProvider for JmaProvider {
     fn id(&self) -> &'static str {
-        "jma"
+        JMA_PROVIDER_ID
     }
 
     fn label(&self) -> &'static str {
-        "JMA Japan"
+        JMA_PROVIDER_LABEL
     }
 
     fn country(&self) -> &'static str {
-        "Japan"
+        JMA_COUNTRY
+    }
+
+    #[cfg(feature = "net")]
+    fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
+        Ok(jma_static_sites())
+    }
+
+    #[cfg(feature = "net")]
+    fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
+        jma_latest(&jma_static_sites(), site_id)
+    }
+
+    fn static_sites(&self) -> Vec<IntlSite> {
+        jma_static_sites()
+    }
+}
+
+impl IntlProvider for JmaCatalogProvider {
+    fn id(&self) -> &'static str {
+        JMA_PROVIDER_ID
+    }
+
+    fn label(&self) -> &'static str {
+        JMA_PROVIDER_LABEL
+    }
+
+    fn country(&self) -> &'static str {
+        JMA_COUNTRY
     }
 
     #[cfg(feature = "net")]
@@ -931,25 +991,11 @@ impl IntlProvider for JmaProvider {
 
     #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
-        let sites = self.catalog_sites();
-        if !sites.iter().any(|site| site.site_id == site_id) {
-            return Err(format!("unknown JMA site '{site_id}'"));
-        }
-        let stamp = jma_newest_stamp()?;
-        Ok(jma_frame_plan(
-            stamp,
-            site_id,
-            jma_velocity_available(stamp),
-        ))
+        jma_latest(&self.catalog_sites(), site_id)
     }
 
     fn static_sites(&self) -> Vec<IntlSite> {
-        JMA_STATIONS
-            .iter()
-            .map(|&(id, number, latitude_deg, longitude_deg)| {
-                self.site(id, number, latitude_deg, longitude_deg)
-            })
-            .collect()
+        jma_static_sites()
     }
 }
 
@@ -1638,10 +1684,10 @@ mod tests {
         let taka = &from_tar[0];
         assert_eq!((taka.id.as_str(), taka.number), ("TAKA", 47773));
 
-        let default_provider = JmaProvider::new();
+        // The unit value and `new()` are the same embedded-table provider.
         assert_eq!(
-            default_provider.catalog_sites(),
-            default_provider.static_sites()
+            JmaProvider::new().static_sites(),
+            JmaProvider.static_sites()
         );
 
         // Tar row first, then every embedded row (TAKA again): the caller's
@@ -1654,7 +1700,9 @@ mod tests {
                 latitude_deg: f64::from(latitude),
                 longitude_deg: f64::from(longitude),
             });
-        let provider = JmaProvider::with_stations(from_tar.iter().cloned().chain(embedded_rows));
+        let provider = JmaCatalogProvider::new(from_tar.iter().cloned().chain(embedded_rows));
+        assert_eq!(provider.id(), JmaProvider.id());
+        assert_eq!(provider.static_sites(), JmaProvider.static_sites());
         let sites = provider.catalog_sites();
         assert_eq!(sites.len(), JMA_STATIONS.len());
         assert!(
