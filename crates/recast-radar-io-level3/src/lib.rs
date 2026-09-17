@@ -18,7 +18,8 @@
 //!    dispatched by packet code to the family modules in [`packets`]. Packets
 //!    without a decoder are kept as [`Packet::Unknown`] with their bytes.
 //!
-//! [`product_info`] looks up a product code's mnemonic, name and kind.
+//! [`product_info`] looks up a product code's mnemonic, name and kind, and
+//! [`levels::DataLevels`] maps a product's data levels to physical values.
 //!
 //! The format reference with ICD section numbers is `docs/level3/reference.md`.
 
@@ -26,6 +27,7 @@ mod blocks;
 mod decompress;
 mod error;
 mod header;
+pub mod levels;
 pub mod packets;
 mod products;
 mod read;
