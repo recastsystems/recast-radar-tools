@@ -1,0 +1,33 @@
+[package]
+name = "recast-radar-io-nexrad"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+byteorder.workspace = true
+chrono.workspace = true
+flate2.workspace = true
+recast-radar-core = { path = "../recast-radar-core" }
+rayon.workspace = true
+thiserror.workspace = true
+zip.workspace = true
+
+# Native targets keep the C backends: `bzip2-sys` (libbz2) and libdeflate's
+# hand-tuned SIMD gzip fast path.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bzip2.workspace = true
+libdeflate-sys.workspace = true
+
+# wasm32 has no libc/sysroot for cc-rs to compile against, so neither
+# `bzip2-sys` nor `libdeflate-sys` can build there. Swap bzip2 to its
+# pure-Rust `libbz2-rs-sys` backend (the crate's own default feature; same
+# public API) and drop libdeflate entirely -- it is only an optional fast
+# path in front of flate2's pure-Rust `zlib-rs` gzip decoder.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bzip2 = { version = "0.6" }
+
+[dev-dependencies]
+# For the live international-feed probe example only (recast-radar-data has no
+# path dependencies, so this cannot cycle).
+recast-radar-data = { path = "../recast-radar-data" }

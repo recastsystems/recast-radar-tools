@@ -1,0 +1,4421 @@
+//! Fast color table parsing and sampling for radar renderers.
+
+/// Solarpower07 WRF-Runner colormaps ported for model/WRF map layers.
+/// See [`solar::solar_model_field_table`]; credit Solarpower07 (handle only,
+/// credit pending per project policy).
+pub mod solar;
+
+/// Friendly display labels + default-palette family hints for raw
+/// `wrf_*`-prefixed store fields (the WRF Registry passthrough names both
+/// import paths write). Consumed by the Solar resolver and the model dock's
+/// display-time renaming.
+pub mod wrf_fields;
+
+/// Naming contract (labels ↔ store-style slugs) for the per-level isobaric
+/// map fields the Model Data dock synthesizes from the `*_iso` sounding
+/// volumes. Consumed by the dock's display-time synthesis and the Solar
+/// resolver's level-aware lookups.
+pub mod iso_levels;
+
+pub use iso_levels::{
+    ISO_PICKER_LEVELS_HPA, IsoLevelField, IsoLevelSpec, parse_iso_label, parse_iso_slug,
+};
+pub use solar::{
+    solar_cape_table, solar_model_field_table, solar_reflectivity_table,
+    solar_relative_humidity_table, solar_vorticity_table,
+};
+pub use wrf_fields::{
+    WrfColorFamily, WrfFieldInfo, wrf_display_label, wrf_field_catalog, wrf_field_info,
+    wrf_store_name_for_label,
+};
+
+use std::collections::hash_map::DefaultHasher;
+use std::fmt;
+use std::fmt::Write as _;
+use std::hash::{Hash, Hasher};
+
+const KNOT_TO_MPS: f32 = 0.514_444;
+const MPH_TO_MPS: f32 = 0.447_04;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Rgba8 {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+impl Rgba8 {
+    pub const TRANSPARENT: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    };
+
+    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self { r, g, b, a }
+    }
+
+    pub const fn opaque(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b, a: 255 }
+    }
+
+    pub const fn to_array(self) -> [u8; 4] {
+        [self.r, self.g, self.b, self.a]
+    }
+
+    fn lerp(self, other: Self, amount: f32) -> Self {
+        let amount = amount.clamp(0.0, 1.0);
+        Self {
+            r: lerp_u8(self.r, other.r, amount),
+            g: lerp_u8(self.g, other.g, amount),
+            b: lerp_u8(self.b, other.b, amount),
+            a: lerp_u8(self.a, other.a, amount),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ColorTableFamily {
+    Reflectivity,
+    Velocity,
+    SpectrumWidth,
+    CorrelationCoefficient,
+    DifferentialReflectivity,
+    EchoTops,
+    Vil,
+    VilDensity,
+    HailSize,
+    Probability,
+    AzimuthalShear,
+    DifferentialPhase,
+    SpecificDifferentialPhase,
+    Generic,
+}
+
+impl ColorTableFamily {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Reflectivity => "Reflectivity",
+            Self::Velocity => "Velocity / SRV",
+            Self::SpectrumWidth => "Spectrum Width",
+            Self::CorrelationCoefficient => "Correlation Coeff (CC)",
+            Self::DifferentialReflectivity => "Differential Refl (ZDR)",
+            Self::EchoTops => "Echo Tops",
+            Self::Vil => "VIL",
+            Self::VilDensity => "VIL Density",
+            Self::HailSize => "Hail Size (MEHS)",
+            Self::Probability => "Probability / Percent",
+            Self::AzimuthalShear => "Azimuthal Shear",
+            Self::DifferentialPhase => "Differential Phase (PHI)",
+            Self::SpecificDifferentialPhase => "Specific Diff Phase (KDP)",
+            Self::Generic => "Other",
+        }
+    }
+
+    /// Every family, in picker order.
+    pub const ALL: [ColorTableFamily; 14] = [
+        Self::Reflectivity,
+        Self::Velocity,
+        Self::SpectrumWidth,
+        Self::CorrelationCoefficient,
+        Self::DifferentialReflectivity,
+        Self::EchoTops,
+        Self::Vil,
+        Self::VilDensity,
+        Self::HailSize,
+        Self::Probability,
+        Self::AzimuthalShear,
+        Self::DifferentialPhase,
+        Self::SpecificDifferentialPhase,
+        Self::Generic,
+    ];
+
+    /// Inverse of `label()` (persisted palette bindings are keyed on it).
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|family| family.label() == label)
+    }
+}
+
+/// Map a GR-style `Product:` header code to the table family it colors.
+/// Community .pal files use the GRLevelX product codes (BR/BV/SW/CC/ZDR/
+/// PHI/KDP/ET/VIL…); unknown or missing codes land in Generic — and the
+/// picker additionally offers user tables across families, since community
+/// files often omit or mislabel `Product:`.
+pub fn family_for_product_code(code: &str) -> ColorTableFamily {
+    match code.trim().to_ascii_uppercase().as_str() {
+        "BR" | "REF" | "CREF" | "DR" | "SDR" => ColorTableFamily::Reflectivity,
+        "BV" | "VEL" | "SRV" | "SRM" | "V" => ColorTableFamily::Velocity,
+        "SW" => ColorTableFamily::SpectrumWidth,
+        "CC" | "RHO" | "RHOHV" => ColorTableFamily::CorrelationCoefficient,
+        "ZDR" => ColorTableFamily::DifferentialReflectivity,
+        "ET" | "EET" => ColorTableFamily::EchoTops,
+        "VIL" | "DVL" => ColorTableFamily::Vil,
+        "VILD" => ColorTableFamily::VilDensity,
+        "MEHS" | "HAIL" => ColorTableFamily::HailSize,
+        "PROB" | "PROBABILITY" | "PERCENT" | "PCT" | "POH" | "POSH" => {
+            ColorTableFamily::Probability
+        }
+        "AZSHEAR" => ColorTableFamily::AzimuthalShear,
+        "PHI" | "PHIDP" => ColorTableFamily::DifferentialPhase,
+        "KDP" => ColorTableFamily::SpecificDifferentialPhase,
+        _ => ColorTableFamily::Generic,
+    }
+}
+
+/// Inverse of [`family_for_product_code`]: the `Product:` header code the
+/// editor stamps on saved tables and `to_gr_pal` writes for exports.
+/// Generic has no GR product code (`None` ⇒ omit the header; the file
+/// scans back into Generic, which is exactly where it started).
+pub fn product_code_for_family(family: ColorTableFamily) -> Option<&'static str> {
+    match family {
+        ColorTableFamily::Reflectivity => Some("BR"),
+        ColorTableFamily::Velocity => Some("BV"),
+        ColorTableFamily::SpectrumWidth => Some("SW"),
+        ColorTableFamily::CorrelationCoefficient => Some("CC"),
+        ColorTableFamily::DifferentialReflectivity => Some("ZDR"),
+        ColorTableFamily::EchoTops => Some("ET"),
+        ColorTableFamily::Vil => Some("VIL"),
+        ColorTableFamily::VilDensity => Some("VILD"),
+        ColorTableFamily::HailSize => Some("MEHS"),
+        ColorTableFamily::Probability => Some("PROB"),
+        ColorTableFamily::AzimuthalShear => Some("AZSHEAR"),
+        ColorTableFamily::DifferentialPhase => Some("PHI"),
+        ColorTableFamily::SpecificDifferentialPhase => Some("KDP"),
+        ColorTableFamily::Generic => None,
+    }
+}
+
+/// Picker badges (docs/customization-spec.md §2.1). An entry can carry
+/// several; `Default` marks the table the family ships with.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Badge {
+    Default,
+    CvdSafe,
+    Classic,
+    Smooth,
+    HighContrast,
+    /// Tables ported from research-radar toolkits (DOW/COW mobile-radar
+    /// work), e.g. the GURT V3 set by ambient330.
+    Research,
+}
+
+impl Badge {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::CvdSafe => "CVD-safe",
+            Self::Classic => "classic",
+            Self::Smooth => "smooth",
+            Self::HighContrast => "high contrast",
+            Self::Research => "research",
+        }
+    }
+}
+
+/// A built-in table plus the metadata the picker renders: one-line
+/// description (hover) and badges (docs/customization-spec.md §2.1).
+pub struct CatalogEntry {
+    pub table: ColorTable,
+    pub description: &'static str,
+    pub badges: &'static [Badge],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorStop {
+    pub value: f32,
+    pub color: Rgba8,
+    /// GR .pal two-color entries: the color ramps from `color` to this
+    /// across the stop's own interval (None = single-color entry).
+    pub end_color: Option<Rgba8>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColorTable {
+    name: String,
+    product: Option<String>,
+    units: Option<String>,
+    range_folded: Rgba8,
+    sample_mode: SampleMode,
+    stops: Vec<ColorStop>,
+    /// Render-time display threshold: values below it draw transparent (data
+    /// is untouched — readouts still see it). For diverging products the clamp
+    /// is symmetric (|value| < threshold), hiding the noise around zero while
+    /// keeping strong inbound/outbound returns.
+    display_threshold: Option<f32>,
+    threshold_is_symmetric: bool,
+}
+
+impl ColorTable {
+    pub fn new(name: impl Into<String>, stops: Vec<ColorStop>) -> Result<Self, ColorTableError> {
+        Self::from_parts(
+            name.into(),
+            None,
+            None,
+            default_range_folded_color(),
+            SampleMode::Interpolated,
+            stops,
+        )
+    }
+
+    pub fn new_stepped(
+        name: impl Into<String>,
+        stops: Vec<ColorStop>,
+    ) -> Result<Self, ColorTableError> {
+        Self::from_parts(
+            name.into(),
+            None,
+            None,
+            default_range_folded_color(),
+            SampleMode::Stepped,
+            stops,
+        )
+    }
+
+    pub fn parse(name: impl Into<String>, text: &str) -> Result<Self, ColorTableError> {
+        Self::parse_with_default_mode(name, text, SampleMode::Interpolated)
+    }
+
+    pub fn parse_with_default_mode(
+        name: impl Into<String>,
+        text: &str,
+        default_sample_mode: SampleMode,
+    ) -> Result<Self, ColorTableError> {
+        let name = name.into();
+        let mut product = None;
+        let mut units = None;
+        let mut scale = None;
+        let mut range_folded = default_range_folded_color();
+        let mut sample_mode = default_sample_mode;
+        let mut stops = Vec::new();
+
+        for (line_index, original_line) in text.lines().enumerate() {
+            let line_number = line_index + 1;
+            let line = normalize_line(original_line);
+            let line = line.trim();
+            if line.is_empty()
+                || line.starts_with(';')
+                || line.starts_with('#')
+                || line.starts_with("$$")
+            {
+                continue;
+            }
+
+            let Some((raw_key, raw_value)) = split_key_value(line) else {
+                continue;
+            };
+            let key = normalize_key(raw_key);
+            let value = raw_value.trim();
+
+            match key.as_str() {
+                "product" => product = non_empty(value),
+                "units" => units = non_empty(value),
+                "scale" => scale = parse_positive_f32(value),
+                "step" => {
+                    // In GR .pal files `Step:` is the LEGEND tick spacing
+                    // and never quantizes the display; our internal tables
+                    // use it as the quantized-interpolation step.
+                    if default_sample_mode != SampleMode::GrPal {
+                        sample_mode = parse_positive_f32(value)
+                            .map(|step| SampleMode::QuantizedInterpolated { step, origin: 0.0 })
+                            .unwrap_or(SampleMode::Stepped);
+                    }
+                }
+                "mode" | "samplemode" | "interpolate" | "interpolation" | "smooth" => {
+                    if let Some(parsed_mode) = parse_sample_mode(value) {
+                        sample_mode = parsed_mode;
+                    }
+                }
+                "rf" | "rangefolded" | "rangefoldedcolor" => {
+                    range_folded = parse_color_only(value, line_number)?;
+                }
+                "color" | "color4" | "solidcolor" | "solidcolor4" => {
+                    stops.push(parse_color_stop(
+                        value,
+                        key.ends_with('4'),
+                        key.starts_with("solid"),
+                        line_number,
+                    )?);
+                }
+                _ => {}
+            }
+        }
+
+        let unit_scale = scale
+            .map(|scale| 1.0 / scale)
+            .or_else(|| units.as_deref().map(unit_value_to_mps_scale))
+            .unwrap_or(1.0);
+        if unit_scale != 1.0 {
+            for stop in &mut stops {
+                stop.value *= unit_scale;
+            }
+            sample_mode = sample_mode.scale_values(unit_scale);
+        }
+
+        Self::from_parts(name, product, units, range_folded, sample_mode, stops)
+    }
+
+    /// Parse a user GR2Analyst-style .pal with faithful GR semantics:
+    /// solid/gradient intervals per entry, color4 alpha, `Step:` as legend
+    /// ticks only.
+    pub fn parse_gr_pal(name: impl Into<String>, text: &str) -> Result<Self, ColorTableError> {
+        Self::parse_with_default_mode(name, text, SampleMode::GrPal)
+    }
+
+    pub fn parse_stepped(name: impl Into<String>, text: &str) -> Result<Self, ColorTableError> {
+        Self::parse_with_default_mode(name, text, SampleMode::Stepped)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn product(&self) -> Option<&str> {
+        self.product.as_deref()
+    }
+
+    pub fn units(&self) -> Option<&str> {
+        self.units.as_deref()
+    }
+
+    pub fn stops(&self) -> &[ColorStop] {
+        &self.stops
+    }
+
+    pub fn interpolates(&self) -> bool {
+        self.sample_mode == SampleMode::Interpolated
+    }
+
+    pub fn sample_mode_label(&self) -> &'static str {
+        self.sample_mode.label()
+    }
+
+    pub fn step_size(&self) -> Option<f32> {
+        self.sample_mode.step_size()
+    }
+
+    pub fn sample(&self, value: f32) -> Rgba8 {
+        if !value.is_finite() {
+            return Rgba8::TRANSPARENT;
+        }
+        if self.value_below_display_threshold(value) {
+            return Rgba8::TRANSPARENT;
+        }
+        match self.sample_mode {
+            SampleMode::Interpolated => self.sample_interpolated(value),
+            SampleMode::Stepped => self.sample_stepped(value),
+            SampleMode::GrPal => self.sample_gr_pal(value),
+            SampleMode::QuantizedInterpolated { step, origin } => {
+                if let Some(first_opaque_value) = self.first_opaque_value()
+                    && value < first_opaque_value
+                {
+                    return Rgba8::TRANSPARENT;
+                }
+                let quantized = quantize_value(value, step, origin);
+                self.sample_interpolated(quantized)
+            }
+        }
+    }
+
+    fn sample_interpolated(&self, value: f32) -> Rgba8 {
+        let Some(first) = self.stops.first() else {
+            return Rgba8::TRANSPARENT;
+        };
+        if value <= first.value {
+            return first.color;
+        }
+        let index = self.stops.partition_point(|stop| stop.value < value);
+        if index >= self.stops.len() {
+            return self
+                .stops
+                .last()
+                .map(|stop| stop.color)
+                .unwrap_or(Rgba8::TRANSPARENT);
+        }
+        let right = self.stops[index];
+        if value == right.value {
+            return right.color;
+        }
+        let left = self.stops[index - 1];
+        let span = (right.value - left.value).max(f32::EPSILON);
+        left.color.lerp(right.color, (value - left.value) / span)
+    }
+
+    /// GR .pal interval semantics: linear ramps between `color:` rows, optional
+    /// per-row `end_color` ramps, and `SolidColor:` hard cuts. `Step:` never
+    /// quantizes the display.
+    fn sample_gr_pal(&self, value: f32) -> Rgba8 {
+        let Some(first) = self.stops.first() else {
+            return Rgba8::TRANSPARENT;
+        };
+        if value <= first.value {
+            return first.color;
+        }
+        let index = self.stops.partition_point(|stop| stop.value <= value);
+        let stop = self.stops[index.saturating_sub(1)];
+        let Some(next_stop) = self.stops.get(index) else {
+            return stop.color;
+        };
+        let end_color = stop.end_color.unwrap_or({
+            if stop.color.a == 0 {
+                stop.color
+            } else {
+                next_stop.color
+            }
+        });
+        let interval_end = next_stop.value;
+        let span = (interval_end - stop.value).max(f32::EPSILON);
+        let t = ((value - stop.value) / span).clamp(0.0, 1.0);
+        stop.color.lerp(end_color, t)
+    }
+
+    fn sample_stepped(&self, value: f32) -> Rgba8 {
+        let Some(first) = self.stops.first() else {
+            return Rgba8::TRANSPARENT;
+        };
+        if value <= first.value {
+            return first.color;
+        }
+        let index = self.stops.partition_point(|stop| stop.value < value);
+        if index >= self.stops.len() {
+            return self
+                .stops
+                .last()
+                .map(|stop| stop.color)
+                .unwrap_or(Rgba8::TRANSPARENT);
+        }
+        let right = self.stops[index];
+        if value == right.value {
+            return right.color;
+        }
+        self.stops[index - 1].color
+    }
+
+    fn first_opaque_value(&self) -> Option<f32> {
+        let first = self.stops.first()?;
+        (first.color.a == 0).then(|| {
+            self.stops
+                .iter()
+                .find(|stop| stop.color.a > 0)
+                .map(|stop| stop.value)
+        })?
+    }
+
+    pub fn color_for_value(&self, value: f32) -> [u8; 4] {
+        self.sample(value).to_array()
+    }
+
+    /// A copy of this table with a render-time display threshold. Values
+    /// below `threshold` (or within ±threshold when `symmetric`) sample as
+    /// transparent — in the viewport, the palette LUT paths, and the
+    /// colorbar alike. `None` clears the clamp.
+    pub fn with_display_threshold(&self, threshold: Option<f32>, symmetric: bool) -> Self {
+        let mut table = self.clone();
+        table.display_threshold = threshold;
+        table.threshold_is_symmetric = symmetric && threshold.is_some();
+        table
+    }
+
+    fn value_below_display_threshold(&self, value: f32) -> bool {
+        match self.display_threshold {
+            Some(threshold) if self.threshold_is_symmetric => value.abs() < threshold,
+            Some(threshold) => value < threshold,
+            None => false,
+        }
+    }
+
+    /// Build a precomputed sampler that returns bit-identical colors to
+    /// [`ColorTable::sample`] in O(1) per lookup. Use it in per-pixel loops:
+    /// it hoists the quantized mode's first-opaque scan out of the hot path
+    /// and replaces the per-sample binary search with a bucket index.
+    pub fn sampler(&self) -> ColorSampler {
+        ColorSampler::new(self)
+    }
+
+    pub fn range_folded_color(&self) -> [u8; 4] {
+        self.range_folded.to_array()
+    }
+
+    pub fn range_folded_rgba(&self) -> Rgba8 {
+        self.range_folded
+    }
+
+    pub fn signature(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.name.hash(&mut hasher);
+        self.product.hash(&mut hasher);
+        self.units.hash(&mut hasher);
+        self.range_folded.hash(&mut hasher);
+        self.sample_mode.hash(&mut hasher);
+        self.stops.len().hash(&mut hasher);
+        for stop in &self.stops {
+            stop.value.to_bits().hash(&mut hasher);
+            stop.color.hash(&mut hasher);
+            stop.end_color.hash(&mut hasher);
+        }
+        self.display_threshold.map(f32::to_bits).hash(&mut hasher);
+        self.threshold_is_symmetric.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    pub fn mirrored_values(&self, name: impl Into<String>) -> Self {
+        let stops = self
+            .stops
+            .iter()
+            .map(|stop| ColorStop {
+                value: -stop.value,
+                color: stop.color,
+                end_color: stop.end_color,
+            })
+            .collect::<Vec<_>>();
+        let mut table = Self::from_parts(
+            name.into(),
+            self.product.clone(),
+            self.units.clone(),
+            self.range_folded,
+            self.sample_mode.mirrored_values(),
+            stops,
+        )
+        .expect("mirrored table preserves valid stops");
+        table.display_threshold = self.display_threshold;
+        table.threshold_is_symmetric = self.threshold_is_symmetric;
+        table
+    }
+
+    /// Build a table from explicit parts — the in-app editor's path (the
+    /// parsers funnel here too). Stop values are in INTERNAL units (the
+    /// editor converts declared kt/mph before calling); stops are sorted
+    /// and bit-deduped, and at least two distinct stops are required.
+    pub fn from_parts(
+        name: String,
+        product: Option<String>,
+        units: Option<String>,
+        range_folded: Rgba8,
+        sample_mode: SampleMode,
+        mut stops: Vec<ColorStop>,
+    ) -> Result<Self, ColorTableError> {
+        stops.retain(|stop| stop.value.is_finite());
+        stops.sort_by(|left, right| left.value.total_cmp(&right.value));
+        stops.dedup_by(|left, right| {
+            if left.value.to_bits() == right.value.to_bits() {
+                *left = *right;
+                true
+            } else {
+                false
+            }
+        });
+
+        if stops.len() < 2 {
+            return Err(ColorTableError::NotEnoughStops);
+        }
+
+        Ok(Self {
+            name,
+            product,
+            units,
+            range_folded,
+            sample_mode,
+            stops,
+            display_threshold: None,
+            threshold_is_symmetric: false,
+        })
+    }
+}
+
+/// Precomputed accelerator for [`ColorTable::sample`].
+///
+/// Produces bit-identical output to the direct path for every input: the same
+/// stop list and tail/edge rules are applied, only the segment search is
+/// replaced. A uniform bucket grid over the stop value range maps a value to
+/// the first stop index that can match it, so the per-sample cost is one
+/// multiply, one table load, and (almost always) a single comparison instead
+/// of a binary search — plus, for quantized tables, the first-opaque
+/// threshold is computed once here instead of rescanning the stops per call.
+#[derive(Clone, Debug)]
+pub struct ColorSampler {
+    sample_mode: SampleMode,
+    first_opaque_value: Option<f32>,
+    display_threshold: Option<f32>,
+    threshold_is_symmetric: bool,
+    stops: Vec<ColorStop>,
+    range_folded: Rgba8,
+    min_value: f32,
+    inv_bucket_width: f32,
+    bucket_start: Vec<u32>,
+}
+
+impl ColorSampler {
+    fn new(table: &ColorTable) -> Self {
+        let stops = table.stops.clone();
+        let min_value = stops.first().map_or(0.0, |stop| stop.value);
+        let max_value = stops.last().map_or(0.0, |stop| stop.value);
+        let span = max_value - min_value;
+        let bucket_count = (stops.len() * 4).clamp(64, 4096);
+        let inv_bucket_width = if span > 0.0 {
+            bucket_count as f32 / span
+        } else {
+            0.0
+        };
+
+        // bucket_start[b] = first stop index whose own bucket is >= b. The
+        // runtime lookup uses the same value->bucket mapping, which is
+        // monotone, so the true segment index can never be earlier.
+        let mut bucket_start = vec![stops.len() as u32; bucket_count];
+        let mut next_bucket = 0usize;
+        for (index, stop) in stops.iter().enumerate() {
+            let bucket = bucket_for(stop.value, min_value, inv_bucket_width, bucket_count);
+            while next_bucket <= bucket {
+                bucket_start[next_bucket] = index as u32;
+                next_bucket += 1;
+            }
+        }
+
+        Self {
+            sample_mode: table.sample_mode,
+            first_opaque_value: table.first_opaque_value(),
+            display_threshold: table.display_threshold,
+            threshold_is_symmetric: table.threshold_is_symmetric,
+            stops,
+            range_folded: table.range_folded,
+            min_value,
+            inv_bucket_width,
+            bucket_start,
+        }
+    }
+
+    pub fn sample(&self, value: f32) -> Rgba8 {
+        if !value.is_finite() {
+            return Rgba8::TRANSPARENT;
+        }
+        let below_threshold = match self.display_threshold {
+            Some(threshold) if self.threshold_is_symmetric => value.abs() < threshold,
+            Some(threshold) => value < threshold,
+            None => false,
+        };
+        if below_threshold {
+            return Rgba8::TRANSPARENT;
+        }
+        match self.sample_mode {
+            SampleMode::Interpolated => self.sample_accelerated(value, true),
+            SampleMode::Stepped => self.sample_accelerated(value, false),
+            SampleMode::GrPal => self.sample_gr_pal_accelerated(value),
+            SampleMode::QuantizedInterpolated { step, origin } => {
+                if let Some(first_opaque_value) = self.first_opaque_value
+                    && value < first_opaque_value
+                {
+                    return Rgba8::TRANSPARENT;
+                }
+                self.sample_accelerated(quantize_value(value, step, origin), true)
+            }
+        }
+    }
+
+    pub fn color_for_value(&self, value: f32) -> [u8; 4] {
+        self.sample(value).to_array()
+    }
+
+    pub fn range_folded_color(&self) -> [u8; 4] {
+        self.range_folded.to_array()
+    }
+
+    /// GR .pal interval semantics on the bucketed stop index; see
+    /// ColorTable::sample_gr_pal.
+    fn sample_gr_pal_accelerated(&self, value: f32) -> Rgba8 {
+        let Some(first) = self.stops.first() else {
+            return Rgba8::TRANSPARENT;
+        };
+        if value <= first.value {
+            return first.color;
+        }
+        let bucket = bucket_for(
+            value,
+            self.min_value,
+            self.inv_bucket_width,
+            self.bucket_start.len(),
+        );
+        let mut index = self.bucket_start[bucket] as usize;
+        while index < self.stops.len() && self.stops[index].value <= value {
+            index += 1;
+        }
+        let stop = self.stops[index.saturating_sub(1)];
+        let Some(next_stop) = self.stops.get(index) else {
+            return stop.color;
+        };
+        let end_color = stop.end_color.unwrap_or({
+            if stop.color.a == 0 {
+                stop.color
+            } else {
+                next_stop.color
+            }
+        });
+        let interval_end = next_stop.value;
+        let span = (interval_end - stop.value).max(f32::EPSILON);
+        let t = ((value - stop.value) / span).clamp(0.0, 1.0);
+        stop.color.lerp(end_color, t)
+    }
+
+    fn sample_accelerated(&self, value: f32, interpolate: bool) -> Rgba8 {
+        let Some(first) = self.stops.first() else {
+            return Rgba8::TRANSPARENT;
+        };
+        if value <= first.value {
+            return first.color;
+        }
+        let bucket = bucket_for(
+            value,
+            self.min_value,
+            self.inv_bucket_width,
+            self.bucket_start.len(),
+        );
+        let mut index = self.bucket_start[bucket] as usize;
+        while index < self.stops.len() && self.stops[index].value < value {
+            index += 1;
+        }
+        if index >= self.stops.len() {
+            return self
+                .stops
+                .last()
+                .map(|stop| stop.color)
+                .unwrap_or(Rgba8::TRANSPARENT);
+        }
+        let right = self.stops[index];
+        if value == right.value {
+            return right.color;
+        }
+        let left = self.stops[index - 1];
+        if interpolate {
+            let span = (right.value - left.value).max(f32::EPSILON);
+            left.color.lerp(right.color, (value - left.value) / span)
+        } else {
+            left.color
+        }
+    }
+}
+
+#[inline]
+fn bucket_for(value: f32, min_value: f32, inv_bucket_width: f32, bucket_count: usize) -> usize {
+    (((value - min_value) * inv_bucket_width) as usize).min(bucket_count - 1)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SampleMode {
+    Interpolated,
+    Stepped,
+    QuantizedInterpolated {
+        step: f32,
+        origin: f32,
+    },
+    /// GR .pal semantics: a stop's interval is SOLID for single-color
+    /// entries and a linear ramp for two-color entries; `step:` headers are
+    /// legend ticks only (GR never quantizes the display).
+    GrPal,
+}
+
+impl SampleMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Interpolated => "interpolated",
+            Self::Stepped => "stepped",
+            Self::QuantizedInterpolated { .. } => "quantized stepped",
+            Self::GrPal => "GR pal",
+        }
+    }
+
+    fn step_size(self) -> Option<f32> {
+        match self {
+            Self::QuantizedInterpolated { step, .. } => Some(step),
+            Self::Interpolated | Self::Stepped | Self::GrPal => None,
+        }
+    }
+
+    fn scale_values(self, scale: f32) -> Self {
+        match self {
+            Self::QuantizedInterpolated { step, origin } => Self::QuantizedInterpolated {
+                step: step * scale,
+                origin: origin * scale,
+            },
+            Self::Interpolated | Self::Stepped | Self::GrPal => self,
+        }
+    }
+
+    fn mirrored_values(self) -> Self {
+        match self {
+            Self::QuantizedInterpolated { step, origin } => Self::QuantizedInterpolated {
+                step,
+                origin: -origin,
+            },
+            Self::Interpolated | Self::Stepped | Self::GrPal => self,
+        }
+    }
+}
+
+impl Hash for SampleMode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match *self {
+            Self::Interpolated => 0_u8.hash(state),
+            Self::Stepped => 1_u8.hash(state),
+            Self::QuantizedInterpolated { step, origin } => {
+                2_u8.hash(state);
+                step.to_bits().hash(state);
+                origin.to_bits().hash(state);
+            }
+            Self::GrPal => 3_u8.hash(state),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColorTableSet {
+    reflectivity: ColorTable,
+    velocity: ColorTable,
+    spectrum_width: ColorTable,
+    correlation_coefficient: ColorTable,
+    differential_reflectivity: ColorTable,
+    echo_tops: ColorTable,
+    vil: ColorTable,
+    vil_density: ColorTable,
+    hail_size: ColorTable,
+    probability: ColorTable,
+    azimuthal_shear: ColorTable,
+    differential_phase: ColorTable,
+    specific_differential_phase: ColorTable,
+    generic: ColorTable,
+}
+
+impl ColorTableSet {
+    pub fn for_family(&self, family: ColorTableFamily) -> &ColorTable {
+        match family {
+            ColorTableFamily::Reflectivity => &self.reflectivity,
+            ColorTableFamily::Velocity => &self.velocity,
+            ColorTableFamily::SpectrumWidth => &self.spectrum_width,
+            ColorTableFamily::CorrelationCoefficient => &self.correlation_coefficient,
+            ColorTableFamily::DifferentialReflectivity => &self.differential_reflectivity,
+            ColorTableFamily::EchoTops => &self.echo_tops,
+            ColorTableFamily::Vil => &self.vil,
+            ColorTableFamily::VilDensity => &self.vil_density,
+            ColorTableFamily::HailSize => &self.hail_size,
+            ColorTableFamily::Probability => &self.probability,
+            ColorTableFamily::AzimuthalShear => &self.azimuthal_shear,
+            ColorTableFamily::DifferentialPhase => &self.differential_phase,
+            ColorTableFamily::SpecificDifferentialPhase => &self.specific_differential_phase,
+            ColorTableFamily::Generic => &self.generic,
+        }
+    }
+
+    pub fn set_family(&mut self, family: ColorTableFamily, table: ColorTable) {
+        match family {
+            ColorTableFamily::Reflectivity => self.reflectivity = table,
+            ColorTableFamily::Velocity => self.velocity = table,
+            ColorTableFamily::SpectrumWidth => self.spectrum_width = table,
+            ColorTableFamily::CorrelationCoefficient => self.correlation_coefficient = table,
+            ColorTableFamily::DifferentialReflectivity => self.differential_reflectivity = table,
+            ColorTableFamily::EchoTops => self.echo_tops = table,
+            ColorTableFamily::Vil => self.vil = table,
+            ColorTableFamily::VilDensity => self.vil_density = table,
+            ColorTableFamily::HailSize => self.hail_size = table,
+            ColorTableFamily::Probability => self.probability = table,
+            ColorTableFamily::AzimuthalShear => self.azimuthal_shear = table,
+            ColorTableFamily::DifferentialPhase => self.differential_phase = table,
+            ColorTableFamily::SpecificDifferentialPhase => self.specific_differential_phase = table,
+            ColorTableFamily::Generic => self.generic = table,
+        }
+    }
+
+    pub fn signature_for_family(&self, family: ColorTableFamily) -> u64 {
+        self.for_family(family).signature()
+    }
+}
+
+impl Default for ColorTableSet {
+    fn default() -> Self {
+        Self {
+            reflectivity: builtin_reflectivity_table(),
+            velocity: builtin_velocity_table(),
+            spectrum_width: builtin_spectrum_width_table(),
+            correlation_coefficient: builtin_correlation_coefficient_table(),
+            differential_reflectivity: builtin_differential_reflectivity_table(),
+            echo_tops: builtin_echo_tops_table(),
+            vil: builtin_vil_table(),
+            vil_density: builtin_vil_density_table(),
+            hail_size: builtin_hail_size_table(),
+            probability: builtin_probability_table(),
+            azimuthal_shear: builtin_azimuthal_shear_table(),
+            differential_phase: builtin_differential_phase_table(),
+            specific_differential_phase: builtin_specific_differential_phase_table(),
+            generic: builtin_generic_table(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ColorTableError {
+    InvalidColor { line: usize, reason: &'static str },
+    NotEnoughStops,
+}
+
+impl fmt::Display for ColorTableError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidColor { line, reason } => {
+                write!(formatter, "invalid color table line {line}: {reason}")
+            }
+            Self::NotEnoughStops => write!(formatter, "color table needs at least two color stops"),
+        }
+    }
+}
+
+impl std::error::Error for ColorTableError {}
+
+pub fn builtin_reflectivity_table() -> ColorTable {
+    analyst_reflectivity_hd_table()
+}
+
+/// Default reflectivity palette: a smooth, perceptually-ordered dBZ ramp
+/// following NWS convention (blue→green→yellow→orange→red→magenta→white).
+/// Versus the old GR2 default it desaturates the electric low-end blues/greens
+/// so light precip reads naturally, keeps lightness rising monotonically into
+/// the severe range, and reserves magenta/purple for the 65+ dBZ hail core.
+/// Clear-air junk below ~10 dBZ is transparent.
+pub fn analyst_reflectivity_hd_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Reflectivity HD", ANALYST_REFLECTIVITY_HD_TABLE)
+        .expect("built-in HD reflectivity color table is valid")
+}
+
+pub fn builtin_velocity_table() -> ColorTable {
+    analyst_hd_velocity_table()
+}
+
+/// Default velocity palette: a diverging green-inbound / red-outbound ramp (NWS
+/// convention) with saturated high-chroma mid-tones and light extremes. The
+/// operational ±Nyquist range renders as vivid, clearly-separated green and
+/// red-orange — the old default washed strong velocities out to near-white
+/// cream, hiding exactly the derecho RIJ / mesovortex couplets; near-white is
+/// reserved for the rarely-reached extreme. Note: this is a conventional
+/// diverging ramp tuned for contrast, not a lightness-monotonic perceptually-
+/// uniform map; it does avoid a full rainbow hue cycle (cf. Borland & Taylor
+/// 2007). For a CVD-safe perceptually-uniform alternative see cmocean `balance`
+/// (Thyng et al. 2016) / CET-D (Kovesi 2015) — a future preset.
+pub fn analyst_hd_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Velocity HD", ANALYST_HD_VELOCITY_TABLE)
+        .expect("built-in HD velocity color table is valid")
+}
+
+pub fn tornado_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Tornado VEL", TORNADO_VELOCITY_TABLE)
+        .expect("built-in tornado velocity color table is valid")
+}
+
+pub fn vortex_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("WxTools Vortex Velo", VORTEX_VELO_TABLE)
+        .expect("built-in velocity color table is valid")
+}
+
+/// Back-compat table list (picker order). Single-sourced from the catalog
+/// so names/order can never drift from the badged entries.
+pub fn builtin_tables_for_family(family: ColorTableFamily) -> Vec<ColorTable> {
+    builtin_catalog_for_family(family)
+        .into_iter()
+        .map(|entry| entry.table)
+        .collect()
+}
+
+/// The badged built-in catalog (docs/customization-spec.md §2.1): every
+/// family's tables in picker order, each with a one-line description and
+/// badges. Position 0 is the family default and carries `Badge::Default`
+/// (pinned by `every_family_has_a_default_badged_catalog_entry`).
+pub fn builtin_catalog_for_family(family: ColorTableFamily) -> Vec<CatalogEntry> {
+    fn entry(
+        table: ColorTable,
+        description: &'static str,
+        badges: &'static [Badge],
+    ) -> CatalogEntry {
+        CatalogEntry {
+            table,
+            description,
+            badges,
+        }
+    }
+    match family {
+        ColorTableFamily::Reflectivity => vec![
+            entry(
+                builtin_reflectivity_table(),
+                "NWS-convention dBZ ladder, transparent below 10 dBZ, magenta held for 65+ hail cores — the BowEcho default",
+                &[Badge::Default],
+            ),
+            entry(
+                turbo_reflectivity_table(),
+                "Smooth turbo ramp (Mikhailov 2019): near-uniform perceptual steps for fine echo structure, no hard category edges",
+                &[Badge::Smooth],
+            ),
+            entry(
+                gr2_reflectivity_table(),
+                "The GR2Analyst default palette the community's eyes are calibrated to",
+                &[Badge::Classic],
+            ),
+            entry(
+                analyst_classic_reflectivity_table(),
+                "Classic electric hue ladder with cleaned-up category boundaries",
+                &[Badge::Classic],
+            ),
+            entry(
+                nws_reflectivity_table(),
+                "Traditional NWS web-radar palette: cyan lows into the familiar green/yellow/red severe ladder",
+                &[Badge::Classic],
+            ),
+            entry(
+                dark_scope_reflectivity_table(),
+                "Muted, darker ramp for night ops and dim rooms",
+                &[],
+            ),
+            entry(
+                awips_wilson_edit_reflectivity_table(),
+                "Wilson AWIPS Dark .pal preset, preserving GR alpha/ramp semantics from the supplied table",
+                &[Badge::Classic],
+            ),
+            entry(
+                hail_core_reflectivity_table(),
+                "Extended high end: white and cyan flag 80+ dBZ hail spikes",
+                &[Badge::HighContrast],
+            ),
+            entry(
+                low_precip_reflectivity_table(),
+                "Low-end stretch for drizzle, snow bands, and weak-echo detail",
+                &[],
+            ),
+            entry(
+                tornado_debris_reflectivity_table(),
+                "High-end contrast tuned for debris-ball co-location work",
+                &[],
+            ),
+            entry(
+                clean_light_reflectivity_table(),
+                "Lighter, lower-saturation ramp for bright rooms and screenshots",
+                &[],
+            ),
+            entry(
+                gurt_reflectivity_table(),
+                "GURT V3 research ramp by ambient330 — full -20..70 dBZ span with no clear-air cutoff, for attenuation-shifted X-band/DOW work",
+                &[Badge::Research],
+            ),
+            entry(
+                solar_reflectivity_table(),
+                "Solarpower07 WRF-Runner \"PW Style\" dBZ ladder (ported) — the WRF/model-side default; clear air below 5 dBZ transparent",
+                &[],
+            ),
+        ],
+        ColorTableFamily::Velocity => vec![
+            entry(
+                builtin_velocity_table(),
+                "Diverging green/red (NWS convention) with a neutral-dark zero so couplets read by chroma jump — the BowEcho default",
+                &[Badge::Default],
+            ),
+            entry(
+                balance_velocity_table(),
+                "Perceptually uniform blue-red diverging modeled on cmocean balance / CET-D (Thyng et al. 2016; Kovesi 2015); robust under red-green color vision deficiency",
+                &[Badge::CvdSafe, Badge::Smooth],
+            ),
+            entry(
+                tornado_velocity_table(),
+                "Hot break colors at tornadic velocities; extremes wash bright for instant couplet pop",
+                &[Badge::HighContrast],
+            ),
+            entry(
+                analyst_velocity_table(),
+                "Stepped operational diverging ramp with bright-washed extremes",
+                &[],
+            ),
+            entry(
+                radarscope_contrast_velocity_table(),
+                "RadarScope-style contrast curve with pale extreme bands",
+                &[],
+            ),
+            entry(
+                wdt_radarscope_velocity_table(),
+                "WDT/RadarScope velocity .pal preset, preserving kt scale and GR ramp semantics",
+                &[Badge::Classic],
+            ),
+            entry(
+                sign_check_velocity_table(),
+                "Three hard bands — toward, zero, away. Polarity and dealiasing QC",
+                &[Badge::HighContrast],
+            ),
+            entry(
+                couplet_pop_velocity_table(),
+                "Dark mid-range, saturated cores: rotation couplets jump out at storm scale",
+                &[],
+            ),
+            entry(
+                gr2_ish_analyst_velocity_table(),
+                "GR2Analyst-flavored greens and reds with a modern zero treatment",
+                &[Badge::Classic],
+            ),
+            entry(
+                subtle_srv_velocity_table(),
+                "Low-saturation ramp for storm-relative work under other overlays",
+                &[],
+            ),
+            entry(
+                gurt_velocity_table(),
+                "GURT V3 research ramp by ambient330 over ±30 m/s — sized to low X-band/DOW Nyquist intervals so none of the ramp is wasted",
+                &[Badge::Research],
+            ),
+            entry(
+                gurt_velocity_dealiased_table(),
+                "GURT V3 ramp stretched to ±60 m/s — upstream's dealiased-velocity scale, for post-dealias couplet work",
+                &[Badge::Research],
+            ),
+        ],
+        ColorTableFamily::SpectrumWidth => vec![
+            entry(
+                builtin_spectrum_width_table(),
+                "Dark below ~4 m/s where most of the field lives; warm break into the 8+ m/s turbulence/rotation range",
+                &[Badge::Default],
+            ),
+            entry(
+                gurt_spectrum_width_table(),
+                "GURT V3 research ramp by ambient330 over 0-15 m/s: dark-violet quiet end through warm mids to gray/cyan tops",
+                &[Badge::Research],
+            ),
+        ],
+        ColorTableFamily::CorrelationCoefficient => vec![
+            entry(
+                builtin_correlation_coefficient_table(),
+                "Cool non-met lows, warm precip above 0.95; resolution packed into the 0.80-1.00 diagnostic band",
+                &[Badge::Default],
+            ),
+            entry(
+                tornado_cc_table(),
+                "Exaggerated 0.5-0.8 drop so tornadic debris signatures pop hard",
+                &[Badge::HighContrast],
+            ),
+            entry(
+                gurt_correlation_coefficient_table(),
+                "GURT V3 research ramp by ambient330: blues across the non-met band, warm break to maroon as rhoHV approaches 1",
+                &[Badge::Research],
+            ),
+        ],
+        ColorTableFamily::DifferentialReflectivity => vec![
+            entry(
+                builtin_differential_reflectivity_table(),
+                "Diverging about 0 dB: gray spheres, warm oblate drops; resolution favors 0-4 dB",
+                &[Badge::Default],
+            ),
+            entry(
+                gurt_differential_reflectivity_table(),
+                "GURT V3 research ramp by ambient330 over -2..8 dB: dark negatives, rain-range blue→green→yellow→red, pink/purple extremes",
+                &[Badge::Research],
+            ),
+        ],
+        ColorTableFamily::EchoTops => vec![entry(
+            builtin_echo_tops_table(),
+            "Storm-top rainbow ramp over ~5-60 kft (values are metres above the radar)",
+            &[Badge::Default],
+        )],
+        ColorTableFamily::Vil => vec![entry(
+            builtin_vil_table(),
+            "Blue-to-magenta kg/m² ramp; the warm/magenta high end flags the large-hail VIL range",
+            &[Badge::Default],
+        )],
+        ColorTableFamily::VilDensity => vec![entry(
+            builtin_vil_density_table(),
+            "Hard warm break at ~3.5 g/m³ — the Amburn & Wolf (1997) large-hail threshold",
+            &[Badge::Default],
+        )],
+        ColorTableFamily::HailSize => vec![entry(
+            builtin_hail_size_table(),
+            "Breaks at the 19/25/44/50 mm report thresholds (cf. Witt et al. 1998): severe goes warm, giant goes magenta",
+            &[Badge::Default],
+        )],
+        ColorTableFamily::Probability => vec![entry(
+            builtin_probability_table(),
+            "0-100% monotonic probability ramp for POH/POSH-style products; labels stay in percent, never echo-top metres",
+            &[Badge::Default],
+        )],
+        ColorTableFamily::AzimuthalShear => vec![entry(
+            builtin_azimuthal_shear_table(),
+            "Diverging about zero: cyclonic shear warms to red/white, anticyclonic cools to violet, near-zero stays dark",
+            &[Badge::Default],
+        )],
+        ColorTableFamily::DifferentialPhase => vec![entry(
+            builtin_differential_phase_table(),
+            "Monotonic ramp over the 0-180°+ accumulated differential phase range",
+            &[Badge::Default],
+        )],
+        ColorTableFamily::SpecificDifferentialPhase => vec![
+            entry(
+                builtin_specific_differential_phase_table(),
+                "Diverging about zero; positive KDP (liquid-water loading) warms green to red",
+                &[Badge::Default],
+            ),
+            entry(
+                gurt_specific_differential_phase_table(),
+                "GURT V3 research ramp by ambient330 over -2..12 °/km: gray negatives, warm liquid-loading mid-range, violet extremes",
+                &[Badge::Research],
+            ),
+        ],
+        ColorTableFamily::Generic => vec![entry(
+            builtin_generic_table(),
+            "Neutral monotonic ramp for products without a dedicated family",
+            &[Badge::Default],
+        )],
+    }
+}
+
+/// Echo-tops palette. **Values are metres above the radar** (the echo-top grid
+/// stores SI height); the labels below mark the familiar kft levels. The
+/// conventional rainbow storm-top ramp: blue→cyan→green→yellow→orange→red→
+/// magenta→white (a hue progression, not lightness-monotonic).
+pub fn builtin_echo_tops_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst Echo Tops",
+        vec![
+            stop(1_500.0, 40, 40, 110),    // ~5 kft
+            stop(3_000.0, 30, 84, 184),    // ~10
+            stop(4_500.0, 0, 150, 200),    // ~15 cyan
+            stop(6_100.0, 0, 172, 128),    // ~20
+            stop(7_600.0, 36, 182, 58),    // ~25 green
+            stop(9_100.0, 150, 200, 40),   // ~30
+            stop(10_700.0, 240, 225, 50),  // ~35 yellow
+            stop(12_200.0, 245, 150, 30),  // ~40 orange
+            stop(13_700.0, 226, 46, 40),   // ~45 red
+            stop(15_200.0, 200, 30, 120),  // ~50 magenta
+            stop(16_800.0, 170, 84, 204),  // ~55 violet
+            stop(18_300.0, 236, 236, 246), // ~60 kft white
+        ],
+    )
+    .expect("built-in echo-tops color table is valid")
+}
+
+/// VIL palette (kg m^-2). Blue→cyan→green→yellow→orange→red→magenta→white;
+/// the warm/magenta high end (≳ 40–55) flags the large-hail VIL range.
+pub fn builtin_vil_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst VIL",
+        vec![
+            stop(1.0, 40, 50, 120),
+            stop(5.0, 30, 90, 190),
+            stop(10.0, 0, 160, 200),
+            stop(15.0, 0, 175, 112),
+            stop(20.0, 40, 182, 60),
+            stop(25.0, 150, 200, 40),
+            stop(30.0, 240, 225, 50),
+            stop(37.0, 245, 150, 30),
+            stop(45.0, 226, 46, 40),
+            stop(55.0, 200, 30, 120),
+            stop(70.0, 236, 236, 246),
+        ],
+    )
+    .expect("built-in VIL color table is valid")
+}
+
+/// VIL Density palette (g m^-3). Blue→green→yellow below the large-hail
+/// threshold, then a hard warm break at ~3.5 g/m³ (orange→red→magenta) so the
+/// large-hail range (Amburn & Wolf 1997) stands out.
+pub fn builtin_vil_density_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst VIL Density",
+        vec![
+            stop(0.3, 40, 60, 130),
+            stop(1.0, 30, 120, 200),
+            stop(1.8, 0, 175, 150),
+            stop(2.6, 120, 200, 50),
+            stop(3.4, 240, 220, 50),
+            stop(3.6, 245, 150, 30),
+            stop(4.5, 232, 60, 44),
+            stop(5.5, 180, 30, 110),
+            stop(7.0, 240, 200, 235),
+        ],
+    )
+    .expect("built-in VIL density color table is valid")
+}
+
+/// MEHS palette (mm). Breaks at report thresholds: 19 mm (3/4"), the 25 mm
+/// (1") severe criterion, 44 mm (1.75" golf ball) and 50 mm (2") — sub-severe
+/// sizes stay cool, severe goes warm, giant hail goes magenta->white.
+pub fn builtin_hail_size_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst MEHS",
+        vec![
+            stop(5.0, 60, 110, 170),
+            stop(15.0, 70, 160, 200),
+            stop(19.0, 90, 190, 120),
+            stop(25.0, 235, 215, 60),
+            stop(38.0, 245, 150, 40),
+            stop(44.0, 230, 70, 45),
+            stop(50.0, 200, 35, 100),
+            stop(70.0, 240, 160, 235),
+            stop(100.0, 250, 245, 250),
+        ],
+    )
+    .expect("built-in hail size color table is valid")
+}
+
+/// Probability palette (%). Sequential, capped at 100 so POH/POSH legends
+/// stay in their native percent domain instead of inheriting echo-top metres.
+pub fn builtin_probability_table() -> ColorTable {
+    ColorTable::from_parts(
+        "Analyst Probability".to_owned(),
+        Some("PROB".to_owned()),
+        Some("%".to_owned()),
+        default_range_folded_color(),
+        SampleMode::Interpolated,
+        vec![
+            stop(0.0, 30, 38, 64),
+            stop(5.0, 36, 82, 148),
+            stop(15.0, 30, 138, 184),
+            stop(30.0, 36, 174, 116),
+            stop(45.0, 154, 196, 58),
+            stop(60.0, 238, 216, 54),
+            stop(75.0, 244, 142, 38),
+            stop(90.0, 218, 58, 54),
+            stop(100.0, 244, 232, 238),
+        ],
+    )
+    .expect("built-in probability color table is valid")
+}
+
+/// Azimuthal-shear palette (×10^-3 s^-1), diverging about zero: near-zero is
+/// dark/neutral, cyclonic-sense shear (positive) warms through orange→red→
+/// white (mesocyclone/TVS), anticyclonic-sense (negative) cools through
+/// blue→violet. Magnitude brightens so rotation signatures pop out of the
+/// mostly-zero field.
+pub fn builtin_azimuthal_shear_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst Az Shear",
+        vec![
+            stop(-25.0, 150, 90, 220),
+            stop(-15.0, 80, 96, 210),
+            stop(-8.0, 52, 92, 150),
+            stop(-3.0, 40, 48, 66),
+            stop(0.0, 30, 32, 36),
+            stop(3.0, 70, 56, 38),
+            stop(8.0, 160, 110, 30),
+            stop(15.0, 234, 120, 28),
+            stop(22.0, 248, 60, 44),
+            stop(32.0, 252, 220, 150),
+        ],
+    )
+    .expect("built-in azimuthal-shear color table is valid")
+}
+
+/// Differential phase (ΦDP, degrees) palette — a monotonic perceptual ramp over
+/// the operational 0–180° range (extending toward 360°). ΦDP accumulates with
+/// propagation through rain, so a smooth low→high ramp reads the along-beam
+/// phase gradient.
+pub fn builtin_differential_phase_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst PHI",
+        vec![
+            stop(0.0, 40, 44, 78),
+            stop(30.0, 36, 96, 180),
+            stop(60.0, 0, 158, 170),
+            stop(90.0, 70, 184, 70),
+            stop(120.0, 210, 206, 50),
+            stop(150.0, 240, 150, 32),
+            stop(180.0, 226, 60, 44),
+            stop(270.0, 170, 40, 110),
+            stop(360.0, 232, 200, 230),
+        ],
+    )
+    .expect("built-in differential-phase color table is valid")
+}
+
+/// Specific differential phase (KDP, °/km) palette. Diverging about zero:
+/// near-zero neutral, the small negative range (backscatter differential phase /
+/// noise) cool, and positive KDP — proportional to liquid-water content / heavy
+/// rain and big drops — warming green→yellow→orange→red.
+pub fn builtin_specific_differential_phase_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst KDP",
+        vec![
+            stop(-1.0, 70, 96, 170),
+            stop(-0.3, 90, 110, 140),
+            stop(0.0, 60, 64, 70),
+            stop(0.3, 70, 120, 80),
+            stop(0.75, 90, 180, 70),
+            stop(1.5, 210, 210, 50),
+            stop(2.5, 244, 158, 32),
+            stop(4.0, 230, 70, 44),
+            stop(7.0, 180, 30, 96),
+        ],
+    )
+    .expect("built-in specific-differential-phase color table is valid")
+}
+
+/// Default Correlation Coefficient (ρhv) palette, ~0.2–1.05. Standard rainbow
+/// convention: low CC (non-meteorological — debris, clutter, birds, chaff, and
+/// the tornadic debris signature) reads as cool blue/teal, dropping to dark at
+/// the noise floor; meteorological precip (CC ≳ 0.95) reads warm, peaking near
+/// white at ρhv→1. Most of the color resolution is packed into 0.80–1.00 where
+/// the diagnostic action is. A debris ball therefore shows as the classic cool
+/// "hole" inside warm precip.
+pub fn builtin_correlation_coefficient_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst CC",
+        vec![
+            stop(0.20, 48, 48, 56),
+            stop(0.45, 72, 60, 150),
+            stop(0.65, 46, 96, 200),
+            stop(0.80, 0, 168, 196),
+            stop(0.88, 64, 196, 92),
+            stop(0.92, 208, 216, 52),
+            stop(0.95, 245, 158, 32),
+            stop(0.97, 226, 46, 40),
+            stop(0.99, 150, 22, 30),
+            stop(1.00, 236, 236, 244),
+            stop(1.05, 255, 255, 255),
+        ],
+    )
+    .expect("built-in CC color table is valid")
+}
+
+/// CC variant tuned for tornadic-debris hunting: exaggerates the 0.7–0.95 drop
+/// so debris signatures (ρhv ~0.5–0.8 co-located with rotation) pop hard.
+pub fn tornado_cc_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst CC Debris",
+        vec![
+            stop(0.30, 30, 30, 38),
+            stop(0.50, 120, 40, 150),
+            stop(0.70, 210, 40, 60),
+            stop(0.80, 245, 130, 30),
+            stop(0.88, 240, 224, 60),
+            stop(0.93, 70, 200, 90),
+            stop(0.96, 40, 150, 220),
+            stop(0.99, 40, 70, 180),
+            stop(1.02, 230, 232, 245),
+        ],
+    )
+    .expect("built-in CC debris color table is valid")
+}
+
+/// Default Differential Reflectivity (ZDR) palette, ~−2…+8 dB. Diverging about
+/// 0 dB (spherical scatterers: small/dry hail, clutter → neutral gray). Cool
+/// blues for the uncommon negatives (conical graupel, vertically-aligned ice);
+/// warm green→yellow→orange→red→magenta for positive ZDR (oblate raindrops, big
+/// drops, ZDR columns marking updrafts). Resolution favors 0…+4 dB where most
+/// meteorological signal lives.
+pub fn builtin_differential_reflectivity_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst ZDR",
+        vec![
+            stop(-4.0, 60, 30, 96),
+            stop(-2.0, 56, 70, 168),
+            stop(-0.5, 96, 150, 196),
+            stop(0.0, 140, 140, 140),
+            stop(0.5, 150, 168, 120),
+            stop(1.0, 120, 192, 88),
+            stop(2.0, 224, 220, 60),
+            stop(3.0, 245, 158, 32),
+            stop(4.0, 226, 52, 40),
+            stop(5.5, 176, 28, 92),
+            stop(7.0, 206, 86, 200),
+            stop(8.0, 240, 200, 240),
+        ],
+    )
+    .expect("built-in ZDR color table is valid")
+}
+
+pub fn analyst_reflectivity_table() -> ColorTable {
+    ColorTable::new_stepped(
+        "Analyst High Contrast REF",
+        vec![
+            stop(-10.0, 5, 8, 18),
+            stop(0.0, 18, 36, 76),
+            stop(7.5, 23, 92, 157),
+            stop(15.0, 26, 158, 191),
+            stop(22.5, 17, 146, 62),
+            stop(30.0, 84, 188, 54),
+            stop(37.5, 242, 216, 47),
+            stop(45.0, 239, 120, 34),
+            stop(52.5, 221, 42, 38),
+            stop(60.0, 174, 32, 112),
+            stop(67.5, 214, 76, 218),
+            stop(75.0, 245, 245, 245),
+        ],
+    )
+    .expect("built-in analyst reflectivity color table is valid")
+}
+
+pub fn nws_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("NWS Classic REF", NWS_CLASSIC_REFLECTIVITY_TABLE)
+        .expect("built-in nws reflectivity color table is valid")
+}
+
+pub fn analyst_classic_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Classic REF", ANALYST_CLASSIC_REFLECTIVITY_TABLE)
+        .expect("built-in analyst classic reflectivity color table is valid")
+}
+
+pub fn gr2_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("GR2Analyst Classic REF", GR2_REFLECTIVITY_TABLE)
+        .expect("built-in GR2 reflectivity color table is valid")
+}
+
+pub fn storm_detail_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Storm Detail REF", STORM_DETAIL_REFLECTIVITY_TABLE)
+        .expect("built-in storm detail reflectivity color table is valid")
+}
+
+pub fn hail_core_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Hail Core REF", HAIL_CORE_REFLECTIVITY_TABLE)
+        .expect("built-in hail core reflectivity color table is valid")
+}
+
+pub fn low_precip_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Low Precip REF", LOW_PRECIP_REFLECTIVITY_TABLE)
+        .expect("built-in low precip reflectivity color table is valid")
+}
+
+pub fn dark_scope_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("Dark Scope REF", DARK_SCOPE_REFLECTIVITY_TABLE)
+        .expect("built-in dark scope reflectivity color table is valid")
+}
+
+pub fn awips_wilson_edit_reflectivity_table() -> ColorTable {
+    ColorTable::parse_gr_pal(
+        "AWIPS Wilson Edit REF",
+        AWIPS_WILSON_EDIT_REFLECTIVITY_TABLE,
+    )
+    .expect("built-in AWIPS Wilson Edit reflectivity color table is valid")
+}
+
+pub fn tornado_debris_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("Tornado Debris REF", TORNADO_DEBRIS_REFLECTIVITY_TABLE)
+        .expect("built-in tornado debris reflectivity color table is valid")
+}
+
+pub fn clean_light_reflectivity_table() -> ColorTable {
+    ColorTable::parse_stepped("Clean Light REF", CLEAN_LIGHT_REFLECTIVITY_TABLE)
+        .expect("built-in clean light reflectivity color table is valid")
+}
+
+/// Smooth turbo-derived reflectivity ramp for fine echo-structure work
+/// (QLCS surges, couplet co-location): turbo keeps a near-uniform
+/// perceptual derivative where jet's banding creates false edges
+/// (Mikhailov 2019, Google AI Blog, "Turbo, An Improved Rainbow Colormap
+/// for Visualization"; on rainbow-map hazards cf. Borland & Taylor 2007,
+/// IEEE CG&A 27(2)). Stops sample the official 5th-order polynomial
+/// approximation of turbo (Ruofei Du, Apache-2.0) every 5 dBZ over
+/// 10–75 dBZ, with an alpha fade-in below 10 dBZ hiding clear-air junk.
+/// Deliberately interpolated, not stepped — this is the "smooth" badge.
+pub fn turbo_reflectivity_table() -> ColorTable {
+    ColorTable::parse("Turbo REF (smooth)", TURBO_REFLECTIVITY_TABLE)
+        .expect("built-in turbo reflectivity color table is valid")
+}
+
+pub fn analyst_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Pro VEL", ANALYST_PRO_VELOCITY_TABLE)
+        .expect("built-in analyst velocity color table is valid")
+}
+
+pub fn nws_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("NWS Classic VEL", NWS_VELOCITY_TABLE)
+        .expect("built-in nws velocity color table is valid")
+}
+
+pub fn gr2_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("GR2Analyst Classic VEL", GR2_VELOCITY_TABLE)
+        .expect("built-in GR2 velocity color table is valid")
+}
+
+pub fn tight_couplet_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Analyst Tight Couplet VEL", TIGHT_COUPLET_VELOCITY_TABLE)
+        .expect("built-in tight couplet velocity color table is valid")
+}
+
+pub fn radarscope_contrast_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped(
+        "RadarScope Contrast VEL",
+        RADARSCOPE_CONTRAST_VELOCITY_TABLE,
+    )
+    .expect("built-in radarscope contrast velocity color table is valid")
+}
+
+pub fn wdt_radarscope_velocity_table() -> ColorTable {
+    ColorTable::parse_gr_pal("WDT RadarScope VEL", WDT_RADARSCOPE_VELOCITY_TABLE)
+        .expect("built-in WDT RadarScope velocity color table is valid")
+}
+
+pub fn sign_check_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Sign Check VEL", SIGN_CHECK_VELOCITY_TABLE)
+        .expect("built-in sign-check velocity color table is valid")
+}
+
+pub fn couplet_pop_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Couplet Pop VEL", COUPLET_POP_VELOCITY_TABLE)
+        .expect("built-in couplet pop velocity color table is valid")
+}
+
+pub fn gr2_ish_analyst_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("GR2-ish Analyst VEL", GR2_ISH_ANALYST_VELOCITY_TABLE)
+        .expect("built-in GR2-ish analyst velocity color table is valid")
+}
+
+pub fn subtle_srv_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Subtle SRV VEL", SUBTLE_SRV_VELOCITY_TABLE)
+        .expect("built-in subtle SRV velocity color table is valid")
+}
+
+/// Colorblind-safe, perceptually-uniform diverging velocity palette modeled on
+/// cmocean `balance` (Thyng et al. 2016) / CET-D (Kovesi 2015): deep blue
+/// (inbound) → light neutral (zero) → deep red (outbound). Unlike the green/red
+/// default this uses the blue↔red axis, which is robust to red-green color
+/// vision deficiency, and lightness IS monotonic on each arm (dark at the
+/// extremes, light at zero) — a genuinely perceptual ramp for accessibility.
+pub fn balance_velocity_table() -> ColorTable {
+    ColorTable::new(
+        "Balance VEL (CVD-safe)",
+        vec![
+            stop(-70.0, 18, 24, 92),
+            stop(-50.0, 28, 70, 160),
+            stop(-30.0, 60, 130, 210),
+            stop(-15.0, 132, 186, 230),
+            stop(-5.0, 200, 220, 240),
+            stop(0.0, 244, 244, 246),
+            stop(5.0, 242, 214, 204),
+            stop(15.0, 234, 164, 150),
+            stop(30.0, 220, 100, 90),
+            stop(50.0, 180, 44, 50),
+            stop(70.0, 110, 14, 30),
+        ],
+    )
+    .expect("built-in balance velocity color table is valid")
+}
+
+pub fn nws_split_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("NWS Split VEL", NWS_SPLIT_VELOCITY_TABLE)
+        .expect("built-in split velocity color table is valid")
+}
+
+pub fn dark_analyst_velocity_table() -> ColorTable {
+    ColorTable::parse_stepped("Dark Analyst VEL", DARK_ANALYST_VELOCITY_TABLE)
+        .expect("built-in dark analyst velocity color table is valid")
+}
+
+pub fn builtin_spectrum_width_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst Spectrum Width",
+        vec![
+            stop(0.0, 9, 20, 32),
+            stop(1.0, 24, 52, 100),
+            stop(2.0, 22, 102, 172),
+            stop(3.0, 18, 152, 180),
+            stop(4.0, 36, 174, 98),
+            stop(5.5, 160, 188, 58),
+            stop(7.0, 232, 190, 54),
+            stop(9.0, 238, 112, 42),
+            stop(12.0, 216, 44, 50),
+            stop(16.0, 160, 36, 136),
+            stop(24.0, 235, 235, 235),
+        ],
+    )
+    .expect("built-in spectrum width color table is valid")
+}
+
+pub fn builtin_generic_table() -> ColorTable {
+    ColorTable::new(
+        "Analyst Generic",
+        vec![
+            stop(0.0, 34, 40, 64),
+            stop(10.0, 34, 82, 130),
+            stop(25.0, 34, 132, 172),
+            stop(40.0, 58, 166, 140),
+            stop(55.0, 116, 180, 92),
+            stop(70.0, 218, 188, 74),
+            stop(85.0, 224, 114, 56),
+            stop(100.0, 210, 64, 68),
+        ],
+    )
+    .expect("built-in generic color table is valid")
+}
+
+/// Purpose-built palette resolver for a BowEcho synthetic-radar diagnostic
+/// moment. Instrument stages retain their canonical moment palette, while a
+/// 0..1 quality fraction must never inherit the Generic 0..100 scale and a
+/// signed synthetic-minus-observed residual must always retain a neutral zero.
+pub fn validation_table_for_moment_id(moment_id: &str) -> Option<ColorTable> {
+    Some(match moment_id.trim().to_ascii_uppercase().as_str() {
+        "IREF" | "MREF" => builtin_reflectivity_table(),
+        "IVEL" | "MVEL" => builtin_velocity_table(),
+        "ISW" | "MSW" => builtin_spectrum_width_table(),
+        "IZDR" | "MZDR" => builtin_differential_reflectivity_table(),
+        "IRHO" | "MRHO" => builtin_correlation_coefficient_table(),
+        "IKDP" | "MKDP" => builtin_specific_differential_phase_table(),
+        "MCOV" | "TUNB" | "MSIG" => builtin_quality_fraction_table(),
+        "DIF_REF" => validation_difference_table("Reflectivity difference", 5.0, 15.0, 40.0),
+        "DIF_VEL" => validation_difference_table("Velocity difference", 3.0, 12.0, 35.0),
+        "DIF_SW" => validation_difference_table("Spectrum-width difference", 1.0, 4.0, 12.0),
+        "DIF_ZDR" => validation_difference_table("ZDR difference", 0.5, 1.5, 5.0),
+        "DIF_RHO" => validation_difference_table("RHOHV difference", 0.02, 0.10, 0.40),
+        "DIF_PHI" => validation_difference_table("PHIDP difference", 10.0, 45.0, 180.0),
+        "DIF_KDP" => validation_difference_table("KDP difference", 0.5, 2.0, 8.0),
+        _ => return None,
+    })
+}
+
+/// Continuous support-quality ramp over the physical fraction domain 0..1.
+/// Low support is warm/dark, while fully supported gates are cool/bright.
+pub fn builtin_quality_fraction_table() -> ColorTable {
+    ColorTable::new(
+        "Synthetic radar gate quality",
+        vec![
+            stop(0.00, 92, 20, 30),
+            stop(0.20, 190, 48, 38),
+            stop(0.40, 238, 126, 34),
+            stop(0.60, 232, 210, 72),
+            stop(0.80, 62, 184, 158),
+            stop(1.00, 202, 250, 222),
+        ],
+    )
+    .expect("built-in synthetic-radar quality table is valid")
+}
+
+fn validation_difference_table(
+    name: &'static str,
+    inner: f32,
+    middle: f32,
+    outer: f32,
+) -> ColorTable {
+    debug_assert!(0.0 < inner && inner < middle && middle < outer);
+    ColorTable::new(
+        name,
+        vec![
+            stop(-outer, 27, 48, 112),
+            stop(-middle, 44, 112, 190),
+            stop(-inner, 152, 202, 230),
+            stop(0.0, 238, 238, 236),
+            stop(inner, 244, 184, 154),
+            stop(middle, 210, 80, 70),
+            stop(outer, 112, 20, 40),
+        ],
+    )
+    .expect("built-in synthetic-minus-observed difference table is valid")
+}
+
+// ─── GURT V3 research-radar palettes ────────────────────────────────────────
+//
+// Color tables from GURT V3 — the Graphic Utility Radar Toolkit by ambient330
+// (github.com/ambient330/Graphic-Utility-Radar-Toolkit-V3, MIT license), a
+// Py-ART based SOLO3-style editor for DORADE sweepfiles from research radars.
+// The ramps are tuned for mobile/X-band deployments (DOW/COW): velocity spans
+// the low X-band Nyquist interval instead of the NEXRAD-scale convention, and
+// reflectivity keeps resolution across the attenuation-shifted -20..70 dBZ
+// span. Ported with appreciation; values are bit-faithful to upstream.
+//
+// Upstream (GurtV3.3.py) builds each colormap with `_make_cmap` (line 1159),
+// which hex-decodes the list and REVERSES it (`rgb[::-1]`) before handing it
+// to matplotlib's `LinearSegmentedColormap.from_list`: the hex arrays below
+// are written top-of-colorbar first exactly as upstream, so the LAST entry is
+// the low end of the scale. Anchors are evenly spaced over the field range
+// and matplotlib interpolates linearly between them — which is exactly
+// [`SampleMode::Interpolated`] over the stops [`gurt_stops`] builds. Field
+// ranges come from upstream's FIELD_DEFAULTS (GurtV3.3.py lines 1256-1277).
+
+/// GURT velocity hexes (GurtV3.3.py lines 1180-1186). Upstream's `gurt_ref`
+/// (lines 1187-1193) is a byte-identical list — only the field range differs
+/// — so the reflectivity table reuses this constant.
+const GURT_VELOCITY_HEX: [u32; 39] = [
+    0xF2465B, 0xE0365B, 0xCF2646, 0xB71630, 0x9F0100, 0xA05060, 0x7C544C, 0x885840, 0x966440,
+    0xA5703E, 0xB37B36, 0xC1872E, 0xD09326, 0xDE9F1E, 0xECAB16, 0xEFB70E, 0xEFC306, 0xEFCF00,
+    0xECE4B0, 0xD0E4D0, 0xBFDCBF, 0xA1D0A1, 0x85C485, 0x67B867, 0x4AAD4A, 0x2DA12D, 0x0F950F,
+    0x007D00, 0x017100, 0x30855F, 0x48969A, 0x718FFE, 0x6A60FE, 0x5A24E5, 0x4A0EC3, 0x3A0EAB,
+    0x2A0E94, 0x673A8F, 0x7805A3,
+];
+
+/// GURT ZDR hexes (GurtV3.3.py lines 1163-1166).
+const GURT_ZDR_HEX: [u32; 22] = [
+    0x922E97, 0xB26CB6, 0xC998CB, 0xE2C7E3, 0xFEF9FB, 0xF8BEDB, 0xEF77B2, 0xCF3B58, 0xB00000,
+    0xC80603, 0xDE1A0B, 0xEE8836, 0xFEF861, 0x5ADE64, 0x3FE2CF, 0x2474B4, 0x0B0D9C, 0xD1D1D9,
+    0x7F6CA2, 0x453B58, 0x292335, 0x060507,
+];
+
+/// GURT RhoHV/CC hexes (GurtV3.3.py lines 1167-1170).
+const GURT_CC_HEX: [u32; 20] = [
+    0x8B1E4D, 0xE41000, 0xFC7F00, 0xFFB600, 0xFFFB00, 0xBCE906, 0x87D70B, 0x61ED6E, 0x719CD2,
+    0x5151E8, 0x2929D1, 0x0A0ABD, 0x0C0CAC, 0x0D0D9C, 0x0F0F8C, 0x1C1C9E, 0x2D2D84, 0x404068,
+    0x454561, 0x4F4F4F,
+];
+
+/// GURT KDP hexes (GurtV3.3.py lines 1171-1175).
+const GURT_KDP_HEX: [u32; 27] = [
+    0xC361F9, 0x6F329A, 0x160234, 0x624264, 0xB18596, 0xFAC4C5, 0xFF7B00, 0xFFBC00, 0xFEFF00,
+    0x84DA1A, 0x16BA31, 0x3ADB94, 0x60FEF6, 0x74C7D1, 0x8987A2, 0x9B507A, 0xEA77B8, 0xCE5B93,
+    0xB03D6A, 0x921F42, 0x75021B, 0x62000E, 0x4B0101, 0x4B2828, 0x4B4A4A, 0x5F5F5F, 0x757575,
+];
+
+/// GURT spectrum-width hexes (GurtV3.3.py lines 1176-1179).
+const GURT_SPECTRUM_WIDTH_HEX: [u32; 21] = [
+    0x02A0C8, 0x2CA7C6, 0x53AEC5, 0x78B4C3, 0x9FBBC1, 0xC1C1C1, 0xDCDCDC, 0xE6E6E6, 0xF2F2F2,
+    0xFFFD01, 0xFDC60F, 0xFDB313, 0xFC991A, 0xF7742D, 0xEF6341, 0xE54F5B, 0xDE406D, 0xB73192,
+    0x7D26BD, 0x31148A, 0x1A0855,
+];
+
+/// Evenly spaced stops over `min..=max` from a GURT hex list (written
+/// top-of-scale first; reversed here exactly like upstream `_make_cmap`).
+fn gurt_stops(min: f32, max: f32, top_of_scale_first: &[u32]) -> Vec<ColorStop> {
+    let last = (top_of_scale_first.len() - 1) as f32;
+    top_of_scale_first
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(index, &hex)| {
+            stop(
+                min + (index as f32 / last) * (max - min),
+                (hex >> 16) as u8,
+                (hex >> 8) as u8,
+                hex as u8,
+            )
+        })
+        .collect()
+}
+
+/// GURT V3 reflectivity over -20..70 dBZ (FIELD_DEFAULTS "DBZH",
+/// GurtV3.3.py line 1257). Unlike the NEXRAD-tuned defaults this paints the
+/// whole span — X-band attenuation shifts usable reflectivity low, so there
+/// is no clear-air cutoff.
+pub fn gurt_reflectivity_table() -> ColorTable {
+    ColorTable::new(
+        "GURT Reflectivity",
+        gurt_stops(-20.0, 70.0, &GURT_VELOCITY_HEX),
+    )
+    .expect("built-in GURT reflectivity color table is valid")
+}
+
+/// GURT V3 velocity over ±30 m/s (FIELD_DEFAULTS "VEL", GurtV3.3.py line
+/// 1262) — matched to the low Nyquist velocities of X-band research radars.
+pub fn gurt_velocity_table() -> ColorTable {
+    ColorTable::new("GURT Velocity", gurt_stops(-30.0, 30.0, &GURT_VELOCITY_HEX))
+        .expect("built-in GURT velocity color table is valid")
+}
+
+/// GURT V3 dealiased velocity over ±60 m/s (FIELD_DEFAULTS "VELD",
+/// GurtV3.3.py line 1265) — the same ramp on upstream's doubled,
+/// post-dealias scale.
+pub fn gurt_velocity_dealiased_table() -> ColorTable {
+    ColorTable::new(
+        "GURT Velocity Dealiased",
+        gurt_stops(-60.0, 60.0, &GURT_VELOCITY_HEX),
+    )
+    .expect("built-in GURT dealiased velocity color table is valid")
+}
+
+/// GURT V3 spectrum width over 0..15 m/s (FIELD_DEFAULTS "SW", GurtV3.3.py
+/// line 1275).
+pub fn gurt_spectrum_width_table() -> ColorTable {
+    ColorTable::new(
+        "GURT Spectrum Width",
+        gurt_stops(0.0, 15.0, &GURT_SPECTRUM_WIDTH_HEX),
+    )
+    .expect("built-in GURT spectrum width color table is valid")
+}
+
+/// GURT V3 RhoHV/CC over 0..1 (FIELD_DEFAULTS "RHOHV", GurtV3.3.py line
+/// 1267).
+pub fn gurt_correlation_coefficient_table() -> ColorTable {
+    ColorTable::new("GURT CC", gurt_stops(0.0, 1.0, &GURT_CC_HEX))
+        .expect("built-in GURT correlation coefficient color table is valid")
+}
+
+/// GURT V3 differential reflectivity over -2..8 dB (FIELD_DEFAULTS "ZDR",
+/// GurtV3.3.py line 1266).
+pub fn gurt_differential_reflectivity_table() -> ColorTable {
+    ColorTable::new("GURT ZDR", gurt_stops(-2.0, 8.0, &GURT_ZDR_HEX))
+        .expect("built-in GURT differential reflectivity color table is valid")
+}
+
+/// GURT V3 specific differential phase over -2..12 °/km (FIELD_DEFAULTS
+/// "KDP", GurtV3.3.py line 1268).
+pub fn gurt_specific_differential_phase_table() -> ColorTable {
+    ColorTable::new("GURT KDP", gurt_stops(-2.0, 12.0, &GURT_KDP_HEX))
+        .expect("built-in GURT specific differential phase color table is valid")
+}
+
+fn stop(value: f32, r: u8, g: u8, b: u8) -> ColorStop {
+    ColorStop {
+        value,
+        color: Rgba8::opaque(r, g, b),
+        end_color: None,
+    }
+}
+
+fn default_range_folded_color() -> Rgba8 {
+    Rgba8::new(126, 80, 196, 245)
+}
+
+fn lerp_u8(left: u8, right: u8, amount: f32) -> u8 {
+    ((left as f32 + (right as f32 - left as f32) * amount).round()).clamp(0.0, 255.0) as u8
+}
+
+fn quantize_value(value: f32, step: f32, origin: f32) -> f32 {
+    if !step.is_finite() || step <= 0.0 {
+        return value;
+    }
+    ((value - origin) / step).round() * step + origin
+}
+
+fn normalize_line(line: &str) -> String {
+    line.replace('\u{a0}', " ")
+}
+
+fn normalize_key(key: &str) -> String {
+    key.chars()
+        .filter(|character| !character.is_ascii_whitespace() && *character != '_')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn split_key_value(line: &str) -> Option<(&str, &str)> {
+    if let Some((key, value)) = line.split_once(':') {
+        return Some((key, value));
+    }
+    let mut parts = line.splitn(2, char::is_whitespace);
+    Some((parts.next()?, parts.next()?))
+}
+
+fn non_empty(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn parse_color_stop(
+    value: &str,
+    expects_alpha: bool,
+    solid: bool,
+    line: usize,
+) -> Result<ColorStop, ColorTableError> {
+    let numbers = parse_numbers(value);
+    let components = if expects_alpha { 4 } else { 3 };
+    if numbers.len() < 1 + components {
+        return Err(ColorTableError::InvalidColor {
+            line,
+            reason: "expected value plus RGB or RGBA components",
+        });
+    }
+    let read_color = |offset: usize| -> Result<Rgba8, ColorTableError> {
+        Ok(Rgba8::new(
+            byte_component(numbers[offset], line)?,
+            byte_component(numbers[offset + 1], line)?,
+            byte_component(numbers[offset + 2], line)?,
+            if expects_alpha {
+                byte_component(numbers[offset + 3], line)?
+            } else {
+                255
+            },
+        ))
+    };
+    let color = read_color(1)?;
+    // `Color:` rows interpolate to the next color unless they provide a
+    // second interval-end color. `SolidColor:` rows hold a hard band.
+    let end_color = if solid {
+        Some(color)
+    } else {
+        (numbers.len() > 2 * components)
+            .then(|| read_color(1 + components))
+            .transpose()?
+    };
+    Ok(ColorStop {
+        value: numbers[0],
+        color,
+        end_color,
+    })
+}
+
+fn parse_color_only(value: &str, line: usize) -> Result<Rgba8, ColorTableError> {
+    let numbers = parse_numbers(value);
+    if numbers.len() < 3 {
+        return Err(ColorTableError::InvalidColor {
+            line,
+            reason: "expected RGB components",
+        });
+    }
+    Ok(Rgba8::new(
+        byte_component(numbers[0], line)?,
+        byte_component(numbers[1], line)?,
+        byte_component(numbers[2], line)?,
+        numbers
+            .get(3)
+            .map(|value| byte_component(*value, line))
+            .transpose()?
+            .unwrap_or(245),
+    ))
+}
+
+fn parse_numbers(value: &str) -> Vec<f32> {
+    value
+        .split(|character: char| {
+            character.is_ascii_whitespace() || character == ',' || character == ';'
+        })
+        .filter_map(|token| {
+            let token = token.trim();
+            (!token.is_empty())
+                .then(|| token.parse::<f32>().ok())
+                .flatten()
+        })
+        .collect()
+}
+
+fn byte_component(value: f32, line: usize) -> Result<u8, ColorTableError> {
+    if !value.is_finite() {
+        return Err(ColorTableError::InvalidColor {
+            line,
+            reason: "color component must be finite",
+        });
+    }
+    Ok(value.round().clamp(0.0, 255.0) as u8)
+}
+
+fn parse_positive_f32(value: &str) -> Option<f32> {
+    let value = parse_numbers(value).first().copied()?;
+    (value.is_finite() && value > 0.0).then_some(value)
+}
+
+fn parse_sample_mode(value: &str) -> Option<SampleMode> {
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "false" | "no" | "off" | "0" | "step" | "stepped" | "discrete" | "nearest" => {
+            Some(SampleMode::Stepped)
+        }
+        "true" | "yes" | "on" | "1" | "smooth" | "linear" | "interpolate" | "interpolated" => {
+            Some(SampleMode::Interpolated)
+        }
+        _ => None,
+    }
+}
+
+fn unit_value_to_mps_scale(units: &str) -> f32 {
+    let units = units.trim().to_ascii_lowercase();
+    match units.as_str() {
+        "kt" | "kts" | "knot" | "knots" => KNOT_TO_MPS,
+        "mph" | "mi/h" => MPH_TO_MPS,
+        "km/h" | "kph" | "kmh" => 1000.0 / 3600.0,
+        "ft" | "feet" => 0.3048,
+        "kft" | "kilofoot" | "kilofeet" => 304.8,
+        "km" => 1000.0,
+        "in" | "inch" | "inches" => 25.4,
+        _ => 1.0,
+    }
+}
+
+/// The factor that converts a value declared in `units` to the internal
+/// representation (kt/mph → m/s; anything else is label-only, factor 1).
+/// The in-app editor authors stops in declared units and pre-scales them
+/// for [`ColorTable::from_parts`] — exactly what the parser does to a
+/// community `.pal`, so a velocity table authored in kt behaves
+/// identically to one loaded from disk.
+pub fn unit_scale_to_internal(units: &str) -> f32 {
+    unit_value_to_mps_scale(units)
+}
+
+// ---------------------------------------------------------------------------
+// GR2Analyst-compatible .pal writer (docs/customization-spec.md §2.3)
+// ---------------------------------------------------------------------------
+
+/// One emitted `.pal` color row, in internal units until the unit
+/// conversion pass rewrites `value`.
+struct PalRow {
+    value: f32,
+    color: Rgba8,
+    end_color: Option<Rgba8>,
+    solid: bool,
+}
+
+/// Serialize a table as a GR2Analyst-compatible `.pal`.
+///
+/// Dialect (verified against `parse_gr_pal`): `Product:`/`Units:`/`RF:`
+/// headers, a legend-only `Step:` hint, and `Color:`/`Color4:`/
+/// `SolidColor:`/`SolidColor4:` rows — no nonstandard headers, so the
+/// file is bit-faithful in GR2A. Re-parsing through
+/// [`ColorTable::parse_gr_pal`] reproduces `sample()` EXACTLY at every
+/// value: representation may change (stepped tables become `SolidColor:`
+/// bands; quantized tables expand to one solid band per quantization
+/// step), sampling never does — pinned by the export round-trip tests.
+///
+/// Velocity tables declared in kt/mph write their values back in the
+/// declared unit (the parser's kt→m/s scaling then restores the exact
+/// internal floats); when a value has no exact preimage under the unit
+/// scale the whole file falls back to SI (`Units: m/s`, unscaled) rather
+/// than shift a stop by an ULP.
+pub fn to_gr_pal(table: &ColorTable) -> String {
+    let mut rows = pal_rows(table);
+
+    let mut units = table
+        .units()
+        .map(str::trim)
+        .filter(|units| !units.is_empty())
+        .map(str::to_owned);
+    let scale = units.as_deref().map(unit_value_to_mps_scale).unwrap_or(1.0);
+    if scale != 1.0 {
+        let declared: Option<Vec<f32>> = rows
+            .iter()
+            .map(|row| exact_unscaled(row.value, scale))
+            .collect();
+        match declared {
+            Some(values) => {
+                for (row, value) in rows.iter_mut().zip(values) {
+                    row.value = value;
+                }
+            }
+            None => units = Some("m/s".to_owned()),
+        }
+    }
+
+    let mut text = String::new();
+    let _ = writeln!(text, "; exported by BowEcho {}", env!("CARGO_PKG_VERSION"));
+    if let Some(product) = table
+        .product()
+        .map(str::trim)
+        .filter(|product| !product.is_empty())
+    {
+        let _ = writeln!(text, "Product: {product}");
+    }
+    if let Some(units) = &units {
+        let _ = writeln!(text, "Units: {units}");
+    }
+    if let Some(step) = legend_step(&rows) {
+        let _ = writeln!(text, "Step: {step}");
+    }
+    let rf = table.range_folded_rgba();
+    let _ = writeln!(text, "RF: {} {} {} {}", rf.r, rf.g, rf.b, rf.a);
+    for row in &rows {
+        let value = row.value;
+        let Rgba8 { r, g, b, a } = row.color;
+        if row.solid {
+            if a == 255 {
+                let _ = writeln!(text, "SolidColor: {value} {r} {g} {b}");
+            } else {
+                let _ = writeln!(text, "SolidColor4: {value} {r} {g} {b} {a}");
+            }
+        } else if let Some(end) = row.end_color {
+            if a == 255 && end.a == 255 {
+                let _ = writeln!(
+                    text,
+                    "Color: {value} {r} {g} {b} {} {} {}",
+                    end.r, end.g, end.b
+                );
+            } else {
+                let _ = writeln!(
+                    text,
+                    "Color4: {value} {r} {g} {b} {a} {} {} {} {}",
+                    end.r, end.g, end.b, end.a
+                );
+            }
+        } else if a == 255 {
+            let _ = writeln!(text, "Color: {value} {r} {g} {b}");
+        } else {
+            let _ = writeln!(text, "Color4: {value} {r} {g} {b} {a}");
+        }
+    }
+    text
+}
+
+/// Map a table's stops into GR rows whose `parse_gr_pal` sampling matches
+/// the table's own sample mode exactly.
+fn pal_rows(table: &ColorTable) -> Vec<PalRow> {
+    let stops = table.stops();
+    match table.sample_mode {
+        // Already GR semantics: solid stops (end == color) write as
+        // SolidColor rows, explicit ramps keep their end color.
+        SampleMode::GrPal => stops
+            .iter()
+            .map(|stop| {
+                if stop.end_color == Some(stop.color) {
+                    PalRow {
+                        value: stop.value,
+                        color: stop.color,
+                        end_color: None,
+                        solid: true,
+                    }
+                } else {
+                    PalRow {
+                        value: stop.value,
+                        color: stop.color,
+                        end_color: stop.end_color,
+                        solid: false,
+                    }
+                }
+            })
+            .collect(),
+        // Stepped bins are exactly GR's SolidColor bands.
+        SampleMode::Stepped => stops
+            .iter()
+            .map(|stop| PalRow {
+                value: stop.value,
+                color: stop.color,
+                end_color: None,
+                solid: true,
+            })
+            .collect(),
+        SampleMode::Interpolated => interpolated_rows(stops),
+        SampleMode::QuantizedInterpolated { step, origin } => {
+            if step.is_finite() && step > 0.0 {
+                quantized_rows(table, step, origin).unwrap_or_else(|| interpolated_rows(stops))
+            } else {
+                // Invalid step never quantizes (quantize_value passes the
+                // value through) — plain interpolation.
+                interpolated_rows(stops)
+            }
+        }
+    }
+}
+
+/// Plain `Color:` rows ramp to the next row in GR — identical to
+/// interpolated sampling — EXCEPT that GR holds a transparent row's color
+/// across its interval; interpolated tables lerp through it, so those
+/// rows get an explicit end color.
+fn interpolated_rows(stops: &[ColorStop]) -> Vec<PalRow> {
+    stops
+        .iter()
+        .enumerate()
+        .map(|(index, stop)| {
+            let end_color = (stop.color.a == 0)
+                .then(|| stops.get(index + 1).map(|next| next.color))
+                .flatten()
+                .filter(|next| *next != stop.color);
+            PalRow {
+                value: stop.value,
+                color: stop.color,
+                end_color,
+                solid: false,
+            }
+        })
+        .collect()
+}
+
+/// Expand a quantized table into one `SolidColor` band per quantization
+/// step. Band boundaries are found by bit-level bisection against the
+/// SAME arithmetic `quantize_value` uses, so the expansion reproduces the
+/// original's rounding (including round-half-away-from-zero asymmetry)
+/// to the last ULP. Returns None for degenerate tables (caller falls
+/// back to interpolated rows).
+fn quantized_rows(table: &ColorTable, step: f32, origin: f32) -> Option<Vec<PalRow>> {
+    const MAX_BANDS: i64 = 4096;
+    let first = table.stops.first()?;
+    let last = table.stops.last()?;
+    let band_of = |value: f32| -> i64 { ((value - origin) / step).round() as i64 };
+    // One band beyond each end so out-of-range values clamp to the same
+    // first/last colors the original clamps to.
+    let k_lo = band_of(first.value).checked_sub(1)?;
+    let k_hi = band_of(last.value).checked_add(1)?;
+    if k_hi.checked_sub(k_lo)? > MAX_BANDS {
+        return None;
+    }
+    let q = |k: i64| origin + (k as f32) * step;
+    if !q(k_lo).is_finite() || !q(k_hi).is_finite() {
+        return None;
+    }
+
+    let mut bands: Vec<(f32, Rgba8)> = Vec::new();
+    // The anchor row only needs to sit below every band-1 boundary;
+    // everything beneath it clamps to its color anyway.
+    bands.push((next_down(q(k_lo)), table.sample_interpolated(q(k_lo))));
+    for k in (k_lo + 1)..=k_hi {
+        let boundary = lowest_value_in_band(k, q(k - 1), q(k), band_of);
+        bands.push((boundary, table.sample_interpolated(q(k))));
+    }
+
+    // The quantized mode's noise clamp: RAW values below the first opaque
+    // stop are hard transparent (0,0,0,0), not the lerped stop color.
+    if let Some(first_opaque) = table.first_opaque_value() {
+        bands.retain(|(value, _)| *value > first_opaque);
+        bands.insert(
+            0,
+            (
+                first_opaque,
+                table.sample_interpolated(quantize_value(first_opaque, step, origin)),
+            ),
+        );
+        bands.insert(0, (next_down(first_opaque), Rgba8::TRANSPARENT));
+    }
+
+    // Strictly ascending values (an empty band collapses onto the next
+    // boundary — the LATER band owns the shared value), then merge
+    // equal-color runs (solid bands: keeping the first row of a run
+    // samples identically).
+    let mut cleaned: Vec<(f32, Rgba8)> = Vec::new();
+    for (value, color) in bands {
+        while cleaned
+            .last()
+            .is_some_and(|(previous, _)| *previous >= value)
+        {
+            cleaned.pop();
+        }
+        cleaned.push((value, color));
+    }
+    cleaned.dedup_by(|later, earlier| later.1 == earlier.1);
+    if cleaned.len() < 2 {
+        return None;
+    }
+
+    Some(
+        cleaned
+            .into_iter()
+            .map(|(value, color)| PalRow {
+                value,
+                color,
+                end_color: None,
+                solid: true,
+            })
+            .collect(),
+    )
+}
+
+/// Smallest f32 in `(lower, upper]` whose band index reaches `k`, by
+/// bisection on the total-ordered f32 bit lattice — `band_of` is
+/// monotone non-decreasing, so this is the exact crossover.
+fn lowest_value_in_band(k: i64, lower: f32, upper: f32, band_of: impl Fn(f32) -> i64) -> f32 {
+    if band_of(lower) >= k {
+        return lower;
+    }
+    let mut low_key = ordered_key(lower);
+    let mut high_key = ordered_key(upper);
+    while low_key + 1 < high_key {
+        let mid_key = low_key + (high_key - low_key) / 2;
+        if band_of(from_ordered_key(mid_key)) >= k {
+            high_key = mid_key;
+        } else {
+            low_key = mid_key;
+        }
+    }
+    from_ordered_key(high_key)
+}
+
+/// Monotone f32 → i32 key (IEEE-754 totally ordered; the same xor is its
+/// own inverse on each sign branch).
+fn ordered_key(value: f32) -> i32 {
+    let bits = value.to_bits() as i32;
+    bits ^ (((bits >> 31) as u32) >> 1) as i32
+}
+
+fn from_ordered_key(key: i32) -> f32 {
+    f32::from_bits((key ^ (((key >> 31) as u32) >> 1) as i32) as u32)
+}
+
+/// The next f32 strictly below `value`.
+fn next_down(value: f32) -> f32 {
+    from_ordered_key(ordered_key(value) - 1)
+}
+
+/// Find the declared-units value that reparses (one f32 multiply by
+/// `scale`) to exactly `internal`: search the few floats around the
+/// naive quotient for a bit-exact preimage.
+fn exact_unscaled(internal: f32, scale: f32) -> Option<f32> {
+    if !internal.is_finite() || !scale.is_finite() || scale == 0.0 {
+        return None;
+    }
+    let center = ordered_key(internal / scale);
+    (-8i32..=8)
+        .map(|delta| from_ordered_key(center.wrapping_add(delta)))
+        .find(|candidate| candidate.is_finite() && candidate * scale == internal)
+}
+
+/// Legend tick hint (`Step:` is legend-only in GR — never quantizes):
+/// a round 1/2/5×10ⁿ step giving ~10 ticks across the value range.
+fn legend_step(rows: &[PalRow]) -> Option<f32> {
+    let first = rows.first()?.value;
+    let last = rows.last()?.value;
+    let range = (last - first).abs();
+    if !range.is_finite() || range <= 0.0 {
+        return None;
+    }
+    let raw = range / 10.0;
+    let magnitude = 10f32.powf(raw.log10().floor());
+    [1.0f32, 2.0, 5.0, 10.0]
+        .iter()
+        .map(|multiple| multiple * magnitude)
+        .find(|step| *step >= raw && step.is_finite() && *step > 0.0)
+}
+
+/// Turbo (Mikhailov 2019) sampled at 5 dBZ steps via the official
+/// polynomial approximation; see `turbo_reflectivity_table`. No `step:`
+/// header — the ramp interpolates.
+const TURBO_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+color4: 7.5 35 23 27 0
+color4: 10 35 23 27 255
+color: 15 75 72 195
+color: 20 61 126 248
+color: 25 40 177 234
+color: 30 40 218 191
+color: 35 68 245 141
+color: 40 119 254 98
+color: 45 179 243 67
+color: 50 231 214 47
+color: 55 255 169 36
+color: 60 255 116 27
+color: 65 221 64 17
+color: 70 171 24 5
+color: 75 144 12 0
+"#;
+
+const ANALYST_REFLECTIVITY_HD_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -30 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 110 120 150
+color: 15 44 110 214
+color: 20 36 168 188
+color: 25 44 190 96
+color: 30 30 150 44
+color: 35 166 206 44
+color: 40 244 232 56
+color: 45 248 186 40
+color: 50 238 110 28
+color: 55 224 38 38
+color: 60 176 22 28
+color: 65 240 72 180
+color: 70 168 60 200
+color: 75 214 158 232
+color: 80 255 255 255
+"#;
+
+const GR2_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -10 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 4 233 231
+color: 15 1 159 244
+color: 20 3 0 244
+color: 25 2 253 2
+color: 30 1 197 1
+color: 35 0 142 0
+color: 40 253 248 2
+color: 45 229 188 0
+color: 50 253 149 0
+color: 55 253 0 0
+color: 62.5 212 0 0
+color: 67.5 188 0 0
+color: 72.5 232 32 206
+color: 80 156 70 206
+color: 92.5 255 255 255
+"#;
+
+const NWS_CLASSIC_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -10 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 4 233 231
+color: 15 1 159 244
+color: 20 3 0 244
+color: 25 2 253 2
+color: 30 1 197 1
+color: 35 0 142 0
+color: 40 253 248 2
+color: 45 229 188 0
+color: 50 253 149 0
+color: 55 253 0 0
+color: 62.5 212 0 0
+color: 67.5 188 0 0
+color: 72.5 232 32 206
+color: 80 156 70 206
+color: 92.5 255 255 255
+"#;
+
+const ANALYST_CLASSIC_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -10 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 0 204 220
+color: 15 0 132 232
+color: 20 12 58 226
+color: 25 0 222 44
+color: 30 0 174 24
+color: 35 0 124 12
+color: 40 235 226 34
+color: 45 238 174 28
+color: 50 242 112 22
+color: 55 238 28 30
+color: 62.5 190 0 18
+color: 67.5 150 0 18
+color: 72.5 214 42 180
+color: 80 150 82 198
+color: 92.5 246 246 246
+"#;
+
+const STORM_DETAIL_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -10 0 0 0 0
+color4: 0 0 0 0 0
+color: 5 18 42 86
+color: 10 25 92 154
+color: 15 31 164 206
+color: 20 28 184 114
+color: 25 21 132 44
+color: 30 88 178 42
+color: 35 218 226 45
+color: 40 251 180 32
+color: 45 254 101 22
+color: 50 238 32 28
+color: 55 174 0 22
+color: 60 214 52 168
+color: 65 142 34 214
+color: 70 228 228 236
+color: 80 255 255 255
+"#;
+
+const HAIL_CORE_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -10 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 35 98 164
+color: 15 33 168 210
+color: 20 16 172 78
+color: 25 0 120 36
+color: 30 82 170 40
+color: 35 234 232 36
+color: 40 252 168 22
+color: 45 252 88 18
+color: 50 246 26 28
+color: 57.5 176 0 16
+color: 65 154 0 28
+color: 70 206 32 174
+color: 77.5 152 74 204
+color: 80 255 255 255
+color: 87.5 112 228 255
+color: 95 255 255 255
+"#;
+
+const LOW_PRECIP_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -15 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 38 116 174
+color: 15 42 184 214
+color: 20 58 204 132
+color: 25 44 154 66
+color: 30 84 188 50
+color: 35 224 226 64
+color: 40 250 178 50
+color: 45 244 96 42
+color: 50 218 44 52
+color: 57.5 160 26 78
+color: 65 170 28 128
+color: 72.5 202 68 196
+color: 80 154 84 204
+color: 90 238 238 244
+"#;
+
+const DARK_SCOPE_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -10 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 38 86 128
+color: 15 52 136 170
+color: 20 30 158 86
+color: 25 18 118 48
+color: 30 78 164 44
+color: 35 196 206 54
+color: 40 232 156 42
+color: 45 234 88 34
+color: 50 218 38 40
+color: 57.5 156 24 30
+color: 65 168 30 130
+color: 72.5 196 70 204
+color: 80 154 82 210
+color: 87.5 226 226 232
+color: 95 255 255 255
+"#;
+
+const AWIPS_WILSON_EDIT_REFLECTIVITY_TABLE: &str = r#"
+;
+; AWIPS Color Table by Karl Schneider
+;
+
+product: BR
+units: dBZ
+step: 5
+
+color4: -30 116 78 173 0 147 141 117 255
+color: -20 150 145 83 210 212 180
+color: -10 204 207 180 65 91 158
+color: 10 67 97 162 106 208 228
+color: 18 111 214 232 53 213 91
+color: 22 17 213 24 9 94 9
+color: 35 29 104 9 234 210 4
+color: 40 255 226 0 255 128 0
+color: 50 255 0 0 113 0 0
+color: 60 255 255 255 255 146 255
+color: 65 255 117 255 225 11 227
+color: 70 178 0 255 99 0 214
+color: 75 5 236 240 1 32 32
+color: 85 1 32 32
+color: 95 1 32 32
+"#;
+
+const TORNADO_DEBRIS_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -10 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 30 96 152
+color: 15 34 152 196
+color: 20 26 190 112
+color: 25 0 146 52
+color: 30 72 176 42
+color: 35 214 220 48
+color: 40 246 174 32
+color: 45 250 102 26
+color: 50 238 32 30
+color: 57.5 178 0 24
+color: 65 164 0 40
+color: 70 206 36 168
+color: 77.5 224 94 210
+color: 87.5 176 230 255
+color: 95 255 255 255
+"#;
+
+const CLEAN_LIGHT_REFLECTIVITY_TABLE: &str = r#"
+product: BR
+units: dBZ
+step: 1
+color4: -15 0 0 0 0
+color4: 7.5 0 0 0 0
+color: 10 30 114 160
+color: 17.5 38 164 190
+color: 22.5 42 186 110
+color: 27.5 22 132 52
+color: 32.5 94 176 48
+color: 37.5 220 218 58
+color: 42.5 242 160 42
+color: 47.5 236 90 38
+color: 52.5 218 38 44
+color: 60 156 22 34
+color: 67.5 174 34 132
+color: 75 206 72 198
+color: 82.5 156 84 206
+color: 92.5 238 238 242
+"#;
+
+const VORTEX_VELO_TABLE: &str = r#"
+units: MPH
+step: 20
+scale: 2.237
+product: BV
+color: 0 115 115 115
+color: .1 134 113 116
+color: 5 130 3 3
+color: 30 238 0 0
+color: 40 255 87 1
+color: 55 255 143 1
+color: 70 255 239 2
+color: 90 255 252 81
+color: 120 255 255 255
+color: 130 128 128 128
+color: -4.99 70 129 68
+color: -5 2 139 2
+color: -30 4 239 16
+color: -40 4 169 86
+color: -55 4 92 162
+color: -70 4 5 254
+color: -90 4 87 254
+color: -110 5 177 255
+color: -130 0 255 255
+"#;
+
+const ANALYST_HD_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 2
+color: -80 204 236 255
+color: -64 150 208 255
+color: -50 74 168 255
+color: -40 18 120 240
+color: -32 0 150 208
+color: -26 0 196 168
+color: -20 0 214 110
+color: -15 24 208 74
+color: -10 48 190 70
+color: -6 46 150 74
+color: -2 78 116 88
+color: 0 105 105 105
+color: 2 132 94 84
+color: 6 180 70 56
+color: 10 214 44 40
+color: 15 244 34 34
+color: 20 255 74 28
+color: 26 255 120 0
+color: 32 255 160 0
+color: 40 255 200 0
+color: 50 255 230 90
+color: 64 255 244 170
+color: 80 255 255 235
+"#;
+
+const TORNADO_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 2
+color: -70 236 255 255
+color: -58 126 220 255
+color: -48 166 236 255
+color: -38 210 250 255
+color: -30 246 255 255
+color: -24 232 255 250
+color: -18 0 156 54
+color: -13 18 232 54
+color: -9 82 244 104
+color: -5 36 136 54
+color: -2 84 100 84
+color: 0 112 112 112
+color: 2 120 86 84
+color: 5 154 46 44
+color: 9 216 28 28
+color: 14 255 34 40
+color: 20 242 0 0
+color: 24 255 238 218
+color: 28 255 255 238
+color: 34 255 224 168
+color: 42 255 248 220
+color: 50 255 255 240
+color: 58 255 230 190
+color: 64 255 202 130
+color: 70 255 240 204
+"#;
+
+const GR2_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 2
+color: -70 0 255 255
+color: -55 0 170 255
+color: -42 0 80 255
+color: -32 0 180 80
+color: -24 0 220 0
+color: -16 0 148 0
+color: -8 74 132 74
+color: -2 96 108 96
+color: 0 128 128 128
+color: 2 126 94 94
+color: 8 156 44 44
+color: 16 198 0 0
+color: 24 244 0 0
+color: 32 255 116 0
+color: 42 255 220 0
+color: 55 255 255 255
+color: 70 172 172 172
+"#;
+
+const TIGHT_COUPLET_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 1
+color: -70 230 255 255
+color: -50 54 236 214
+color: -36 0 188 122
+color: -26 0 114 48
+color: -18 0 176 34
+color: -12 32 252 46
+color: -7 0 176 34
+color: -3 36 112 50
+color: -1 78 94 78
+color: 0 112 112 112
+color: 1 112 78 78
+color: 3 152 36 36
+color: 7 246 22 22
+color: 12 255 42 42
+color: 18 202 0 0
+color: 26 142 0 0
+color: 36 110 0 0
+color: 50 238 124 132
+color: 70 255 255 255
+"#;
+
+const RADARSCOPE_CONTRAST_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 2
+color: -70 216 255 255
+color: -58 126 220 255
+color: -48 166 236 255
+color: -38 210 250 255
+color: -30 246 255 255
+color: -24 232 255 250
+color: -22 210 248 226
+color: -16 0 224 54
+color: -11 42 255 66
+color: -7 106 240 116
+color: -4 46 134 54
+color: -1 98 104 96
+color: 0 122 122 122
+color: 1 128 96 96
+color: 4 156 64 62
+color: 7 198 42 42
+color: 11 246 28 28
+color: 16 255 40 46
+color: 22 244 0 24
+color: 24 255 238 218
+color: 28 255 255 238
+color: 36 255 220 172
+color: 44 255 250 224
+color: 50 255 255 238
+color: 56 255 232 190
+color: 62 255 204 134
+color: 70 255 242 202
+"#;
+
+const WDT_RADARSCOPE_VELOCITY_TABLE: &str = r#"
+units: KTS
+step: 20
+product: BV
+Scale:   1.9426
+
+color: 200 45 0 0
+color: 140 60 0 0
+color: 120 97 6 2
+color: 80 254 137 80
+color: 60 255 230 169 255 151 86
+color: 55 255 157 206 255 221 176
+color: 40 249 58 84 255 142 212
+color: 10 105 0 0 242 1 6
+color: 0 130 106 120 122 48 57
+color: -10 72 112 71 106 125 105
+color: -40 10 248 35 15 99 20
+color: -50 180 240 243 33 253 50
+color: -70 55 226 229 172 239 242
+color: -90 25 1 142 47 215 225
+color: -100 105 2 142 32 1 141
+color: -120 250 4 130 114 3 141
+color: -140 255 20 180
+color: -200 255 220 220
+RF: 123 0 200
+"#;
+
+const SIGN_CHECK_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+mode: stepped
+rf: 180 80 255 255
+color: -100 0 0 255
+color: -0.01 0 0 255
+color: 0 120 120 120
+color: 0.01 255 0 0
+color: 100 255 0 0
+"#;
+
+const COUPLET_POP_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 1
+color: -70 238 255 255
+color: -58 92 238 216
+color: -46 20 206 152
+color: -36 0 150 82
+color: -28 0 92 42
+color: -21 0 172 58
+color: -15 0 236 44
+color: -10 34 186 48
+color: -6 36 122 50
+color: -2 78 98 76
+color: 0 92 92 92
+color: 2 104 72 70
+color: 6 132 34 34
+color: 10 214 24 24
+color: 15 255 34 34
+color: 21 236 16 38
+color: 28 180 8 34
+color: 36 122 6 34
+color: 46 196 78 96
+color: 58 240 184 190
+color: 70 255 255 255
+"#;
+
+const GR2_ISH_ANALYST_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 2
+color: -70 0 252 252
+color: -55 0 174 244
+color: -42 20 90 238
+color: -32 0 176 82
+color: -24 0 214 0
+color: -16 0 150 0
+color: -8 74 132 74
+color: -2 96 108 96
+color: 0 124 124 124
+color: 2 126 94 94
+color: 8 160 42 42
+color: 16 204 0 0
+color: 24 246 0 0
+color: 32 255 92 38
+color: 42 246 156 128
+color: 55 255 222 222
+color: 70 172 172 172
+"#;
+
+const SUBTLE_SRV_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 1
+color: -70 184 236 230
+color: -55 90 206 190
+color: -42 32 168 132
+color: -32 12 122 76
+color: -24 18 88 52
+color: -16 36 140 64
+color: -10 62 196 82
+color: -5 58 132 70
+color: -1 82 98 84
+color: 0 94 94 94
+color: 1 104 86 84
+color: 5 128 58 54
+color: 10 188 52 48
+color: 16 222 64 58
+color: 24 184 42 54
+color: 32 138 34 54
+color: 42 190 96 114
+color: 55 224 184 190
+color: 70 242 242 242
+"#;
+
+const NWS_SPLIT_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 2
+color: -70 0 240 240
+color: -55 0 150 240
+color: -42 0 62 220
+color: -32 0 150 60
+color: -24 0 210 0
+color: -16 0 136 0
+color: -8 76 140 76
+color: -2 104 118 104
+color: 0 130 130 130
+color: 2 142 104 104
+color: 8 168 54 54
+color: 16 210 0 0
+color: 24 248 0 0
+color: 32 255 118 0
+color: 42 255 226 0
+color: 55 255 255 255
+color: 70 170 170 170
+"#;
+
+const DARK_ANALYST_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+step: 2
+color: -70 210 246 240
+color: -55 82 210 196
+color: -42 0 164 126
+color: -32 0 114 68
+color: -24 0 80 44
+color: -16 0 142 50
+color: -10 20 206 42
+color: -5 34 126 46
+color: -1 72 88 74
+color: 0 94 94 94
+color: 1 102 72 72
+color: 5 132 34 34
+color: 10 208 24 24
+color: 16 238 42 42
+color: 24 188 18 36
+color: 32 128 16 36
+color: 42 198 92 112
+color: 55 232 202 206
+color: 70 250 250 250
+"#;
+
+const ANALYST_PRO_VELOCITY_TABLE: &str = r#"
+product: BV
+units: m/s
+mode: stepped
+color: -70 222 255 255
+color: -58 126 220 255
+color: -46 170 238 255
+color: -36 214 250 255
+color: -28 246 255 255
+color: -24 232 255 250
+color: -21 210 248 226
+color: -15 0 226 58
+color: -10 42 214 70
+color: -6 42 132 54
+color: -2 82 98 80
+color: 0 110 110 110
+color: 2 116 84 84
+color: 6 148 42 42
+color: 10 204 30 30
+color: 15 248 36 42
+color: 21 255 78 86
+color: 24 255 238 218
+color: 28 255 255 238
+color: 36 255 222 174
+color: 46 255 250 226
+color: 58 255 255 238
+color: 66 255 210 146
+color: 70 255 240 220
+"#;
+
+const NWS_VELOCITY_TABLE: &str = r#"
+product: BV
+units: kt
+color: -120 0 255 255
+color: -100 0 160 255
+color: -80 0 64 255
+color: -60 0 160 80
+color: -40 0 220 0
+color: -20 0 128 0
+color: -5 85 145 85
+color: 0 128 128 128
+color: 5 150 90 90
+color: 20 160 0 0
+color: 40 230 0 0
+color: 60 255 130 0
+color: 80 255 230 0
+color: 100 255 255 255
+color: 120 170 170 170
+"#;
+
+#[cfg(test)]
+mod gr_pal_tests {
+    use super::*;
+
+    /// The community .pal that exposed the GR-semantics gaps (RadarOmega
+    /// reflectivity): color4 alpha stop, a two-color gray ramp, interpolated
+    /// single-color levels, and a Step: header that must NOT quantize.
+    const RADAR_OMEGA: &str = "units: dBZ
+step: 10
+product: BR
+
+color4: -10 7 59 71 0
+color: 0 62 69 71 191 193 197
+color: 20 135 229 125
+color: 30 48 102 43
+color: 35 253 227 0
+color: 50 254 26 0 181 0 52
+color: 60 163 0 136 254 4 250
+color: 70 67 190 254 19 144 242
+color: 80 166 176 150 255 231 188
+color: 85 255 231 188
+";
+
+    #[test]
+    fn gr_pal_matches_gr2analyst_semantics() {
+        let table = ColorTable::parse_gr_pal("RadarOmega", RADAR_OMEGA).expect("parse");
+        // Step: is legend-only — no quantization mode.
+        assert_eq!(table.sample_mode_label(), "GR pal");
+        // color4 alpha threshold stop: the [-10, 0) interval remains hidden.
+        assert_eq!(table.sample(-5.0).a, 0);
+        // Two-color ramp 0..20: midpoint is halfway gray.
+        let mid = table.sample(10.0);
+        assert!((mid.r as i32 - 126).abs() <= 2, "{mid:?}");
+        assert!((mid.g as i32 - 131).abs() <= 2, "{mid:?}");
+        // Single-color levels interpolate between the full table stops.
+        assert_ne!(table.sample(21.0), table.sample(29.0));
+        let green = table.sample(25.0);
+        assert!((green.r as i32 - 92).abs() <= 2, "{green:?}");
+        assert!((green.g as i32 - 166).abs() <= 2, "{green:?}");
+        // Two-color red ramp 50..60: midpoint between (254,26,0)-(181,0,52).
+        let red = table.sample(55.0);
+        assert!((red.r as i32 - 217).abs() <= 3, "{red:?}");
+        assert!((red.b as i32 - 26).abs() <= 3, "{red:?}");
+        // The sampler agrees with the table.
+        let sampler = ColorSampler::new(&table);
+        for value in [-5.0f32, 10.0, 25.0, 40.0, 55.0, 72.0, 86.0] {
+            assert_eq!(sampler.sample(value), table.sample(value), "at {value}");
+        }
+    }
+
+    #[test]
+    fn gr_pal_solidcolor_keeps_explicit_hard_cut() {
+        let table = ColorTable::parse_gr_pal(
+            "solid",
+            "color: 0 0 0 0\nsolidcolor: 10 100 0 0\ncolor: 20 200 0 0",
+        )
+        .expect("parse");
+
+        assert_eq!(table.sample(5.0), Rgba8::opaque(50, 0, 0));
+        assert_eq!(table.sample(11.0), Rgba8::opaque(100, 0, 0));
+        assert_eq!(table.sample(19.0), Rgba8::opaque(100, 0, 0));
+    }
+
+    #[test]
+    fn gr_pal_clamps_overflowing_byte_channels_from_community_tables() {
+        let table = ColorTable::parse_gr_pal(
+            "Viper overflow tail",
+            "product: BR\nunits: dBZ\ncolor: 94.0 254 254 254\ncolor: 94.5 258 258 258\ncolor: 100.0 262 262 262\n",
+        )
+        .expect("overflowing community table parses");
+
+        assert_eq!(table.sample(94.5), Rgba8::opaque(255, 255, 255));
+        assert_eq!(table.sample(100.0), Rgba8::opaque(255, 255, 255));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nudge_up(value: f32) -> f32 {
+        f32::from_bits(if value >= 0.0 {
+            value.to_bits() + 1
+        } else {
+            value.to_bits() - 1
+        })
+    }
+
+    fn nudge_down(value: f32) -> f32 {
+        f32::from_bits(if value > 0.0 {
+            value.to_bits() - 1
+        } else {
+            value.to_bits() + 1
+        })
+    }
+
+    #[test]
+    fn unit_scale_to_internal_covers_speed_height_and_hail_units() {
+        assert!((unit_scale_to_internal("km/h") - (1000.0 / 3600.0)).abs() < f32::EPSILON);
+        assert!((unit_scale_to_internal("kph") - (1000.0 / 3600.0)).abs() < f32::EPSILON);
+        assert!((unit_scale_to_internal("kft") - 304.8).abs() < f32::EPSILON);
+        assert!((unit_scale_to_internal("ft") - 0.3048).abs() < f32::EPSILON);
+        assert!((unit_scale_to_internal("in") - 25.4).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn sampler_matches_direct_sampling_exactly() {
+        let mut tables: Vec<ColorTable> = ColorTableFamily::ALL
+            .iter()
+            .flat_map(|family| builtin_tables_for_family(*family))
+            .collect();
+        // A quantized table with a transparent lead stop exercises the
+        // first-opaque clamp; the stepped variant exercises left-stop picks.
+        let quantized = ColorTable::parse(
+            "quantized with transparent lead",
+            r#"
+            Product: Velocity
+            Units: MPS
+            Step: 5
+            Color4: -100 0 0 0 0
+            Color4: -50 0 50 255 255
+            Color: 0 255 255 255
+            Color4: 64 255 0 0 255
+            "#,
+        )
+        .unwrap();
+        tables.push(quantized);
+        tables.push(
+            ColorTable::new_stepped(
+                "stepped",
+                vec![
+                    ColorStop {
+                        value: -10.0,
+                        color: Rgba8 {
+                            r: 1,
+                            g: 2,
+                            b: 3,
+                            a: 0,
+                        },
+                        end_color: None,
+                    },
+                    ColorStop {
+                        value: 0.5,
+                        color: Rgba8 {
+                            r: 200,
+                            g: 100,
+                            b: 50,
+                            a: 255,
+                        },
+                        end_color: None,
+                    },
+                    ColorStop {
+                        value: 33.25,
+                        color: Rgba8 {
+                            r: 9,
+                            g: 8,
+                            b: 7,
+                            a: 128,
+                        },
+                        end_color: None,
+                    },
+                ],
+            )
+            .unwrap(),
+        );
+
+        for table in &tables {
+            let sampler = table.sampler();
+            let stops = table.stops();
+            let min = stops.first().unwrap().value;
+            let max = stops.last().unwrap().value;
+            let span = (max - min).max(1.0);
+
+            let mut probes: Vec<f32> = Vec::new();
+            for index in 0..=4000 {
+                probes.push(min - 0.1 * span + (index as f32) * (1.2 * span / 4000.0));
+            }
+            for stop in stops {
+                probes.push(stop.value);
+                probes.push(nudge_up(stop.value));
+                probes.push(nudge_down(stop.value));
+            }
+            probes.extend([
+                f32::NAN,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::MAX,
+                f32::MIN,
+                0.0,
+                -0.0,
+            ]);
+
+            for value in probes {
+                assert_eq!(
+                    sampler.color_for_value(value),
+                    table.color_for_value(value),
+                    "table '{}' diverges at value {value}",
+                    table.name()
+                );
+            }
+            assert_eq!(sampler.range_folded_color(), table.range_folded_color());
+        }
+    }
+
+    #[test]
+    fn parses_wxtools_velocity_units_and_unsorted_stops() {
+        let table = ColorTable::parse(
+            "Vortex Velo sample",
+            r#"
+            units: MPH
+            product: BV
+            color: 0 115 115 115
+            color: 5 130 3 3
+            color: -5 2 139 2
+            "#,
+        )
+        .expect("table parses");
+
+        assert_eq!(table.product(), Some("BV"));
+        assert_eq!(table.stops()[0].value, -5.0 * MPH_TO_MPS);
+        assert_eq!(table.sample(0.0), Rgba8::opaque(115, 115, 115));
+    }
+
+    #[test]
+    fn parses_color4_and_range_folded_rows() {
+        let table = ColorTable::parse(
+            "RadarScope sample",
+            r#"
+            product: BR
+            units: dBZ
+            color4: -15 0 0 0 0
+            color: 5 29 37 60
+            RF: 82 21 86
+            "#,
+        )
+        .expect("table parses");
+
+        assert_eq!(table.sample(-20.0), Rgba8::TRANSPARENT);
+        assert_eq!(table.range_folded_rgba(), Rgba8::new(82, 21, 86, 245));
+    }
+
+    #[test]
+    fn parses_gr_scale_without_double_scaling_units() {
+        let table = ColorTable::parse(
+            "Scaled velocity",
+            r#"
+            product: BV
+            scale: 2
+            color: 10 10 20 30
+            color: 20 30 40 50
+            "#,
+        )
+        .expect("table parses");
+
+        assert_eq!(table.stops()[0].value, 5.0);
+        assert_eq!(table.stops()[1].value, 10.0);
+    }
+
+    #[test]
+    fn stepped_tables_hold_bins_between_thresholds() {
+        let table = ColorTable::parse(
+            "Stepped velocity",
+            r#"
+            mode: stepped
+            color: 0 0 0 0
+            color: 10 255 255 255
+            "#,
+        )
+        .expect("table parses");
+
+        assert!(!table.interpolates());
+        assert_eq!(table.sample(5.0), Rgba8::opaque(0, 0, 0));
+        assert_eq!(table.sample(10.0), Rgba8::opaque(255, 255, 255));
+    }
+
+    #[test]
+    fn step_rows_make_pal_style_tables_quantized_ramps() {
+        let table = ColorTable::parse(
+            "RadarScope sample",
+            r#"
+            product: BR
+            units: dBZ
+            step: 5
+            color4: -5 0 0 0 0
+            color: 5 0 0 100
+            color: 15 0 0 200
+            "#,
+        )
+        .expect("table parses");
+
+        assert!(!table.interpolates());
+        assert_eq!(table.sample_mode_label(), "quantized stepped");
+        assert_eq!(table.step_size(), Some(5.0));
+        assert_eq!(table.sample(0.0), Rgba8::TRANSPARENT);
+        assert_eq!(table.sample(7.4), Rgba8::opaque(0, 0, 100));
+        assert_eq!(table.sample(11.0), Rgba8::opaque(0, 0, 150));
+        assert_eq!(table.sample(12.4), Rgba8::opaque(0, 0, 150));
+        assert_eq!(table.sample(12.6), Rgba8::opaque(0, 0, 200));
+    }
+
+    #[test]
+    fn quantized_step_converts_with_velocity_units() {
+        let table = ColorTable::parse(
+            "Velocity sample",
+            r#"
+            units: MPH
+            step: 10
+            color: 0 80 80 80
+            color: 20 240 0 0
+            "#,
+        )
+        .expect("table parses");
+
+        let step = table.step_size().expect("numeric step preserved");
+        assert!((step - 10.0 * MPH_TO_MPS).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_stepped_defaults_to_bins_without_mode_line() {
+        let table = ColorTable::parse_stepped(
+            "NWS sample",
+            r#"
+            units: dBZ
+            color: 0 0 0 0
+            color: 10 255 255 255
+            "#,
+        )
+        .expect("table parses");
+
+        assert!(!table.interpolates());
+        assert_eq!(table.sample(5.0), Rgba8::opaque(0, 0, 0));
+    }
+
+    #[test]
+    fn explicit_interpolated_mode_overrides_stepped_default() {
+        let table = ColorTable::parse_stepped(
+            "Smooth sample",
+            r#"
+            mode: interpolated
+            color: 0 0 0 0
+            color: 10 100 100 100
+            "#,
+        )
+        .expect("table parses");
+
+        assert!(table.interpolates());
+        assert_eq!(table.sample(5.0), Rgba8::opaque(50, 50, 50));
+    }
+
+    #[test]
+    fn default_reflectivity_preset_filters_low_dbz_and_stretches_high_end() {
+        let table = builtin_reflectivity_table();
+
+        assert_eq!(table.name(), "Analyst Reflectivity HD");
+        assert!(!table.interpolates());
+        assert_eq!(table.sample_mode_label(), "quantized stepped");
+        assert_eq!(table.step_size(), Some(1.0));
+        // clear-air junk below ~10 dBZ is filtered out
+        assert_eq!(table.sample(5.0), Rgba8::TRANSPARENT);
+        assert_ne!(table.sample(10.0), Rgba8::TRANSPARENT);
+        // The display ladder should use the full REF palette, not collapse
+        // 10..15 dBZ into one 5 dBZ bucket.
+        assert_ne!(table.sample(10.0), table.sample(11.0));
+        // purple/magenta reserved for the 65+ dBZ hail core, not light precip
+        for stop in table.stops() {
+            let [r, g, b, a] = stop.color.to_array();
+            let purple = a > 0 && r > 120 && b > 120 && g < 120;
+            assert!(
+                !purple || stop.value >= 65.0,
+                "purple too early at {} dBZ",
+                stop.value
+            );
+        }
+    }
+
+    #[test]
+    fn dual_pol_families_have_dedicated_defaults() {
+        let set = ColorTableSet::default();
+        assert_eq!(
+            set.for_family(ColorTableFamily::CorrelationCoefficient)
+                .name(),
+            "Analyst CC"
+        );
+        assert_eq!(
+            set.for_family(ColorTableFamily::DifferentialReflectivity)
+                .name(),
+            "Analyst ZDR"
+        );
+    }
+
+    #[test]
+    fn cc_table_resolves_meteorological_range() {
+        // The old generic fallback flattened all CC (0.2-1.05) into one dark
+        // color; the dedicated table must vary meaningfully across the band
+        // where interpretation happens.
+        let cc = builtin_correlation_coefficient_table();
+        let low = cc.sample(0.70); // non-met / debris
+        let mid = cc.sample(0.93); // melting / mixed
+        let high = cc.sample(0.998); // uniform precip
+        assert_ne!(low, mid);
+        assert_ne!(mid, high);
+        assert_ne!(low, high);
+    }
+
+    #[test]
+    fn zdr_table_diverges_about_zero() {
+        let zdr = builtin_differential_reflectivity_table();
+        let [neg_r, _, neg_b, _] = zdr.sample(-2.0).to_array();
+        let [zr, zg, zb, _] = zdr.sample(0.0).to_array();
+        let [pos_r, _, pos_b, _] = zdr.sample(3.0).to_array();
+        assert!(neg_b > neg_r, "negative ZDR should be cool (blue-dominant)");
+        assert!(
+            (zr as i16 - zg as i16).abs() <= 12 && (zg as i16 - zb as i16).abs() <= 12,
+            "0 dB should be ~neutral gray"
+        );
+        assert!(pos_r > pos_b, "positive ZDR should be warm (red-dominant)");
+    }
+
+    #[test]
+    fn builtin_radar_presets_default_to_stepped_sampling() {
+        for table in [
+            builtin_reflectivity_table(),
+            analyst_reflectivity_table(),
+            nws_reflectivity_table(),
+            builtin_velocity_table(),
+            vortex_velocity_table(),
+            nws_velocity_table(),
+        ] {
+            assert!(
+                !table.interpolates(),
+                "{} should use stepped radar bins",
+                table.name()
+            );
+        }
+    }
+
+    #[test]
+    fn analyst_velocity_preset_is_stepped_for_gate_readability() {
+        let table = analyst_velocity_table();
+
+        assert!(!table.interpolates());
+    }
+
+    #[test]
+    fn default_velocity_table_is_perceptual_diverging() {
+        let table = builtin_velocity_table();
+
+        assert_eq!(table.name(), "Analyst Velocity HD");
+        assert!(!table.interpolates());
+
+        // Zero isodop is neutral gray.
+        let [zero_r, zero_g, zero_b, zero_a] = table.sample(0.0).to_array();
+        assert_eq!(zero_a, 255);
+        assert!((zero_r as i16 - zero_g as i16).abs() <= 8);
+        assert!((zero_g as i16 - zero_b as i16).abs() <= 8);
+
+        // Inbound is cool (green / blue), outbound is warm (red / orange) at
+        // every magnitude so the two are always distinguishable.
+        let [in_r, in_g, in_b, _] = table.sample(-20.0).to_array();
+        assert!(
+            in_g > 150 && in_r < 90,
+            "inbound should be green, got {in_r},{in_g},{in_b}"
+        );
+        let [far_r, _, far_b, _] = table.sample(-50.0).to_array();
+        assert!(
+            far_b > 200 && far_r < 160,
+            "strong inbound should be blue, got {far_r},_,{far_b}"
+        );
+
+        let [out_r, out_g, out_b, _] = table.sample(20.0).to_array();
+        assert!(
+            out_r > 220 && out_b < 90,
+            "outbound should be red, got {out_r},{out_g},{out_b}"
+        );
+    }
+
+    #[test]
+    fn display_threshold_clamps_table_sampler_and_signature() {
+        let table = builtin_reflectivity_table();
+        let clamped = table.with_display_threshold(Some(20.0), false);
+        // Below threshold -> transparent; at/above unchanged.
+        assert_eq!(clamped.color_for_value(10.0)[3], 0);
+        assert_eq!(clamped.color_for_value(35.0), table.color_for_value(35.0));
+        // Sampler stays bit-identical to the table.
+        let sampler = clamped.sampler();
+        for value in [-10.0_f32, 5.0, 19.9, 20.0, 35.0, 60.0] {
+            assert_eq!(
+                sampler.color_for_value(value),
+                clamped.color_for_value(value)
+            );
+        }
+        // Symmetric clamp for diverging products keeps both strong sides.
+        let velocity = analyst_hd_velocity_table().with_display_threshold(Some(5.0), true);
+        assert_eq!(velocity.color_for_value(2.0)[3], 0);
+        assert_eq!(velocity.color_for_value(-2.0)[3], 0);
+        assert!(velocity.color_for_value(20.0)[3] > 0);
+        assert!(velocity.color_for_value(-20.0)[3] > 0);
+        // The clamp participates in the signature (render keys invalidate).
+        assert_ne!(table.signature(), clamped.signature());
+        assert_ne!(
+            clamped.signature(),
+            table.with_display_threshold(Some(25.0), false).signature()
+        );
+    }
+
+    #[test]
+    fn balance_velocity_is_cvd_safe_and_lightness_monotonic() {
+        let t = balance_velocity_table();
+        let lum = |c: [u8; 4]| 0.2126 * c[0] as f32 + 0.7152 * c[1] as f32 + 0.0722 * c[2] as f32;
+        let inbound = t.color_for_value(-50.0);
+        let zero = t.color_for_value(0.0);
+        let outbound = t.color_for_value(50.0);
+        // blue↔red axis (CVD-safe), green channel low at the extremes
+        assert!(
+            inbound[2] > inbound[0] && inbound[1] < 120,
+            "inbound should be blue: {inbound:?}"
+        );
+        assert!(
+            outbound[0] > outbound[2] && outbound[1] < 120,
+            "outbound should be red: {outbound:?}"
+        );
+        // light/neutral centre
+        assert!(
+            zero.iter().take(3).all(|&c| c > 200),
+            "zero should be light: {zero:?}"
+        );
+        // lightness monotonic on each arm: darker toward the extremes
+        assert!(lum(t.color_for_value(-70.0)) < lum(t.color_for_value(-30.0)));
+        assert!(lum(t.color_for_value(-30.0)) < lum(zero));
+        assert!(lum(t.color_for_value(70.0)) < lum(t.color_for_value(30.0)));
+        assert!(lum(t.color_for_value(30.0)) < lum(zero));
+    }
+
+    #[test]
+    fn default_velocity_preset_keeps_strong_cores_saturated() {
+        // Regression guard for the old "wash to near-white cream" bug: the
+        // operational ±Nyquist range must stay vivid and NOT collapse to a
+        // pale, near-white color (which hid derecho RIJ / couplet cores).
+        let table = builtin_velocity_table();
+
+        let inbound = table.sample(-20.0).to_array();
+        assert!(
+            !(inbound[0] > 190 && inbound[1] > 190 && inbound[2] > 190),
+            "strong inbound washed out to near-white: {inbound:?}"
+        );
+        assert!(
+            inbound[1] > 150 && inbound[0] < 90,
+            "inbound not a saturated green: {inbound:?}"
+        );
+
+        let outbound = table.sample(20.0).to_array();
+        assert!(
+            !(outbound[0] > 200 && outbound[1] > 190 && outbound[2] > 170),
+            "strong outbound washed out to cream: {outbound:?}"
+        );
+        assert!(
+            outbound[0] > 220 && outbound[2] < 90,
+            "outbound not a saturated red: {outbound:?}"
+        );
+    }
+
+    #[test]
+    fn signatures_change_when_colors_change() {
+        let left =
+            ColorTable::parse("a", "color: 0 0 0 0\ncolor: 1 255 255 255").expect("table parses");
+        let right =
+            ColorTable::parse("a", "color: 0 0 0 0\ncolor: 1 255 255 254").expect("table parses");
+
+        assert_ne!(left.signature(), right.signature());
+    }
+
+    #[test]
+    fn signatures_change_when_gr_interval_end_colors_change() {
+        let left =
+            ColorTable::parse_gr_pal("a", "color: 0 0 0 0 100 100 100\ncolor: 10 255 255 255")
+                .expect("table parses");
+        let right =
+            ColorTable::parse_gr_pal("a", "color: 0 0 0 0 101 100 100\ncolor: 10 255 255 255")
+                .expect("table parses");
+
+        assert_ne!(left.signature(), right.signature());
+    }
+
+    #[test]
+    fn built_in_presets_offer_multiple_ref_and_velocity_choices() {
+        let reflectivity = builtin_tables_for_family(ColorTableFamily::Reflectivity)
+            .into_iter()
+            .map(|table| table.name().to_owned())
+            .collect::<Vec<_>>();
+        let velocity = builtin_tables_for_family(ColorTableFamily::Velocity)
+            .into_iter()
+            .map(|table| table.name().to_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            reflectivity,
+            vec![
+                "Analyst Reflectivity HD",
+                "Turbo REF (smooth)",
+                "GR2Analyst Classic REF",
+                "Analyst Classic REF",
+                "NWS Classic REF",
+                "Dark Scope REF",
+                "AWIPS Wilson Edit REF",
+                "Analyst Hail Core REF",
+                "Analyst Low Precip REF",
+                "Tornado Debris REF",
+                "Clean Light REF",
+                "GURT Reflectivity",
+                "Solar PW Reflectivity",
+            ]
+        );
+        assert_eq!(
+            velocity,
+            vec![
+                "Analyst Velocity HD",
+                "Balance VEL (CVD-safe)",
+                "Analyst Tornado VEL",
+                "Analyst Pro VEL",
+                "RadarScope Contrast VEL",
+                "WDT RadarScope VEL",
+                "Sign Check VEL",
+                "Couplet Pop VEL",
+                "GR2-ish Analyst VEL",
+                "Subtle SRV VEL",
+                "GURT Velocity",
+                "GURT Velocity Dealiased",
+            ]
+        );
+    }
+
+    #[test]
+    fn accepted_reflectivity_presets_filter_junk_and_delay_purple() {
+        for table in [
+            gr2_reflectivity_table(),
+            nws_reflectivity_table(),
+            dark_scope_reflectivity_table(),
+            hail_core_reflectivity_table(),
+            low_precip_reflectivity_table(),
+        ] {
+            assert_eq!(table.sample_mode_label(), "quantized stepped");
+            assert_eq!(table.step_size(), Some(1.0), "{} step size", table.name());
+            assert_eq!(table.sample(5.0), Rgba8::TRANSPARENT);
+            assert_ne!(
+                table.sample(10.0),
+                Rgba8::TRANSPARENT,
+                "{} should show 10 dBZ and higher",
+                table.name()
+            );
+            assert_ne!(
+                table.sample(10.0),
+                table.sample(11.0),
+                "{} should preserve one-dBZ REF detail",
+                table.name()
+            );
+            for stop in table.stops() {
+                let [red, green, blue, alpha] = stop.color.to_array();
+                let purple_or_magenta = alpha > 0 && red > 120 && blue > 120 && green < 120;
+                assert!(
+                    !purple_or_magenta || stop.value >= 65.0,
+                    "{} brings purple too early at {:.1} dBZ: {red},{green},{blue}",
+                    table.name(),
+                    stop.value
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn accepted_reflectivity_presets_keep_high_dbz_purple() {
+        for table in [
+            gr2_reflectivity_table(),
+            nws_reflectivity_table(),
+            analyst_classic_reflectivity_table(),
+            dark_scope_reflectivity_table(),
+            hail_core_reflectivity_table(),
+            low_precip_reflectivity_table(),
+        ] {
+            assert!(
+                table.stops().iter().any(|stop| {
+                    let [red, green, blue, alpha] = stop.color.to_array();
+                    alpha > 0 && stop.value >= 65.0 && red > 140 && blue > 120 && green < 120
+                }),
+                "{} should keep a high-dBZ purple/magenta bin",
+                table.name()
+            );
+        }
+    }
+
+    #[test]
+    fn accepted_velocity_presets_stay_available() {
+        for table in [
+            builtin_velocity_table(),
+            analyst_velocity_table(),
+            radarscope_contrast_velocity_table(),
+            sign_check_velocity_table(),
+        ] {
+            assert!(!table.interpolates());
+        }
+    }
+
+    #[test]
+    fn sign_check_velocity_table_exposes_raw_velocity_polarity() {
+        let table = sign_check_velocity_table();
+
+        assert_eq!(table.name(), "Sign Check VEL");
+        assert_eq!(table.sample_mode_label(), "stepped");
+        assert_eq!(table.sample(-1.0), Rgba8::opaque(0, 0, 255));
+        assert_eq!(table.sample(0.0), Rgba8::opaque(120, 120, 120));
+        assert_eq!(table.sample(1.0), Rgba8::opaque(255, 0, 0));
+        assert_eq!(table.range_folded_rgba(), Rgba8::opaque(180, 80, 255));
+    }
+
+    #[test]
+    fn mirrored_velocity_table_samples_opposite_polarity_colors() {
+        let table = sign_check_velocity_table();
+        let mirrored = table.mirrored_values("Mirrored Sign Check VEL");
+
+        assert_eq!(mirrored.sample(1.0), table.sample(-1.0));
+        assert_eq!(mirrored.sample(-1.0), table.sample(1.0));
+        assert_eq!(mirrored.sample(0.0), table.sample(0.0));
+        assert_eq!(mirrored.range_folded_rgba(), table.range_folded_rgba());
+    }
+
+    #[test]
+    fn review_candidate_palettes_are_stepped() {
+        for table in [
+            analyst_classic_reflectivity_table(),
+            tornado_debris_reflectivity_table(),
+            clean_light_reflectivity_table(),
+            couplet_pop_velocity_table(),
+            gr2_ish_analyst_velocity_table(),
+            subtle_srv_velocity_table(),
+        ] {
+            assert!(!table.interpolates(), "{} should be stepped", table.name());
+        }
+    }
+
+    #[test]
+    fn product_codes_map_to_families() {
+        assert_eq!(
+            family_for_product_code("BR"),
+            ColorTableFamily::Reflectivity
+        );
+        assert_eq!(
+            family_for_product_code("br"),
+            ColorTableFamily::Reflectivity
+        );
+        assert_eq!(family_for_product_code(" BV "), ColorTableFamily::Velocity);
+        assert_eq!(family_for_product_code("SRV"), ColorTableFamily::Velocity);
+        assert_eq!(
+            family_for_product_code("SW"),
+            ColorTableFamily::SpectrumWidth
+        );
+        assert_eq!(
+            family_for_product_code("CC"),
+            ColorTableFamily::CorrelationCoefficient
+        );
+        assert_eq!(
+            family_for_product_code("ZDR"),
+            ColorTableFamily::DifferentialReflectivity
+        );
+        assert_eq!(family_for_product_code("ET"), ColorTableFamily::EchoTops);
+        assert_eq!(family_for_product_code("VIL"), ColorTableFamily::Vil);
+        assert_eq!(
+            family_for_product_code("POSH"),
+            ColorTableFamily::Probability
+        );
+        assert_eq!(
+            family_for_product_code("POH"),
+            ColorTableFamily::Probability
+        );
+        assert_eq!(
+            family_for_product_code("PCT"),
+            ColorTableFamily::Probability
+        );
+        assert_eq!(
+            family_for_product_code("PHI"),
+            ColorTableFamily::DifferentialPhase
+        );
+        assert_eq!(
+            family_for_product_code("KDP"),
+            ColorTableFamily::SpecificDifferentialPhase
+        );
+        // Unknown/missing codes (mislabeled community files) -> Generic.
+        assert_eq!(family_for_product_code("BOGUS"), ColorTableFamily::Generic);
+        assert_eq!(family_for_product_code(""), ColorTableFamily::Generic);
+    }
+
+    #[test]
+    fn family_labels_round_trip() {
+        for family in ColorTableFamily::ALL {
+            assert_eq!(ColorTableFamily::from_label(family.label()), Some(family));
+        }
+        assert_eq!(ColorTableFamily::from_label("nope"), None);
+    }
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+
+    /// §2.1 completeness: every family ships a Default-badged entry — and
+    /// it is the table `ColorTableSet::default()` actually uses, in
+    /// position 0, with a non-empty description on every entry.
+    #[test]
+    fn every_family_has_a_default_badged_catalog_entry() {
+        let defaults = ColorTableSet::default();
+        for family in ColorTableFamily::ALL {
+            let catalog = builtin_catalog_for_family(family);
+            assert!(
+                !catalog.is_empty(),
+                "{} has an empty catalog",
+                family.label()
+            );
+            let default_entries: Vec<&CatalogEntry> = catalog
+                .iter()
+                .filter(|entry| entry.badges.contains(&Badge::Default))
+                .collect();
+            assert_eq!(
+                default_entries.len(),
+                1,
+                "{} must have exactly one Default-badged entry",
+                family.label()
+            );
+            assert_eq!(
+                default_entries[0].table.name(),
+                defaults.for_family(family).name(),
+                "{}'s Default badge sits on a table that is not the family default",
+                family.label()
+            );
+            assert_eq!(
+                catalog[0].table.name(),
+                defaults.for_family(family).name(),
+                "{}'s default should lead the picker list",
+                family.label()
+            );
+            for entry in &catalog {
+                assert!(
+                    !entry.description.trim().is_empty(),
+                    "{} entry '{}' is missing a description",
+                    family.label(),
+                    entry.table.name()
+                );
+            }
+        }
+    }
+
+    /// The legacy list API stays single-sourced from the catalog.
+    #[test]
+    fn builtin_tables_match_catalog_order() {
+        for family in ColorTableFamily::ALL {
+            let names: Vec<String> = builtin_tables_for_family(family)
+                .iter()
+                .map(|table| table.name().to_owned())
+                .collect();
+            let catalog_names: Vec<String> = builtin_catalog_for_family(family)
+                .iter()
+                .map(|entry| entry.table.name().to_owned())
+                .collect();
+            assert_eq!(names, catalog_names);
+        }
+    }
+
+    #[test]
+    fn product_codes_round_trip_through_family_mapping() {
+        for family in ColorTableFamily::ALL {
+            match product_code_for_family(family) {
+                Some(code) => assert_eq!(
+                    family_for_product_code(code),
+                    family,
+                    "{code} does not map back to {}",
+                    family.label()
+                ),
+                None => assert_eq!(family, ColorTableFamily::Generic),
+            }
+        }
+    }
+
+    #[test]
+    fn turbo_reflectivity_is_smooth_and_filters_clear_air() {
+        let table = turbo_reflectivity_table();
+        assert!(table.interpolates(), "the smooth badge means interpolated");
+        assert_eq!(table.sample(5.0).a, 0, "clear-air junk stays hidden");
+        assert_eq!(table.sample(10.0).a, 255);
+        // No banding: neighboring dBZ differ smoothly.
+        assert_ne!(table.sample(31.0), table.sample(33.0));
+    }
+}
+
+/// Pin the GURT V3 ports bit-for-bit against the upstream source
+/// (github.com/ambient330/Graphic-Utility-Radar-Toolkit-V3, GurtV3.3.py).
+/// Each test samples anchor stops and asserts the exact RGBA decoded from
+/// the upstream hex literal. Remember `_make_cmap` (GurtV3.3.py line 1159)
+/// reverses the hex list, so stop index `i` (low end first) corresponds to
+/// upstream list entry `n-1-i`.
+#[cfg(test)]
+mod gurt_upstream_fidelity_tests {
+    use super::*;
+
+    /// The value of stop `index` — the same arithmetic as `gurt_stops`, so
+    /// sampling at it hits the stop's exact-match path.
+    fn anchor(min: f32, max: f32, count: usize, index: usize) -> f32 {
+        min + (index as f32 / (count - 1) as f32) * (max - min)
+    }
+
+    /// Hexes: GurtV3.3.py lines 1187-1193 (`gurt_ref`); range -20..70 dBZ
+    /// from FIELD_DEFAULTS "DBZH" (line 1257).
+    #[test]
+    fn gurt_reflectivity_matches_upstream_anchors() {
+        let table = gurt_reflectivity_table();
+        assert!(table.interpolates(), "matplotlib from_list interpolates");
+        assert_eq!(table.stops().len(), 39);
+        let at = |index| anchor(-20.0, 70.0, 39, index);
+        assert_eq!(table.sample(at(0)), Rgba8::opaque(0x78, 0x05, 0xA3)); // -20 dBZ   '#7805A3'
+        assert_eq!(table.sample(at(9)), Rgba8::opaque(0x30, 0x85, 0x5F)); // ~1.3 dBZ  '#30855F'
+        assert_eq!(table.sample(at(19)), Rgba8::opaque(0xD0, 0xE4, 0xD0)); // 25 dBZ   '#D0E4D0'
+        assert_eq!(table.sample(at(28)), Rgba8::opaque(0xB3, 0x7B, 0x36)); // ~46 dBZ  '#B37B36'
+        assert_eq!(table.sample(at(38)), Rgba8::opaque(0xF2, 0x46, 0x5B)); // 70 dBZ   '#F2465B'
+    }
+
+    /// Hexes: GurtV3.3.py lines 1180-1186 (`gurt_vel`); range ±30 m/s from
+    /// FIELD_DEFAULTS "VEL" (line 1262).
+    #[test]
+    fn gurt_velocity_matches_upstream_anchors() {
+        let table = gurt_velocity_table();
+        assert!(table.interpolates());
+        assert_eq!(table.stops().len(), 39);
+        let at = |index| anchor(-30.0, 30.0, 39, index);
+        assert_eq!(table.sample(at(0)), Rgba8::opaque(0x78, 0x05, 0xA3)); // -30 m/s   '#7805A3'
+        assert_eq!(table.sample(at(9)), Rgba8::opaque(0x30, 0x85, 0x5F)); // ~-15.8    '#30855F'
+        assert_eq!(table.sample(0.0), Rgba8::opaque(0xD0, 0xE4, 0xD0)); // 0 m/s      '#D0E4D0'
+        assert_eq!(table.sample(at(28)), Rgba8::opaque(0xB3, 0x7B, 0x36)); // ~14.2    '#B37B36'
+        assert_eq!(table.sample(at(38)), Rgba8::opaque(0xF2, 0x46, 0x5B)); // 30 m/s   '#F2465B'
+    }
+
+    /// Range ±60 m/s from FIELD_DEFAULTS "VELD" (GurtV3.3.py line 1265);
+    /// same `gurt_vel` hexes (lines 1180-1186) on the doubled scale.
+    #[test]
+    fn gurt_velocity_dealiased_matches_upstream_anchors() {
+        let table = gurt_velocity_dealiased_table();
+        assert!(table.interpolates());
+        assert_eq!(table.stops().len(), 39);
+        let at = |index| anchor(-60.0, 60.0, 39, index);
+        assert_eq!(table.sample(at(0)), Rgba8::opaque(0x78, 0x05, 0xA3)); // -60 m/s   '#7805A3'
+        assert_eq!(table.sample(at(9)), Rgba8::opaque(0x30, 0x85, 0x5F)); // ~-31.6    '#30855F'
+        assert_eq!(table.sample(0.0), Rgba8::opaque(0xD0, 0xE4, 0xD0)); // 0 m/s      '#D0E4D0'
+        assert_eq!(table.sample(at(28)), Rgba8::opaque(0xB3, 0x7B, 0x36)); // ~28.4    '#B37B36'
+        assert_eq!(table.sample(at(38)), Rgba8::opaque(0xF2, 0x46, 0x5B)); // 60 m/s   '#F2465B'
+    }
+
+    /// Hexes: GurtV3.3.py lines 1176-1179 (`gurt_sw`); range 0..15 m/s from
+    /// FIELD_DEFAULTS "SW" (line 1275).
+    #[test]
+    fn gurt_spectrum_width_matches_upstream_anchors() {
+        let table = gurt_spectrum_width_table();
+        assert!(table.interpolates());
+        assert_eq!(table.stops().len(), 21);
+        assert_eq!(table.sample(0.0), Rgba8::opaque(0x1A, 0x08, 0x55)); // 0 m/s      '#1A0855'
+        assert_eq!(table.sample(3.75), Rgba8::opaque(0xE5, 0x4F, 0x5B)); // 3.75 m/s  '#E54F5B'
+        assert_eq!(table.sample(7.5), Rgba8::opaque(0xFD, 0xC6, 0x0F)); // 7.5 m/s    '#FDC60F'
+        assert_eq!(table.sample(11.25), Rgba8::opaque(0xC1, 0xC1, 0xC1)); // 11.25    '#C1C1C1'
+        assert_eq!(table.sample(15.0), Rgba8::opaque(0x02, 0xA0, 0xC8)); // 15 m/s    '#02A0C8'
+    }
+
+    /// Hexes: GurtV3.3.py lines 1167-1170 (`gurt_cc`); range 0..1 from
+    /// FIELD_DEFAULTS "RHOHV" (line 1267).
+    #[test]
+    fn gurt_correlation_coefficient_matches_upstream_anchors() {
+        let table = gurt_correlation_coefficient_table();
+        assert!(table.interpolates());
+        assert_eq!(table.stops().len(), 20);
+        let at = |index| anchor(0.0, 1.0, 20, index);
+        assert_eq!(table.sample(at(0)), Rgba8::opaque(0x4F, 0x4F, 0x4F)); // 0.0      '#4F4F4F'
+        assert_eq!(table.sample(at(5)), Rgba8::opaque(0x0F, 0x0F, 0x8C)); // ~0.26    '#0F0F8C'
+        assert_eq!(table.sample(at(9)), Rgba8::opaque(0x29, 0x29, 0xD1)); // ~0.47    '#2929D1'
+        assert_eq!(table.sample(at(14)), Rgba8::opaque(0xBC, 0xE9, 0x06)); // ~0.74   '#BCE906'
+        assert_eq!(table.sample(at(19)), Rgba8::opaque(0x8B, 0x1E, 0x4D)); // 1.0     '#8B1E4D'
+    }
+
+    /// Hexes: GurtV3.3.py lines 1163-1166 (`gurt_zdr`); range -2..8 dB from
+    /// FIELD_DEFAULTS "ZDR" (line 1266).
+    #[test]
+    fn gurt_differential_reflectivity_matches_upstream_anchors() {
+        let table = gurt_differential_reflectivity_table();
+        assert!(table.interpolates());
+        assert_eq!(table.stops().len(), 22);
+        let at = |index| anchor(-2.0, 8.0, 22, index);
+        assert_eq!(table.sample(at(0)), Rgba8::opaque(0x06, 0x05, 0x07)); // -2 dB    '#060507'
+        assert_eq!(table.sample(at(5)), Rgba8::opaque(0x0B, 0x0D, 0x9C)); // ~0.38    '#0B0D9C'
+        assert_eq!(table.sample(at(10)), Rgba8::opaque(0xEE, 0x88, 0x36)); // ~2.76   '#EE8836'
+        assert_eq!(table.sample(at(16)), Rgba8::opaque(0xF8, 0xBE, 0xDB)); // ~5.62   '#F8BEDB'
+        assert_eq!(table.sample(at(21)), Rgba8::opaque(0x92, 0x2E, 0x97)); // 8 dB    '#922E97'
+    }
+
+    /// Hexes: GurtV3.3.py lines 1171-1175 (`gurt_kdp`); range -2..12 °/km
+    /// from FIELD_DEFAULTS "KDP" (line 1268).
+    #[test]
+    fn gurt_specific_differential_phase_matches_upstream_anchors() {
+        let table = gurt_specific_differential_phase_table();
+        assert!(table.interpolates());
+        assert_eq!(table.stops().len(), 27);
+        let at = |index| anchor(-2.0, 12.0, 27, index);
+        assert_eq!(table.sample(at(0)), Rgba8::opaque(0x75, 0x75, 0x75)); // -2 °/km  '#757575'
+        assert_eq!(table.sample(at(6)), Rgba8::opaque(0x75, 0x02, 0x1B)); // ~1.23    '#75021B'
+        assert_eq!(table.sample(5.0), Rgba8::opaque(0x74, 0xC7, 0xD1)); // 5 °/km    '#74C7D1'
+        assert_eq!(table.sample(at(20)), Rgba8::opaque(0xFF, 0x7B, 0x00)); // ~8.77   '#FF7B00'
+        assert_eq!(table.sample(at(26)), Rgba8::opaque(0xC3, 0x61, 0xF9)); // 12 °/km '#C361F9'
+    }
+
+    /// Upstream defines `gurt_ref` (GurtV3.3.py lines 1187-1193) and
+    /// `gurt_vel` (lines 1180-1186) with byte-identical hex lists; only the
+    /// field range differs.
+    #[test]
+    fn gurt_reflectivity_shares_the_velocity_ramp() {
+        let reflectivity = gurt_reflectivity_table();
+        let velocity = gurt_velocity_table();
+        for (ref_stop, vel_stop) in reflectivity.stops().iter().zip(velocity.stops()) {
+            assert_eq!(ref_stop.color, vel_stop.color);
+        }
+    }
+
+    /// FIELD_DEFAULTS "VELD" (±60) is exactly the "VEL" scale (±30) doubled.
+    #[test]
+    fn gurt_velocity_dealiased_doubles_the_native_scale() {
+        let native = gurt_velocity_table();
+        let dealiased = gurt_velocity_dealiased_table();
+        for (n, d) in native.stops().iter().zip(dealiased.stops()) {
+            assert_eq!(n.color, d.color);
+            assert_eq!(d.value, n.value * 2.0);
+        }
+    }
+
+    /// Out-of-range values clamp to the end anchors, matching matplotlib's
+    /// over/under behavior for `from_list` colormaps.
+    #[test]
+    fn gurt_tables_clamp_like_matplotlib() {
+        let table = gurt_velocity_table();
+        assert_eq!(table.sample(-90.0), Rgba8::opaque(0x78, 0x05, 0xA3));
+        assert_eq!(table.sample(90.0), Rgba8::opaque(0xF2, 0x46, 0x5B));
+    }
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+
+    fn nudge_up(value: f32) -> f32 {
+        from_ordered_key(ordered_key(value) + 1)
+    }
+
+    fn nudge_down(value: f32) -> f32 {
+        next_down(value)
+    }
+
+    /// Every public built-in constructor — including the tables outside
+    /// the picker catalog — so the writer faces every sample mode
+    /// (interpolated / stepped / quantized / GrPal) and every units
+    /// variant (m/s, dBZ, kt, MPH+Scale) we ship.
+    fn all_builtin_tables() -> Vec<ColorTable> {
+        let mut tables: Vec<ColorTable> = ColorTableFamily::ALL
+            .iter()
+            .flat_map(|family| builtin_tables_for_family(*family))
+            .collect();
+        tables.extend([
+            vortex_velocity_table(),
+            nws_velocity_table(),
+            gr2_velocity_table(),
+            tight_couplet_velocity_table(),
+            nws_split_velocity_table(),
+            dark_analyst_velocity_table(),
+            storm_detail_reflectivity_table(),
+            analyst_reflectivity_table(),
+        ]);
+        tables
+    }
+
+    /// Dense sweep + every stop value (± one ULP) + quantization band
+    /// boundaries (± one ULP) + non-finite specials.
+    fn probe_values(table: &ColorTable) -> Vec<f32> {
+        let stops = table.stops();
+        let min = stops.first().unwrap().value;
+        let max = stops.last().unwrap().value;
+        let span = (max - min).max(1.0);
+
+        let mut probes: Vec<f32> = Vec::new();
+        for index in 0..=4000 {
+            probes.push(min - 0.1 * span + (index as f32) * (1.2 * span / 4000.0));
+        }
+        for stop in stops {
+            probes.push(stop.value);
+            probes.push(nudge_up(stop.value));
+            probes.push(nudge_down(stop.value));
+        }
+        if let Some(step) = table.step_size() {
+            // Built-in quantized tables all use origin 0; even if one did
+            // not, these are still valid probe values.
+            let mut boundary = (min / step).floor() * step - 0.5 * step;
+            while boundary <= max + step {
+                probes.push(boundary);
+                probes.push(nudge_up(boundary));
+                probes.push(nudge_down(boundary));
+                boundary += step;
+            }
+        }
+        probes.extend([
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::MAX,
+            f32::MIN,
+            0.0,
+            -0.0,
+        ]);
+        probes
+    }
+
+    fn assert_export_round_trips(table: &ColorTable) {
+        let pal = to_gr_pal(table);
+        let reparsed = ColorTable::parse_gr_pal(table.name(), &pal)
+            .unwrap_or_else(|err| panic!("{} failed to reparse: {err}\n{pal}", table.name()));
+        for value in probe_values(table) {
+            assert_eq!(
+                reparsed.color_for_value(value),
+                table.color_for_value(value),
+                "'{}' diverges at {value}\n--- exported .pal ---\n{pal}",
+                table.name()
+            );
+        }
+        assert_eq!(
+            reparsed.range_folded_color(),
+            table.range_folded_color(),
+            "'{}' RF color diverges",
+            table.name()
+        );
+    }
+
+    /// THE round-trip guarantee (§2.3): parse_gr_pal(to_gr_pal(t)) is
+    /// sampling-identical for every built-in.
+    #[test]
+    fn exported_builtins_round_trip_sampling_exactly() {
+        for table in all_builtin_tables() {
+            assert_export_round_trips(&table);
+        }
+    }
+
+    /// Synthetic alpha / two-color-gradient / solid coverage, plus the
+    /// community file that exercises every GR dialect feature at once.
+    #[test]
+    fn exported_synthetic_tables_round_trip_sampling_exactly() {
+        let radar_omega = ColorTable::parse_gr_pal(
+            "RadarOmega",
+            "units: dBZ\nstep: 10\nproduct: BR\n\
+             color4: -10 7 59 71 0\n\
+             color: 0 62 69 71 191 193 197\n\
+             color: 20 135 229 125\n\
+             color: 30 48 102 43\n\
+             color: 35 253 227 0\n\
+             color: 50 254 26 0 181 0 52\n\
+             color: 60 163 0 136 254 4 250\n\
+             color: 80 166 176 150 255 231 188\n\
+             color: 85 255 231 188\n",
+        )
+        .expect("synthetic gradient table parses");
+
+        let alpha_ramp = ColorTable::parse(
+            "alpha ramp",
+            "product: BR\nunits: dBZ\n\
+             color4: 0 10 20 30 0\n\
+             color4: 10 40 80 120 128\n\
+             color4: 20 200 100 50 255\n\
+             color4: 30 240 240 240 64\n",
+        )
+        .expect("synthetic alpha table parses");
+
+        let solid_bands = ColorTable::parse_gr_pal(
+            "solid bands",
+            "product: BV\n\
+             solidcolor: -10 0 0 200\n\
+             solidcolor4: 0 120 120 120 200\n\
+             solidcolor: 10 200 0 0\n",
+        )
+        .expect("synthetic solid table parses");
+
+        let stepped = ColorTable::new_stepped(
+            "stepped synthetic",
+            vec![
+                ColorStop {
+                    value: -5.0,
+                    color: Rgba8::new(1, 2, 3, 0),
+                    end_color: None,
+                },
+                ColorStop {
+                    value: 2.5,
+                    color: Rgba8::opaque(50, 100, 150),
+                    end_color: None,
+                },
+                ColorStop {
+                    value: 11.25,
+                    color: Rgba8::new(200, 150, 100, 80),
+                    end_color: None,
+                },
+            ],
+        )
+        .expect("synthetic stepped table builds");
+
+        // Interpolated with a transparent stop in the MIDDLE: GR holds
+        // transparent rows, interpolation lerps through them — the writer
+        // must emit the explicit end color.
+        let transparent_middle = ColorTable::new(
+            "transparent middle",
+            vec![
+                ColorStop {
+                    value: 0.0,
+                    color: Rgba8::opaque(255, 0, 0),
+                    end_color: None,
+                },
+                ColorStop {
+                    value: 10.0,
+                    color: Rgba8::new(60, 70, 80, 0),
+                    end_color: None,
+                },
+                ColorStop {
+                    value: 20.0,
+                    color: Rgba8::opaque(0, 0, 255),
+                    end_color: None,
+                },
+            ],
+        )
+        .expect("synthetic transparent-middle table builds");
+
+        for table in [
+            radar_omega,
+            alpha_ramp,
+            solid_bands,
+            stepped,
+            transparent_middle,
+        ] {
+            assert_export_round_trips(&table);
+        }
+    }
+
+    /// §2.3 units fidelity: a kt-declared table exports its values back
+    /// in knots (community-natural) and STILL reparses to the exact
+    /// internal m/s floats.
+    #[test]
+    fn kt_units_round_trip_in_declared_units() {
+        let table = nws_velocity_table();
+        let pal = to_gr_pal(&table);
+        assert!(pal.contains("Units: kt"), "kt header lost:\n{pal}");
+        // Stop values are written in knots, not the internal m/s.
+        assert!(
+            pal.lines()
+                .any(|line| line.trim().starts_with("SolidColor: -120 ")),
+            "expected the -120 kt stop in declared units:\n{pal}"
+        );
+        assert_export_round_trips(&table);
+    }
+
+    #[test]
+    fn export_header_carries_version_product_and_rf() {
+        let table = sign_check_velocity_table();
+        let pal = to_gr_pal(&table);
+        let mut lines = pal.lines();
+        let comment = lines.next().expect("first line");
+        assert!(
+            comment.starts_with("; exported by BowEcho "),
+            "missing export comment: {comment}"
+        );
+        assert!(pal.contains("Product: BV"));
+        // Sign Check's custom RF color (180 80 255 255) survives with alpha.
+        assert!(pal.contains("RF: 180 80 255 255"), "RF line lost:\n{pal}");
+    }
+
+    /// `Step:` in exports is a legend hint only — it must never make the
+    /// reparsed table quantized.
+    #[test]
+    fn exported_step_header_stays_legend_only() {
+        let table = builtin_reflectivity_table();
+        let pal = to_gr_pal(&table);
+        assert!(pal.contains("Step: "));
+        let reparsed = ColorTable::parse_gr_pal(table.name(), &pal).expect("reparse");
+        assert_eq!(reparsed.sample_mode_label(), "GR pal");
+        assert_eq!(reparsed.step_size(), None);
+    }
+
+    #[test]
+    fn synthetic_gate_quality_palette_uses_the_fraction_domain() {
+        let table = builtin_quality_fraction_table();
+        assert_eq!(table.stops().first().unwrap().value, 0.0);
+        assert_eq!(table.stops().last().unwrap().value, 1.0);
+        assert_ne!(table.color_for_value(0.0), table.color_for_value(1.0));
+        for id in ["MCOV", "tunb", "MSIG"] {
+            let resolved = validation_table_for_moment_id(id).expect("quality palette");
+            assert_eq!(resolved.stops().first().unwrap().value, 0.0);
+            assert_eq!(resolved.stops().last().unwrap().value, 1.0);
+        }
+    }
+
+    #[test]
+    fn instrument_stage_diagnostics_reuse_their_physical_moment_palettes() {
+        for (stage, canonical) in [
+            ("IREF", builtin_reflectivity_table()),
+            ("MVEL", builtin_velocity_table()),
+            ("ISW", builtin_spectrum_width_table()),
+            ("MZDR", builtin_differential_reflectivity_table()),
+            ("IRHO", builtin_correlation_coefficient_table()),
+            ("MKDP", builtin_specific_differential_phase_table()),
+        ] {
+            let resolved = validation_table_for_moment_id(stage).expect("stage palette");
+            assert_eq!(resolved.stops(), canonical.stops(), "{stage}");
+        }
+    }
+
+    #[test]
+    fn validation_difference_palettes_are_centered_and_moment_scaled() {
+        let mut spans = Vec::new();
+        for id in [
+            "DIF_REF", "DIF_VEL", "DIF_SW", "DIF_ZDR", "DIF_RHO", "DIF_PHI", "DIF_KDP",
+        ] {
+            let table = validation_table_for_moment_id(id).expect("difference palette");
+            let minimum = table.stops().first().unwrap().value;
+            let maximum = table.stops().last().unwrap().value;
+            assert_eq!(minimum, -maximum, "{id}");
+            let zero = table.color_for_value(0.0);
+            assert!(zero[0].abs_diff(zero[1]) <= 2, "{id} zero is not neutral");
+            assert!(zero[1].abs_diff(zero[2]) <= 2, "{id} zero is not neutral");
+            assert_ne!(table.color_for_value(minimum), zero, "{id}");
+            assert_ne!(table.color_for_value(maximum), zero, "{id}");
+            spans.push(maximum);
+        }
+        assert!(spans.windows(2).any(|pair| pair[0] != pair[1]));
+        assert!(validation_table_for_moment_id("DIF_BOGUS").is_none());
+    }
+}

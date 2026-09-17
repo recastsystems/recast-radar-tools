@@ -1,0 +1,3 @@
+KTLX20240315_000217_V06  pixel checksum 0xc04a5e2dfecc4c1f  deterministic across iterations: yes
+KILX20260418_013553_V06  pixel checksum 0xd5080047ae5dfeb5  deterministic across iterations: yes
+KTLX20130520_201643_V06.gz  pixel checksum 0x19e3735f42cdca4b  deterministic across iterations: yes

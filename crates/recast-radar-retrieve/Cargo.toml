@@ -1,0 +1,11 @@
+[package]
+name = "recast-radar-retrieve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+recast-radar-core = { path = "../recast-radar-core" }
+
+[lints]
+workspace = true

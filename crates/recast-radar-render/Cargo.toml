@@ -1,0 +1,17 @@
+[package]
+name = "recast-radar-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+recast-radar-color-tables = { path = "../recast-radar-color-tables" }
+image.workspace = true
+recast-radar-core = { path = "../recast-radar-core" }
+rayon.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
