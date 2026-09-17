@@ -1,0 +1,1263 @@
+{
+ "schema": "recast-radar-tools/fm301-golden/pyart/1",
+ "id": "l2-kpah-20080415-235014",
+ "format": "nexrad-level2",
+ "sha256": "788b1956e9cb47c0d665e49d52b6657a55196296213e36d0cf928d019a8852bf",
+ "size": 294612,
+ "categories": ["nexrad-level2", "msg31-legacy-resolution"],
+ "note": "AR2V0004 Build 10.0 Message 31 at legacy resolution, VCP 32, 7 sweeps: REF 1 km gates from 500 m, VEL/SW 250 m from 125 m. xradar puts the mixed sweeps 4-6 on REF spacing (VRADH/WRADH misplaced x4); Py-ART repeats REF on 250 m gates (design note 6.2, A.3).",
+ "generator": {
+  "script": "tools/fm301_golden.py",
+  "python": "3.13",
+  "numpy": "2.5.3",
+  "arm_pyart": "2.2.5",
+  "netCDF4": "1.7.4",
+  "h5py": "3.16.0"
+ },
+ "reader": {"function": "pyart.io.read_nexrad_archive", "input": "file", "kwargs": {"linear_interp": false}},
+ "status": "ok",
+ "error": null,
+ "warnings": [
+  "UserWarning: Py-ART's NEXRAD Level 2 module is deprecated, please use xradar to read in the file using xd.io.open_nexradlevel2_datatree",
+  "UserWarning: Gate spacing is not constant, interpolating data in scans [0, 2, 4, 5, 6] for moment REF."
+ ],
+ "radar": {
+  "scan_type": "ppi",
+  "nrays": 2520,
+  "ngates": 1840,
+  "nsweeps": 7,
+  "metadata": {
+   "Conventions": "CF/Radial instrument_parameters",
+   "comment": "",
+   "history": "",
+   "institution": "",
+   "instrument_name": "KPAH",
+   "original_container": "NEXRAD Level II",
+   "references": "",
+   "source": "",
+   "title": "",
+   "vcp_pattern": 32,
+   "version": "1.3"
+  },
+  "metadata_types": {
+   "Conventions": "str",
+   "comment": "str",
+   "history": "str",
+   "institution": "str",
+   "instrument_name": "str",
+   "original_container": "str",
+   "references": "str",
+   "source": "str",
+   "title": "str",
+   "vcp_pattern": "int",
+   "version": "str"
+  },
+  "sweeps": [
+   {"sweep": 0, "start": 0, "end": 359, "rays": 360},
+   {"sweep": 1, "start": 360, "end": 719, "rays": 360},
+   {"sweep": 2, "start": 720, "end": 1079, "rays": 360},
+   {"sweep": 3, "start": 1080, "end": 1439, "rays": 360},
+   {"sweep": 4, "start": 1440, "end": 1799, "rays": 360},
+   {"sweep": 5, "start": 1800, "end": 2159, "rays": 360},
+   {"sweep": 6, "start": 2160, "end": 2519, "rays": 360}
+  ],
+  "variables": {
+   "time": {
+    "meta": {
+     "calendar": "gregorian",
+     "comment": "Coordinate variable for time. Time at the center of each ray, in fractional seconds since the global variable time_coverage_start",
+     "long_name": "time_in_seconds_since_volume_start",
+     "standard_name": "time",
+     "units": "seconds since 2008-04-15T23:50:11Z"
+    },
+    "meta_types": {
+     "calendar": "str",
+     "comment": "str",
+     "long_name": "str",
+     "standard_name": "str",
+     "units": "str"
+    },
+    "values": {
+     "dtype": "float64",
+     "shape": [2520],
+     "count": 2520,
+     "sha256": "11f519ba01914bc97cf26d774da12cafca2fa181cfb24b3807936ba1be5ee506",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.260999999998603,
+     "max": 577.9410000000062,
+     "mean": 276.8742539682539,
+     "first": [0.260999999998603, 0.45600000000558794, 0.6520000000018626],
+     "last": 577.9410000000062,
+     "non_decreasing": true
+    },
+    "per_sweep": [
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "d6be91b5b72c01377b4138d997e9f95347371e415e632acae8302e98d93cca60",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.260999999998603,
+      "max": 72.88000000000466,
+      "mean": 36.5615694444443,
+      "first": [0.260999999998603, 0.45600000000558794, 0.6520000000018626],
+      "last": 72.88000000000466,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "e39f41a72719b5d349fff0d783a5bb152e21e01dd7253c4db0bfaba002733e35",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 73.6929999999993,
+      "max": 153.14599999999336,
+      "mean": 113.42279444444453,
+      "first": [73.6929999999993, 73.9030000000057, 74.13499999999476],
+      "last": 153.14599999999336,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "1c25acab27f32765153e59ac70c81eb4fa51dd2ac0dc79fcfa70d69f60fccb28",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 154.40200000000186,
+      "max": 227.03200000000652,
+      "mean": 190.70891111111098,
+      "first": [154.40200000000186, 154.61000000000058, 154.80299999999988],
+      "last": 227.03200000000652,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "48d816d2b0fc606e85231f122c983743b8d8a49c975f1817231ed3f5eac5176f",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 227.85000000000582,
+      "max": 307.3000000000029,
+      "mean": 267.5750055555553,
+      "first": [227.85000000000582, 228.05599999999686, 228.2829999999958],
+      "last": 307.3000000000029,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "e8979905d9acda8ffd248d902fc799e5a0c27d167fae34d8c7f71dc833271886",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 308.625,
+      "max": 397.42699999999604,
+      "mean": 353.024275,
+      "first": [308.625, 308.88400000000547, 309.1380000000063],
+      "last": 397.42699999999604,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "0faed41c742f76042e6a1bcf61e8f2fb0a20fa9ced38660f4338ac006c81b8b5",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 398.90899999999965,
+      "max": 487.68700000000536,
+      "mean": 443.2834416666667,
+      "first": [398.90899999999965, 399.15200000000186, 399.4030000000057],
+      "last": 487.68700000000536,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "99b53eda200baa6606e70f9ca9adf6a43b4e096cf015bb7d254676d0ea1b3552",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 489.1670000000013,
+      "max": 577.9410000000062,
+      "mean": 533.5437805555558,
+      "first": [489.1670000000013, 489.40899999999965, 489.66300000000047],
+      "last": 577.9410000000062,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "range": {
+    "meta": {
+     "axis": "radial_range_coordinate",
+     "comment": "Coordinate variable for range. Range to center of each bin.",
+     "long_name": "range_to_measurement_volume",
+     "meters_between_gates": 250.0,
+     "meters_to_center_of_first_gate": 125.0,
+     "spacing_is_constant": "true",
+     "standard_name": "projection_range_coordinate",
+     "units": "meters"
+    },
+    "meta_types": {
+     "axis": "str",
+     "comment": "str",
+     "long_name": "str",
+     "meters_between_gates": "float",
+     "meters_to_center_of_first_gate": "float",
+     "spacing_is_constant": "str",
+     "standard_name": "str",
+     "units": "str"
+    },
+    "values": {
+     "dtype": "float32",
+     "shape": [1840],
+     "count": 1840,
+     "sha256": "6c419bdfb72ed729b777d1fb1269b5062cf570ed3b80bf27fbdde51eddf41830",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 125.0,
+     "max": 459875.0,
+     "mean": 230000.0,
+     "first": [125.0, 375.0, 625.0],
+     "last": 459875.0,
+     "non_decreasing": true
+    }
+   },
+   "azimuth": {
+    "meta": {
+     "axis": "radial_azimuth_coordinate",
+     "comment": "Azimuth of antenna relative to true north",
+     "long_name": "azimuth_angle_from_true_north",
+     "standard_name": "beam_azimuth_angle",
+     "units": "degrees"
+    },
+    "meta_types": {"axis": "str", "comment": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [2520],
+     "count": 2520,
+     "sha256": "d54698751480369841068982e9e94966ab67788d384e6a098e91a3a2644a7313",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.4888916015625,
+     "max": 359.51934814453125,
+     "mean": 180.00389535086495,
+     "first": [72.50701904296875, 73.4820556640625, 74.5037841796875],
+     "last": 97.4761962890625,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9ad79bb4458d0854ee5b6f1c6eed6c9b0a767a3b098154a0ec9e92ce9aaf4d1d",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.50262451171875,
+      "max": 359.5166015625,
+      "mean": 180.01234436035156,
+      "first": [72.50701904296875, 73.4820556640625, 74.5037841796875],
+      "last": 71.5155029296875,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "b8718fccd0920ac4d8a95bf9582cb301912f5808e4f8bfe3381d5de05924b6c8",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.51361083984375,
+      "max": 359.51934814453125,
+      "mean": 180.0030288696289,
+      "first": [75.4595947265625, 76.48406982421875, 77.508544921875],
+      "last": 74.49554443359375,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "3c965016e21d2da17eef4db49bbe5d9522a691998b82ed753704ced48866342e",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.5438232421875,
+      "max": 359.50286865234375,
+      "mean": 180.01231384277344,
+      "first": [80.51605224609375, 81.51580810546875, 82.49359130859375],
+      "last": 79.49432373046875,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "c84da619228bda30daf2d5258acc390db8629211163af209b728d75e0796dcd6",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.50262451171875,
+      "max": 359.505615234375,
+      "mean": 180.00267791748047,
+      "first": [83.47137451171875, 84.46563720703125, 85.5010986328125],
+      "last": 82.50732421875,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "5012edad462b0ad7a1b9428e6494a9c7e949090905ae1211614d8bce44676677",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.4998779296875,
+      "max": 359.49462890625,
+      "mean": 179.998779296875,
+      "first": [88.4783935546875, 89.4891357421875, 90.516357421875],
+      "last": 87.5225830078125,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "614babdac1993f0241557dc227f8a9aab94b9a60cc35c185200b9b51bcd913c4",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.494384765625,
+      "max": 359.5111083984375,
+      "mean": 179.99986267089844,
+      "first": [93.4991455078125, 94.4769287109375, 95.482177734375],
+      "last": 92.4993896484375,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "3e268cf311383980bf5311eaa4fa1f8fb364ba661b5435fabc2fd8e028d75fa0",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.4888916015625,
+      "max": 359.49462890625,
+      "mean": 179.99826049804688,
+      "first": [98.50341796875, 99.481201171875, 100.4754638671875],
+      "last": 97.4761962890625,
+      "non_decreasing": false
+     }
+    ]
+   },
+   "elevation": {
+    "meta": {
+     "axis": "radial_elevation_coordinate",
+     "comment": "Elevation of antenna relative to the horizontal plane",
+     "long_name": "elevation_angle_from_horizontal_plane",
+     "standard_name": "beam_elevation_angle",
+     "units": "degrees"
+    },
+    "meta_types": {"axis": "str", "comment": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [2520],
+     "count": 2520,
+     "sha256": "534f19523cf73158d100af0bd9d1be18de96adcb0296a50f09723db6e7f96d83",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.439453125,
+     "max": 4.482421875,
+     "mean": 2.0412695748465404,
+     "first": [0.5712890625, 0.5712890625, 0.5438232421875],
+     "last": 4.4384765625,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "3104bbd630c2cd7ec9297a12657aa91f3599ef6ba31ed9ed6e58f99123548b2c",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.439453125,
+      "max": 0.5712890625,
+      "mean": 0.4612274169921875,
+      "first": [0.5712890625, 0.5712890625, 0.5438232421875],
+      "last": 0.4833984375,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "deba4963fa9d1b60c5ec4116651a3cbfa3936a7304d4c751b23ab2519b75798e",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.439453125,
+      "max": 0.4833984375,
+      "mean": 0.46112060546875,
+      "first": [0.4833984375, 0.4833984375, 0.4833984375],
+      "last": 0.4833984375,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "5e32df98e296ed5dbe677b7a792f624f9023961720f19fe632d6e2289d377d98",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 1.318359375,
+      "max": 1.494140625,
+      "mean": 1.4664840698242188,
+      "first": [1.35955810546875, 1.33758544921875, 1.32110595703125],
+      "last": 1.4501953125,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "bf8c0d2e13f39708fe248606859decb631aac5eb0e4174a4b7bddc0d808f19db",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 1.4501953125,
+      "max": 1.494140625,
+      "mean": 1.471221923828125,
+      "first": [1.494140625, 1.494140625, 1.494140625],
+      "last": 1.4501953125,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "58d5984f4f01aaacba9b277b6e5c26ea8c3e5feeebffe2ef748f2613378bb4f4",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 2.4169921875,
+      "max": 2.5048828125,
+      "mean": 2.4801788330078125,
+      "first": [2.4609375, 2.4224853515625, 2.4169921875],
+      "last": 2.4609375,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "edc4bb580d9e8bd2352007b14a762cb262b2fe70886261cc30e0b0e92eb3d1dc",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 3.416748046875,
+      "max": 3.515625,
+      "mean": 3.4912261962890625,
+      "first": [3.438720703125, 3.416748046875, 3.427734375],
+      "last": 3.4716796875,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "fb6ba316f93894612ef77b64853b13a5cf9f644322b549837a1e9094e06881bd",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 4.39453125,
+      "max": 4.482421875,
+      "mean": 4.457427978515625,
+      "first": [4.4110107421875, 4.39453125, 4.39453125],
+      "last": 4.4384765625,
+      "non_decreasing": false
+     }
+    ]
+   },
+   "fixed_angle": {
+    "meta": {
+     "long_name": "Target angle for sweep",
+     "standard_name": "target_fixed_angle",
+     "units": "degrees"
+    },
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [7],
+     "count": 7,
+     "sha256": "f1a0e22f14d4bdc11acd6fdb6e6c1722f941d5503819e7deb1bce26e61b903ba",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.4833984375,
+     "max": 4.482421875,
+     "mean": 2.0654296875,
+     "first": [0.4833984375, 0.4833984375, 1.494140625],
+     "last": 4.482421875,
+     "non_decreasing": true,
+     "values": [0.4833984375, 0.4833984375, 1.494140625, 1.494140625, 2.5048828125, 3.515625, 4.482421875]
+    }
+   },
+   "sweep_number": {
+    "meta": {"long_name": "Sweep number", "standard_name": "sweep_number", "units": "count"},
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [7],
+     "count": 7,
+     "sha256": "e1a613aa4b331588d97b5feef1faabe8e8138d8c488ee9122b8533bfdda3c189",
+     "min": 0,
+     "max": 6,
+     "sum": 21,
+     "first": [0, 1, 2],
+     "last": 6,
+     "non_decreasing": true,
+     "values": [0, 1, 2, 3, 4, 5, 6]
+    }
+   },
+   "sweep_mode": {
+    "meta": {
+     "comment": "Options are: \"sector\", \"coplane\", \"rhi\", \"vertical_pointing\", \"idle\", \"azimuth_surveillance\", \"elevation_surveillance\", \"sunscan\", \"pointing\", \"manual_ppi\", \"manual_rhi\"",
+     "long_name": "Sweep mode",
+     "standard_name": "sweep_mode",
+     "units": "unitless"
+    },
+    "meta_types": {"comment": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "S20",
+     "shape": [7],
+     "values": [
+      "azimuth_surveillance",
+      "azimuth_surveillance",
+      "azimuth_surveillance",
+      "azimuth_surveillance",
+      "azimuth_surveillance",
+      "azimuth_surveillance",
+      "azimuth_surveillance"
+     ]
+    }
+   },
+   "sweep_start_ray_index": {
+    "meta": {"long_name": "Index of first ray in sweep, 0-based", "units": "count"},
+    "meta_types": {"long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [7],
+     "count": 7,
+     "sha256": "4336dc5d27ce246e329b569a724eda7e6f53f27e9d6b03bb25ef639bf1cc3c19",
+     "min": 0,
+     "max": 2160,
+     "sum": 7560,
+     "first": [0, 360, 720],
+     "last": 2160,
+     "non_decreasing": true,
+     "values": [0, 360, 720, 1080, 1440, 1800, 2160]
+    }
+   },
+   "sweep_end_ray_index": {
+    "meta": {"long_name": "Index of last ray in sweep, 0-based", "units": "count"},
+    "meta_types": {"long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [7],
+     "count": 7,
+     "sha256": "6e7d902044e09b1aa8f1ce6eb5ae8cbdebd7cebbdba0da931619fb355922f7be",
+     "min": 359,
+     "max": 2519,
+     "sum": 10073,
+     "first": [359, 719, 1079],
+     "last": 2519,
+     "non_decreasing": true,
+     "values": [359, 719, 1079, 1439, 1799, 2159, 2519]
+    }
+   },
+   "latitude": {
+    "meta": {"long_name": "Latitude", "standard_name": "Latitude", "units": "degrees_north"},
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "4bdfc309e4030f1db7780bb6455506cb8391dccb3e77c32dd8115ca8e766360f",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 37.06833267211914,
+     "max": 37.06833267211914,
+     "mean": 37.06833267211914,
+     "first": [37.06833267211914],
+     "last": 37.06833267211914,
+     "non_decreasing": true,
+     "values": [37.06833267211914]
+    }
+   },
+   "longitude": {
+    "meta": {"long_name": "Longitude", "standard_name": "Longitude", "units": "degrees_east"},
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "777c6714634c82a052d9c8771e7ce99876785dfa23ea2c443e5511d12143e56c",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -88.77194213867188,
+     "max": -88.77194213867188,
+     "mean": -88.77194213867188,
+     "first": [-88.77194213867188],
+     "last": -88.77194213867188,
+     "non_decreasing": true,
+     "values": [-88.77194213867188]
+    }
+   },
+   "altitude": {
+    "meta": {"long_name": "Altitude", "positive": "up", "standard_name": "Altitude", "units": "meters"},
+    "meta_types": {"long_name": "str", "positive": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "e1af35bc6627c2dd9fd1fcdd5b07e61514ac0f2019cec604a120d591a54744de",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 45.0,
+     "max": 45.0,
+     "mean": 45.0,
+     "first": [45.0],
+     "last": 45.0,
+     "non_decreasing": true,
+     "values": [45.0]
+    }
+   }
+  },
+  "instrument_parameters": {
+   "nyquist_velocity": {
+    "meta": {
+     "comments": "Unambiguous velocity",
+     "long_name": "Nyquist velocity",
+     "meta_group": "instrument_parameters",
+     "units": "meters_per_second"
+    },
+    "meta_types": {"comments": "str", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [2520],
+     "count": 2520,
+     "sha256": "faba1eb887346c1bf3f57ddb823c475630a07a105958e9ba8587b9fb42376d05",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 8.84000015258789,
+     "max": 35.220001220703125,
+     "mean": 27.682858058384486,
+     "first": [8.84000015258789, 8.84000015258789, 8.84000015258789],
+     "last": 35.220001220703125,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "87e70543b7f53c71e26e9c20c942d561088271929281aedbdc239393464f07e7",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 8.84000015258789,
+      "max": 8.84000015258789,
+      "mean": 8.84000015258789,
+      "first": [8.84000015258789, 8.84000015258789, 8.84000015258789],
+      "last": 8.84000015258789,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "a516c02af4deb627cc4c023fe12db8c2a41d96501d94e88432aa9615ebe34903",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 35.220001220703125,
+      "max": 35.220001220703125,
+      "mean": 35.220001220703125,
+      "first": [35.220001220703125, 35.220001220703125, 35.220001220703125],
+      "last": 35.220001220703125,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "87e70543b7f53c71e26e9c20c942d561088271929281aedbdc239393464f07e7",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 8.84000015258789,
+      "max": 8.84000015258789,
+      "mean": 8.84000015258789,
+      "first": [8.84000015258789, 8.84000015258789, 8.84000015258789],
+      "last": 8.84000015258789,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "a516c02af4deb627cc4c023fe12db8c2a41d96501d94e88432aa9615ebe34903",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 35.220001220703125,
+      "max": 35.220001220703125,
+      "mean": 35.220001220703125,
+      "first": [35.220001220703125, 35.220001220703125, 35.220001220703125],
+      "last": 35.220001220703125,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "a516c02af4deb627cc4c023fe12db8c2a41d96501d94e88432aa9615ebe34903",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 35.220001220703125,
+      "max": 35.220001220703125,
+      "mean": 35.220001220703125,
+      "first": [35.220001220703125, 35.220001220703125, 35.220001220703125],
+      "last": 35.220001220703125,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "a516c02af4deb627cc4c023fe12db8c2a41d96501d94e88432aa9615ebe34903",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 35.220001220703125,
+      "max": 35.220001220703125,
+      "mean": 35.220001220703125,
+      "first": [35.220001220703125, 35.220001220703125, 35.220001220703125],
+      "last": 35.220001220703125,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "a516c02af4deb627cc4c023fe12db8c2a41d96501d94e88432aa9615ebe34903",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 35.220001220703125,
+      "max": 35.220001220703125,
+      "mean": 35.220001220703125,
+      "first": [35.220001220703125, 35.220001220703125, 35.220001220703125],
+      "last": 35.220001220703125,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "unambiguous_range": {
+    "meta": {
+     "comments": "Unambiguous range",
+     "long_name": "Unambiguous range",
+     "meta_group": "instrument_parameters",
+     "units": "meters"
+    },
+    "meta_types": {"comments": "str", "long_name": "str", "meta_group": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [2520],
+     "count": 2520,
+     "sha256": "ad5ea90b1857fcf2901f2913859a2f6da3a016d8c32f377ad39c7ff83ac2bcca",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 117000.0,
+     "max": 466000.0,
+     "mean": 216714.2857142857,
+     "first": [466000.0, 466000.0, 466000.0],
+     "last": 117000.0,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "f4da6bfe0bc2596ab6f869e5754362d0e60a38ed35aa4a54c2e009be32094bc5",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 466000.0,
+      "max": 466000.0,
+      "mean": 466000.0,
+      "first": [466000.0, 466000.0, 466000.0],
+      "last": 466000.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9e8fbd2275af198c139e51b971b32b474b70ce942d24c67c45a36ef79e67f228",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 117000.0,
+      "max": 117000.0,
+      "mean": 117000.0,
+      "first": [117000.0, 117000.0, 117000.0],
+      "last": 117000.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "f4da6bfe0bc2596ab6f869e5754362d0e60a38ed35aa4a54c2e009be32094bc5",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 466000.0,
+      "max": 466000.0,
+      "mean": 466000.0,
+      "first": [466000.0, 466000.0, 466000.0],
+      "last": 466000.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9e8fbd2275af198c139e51b971b32b474b70ce942d24c67c45a36ef79e67f228",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 117000.0,
+      "max": 117000.0,
+      "mean": 117000.0,
+      "first": [117000.0, 117000.0, 117000.0],
+      "last": 117000.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9e8fbd2275af198c139e51b971b32b474b70ce942d24c67c45a36ef79e67f228",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 117000.0,
+      "max": 117000.0,
+      "mean": 117000.0,
+      "first": [117000.0, 117000.0, 117000.0],
+      "last": 117000.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9e8fbd2275af198c139e51b971b32b474b70ce942d24c67c45a36ef79e67f228",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 117000.0,
+      "max": 117000.0,
+      "mean": 117000.0,
+      "first": [117000.0, 117000.0, 117000.0],
+      "last": 117000.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "9e8fbd2275af198c139e51b971b32b474b70ce942d24c67c45a36ef79e67f228",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 117000.0,
+      "max": 117000.0,
+      "mean": 117000.0,
+      "first": [117000.0, 117000.0, 117000.0],
+      "last": 117000.0,
+      "non_decreasing": true
+     }
+    ]
+   }
+  },
+  "radar_calibration": null
+ },
+ "fields": {
+  "reflectivity": {
+   "meta": {
+    "_FillValue": -9999.0,
+    "coordinates": "elevation azimuth range",
+    "long_name": "Reflectivity",
+    "standard_name": "equivalent_reflectivity_factor",
+    "units": "dBZ",
+    "valid_max": 94.5,
+    "valid_min": -32.0
+   },
+   "meta_types": {
+    "_FillValue": "float",
+    "coordinates": "str",
+    "long_name": "str",
+    "standard_name": "str",
+    "units": "str",
+    "valid_max": "float",
+    "valid_min": "float"
+   },
+   "dtype": "float32",
+   "shape": [2520, 1840],
+   "masked": true,
+   "total": {
+    "count_unmasked": 125340,
+    "count_masked": 4511460,
+    "count_nan_unmasked": 0,
+    "min": -32.0,
+    "max": 45.5,
+    "mean": -9.734402425402903,
+    "extent": 1292,
+    "sha256": "ad2a91d1c8b8e2750403b6dbefa3cb13719c0501b455ea1d18877c79b264dc2f"
+   },
+   "per_sweep": [
+    {
+     "sweep": 0,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 43708,
+     "count_masked": 618692,
+     "count_nan_unmasked": 0,
+     "min": -29.5,
+     "max": 45.5,
+     "mean": -0.821451450535371,
+     "extent": 856,
+     "sha256": "dd5ce59822457964ea9195be9e99f4a7797190b0329845b8036ab66484306f87"
+    },
+    {
+     "sweep": 1,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 0,
+     "count_masked": 662400,
+     "count_nan_unmasked": 0,
+     "min": null,
+     "max": null,
+     "mean": null,
+     "extent": 0,
+     "sha256": "4411fbbca80544b1ecfec68e1121e4d7292bab5dd8c4e4a97be2f78acc5658a8"
+    },
+    {
+     "sweep": 2,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 23856,
+     "count_masked": 638544,
+     "count_nan_unmasked": 0,
+     "min": -31.5,
+     "max": 28.0,
+     "mean": -12.095238095238095,
+     "extent": 1292,
+     "sha256": "95c3b886c5dfb53ab9ce42061343d455cc31f0a29c73116bfff04deaa284bb8f"
+    },
+    {
+     "sweep": 3,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 0,
+     "count_masked": 662400,
+     "count_nan_unmasked": 0,
+     "min": null,
+     "max": null,
+     "mean": null,
+     "extent": 0,
+     "sha256": "4411fbbca80544b1ecfec68e1121e4d7292bab5dd8c4e4a97be2f78acc5658a8"
+    },
+    {
+     "sweep": 4,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 20960,
+     "count_masked": 641440,
+     "count_nan_unmasked": 0,
+     "min": -31.0,
+     "max": 21.0,
+     "mean": -14.851622137404581,
+     "extent": 916,
+     "sha256": "596a8c4fad99073d30b527b1c3c7a3eaa1a046c022fbd34dc5e62fe42492a28a"
+    },
+    {
+     "sweep": 5,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 19124,
+     "count_masked": 643276,
+     "count_nan_unmasked": 0,
+     "min": -32.0,
+     "max": 22.0,
+     "mean": -15.95304329638151,
+     "extent": 120,
+     "sha256": "c2392d37b88ea3c5f0729ff0f3c276697e2ffa106140f0e9a0aa2c3597533678"
+    },
+    {
+     "sweep": 6,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 17692,
+     "count_masked": 644708,
+     "count_nan_unmasked": 0,
+     "min": -32.0,
+     "max": 13.0,
+     "mean": -15.786004973999548,
+     "extent": 316,
+     "sha256": "2a4da03f22978ca7430be334cbf5866ff37b40583eb17d4aa085fb1ff254b128"
+    }
+   ]
+  },
+  "spectrum_width": {
+   "meta": {
+    "_FillValue": -9999.0,
+    "coordinates": "elevation azimuth range",
+    "long_name": "Spectrum Width",
+    "standard_name": "doppler_spectrum_width",
+    "units": "meters_per_second",
+    "valid_max": 63.0,
+    "valid_min": -63.5
+   },
+   "meta_types": {
+    "_FillValue": "float",
+    "coordinates": "str",
+    "long_name": "str",
+    "standard_name": "str",
+    "units": "str",
+    "valid_max": "float",
+    "valid_min": "float"
+   },
+   "dtype": "float32",
+   "shape": [2520, 1840],
+   "masked": true,
+   "total": {
+    "count_unmasked": 92217,
+    "count_masked": 4544583,
+    "count_nan_unmasked": 0,
+    "min": 0.0,
+    "max": 38.0,
+    "mean": 2.3188837199214896,
+    "extent": 857,
+    "sha256": "3291f2e663bd8482f04935acbf3fd804485d6dd487afeefdca22dd7e5ac2440a"
+   },
+   "per_sweep": [
+    {
+     "sweep": 0,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 0,
+     "count_masked": 662400,
+     "count_nan_unmasked": 0,
+     "min": null,
+     "max": null,
+     "mean": null,
+     "extent": 0,
+     "sha256": "4411fbbca80544b1ecfec68e1121e4d7292bab5dd8c4e4a97be2f78acc5658a8"
+    },
+    {
+     "sweep": 1,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 25450,
+     "count_masked": 636950,
+     "count_nan_unmasked": 0,
+     "min": 0.0,
+     "max": 26.5,
+     "mean": 2.6086444007858547,
+     "extent": 857,
+     "sha256": "26acb24c987d9e4522167a76059ab9728bacad171405d9611873f2f969637223"
+    },
+    {
+     "sweep": 2,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 0,
+     "count_masked": 662400,
+     "count_nan_unmasked": 0,
+     "min": null,
+     "max": null,
+     "mean": null,
+     "extent": 0,
+     "sha256": "4411fbbca80544b1ecfec68e1121e4d7292bab5dd8c4e4a97be2f78acc5658a8"
+    },
+    {
+     "sweep": 3,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 18320,
+     "count_masked": 644080,
+     "count_nan_unmasked": 0,
+     "min": 0.0,
+     "max": 20.5,
+     "mean": 2.174781659388646,
+     "extent": 252,
+     "sha256": "a2792697d2fff173a97e990c68274080d2f607731b6cb7b0fc28779e99695bc0"
+    },
+    {
+     "sweep": 4,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 16977,
+     "count_masked": 645423,
+     "count_nan_unmasked": 0,
+     "min": 0.0,
+     "max": 32.5,
+     "mean": 2.3145137539023386,
+     "extent": 174,
+     "sha256": "63739952aaa3f60a50cf51215b03bf47a72be905989f3abefbd84b8af109c245"
+    },
+    {
+     "sweep": 5,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 15993,
+     "count_masked": 646407,
+     "count_nan_unmasked": 0,
+     "min": 0.0,
+     "max": 38.0,
+     "mean": 2.2973801037954105,
+     "extent": 119,
+     "sha256": "5450ec46887f2362fb768141aca74d5075560d49f2f401cf1b79c6c01887473d"
+    },
+    {
+     "sweep": 6,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 15477,
+     "count_masked": 646923,
+     "count_nan_unmasked": 0,
+     "min": 0.0,
+     "max": 31.5,
+     "mean": 2.039994831039607,
+     "extent": 108,
+     "sha256": "769601ee056b9dcaa2148d8fc5bb7c549930e888252e6216b25821ad38384786"
+    }
+   ]
+  },
+  "velocity": {
+   "meta": {
+    "_FillValue": -9999.0,
+    "coordinates": "elevation azimuth range",
+    "long_name": "Mean doppler Velocity",
+    "standard_name": "radial_velocity_of_scatterers_away_from_instrument",
+    "units": "meters_per_second",
+    "valid_max": 95.0,
+    "valid_min": -95.0
+   },
+   "meta_types": {
+    "_FillValue": "float",
+    "coordinates": "str",
+    "long_name": "str",
+    "standard_name": "str",
+    "units": "str",
+    "valid_max": "float",
+    "valid_min": "float"
+   },
+   "dtype": "float32",
+   "shape": [2520, 1840],
+   "masked": true,
+   "total": {
+    "count_unmasked": 92217,
+    "count_masked": 4544583,
+    "count_nan_unmasked": 0,
+    "min": -35.0,
+    "max": 35.0,
+    "mean": 0.3592775735493456,
+    "extent": 857,
+    "sha256": "ba040db0ad31263842d648a44881e4907dd6e23ee2c7925350b8abac32ffbd8b"
+   },
+   "per_sweep": [
+    {
+     "sweep": 0,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 0,
+     "count_masked": 662400,
+     "count_nan_unmasked": 0,
+     "min": null,
+     "max": null,
+     "mean": null,
+     "extent": 0,
+     "sha256": "4411fbbca80544b1ecfec68e1121e4d7292bab5dd8c4e4a97be2f78acc5658a8"
+    },
+    {
+     "sweep": 1,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 25450,
+     "count_masked": 636950,
+     "count_nan_unmasked": 0,
+     "min": -35.0,
+     "max": 34.0,
+     "mean": 0.27506876227897836,
+     "extent": 857,
+     "sha256": "dec129da618daba45fb4b9bc365e99ffec2f2983c15dcdaaa3e9c3656026d6b1"
+    },
+    {
+     "sweep": 2,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 0,
+     "count_masked": 662400,
+     "count_nan_unmasked": 0,
+     "min": null,
+     "max": null,
+     "mean": null,
+     "extent": 0,
+     "sha256": "4411fbbca80544b1ecfec68e1121e4d7292bab5dd8c4e4a97be2f78acc5658a8"
+    },
+    {
+     "sweep": 3,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 18320,
+     "count_masked": 644080,
+     "count_nan_unmasked": 0,
+     "min": -31.5,
+     "max": 34.5,
+     "mean": 0.4585698689956332,
+     "extent": 252,
+     "sha256": "c2c1d24318b9b8d39b71b647117936d489f9f70b30cab3eb21543ad2f038a4d4"
+    },
+    {
+     "sweep": 4,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 16977,
+     "count_masked": 645423,
+     "count_nan_unmasked": 0,
+     "min": -35.0,
+     "max": 34.0,
+     "mean": 0.4546739706661954,
+     "extent": 174,
+     "sha256": "858d52714ece37de1abfbcb3cc0c4ff2b4c070ade62aac0057385dd1100966b4"
+    },
+    {
+     "sweep": 5,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 15993,
+     "count_masked": 646407,
+     "count_nan_unmasked": 0,
+     "min": -35.0,
+     "max": 35.0,
+     "mean": 0.3872319139623585,
+     "extent": 119,
+     "sha256": "5d783c65a61e20432f3146936c6fb610b1106e098218212ab585eaa65c3f0414"
+    },
+    {
+     "sweep": 6,
+     "rays": 360,
+     "gates": 1840,
+     "count_unmasked": 15477,
+     "count_masked": 646923,
+     "count_nan_unmasked": 0,
+     "min": -34.5,
+     "max": 33.5,
+     "mean": 0.24668863474833624,
+     "extent": 108,
+     "sha256": "f6f4f476b610bf44617583ca1cd6b61964780845e9cfa85060e42afb8db31b78"
+    }
+   ]
+  }
+ }
+}

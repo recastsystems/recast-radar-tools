@@ -1,0 +1,146 @@
+{
+ "schema": "recast-radar-tools/fm301-golden/index/1",
+ "generator": {
+  "script": "tools/fm301_golden.py",
+  "xradar": {
+   "script": "tools/fm301_golden.py",
+   "python": "3.13",
+   "numpy": "2.5.3",
+   "xradar": "0.12.0",
+   "xarray": "2026.7.0",
+   "netCDF4": "1.7.4",
+   "h5netcdf": "1.8.1",
+   "h5py": "3.16.0"
+  },
+  "pyart": {
+   "script": "tools/fm301_golden.py",
+   "python": "3.13",
+   "numpy": "2.5.3",
+   "arm_pyart": "2.2.5",
+   "netCDF4": "1.7.4",
+   "h5py": "3.16.0"
+  }
+ },
+ "xradar_views": {
+  "time": {"first_dim": "time", "mask_and_scale": false, "optional_groups": true},
+  "auto": {"first_dim": "auto", "mask_and_scale": false, "optional_groups": true}
+ },
+ "xradar_decoded": {"first_dim": "time", "optional_groups": true},
+ "pyart_readers": {
+  "nexrad": {"function": "pyart.io.read_nexrad_archive", "kwargs": {"linear_interp": false}},
+  "odim": {"function": "pyart.aux_io.read_odim_h5", "kwargs": {}},
+  "cfradial1": {"function": "pyart.io.read_cfradial", "kwargs": {}}
+ },
+ "files": [
+  {
+   "id": "l2-ktlx-20240315-000217",
+   "reader_kind": "nexrad",
+   "categories": ["nexrad-level2", "modern-dualpol", "sails"],
+   "xradar": "xradar/l2-ktlx-20240315-000217.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/l2-ktlx-20240315-000217.json",
+   "pyart_status": "ok",
+   "note": "Build 22.0 Message 31, VCP 212 with SAILS x3, 20 sweeps. Surveillance cuts carry dual-pol moments on 1192 of 1832 gates; xradar pads them with raw 0 and writes no _FillValue (design note 6.1, A.2)."
+  },
+  {
+   "id": "l2-kdvn-20200810-180401",
+   "reader_kind": "nexrad",
+   "categories": ["nexrad-level2", "modern-dualpol", "meso-sails"],
+   "xradar": "xradar/l2-kdvn-20200810-180401.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/l2-kdvn-20200810-180401.json",
+   "pyart_status": "ok",
+   "note": "Build 18.2 Message 31, VCP 212 with MESO-SAILS x2, 21 sweeps, 8-bit ZDR, VOL 44 v2.0 / RAD 28 blocks, LDM bzip2 records."
+  },
+  {
+   "id": "l2-kpah-20080415-235014",
+   "reader_kind": "nexrad",
+   "categories": ["nexrad-level2", "msg31-legacy-resolution"],
+   "xradar": "xradar/l2-kpah-20080415-235014.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/l2-kpah-20080415-235014.json",
+   "pyart_status": "ok",
+   "note": "AR2V0004 Build 10.0 Message 31 at legacy resolution, VCP 32, 7 sweeps: REF 1 km gates from 500 m, VEL/SW 250 m from 125 m. xradar puts the mixed sweeps 4-6 on REF spacing (VRADH/WRADH misplaced x4); Py-ART repeats REF on 250 m gates (design note 6.2, A.3)."
+  },
+  {
+   "id": "l2-klix-20050829-130035",
+   "reader_kind": "nexrad",
+   "categories": ["nexrad-level2", "message1"],
+   "xradar": "xradar/l2-klix-20050829-130035.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/l2-klix-20050829-130035.json",
+   "pyart_status": "ok",
+   "note": "AR2V0001 Message 1 with metadata messages, VCP 121, 20 sweeps: REF 1 km from 0 m, VEL/SW 250 m from -375 m. xradar needs the gunzipped file, emits no WRADH, puts mixed sweeps on REF spacing and reads the -375 m first gate as 65161 (design note A.3)."
+  },
+  {
+   "id": "l2-ktlx-19990504-002218",
+   "reader_kind": "nexrad",
+   "categories": ["nexrad-level2", "message1", "nul-icao"],
+   "xradar": "xradar/l2-ktlx-19990504-002218.json",
+   "xradar_status": "error",
+   "pyart": "pyart/l2-ktlx-19990504-002218.json",
+   "pyart_status": "ok",
+   "note": "ARCHIVE2.036 Message 1 with NUL ICAO and no site location, VCP 11, 16 sweeps. xradar 0.12 fails to open the volume; Py-ART reads it (design note A.3)."
+  },
+  {
+   "id": "odim-dkrom-20260820-1130-pvol",
+   "reader_kind": "odim",
+   "categories": ["odim-h5", "pvol", "dualpol"],
+   "xradar": "xradar/odim-dkrom-20260820-1130-pvol.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/odim-dkrom-20260820-1130-pvol.json",
+   "pyart_status": "ok",
+   "note": "DMI Romo PVOL, 10 sweeps x 8 quantities (VRAD not VRADH; TH in dBZ; LDR all nodata), equal ODIM start and end times, which xradar warns about (design note A.4)."
+  },
+  {
+   "id": "odim-iesha-20260305-0115-pvol",
+   "reader_kind": "odim",
+   "categories": ["odim-h5", "pvol", "gate-tiers", "vertical-sweep"],
+   "xradar": "xradar/odim-iesha-20260305-0115-pvol.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/odim-iesha-20260305-0115-pvol.json",
+   "pyart_status": "ok",
+   "note": "Met Eireann Shannon PVOL, 10 sweeps with gate tiers 497/350/240/100 and a 90 deg top sweep, measured azimuths and ray times; first_dim=time rotates rays (design note A.4)."
+  },
+  {
+   "id": "odim-espdg-20260707-1927-pvol-dbzh-vradh",
+   "reader_kind": "odim",
+   "categories": ["odim-h5", "pvol", "float64"],
+   "xradar": "xradar/odim-espdg-20260707-1927-pvol-dbzh-vradh.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/odim-espdg-20260707-1927-pvol-dbzh-vradh.json",
+   "pyart_status": "ok",
+   "note": "AEMET Perdiguera PVOL, 2 sweeps, DBZH and VRADH as float64 planes (gain 1, offset 0, nodata 95.5, undetect -32; design note 7.2)."
+  },
+  {
+   "id": "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
+   "reader_kind": "cfradial1",
+   "categories": ["cfradial1", "ppi", "int8-packed"],
+   "xradar": "xradar/cfrad1-irene-sr2-20110827-120420-sur-sweeps01.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/cfrad1-irene-sr2-20110827-120420-sur-sweeps01.json",
+   "pyart_status": "ok",
+   "note": "SMART-R2 Radx CfRadial 1.3 PPI, 2 sweeps, int8 packed DBZ/VEL with _FillValue -128, per-ray instrument variables and r_calib_* calibration (design note A.5)."
+  },
+  {
+   "id": "cfrad1-dow8-20211011-223602-rhi-trim3-classic",
+   "reader_kind": "cfradial1",
+   "categories": ["cfradial1", "rhi", "int16-packed", "moving-platform"],
+   "xradar": "xradar/cfrad1-dow8-20211011-223602-rhi-trim3-classic.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/cfrad1-dow8-20211011-223602-rhi-trim3-classic.json",
+   "pyart_status": "ok",
+   "note": "DOW8 Radx CfRadial 1.4 RHI, 1 sweep, int16 packed DBZHC/VEL/WIDTH with float32 scale_factor, georeference variables; xradar uses dimension azimuth (design note A.5)."
+  },
+  {
+   "id": "cfrad1-xsapr-sgp-20110520-ppi-netcdf4",
+   "reader_kind": "cfradial1",
+   "categories": ["cfradial1", "ppi", "float32"],
+   "xradar": "xradar/cfrad1-xsapr-sgp-20110520-ppi-netcdf4.json",
+   "xradar_status": "ok",
+   "pyart": "pyart/cfrad1-xsapr-sgp-20110520-ppi-netcdf4.json",
+   "pyart_status": "ok",
+   "note": "ARM X-SAPR CfRadial 1.2 PPI (netCDF-4), 1 sweep of 40 rays x 42 gates, float32 reflectivity_horizontal with _FillValue -9999 (design note 7.3)."
+  }
+ ]
+}

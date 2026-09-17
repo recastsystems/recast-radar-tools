@@ -1,0 +1,501 @@
+{
+ "schema": "recast-radar-tools/fm301-golden/pyart/1",
+ "id": "odim-espdg-20260707-1927-pvol-dbzh-vradh",
+ "format": "odim-h5",
+ "sha256": "1d297d435a504df3cf09e06054bb588be3417af112839a3a0685e5fd95abdfbd",
+ "size": 162450,
+ "categories": ["odim-h5", "pvol", "float64"],
+ "note": "AEMET Perdiguera PVOL, 2 sweeps, DBZH and VRADH as float64 planes (gain 1, offset 0, nodata 95.5, undetect -32; design note 7.2).",
+ "generator": {
+  "script": "tools/fm301_golden.py",
+  "python": "3.13",
+  "numpy": "2.5.3",
+  "arm_pyart": "2.2.5",
+  "netCDF4": "1.7.4",
+  "h5py": "3.16.0"
+ },
+ "reader": {"function": "pyart.aux_io.read_odim_h5", "input": "file", "kwargs": {}},
+ "status": "ok",
+ "error": null,
+ "warnings": [
+  "UserWarning: Py-ART's ODIM module is deprecated, please use xradar to read in the file using xd.io.open_odim_datatree",
+  "DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC)."
+ ],
+ "radar": {
+  "scan_type": "ppi",
+  "nrays": 720,
+  "ngates": 299,
+  "nsweeps": 2,
+  "metadata": {
+   "Conventions": "CF/Radial instrument_parameters",
+   "comment": "",
+   "history": "",
+   "institution": "",
+   "instrument_name": "",
+   "odim_conventions": "ODIM_H5/V2_4",
+   "original_container": "odim_h5",
+   "references": "",
+   "source": "WMO:08162,RAD:SP47,PLC:Perdiguera,NOD:espdg",
+   "title": "",
+   "version": "H5rad 2.4"
+  },
+  "metadata_types": {
+   "Conventions": "str",
+   "comment": "str",
+   "history": "str",
+   "institution": "str",
+   "instrument_name": "str",
+   "odim_conventions": "str",
+   "original_container": "str",
+   "references": "str",
+   "source": "str",
+   "title": "str",
+   "version": "str"
+  },
+  "sweeps": [
+   {"sweep": 0, "start": 0, "end": 359, "rays": 360},
+   {"sweep": 1, "start": 360, "end": 719, "rays": 360}
+  ],
+  "variables": {
+   "time": {
+    "meta": {
+     "calendar": "gregorian",
+     "comment": "Coordinate variable for time. Time at the center of each ray, in fractional seconds since the global variable time_coverage_start",
+     "long_name": "time_in_seconds_since_volume_start",
+     "standard_name": "time",
+     "units": "seconds since 2026-07-07T19:27:49Z"
+    },
+    "meta_types": {
+     "calendar": "str",
+     "comment": "str",
+     "long_name": "str",
+     "standard_name": "str",
+     "units": "str"
+    },
+    "values": {
+     "dtype": "float32",
+     "shape": [720],
+     "count": 720,
+     "sha256": "b88767585691da6ace1d416380586c73fb990673ce39d4e14228400535ac319f",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.0,
+     "max": 61.0,
+     "mean": 36.00277777777778,
+     "first": [0.0, 0.0, 0.0],
+     "last": 61.0,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "683796816c367333cab4807ccba934474bb76b863758cdcb7f9a5361c9ab7201",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.0,
+      "max": 61.0,
+      "mean": 30.002777777777776,
+      "first": [0.0, 0.0, 0.0],
+      "last": 61.0,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "f7b095ff9af54a0326cca8e3ca90a4b17c6bfc8b01a8161d19ddd4f5d8271fc1",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 24.0,
+      "max": 61.0,
+      "mean": 42.00277777777778,
+      "first": [24.0, 24.0, 24.0],
+      "last": 61.0,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "range": {
+    "meta": {
+     "axis": "radial_range_coordinate",
+     "comment": "Coordinate variable for range. Range to center of each bin.",
+     "long_name": "range_to_measurement_volume",
+     "meters_between_gates": 500.0,
+     "meters_to_center_of_first_gate": 200000.0,
+     "spacing_is_constant": "true",
+     "standard_name": "projection_range_coordinate",
+     "units": "meters"
+    },
+    "meta_types": {
+     "axis": "str",
+     "comment": "str",
+     "long_name": "str",
+     "meters_between_gates": "float",
+     "meters_to_center_of_first_gate": "float",
+     "spacing_is_constant": "str",
+     "standard_name": "str",
+     "units": "str"
+    },
+    "values": {
+     "dtype": "float32",
+     "shape": [299],
+     "count": 299,
+     "sha256": "28f6bac561542f7bcf440d86f78b30561bd838f1b90cb6daa34662f1e2e7e534",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 200250.0,
+     "max": 349250.0,
+     "mean": 274750.0,
+     "first": [200250.0, 200750.0, 201250.0],
+     "last": 349250.0,
+     "non_decreasing": true
+    }
+   },
+   "azimuth": {
+    "meta": {
+     "axis": "radial_azimuth_coordinate",
+     "comment": "Azimuth of antenna relative to true north",
+     "long_name": "azimuth_angle_from_true_north",
+     "standard_name": "beam_azimuth_angle",
+     "units": "degrees"
+    },
+    "meta_types": {"axis": "str", "comment": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [720],
+     "count": 720,
+     "sha256": "835531fe0b4234422dd94037622a4dce3260b72eb566259f7fd8f14c25d4c3cb",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -179.9945068359375,
+     "max": 179.98077392578125,
+     "mean": -0.005825042724609375,
+     "first": [1.00250244140625, 1.9830322265625, 3.01300048828125],
+     "last": -0.0054931640625,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "4741825812adcb7b0a625078dc3e0be27521d96dfed0b1ea6d736b509fe0448e",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -179.9945068359375,
+      "max": 178.9837646484375,
+      "mean": -0.5062484741210938,
+      "first": [1.00250244140625, 1.9830322265625, 3.01300048828125],
+      "last": -0.00823974609375,
+      "non_decreasing": false
+     },
+     {
+      "dtype": "float32",
+      "shape": [360],
+      "count": 360,
+      "sha256": "e8d9dddcf47f3fdc178837ad12cedc3a49be719abadd2432c00c7415e637d8df",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": -179.00299072265625,
+      "max": 179.98077392578125,
+      "mean": 0.494598388671875,
+      "first": [1.00799560546875, 1.9830322265625, 2.99652099609375],
+      "last": -0.0054931640625,
+      "non_decreasing": false
+     }
+    ]
+   },
+   "elevation": {
+    "meta": {
+     "axis": "radial_elevation_coordinate",
+     "comment": "Elevation of antenna relative to the horizontal plane",
+     "long_name": "elevation_angle_from_horizontal_plane",
+     "standard_name": "beam_elevation_angle",
+     "units": "degrees"
+    },
+    "meta_types": {"axis": "str", "comment": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [720],
+     "count": 720,
+     "sha256": "f791c11d05978999770de34c335ea9fcede400e961e850de1f3e8bf8e6a01add",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.4998779296875,
+     "max": 1.4996337890625,
+     "mean": 0.999755859375,
+     "first": [1.4996337890625, 1.4996337890625, 1.4996337890625],
+     "last": 0.4998779296875,
+     "non_decreasing": false
+    },
+    "per_sweep": [
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "0a9bb1d13689abb8159528d44fec06d95346ad23727dcfbf836bf300f91c48f4",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 1.4996337890625,
+      "max": 1.4996337890625,
+      "mean": 1.4996337890625,
+      "first": [1.4996337890625, 1.4996337890625, 1.4996337890625],
+      "last": 1.4996337890625,
+      "non_decreasing": true
+     },
+     {
+      "dtype": "float64",
+      "shape": [360],
+      "count": 360,
+      "sha256": "ba783f83479b57c3d88ab4d29dbfd6cd5d6cbacea28badd42b497cb282153c4a",
+      "count_nan": 0,
+      "count_inf": 0,
+      "min": 0.4998779296875,
+      "max": 0.4998779296875,
+      "mean": 0.4998779296875,
+      "first": [0.4998779296875, 0.4998779296875, 0.4998779296875],
+      "last": 0.4998779296875,
+      "non_decreasing": true
+     }
+    ]
+   },
+   "fixed_angle": {
+    "meta": {
+     "long_name": "Target angle for sweep",
+     "standard_name": "target_fixed_angle",
+     "units": "degrees"
+    },
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "60f9969a0ffbcae522c6ffd33a69119cd1f6d3b024edcbe9da85117402dc7e96",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 0.4998779296875,
+     "max": 1.4996337890625,
+     "mean": 0.999755859375,
+     "first": [1.4996337890625, 0.4998779296875],
+     "last": 0.4998779296875,
+     "non_decreasing": false,
+     "values": [1.4996337890625, 0.4998779296875]
+    }
+   },
+   "sweep_number": {
+    "meta": {"long_name": "Sweep number", "standard_name": "sweep_number", "units": "count"},
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d",
+     "min": 0,
+     "max": 1,
+     "sum": 1,
+     "first": [0, 1],
+     "last": 1,
+     "non_decreasing": true,
+     "values": [0, 1]
+    }
+   },
+   "sweep_mode": {
+    "meta": {
+     "comment": "Options are: \"sector\", \"coplane\", \"rhi\", \"vertical_pointing\", \"idle\", \"azimuth_surveillance\", \"elevation_surveillance\", \"sunscan\", \"pointing\", \"manual_ppi\", \"manual_rhi\"",
+     "long_name": "Sweep mode",
+     "standard_name": "sweep_mode",
+     "units": "unitless"
+    },
+    "meta_types": {"comment": "str", "long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {"dtype": "U20", "shape": [2], "values": ["azimuth_surveillance", "azimuth_surveillance"]}
+   },
+   "sweep_start_ray_index": {
+    "meta": {"long_name": "Index of first ray in sweep, 0-based", "units": "count"},
+    "meta_types": {"long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "95ddd6f483e45e5dc04240b29beb83b1544e0ee137ea479c8c6a063bb623257b",
+     "min": 0,
+     "max": 360,
+     "sum": 360,
+     "first": [0, 360],
+     "last": 360,
+     "non_decreasing": true,
+     "values": [0, 360]
+    }
+   },
+   "sweep_end_ray_index": {
+    "meta": {"long_name": "Index of last ray in sweep, 0-based", "units": "count"},
+    "meta_types": {"long_name": "str", "units": "str"},
+    "values": {
+     "dtype": "int32",
+     "shape": [2],
+     "count": 2,
+     "sha256": "520abb9c42bea3ad9221c0fb65fe0d0a08c3c9ccd4133552bba9923d20bffee5",
+     "min": 359,
+     "max": 719,
+     "sum": 1078,
+     "first": [359, 719],
+     "last": 719,
+     "non_decreasing": true,
+     "values": [359, 719]
+    }
+   },
+   "latitude": {
+    "meta": {"long_name": "Latitude", "standard_name": "Latitude", "units": "degrees_north"},
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "b7161b21a08d9c41ab89184de8002a9e5f1313408fe6a5365cbe9589d4684821",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 41.7339900881052,
+     "max": 41.7339900881052,
+     "mean": 41.7339900881052,
+     "first": [41.7339900881052],
+     "last": 41.7339900881052,
+     "non_decreasing": true,
+     "values": [41.7339900881052]
+    }
+   },
+   "longitude": {
+    "meta": {"long_name": "Longitude", "standard_name": "Longitude", "units": "degrees_east"},
+    "meta_types": {"long_name": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "0049d020e7f370af8aef90b550529dd3e80db863679fd37a2e83a54b122342d1",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": -0.5459400080144405,
+     "max": -0.5459400080144405,
+     "mean": -0.5459400080144405,
+     "first": [-0.5459400080144405],
+     "last": -0.5459400080144405,
+     "non_decreasing": true,
+     "values": [-0.5459400080144405]
+    }
+   },
+   "altitude": {
+    "meta": {"long_name": "Altitude", "positive": "up", "standard_name": "Altitude", "units": "meters"},
+    "meta_types": {"long_name": "str", "positive": "str", "standard_name": "str", "units": "str"},
+    "values": {
+     "dtype": "float64",
+     "shape": [1],
+     "count": 1,
+     "sha256": "c76b7909dfa6e2d0afaf795a7aeee941d48f37ebcdf68084845e391d0895e833",
+     "count_nan": 0,
+     "count_inf": 0,
+     "min": 835.0,
+     "max": 835.0,
+     "mean": 835.0,
+     "first": [835.0],
+     "last": 835.0,
+     "non_decreasing": true,
+     "values": [835.0]
+    }
+   }
+  },
+  "instrument_parameters": null,
+  "radar_calibration": null
+ },
+ "fields": {
+  "reflectivity_horizontal": {
+   "meta": {"_FillValue": -9999.0},
+   "meta_types": {"_FillValue": "float"},
+   "dtype": "float32",
+   "shape": [720, 299],
+   "masked": true,
+   "total": {
+    "count_unmasked": 35160,
+    "count_masked": 180120,
+    "count_nan_unmasked": 0,
+    "min": -31.5,
+    "max": 49.5,
+    "mean": -0.49938850967007964,
+    "extent": 298,
+    "sha256": "56029eb1e101e6d715262cd2c1a6c3729c5b91f6a38ba847c39bb06a269c7206"
+   },
+   "per_sweep": [
+    {
+     "sweep": 0,
+     "rays": 360,
+     "gates": 299,
+     "count_unmasked": 16771,
+     "count_masked": 90869,
+     "count_nan_unmasked": 0,
+     "min": -31.5,
+     "max": 46.0,
+     "mean": -0.028024566215491025,
+     "extent": 298,
+     "sha256": "2dcabee7286c0330ef9e30367cabe8f1830f16e08dc8fd9de76d5bdc6cb8e0c4"
+    },
+    {
+     "sweep": 1,
+     "rays": 360,
+     "gates": 299,
+     "count_unmasked": 18389,
+     "count_masked": 89251,
+     "count_nan_unmasked": 0,
+     "min": -31.5,
+     "max": 49.5,
+     "mean": -0.9292783729403448,
+     "extent": 298,
+     "sha256": "4c7dc7947f2b89be93b06e5c79216ea06d9a92ebfa48d44ccb4121868507fe36"
+    }
+   ]
+  },
+  "velocity_horizontal": {
+   "meta": {"_FillValue": -9999.0},
+   "meta_types": {"_FillValue": "float"},
+   "dtype": "float32",
+   "shape": [720, 299],
+   "masked": true,
+   "total": {
+    "count_unmasked": 215280,
+    "count_masked": 0,
+    "count_nan_unmasked": 0,
+    "min": -36.75370788574219,
+    "max": 39.895050048828125,
+    "mean": 0.04158397398027998,
+    "extent": 299,
+    "sha256": "ba6833eb9915fadca10a81f641f0724fe0bcb84212843841905783d63df99b77"
+   },
+   "per_sweep": [
+    {
+     "sweep": 0,
+     "rays": 360,
+     "gates": 299,
+     "count_unmasked": 107640,
+     "count_masked": 0,
+     "count_nan_unmasked": 0,
+     "min": -34.24063491821289,
+     "max": 32.35582733154297,
+     "mean": 0.14485954913241142,
+     "extent": 299,
+     "sha256": "82557ad489b84c9b504fabe6ed6d1271e4b02c6082be667e8eca371be708e54f"
+    },
+    {
+     "sweep": 1,
+     "rays": 360,
+     "gates": 299,
+     "count_unmasked": 107640,
+     "count_masked": 0,
+     "count_nan_unmasked": 0,
+     "min": -36.75370788574219,
+     "max": 39.895050048828125,
+     "mean": -0.06169160117185147,
+     "extent": 299,
+     "sha256": "5e12e0a27ff1ba5dedd88eccd15ba475a119134f53c6d176b7e1f4254f7671e0"
+    }
+   ]
+  }
+ }
+}

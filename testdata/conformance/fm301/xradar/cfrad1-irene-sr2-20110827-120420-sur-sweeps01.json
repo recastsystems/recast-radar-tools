@@ -1,0 +1,5810 @@
+{
+ "schema": "recast-radar-tools/fm301-golden/xradar/1",
+ "id": "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
+ "format": "cfradial1",
+ "sha256": "6c9d57caf330a1fdfe7366b6440204523853089342769c3b7d789a7edd89feb9",
+ "size": 1664412,
+ "categories": ["cfradial1", "ppi", "int8-packed"],
+ "note": "SMART-R2 Radx CfRadial 1.3 PPI, 2 sweeps, int8 packed DBZ/VEL with _FillValue -128, per-ray instrument variables and r_calib_* calibration (design note A.5).",
+ "generator": {
+  "script": "tools/fm301_golden.py",
+  "python": "3.13",
+  "numpy": "2.5.3",
+  "xradar": "0.12.0",
+  "xarray": "2026.7.0",
+  "netCDF4": "1.7.4",
+  "h5netcdf": "1.8.1",
+  "h5py": "3.16.0"
+ },
+ "reader": {
+  "function": "xradar.io.open_cfradial1_datatree",
+  "input": "file",
+  "input_sha256": "6c9d57caf330a1fdfe7366b6440204523853089342769c3b7d789a7edd89feb9",
+  "input_size": 1664412
+ },
+ "status": "ok",
+ "error": null,
+ "warnings": [],
+ "views": {
+  "time": {
+   "kwargs": {"first_dim": "time", "mask_and_scale": false, "optional_groups": true},
+   "groups": [
+    {
+     "path": "/",
+     "dims": {"frequency": 1, "sweep": 2},
+     "attrs": {
+      "Conventions": "CF-1.6",
+      "comment": "",
+      "history": "Sigmet RAW file: ",
+      "institution": "",
+      "instrument_name": "CPOLRVP",
+      "platform_is_mobile": "false",
+      "ray_times_increase": "true",
+      "references": "Conversion software: Radx::SigmetRadxFile",
+      "scan_id": 0,
+      "scan_name": "IRENE_WINDS",
+      "site_name": "CPOLRVP",
+      "source": "Sigmet IRIS software",
+      "title": "IRENE-WINDS",
+      "version": "CF-Radial-1.3"
+     },
+     "attr_types": {
+      "Conventions": "str",
+      "comment": "str",
+      "history": "str",
+      "institution": "str",
+      "instrument_name": "str",
+      "platform_is_mobile": "str",
+      "ray_times_increase": "str",
+      "references": "str",
+      "scan_id": "int32",
+      "scan_name": "str",
+      "site_name": "str",
+      "source": "str",
+      "title": "str",
+      "version": "str"
+     },
+     "variables": [
+      {
+       "name": "altitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {"_FillValue": -9999.0, "long_name": "altitude", "positive": "up", "units": "meters"},
+       "attr_types": {"_FillValue": "float", "long_name": "str", "positive": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "frequency",
+       "role": "coord",
+       "dims": ["frequency"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "transmission_frequency",
+        "meta_group": "instrument_parameters",
+        "units": "s-1"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [1],
+        "count": 1,
+        "sha256": "c1a33f90e6d33adbe79343e12715286cf3efd5fc309880ebd69ca350cf05e08e",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 5624624128.0,
+        "max": 5624624128.0,
+        "mean": 5624624128.0,
+        "first": [5624624128.0],
+        "last": 5624624128.0,
+        "non_decreasing": true,
+        "values": [5624624128.0]
+       }
+      },
+      {
+       "name": "latitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {"_FillValue": -9999.0, "long_name": "latitude", "units": "degrees_north"},
+       "attr_types": {"_FillValue": "float", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": 34.73310470581055}
+      },
+      {
+       "name": "longitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {"_FillValue": -9999.0, "long_name": "longitude", "units": "degrees_east"},
+       "attr_types": {"_FillValue": "float", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": -76.66191101074219}
+      },
+      {
+       "name": "altitude_agl",
+       "role": "data",
+       "dims": [],
+       "dtype": "float64",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "altitude_above_ground_level",
+        "positive": "up",
+        "units": "meters"
+       },
+       "attr_types": {"_FillValue": "float", "long_name": "str", "positive": "str", "units": "str"},
+       "encoding": {"dtype": "float64"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float64", "shape": [], "value": -65.0}
+      },
+      {
+       "name": "instrument_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "long_name": "type_of_instrument",
+        "meta_group": "instrument_parameters",
+        "options": "radar, lidar"
+       },
+       "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "radar"}
+      },
+      {
+       "name": "platform_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "long_name": "platform_type",
+        "options": "fixed, vehicle, ship, aircraft_fore, aircraft_aft, aircraft_tail, aircraft_belly, aircraft_roof, aircraft_nose, satellite_orbit, satellite_geostat"
+       },
+       "attr_types": {"long_name": "str", "options": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "primary_axis",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "long_name": "primary_axis_of_rotation",
+        "options": "axis_z, axis_y, axis_x, axis_z_prime, axis_y_prime, axis_x_prime"
+       },
+       "attr_types": {"long_name": "str", "options": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "axis_z"}
+      },
+      {
+       "name": "status_str",
+       "role": "data",
+       "dims": [],
+       "dtype": "S1",
+       "attrs": {"long_name": "status_of_instrument"},
+       "attr_types": {"long_name": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S1", "shape": [], "value": ""}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "ray_target_fixed_angle", "units": "degrees"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [2],
+        "count": 2,
+        "sha256": "60cefe547dfb93cd6387dfc8cdb301672c7cb5607c390eeefcc542e54c219e3a",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.802001953125,
+        "max": 1.4996337890625,
+        "mean": 1.15081787109375,
+        "first": [0.802001953125, 1.4996337890625],
+        "last": 1.4996337890625,
+        "non_decreasing": true,
+        "values": [0.802001953125, 1.4996337890625]
+       }
+      },
+      {
+       "name": "sweep_group_name",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "U7",
+       "attrs": {},
+       "attr_types": {},
+       "encoding": {"dtype": "U7"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "U7", "shape": [2], "values": ["sweep_0", "sweep_1"]}
+      },
+      {
+       "name": "time_coverage_end",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {"long_name": "data_volume_end_time_utc"},
+       "attr_types": {"long_name": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:08:02Z"}
+      },
+      {
+       "name": "time_coverage_start",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "comment": "ray times are relative to start time in secs",
+        "long_name": "data_volume_start_time_utc"
+       },
+       "attr_types": {"comment": "str", "long_name": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:04:20Z"}
+      },
+      {
+       "name": "volume_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int32",
+       "attrs": {"_FillValue": -9999, "long_name": "data_volume_index_number", "units": ""},
+       "attr_types": {"_FillValue": "int32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "int32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "int32", "shape": [], "value": 395}
+      }
+     ]
+    },
+    {
+     "path": "/radar_parameters",
+     "dims": {},
+     "attrs": {},
+     "attr_types": {},
+     "variables": [
+      {
+       "name": "radar_antenna_gain_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "nominal_radar_antenna_gain_h_channel",
+        "meta_group": "radar_parameters",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "radar_antenna_gain_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "nominal_radar_antenna_gain_v_channel",
+        "meta_group": "radar_parameters",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "radar_beam_width_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "half_power_radar_beam_width_h_channel",
+        "meta_group": "radar_parameters",
+        "units": "degrees"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 1.559999942779541}
+      },
+      {
+       "name": "radar_beam_width_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "half_power_radar_beam_width_v_channel",
+        "meta_group": "radar_parameters",
+        "units": "degrees"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 1.559999942779541}
+      },
+      {
+       "name": "radar_receiver_bandwidth",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_receiver_bandwidth",
+        "meta_group": "radar_parameters",
+        "units": "s-1"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      }
+     ]
+    },
+    {
+     "path": "/georeferencing_correction",
+     "dims": {},
+     "attrs": {},
+     "attr_types": {},
+     "variables": []
+    },
+    {
+     "path": "/radar_calibration",
+     "dims": {},
+     "attrs": {},
+     "attr_types": {},
+     "variables": [
+      {
+       "name": "antenna_gain_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_antenna_gain_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "antenna_gain_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_antenna_gain_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_reflectivity_at_1km_at_zero_snr_h_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBZ"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_reflectivity_at_1km_at_zero_snr_h_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBZ"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_reflectivity_at_1km_at_zero_snr_v_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBZ"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_reflectivity_at_1km_at_zero_snr_v_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBZ"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "coupler_forward_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_coupler_forward_loss_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "coupler_forward_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_coupler_forward_loss_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "dbz_correction",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_dbz_correction",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "ldr_correction_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_ldr_correction_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -77.9800033569336}
+      },
+      {
+       "name": "ldr_correction_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_ldr_correction_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "noise_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_noise_h_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -105.69000244140625}
+      },
+      {
+       "name": "noise_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_noise_h_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_source_power_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_noise_source_power_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_source_power_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_noise_source_power_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_noise_v_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_noise_v_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "power_measure_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_power_measurement_loss_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "power_measure_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_power_measurement_loss_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "pulse_width",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_pulse_width",
+        "meta_group": "radar_calibration",
+        "units": "seconds"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -0.009998999536037445}
+      },
+      {
+       "name": "radar_constant_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_constant_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 96.13999938964844}
+      },
+      {
+       "name": "radar_constant_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_constant_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_gain_h_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_gain_h_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_gain_v_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_gain_v_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_mismatch_loss",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_receiver_mismatch_loss",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_slope_h_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_slope_h_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_slope_v_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_receiver_slope_v_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_sun_power_h_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_sun_power_h_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_sun_power_v_co_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_sun_power_v_cross_polar_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "system_phidp",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_system_phidp",
+        "meta_group": "radar_calibration",
+        "units": "degrees"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "test_power_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_test_power_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "test_power_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_test_power_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "time",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {"long_name": "radar_calibration_time_utc", "meta_group": "radar_calibration"},
+       "attr_types": {"long_name": "str", "meta_group": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:04:20Z"}
+      },
+      {
+       "name": "two_way_radome_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_two_way_radome_loss_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "two_way_radome_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_two_way_radome_loss_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "two_way_waveguide_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_two_way_waveguide_loss_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "two_way_waveguide_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "radar_calibration_two_way_waveguide_loss_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "xmit_power_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_xmit_power_h_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 82.04119873046875}
+      },
+      {
+       "name": "xmit_power_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_xmit_power_v_channel",
+        "meta_group": "radar_calibration",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "zdr_correction",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "calibrated_radar_zdr_correction",
+        "meta_group": "radar_calibration",
+        "units": "db"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": -76.97000122070312}
+      }
+     ]
+    },
+    {
+     "path": "/sweep_0",
+     "dims": {"range": 1107, "time": 360},
+     "attrs": {},
+     "attr_types": {},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "ray_azimuth_angle", "units": "degrees"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "4cea434f51b546ee8b485df53d04a464a174fd473518d03be17f9c3d32b8f3e8",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.208740234375,
+        "max": 359.18701171875,
+        "mean": 179.695556640625,
+        "first": [314.20074462890625, 315.20599365234375, 316.20025634765625],
+        "last": 313.21197509765625,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "ray_elevation_angle",
+        "positive": "up",
+        "units": "degrees"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "positive": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "9c5fc449a1ba606a408a72e024295a4c84333a34b59e1f3334d582bf7d81e016",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.6976318359375,
+        "max": 0.80474853515625,
+        "mean": 0.7900009155273438,
+        "first": [0.791015625, 0.780029296875, 0.80474853515625],
+        "last": 0.791015625,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "attrs": {
+        "long_name": "Range from instrument to center of gate",
+        "meters_between_gates": 75.00000298023224,
+        "meters_to_center_of_first_gate": 0.0,
+        "spacing_is_constant": "true",
+        "units": "meters"
+       },
+       "attr_types": {
+        "long_name": "str",
+        "meters_between_gates": "float",
+        "meters_to_center_of_first_gate": "float",
+        "spacing_is_constant": "str",
+        "units": "str"
+       },
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [1107],
+        "count": 1107,
+        "sha256": "5072624d63ed67fcb03129c7264204b4b837e83352b67b87dc44f1cee2ba0a26",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 82950.0,
+        "mean": 41475.0,
+        "first": [0.0, 75.0, 150.0],
+        "last": 82950.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "datetime64[ns]",
+       "attrs": {
+        "comment": "times are relative to the volume start_time",
+        "long_name": "time in seconds since volume start",
+        "standard_name": "time"
+       },
+       "attr_types": {"comment": "str", "long_name": "str", "standard_name": "str"},
+       "encoding": {"calendar": "gregorian", "dtype": "float64", "units": "seconds since 2011-08-27T12:04:20Z"},
+       "encoding_types": {"calendar": "str", "dtype": "dtype", "units": "str"},
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [360],
+        "count": 360,
+        "sha256": "701ddabe95eda30771288883c4d025bfd40f301686b1b3facec396447847ab02",
+        "count_nat": 0,
+        "min": 1314446660.76,
+        "max": 1314446672.76,
+        "mean": 1314446666.2933335,
+        "first": [1314446660.76, 1314446660.76, 1314446660.76],
+        "last": 1314446672.76,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "DBZ",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "int8",
+       "attrs": {
+        "_FillValue": -128,
+        "add_offset": 32.0,
+        "grid_mapping": "grid_mapping",
+        "sampling_ratio": 1.0,
+        "scale_factor": 0.5,
+        "units": "dBZ"
+       },
+       "attr_types": {
+        "_FillValue": "int8",
+        "add_offset": "float32",
+        "grid_mapping": "str",
+        "sampling_ratio": "float32",
+        "scale_factor": "float32",
+        "units": "str"
+       },
+       "encoding": {"coordinates": "time range", "dtype": "int8"},
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "int8",
+        "shape": [360, 1107],
+        "count": 398520,
+        "sha256": "8eb39e15c1244610e4c885547716b5ba3ddb8321e0e5d36c26de2b857a3bfc9a",
+        "min": -128,
+        "max": 75,
+        "sum": -9337543
+       }
+      },
+      {
+       "name": "VEL",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "int8",
+       "attrs": {
+        "_FillValue": -128,
+        "add_offset": 0.0,
+        "grid_mapping": "grid_mapping",
+        "sampling_ratio": 1.0,
+        "scale_factor": 0.3777165412902832,
+        "units": "m/s"
+       },
+       "attr_types": {
+        "_FillValue": "int8",
+        "add_offset": "float32",
+        "grid_mapping": "str",
+        "sampling_ratio": "float32",
+        "scale_factor": "float32",
+        "units": "str"
+       },
+       "encoding": {"coordinates": "time range", "dtype": "int8"},
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "int8",
+        "shape": [360, 1107],
+        "count": 398520,
+        "sha256": "1b7d3e101e5ff560dace3a36154a63de732650b13630d4b69a8a66b2c4849b3f",
+        "min": -127,
+        "max": 127,
+        "sum": -487869
+       }
+      },
+      {
+       "name": "antenna_transition",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "int8",
+       "attrs": {
+        "_FillValue": -128,
+        "comment": "1 if antenna is in transition, 0 otherwise",
+        "long_name": "antenna_is_in_transition_between_sweeps",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "int8", "comment": "str", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "int8"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "int8",
+        "shape": [360],
+        "count": 360,
+        "sha256": "d3df611a0ed2e328b050d285287637c60643ba96ec09e4aaefaad7f2cd114b77",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "long_name": "follow_mode_for_scan_strategy",
+        "meta_group": "instrument_parameters",
+        "options": "none, sun, vehicle, aircraft, target, manual"
+       },
+       "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "none"}
+      },
+      {
+       "name": "measured_transmit_power_h",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "measured_radar_transmit_power_h_channel",
+        "meta_group": "radar_parameters",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "measured_transmit_power_v",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "measured_radar_transmit_power_v_channel",
+        "meta_group": "radar_parameters",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "n_samples",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "int32",
+       "attrs": {
+        "_FillValue": -9999,
+        "long_name": "number_of_samples_used_to_compute_moments",
+        "meta_group": "instrument_parameters",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "int32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "int32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "int32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "5924cee464535f9675ad5b16cd721d716cc97f01f931b740df4b33dacf4098b4",
+        "min": 32,
+        "max": 32,
+        "sum": 11520,
+        "first": [32, 32, 32],
+        "last": 32,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "unambiguous_doppler_velocity",
+        "meta_group": "instrument_parameters",
+        "units": "meters per second"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "061ad78918d15fd1b6a147ccc1d8976b7cda4d076643a35a337c5d6e71114d16",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 47.970001220703125,
+        "max": 47.970001220703125,
+        "mean": 47.970001220703125,
+        "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+        "last": 47.970001220703125,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "pulse_repetition_time",
+        "meta_group": "instrument_parameters",
+        "units": "seconds"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "204df996357c0eda5b4ab92975303b75b2a9b33d41e3d27d9f485ecf5f238c9f",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0005555555690079927,
+        "max": 0.0005555555690079927,
+        "mean": 0.0005555555690079927,
+        "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+        "last": 0.0005555555690079927,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "long_name": "transmit_pulse_mode",
+        "meta_group": "radar_parameters",
+        "options": "fixed, staggered, dual"
+       },
+       "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "prt_ratio",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "pulse_repetition_frequency_ratio",
+        "meta_group": "instrument_parameters",
+        "units": "seconds"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "724b49484d64642b5ad9498b592d7000319021434a2cb82f69cab22910dae805",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.0,
+        "max": 1.0,
+        "mean": 1.0,
+        "first": [1.0, 1.0, 1.0],
+        "last": 1.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "pulse_width",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "transmitter_pulse_width",
+        "meta_group": "instrument_parameters",
+        "units": "seconds"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "6fd2ecfe85410599a907bcbecf48d1fac28cb488f98c38c744b42e16da1c0f80",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 4.999999987376214e-07,
+        "max": 4.999999987376214e-07,
+        "mean": 4.999999987376214e-07,
+        "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+        "last": 4.999999987376214e-07,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "r_calib_index",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "int32",
+       "attrs": {
+        "_FillValue": -9999,
+        "comment": "This is the index for the calibration which applies to this ray",
+        "long_name": "calibration_data_array_index_per_ray",
+        "meta_group": "radar_calibration",
+        "units": ""
+       },
+       "attr_types": {
+        "_FillValue": "int32",
+        "comment": "str",
+        "long_name": "str",
+        "meta_group": "str",
+        "units": "str"
+       },
+       "encoding": {"dtype": "int32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "int32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "52dbd4365b026555e3382c056240376d3aa319c7e46c1aa7c38caa4883570517",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_gate_spacing",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "gate_spacing_for_ray", "units": "meters"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "a80c0acec88510a08535805cfd8a679e6c5cbaa8b25c95a573d503863bfabe46",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 75.0,
+        "max": 75.0,
+        "mean": 75.0,
+        "first": [75.0, 75.0, 75.0],
+        "last": 75.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_start_range",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "start_range_for_ray", "units": "meters"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "52dbd4365b026555e3382c056240376d3aa319c7e46c1aa7c38caa4883570517",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0,
+        "first": [0.0, 0.0, 0.0],
+        "last": 0.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "scan_rate",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "antenna_angle_scan_rate",
+        "meta_group": "instrument_parameters",
+        "units": "degrees per second"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "ray_target_fixed_angle", "units": "degrees"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 0.802001953125}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "attrs": {
+        "long_name": "scan_mode_for_sweep",
+        "options": "sector, coplane, rhi, vertical_pointing, idle, azimuth_surveillance, elevation_surveillance, sunscan, pointing, calibration, manual_ppi, manual_rhi, sunscan_rhi"
+       },
+       "attr_types": {"long_name": "str", "options": "str"},
+       "encoding": {},
+       "encoding_types": {},
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int32",
+       "attrs": {"_FillValue": -9999, "long_name": "sweep_index_number_0_based", "units": ""},
+       "attr_types": {"_FillValue": "int32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "int32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "int32", "shape": [], "value": 0}
+      },
+      {
+       "name": "unambiguous_range",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "unambiguous_range",
+        "meta_group": "instrument_parameters",
+        "units": "meters"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "f3032f42fd34b1c75d544cc14744ab1c257d43167035b721fb599762f0f3fb96",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 83275.6796875,
+        "max": 83275.6796875,
+        "mean": 83275.6796875,
+        "first": [83275.6796875, 83275.6796875, 83275.6796875],
+        "last": 83275.6796875,
+        "non_decreasing": true
+       }
+      }
+     ]
+    },
+    {
+     "path": "/sweep_1",
+     "dims": {"range": 1107, "time": 359},
+     "attrs": {},
+     "attr_types": {},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "ray_azimuth_angle", "units": "degrees"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "d16429d8f5714f5bb64af5c1d5120e5d0eb0d319a0c2557802fe0293b87e0c2f",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.21148681640625,
+        "max": 359.18975830078125,
+        "mean": 179.31454799301446,
+        "first": [315.19775390625, 317.21099853515625, 318.19976806640625],
+        "last": 314.20074462890625,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "ray_elevation_angle",
+        "positive": "up",
+        "units": "degrees"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "positive": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "26a5d50ec4771d4e4d861b7a743bc0c12ddc67a91051971b2aa1c5875577df27",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.791015625,
+        "max": 1.593017578125,
+        "mean": 1.4536993085175836,
+        "first": [0.791015625, 0.791015625, 0.791015625],
+        "last": 1.47216796875,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "attrs": {
+        "long_name": "Range from instrument to center of gate",
+        "meters_between_gates": 75.00000298023224,
+        "meters_to_center_of_first_gate": 0.0,
+        "spacing_is_constant": "true",
+        "units": "meters"
+       },
+       "attr_types": {
+        "long_name": "str",
+        "meters_between_gates": "float",
+        "meters_to_center_of_first_gate": "float",
+        "spacing_is_constant": "str",
+        "units": "str"
+       },
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [1107],
+        "count": 1107,
+        "sha256": "5072624d63ed67fcb03129c7264204b4b837e83352b67b87dc44f1cee2ba0a26",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 82950.0,
+        "mean": 41475.0,
+        "first": [0.0, 75.0, 150.0],
+        "last": 82950.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["time"],
+       "dtype": "datetime64[ns]",
+       "attrs": {
+        "comment": "times are relative to the volume start_time",
+        "long_name": "time in seconds since volume start",
+        "standard_name": "time"
+       },
+       "attr_types": {"comment": "str", "long_name": "str", "standard_name": "str"},
+       "encoding": {"calendar": "gregorian", "dtype": "float64", "units": "seconds since 2011-08-27T12:04:20Z"},
+       "encoding_types": {"calendar": "str", "dtype": "dtype", "units": "str"},
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [359],
+        "count": 359,
+        "sha256": "bb5a5e17e182171e544459fa26968994da0a1da30f17b3ca26cad35c93c79bae",
+        "count_nat": 0,
+        "min": 1314446672.811,
+        "max": 1314446684.811,
+        "mean": 1314446678.359747,
+        "first": [1314446672.811, 1314446672.811, 1314446672.811],
+        "last": 1314446684.811,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "DBZ",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "int8",
+       "attrs": {
+        "_FillValue": -128,
+        "add_offset": 32.0,
+        "grid_mapping": "grid_mapping",
+        "sampling_ratio": 1.0,
+        "scale_factor": 0.5,
+        "units": "dBZ"
+       },
+       "attr_types": {
+        "_FillValue": "int8",
+        "add_offset": "float32",
+        "grid_mapping": "str",
+        "sampling_ratio": "float32",
+        "scale_factor": "float32",
+        "units": "str"
+       },
+       "encoding": {"coordinates": "time range", "dtype": "int8"},
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "int8",
+        "shape": [359, 1107],
+        "count": 397413,
+        "sha256": "b0f161bae71c7b8b494be888d26d9009484b31456a6d69d3665b619a8d122bfd",
+        "min": -128,
+        "max": 64,
+        "sum": -9320834
+       }
+      },
+      {
+       "name": "VEL",
+       "role": "data",
+       "dims": ["time", "range"],
+       "dtype": "int8",
+       "attrs": {
+        "_FillValue": -128,
+        "add_offset": 0.0,
+        "grid_mapping": "grid_mapping",
+        "sampling_ratio": 1.0,
+        "scale_factor": 0.3777165412902832,
+        "units": "m/s"
+       },
+       "attr_types": {
+        "_FillValue": "int8",
+        "add_offset": "float32",
+        "grid_mapping": "str",
+        "sampling_ratio": "float32",
+        "scale_factor": "float32",
+        "units": "str"
+       },
+       "encoding": {"coordinates": "time range", "dtype": "int8"},
+       "encoding_types": {"coordinates": "str", "dtype": "dtype"},
+       "values": {
+        "dtype": "int8",
+        "shape": [359, 1107],
+        "count": 397413,
+        "sha256": "704685c66fb735c182c4cd68b998101ef4fa96d021a24b1e04d3dd046c66335b",
+        "min": -127,
+        "max": 127,
+        "sum": -33330
+       }
+      },
+      {
+       "name": "antenna_transition",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "int8",
+       "attrs": {
+        "_FillValue": -128,
+        "comment": "1 if antenna is in transition, 0 otherwise",
+        "long_name": "antenna_is_in_transition_between_sweeps",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "int8", "comment": "str", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "int8"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "int8",
+        "shape": [359],
+        "count": 359,
+        "sha256": "8bcfcd6be82aeb4875ef1ce86bc6b0ea7667c95fd4243f1d7da32ec159da1087",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "long_name": "follow_mode_for_scan_strategy",
+        "meta_group": "instrument_parameters",
+        "options": "none, sun, vehicle, aircraft, target, manual"
+       },
+       "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "none"}
+      },
+      {
+       "name": "measured_transmit_power_h",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "measured_radar_transmit_power_h_channel",
+        "meta_group": "radar_parameters",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "measured_transmit_power_v",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "measured_radar_transmit_power_v_channel",
+        "meta_group": "radar_parameters",
+        "units": "dBm"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "n_samples",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "int32",
+       "attrs": {
+        "_FillValue": -9999,
+        "long_name": "number_of_samples_used_to_compute_moments",
+        "meta_group": "instrument_parameters",
+        "units": ""
+       },
+       "attr_types": {"_FillValue": "int32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "int32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "int32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "4f16b6cc92c5e8dfbf25cd71b3885285967da0dff9ab263f9a6f6bec626e0fd2",
+        "min": 32,
+        "max": 32,
+        "sum": 11488,
+        "first": [32, 32, 32],
+        "last": 32,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "unambiguous_doppler_velocity",
+        "meta_group": "instrument_parameters",
+        "units": "meters per second"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "fd59c7c898cce4e61ad88b8f5678a8042e5028611ef92a913f67e9b914a6d9db",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 47.970001220703125,
+        "max": 47.970001220703125,
+        "mean": 47.970001220703125,
+        "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+        "last": 47.970001220703125,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "pulse_repetition_time",
+        "meta_group": "instrument_parameters",
+        "units": "seconds"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "9ebd24926078ae985001b51ef1fb537362a755085dbd0d1428db7297f1ce147d",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0005555555690079927,
+        "max": 0.0005555555690079927,
+        "mean": 0.0005555555690079927,
+        "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+        "last": 0.0005555555690079927,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "attrs": {
+        "long_name": "transmit_pulse_mode",
+        "meta_group": "radar_parameters",
+        "options": "fixed, staggered, dual"
+       },
+       "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+       "encoding": {"dtype": "S1"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "prt_ratio",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "pulse_repetition_frequency_ratio",
+        "meta_group": "instrument_parameters",
+        "units": "seconds"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "c5eca97910f128b517f6e93cd34cda1b0470af283934966d60c32e74003938aa",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.0,
+        "max": 1.0,
+        "mean": 1.0,
+        "first": [1.0, 1.0, 1.0],
+        "last": 1.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "pulse_width",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "transmitter_pulse_width",
+        "meta_group": "instrument_parameters",
+        "units": "seconds"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "840f904aa8df0434da1acda18f5ae7203149b22224785bad6ef060700ed84852",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 4.999999987376214e-07,
+        "max": 4.999999987376214e-07,
+        "mean": 4.999999987376214e-07,
+        "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+        "last": 4.999999987376214e-07,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "r_calib_index",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "int32",
+       "attrs": {
+        "_FillValue": -9999,
+        "comment": "This is the index for the calibration which applies to this ray",
+        "long_name": "calibration_data_array_index_per_ray",
+        "meta_group": "radar_calibration",
+        "units": ""
+       },
+       "attr_types": {
+        "_FillValue": "int32",
+        "comment": "str",
+        "long_name": "str",
+        "meta_group": "str",
+        "units": "str"
+       },
+       "encoding": {"dtype": "int32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "int32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "c3bf51869a4db89a6a6c3d459827243126e1b05a8235b11a29380c8eb692679d",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_gate_spacing",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "gate_spacing_for_ray", "units": "meters"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "d572fa2b64bc09d5dddfab10b8dd1ed8994c26b3b7fc6fe8e28602055426805b",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 75.0,
+        "max": 75.0,
+        "mean": 75.0,
+        "first": [75.0, 75.0, 75.0],
+        "last": 75.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_start_range",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "start_range_for_ray", "units": "meters"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "c3bf51869a4db89a6a6c3d459827243126e1b05a8235b11a29380c8eb692679d",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0,
+        "first": [0.0, 0.0, 0.0],
+        "last": 0.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "scan_rate",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "antenna_angle_scan_rate",
+        "meta_group": "instrument_parameters",
+        "units": "degrees per second"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "attrs": {"_FillValue": -9999.0, "long_name": "ray_target_fixed_angle", "units": "degrees"},
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "float32", "shape": [], "value": 1.4996337890625}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "attrs": {
+        "long_name": "scan_mode_for_sweep",
+        "options": "sector, coplane, rhi, vertical_pointing, idle, azimuth_surveillance, elevation_surveillance, sunscan, pointing, calibration, manual_ppi, manual_rhi, sunscan_rhi"
+       },
+       "attr_types": {"long_name": "str", "options": "str"},
+       "encoding": {},
+       "encoding_types": {},
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int32",
+       "attrs": {"_FillValue": -9999, "long_name": "sweep_index_number_0_based", "units": ""},
+       "attr_types": {"_FillValue": "int32", "long_name": "str", "units": "str"},
+       "encoding": {"dtype": "int32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {"dtype": "int32", "shape": [], "value": 1}
+      },
+      {
+       "name": "unambiguous_range",
+       "role": "data",
+       "dims": ["time"],
+       "dtype": "float32",
+       "attrs": {
+        "_FillValue": -9999.0,
+        "long_name": "unambiguous_range",
+        "meta_group": "instrument_parameters",
+        "units": "meters"
+       },
+       "attr_types": {"_FillValue": "float32", "long_name": "str", "meta_group": "str", "units": "str"},
+       "encoding": {"dtype": "float32"},
+       "encoding_types": {"dtype": "dtype"},
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "646eefd980c8e4939d2371c8d469a92c74ac2b686148bbbef1a4bf107e4d4414",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 83275.6796875,
+        "max": 83275.6796875,
+        "mean": 83275.6796875,
+        "first": [83275.6796875, 83275.6796875, 83275.6796875],
+        "last": 83275.6796875,
+        "non_decreasing": true
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "auto": {
+   "kwargs": {"first_dim": "auto", "mask_and_scale": false, "optional_groups": true},
+   "groups": [
+    {
+     "path": "/",
+     "dims": {"frequency": 1, "sweep": 2},
+     "variables": [
+      {
+       "name": "altitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "frequency",
+       "role": "coord",
+       "dims": ["frequency"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [1],
+        "count": 1,
+        "sha256": "c1a33f90e6d33adbe79343e12715286cf3efd5fc309880ebd69ca350cf05e08e",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 5624624128.0,
+        "max": 5624624128.0,
+        "mean": 5624624128.0,
+        "first": [5624624128.0],
+        "last": 5624624128.0,
+        "non_decreasing": true,
+        "values": [5624624128.0]
+       }
+      },
+      {
+       "name": "latitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": 34.73310470581055}
+      },
+      {
+       "name": "longitude",
+       "role": "coord",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": -76.66191101074219}
+      },
+      {
+       "name": "altitude_agl",
+       "role": "data",
+       "dims": [],
+       "dtype": "float64",
+       "values": {"dtype": "float64", "shape": [], "value": -65.0}
+      },
+      {
+       "name": "instrument_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "radar"}
+      },
+      {
+       "name": "platform_type",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "primary_axis",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "axis_z"}
+      },
+      {
+       "name": "status_str",
+       "role": "data",
+       "dims": [],
+       "dtype": "S1",
+       "values": {"dtype": "S1", "shape": [], "value": ""}
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [2],
+        "count": 2,
+        "sha256": "60cefe547dfb93cd6387dfc8cdb301672c7cb5607c390eeefcc542e54c219e3a",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.802001953125,
+        "max": 1.4996337890625,
+        "mean": 1.15081787109375,
+        "first": [0.802001953125, 1.4996337890625],
+        "last": 1.4996337890625,
+        "non_decreasing": true,
+        "values": [0.802001953125, 1.4996337890625]
+       }
+      },
+      {
+       "name": "sweep_group_name",
+       "role": "data",
+       "dims": ["sweep"],
+       "dtype": "U7",
+       "values": {"dtype": "U7", "shape": [2], "values": ["sweep_0", "sweep_1"]}
+      },
+      {
+       "name": "time_coverage_end",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:08:02Z"}
+      },
+      {
+       "name": "time_coverage_start",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:04:20Z"}
+      },
+      {
+       "name": "volume_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int32",
+       "values": {"dtype": "int32", "shape": [], "value": 395}
+      }
+     ]
+    },
+    {
+     "path": "/radar_parameters",
+     "dims": {},
+     "variables": [
+      {
+       "name": "radar_antenna_gain_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "radar_antenna_gain_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "radar_beam_width_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 1.559999942779541}
+      },
+      {
+       "name": "radar_beam_width_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 1.559999942779541}
+      },
+      {
+       "name": "radar_receiver_bandwidth",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      }
+     ]
+    },
+    {"path": "/georeferencing_correction", "dims": {}, "variables": []},
+    {
+     "path": "/radar_calibration",
+     "dims": {},
+     "variables": [
+      {
+       "name": "antenna_gain_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "antenna_gain_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "base_1km_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "coupler_forward_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "coupler_forward_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "dbz_correction",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "ldr_correction_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -77.9800033569336}
+      },
+      {
+       "name": "ldr_correction_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "noise_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -105.69000244140625}
+      },
+      {
+       "name": "noise_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_source_power_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_source_power_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "noise_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "power_measure_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "power_measure_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "pulse_width",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -0.009998999536037445}
+      },
+      {
+       "name": "radar_constant_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 96.13999938964844}
+      },
+      {
+       "name": "radar_constant_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_gain_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_mismatch_loss",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "receiver_slope_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_hc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_hx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_vc",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "sun_power_vx",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "system_phidp",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 0.0}
+      },
+      {
+       "name": "test_power_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "test_power_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "time",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:04:20Z"}
+      },
+      {
+       "name": "two_way_radome_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "two_way_radome_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "two_way_waveguide_loss_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "two_way_waveguide_loss_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "xmit_power_h",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 82.04119873046875}
+      },
+      {
+       "name": "xmit_power_v",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -9999.0}
+      },
+      {
+       "name": "zdr_correction",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": -76.97000122070312}
+      }
+     ]
+    },
+    {
+     "path": "/sweep_0",
+     "dims": {"azimuth": 360, "range": 1107},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "98de4a85d3ba0bfe47dfcd45d828a08be390e4a26e6902cc2468b5f684d007b6",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.208740234375,
+        "max": 359.18701171875,
+        "mean": 179.695556640625,
+        "first": [0.208740234375, 1.1810302734375, 2.18902587890625],
+        "last": 359.18701171875,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "1fa08129f2b466ee7ff152e573bb706dcc203390c8aabc2ced0e48611b3133f3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.6976318359375,
+        "max": 0.80474853515625,
+        "mean": 0.7900009155273438,
+        "first": [0.791015625, 0.791015625, 0.791015625],
+        "last": 0.791015625,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [1107],
+        "count": 1107,
+        "sha256": "5072624d63ed67fcb03129c7264204b4b837e83352b67b87dc44f1cee2ba0a26",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 82950.0,
+        "mean": 41475.0,
+        "first": [0.0, 75.0, 150.0],
+        "last": 82950.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "datetime64[ns]",
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [360],
+        "count": 360,
+        "sha256": "958c2b31042681e0b0ca968f50992da1799295111d20e67677075b5adacbaa8c",
+        "count_nat": 0,
+        "min": 1314446660.76,
+        "max": 1314446672.76,
+        "mean": 1314446666.2933335,
+        "first": [1314446661.76, 1314446661.76, 1314446661.76],
+        "last": 1314446661.76,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "DBZ",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "int8",
+       "values": {
+        "dtype": "int8",
+        "shape": [360, 1107],
+        "count": 398520,
+        "sha256": "6b69539975f3e488e0f823aeea793993fe5e3b690adfaa63e380f09bc8ae9889",
+        "min": -128,
+        "max": 75,
+        "sum": -9337543
+       }
+      },
+      {
+       "name": "VEL",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "int8",
+       "values": {
+        "dtype": "int8",
+        "shape": [360, 1107],
+        "count": 398520,
+        "sha256": "734b43f130ab91593a49df39142c801eba469a3be3c4e6dce9bf05b0095f5fcd",
+        "min": -127,
+        "max": 127,
+        "sum": -487869
+       }
+      },
+      {
+       "name": "antenna_transition",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "int8",
+       "values": {
+        "dtype": "int8",
+        "shape": [360],
+        "count": 360,
+        "sha256": "d3df611a0ed2e328b050d285287637c60643ba96ec09e4aaefaad7f2cd114b77",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "none"}
+      },
+      {
+       "name": "measured_transmit_power_h",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "measured_transmit_power_v",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "n_samples",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "int32",
+       "values": {
+        "dtype": "int32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "5924cee464535f9675ad5b16cd721d716cc97f01f931b740df4b33dacf4098b4",
+        "min": 32,
+        "max": 32,
+        "sum": 11520,
+        "first": [32, 32, 32],
+        "last": 32,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "061ad78918d15fd1b6a147ccc1d8976b7cda4d076643a35a337c5d6e71114d16",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 47.970001220703125,
+        "max": 47.970001220703125,
+        "mean": 47.970001220703125,
+        "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+        "last": 47.970001220703125,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "204df996357c0eda5b4ab92975303b75b2a9b33d41e3d27d9f485ecf5f238c9f",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0005555555690079927,
+        "max": 0.0005555555690079927,
+        "mean": 0.0005555555690079927,
+        "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+        "last": 0.0005555555690079927,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "prt_ratio",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "724b49484d64642b5ad9498b592d7000319021434a2cb82f69cab22910dae805",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.0,
+        "max": 1.0,
+        "mean": 1.0,
+        "first": [1.0, 1.0, 1.0],
+        "last": 1.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "pulse_width",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "6fd2ecfe85410599a907bcbecf48d1fac28cb488f98c38c744b42e16da1c0f80",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 4.999999987376214e-07,
+        "max": 4.999999987376214e-07,
+        "mean": 4.999999987376214e-07,
+        "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+        "last": 4.999999987376214e-07,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "r_calib_index",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "int32",
+       "values": {
+        "dtype": "int32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "52dbd4365b026555e3382c056240376d3aa319c7e46c1aa7c38caa4883570517",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_gate_spacing",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "a80c0acec88510a08535805cfd8a679e6c5cbaa8b25c95a573d503863bfabe46",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 75.0,
+        "max": 75.0,
+        "mean": 75.0,
+        "first": [75.0, 75.0, 75.0],
+        "last": 75.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_start_range",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "52dbd4365b026555e3382c056240376d3aa319c7e46c1aa7c38caa4883570517",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0,
+        "first": [0.0, 0.0, 0.0],
+        "last": 0.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "scan_rate",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "9f4868ed3ab69450b02100b178e363ed49130be00be6cb9b5f523fb983a3f6d3",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 0.802001953125}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int32",
+       "values": {"dtype": "int32", "shape": [], "value": 0}
+      },
+      {
+       "name": "unambiguous_range",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [360],
+        "count": 360,
+        "sha256": "f3032f42fd34b1c75d544cc14744ab1c257d43167035b721fb599762f0f3fb96",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 83275.6796875,
+        "max": 83275.6796875,
+        "mean": 83275.6796875,
+        "first": [83275.6796875, 83275.6796875, 83275.6796875],
+        "last": 83275.6796875,
+        "non_decreasing": true
+       }
+      }
+     ]
+    },
+    {
+     "path": "/sweep_1",
+     "dims": {"azimuth": 359, "range": 1107},
+     "variables": [
+      {
+       "name": "azimuth",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "d32462d762e4490963e425bd93dba886731d0caa910955add9a9ff2c428e0aa9",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.21148681640625,
+        "max": 359.18975830078125,
+        "mean": 179.31454799301446,
+        "first": [0.21148681640625, 1.19476318359375, 2.208251953125],
+        "last": 359.18975830078125,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "elevation",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "16e7662f468c885bcc77a70f505f970d67dbf451e16a2e6c401b3dec1d6b438c",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.791015625,
+        "max": 1.593017578125,
+        "mean": 1.4536993085175836,
+        "first": [1.47216796875, 1.47216796875, 1.47216796875],
+        "last": 1.47216796875,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "range",
+       "role": "coord",
+       "dims": ["range"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [1107],
+        "count": 1107,
+        "sha256": "5072624d63ed67fcb03129c7264204b4b837e83352b67b87dc44f1cee2ba0a26",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 82950.0,
+        "mean": 41475.0,
+        "first": [0.0, 75.0, 150.0],
+        "last": 82950.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "time",
+       "role": "coord",
+       "dims": ["azimuth"],
+       "dtype": "datetime64[ns]",
+       "values": {
+        "dtype": "datetime64[ns]",
+        "shape": [359],
+        "count": 359,
+        "sha256": "40195470ad0b70b990440968a22b0184bd5db21a96787905bc34a01039043859",
+        "count_nat": 0,
+        "min": 1314446672.811,
+        "max": 1314446684.811,
+        "mean": 1314446678.359747,
+        "first": [1314446673.811, 1314446673.811, 1314446673.811],
+        "last": 1314446673.811,
+        "non_decreasing": false
+       }
+      },
+      {
+       "name": "DBZ",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "int8",
+       "values": {
+        "dtype": "int8",
+        "shape": [359, 1107],
+        "count": 397413,
+        "sha256": "96bf5979dc60b2430c1a2b011d1e8f73f22593f6d19a856cd78ee88a5189d912",
+        "min": -128,
+        "max": 64,
+        "sum": -9320834
+       }
+      },
+      {
+       "name": "VEL",
+       "role": "data",
+       "dims": ["azimuth", "range"],
+       "dtype": "int8",
+       "values": {
+        "dtype": "int8",
+        "shape": [359, 1107],
+        "count": 397413,
+        "sha256": "eb99058baa5f736cfd8b84657a72afe605a88e93f0642b9e09ea1d13a4505e80",
+        "min": -127,
+        "max": 127,
+        "sum": -33330
+       }
+      },
+      {
+       "name": "antenna_transition",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "int8",
+       "values": {
+        "dtype": "int8",
+        "shape": [359],
+        "count": 359,
+        "sha256": "8bcfcd6be82aeb4875ef1ce86bc6b0ea7667c95fd4243f1d7da32ec159da1087",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "follow_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "none"}
+      },
+      {
+       "name": "measured_transmit_power_h",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "measured_transmit_power_v",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "n_samples",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "int32",
+       "values": {
+        "dtype": "int32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "4f16b6cc92c5e8dfbf25cd71b3885285967da0dff9ab263f9a6f6bec626e0fd2",
+        "min": 32,
+        "max": 32,
+        "sum": 11488,
+        "first": [32, 32, 32],
+        "last": 32,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "nyquist_velocity",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "fd59c7c898cce4e61ad88b8f5678a8042e5028611ef92a913f67e9b914a6d9db",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 47.970001220703125,
+        "max": 47.970001220703125,
+        "mean": 47.970001220703125,
+        "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+        "last": 47.970001220703125,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "9ebd24926078ae985001b51ef1fb537362a755085dbd0d1428db7297f1ce147d",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0005555555690079927,
+        "max": 0.0005555555690079927,
+        "mean": 0.0005555555690079927,
+        "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+        "last": 0.0005555555690079927,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "prt_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "S32",
+       "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+      },
+      {
+       "name": "prt_ratio",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "c5eca97910f128b517f6e93cd34cda1b0470af283934966d60c32e74003938aa",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 1.0,
+        "max": 1.0,
+        "mean": 1.0,
+        "first": [1.0, 1.0, 1.0],
+        "last": 1.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "pulse_width",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "840f904aa8df0434da1acda18f5ae7203149b22224785bad6ef060700ed84852",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 4.999999987376214e-07,
+        "max": 4.999999987376214e-07,
+        "mean": 4.999999987376214e-07,
+        "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+        "last": 4.999999987376214e-07,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "r_calib_index",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "int32",
+       "values": {
+        "dtype": "int32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "c3bf51869a4db89a6a6c3d459827243126e1b05a8235b11a29380c8eb692679d",
+        "min": 0,
+        "max": 0,
+        "sum": 0,
+        "first": [0, 0, 0],
+        "last": 0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_gate_spacing",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "d572fa2b64bc09d5dddfab10b8dd1ed8994c26b3b7fc6fe8e28602055426805b",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 75.0,
+        "max": 75.0,
+        "mean": 75.0,
+        "first": [75.0, 75.0, 75.0],
+        "last": 75.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "ray_start_range",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "c3bf51869a4db89a6a6c3d459827243126e1b05a8235b11a29380c8eb692679d",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0,
+        "first": [0.0, 0.0, 0.0],
+        "last": 0.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "scan_rate",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "687b7249d7795b6b7ca51324b4b203a0384de5461244680cb9d464b086c89a34",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": -9999.0,
+        "max": -9999.0,
+        "mean": -9999.0,
+        "first": [-9999.0, -9999.0, -9999.0],
+        "last": -9999.0,
+        "non_decreasing": true
+       }
+      },
+      {
+       "name": "sweep_fixed_angle",
+       "role": "data",
+       "dims": [],
+       "dtype": "float32",
+       "values": {"dtype": "float32", "shape": [], "value": 1.4996337890625}
+      },
+      {
+       "name": "sweep_mode",
+       "role": "data",
+       "dims": [],
+       "dtype": "U20",
+       "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+      },
+      {
+       "name": "sweep_number",
+       "role": "data",
+       "dims": [],
+       "dtype": "int32",
+       "values": {"dtype": "int32", "shape": [], "value": 1}
+      },
+      {
+       "name": "unambiguous_range",
+       "role": "data",
+       "dims": ["azimuth"],
+       "dtype": "float32",
+       "values": {
+        "dtype": "float32",
+        "shape": [359],
+        "count": 359,
+        "sha256": "646eefd980c8e4939d2371c8d469a92c74ac2b686148bbbef1a4bf107e4d4414",
+        "count_nan": 0,
+        "count_inf": 0,
+        "min": 83275.6796875,
+        "max": 83275.6796875,
+        "mean": 83275.6796875,
+        "first": [83275.6796875, 83275.6796875, 83275.6796875],
+        "last": 83275.6796875,
+        "non_decreasing": true
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "decoded": {
+  "kwargs": {"first_dim": "time", "optional_groups": true},
+  "groups": [
+   {
+    "path": "/",
+    "variables": [
+     {
+      "name": "altitude",
+      "role": "coord",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "altitude", "positive": "up", "units": "meters"},
+      "attr_types": {"long_name": "str", "positive": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float64"},
+      "encoding_types": {"_FillValue": "float", "dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 0.0}
+     },
+     {
+      "name": "frequency",
+      "role": "coord",
+      "dims": ["frequency"],
+      "dtype": "float32",
+      "attrs": {"long_name": "transmission_frequency", "meta_group": "instrument_parameters", "units": "s-1"},
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [1],
+       "count": 1,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 5624624128.0,
+       "max": 5624624128.0,
+       "mean": 5624624128.0,
+       "first": [5624624128.0],
+       "last": 5624624128.0,
+       "non_decreasing": true,
+       "values": [5624624128.0]
+      }
+     },
+     {
+      "name": "latitude",
+      "role": "coord",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "latitude", "units": "degrees_north"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float64"},
+      "encoding_types": {"_FillValue": "float", "dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 34.73310470581055}
+     },
+     {
+      "name": "longitude",
+      "role": "coord",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "longitude", "units": "degrees_east"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float64"},
+      "encoding_types": {"_FillValue": "float", "dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": -76.66191101074219}
+     },
+     {
+      "name": "altitude_agl",
+      "role": "data",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "altitude_above_ground_level", "positive": "up", "units": "meters"},
+      "attr_types": {"long_name": "str", "positive": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float64"},
+      "encoding_types": {"_FillValue": "float", "dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": -65.0}
+     },
+     {
+      "name": "instrument_type",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "long_name": "type_of_instrument",
+       "meta_group": "instrument_parameters",
+       "options": "radar, lidar"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "radar"}
+     },
+     {
+      "name": "platform_type",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "long_name": "platform_type",
+       "options": "fixed, vehicle, ship, aircraft_fore, aircraft_aft, aircraft_tail, aircraft_belly, aircraft_roof, aircraft_nose, satellite_orbit, satellite_geostat"
+      },
+      "attr_types": {"long_name": "str", "options": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+     },
+     {
+      "name": "primary_axis",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "long_name": "primary_axis_of_rotation",
+       "options": "axis_z, axis_y, axis_x, axis_z_prime, axis_y_prime, axis_x_prime"
+      },
+      "attr_types": {"long_name": "str", "options": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "axis_z"}
+     },
+     {
+      "name": "status_str",
+      "role": "data",
+      "dims": [],
+      "dtype": "S1",
+      "attrs": {"long_name": "status_of_instrument"},
+      "attr_types": {"long_name": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S1", "shape": [], "value": ""}
+     },
+     {
+      "name": "sweep_fixed_angle",
+      "role": "data",
+      "dims": ["sweep"],
+      "dtype": "float32",
+      "attrs": {"long_name": "ray_target_fixed_angle", "units": "degrees"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [2],
+       "count": 2,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.802001953125,
+       "max": 1.4996337890625,
+       "mean": 1.15081787109375,
+       "first": [0.802001953125, 1.4996337890625],
+       "last": 1.4996337890625,
+       "non_decreasing": true,
+       "values": [0.802001953125, 1.4996337890625]
+      }
+     },
+     {
+      "name": "sweep_group_name",
+      "role": "data",
+      "dims": ["sweep"],
+      "dtype": "U9",
+      "attrs": {},
+      "attr_types": {},
+      "encoding": {"_FillValue": -9999, "dtype": "U9"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {"dtype": "U9", "shape": [2], "values": ["sweep_0.0", "sweep_1.0"]}
+     },
+     {
+      "name": "time_coverage_end",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {"long_name": "data_volume_end_time_utc"},
+      "attr_types": {"long_name": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:08:02Z"}
+     },
+     {
+      "name": "time_coverage_start",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "comment": "ray times are relative to start time in secs",
+       "long_name": "data_volume_start_time_utc"
+      },
+      "attr_types": {"comment": "str", "long_name": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:04:20Z"}
+     },
+     {
+      "name": "volume_number",
+      "role": "data",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "data_volume_index_number", "units": ""},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999, "dtype": "int32"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 395.0}
+     }
+    ]
+   },
+   {
+    "path": "/radar_parameters",
+    "variables": [
+     {
+      "name": "radar_antenna_gain_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "nominal_radar_antenna_gain_h_channel",
+       "meta_group": "radar_parameters",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "radar_antenna_gain_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "nominal_radar_antenna_gain_v_channel",
+       "meta_group": "radar_parameters",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "radar_beam_width_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "half_power_radar_beam_width_h_channel",
+       "meta_group": "radar_parameters",
+       "units": "degrees"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 1.559999942779541}
+     },
+     {
+      "name": "radar_beam_width_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "half_power_radar_beam_width_v_channel",
+       "meta_group": "radar_parameters",
+       "units": "degrees"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 1.559999942779541}
+     },
+     {
+      "name": "radar_receiver_bandwidth",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {"long_name": "radar_receiver_bandwidth", "meta_group": "radar_parameters", "units": "s-1"},
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     }
+    ]
+   },
+   {"path": "/georeferencing_correction", "variables": []},
+   {
+    "path": "/radar_calibration",
+    "variables": [
+     {
+      "name": "antenna_gain_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_antenna_gain_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "antenna_gain_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_antenna_gain_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "base_1km_hc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_reflectivity_at_1km_at_zero_snr_h_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBZ"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "base_1km_hx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_reflectivity_at_1km_at_zero_snr_h_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBZ"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "base_1km_vc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_reflectivity_at_1km_at_zero_snr_v_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBZ"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "base_1km_vx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_reflectivity_at_1km_at_zero_snr_v_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBZ"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "coupler_forward_loss_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_coupler_forward_loss_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "coupler_forward_loss_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_coupler_forward_loss_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "dbz_correction",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_dbz_correction",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 0.0}
+     },
+     {
+      "name": "ldr_correction_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_ldr_correction_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": -77.9800033569336}
+     },
+     {
+      "name": "ldr_correction_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_ldr_correction_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 0.0}
+     },
+     {
+      "name": "noise_hc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_noise_h_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": -105.69000244140625}
+     },
+     {
+      "name": "noise_hx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_noise_h_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "noise_source_power_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_noise_source_power_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "noise_source_power_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_noise_source_power_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "noise_vc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_noise_v_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "noise_vx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_noise_v_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "power_measure_loss_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_power_measurement_loss_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "power_measure_loss_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_power_measurement_loss_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "pulse_width",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_pulse_width",
+       "meta_group": "radar_calibration",
+       "units": "seconds"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": -0.009998999536037445}
+     },
+     {
+      "name": "radar_constant_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_constant_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 96.13999938964844}
+     },
+     {
+      "name": "radar_constant_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_constant_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_gain_hc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_gain_h_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_gain_hx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_gain_h_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_gain_vc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_gain_v_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_gain_vx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_gain_v_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_mismatch_loss",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_receiver_mismatch_loss",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_slope_hc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_slope_h_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": ""
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_slope_hx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_slope_h_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": ""
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_slope_vc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_slope_v_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": ""
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "receiver_slope_vx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_receiver_slope_v_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": ""
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "sun_power_hc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_sun_power_h_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "sun_power_hx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_sun_power_h_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "sun_power_vc",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_sun_power_v_co_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "sun_power_vx",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_sun_power_v_cross_polar_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "system_phidp",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_system_phidp",
+       "meta_group": "radar_calibration",
+       "units": "degrees"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 0.0}
+     },
+     {
+      "name": "test_power_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_test_power_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "test_power_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_test_power_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "time",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {"long_name": "radar_calibration_time_utc", "meta_group": "radar_calibration"},
+      "attr_types": {"long_name": "str", "meta_group": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "2011-08-27T12:04:20Z"}
+     },
+     {
+      "name": "two_way_radome_loss_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_two_way_radome_loss_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "two_way_radome_loss_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_two_way_radome_loss_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "two_way_waveguide_loss_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_two_way_waveguide_loss_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "two_way_waveguide_loss_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "radar_calibration_two_way_waveguide_loss_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "xmit_power_h",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_xmit_power_h_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 82.04119873046875}
+     },
+     {
+      "name": "xmit_power_v",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_xmit_power_v_channel",
+       "meta_group": "radar_calibration",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": "NaN"}
+     },
+     {
+      "name": "zdr_correction",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "calibrated_radar_zdr_correction",
+       "meta_group": "radar_calibration",
+       "units": "db"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": -76.97000122070312}
+     }
+    ]
+   },
+   {
+    "path": "/sweep_0",
+    "variables": [
+     {
+      "name": "azimuth",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "ray_azimuth_angle", "units": "degrees"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.208740234375,
+       "max": 359.18701171875,
+       "mean": 179.695556640625,
+       "first": [314.20074462890625, 315.20599365234375, 316.20025634765625],
+       "last": 313.21197509765625,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "elevation",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "ray_elevation_angle", "positive": "up", "units": "degrees"},
+      "attr_types": {"long_name": "str", "positive": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.6976318359375,
+       "max": 0.80474853515625,
+       "mean": 0.7900009155273438,
+       "first": [0.791015625, 0.780029296875, 0.80474853515625],
+       "last": 0.791015625,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "range",
+      "role": "coord",
+      "dims": ["range"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "Range from instrument to center of gate",
+       "meters_between_gates": 75.00000298023224,
+       "meters_to_center_of_first_gate": 0.0,
+       "spacing_is_constant": "true",
+       "units": "meters"
+      },
+      "attr_types": {
+       "long_name": "str",
+       "meters_between_gates": "float",
+       "meters_to_center_of_first_gate": "float",
+       "spacing_is_constant": "str",
+       "units": "str"
+      },
+      "encoding": {"dtype": "float32"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [1107],
+       "count": 1107,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 82950.0,
+       "mean": 41475.0,
+       "first": [0.0, 75.0, 150.0],
+       "last": 82950.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "time",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "datetime64[ns]",
+      "attrs": {
+       "comment": "times are relative to the volume start_time",
+       "long_name": "time in seconds since volume start",
+       "standard_name": "time"
+      },
+      "attr_types": {"comment": "str", "long_name": "str", "standard_name": "str"},
+      "encoding": {"calendar": "gregorian", "dtype": "float64", "units": "seconds since 2011-08-27T12:04:20Z"},
+      "encoding_types": {"calendar": "str", "dtype": "dtype", "units": "str"},
+      "values": {
+       "dtype": "datetime64[ns]",
+       "shape": [360],
+       "count": 360,
+       "count_nat": 0,
+       "min": 1314446660.76,
+       "max": 1314446672.76,
+       "mean": 1314446666.2933335,
+       "first": [1314446660.76, 1314446660.76, 1314446660.76],
+       "last": 1314446672.76,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "DBZ",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float32",
+      "attrs": {"grid_mapping": "grid_mapping", "sampling_ratio": 1.0, "units": "dBZ"},
+      "attr_types": {"grid_mapping": "str", "sampling_ratio": "float32", "units": "str"},
+      "encoding": {
+       "_FillValue": -128,
+       "add_offset": 32.0,
+       "coordinates": "time range",
+       "dtype": "int8",
+       "scale_factor": 0.5
+      },
+      "encoding_types": {
+       "_FillValue": "int8",
+       "add_offset": "float32",
+       "coordinates": "str",
+       "dtype": "dtype",
+       "scale_factor": "float32"
+      },
+      "values": {
+       "dtype": "float32",
+       "shape": [360, 1107],
+       "count": 398520,
+       "count_nan": 23779,
+       "count_inf": 0,
+       "min": -31.5,
+       "max": 69.5,
+       "mean": 23.602425408482127
+      }
+     },
+     {
+      "name": "VEL",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float32",
+      "attrs": {"grid_mapping": "grid_mapping", "sampling_ratio": 1.0, "units": "m/s"},
+      "attr_types": {"grid_mapping": "str", "sampling_ratio": "float32", "units": "str"},
+      "encoding": {
+       "_FillValue": -128,
+       "add_offset": 0.0,
+       "coordinates": "time range",
+       "dtype": "int8",
+       "scale_factor": 0.3777165412902832
+      },
+      "encoding_types": {
+       "_FillValue": "int8",
+       "add_offset": "float32",
+       "coordinates": "str",
+       "dtype": "dtype",
+       "scale_factor": "float32"
+      },
+      "values": {
+       "dtype": "float32",
+       "shape": [360, 1107],
+       "count": 398520,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": -47.970001220703125,
+       "max": 47.970001220703125,
+       "mean": -0.4624013633226925
+      }
+     },
+     {
+      "name": "antenna_transition",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "comment": "1 if antenna is in transition, 0 otherwise",
+       "long_name": "antenna_is_in_transition_between_sweeps",
+       "units": ""
+      },
+      "attr_types": {"comment": "str", "long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -128, "dtype": "int8"},
+      "encoding_types": {"_FillValue": "int8", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 0.0,
+       "mean": 0.0,
+       "first": [0.0, 0.0, 0.0],
+       "last": 0.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "follow_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "long_name": "follow_mode_for_scan_strategy",
+       "meta_group": "instrument_parameters",
+       "options": "none, sun, vehicle, aircraft, target, manual"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "none"}
+     },
+     {
+      "name": "measured_transmit_power_h",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "measured_radar_transmit_power_h_channel",
+       "meta_group": "radar_parameters",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 360,
+       "count_inf": 0,
+       "min": null,
+       "max": null,
+       "mean": null,
+       "first": ["NaN", "NaN", "NaN"],
+       "last": "NaN",
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "measured_transmit_power_v",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "measured_radar_transmit_power_v_channel",
+       "meta_group": "radar_parameters",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 360,
+       "count_inf": 0,
+       "min": null,
+       "max": null,
+       "mean": null,
+       "first": ["NaN", "NaN", "NaN"],
+       "last": "NaN",
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "n_samples",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "long_name": "number_of_samples_used_to_compute_moments",
+       "meta_group": "instrument_parameters",
+       "units": ""
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999, "dtype": "int32"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 32.0,
+       "max": 32.0,
+       "mean": 32.0,
+       "first": [32.0, 32.0, 32.0],
+       "last": 32.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "nyquist_velocity",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "unambiguous_doppler_velocity",
+       "meta_group": "instrument_parameters",
+       "units": "meters per second"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 47.970001220703125,
+       "max": 47.970001220703125,
+       "mean": 47.970001220703125,
+       "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+       "last": 47.970001220703125,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "prt",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "pulse_repetition_time",
+       "meta_group": "instrument_parameters",
+       "units": "seconds"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0005555555690079927,
+       "max": 0.0005555555690079927,
+       "mean": 0.0005555555690079927,
+       "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+       "last": 0.0005555555690079927,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "prt_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "long_name": "transmit_pulse_mode",
+       "meta_group": "radar_parameters",
+       "options": "fixed, staggered, dual"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+     },
+     {
+      "name": "prt_ratio",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "pulse_repetition_frequency_ratio",
+       "meta_group": "instrument_parameters",
+       "units": "seconds"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 1.0,
+       "max": 1.0,
+       "mean": 1.0,
+       "first": [1.0, 1.0, 1.0],
+       "last": 1.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "pulse_width",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "transmitter_pulse_width",
+       "meta_group": "instrument_parameters",
+       "units": "seconds"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 4.999999987376214e-07,
+       "max": 4.999999987376214e-07,
+       "mean": 4.999999987376214e-07,
+       "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+       "last": 4.999999987376214e-07,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "r_calib_index",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "comment": "This is the index for the calibration which applies to this ray",
+       "long_name": "calibration_data_array_index_per_ray",
+       "meta_group": "radar_calibration",
+       "units": ""
+      },
+      "attr_types": {"comment": "str", "long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999, "dtype": "int32"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 0.0,
+       "mean": 0.0,
+       "first": [0.0, 0.0, 0.0],
+       "last": 0.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "ray_gate_spacing",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "gate_spacing_for_ray", "units": "meters"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 75.0,
+       "max": 75.0,
+       "mean": 75.0,
+       "first": [75.0, 75.0, 75.0],
+       "last": 75.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "ray_start_range",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "start_range_for_ray", "units": "meters"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 0.0,
+       "mean": 0.0,
+       "first": [0.0, 0.0, 0.0],
+       "last": 0.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "scan_rate",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "antenna_angle_scan_rate",
+       "meta_group": "instrument_parameters",
+       "units": "degrees per second"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 360,
+       "count_inf": 0,
+       "min": null,
+       "max": null,
+       "mean": null,
+       "first": ["NaN", "NaN", "NaN"],
+       "last": "NaN",
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "sweep_fixed_angle",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {"long_name": "ray_target_fixed_angle", "units": "degrees"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 0.802001953125}
+     },
+     {
+      "name": "sweep_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U20",
+      "attrs": {
+       "long_name": "scan_mode_for_sweep",
+       "options": "sector, coplane, rhi, vertical_pointing, idle, azimuth_surveillance, elevation_surveillance, sunscan, pointing, calibration, manual_ppi, manual_rhi, sunscan_rhi"
+      },
+      "attr_types": {"long_name": "str", "options": "str"},
+      "encoding": {},
+      "encoding_types": {},
+      "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+     },
+     {
+      "name": "sweep_number",
+      "role": "data",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "sweep_index_number_0_based", "units": ""},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999, "dtype": "int32"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 0.0}
+     },
+     {
+      "name": "unambiguous_range",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "unambiguous_range", "meta_group": "instrument_parameters", "units": "meters"},
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [360],
+       "count": 360,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 83275.6796875,
+       "max": 83275.6796875,
+       "mean": 83275.6796875,
+       "first": [83275.6796875, 83275.6796875, 83275.6796875],
+       "last": 83275.6796875,
+       "non_decreasing": true
+      }
+     }
+    ]
+   },
+   {
+    "path": "/sweep_1",
+    "variables": [
+     {
+      "name": "azimuth",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "ray_azimuth_angle", "units": "degrees"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.21148681640625,
+       "max": 359.18975830078125,
+       "mean": 179.31454799301446,
+       "first": [315.19775390625, 317.21099853515625, 318.19976806640625],
+       "last": 314.20074462890625,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "elevation",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "ray_elevation_angle", "positive": "up", "units": "degrees"},
+      "attr_types": {"long_name": "str", "positive": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.791015625,
+       "max": 1.593017578125,
+       "mean": 1.4536993085175836,
+       "first": [0.791015625, 0.791015625, 0.791015625],
+       "last": 1.47216796875,
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "range",
+      "role": "coord",
+      "dims": ["range"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "Range from instrument to center of gate",
+       "meters_between_gates": 75.00000298023224,
+       "meters_to_center_of_first_gate": 0.0,
+       "spacing_is_constant": "true",
+       "units": "meters"
+      },
+      "attr_types": {
+       "long_name": "str",
+       "meters_between_gates": "float",
+       "meters_to_center_of_first_gate": "float",
+       "spacing_is_constant": "str",
+       "units": "str"
+      },
+      "encoding": {"dtype": "float32"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [1107],
+       "count": 1107,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 82950.0,
+       "mean": 41475.0,
+       "first": [0.0, 75.0, 150.0],
+       "last": 82950.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "time",
+      "role": "coord",
+      "dims": ["time"],
+      "dtype": "datetime64[ns]",
+      "attrs": {
+       "comment": "times are relative to the volume start_time",
+       "long_name": "time in seconds since volume start",
+       "standard_name": "time"
+      },
+      "attr_types": {"comment": "str", "long_name": "str", "standard_name": "str"},
+      "encoding": {"calendar": "gregorian", "dtype": "float64", "units": "seconds since 2011-08-27T12:04:20Z"},
+      "encoding_types": {"calendar": "str", "dtype": "dtype", "units": "str"},
+      "values": {
+       "dtype": "datetime64[ns]",
+       "shape": [359],
+       "count": 359,
+       "count_nat": 0,
+       "min": 1314446672.811,
+       "max": 1314446684.811,
+       "mean": 1314446678.359747,
+       "first": [1314446672.811, 1314446672.811, 1314446672.811],
+       "last": 1314446684.811,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "DBZ",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float32",
+      "attrs": {"grid_mapping": "grid_mapping", "sampling_ratio": 1.0, "units": "dBZ"},
+      "attr_types": {"grid_mapping": "str", "sampling_ratio": "float32", "units": "str"},
+      "encoding": {
+       "_FillValue": -128,
+       "add_offset": 32.0,
+       "coordinates": "time range",
+       "dtype": "int8",
+       "scale_factor": 0.5
+      },
+      "encoding_types": {
+       "_FillValue": "int8",
+       "add_offset": "float32",
+       "coordinates": "str",
+       "dtype": "dtype",
+       "scale_factor": "float32"
+      },
+      "values": {
+       "dtype": "float32",
+       "shape": [359, 1107],
+       "count": 397413,
+       "count_nan": 26918,
+       "count_inf": 0,
+       "min": -31.5,
+       "max": 64.0,
+       "mean": 24.07097261771414
+      }
+     },
+     {
+      "name": "VEL",
+      "role": "data",
+      "dims": ["time", "range"],
+      "dtype": "float32",
+      "attrs": {"grid_mapping": "grid_mapping", "sampling_ratio": 1.0, "units": "m/s"},
+      "attr_types": {"grid_mapping": "str", "sampling_ratio": "float32", "units": "str"},
+      "encoding": {
+       "_FillValue": -128,
+       "add_offset": 0.0,
+       "coordinates": "time range",
+       "dtype": "int8",
+       "scale_factor": 0.3777165412902832
+      },
+      "encoding_types": {
+       "_FillValue": "int8",
+       "add_offset": "float32",
+       "coordinates": "str",
+       "dtype": "dtype",
+       "scale_factor": "float32"
+      },
+      "values": {
+       "dtype": "float32",
+       "shape": [359, 1107],
+       "count": 397413,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": -47.970001220703125,
+       "max": 47.970001220703125,
+       "mean": -0.031678108614038365
+      }
+     },
+     {
+      "name": "antenna_transition",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "comment": "1 if antenna is in transition, 0 otherwise",
+       "long_name": "antenna_is_in_transition_between_sweeps",
+       "units": ""
+      },
+      "attr_types": {"comment": "str", "long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -128, "dtype": "int8"},
+      "encoding_types": {"_FillValue": "int8", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 0.0,
+       "mean": 0.0,
+       "first": [0.0, 0.0, 0.0],
+       "last": 0.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "follow_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "long_name": "follow_mode_for_scan_strategy",
+       "meta_group": "instrument_parameters",
+       "options": "none, sun, vehicle, aircraft, target, manual"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "none"}
+     },
+     {
+      "name": "measured_transmit_power_h",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "measured_radar_transmit_power_h_channel",
+       "meta_group": "radar_parameters",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 359,
+       "count_inf": 0,
+       "min": null,
+       "max": null,
+       "mean": null,
+       "first": ["NaN", "NaN", "NaN"],
+       "last": "NaN",
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "measured_transmit_power_v",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "measured_radar_transmit_power_v_channel",
+       "meta_group": "radar_parameters",
+       "units": "dBm"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 359,
+       "count_inf": 0,
+       "min": null,
+       "max": null,
+       "mean": null,
+       "first": ["NaN", "NaN", "NaN"],
+       "last": "NaN",
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "n_samples",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "long_name": "number_of_samples_used_to_compute_moments",
+       "meta_group": "instrument_parameters",
+       "units": ""
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999, "dtype": "int32"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 32.0,
+       "max": 32.0,
+       "mean": 32.0,
+       "first": [32.0, 32.0, 32.0],
+       "last": 32.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "nyquist_velocity",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "unambiguous_doppler_velocity",
+       "meta_group": "instrument_parameters",
+       "units": "meters per second"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 47.970001220703125,
+       "max": 47.970001220703125,
+       "mean": 47.970001220703125,
+       "first": [47.970001220703125, 47.970001220703125, 47.970001220703125],
+       "last": 47.970001220703125,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "prt",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "pulse_repetition_time",
+       "meta_group": "instrument_parameters",
+       "units": "seconds"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0005555555690079927,
+       "max": 0.0005555555690079927,
+       "mean": 0.0005555555690079927,
+       "first": [0.0005555555690079927, 0.0005555555690079927, 0.0005555555690079927],
+       "last": 0.0005555555690079927,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "prt_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "S32",
+      "attrs": {
+       "long_name": "transmit_pulse_mode",
+       "meta_group": "radar_parameters",
+       "options": "fixed, staggered, dual"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "options": "str"},
+      "encoding": {"dtype": "S1"},
+      "encoding_types": {"dtype": "dtype"},
+      "values": {"dtype": "S32", "shape": [], "value": "fixed"}
+     },
+     {
+      "name": "prt_ratio",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "pulse_repetition_frequency_ratio",
+       "meta_group": "instrument_parameters",
+       "units": "seconds"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 1.0,
+       "max": 1.0,
+       "mean": 1.0,
+       "first": [1.0, 1.0, 1.0],
+       "last": 1.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "pulse_width",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "transmitter_pulse_width",
+       "meta_group": "instrument_parameters",
+       "units": "seconds"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 4.999999987376214e-07,
+       "max": 4.999999987376214e-07,
+       "mean": 4.999999987376214e-07,
+       "first": [4.999999987376214e-07, 4.999999987376214e-07, 4.999999987376214e-07],
+       "last": 4.999999987376214e-07,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "r_calib_index",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float64",
+      "attrs": {
+       "comment": "This is the index for the calibration which applies to this ray",
+       "long_name": "calibration_data_array_index_per_ray",
+       "meta_group": "radar_calibration",
+       "units": ""
+      },
+      "attr_types": {"comment": "str", "long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999, "dtype": "int32"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float64",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 0.0,
+       "mean": 0.0,
+       "first": [0.0, 0.0, 0.0],
+       "last": 0.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "ray_gate_spacing",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "gate_spacing_for_ray", "units": "meters"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 75.0,
+       "max": 75.0,
+       "mean": 75.0,
+       "first": [75.0, 75.0, 75.0],
+       "last": 75.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "ray_start_range",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "start_range_for_ray", "units": "meters"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 0.0,
+       "max": 0.0,
+       "mean": 0.0,
+       "first": [0.0, 0.0, 0.0],
+       "last": 0.0,
+       "non_decreasing": true
+      }
+     },
+     {
+      "name": "scan_rate",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {
+       "long_name": "antenna_angle_scan_rate",
+       "meta_group": "instrument_parameters",
+       "units": "degrees per second"
+      },
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 359,
+       "count_inf": 0,
+       "min": null,
+       "max": null,
+       "mean": null,
+       "first": ["NaN", "NaN", "NaN"],
+       "last": "NaN",
+       "non_decreasing": false
+      }
+     },
+     {
+      "name": "sweep_fixed_angle",
+      "role": "data",
+      "dims": [],
+      "dtype": "float32",
+      "attrs": {"long_name": "ray_target_fixed_angle", "units": "degrees"},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {"dtype": "float32", "shape": [], "value": 1.4996337890625}
+     },
+     {
+      "name": "sweep_mode",
+      "role": "data",
+      "dims": [],
+      "dtype": "U20",
+      "attrs": {
+       "long_name": "scan_mode_for_sweep",
+       "options": "sector, coplane, rhi, vertical_pointing, idle, azimuth_surveillance, elevation_surveillance, sunscan, pointing, calibration, manual_ppi, manual_rhi, sunscan_rhi"
+      },
+      "attr_types": {"long_name": "str", "options": "str"},
+      "encoding": {},
+      "encoding_types": {},
+      "values": {"dtype": "U20", "shape": [], "value": "azimuth_surveillance"}
+     },
+     {
+      "name": "sweep_number",
+      "role": "data",
+      "dims": [],
+      "dtype": "float64",
+      "attrs": {"long_name": "sweep_index_number_0_based", "units": ""},
+      "attr_types": {"long_name": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999, "dtype": "int32"},
+      "encoding_types": {"_FillValue": "int32", "dtype": "dtype"},
+      "values": {"dtype": "float64", "shape": [], "value": 1.0}
+     },
+     {
+      "name": "unambiguous_range",
+      "role": "data",
+      "dims": ["time"],
+      "dtype": "float32",
+      "attrs": {"long_name": "unambiguous_range", "meta_group": "instrument_parameters", "units": "meters"},
+      "attr_types": {"long_name": "str", "meta_group": "str", "units": "str"},
+      "encoding": {"_FillValue": -9999.0, "dtype": "float32"},
+      "encoding_types": {"_FillValue": "float32", "dtype": "dtype"},
+      "values": {
+       "dtype": "float32",
+       "shape": [359],
+       "count": 359,
+       "count_nan": 0,
+       "count_inf": 0,
+       "min": 83275.6796875,
+       "max": 83275.6796875,
+       "mean": 83275.6796875,
+       "first": [83275.6796875, 83275.6796875, 83275.6796875],
+       "last": 83275.6796875,
+       "non_decreasing": true
+      }
+     }
+    ]
+   }
+  ]
+ }
+}
