@@ -2882,7 +2882,7 @@ mod tests {
             let mut volumes = Vec::new();
             for part in &plan.parts {
                 let bytes = crate::fetch_volume_bytes(&part.url).expect("part download");
-                let volume = recast_radar_io_nexrad::decode_supported_volume_bytes(&bytes).expect("ODIM decode");
+                let volume = recast_radar_io::decode_supported_volume_bytes(&bytes).expect("ODIM decode");
                 volumes.push(volume);
             }
             let cuts: usize = volumes.iter().map(|volume| volume.cuts.len()).sum();
@@ -2944,7 +2944,7 @@ mod tests {
                         continue;
                     }
                 };
-                match recast_radar_io_nexrad::decode_supported_volume_bytes(&bytes) {
+                match recast_radar_io::decode_supported_volume_bytes(&bytes) {
                     Ok(volume) => {
                         cuts += volume.cuts.len();
                         radials += volume.metadata.decoded_radial_count;

@@ -1,0 +1,18 @@
+[package]
+name = "recast-radar-io-cfradial"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+recast-radar-core = { path = "../recast-radar-core" }
+thiserror.workspace = true
+
+[dev-dependencies]
+# Cross-format sniffer and netCDF-4 rejection checks in the integration tests.
+recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
+recast-radar-io-odim = { path = "../recast-radar-io-odim" }
+
+[lints]
+workspace = true

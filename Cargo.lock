@@ -63,12 +63,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 
 [[package]]
-name = "byteorder"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
-
-[[package]]
 name = "byteorder-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -922,7 +916,7 @@ dependencies = [
  "chrono",
  "recast-radar-color-tables",
  "recast-radar-core",
- "recast-radar-io-nexrad",
+ "recast-radar-io",
  "recast-radar-render",
  "serde",
  "serde_json",
@@ -946,7 +940,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "quick-xml",
- "recast-radar-io-nexrad",
+ "recast-radar-io",
+ "recast-radar-io-jma",
  "reqwest",
  "serde",
  "serde_json",
@@ -954,18 +949,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-radar-io"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "recast-radar-core",
+ "recast-radar-data",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-dorade",
+ "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
+ "recast-radar-io-odim",
+ "thiserror",
+]
+
+[[package]]
+name = "recast-radar-io-cfradial"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "recast-radar-core",
+ "recast-radar-io-dorade",
+ "recast-radar-io-odim",
+ "thiserror",
+]
+
+[[package]]
+name = "recast-radar-io-dorade"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rayon",
+ "recast-radar-core",
+ "recast-radar-io-nexrad",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "recast-radar-io-jma"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "recast-radar-core",
+ "thiserror",
+]
+
+[[package]]
 name = "recast-radar-io-nexrad"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "bzip2",
  "chrono",
  "flate2",
  "rayon",
  "recast-radar-core",
- "recast-radar-data",
  "thiserror",
- "zip",
+]
+
+[[package]]
+name = "recast-radar-io-odim"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flate2",
+ "recast-radar-core",
+ "thiserror",
 ]
 
 [[package]]
@@ -977,6 +1026,7 @@ dependencies = [
  "rayon",
  "recast-radar-color-tables",
  "recast-radar-core",
+ "recast-radar-io-cfradial",
  "recast-radar-io-nexrad",
  "thiserror",
 ]

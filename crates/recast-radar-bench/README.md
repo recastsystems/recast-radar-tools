@@ -1,7 +1,7 @@
 # recast-radar-bench
 
 Headless benchmark harness for BowEcho's decode + raster hot path. No
-window, no network, no `app_ui` dependency — just the same `recast_radar_io_nexrad`
+window, no network, no `app_ui` dependency — just the same `recast_radar_io`
 decode entry and `recast_radar_render` viewport-raster path the app runs, timed
 with `std::time::Instant` and checksummed for byte-identical output.
 

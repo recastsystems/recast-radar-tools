@@ -6,17 +6,18 @@ license.workspace = true
 
 [dependencies]
 chrono.workspace = true
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 quick-xml.workspace = true
+# JMA station catalog: parses station headers out of the national GRIB2 tar.
+recast-radar-io-jma = { path = "../recast-radar-io-jma" }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-# Only for examples/intl_probe.rs (live download + decode smoke); the
-# library itself must never depend on the decode layer.
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+# Decode checks in unit tests and examples/intl_probe.rs (live download +
+# decode smoke); the library itself does not use the format router.
+recast-radar-io = { path = "../recast-radar-io" }
 
 [lints]
 workspace = true

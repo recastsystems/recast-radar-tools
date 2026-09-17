@@ -1089,11 +1089,15 @@ fn format_option_f32(value: Option<f32>) -> String {
 pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
     let raw =
         fs::read(&args.target).map_err(|err| format!("read {}: {err}", args.target.display()))?;
-    let volume = recast_radar_io_nexrad::decode_supported_volume_bytes(raw.as_slice())?;
+    let volume = recast_radar_io::decode_supported_volume_bytes(raw.as_slice())
+        .map_err(|err| err.to_string())?;
     let prior_volume = match &args.prior {
         Some(path) => {
             let bytes = fs::read(path).map_err(|err| format!("read {}: {err}", path.display()))?;
-            Some(recast_radar_io_nexrad::decode_supported_volume_bytes(bytes.as_slice())?)
+            Some(
+                recast_radar_io::decode_supported_volume_bytes(bytes.as_slice())
+                    .map_err(|err| err.to_string())?,
+            )
         }
         None => None,
     };

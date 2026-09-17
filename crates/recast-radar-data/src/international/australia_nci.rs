@@ -865,7 +865,7 @@ id,id_long,WIGOS,short_name,location,radar_type,postchange_start,prechange_end,s
             .expect("latest Melbourne archive frame");
         let raw = crate::fetch_volume_bytes(&plan.parts[0].url).expect("download ODIM HDF5 member");
         let volume =
-            recast_radar_io_nexrad::decode_supported_volume_bytes(&raw).expect("ODIM HDF5 member decode");
+            recast_radar_io::decode_supported_volume_bytes(&raw).expect("ODIM HDF5 member decode");
         assert!(
             volume.cuts.iter().any(|cut| !cut.moments.is_empty()),
             "decoded volume should contain moments"

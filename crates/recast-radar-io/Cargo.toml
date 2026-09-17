@@ -1,0 +1,22 @@
+[package]
+name = "recast-radar-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+flate2.workspace = true
+recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
+recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
+recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-io-odim = { path = "../recast-radar-io-odim" }
+thiserror.workspace = true
+
+[dev-dependencies]
+# Only for examples/intl_assembly_probe.rs (live download + decode + merge).
+recast-radar-data = { path = "../recast-radar-data" }
+
+[lints]
+workspace = true
