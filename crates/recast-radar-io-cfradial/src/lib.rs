@@ -1,7 +1,9 @@
 //! CfRadial 1.x decoding through a pure-Rust classic netCDF reader.
 //!
-//! - [`cfradial`]: CfRadial 1.x volumes into
-//!   [`recast_radar_core::RadarVolume`].
+//! - [`cfradial`]: CfRadial 1.x volumes into the FM301
+//!   [`recast_radar_core::model::Volume`] ([`read_cfradial1_volume`]); the
+//!   pre-FM301 [`decode_cfradial1_volume`] lives in [`legacy_api`] during the
+//!   migration.
 //! - [`netcdf3`]: the minimal read-only classic netCDF (CDF-1/CDF-2) parser.
 //!
 //! # Limits
@@ -15,10 +17,11 @@
 //!
 //! The CfRadial decoder accepts at most `MAX_GATES_PER_RADIAL` (16,384)
 //! gates and `MAX_SWEEPS_PER_VOLUME` (1,024) sweeps, and charges every
-//! numeric coordinate array it widens to f64, each field's transient f32
-//! plane, the radial and per-ray metadata tables, and every moment grid to a
-//! `DecodeBudget` of `MAX_DECODED_VOLUME_BYTES` (1 GiB) before allocating
-//! (constants in [`recast_radar_core::bounded_read`]). Sweeps must not share
+//! numeric coordinate array it widens to f64, the ray tables and every
+//! field's sweep rows (in the file's storage width) to a `DecodeBudget` of
+//! `MAX_DECODED_VOLUME_BYTES` (1 GiB) before allocating (constants in
+//! [`recast_radar_core::bounded_read`]); the netCDF reader's own 256 MiB
+//! per-variable cap bounds each full field array it reads. Sweeps must not share
 //! rays: overlapping `sweep_start_ray_index`/`sweep_end_ray_index` ranges are
 //! a [`CfRadialError::InvalidMessage`] error, so each ray's gates are copied
 //! into at most one sweep and a moment's grids never outgrow its field. A
@@ -30,13 +33,19 @@
 //! exceeds a limit fails the decode.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 pub mod cfradial;
+#[allow(deprecated)]
+pub mod legacy_api;
 pub mod netcdf3;
 
 use thiserror::Error;
 
-pub use cfradial::decode_cfradial1_volume;
+pub use cfradial::read_cfradial1_volume;
+#[allow(deprecated)]
+pub use legacy_api::decode_cfradial1_volume;
 pub use netcdf3::looks_like_netcdf3_bytes;
 
 /// Result type for CfRadial and netCDF decoding.
@@ -65,9 +74,6 @@ pub enum CfRadialError {
         /// Human-readable description.
         reason: String,
     },
-    /// Decoded gates did not fit the moment grid.
-    #[error("moment grid error: {0}")]
-    MomentGrid(#[from] recast_radar_core::MomentGridError),
     /// The file declares more data than a documented resource limit allows
     /// (see the crate-level `# Limits` section).
     #[error("decode limit exceeded: {0}")]

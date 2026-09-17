@@ -39,6 +39,9 @@ pub fn looks_like_netcdf3_bytes(bytes: &[u8]) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub enum NcValue {
     Str(String),
+    /// `NC_FLOAT` values, kept at their width: xarray derives the decoded
+    /// dtype of a packed variable from the width of its `scale_factor`.
+    Floats(Vec<f32>),
     Doubles(Vec<f64>),
     Ints(Vec<i64>),
 }
@@ -53,6 +56,7 @@ impl NcValue {
 
     pub fn as_f64(&self) -> Option<f64> {
         match self {
+            Self::Floats(values) => values.first().map(|value| f64::from(*value)),
             Self::Doubles(values) => values.first().copied(),
             Self::Ints(values) => values.first().map(|value| *value as f64),
             _ => None,
@@ -106,11 +110,19 @@ pub struct NcVar {
     /// Dimension indices into [`Nc3File::dims`].
     pub dim_ids: Vec<usize>,
     pub attrs: BTreeMap<String, NcValue>,
+    /// Position in the file header's variable list (file order).
+    pub index: usize,
     nc_type: u32,
     begin: u64,
 }
 
 impl NcVar {
+    /// The netCDF external type code (1 byte, 2 char, 3 short, 4 int, 5
+    /// float, 6 double).
+    pub fn nc_type(&self) -> u32 {
+        self.nc_type
+    }
+
     pub fn attr_str(&self, name: &str) -> Option<&str> {
         self.attrs.get(name).and_then(NcValue::as_str)
     }
@@ -263,9 +275,9 @@ impl<'a> Cursor<'a> {
                         raw.as_chunks::<4>()
                             .0
                             .iter()
-                            .map(|quad| f64::from(f32::from_be_bytes(*quad))),
+                            .map(|quad| f32::from_be_bytes(*quad)),
                     );
-                    NcValue::Doubles(values)
+                    NcValue::Floats(values)
                 }
                 6 => {
                     let mut values = reserve_vec(nelems, "netCDF double attribute")?;
@@ -362,7 +374,7 @@ impl<'a> Nc3File<'a> {
             )));
         }
         let mut vars = BTreeMap::new();
-        for _ in 0..var_count {
+        for index in 0..var_count {
             let name = cursor.name()?;
             let ndims = cursor.u32()? as usize;
             if ndims > MAX_NC_VAR_DIMS {
@@ -391,6 +403,7 @@ impl<'a> Nc3File<'a> {
                     name,
                     dim_ids,
                     attrs,
+                    index,
                     nc_type,
                     begin,
                 },

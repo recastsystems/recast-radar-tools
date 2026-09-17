@@ -5,12 +5,15 @@
 //! NCAR/EOL, version 1.4 (2016) (versions 1.1–1.4 share the layout read
 //! here). CfRadial 1 files are classic netCDF (`CDF\x01`/`CDF\x02`) with:
 //! - dimensions `time` (rays, usually unlimited) and `range` (gates),
-//! - per-ray `azimuth(time)`, `elevation(time)`, optional
-//!   `nyquist_velocity(time)`, `prt(time)`, `unambiguous_range(time)`,
-//!   `pulse_count(time)`, and `independent_samples(time)`,
+//! - per-ray `azimuth(time)`, `elevation(time)`, `time(time)` and the
+//!   instrument variables `nyquist_velocity`, `unambiguous_range`, `prt`,
+//!   `prt_ratio`, `n_samples`, `pulse_width`, `scan_rate`,
+//!   `antenna_transition`, `r_calib_index` (all optional),
 //! - per-sweep `fixed_angle(sweep)`, `sweep_start_ray_index(sweep)`,
-//!   `sweep_end_ray_index(sweep)`, `sweep_mode(sweep, string_length)`,
-//! - scalar `latitude`/`longitude`/`altitude`, `time_coverage_start`,
+//!   `sweep_end_ray_index(sweep)`, `sweep_mode(sweep, string_length)` and
+//!   the other Table 301-8a string variables,
+//! - scalar `latitude`/`longitude`/`altitude` (per ray for moving
+//!   platforms), `time_coverage_start`, `volume_number`, `platform_type`,
 //! - field variables dimensioned `(time, range)`, optionally packed with
 //!   `scale_factor`/`add_offset` and flagged with `_FillValue`
 //!   (CF packing: physical = raw * scale_factor + add_offset).
@@ -18,31 +21,184 @@
 //! CfRadial 2 is netCDF-4 (HDF5 container) and is rejected by the routing
 //! layer with an explicit message — it never reaches this module.
 //!
-//! Fields decode into F32 moment grids (NaN = fill); sweeps become
-//! elevation cuts. For RHI sweeps the fixed angle is the AZIMUTH and lands
-//! in `ElevationCut::elevation_deg`, matching the DORADE decoder's RHI
-//! convention; `sweep_mode` is surfaced as [`recast_radar_core::ScanMode`].
+//! [`read_cfradial1_volume`] builds the FM301 model ([`Volume`]; design note
+//! `docs/design/fm301-model.md` sections 7.3, 9 and 11) the way xradar's
+//! `open_cfradial1_datatree` and Py-ART's `read_cfradial` read the same
+//! file: one sweep per `sweep` index in file order, field variables under
+//! their names verbatim in file order, packed `byte`/`short` fields kept as
+//! `i8`/`i16` with the file's `scale_factor`, `add_offset` and `_FillValue`
+//! (attribute width preserved), float fields verbatim with their fill, the
+//! `range` coordinate as the file's gate centres, `time(time)` as seconds
+//! since the `time.units` reference (else `time_coverage_start`), and every
+//! per-ray, root and sweep variable without a typed slot kept verbatim in
+//! `extra_vars`. The BowEcho export attributes (`vcp_*`, `polarization`,
+//! `calibration`, `forward_operator`, ...) fill `ScanStrategy`, `Provenance`
+//! and `SimulationProvenance`; sweeps whose `vcp_moment_coverage_code`
+//! restricts their moments get only those fields. For RHI sweeps the fixed
+//! angle is the AZIMUTH (CfRadial §5.8).
+//!
+//! The pre-FM301 [`decode_cfradial1_volume`] (legacy `RadarVolume`) lives
+//! in [`crate::legacy_api`] during the migration.
 
-use std::collections::BTreeSet;
+use std::borrow::Cow;
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
-use recast_radar_core::{
-    ElevationCut, GateRange, MomentGrid, MomentRow, MomentType, RadarSite, RadarVolume, Radial,
-    RayInstrumentMetadata, ScanLegMetadata, ScanMode, VcpInfo, canonical_moment,
+use recast_radar_core::model::{
+    ArrayBuf, AttrValue, ExtraVariable, Field, FieldData, FieldName, FloatCoding, FloatWidth,
+    FollowMode, GateMapping, InstrumentType, IntCoding, LinearTransform, PlatformTrack,
+    PlatformType, PolarizationMode, PrimaryAxis, PrtMode, Quantity, RangeCoord, Scalar,
+    ScanDefinition, ScanLeg, SimulationProvenance, SourceFormat, Sweep, SweepMode, Volume,
 };
 
+#[allow(deprecated)]
+pub use crate::legacy_api::decode_cfradial1_volume;
 pub use crate::netcdf3::looks_like_netcdf3_bytes;
-use crate::netcdf3::{Nc3File, NcArray, NcVar};
+use crate::netcdf3::{Nc3File, NcArray, NcValue, NcVar};
 use crate::{CfRadialError, Result};
 
-/// Decode a CfRadial 1.x byte buffer into the shared radar model.
-pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
-    decode_cfradial1_volume_within(bytes, DecodeBudget::volume())
+/// Decode a CfRadial 1.x byte buffer into the FM301 model.
+pub fn read_cfradial1_volume(bytes: &[u8]) -> Result<Volume> {
+    Ok(decode(bytes, DecodeBudget::volume(), false)?.volume)
 }
 
-/// [`decode_cfradial1_volume`] with an explicit output budget.
-fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Result<RadarVolume> {
+/// [`read_cfradial1_volume`] with an explicit output budget.
+#[cfg(test)]
+fn read_cfradial1_volume_within(bytes: &[u8], budget: DecodeBudget) -> Result<Volume> {
+    Ok(decode(bytes, budget, false)?.volume)
+}
+
+/// A decoded volume plus the values only the legacy wrapper needs.
+pub(crate) struct Decoded {
+    pub volume: Volume,
+    pub legacy: Option<LegacyLog>,
+}
+
+/// Values the pre-FM301 decoder derived with its own rounding and filters,
+/// recorded so [`crate::legacy_api`] reproduces them exactly.
+#[derive(Default)]
+pub(crate) struct LegacyLog {
+    /// `time_coverage_start` (the legacy volume time), when it parsed.
+    pub volume_time: Option<DateTime<Utc>>,
+    pub pulse_width_us: Option<f32>,
+    pub unambiguous_range_km: Option<f32>,
+    /// The legacy `scan_mode` (Ppi/Rhi/VerticalPointing/Other) per declared
+    /// sweep, for the legacy combined mode.
+    pub sweep_modes: Vec<Option<LegacyScanMode>>,
+    /// Per decoded sweep (in sweep order), the legacy per-ray instrument
+    /// metadata; empty when the file has none of the four variables.
+    pub ray_instruments: Vec<Vec<LegacyRayInstrument>>,
+}
+
+/// The legacy `RayInstrumentMetadata` values of one ray.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct LegacyRayInstrument {
+    pub prt_s: Option<f32>,
+    pub unambiguous_range_km: Option<f32>,
+    pub pulse_count: Option<u32>,
+    pub independent_samples: Option<f32>,
+}
+
+/// The legacy `ScanMode` vocabulary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LegacyScanMode {
+    Ppi,
+    Rhi,
+    VerticalPointing,
+    Other,
+}
+
+/// Global attributes with a typed slot in the model; every other global
+/// attribute goes to `GlobalAttrs::other` verbatim.
+const SLOTTED_GLOBAL_ATTRS: &[&str] = &[
+    "Conventions",
+    "version",
+    "title",
+    "institution",
+    "references",
+    "source",
+    "history",
+    "comment",
+    "instrument_name",
+    "site_name",
+    "scan_name",
+    "scan_id",
+    "platform_is_mobile",
+    "ray_times_increase",
+    "simulated",
+    "vcp_pattern",
+    "vcp_source_document",
+    "vcp_source_revision",
+    "vcp_source_rda_build",
+    "vcp_source_figure",
+    "vcp_pulse_length",
+    "vcp_adaptations",
+    "polarization",
+    "calibration",
+    "forward_operator",
+    "forward_operator_config",
+    "source_model",
+    "microphysics_scheme",
+    "scattering_model",
+    "time_coverage_start",
+    "time_coverage_end",
+];
+
+/// Per-ray variables with a typed slot; the rest of the `(time)` variables
+/// go to `Sweep::extra_vars`.
+const SLOTTED_RAY_VARS: &[&str] = &[
+    "time",
+    "azimuth",
+    "elevation",
+    "nyquist_velocity",
+    "unambiguous_range",
+    "prt",
+    "prt_ratio",
+    "n_samples",
+    "pulse_count",
+    "pulse_width",
+    "scan_rate",
+    "antenna_transition",
+    "r_calib_index",
+    "independent_samples",
+    "latitude",
+    "longitude",
+    "altitude",
+    "altitude_agl",
+    "heading",
+    "roll",
+    "pitch",
+    "drift",
+    "rotation",
+    "tilt",
+    "measured_transmit_power_h",
+    "measured_transmit_power_v",
+];
+
+/// Root variables with a typed slot; other scalar root variables go to
+/// `Volume::extra_vars`.
+const SLOTTED_ROOT_VARS: &[&str] = &[
+    "volume_number",
+    "platform_type",
+    "instrument_type",
+    "primary_axis",
+    "status_str",
+    "time_coverage_start",
+    "time_coverage_end",
+    "latitude",
+    "longitude",
+    "altitude",
+    "altitude_agl",
+    "frequency",
+    "radar_antenna_gain_h",
+    "radar_antenna_gain_v",
+    "radar_beam_width_h",
+    "radar_beam_width_v",
+    "radar_rx_bandwidth",
+    "radar_receiver_bandwidth",
+];
+
+pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget, legacy: bool) -> Result<Decoded> {
     let file = Nc3File::open(bytes)?;
     let dim = |name: &str| file.dims.iter().position(|(dim_name, _)| dim_name == name);
     let (Some(time_dim), Some(range_dim)) = (dim("time"), dim("range")) else {
@@ -56,62 +212,52 @@ fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Res
         return Err(invalid("CfRadial volume has no rays or gates"));
     }
     check_gate_count(n_gates, "CfRadial range dimension").map_err(CfRadialError::LimitExceeded)?;
+    let ngates = u32::try_from(n_gates).map_err(|_| invalid("CfRadial range overflow"))?;
 
     let azimuth = read_f64s(&file, "azimuth", &mut budget)?;
     let elevation = read_f64s(&file, "elevation", &mut budget)?;
     if azimuth.len() < n_rays || elevation.len() < n_rays {
         return Err(invalid("azimuth/elevation shorter than the time dimension"));
     }
-    let nyquist = optional_f64s(&file, "nyquist_velocity", &mut budget)?;
-    // Keep physical timing/sample quantities aligned to their source rays.
-    // VCP Appendix-C PRF values elsewhere in the file are source-table CODES,
-    // not frequencies; they remain in ScanLegMetadata and never feed these
-    // physical variables.
-    let ray_prt_s = aligned_time_f32s(
+    let nyquist = aligned_time_values(&file, "nyquist_velocity", time_dim, n_rays, &mut budget)?;
+    let unambiguous_range_scale = range_units_to_m_scale(units_of(&file, "unambiguous_range"));
+    let unambiguous_range =
+        aligned_time_values(&file, "unambiguous_range", time_dim, n_rays, &mut budget)?;
+    let prt_scale = time_units_scale(units_of(&file, "prt"));
+    let prt = aligned_time_values(&file, "prt", time_dim, n_rays, &mut budget)?;
+    let prt_ratio = aligned_time_values(&file, "prt_ratio", time_dim, n_rays, &mut budget)?;
+    let n_samples = aligned_time_values(&file, "n_samples", time_dim, n_rays, &mut budget)?;
+    let pulse_count = aligned_time_values(&file, "pulse_count", time_dim, n_rays, &mut budget)?;
+    let pulse_width_scale = time_units_scale(units_of(&file, "pulse_width"));
+    let pulse_width = aligned_time_values(&file, "pulse_width", time_dim, n_rays, &mut budget)?;
+    let scan_rate = aligned_time_values(&file, "scan_rate", time_dim, n_rays, &mut budget)?;
+    let antenna_transition =
+        aligned_time_values(&file, "antenna_transition", time_dim, n_rays, &mut budget)?;
+    let calib_index = aligned_time_values(&file, "r_calib_index", time_dim, n_rays, &mut budget)?;
+    let independent_samples =
+        aligned_time_values(&file, "independent_samples", time_dim, n_rays, &mut budget)?;
+    let transmit_power_h = aligned_time_values(
         &file,
-        "prt",
+        "measured_transmit_power_h",
         time_dim,
         n_rays,
-        time_units_scale,
         &mut budget,
     )?;
-    let ray_unambiguous_range_km = aligned_time_f32s(
+    let transmit_power_v = aligned_time_values(
         &file,
-        "unambiguous_range",
+        "measured_transmit_power_v",
         time_dim,
         n_rays,
-        range_units_to_km_scale,
         &mut budget,
     )?;
-    let ray_pulse_count = aligned_time_u32s(&file, "pulse_count", time_dim, n_rays, &mut budget)?;
-    let ray_independent_samples = aligned_time_f32s(
-        &file,
-        "independent_samples",
-        time_dim,
-        n_rays,
-        |_| 1.0,
-        &mut budget,
-    )?;
-    let has_ray_instrument_metadata = ray_prt_s.is_some()
-        || ray_unambiguous_range_km.is_some()
-        || ray_pulse_count.is_some()
-        || ray_independent_samples.is_some();
+    let platform = read_platform_track(&file, time_dim, n_rays, &mut budget)?;
 
-    // Gate geometry: range(range) gate centers in metres (spec §5.5); the
-    // start_range/gate spacing attributes are optional, so derive from the
-    // coordinate values themselves.
+    // Gate geometry: range(range) gate centres in metres (spec §5.5).
     let range = read_f64s(&file, "range", &mut budget)?;
     if range.len() < 2 {
         return Err(invalid("range coordinate needs at least two gates"));
     }
-    let spacing = (range[1] - range[0]).round().max(1.0);
-    // Center of first gate − half a gate = range to gate start.
-    let first_gate = (range[0] - spacing / 2.0).round();
-    let gate_range = GateRange {
-        first_gate_m: first_gate as i32,
-        gate_spacing_m: spacing as i32,
-        gate_count: n_gates,
-    };
+    let range_coord = range_coordinate(&range[..n_gates.min(range.len())], ngates);
 
     // Sweep index ranges; a missing sweep dimension means one sweep.
     let fixed_angles = optional_f64s(&file, "fixed_angle", &mut budget)?.unwrap_or_default();
@@ -121,32 +267,122 @@ fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Res
         optional_f64s(&file, "sweep_start_ray_index", &mut budget)?.unwrap_or_default();
     let sweep_ends = optional_f64s(&file, "sweep_end_ray_index", &mut budget)?.unwrap_or_default();
     let sweep_count = fixed_angles.len().max(1);
-    let sweep_modes = read_sweep_modes(&file, sweep_count);
+    let sweep_modes = read_sweep_strings(&file, "sweep_mode", sweep_count);
+    let follow_modes = read_sweep_strings(&file, "follow_mode", sweep_count);
+    let prt_modes = read_sweep_strings(&file, "prt_mode", sweep_count);
+    let polarization_modes = read_sweep_strings(&file, "polarization_mode", sweep_count);
+    let target_scan_rates = optional_f64s(&file, "target_scan_rate", &mut budget)?;
+    let rays_are_indexed = read_sweep_strings(&file, "rays_are_indexed", sweep_count);
+    let ray_angle_res = optional_f64s(&file, "ray_angle_res", &mut budget)?;
 
-    let mut volume = RadarVolume {
-        site: parse_site(&file),
-        ..RadarVolume::default()
+    // Time: seconds since the `time.units` reference, else since
+    // `time_coverage_start`.
+    let coverage_start = parse_time_var_or_attr(&file, "time_coverage_start");
+    let coverage_end = parse_time_var_or_attr(&file, "time_coverage_end");
+    let time_reference = time_units_reference(&file)
+        .or(coverage_start)
+        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
+    let ray_seconds = optional_f64s(&file, "time", &mut budget)?;
+
+    let instrument_name = file
+        .gattr_str("instrument_name")
+        .or_else(|| file.gattr_str("site_name"))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("CFRAD")
+        .to_owned();
+    let mut volume = Volume::new(instrument_name, time_reference);
+    volume.attrs.site_name = file.gattr_str("site_name").map(str::to_owned);
+    volume.attrs.title = metadata_text(&file, "title");
+    volume.attrs.institution = metadata_text(&file, "institution");
+    volume.attrs.references = metadata_text(&file, "references");
+    volume.attrs.source = metadata_text(&file, "source");
+    volume.attrs.history = metadata_text(&file, "history");
+    volume.attrs.comment = metadata_text(&file, "comment");
+    volume.attrs.platform_is_mobile = gattr_bool(&file, "platform_is_mobile").unwrap_or(false);
+    volume.attrs.ray_times_increase = gattr_bool(&file, "ray_times_increase");
+    volume.attrs.simulated = gattr_bool(&file, "simulated").unwrap_or(false);
+    volume.attrs.other = file
+        .gattrs
+        .iter()
+        .filter(|(name, _)| !SLOTTED_GLOBAL_ATTRS.contains(&name.as_str()))
+        .map(|(name, value)| (name.as_str().into(), attr_value(value)))
+        .collect();
+    volume.time_coverage = match (coverage_start, coverage_end) {
+        (Some(start), Some(end)) => Some(recast_radar_core::model::TimeCoverage { start, end }),
+        _ => None,
     };
-    if let Some(start) = parse_time_coverage_start(&file) {
-        volume.volume_time = start;
-    }
-    volume.metadata.archive_version = Some(
+    volume.volume_number = file
+        .read_var("volume_number")
+        .ok()
+        .and_then(|array| array.get_f64(0))
+        .filter(|value| value.is_finite() && value.fract() == 0.0)
+        .and_then(|value| i32::try_from(value as i64).ok());
+    volume.platform_type = char_var_text(&file, "platform_type")
+        .and_then(|text| PlatformType::parse(&text))
+        .unwrap_or(PlatformType::Fixed);
+    volume.instrument_type = char_var_text(&file, "instrument_type")
+        .and_then(|text| InstrumentType::parse(&text))
+        .unwrap_or(InstrumentType::Radar);
+    volume.primary_axis =
+        char_var_text(&file, "primary_axis").and_then(|text| PrimaryAxis::parse(&text));
+    volume.status_str = char_var_text(&file, "status_str").filter(|text| !text.is_empty());
+    let scalar = |name: &str| -> Option<f64> {
+        let var = file.vars.get(name)?;
+        if !var.dim_ids.is_empty() && var.dim_ids.as_slice() != [time_dim] {
+            return None;
+        }
+        file.read_var(name).ok().and_then(|array| array.get_f64(0))
+    };
+    // A moving platform's root location is its first ray's.
+    volume.location.latitude_deg = scalar("latitude");
+    volume.location.longitude_deg = scalar("longitude");
+    volume.location.altitude_m = scalar("altitude");
+    volume.location.altitude_agl_m = scalar("altitude_agl");
+    volume.provenance.source_format = SourceFormat::CfRadial1;
+    volume.provenance.source_version = Some(
         file.gattr_str("version")
             .map(str::to_owned)
             .unwrap_or_else(|| "CfRadial-1".to_owned()),
     );
-    volume.metadata.compression = Some("cfradial1-netcdf3".to_owned());
-    volume.metadata.scan_mode = combined_scan_mode(&sweep_modes);
-    volume.metadata.radar_frequency_mhz = cfradial_radar_frequency_mhz(&file);
-    volume.metadata.beam_width_h_deg =
+    volume.provenance.source_conventions = file.gattr_str("Conventions").map(str::to_owned);
+    volume.provenance.compression = Some("cfradial1-netcdf3".to_owned());
+    volume.provenance.polarization_note = metadata_text(&file, "polarization");
+    volume.provenance.calibration_note = metadata_text(&file, "calibration");
+    let simulation = SimulationProvenance {
+        forward_operator: metadata_text(&file, "forward_operator"),
+        forward_operator_config: metadata_text(&file, "forward_operator_config"),
+        source_model: metadata_text(&file, "source_model"),
+        microphysics_scheme: metadata_text(&file, "microphysics_scheme"),
+        scattering_model: metadata_text(&file, "scattering_model"),
+    };
+    if simulation != SimulationProvenance::default() {
+        volume.attrs.simulated = true;
+        volume.simulation = Some(Box::new(simulation));
+    }
+
+    // Radar parameters.
+    volume.radar_parameters.frequency_hz = cfradial_frequency_hz(&file);
+    volume.radar_parameters.beam_width_h_deg =
         cfradial_beam_width_deg(&file, &["radar_beam_width_h", "radar_beam_width_h_deg"]);
-    volume.metadata.beam_width_v_deg =
+    volume.radar_parameters.beam_width_v_deg =
         cfradial_beam_width_deg(&file, &["radar_beam_width_v", "radar_beam_width_v_deg"]);
-    volume.metadata.pulse_width_us = cfradial_pulse_width_us(&file);
-    volume.metadata.prt_s = cfradial_prt_s(&file);
-    volume.metadata.unambiguous_range_km = cfradial_unambiguous_range_km(&file);
-    volume.metadata.scan_name = metadata_text(&file, "scan_name");
-    volume.metadata.scan_id = metadata_text(&file, "scan_id").or_else(|| {
+    volume.radar_parameters.antenna_gain_h_db =
+        numeric_var_first(&file, "radar_antenna_gain_h").map(|v| v as f32);
+    volume.radar_parameters.antenna_gain_v_db =
+        numeric_var_first(&file, "radar_antenna_gain_v").map(|v| v as f32);
+    volume.radar_parameters.receiver_bandwidth_hz = numeric_var_first(&file, "radar_rx_bandwidth")
+        .or_else(|| numeric_var_first(&file, "radar_receiver_bandwidth"))
+        .map(|v| v as f32);
+    let legacy_pulse_width_us = cfradial_pulse_width_us(&file);
+    let legacy_unambiguous_range_km = cfradial_unambiguous_range_km(&file);
+    volume.radar_parameters.pulse_width_s = legacy_pulse_width_us.map(|us| us * 1e-6);
+    volume.radar_parameters.prt_s = cfradial_prt_s(&file);
+    volume.radar_parameters.unambiguous_range_m = legacy_unambiguous_range_km.map(|km| km * 1000.0);
+
+    // Scan strategy (BowEcho export attributes).
+    volume.scan.name = metadata_text(&file, "scan_name");
+    let scan_id_text = metadata_text(&file, "scan_id").or_else(|| {
         file.gattr_f64("scan_id")
             .filter(|value| value.is_finite())
             .map(|value| {
@@ -157,28 +393,27 @@ fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Res
                 }
             })
     });
-    volume.vcp = file
+    volume.scan.id = scan_id_text
+        .as_deref()
+        .and_then(|text| text.parse::<i64>().ok());
+    volume.scan.vcp_pattern = file
         .gattr_f64("vcp_pattern")
         .filter(|value| value.is_finite() && value.fract() == 0.0)
         .and_then(|value| u16::try_from(value as i64).ok())
-        .filter(|pattern| *pattern > 0)
-        .map(|pattern| VcpInfo { pattern });
-    volume.metadata.vcp_source_document = metadata_text(&file, "vcp_source_document");
-    volume.metadata.vcp_source_revision = metadata_text(&file, "vcp_source_revision");
-    volume.metadata.vcp_source_rda_build = metadata_text(&file, "vcp_source_rda_build");
-    volume.metadata.vcp_source_figure = metadata_text(&file, "vcp_source_figure");
-    volume.metadata.vcp_pulse_length = metadata_text(&file, "vcp_pulse_length");
-    volume.metadata.vcp_adaptations = metadata_text(&file, "vcp_adaptations");
-    volume.metadata.polarization = metadata_text(&file, "polarization");
-    volume.metadata.calibration = metadata_text(&file, "calibration");
-    volume.metadata.forward_operator = metadata_text(&file, "forward_operator");
-    volume.metadata.forward_operator_config = metadata_text(&file, "forward_operator_config");
-    volume.metadata.source_model = metadata_text(&file, "source_model");
-    volume.metadata.microphysics_scheme = metadata_text(&file, "microphysics_scheme");
-    volume.metadata.scattering_model = metadata_text(&file, "scattering_model");
+        .filter(|pattern| *pattern > 0);
+    let mut definition = ScanDefinition {
+        source_document: metadata_text(&file, "vcp_source_document"),
+        source_revision: metadata_text(&file, "vcp_source_revision"),
+        source_rda_build: metadata_text(&file, "vcp_source_rda_build"),
+        source_figure: metadata_text(&file, "vcp_source_figure"),
+        pulse_length: metadata_text(&file, "vcp_pulse_length"),
+        adaptations: metadata_text(&file, "vcp_adaptations"),
+        scan_id_text: scan_id_text
+            .filter(|text| volume.scan.id.is_none_or(|id| id.to_string() != *text)),
+        legs: Vec::new(),
+    };
 
-    // Ray times (seconds offset from time_coverage_start).
-    let ray_seconds = optional_f64s(&file, "time", &mut budget)?;
+    // Scan legs (BowEcho catalog-backed synthetic volumes).
     let source_row_indices = optional_f64s(&file, "vcp_source_row_index", &mut budget)?;
     let vcp_azimuth_rates = optional_f64s(&file, "vcp_azimuth_rate", &mut budget)?;
     let vcp_source_periods = optional_f64s(&file, "vcp_source_period", &mut budget)?;
@@ -199,14 +434,46 @@ fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Res
         || doppler_prf_codes.is_some()
         || doppler_pulse_counts.is_some();
 
-    // Field variables: anything shaped (time, range).
-    let fields: Vec<&NcVar> = file
+    // Field variables: anything shaped (time, range), in file order.
+    let mut fields: Vec<&NcVar> = file
         .vars
         .values()
         .filter(|var| var.dim_ids.as_slice() == [time_dim, range_dim])
         .collect();
+    fields.sort_by_key(|var| var.index);
     if fields.is_empty() {
         return Err(invalid("CfRadial volume has no (time, range) fields"));
+    }
+    // Per-ray variables without a typed slot, in file order.
+    let mut extra_ray_vars: Vec<&NcVar> = file
+        .vars
+        .values()
+        .filter(|var| {
+            var.dim_ids.first() == Some(&time_dim)
+                && var.dim_ids.len() <= 2
+                && var.dim_ids.as_slice() != [time_dim, range_dim]
+                && !SLOTTED_RAY_VARS.contains(&var.name.as_str())
+        })
+        .collect();
+    extra_ray_vars.sort_by_key(|var| var.index);
+    // Root variables without a typed slot: scalars and char strings.
+    let mut extra_root_vars: Vec<&NcVar> = file
+        .vars
+        .values()
+        .filter(|var| {
+            (var.dim_ids.is_empty()
+                || (var.dim_ids.len() == 1
+                    && var.dim_ids[0] != time_dim
+                    && var.dim_ids[0] != range_dim
+                    && var.nc_type() == 2))
+                && !SLOTTED_ROOT_VARS.contains(&var.name.as_str())
+        })
+        .collect();
+    extra_root_vars.sort_by_key(|var| var.index);
+    for var in extra_root_vars {
+        if let Some(extra) = extra_variable(&file, var, None) {
+            volume.extra_vars.push(extra);
+        }
     }
 
     // Validate every sweep's ray range before building anything. Sweeps that
@@ -218,85 +485,193 @@ fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Res
         .collect();
     check_disjoint_sweeps(&ray_ranges)?;
 
+    let mut log = legacy.then(LegacyLog::default);
+    if let Some(log) = log.as_mut() {
+        log.volume_time = coverage_start;
+        log.pulse_width_us = legacy_pulse_width_us;
+        log.unambiguous_range_km = legacy_unambiguous_range_km;
+        log.sweep_modes = sweep_modes
+            .iter()
+            .map(|mode| mode.as_deref().map(legacy_scan_mode))
+            .collect();
+    }
+    let has_ray_instrument_metadata = prt.is_some()
+        || unambiguous_range.is_some()
+        || pulse_count.is_some()
+        || independent_samples.is_some();
+
     // Build sweep geometry first, then read each full (time, range) field
-    // once and distribute its rows across every sweep. The former
-    // sweep-outer loop reread and reconverted each full field once per sweep.
-    let mut sweeps = Vec::with_capacity(sweep_count);
-    for (sweep, ray_range) in ray_ranges.into_iter().enumerate() {
+    // once and distribute its rows across every sweep.
+    let mut sweeps: Vec<SweepBuild> = Vec::with_capacity(sweep_count);
+    for (index, ray_range) in ray_ranges.into_iter().enumerate() {
         let Some((start_ray, end_ray)) = ray_range else {
-            volume.metadata.skipped_message_count += 1;
+            volume.provenance.decode.skipped_message_count += 1;
             continue;
         };
-        let fixed = fixed_angles.get(sweep).copied().unwrap_or_else(|| {
+        let mode = sweep_modes
+            .get(index)
+            .cloned()
+            .flatten()
+            .map(|text| SweepMode::parse(&text))
+            .unwrap_or(SweepMode::AzimuthSurveillance);
+        let fixed = fixed_angles.get(index).copied().unwrap_or_else(|| {
             fallback_fixed_angle(
-                sweep_modes.get(sweep).copied().flatten(),
+                matches!(mode, SweepMode::Rhi | SweepMode::ManualRhi),
                 &azimuth[start_ray..=end_ray],
                 &elevation[start_ray..=end_ray],
             )
         }) as f32;
-        let mut cut = ElevationCut::new(fixed, Some(sweep.min(255) as u8));
         let sweep_rays = end_ray - start_ray + 1;
-        let ray_bytes = size_of::<Radial>()
-            + if has_ray_instrument_metadata {
-                size_of::<RayInstrumentMetadata>()
-            } else {
-                0
-            };
         budget
-            .charge(sweep_rays, ray_bytes, "CfRadial sweep radials")
+            .charge(sweep_rays, 16 * size_of::<f64>(), "CfRadial sweep rays")
             .map_err(CfRadialError::LimitExceeded)?;
-        cut.radials.reserve_exact(sweep_rays);
-        if has_ray_instrument_metadata {
-            cut.ray_instrument_metadata.reserve_exact(sweep_rays);
-        }
-        for ray in start_ray..=end_ray {
-            let time_offset_ms = ray_seconds
+        let mut sweep = Sweep::new(sweeps.len() as u32, mode, fixed);
+        sweep.elevation_number = u16::try_from(index).ok();
+        sweep.follow_mode = follow_modes
+            .get(index)
+            .cloned()
+            .flatten()
+            .map(|text| FollowMode::parse(&text));
+        sweep.prt_mode = prt_modes
+            .get(index)
+            .cloned()
+            .flatten()
+            .map(|text| PrtMode::parse(&text));
+        sweep.polarization_mode = polarization_modes
+            .get(index)
+            .cloned()
+            .flatten()
+            .map(|text| PolarizationMode::parse(&text));
+        sweep.target_scan_rate_deg_per_s = numeric_f32_at(&target_scan_rates, index);
+        sweep.rays_are_indexed = rays_are_indexed
+            .get(index)
+            .cloned()
+            .flatten()
+            .and_then(|text| parse_bool(&text));
+        sweep.rays_angle_resolution_deg = numeric_f32_at(&ray_angle_res, index);
+        sweep.range = range_coord.clone();
+        sweep.reserve_rays(sweep_rays);
+        let rays = start_ray..=end_ray;
+        for ray in rays.clone() {
+            let time_s = ray_seconds
                 .as_ref()
                 .and_then(|seconds| seconds.get(ray))
-                .map(|seconds| (seconds * 1000.0) as i32)
-                .unwrap_or(0);
-            cut.radials.push(Radial {
-                azimuth_deg: (azimuth[ray] as f32).rem_euclid(360.0),
-                elevation_deg: elevation[ray] as f32,
-                time_offset_ms,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: nyquist
-                    .as_ref()
-                    .and_then(|values| values.get(ray))
-                    .map(|value| *value as f32)
-                    .filter(|value| *value > 0.0),
-                radial_status: None,
-            });
-            if has_ray_instrument_metadata {
-                cut.ray_instrument_metadata.push(RayInstrumentMetadata {
-                    prt_s: aligned_at(&ray_prt_s, ray),
-                    unambiguous_range_km: aligned_at(&ray_unambiguous_range_km, ray),
-                    pulse_count: aligned_at(&ray_pulse_count, ray),
-                    independent_samples: aligned_at(&ray_independent_samples, ray),
-                });
+                .copied()
+                .unwrap_or(0.0);
+            sweep.push_ray(
+                time_s,
+                (azimuth[ray] as f32).rem_euclid(360.0),
+                elevation[ray] as f32,
+            );
+        }
+        let slice_f32 = |values: &Option<Vec<f64>>, scale: f64| -> Option<Vec<f32>> {
+            values.as_ref().map(|values| {
+                values[rays.clone()]
+                    .iter()
+                    .map(|value| {
+                        if value.is_finite() {
+                            (value * scale) as f32
+                        } else {
+                            f32::NAN
+                        }
+                    })
+                    .collect()
+            })
+        };
+        sweep.ray_vars.nyquist_velocity_mps = slice_f32(&nyquist, 1.0);
+        sweep.ray_vars.unambiguous_range_m = slice_f32(&unambiguous_range, unambiguous_range_scale);
+        sweep.ray_vars.prt_s = slice_f32(&prt, prt_scale);
+        sweep.ray_vars.prt_ratio = slice_f32(&prt_ratio, 1.0);
+        sweep.ray_vars.pulse_width_s = slice_f32(&pulse_width, pulse_width_scale);
+        sweep.ray_vars.scan_rate_deg_per_s = slice_f32(&scan_rate, 1.0);
+        sweep.ray_vars.independent_samples = slice_f32(&independent_samples, 1.0);
+        let slice_i32 = |values: &Option<Vec<f64>>| -> Option<Vec<i32>> {
+            values.as_ref().map(|values| {
+                values[rays.clone()]
+                    .iter()
+                    .map(|value| {
+                        if value.is_finite()
+                            && value.fract() == 0.0
+                            && (f64::from(i32::MIN)..=f64::from(i32::MAX)).contains(value)
+                        {
+                            *value as i32
+                        } else {
+                            -9999
+                        }
+                    })
+                    .collect()
+            })
+        };
+        sweep.ray_vars.n_samples = slice_i32(&n_samples).or_else(|| slice_i32(&pulse_count));
+        sweep.ray_vars.calib_index = slice_i32(&calib_index);
+        sweep.ray_vars.antenna_transition = antenna_transition.as_ref().map(|values| {
+            values[rays.clone()]
+                .iter()
+                .map(|value| u8::from(*value != 0.0 && value.is_finite()))
+                .collect()
+        });
+        if let Some(platform) = &platform {
+            sweep.platform_track = Some(Box::new(platform.slice(rays.clone())));
+        }
+        if transmit_power_h.is_some() || transmit_power_v.is_some() {
+            sweep.monitoring = Some(Box::new(recast_radar_core::model::Monitoring {
+                radar_measured_transmit_power_h_dbm: slice_f32(&transmit_power_h, 1.0),
+                radar_measured_transmit_power_v_dbm: slice_f32(&transmit_power_v, 1.0),
+                ..Default::default()
+            }));
+        }
+        for var in &extra_ray_vars {
+            if let Some(extra) = extra_variable(&file, var, Some(rays.clone())) {
+                sweep.extra_vars.push(extra);
             }
         }
+        if let Some(log) = log.as_mut() {
+            log.ray_instruments.push(if has_ray_instrument_metadata {
+                rays.clone()
+                    .map(|ray| LegacyRayInstrument {
+                        prt_s: prt.as_ref().and_then(|v| positive_f32(v[ray] * prt_scale)),
+                        unambiguous_range_km: unambiguous_range
+                            .as_ref()
+                            .and_then(|v| positive_f32(v[ray] * unambiguous_range_scale * 1e-3)),
+                        pulse_count: pulse_count.as_ref().and_then(|v| {
+                            let value = v[ray];
+                            (value.is_finite()
+                                && value > 0.0
+                                && value.fract() == 0.0
+                                && value <= f64::from(u32::MAX))
+                            .then_some(value as u32)
+                        }),
+                        independent_samples: independent_samples
+                            .as_ref()
+                            .and_then(|v| positive_f32(v[ray])),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            });
+        }
 
-        sweeps.push(DecodedSweep {
+        let leg = ScanLeg {
+            source_row_index: numeric_u16_at(&source_row_indices, index),
+            elevation_deg: has_scan_leg_metadata.then_some(fixed),
+            azimuth_rate_deg_per_second: numeric_f32_at(&vcp_azimuth_rates, index),
+            source_period_seconds: numeric_f32_at(&vcp_source_periods, index),
+            waveform: numeric_u8_at(&vcp_waveform_codes, index)
+                .and_then(waveform_from_code)
+                .map(str::to_owned),
+            moment_coverage: numeric_u8_at(&vcp_moment_coverage_codes, index)
+                .and_then(moment_coverage_from_code)
+                .map(str::to_owned),
+            surveillance_prf_code: numeric_u8_at(&surveillance_prf_codes, index),
+            surveillance_pulse_count: numeric_u16_at(&surveillance_pulse_counts, index),
+            doppler_prf_code: numeric_u8_at(&doppler_prf_codes, index),
+            doppler_pulse_count: numeric_u16_at(&doppler_pulse_counts, index),
+        };
+        sweeps.push(SweepBuild {
             start_ray,
             end_ray,
-            cut,
-            scan_leg: ScanLegMetadata {
-                source_row_index: numeric_u16_at(&source_row_indices, sweep),
-                elevation_deg: has_scan_leg_metadata.then_some(fixed),
-                azimuth_rate_deg_per_second: numeric_f32_at(&vcp_azimuth_rates, sweep),
-                source_period_seconds: numeric_f32_at(&vcp_source_periods, sweep),
-                waveform: numeric_u8_at(&vcp_waveform_codes, sweep)
-                    .and_then(waveform_from_code)
-                    .map(str::to_owned),
-                moment_coverage: numeric_u8_at(&vcp_moment_coverage_codes, sweep)
-                    .and_then(moment_coverage_from_code)
-                    .map(str::to_owned),
-                surveillance_prf_code: numeric_u8_at(&surveillance_prf_codes, sweep),
-                surveillance_pulse_count: numeric_u16_at(&surveillance_pulse_counts, sweep),
-                doppler_prf_code: numeric_u8_at(&doppler_prf_codes, sweep),
-                doppler_pulse_count: numeric_u16_at(&doppler_pulse_counts, sweep),
-            },
+            sweep,
+            leg,
         });
     }
     if sweeps.is_empty() {
@@ -306,70 +681,216 @@ fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Res
     let expected_values = n_rays
         .checked_mul(n_gates)
         .ok_or_else(|| invalid("CfRadial field dimensions overflow addressable memory"))?;
-    let mut canonical_fields = BTreeSet::new();
-    for field in fields {
-        let moment = match canonical_moment(&field.name) {
-            Some(moment) if canonical_fields.insert(moment.clone()) => moment,
-            _ => MomentType::Unknown(field.name.clone()),
-        };
-        let values = read_field_physical(&file, field, &mut budget)?;
-        if values.len() < expected_values {
+    for var in fields {
+        let name = FieldName::parse(&var.name);
+        let (quantity, polarization) = Quantity::classify(&var.name, var.attr_str("standard_name"));
+        let raw = file.read_var(&var.name)?;
+        if raw.len() < expected_values {
             return Err(invalid(format!(
                 "CfRadial field '{}' has {} values; expected at least {expected_values}",
-                field.name,
-                values.len()
+                var.name,
+                raw.len()
             )));
         }
-        for sweep in &mut sweeps {
-            if !scan_leg_allows_moment(&sweep.scan_leg, &moment) {
+        let word_bytes = match &raw {
+            NcArray::I8(_) | NcArray::Char(_) => 1,
+            NcArray::I16(_) => 2,
+            NcArray::I32(_) | NcArray::F32(_) => 4,
+            NcArray::F64(_) => 8,
+        };
+        let coding = FieldCoding::of(var);
+        for build in &mut sweeps {
+            if !scan_leg_allows_quantity(&build.leg, quantity) {
                 continue;
             }
-            let sweep_rays = sweep.end_ray - sweep.start_ray + 1;
+            let sweep_rays = build.end_ray - build.start_ray + 1;
             budget
-                .charge(
-                    sweep_rays,
-                    n_gates * size_of::<f32>() + size_of::<usize>(),
-                    "CfRadial moment grid",
-                )
+                .charge(sweep_rays, n_gates * word_bytes, "CfRadial field")
                 .map_err(CfRadialError::LimitExceeded)?;
-            let mut grid = MomentGrid {
-                moment: moment.clone(),
-                gate_range: gate_range.clone(),
-                scale: 1.0,
-                offset: 0.0,
-                nodata: None,
-                range_folded: None,
-                radial_indices: Vec::new(),
-                storage: recast_radar_core::MomentStorage::F32(Vec::new()),
+            let rows = build.start_ray * n_gates..(build.end_ray + 1) * n_gates;
+            let data = match &raw {
+                NcArray::I8(values) => FieldData::I8 {
+                    values: values[rows].to_vec(),
+                    coding: coding.int(),
+                },
+                NcArray::Char(values) => FieldData::U8 {
+                    values: values[rows].to_vec(),
+                    coding: coding.int(),
+                },
+                NcArray::I16(values) => FieldData::I16 {
+                    values: values[rows].to_vec(),
+                    coding: coding.int(),
+                },
+                // No 32-bit integer field storage in the model: expand to the
+                // physical float32 values (NaN for the fill).
+                NcArray::I32(values) => FieldData::F32 {
+                    values: values[rows]
+                        .iter()
+                        .map(|value| coding.physical(f64::from(*value)))
+                        .collect(),
+                    coding: FloatCoding::default(),
+                },
+                NcArray::F32(values) => FieldData::F32 {
+                    values: values[rows].to_vec(),
+                    coding: FloatCoding {
+                        transform: coding.float_transform(),
+                        fill_value: coding.fill.map(|fill| fill as f32),
+                        undetect: None,
+                    },
+                },
+                NcArray::F64(values) => FieldData::F64 {
+                    values: values[rows].to_vec(),
+                    coding: FloatCoding {
+                        transform: coding.float_transform(),
+                        fill_value: coding.fill,
+                        undetect: None,
+                    },
+                },
             };
-            grid.reserve_rows(sweep_rays);
-            for (radial_index, ray) in (sweep.start_ray..=sweep.end_ray).enumerate() {
-                let row_start = ray * n_gates;
-                let row = &values[row_start..row_start + n_gates];
-                grid.push_row(radial_index, MomentRow::F32(row.to_vec()))?;
-            }
-            sweep.cut.moments.insert(moment.clone(), grid);
+            let mut field = Field::new(name.clone(), GateMapping::IDENTITY, ngates, data);
+            field.quantity = quantity;
+            field.polarization = polarization;
+            field.attrs.standard_name = var
+                .attr_str("standard_name")
+                .map(|s| Cow::Owned(s.to_owned()));
+            field.attrs.long_name = var.attr_str("long_name").map(|s| Cow::Owned(s.to_owned()));
+            field.attrs.units = var.attr_str("units").map(|s| Cow::Owned(s.to_owned()));
+            field.attrs.sampling_ratio = var.attr_f64("sampling_ratio").map(|v| v as f32);
+            field.attrs.other = var
+                .attrs
+                .iter()
+                .filter(|(attr, _)| {
+                    !matches!(
+                        attr.as_str(),
+                        "standard_name"
+                            | "long_name"
+                            | "units"
+                            | "sampling_ratio"
+                            | "scale_factor"
+                            | "add_offset"
+                            | "_FillValue"
+                            | "missing_value"
+                    )
+                })
+                .map(|(attr, value)| (attr.as_str().into(), attr_value(value)))
+                .collect();
+            build
+                .sweep
+                .add_field(field)
+                .map_err(|err| invalid(format!("CfRadial field '{}': {err}", var.name)))?;
         }
-        budget.release(values.len() * size_of::<f32>());
     }
-    sweeps.sort_by(|left, right| left.cut.elevation_deg.total_cmp(&right.cut.elevation_deg));
-    if sweeps
-        .iter()
-        .any(|sweep| sweep.scan_leg != ScanLegMetadata::default())
-    {
-        volume.metadata.scan_legs = sweeps.iter().map(|sweep| sweep.scan_leg.clone()).collect();
+
+    let legs: Vec<ScanLeg> = sweeps.iter().map(|build| build.leg.clone()).collect();
+    if legs.iter().any(|leg| *leg != ScanLeg::default()) {
+        definition.legs = legs;
     }
-    volume.cuts = sweeps.into_iter().map(|sweep| sweep.cut).collect();
-    volume.metadata.decoded_radial_count = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
-    volume.metadata.message_count = sweep_count;
-    Ok(volume)
+    if definition != ScanDefinition::default() {
+        volume.scan.definition = Some(Box::new(definition));
+    }
+    volume.provenance.decode.message_count = sweep_count;
+    volume.sweeps = sweeps.into_iter().map(|build| build.sweep).collect();
+    volume.provenance.decode.decoded_ray_count = volume.sweeps.iter().map(Sweep::nrays).sum();
+    volume.seal().map_err(|err| invalid(err.to_string()))?;
+    if volume.time_coverage.is_none() {
+        volume.time_coverage = volume.ray_time_extent();
+    }
+    Ok(Decoded {
+        volume,
+        legacy: log,
+    })
 }
 
-struct DecodedSweep {
+struct SweepBuild {
     start_ray: usize,
     end_ray: usize,
-    cut: ElevationCut,
-    scan_leg: ScanLegMetadata,
+    sweep: Sweep,
+    leg: ScanLeg,
+}
+
+/// A field's CF packing as the file states it.
+struct FieldCoding {
+    scale: f64,
+    offset: f64,
+    attr_width: FloatWidth,
+    fill: Option<f64>,
+}
+
+impl FieldCoding {
+    fn of(var: &NcVar) -> Self {
+        let attr_width = match (var.attrs.get("scale_factor"), var.attrs.get("add_offset")) {
+            (Some(NcValue::Floats(_)), _) | (None, Some(NcValue::Floats(_))) => FloatWidth::F32,
+            _ => FloatWidth::F64,
+        };
+        Self {
+            scale: var.attr_f64("scale_factor").unwrap_or(1.0),
+            offset: var.attr_f64("add_offset").unwrap_or(0.0),
+            attr_width,
+            fill: var
+                .attr_f64("_FillValue")
+                .or_else(|| var.attr_f64("missing_value")),
+        }
+    }
+
+    fn transform(&self) -> LinearTransform {
+        LinearTransform::CfScaleOffset {
+            scale_factor: self.scale,
+            add_offset: self.offset,
+            attr_width: self.attr_width,
+        }
+    }
+
+    /// The transform of a float field: `None` when the values are physical.
+    fn float_transform(&self) -> Option<LinearTransform> {
+        (self.scale != 1.0 || self.offset != 0.0).then(|| self.transform())
+    }
+
+    fn int<T: recast_radar_core::model::PackedInt>(&self) -> IntCoding<T> {
+        IntCoding {
+            transform: self.transform(),
+            fill_value: self
+                .fill
+                .filter(|fill| fill.is_finite() && fill.fract() == 0.0)
+                .and_then(|fill| T::from_i64(fill as i64)),
+            undetect: None,
+            range_folded: None,
+            valid_range: None,
+        }
+    }
+
+    /// Physical value of one raw sample, NaN for the fill (32-bit integer
+    /// fields).
+    fn physical(&self, raw: f64) -> f32 {
+        if Some(raw) == self.fill || !raw.is_finite() {
+            f32::NAN
+        } else {
+            (raw * self.scale + self.offset) as f32
+        }
+    }
+}
+
+/// The `range` coordinate: uniform when every centre sits on the line
+/// through the first and last centres within 0.1% of a gate (float32 files
+/// carry rounding of that order), else the explicit centres.
+fn range_coordinate(range: &[f64], ngates: u32) -> RangeCoord {
+    let first = range[0];
+    let spacing = (range[range.len() - 1] - first) / (range.len() - 1) as f64;
+    let uniform = spacing > 0.0
+        && spacing.is_finite()
+        && range.iter().enumerate().all(|(gate, center)| {
+            (center - (first + gate as f64 * spacing)).abs() <= 1e-3 * spacing
+        });
+    if uniform {
+        RangeCoord::Uniform {
+            first_center_m: first,
+            spacing_m: spacing,
+            ngates,
+        }
+    } else {
+        RangeCoord::Explicit {
+            centers_m: range.iter().map(|value| *value as f32).collect(),
+        }
+    }
 }
 
 /// The rays `start..=end` of `sweep` from `sweep_start_ray_index` and
@@ -472,10 +993,14 @@ fn moment_coverage_from_code(code: u8) -> Option<&'static str> {
     })
 }
 
-fn scan_leg_allows_moment(scan_leg: &ScanLegMetadata, moment: &MomentType) -> bool {
-    match scan_leg.moment_coverage.as_deref() {
-        Some("surveillance") => !matches!(moment, MomentType::Velocity | MomentType::SpectrumWidth),
-        Some("doppler") => matches!(moment, MomentType::Velocity | MomentType::SpectrumWidth),
+fn scan_leg_allows_quantity(leg: &ScanLeg, quantity: Quantity) -> bool {
+    let doppler = matches!(
+        quantity,
+        Quantity::RadialVelocity | Quantity::DealiasedRadialVelocity | Quantity::SpectrumWidth
+    );
+    match leg.moment_coverage.as_deref() {
+        Some("surveillance") => !doppler,
+        Some("doppler") => doppler,
         _ => true,
     }
 }
@@ -484,8 +1009,8 @@ fn scan_leg_allows_moment(scan_leg: &ScanLegMetadata, moment: &MomentType) -> bo
 /// sweeps. Azimuth needs a circular mean so a 359-degree/1-degree RHI points
 /// north, rather than being mislabeled as 180 degrees when `fixed_angle` is
 /// absent.
-fn fallback_fixed_angle(mode: Option<ScanMode>, azimuth: &[f64], elevation: &[f64]) -> f64 {
-    if mode == Some(ScanMode::Rhi) {
+fn fallback_fixed_angle(rhi: bool, azimuth: &[f64], elevation: &[f64]) -> f64 {
+    if rhi {
         circular_mean_degrees(azimuth)
             .or_else(|| azimuth.iter().copied().find(|value| value.is_finite()))
             .map(|value| value.rem_euclid(360.0))
@@ -525,37 +1050,6 @@ fn arithmetic_mean(values: &[f64]) -> Option<f64> {
     }
 }
 
-/// Apply CF packing (physical = raw·scale_factor + add_offset) and
-/// `_FillValue`/`missing_value` masking; everything lands in f32. The
-/// returned buffer is charged to `budget`; the caller releases it.
-fn read_field_physical(
-    file: &Nc3File<'_>,
-    var: &NcVar,
-    budget: &mut DecodeBudget,
-) -> Result<Vec<f32>> {
-    let scale = var.attr_f64("scale_factor").unwrap_or(1.0);
-    let offset = var.attr_f64("add_offset").unwrap_or(0.0);
-    let fill = var
-        .attr_f64("_FillValue")
-        .or_else(|| var.attr_f64("missing_value"));
-    let raw = file.read_var(&var.name)?;
-    let count = raw.len();
-    budget
-        .charge(count, size_of::<f32>(), "CfRadial field values")
-        .map_err(CfRadialError::LimitExceeded)?;
-    let mut out = Vec::with_capacity(count);
-    for index in 0..count {
-        let value = raw.get_f64(index);
-        match value {
-            Some(value) if Some(value) != fill && value.is_finite() => {
-                out.push((value * scale + offset) as f32);
-            }
-            _ => out.push(f32::NAN),
-        }
-    }
-    Ok(out)
-}
-
 /// Read a numeric variable as f64, charging the widened array to `budget`
 /// (an 8-bit variable grows eightfold).
 fn read_f64s(file: &Nc3File<'_>, name: &str, budget: &mut DecodeBudget) -> Result<Vec<f64>> {
@@ -591,9 +1085,183 @@ fn optional_f64s(
     }
 }
 
-/// `sweep_mode(sweep, string_length)` char matrix → per-sweep scan modes.
-fn read_sweep_modes(file: &Nc3File<'_>, sweep_count: usize) -> Vec<Option<ScanMode>> {
-    let Some(var) = file.vars.get("sweep_mode") else {
+/// Read a numeric variable only when it is exactly aligned to the CfRadial
+/// `time` dimension. A scalar, sweep-level value, or malformed short array is
+/// not silently broadcast across rays.
+fn aligned_time_values(
+    file: &Nc3File<'_>,
+    name: &str,
+    time_dim: usize,
+    n_rays: usize,
+    budget: &mut DecodeBudget,
+) -> Result<Option<Vec<f64>>> {
+    let Some(var) = file.vars.get(name) else {
+        return Ok(None);
+    };
+    if var.dim_ids.as_slice() != [time_dim] {
+        return Ok(None);
+    }
+    Ok(optional_f64s(file, name, budget)?.filter(|values| values.len() == n_rays))
+}
+
+/// Per-ray platform position and attitude of a moving platform
+/// (`latitude(time)`, ...). `None` for a fixed platform.
+fn read_platform_track(
+    file: &Nc3File<'_>,
+    time_dim: usize,
+    n_rays: usize,
+    budget: &mut DecodeBudget,
+) -> Result<Option<PlatformTrack>> {
+    let (Some(latitude), Some(longitude), Some(altitude)) = (
+        aligned_time_values(file, "latitude", time_dim, n_rays, budget)?,
+        aligned_time_values(file, "longitude", time_dim, n_rays, budget)?,
+        aligned_time_values(file, "altitude", time_dim, n_rays, budget)?,
+    ) else {
+        return Ok(None);
+    };
+    let angles = |name: &str, budget: &mut DecodeBudget| -> Result<Option<Vec<f32>>> {
+        Ok(aligned_time_values(file, name, time_dim, n_rays, budget)?
+            .map(|values| values.into_iter().map(|v| v as f32).collect()))
+    };
+    Ok(Some(PlatformTrack {
+        latitude_deg: latitude,
+        longitude_deg: longitude,
+        altitude_m: altitude,
+        altitude_agl_m: aligned_time_values(file, "altitude_agl", time_dim, n_rays, budget)?,
+        heading_deg: angles("heading", budget)?,
+        roll_deg: angles("roll", budget)?,
+        pitch_deg: angles("pitch", budget)?,
+        drift_deg: angles("drift", budget)?,
+        rotation_deg: angles("rotation", budget)?,
+        tilt_deg: angles("tilt", budget)?,
+    }))
+}
+
+trait SliceRays {
+    fn slice(&self, rays: std::ops::RangeInclusive<usize>) -> Self;
+}
+
+impl SliceRays for PlatformTrack {
+    fn slice(&self, rays: std::ops::RangeInclusive<usize>) -> Self {
+        let take_f64 = |values: &Vec<f64>| values[rays.clone()].to_vec();
+        let take_f32 =
+            |values: &Option<Vec<f32>>| values.as_ref().map(|v| v[rays.clone()].to_vec());
+        Self {
+            latitude_deg: take_f64(&self.latitude_deg),
+            longitude_deg: take_f64(&self.longitude_deg),
+            altitude_m: take_f64(&self.altitude_m),
+            altitude_agl_m: self
+                .altitude_agl_m
+                .as_ref()
+                .map(|v| v[rays.clone()].to_vec()),
+            heading_deg: take_f32(&self.heading_deg),
+            roll_deg: take_f32(&self.roll_deg),
+            pitch_deg: take_f32(&self.pitch_deg),
+            drift_deg: take_f32(&self.drift_deg),
+            rotation_deg: take_f32(&self.rotation_deg),
+            tilt_deg: take_f32(&self.tilt_deg),
+        }
+    }
+}
+
+/// A variable without a typed slot, verbatim: the whole array (root
+/// variables) or the rows of `rays` (per-ray variables, first dimension
+/// `time`).
+fn extra_variable(
+    file: &Nc3File<'_>,
+    var: &NcVar,
+    rays: Option<std::ops::RangeInclusive<usize>>,
+) -> Option<ExtraVariable> {
+    let dims = file.var_dims(var);
+    let array = file.read_var(&var.name).ok()?;
+    let (dim_names, shape, values): (Vec<Box<str>>, Vec<u32>, ArrayBuf) = match rays {
+        Some(rays) => {
+            let row = dims.iter().skip(1).product::<usize>().max(1);
+            let range = *rays.start() * row..(*rays.end() + 1) * row;
+            if range.end > array.len() {
+                return None;
+            }
+            let mut dim_names: Vec<Box<str>> = vec!["time".into()];
+            let mut shape = vec![u32::try_from(rays.end() - rays.start() + 1).ok()?];
+            for (index, len) in dims.iter().enumerate().skip(1) {
+                dim_names.push(file.dims[var.dim_ids[index]].0.as_str().into());
+                shape.push(u32::try_from(*len).ok()?);
+            }
+            let values = match array {
+                NcArray::I8(v) => ArrayBuf::I8(v[range].to_vec()),
+                NcArray::Char(v) => {
+                    // One string per ray.
+                    ArrayBuf::Text(
+                        v[range]
+                            .chunks(row)
+                            .map(|chars| {
+                                let text =
+                                    chars.split(|byte| *byte == 0).next().unwrap_or_default();
+                                String::from_utf8_lossy(text).into()
+                            })
+                            .collect(),
+                    )
+                }
+                NcArray::I16(v) => ArrayBuf::I16(v[range].to_vec()),
+                NcArray::I32(v) => ArrayBuf::I32(v[range].to_vec()),
+                NcArray::F32(v) => ArrayBuf::F32(v[range].to_vec()),
+                NcArray::F64(v) => ArrayBuf::F64(v[range].to_vec()),
+            };
+            if let ArrayBuf::Text(_) = values {
+                dim_names.truncate(1);
+                shape.truncate(1);
+            }
+            (dim_names, shape, values)
+        }
+        None => {
+            let values = match array {
+                NcArray::Char(v) => {
+                    let text = v.split(|byte| *byte == 0).next().unwrap_or_default();
+                    ArrayBuf::Text(vec![String::from_utf8_lossy(text).into()])
+                }
+                NcArray::I8(v) => ArrayBuf::I8(v),
+                NcArray::I16(v) => ArrayBuf::I16(v),
+                NcArray::I32(v) => ArrayBuf::I32(v),
+                NcArray::F32(v) => ArrayBuf::F32(v),
+                NcArray::F64(v) => ArrayBuf::F64(v),
+            };
+            (Vec::new(), Vec::new(), values)
+        }
+    };
+    Some(ExtraVariable {
+        name: var.name.as_str().into(),
+        dims: dim_names,
+        shape,
+        values,
+        attrs: var
+            .attrs
+            .iter()
+            .map(|(name, value)| (name.as_str().into(), attr_value(value)))
+            .collect(),
+    })
+}
+
+fn attr_value(value: &NcValue) -> AttrValue {
+    match value {
+        NcValue::Str(text) => AttrValue::Text(text.as_str().into()),
+        NcValue::Floats(values) => match values.as_slice() {
+            [single] => AttrValue::Scalar(Scalar::F32(*single)),
+            _ => AttrValue::Array(ArrayBuf::F32(values.clone())),
+        },
+        NcValue::Doubles(values) => match values.as_slice() {
+            [single] => AttrValue::Scalar(Scalar::F64(*single)),
+            _ => AttrValue::Array(ArrayBuf::F64(values.clone())),
+        },
+        NcValue::Ints(values) => match values.as_slice() {
+            [single] => AttrValue::Scalar(Scalar::I64(*single)),
+            _ => AttrValue::Array(ArrayBuf::I64(values.clone())),
+        },
+    }
+}
+
+/// `name(sweep, string_length)` char matrix → per-sweep strings.
+fn read_sweep_strings(file: &Nc3File<'_>, name: &str, sweep_count: usize) -> Vec<Option<String>> {
+    let Some(var) = file.vars.get(name) else {
         return vec![None; sweep_count];
     };
     let dims = file.var_dims(var);
@@ -601,90 +1269,109 @@ fn read_sweep_modes(file: &Nc3File<'_>, sweep_count: usize) -> Vec<Option<ScanMo
         [rows, width] => (*rows, *width),
         _ => return vec![None; sweep_count],
     };
-    let Ok(NcArray::Char(chars)) = file.read_var("sweep_mode") else {
+    let Ok(NcArray::Char(chars)) = file.read_var(name) else {
         return vec![None; sweep_count];
     };
     (0..sweep_count)
         .map(|sweep| {
-            if sweep >= rows {
+            if sweep >= rows || (sweep + 1) * width > chars.len() {
                 return None;
             }
             let raw = &chars[sweep * width..(sweep + 1) * width];
             let text = raw.split(|byte| *byte == 0).next().unwrap_or_default();
-            Some(scan_mode_from_str(String::from_utf8_lossy(text).trim()))
+            Some(String::from_utf8_lossy(text).trim().to_owned())
         })
         .collect()
 }
 
-/// CfRadial 1.4 §5.8 sweep_mode vocabulary.
-fn scan_mode_from_str(mode: &str) -> ScanMode {
+/// A scalar char variable as text.
+fn char_var_text(file: &Nc3File<'_>, name: &str) -> Option<String> {
+    match file.read_var(name).ok()? {
+        NcArray::Char(chars) => {
+            let text = chars.split(|byte| *byte == 0).next().unwrap_or_default();
+            Some(String::from_utf8_lossy(text).trim().to_owned())
+        }
+        _ => None,
+    }
+}
+
+/// CfRadial 1.4 §5.8 sweep_mode vocabulary onto the legacy scan modes.
+pub(crate) fn legacy_scan_mode(mode: &str) -> LegacyScanMode {
     match mode {
-        "azimuth_surveillance" | "sector" | "manual_ppi" => ScanMode::Ppi,
-        "rhi" | "manual_rhi" => ScanMode::Rhi,
-        "vertical_pointing" => ScanMode::VerticalPointing,
-        _ => ScanMode::Other,
+        "azimuth_surveillance" | "sector" | "manual_ppi" => LegacyScanMode::Ppi,
+        "rhi" | "manual_rhi" => LegacyScanMode::Rhi,
+        "vertical_pointing" => LegacyScanMode::VerticalPointing,
+        _ => LegacyScanMode::Other,
     }
 }
 
-/// One volume-level mode when every sweep agrees; mixed scans report Other.
-fn combined_scan_mode(modes: &[Option<ScanMode>]) -> Option<ScanMode> {
-    let mut all = modes.iter().flatten();
-    let first = *all.next()?;
-    if all.all(|mode| *mode == first) {
-        Some(first)
-    } else {
-        Some(ScanMode::Other)
+fn parse_bool(text: &str) -> Option<bool> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" => Some(true),
+        "false" | "0" | "no" => Some(false),
+        _ => None,
     }
 }
 
-fn parse_site(file: &Nc3File<'_>) -> RadarSite {
-    let scalar = |name: &str| -> Option<f32> {
-        file.read_var(name)
-            .ok()
-            .and_then(|array| array.get_f64(0))
-            .map(|value| value as f32)
-    };
-    let id = file
-        .gattr_str("instrument_name")
-        .or_else(|| file.gattr_str("site_name"))
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .unwrap_or("CFRAD")
-        .to_owned();
-    RadarSite {
-        id,
-        name: file.gattr_str("site_name").map(str::to_owned),
-        latitude_deg: scalar("latitude"),
-        longitude_deg: scalar("longitude"),
-        elevation_m: scalar("altitude"),
+fn gattr_bool(file: &Nc3File<'_>, name: &str) -> Option<bool> {
+    match file.gattrs.get(name)? {
+        NcValue::Str(text) => parse_bool(text),
+        other => other.as_f64().map(|value| value != 0.0),
     }
 }
 
-fn parse_time_coverage_start(file: &Nc3File<'_>) -> Option<DateTime<Utc>> {
+fn units_of<'f>(file: &'f Nc3File<'_>, name: &str) -> Option<&'f str> {
+    file.vars.get(name).and_then(|var| var.attr_str("units"))
+}
+
+/// The reference instant of `time.units` ("seconds since <ISO 8601>").
+fn time_units_reference(file: &Nc3File<'_>) -> Option<DateTime<Utc>> {
+    let units = units_of(file, "time")?;
+    let (_, rest) = units.trim().split_once("since")?;
+    parse_iso_instant(rest)
+}
+
+fn parse_time_var_or_attr(file: &Nc3File<'_>, name: &str) -> Option<DateTime<Utc>> {
     // Either a char variable or a global attribute, ISO8601 "...Z".
-    let text = match file.read_var("time_coverage_start") {
+    let text = match file.read_var(name) {
         Ok(NcArray::Char(chars)) => {
             let bytes: Vec<u8> = chars.into_iter().take_while(|byte| *byte != 0).collect();
             String::from_utf8_lossy(&bytes).into_owned()
         }
-        _ => file.gattr_str("time_coverage_start")?.to_owned(),
+        _ => file.gattr_str(name)?.to_owned(),
     };
-    let trimmed = text.trim().trim_end_matches('Z');
+    parse_iso_instant(&text)
+}
+
+fn parse_iso_instant(text: &str) -> Option<DateTime<Utc>> {
+    let trimmed = text.trim().trim_end_matches('Z').trim();
     let naive = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S")
         .or_else(|_| NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S"))
+        .or_else(|_| NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S%.f"))
+        .or_else(|_| NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f"))
         .ok()?;
     Some(Utc.from_utc_datetime(&naive))
 }
 
-fn cfradial_radar_frequency_mhz(file: &Nc3File<'_>) -> Option<u32> {
-    // CfRadial's instrument-parameter coordinate is a numeric
-    // `frequency(frequency)` variable in Hz. Prefer it over the historical
-    // global-attribute spellings below so a standards-compliant file wins
-    // even when a stale compatibility attribute is also present.
-    if let Some(value) = numeric_var_first(file, "frequency")
-        && let Some(mhz) = normalize_frequency_mhz(value)
-    {
-        return Some(mhz);
+/// Operating frequencies in Hz: the `frequency` coordinate variable (values
+/// above 1 MHz verbatim; MHz or GHz spellings normalized), else the
+/// historical global-attribute spellings.
+fn cfradial_frequency_hz(file: &Nc3File<'_>) -> Vec<f64> {
+    if let Ok(values) = file.read_var("frequency") {
+        let hz: Vec<f64> = (0..values.len())
+            .filter_map(|index| values.get_f64(index))
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .filter_map(|value| {
+                if value > 1.0e6 {
+                    Some(value)
+                } else {
+                    normalize_frequency_mhz(value).map(|mhz| f64::from(mhz) * 1e6)
+                }
+            })
+            .collect();
+        if !hz.is_empty() {
+            return hz;
+        }
     }
     for name in [
         "radar_frequency",
@@ -695,17 +1382,17 @@ fn cfradial_radar_frequency_mhz(file: &Nc3File<'_>) -> Option<u32> {
         if let Some(value) = file.gattr_f64(name)
             && let Some(mhz) = normalize_frequency_mhz(value)
         {
-            return Some(mhz);
+            return vec![f64::from(mhz) * 1e6];
         }
     }
     for name in ["radar_wavelength", "radar_wavelength_cm", "wavelength"] {
         if let Some(value) = file.gattr_f64(name)
             && let Some(mhz) = frequency_mhz_from_wavelength(value)
         {
-            return Some(mhz);
+            return vec![f64::from(mhz) * 1e6];
         }
     }
-    None
+    Vec::new()
 }
 
 fn cfradial_beam_width_deg(file: &Nc3File<'_>, names: &[&str]) -> Option<f32> {
@@ -744,7 +1431,7 @@ fn cfradial_pulse_width_us(file: &Nc3File<'_>) -> Option<f32> {
 
 fn cfradial_prt_s(file: &Nc3File<'_>) -> Option<f32> {
     // A time-aligned `prt(time)` belongs to each ray, not to the volume.
-    // Only a true scalar variable participates in this legacy volume-level
+    // Only a true scalar variable participates in this volume-level
     // fallback.
     if let Some(value) = numeric_scalar_var_first(file, "prt") {
         let scale = time_units_scale(file.vars.get("prt").and_then(|var| var.attr_str("units")));
@@ -806,75 +1493,6 @@ fn time_var_seconds(file: &Nc3File<'_>, name: &str) -> Option<f64> {
     seconds.is_finite().then_some(seconds)
 }
 
-/// Read a numeric variable only when it is exactly aligned to the CfRadial
-/// `time` dimension. A scalar, sweep-level value, or malformed short array is
-/// not silently broadcast across rays.
-fn aligned_time_values(
-    file: &Nc3File<'_>,
-    name: &str,
-    time_dim: usize,
-    n_rays: usize,
-    budget: &mut DecodeBudget,
-) -> Result<Option<Vec<f64>>> {
-    let Some(var) = file.vars.get(name) else {
-        return Ok(None);
-    };
-    if var.dim_ids.as_slice() != [time_dim] {
-        return Ok(None);
-    }
-    Ok(optional_f64s(file, name, budget)?.filter(|values| values.len() == n_rays))
-}
-
-fn aligned_time_f32s(
-    file: &Nc3File<'_>,
-    name: &str,
-    time_dim: usize,
-    n_rays: usize,
-    units_scale: impl FnOnce(Option<&str>) -> f64,
-    budget: &mut DecodeBudget,
-) -> Result<Option<Vec<Option<f32>>>> {
-    let scale = units_scale(file.vars.get(name).and_then(|var| var.attr_str("units")));
-    Ok(
-        aligned_time_values(file, name, time_dim, n_rays, budget)?.map(|values| {
-            values
-                .into_iter()
-                .map(|value| positive_f32(value * scale))
-                .collect()
-        }),
-    )
-}
-
-fn aligned_time_u32s(
-    file: &Nc3File<'_>,
-    name: &str,
-    time_dim: usize,
-    n_rays: usize,
-    budget: &mut DecodeBudget,
-) -> Result<Option<Vec<Option<u32>>>> {
-    Ok(
-        aligned_time_values(file, name, time_dim, n_rays, budget)?.map(|values| {
-            values
-                .into_iter()
-                .map(|value| {
-                    (value.is_finite()
-                        && value > 0.0
-                        && value.fract() == 0.0
-                        && value <= u32::MAX as f64)
-                        .then_some(value as u32)
-                })
-                .collect()
-        }),
-    )
-}
-
-fn aligned_at<T: Copy>(values: &Option<Vec<Option<T>>>, ray: usize) -> Option<T> {
-    values
-        .as_ref()
-        .and_then(|values| values.get(ray))
-        .copied()
-        .flatten()
-}
-
 fn time_units_scale(units: Option<&str>) -> f64 {
     let units = units.unwrap_or("seconds").trim().to_ascii_lowercase();
     if units.contains("microsecond") || matches!(units.as_str(), "us" | "µs") {
@@ -893,6 +1511,10 @@ fn range_units_to_km_scale(units: Option<&str>) -> f64 {
     } else {
         1.0e-3
     }
+}
+
+fn range_units_to_m_scale(units: Option<&str>) -> f64 {
+    range_units_to_km_scale(units) * 1000.0
 }
 
 fn positive_f32(value: f64) -> Option<f32> {
@@ -933,7 +1555,7 @@ fn frequency_mhz_from_wavelength(value: f64) -> Option<u32> {
         .then_some(mhz.round() as u32)
 }
 
-fn invalid(reason: impl Into<String>) -> CfRadialError {
+pub(crate) fn invalid(reason: impl Into<String>) -> CfRadialError {
     CfRadialError::InvalidMessage {
         offset: 0,
         reason: reason.into(),
@@ -949,12 +1571,13 @@ mod tests {
         let path = recast_radar_testdata::path("cfrad1-irene-sr2-20110827-120420-sur-sweeps01")
             .unwrap_or_else(|e| panic!("{e}"));
         let bytes = std::fs::read(path).expect("read committed CfRadial file");
-        decode_cfradial1_volume_within(&bytes, DecodeBudget::volume())
+        read_cfradial1_volume_within(&bytes, DecodeBudget::volume())
             .expect("real file fits the default budget");
-        // The moment grids alone (719 rays x 1,107 gates x two f32 fields)
-        // take 6.1 MiB; a 4 MiB budget must fail cleanly.
-        let Err(error) = decode_cfradial1_volume_within(&bytes, DecodeBudget::new(4 << 20)) else {
-            panic!("4 MiB budget must fail");
+        // The int8 fields alone (719 rays x 1,107 gates x two fields) take
+        // 1.5 MiB on top of the widened coordinates; a 1 MiB budget must fail
+        // cleanly.
+        let Err(error) = read_cfradial1_volume_within(&bytes, DecodeBudget::new(1 << 20)) else {
+            panic!("1 MiB budget must fail");
         };
         assert!(
             matches!(&error, CfRadialError::LimitExceeded(reason) if reason.contains("limit")),
@@ -963,46 +1586,62 @@ mod tests {
     }
 
     #[test]
-    fn sweep_mode_vocabulary_maps_to_scan_modes() {
-        assert_eq!(scan_mode_from_str("azimuth_surveillance"), ScanMode::Ppi);
-        assert_eq!(scan_mode_from_str("sector"), ScanMode::Ppi);
-        assert_eq!(scan_mode_from_str("rhi"), ScanMode::Rhi);
-        assert_eq!(scan_mode_from_str("manual_rhi"), ScanMode::Rhi);
+    fn sweep_mode_vocabulary_maps_to_legacy_scan_modes() {
         assert_eq!(
-            scan_mode_from_str("vertical_pointing"),
-            ScanMode::VerticalPointing
+            legacy_scan_mode("azimuth_surveillance"),
+            LegacyScanMode::Ppi
         );
-        assert_eq!(scan_mode_from_str("coplane"), ScanMode::Other);
-    }
-
-    #[test]
-    fn mixed_sweep_modes_collapse_to_other() {
+        assert_eq!(legacy_scan_mode("sector"), LegacyScanMode::Ppi);
+        assert_eq!(legacy_scan_mode("rhi"), LegacyScanMode::Rhi);
+        assert_eq!(legacy_scan_mode("manual_rhi"), LegacyScanMode::Rhi);
         assert_eq!(
-            combined_scan_mode(&[Some(ScanMode::Ppi), Some(ScanMode::Ppi)]),
-            Some(ScanMode::Ppi)
+            legacy_scan_mode("vertical_pointing"),
+            LegacyScanMode::VerticalPointing
         );
-        assert_eq!(
-            combined_scan_mode(&[Some(ScanMode::Ppi), Some(ScanMode::Rhi)]),
-            Some(ScanMode::Other)
-        );
-        assert_eq!(combined_scan_mode(&[None, None]), None);
-        assert_eq!(
-            combined_scan_mode(&[None, Some(ScanMode::Rhi)]),
-            Some(ScanMode::Rhi)
-        );
+        assert_eq!(legacy_scan_mode("coplane"), LegacyScanMode::Other);
     }
 
     #[test]
     fn rhi_fixed_angle_fallback_uses_wrap_aware_azimuth_mean() {
-        let fixed =
-            fallback_fixed_angle(Some(ScanMode::Rhi), &[359.0, 0.0, 1.0], &[10.0, 20.0, 30.0]);
+        let fixed = fallback_fixed_angle(true, &[359.0, 0.0, 1.0], &[10.0, 20.0, 30.0]);
         assert!(!(0.01..=359.99).contains(&fixed), "fixed angle was {fixed}");
     }
 
     #[test]
     fn ppi_fixed_angle_fallback_still_uses_mean_elevation() {
-        let fixed =
-            fallback_fixed_angle(Some(ScanMode::Ppi), &[80.0, 90.0, 100.0], &[0.4, 0.5, 0.6]);
+        let fixed = fallback_fixed_angle(false, &[80.0, 90.0, 100.0], &[0.4, 0.5, 0.6]);
         assert!((fixed - 0.5).abs() < 1.0e-9);
+    }
+
+    #[test]
+    fn range_coordinate_detects_uniform_spacing() {
+        assert_eq!(
+            range_coordinate(&[0.0, 75.0, 150.0, 225.0], 4),
+            RangeCoord::Uniform {
+                first_center_m: 0.0,
+                spacing_m: 75.0,
+                ngates: 4
+            }
+        );
+        // float32 centres of a 124.913025 m spacing, as DOW8 stores them.
+        let dow8: Vec<f64> = (0..950)
+            .map(|gate| f64::from((62.456512_f64 + f64::from(gate) * 124.913025) as f32))
+            .collect();
+        let RangeCoord::Uniform { spacing_m, .. } = range_coordinate(&dow8, 950) else {
+            panic!("float32 rounding must still read as uniform");
+        };
+        assert!((spacing_m - 124.913025).abs() < 1e-4);
+        assert!(matches!(
+            range_coordinate(&[0.0, 75.0, 200.0], 3),
+            RangeCoord::Explicit { .. }
+        ));
+    }
+
+    #[test]
+    fn time_units_reference_parses_cf_epoch() {
+        assert_eq!(
+            parse_iso_instant(" 2011-08-27T12:04:20Z"),
+            Some(Utc.with_ymd_and_hms(2011, 8, 27, 12, 4, 20).unwrap())
+        );
     }
 }
