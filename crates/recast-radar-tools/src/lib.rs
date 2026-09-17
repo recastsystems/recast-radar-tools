@@ -21,14 +21,16 @@
 //! | `track` | `track` | `recast-radar-track` | cell tracking, swaths, temporal grids |
 //! | `render` | `render` | `recast-radar-render` | CPU raster, PNG, color tables |
 //! | `scattering` | `scattering` | `recast-radar-scattering` | scattering primitives, LUTs |
-//! | `serde` | | | serde derives on the data model |
+//! | `serde` | | | placeholder: forwards to `recast-radar-core/serde`, which does nothing yet |
 //! | `full` | | | all of the above |
 //!
 //! Default features: `io`, `correct`, `filters`, `retrieve`, `map`.
 //!
 //! A feature also enables the features of the member crates its crate
 //! depends on (for example `track` enables `correct`, `map` and `retrieve`),
-//! so every type a module's API names can be named through this crate.
+//! so every type a module's API names can be named through this crate. The
+//! exception is `net`, which does not enable `jma`: `recast-radar-data` uses
+//! `recast-radar-io-jma` only internally.
 
 pub use recast_radar_core as core;
 

@@ -34,10 +34,12 @@ Minimum Rust version: 1.94 (edition 2024).
 The three programs below are the files in
 [`crates/recast-radar-tools/examples/`](crates/recast-radar-tools/examples/),
 shown in full. CI compiles them, and `crates/recast-radar-tools/tests/readme.rs`
-fails if a code block here differs from its file. Each program takes a Level II
-file as its first argument. The output shown comes from
+fails if a Rust code block here differs from its file. Each program takes a
+Level II file as its first argument. The output shown comes from
 [`KTLX20240315_000217_V06`](https://unidata-nexrad-level2.s3.amazonaws.com/2024/03/15/KTLX/KTLX20240315_000217_V06)
-(10.8 MB), from the public `unidata-nexrad-level2` bucket on AWS.
+(10.8 MB, testdata id `l2-ktlx-20240315-000217`), from the public
+`unidata-nexrad-level2` bucket on AWS. The output excerpts are copied from a run
+of the examples; no test checks them.
 
 ### Decode a Level II file
 
@@ -226,11 +228,16 @@ the centre to the edge.
 | `recast-radar-render` | `render` | CPU rendering to RGBA and PNG, color tables, GR `.pal` palettes |
 | `recast-radar-scattering` | `scattering` | Radar-scattering primitives and offline lookup tables |
 | `recast-radar-bench` | | Decode and render benchmark with output checksums (binary, not published) |
+| `recast-radar-testdata` | | Real test files: manifests, committed fixtures, a SHA-256-verified download cache and the Level II trim tool (for tests only, not published) |
 <!-- crate-map:end -->
 
 Not in the workspace yet: `recast-radar-io-level3` (a complete Level III
-decoder), `recast-radar-testdata` (the manifest of real test files, with
-download, checksum verification and caching) and `fuzz/` (cargo-fuzz targets).
+decoder) and `fuzz/` (cargo-fuzz targets).
+
+`crates/recast-radar-tools/tests/readme.rs` checks that the map lists exactly
+the crates under `crates/` and that the Module column matches the facade's
+re-exports. It also checks that every crate's manifest has a description,
+keywords, categories and a readme.
 
 ## Features
 
@@ -238,11 +245,11 @@ download, checksum verification and caching) and `fuzz/` (cargo-fuzz targets).
 | Feature | Module | Crate | Also enables | Default |
 |---|---|---|---|---|
 | (always on) | `core` | `recast-radar-core` | | yes |
-| `nexrad` | `nexrad` | `recast-radar-io-nexrad` | | |
-| `odim` | `odim` | `recast-radar-io-odim` | | |
-| `cfradial` | `cfradial` | `recast-radar-io-cfradial` | | |
-| `dorade` | `dorade` | `recast-radar-io-dorade` | | |
-| `jma` | `jma` | `recast-radar-io-jma` | | |
+| `nexrad` | `nexrad` | `recast-radar-io-nexrad` | | via `io` |
+| `odim` | `odim` | `recast-radar-io-odim` | | via `io` |
+| `cfradial` | `cfradial` | `recast-radar-io-cfradial` | | via `io` |
+| `dorade` | `dorade` | `recast-radar-io-dorade` | | via `io` |
+| `jma` | `jma` | `recast-radar-io-jma` | | via `io` |
 | `io` | `io` | `recast-radar-io` | `nexrad` `odim` `cfradial` `dorade` `jma` | yes |
 | `net` | `data` | `recast-radar-data` | | |
 | `correct` | `correct` | `recast-radar-correct` | | yes |
@@ -256,34 +263,53 @@ download, checksum verification and caching) and `fuzz/` (cargo-fuzz targets).
 | `full` | | | `io` `net` `correct` `filters` `retrieve` `map` `track` `render` `scattering` `serde` | |
 <!-- features:end -->
 
+- In the Default column, "yes" means the feature is listed in `default`, and
+  "via `io`" means `io` turns it on.
 - A feature also enables the features of the member crates its crate depends
-  on, so the types a module's API uses can be named through the facade.
+  on, so the types a module's API uses can be named through the facade. The
+  one exception is `net`: `recast-radar-data` depends on
+  `recast-radar-io-jma` but uses it only internally, so `net` does not enable
+  `jma`.
 - `nexrad` alone gives the Level II decoder without the other formats or the
   router.
 - `net` (also part of `full`) is the only feature that makes HTTPS requests
   and the only one that compiles C (see [Pure Rust](#pure-rust)).
-- `serde` turns on `recast-radar-core/serde`. The data model's serde derives
-  are currently compiled whether or not it is on.
+- `serde` is a placeholder. It turns on `recast-radar-core/serde`, which does
+  nothing yet. serde is always compiled, even with `default-features = false`:
+  the data model derives `Serialize` and `Deserialize` unconditionally, and
+  `recast-radar-data` and `recast-radar-scattering` use serde directly.
 - A `level3` feature will come with the Level III crate.
+- `crates/recast-radar-tools/tests/readme.rs` checks this table against the
+  facade's `[features]` and `src/lib.rs`. It also checks the dependency rule,
+  and its `net` exception, against the member crates' manifests.
 
 ## Pure Rust
 
-Without `net`, nothing in the build compiles C or C++:
+Without `net`, nothing in the build compiles C or C++, for any target:
 
 - bzip2 through the `bzip2` crate's Rust backend (`libbz2-rs-sys` is a Rust
   port, despite its name), gzip and zlib through `flate2` with `zlib-rs`.
 - HDF5 (for ODIM_H5) and classic netCDF (for CfRadial) are read by parsers in
   this repository, not by the C libraries.
+- chrono is built with its `now` feature instead of `clock`. `clock` would add
+  `iana-time-zone`, which compiles C++ when the target is Haiku.
 
 The one exception is `net`: `recast-radar-data` uses reqwest with rustls, and
-its crypto provider, `ring`, compiles C and assembly.
+its crypto provider, `ring`, compiles C and assembly. The test-only
+`recast-radar-testdata` also uses rustls (through ureq) to download test files.
+CI runs [`tools/ci/pure-rust-check.sh`](tools/ci/pure-rust-check.sh). It fails
+if `cc` or `cmake` is in the dependency graph, for any target, of the facade
+with every feature except `net` and `full`.
 
-The same split applies to WebAssembly. Every crate except `recast-radar-data`
-passes `cargo check --target wasm32-unknown-unknown`, and so does the facade
-with any single feature other than `net` and `full`. On that target, use the
-byte-slice entry points (such as `nexrad::decode_volume_from_bytes`), because
-the path-based ones return I/O errors. rayon runs everything on the calling
-thread there. Details: [docs/design/wasm.md](docs/design/wasm.md).
+The same split applies to WebAssembly. Every library crate except
+`recast-radar-data` and the test-only `recast-radar-testdata` passes
+`cargo check --target wasm32-unknown-unknown`, and so does the facade with any
+single feature other than `net` and `full`. CI checks this with
+[`tools/ci/wasm-check.sh`](tools/ci/wasm-check.sh), which also leaves out the
+benchmark binary. On that target, use the byte-slice entry points (such
+as `nexrad::decode_volume_from_bytes`), because the path-based ones return I/O
+errors. rayon runs everything on the calling thread there. Details:
+[docs/design/wasm.md](docs/design/wasm.md).
 
 ## No unsafe
 
@@ -306,11 +332,21 @@ the crate manifests.
 
 `cargo test --workspace` runs the tests. New tests read real radar files only.
 Some tests carried over from the original code base still build synthetic
-input, and they will be converted to real files.
+input, and they will be converted to real files. The real files are listed in
+`testdata/manifest.toml` and `testdata/*/manifest.toml`. Small ones are
+committed under `testdata/files/`. The others are downloaded on first use into
+a cache (`$RECAST_RADAR_TESTDATA`, by default in the user's cache directory)
+and checked against their SHA-256.
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs rustfmt, clippy,
-the workspace tests, a `cargo hack check` of each facade feature on its own,
-and the wasm32 check in [`tools/ci/wasm-check.sh`](tools/ci/wasm-check.sh).
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on Ubuntu:
+
+- rustfmt and clippy on Rust 1.94.0, the minimum supported version, so the
+  clippy job also checks that every target builds with that version;
+- the workspace tests on the latest stable Rust, keeping the testdata download
+  cache between runs;
+- a `cargo hack check` of each facade feature on its own, and
+  [`tools/ci/pure-rust-check.sh`](tools/ci/pure-rust-check.sh);
+- the wasm32 check in [`tools/ci/wasm-check.sh`](tools/ci/wasm-check.sh).
 
 ## License
 

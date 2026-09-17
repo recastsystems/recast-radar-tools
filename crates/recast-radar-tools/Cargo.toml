@@ -8,13 +8,18 @@ description = "Pure-Rust weather radar toolkit: decoders, data access, correctio
 readme.workspace = true
 keywords = ["radar", "weather", "meteorology", "nexrad", "odim"]
 categories = ["science", "science::geo", "parser-implementations"]
+# The tests check this repository (its README, manifests, CI workflow and
+# real-file corpus), not the packaged crate, so they are not packaged.
+exclude = ["tests/"]
 
 [package.metadata.docs.rs]
 all-features = true
 
 # Every member crate is optional except the data model. A feature enables its
-# module and the features of the facade crates that crate normally depends on,
-# so every type a module's API names is reachable through the facade. See
+# module and the features of the member crates that crate normally depends on,
+# so every type a module's API names is reachable through the facade. One
+# exception: `net` does not enable `jma` (recast-radar-data uses
+# recast-radar-io-jma internally only). tests/readme.rs checks the rule. See
 # docs/design/packaging.md.
 [features]
 default = ["io", "correct", "filters", "retrieve", "map"]
@@ -69,6 +74,9 @@ recast-radar-render = { path = "../recast-radar-render", optional = true }
 recast-radar-retrieve = { path = "../recast-radar-retrieve", optional = true }
 recast-radar-scattering = { path = "../recast-radar-scattering", optional = true }
 recast-radar-track = { path = "../recast-radar-track", optional = true }
+
+[dev-dependencies]
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [[test]]
 name = "facade_real_files"

@@ -8,36 +8,51 @@ criterion 7): every non-`net` library crate passes
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo check --workspace --exclude recast-radar-data --exclude recast-radar-testdata \
-    --target wasm32-unknown-unknown
-cargo hack check -p recast-radar-tools --each-feature --exclude-features net,full \
-    --no-dev-deps --target wasm32-unknown-unknown
+cargo install cargo-hack
+bash tools/ci/wasm-check.sh
 ```
 
-`--workspace` covers new crates (for example Level III) without changing the
-command. Excluded:
+CI runs this script, and the script is the definition of the check. Its header
+comment gives the same rules as this section. It runs:
 
-- `recast-radar-data`: its networking uses reqwest's blocking client, which
-  does not exist on wasm32 (30 compile errors today). Once E.1 (branch
-  `data-access`) merges, `net` is a default feature and CI adds
-  `cargo check -p recast-radar-data --no-default-features --target wasm32-unknown-unknown`.
-- `recast-radar-testdata` (once `testdata` merges): a dev-only crate with HTTPS
-  through ureq and rustls. Until it merges, cargo warns that this exclusion
-  matches no package.
+1. `cargo hack check --locked --target wasm32-unknown-unknown --workspace`,
+   with the exclusions listed below. cargo-hack checks each crate on its own
+   with its default features, so a crate cannot pass only because another
+   crate in the same command turned on a feature of a shared dependency. New
+   crates (for example Level III) are included without changing the command.
+2. `cargo hack check --locked --target wasm32-unknown-unknown -p
+   recast-radar-tools --each-feature --exclude-features net,full`: the facade
+   with no features, with the defaults, and with each feature alone.
+3. `cargo check --locked --target wasm32-unknown-unknown -p recast-radar-data
+   --no-default-features`, once `recast-radar-data` has a `net` feature
+   (stream E.1). Until then the script prints a note and skips this step.
+
+Plain `cargo check` builds only lib and bin targets, so dev-dependencies (such
+as `recast-radar-io`'s dev-dependency on `recast-radar-data`) are not built.
+
+Not checked:
+
+- `recast-radar-data` with default features: its networking uses reqwest's
+  blocking client, which does not exist on wasm32 (30 compile errors at
+  `ba35387`).
 - The facade's `net` and `full` features, because both enable `recast-radar-data`.
-
-`recast-radar-bench` is a harness binary. It compiles for wasm32, so it stays in
-the command and needs no exclusion. Plain `cargo check` builds only lib and bin
-targets, so dev-dependencies (such as `recast-radar-io`'s dev-dependency on
-`recast-radar-data`) are not built.
+- `recast-radar-bench`: the benchmark harness binary. It is not a library, so
+  wasm32 is not a goal for it. It did compile for wasm32 at `ba35387` (see
+  Result).
+- `recast-radar-testdata`: the test-only corpus crate. It downloads over HTTPS
+  through ureq and rustls, and no library crate has it as a normal dependency.
 
 ## Result (branch `packaging` at `ba35387`)
 
-Everything passes without any source or manifest change and with zero warnings:
+This run used an earlier form of the check: one
+`cargo check --workspace --exclude recast-radar-data`, which also covered
+`recast-radar-bench`. Everything passed without any source or manifest change
+and with zero warnings:
 `core`, `io-nexrad`, `io-odim`, `io-cfradial`, `io-dorade`, `io-jma`, `io`,
 `correct`, `filters`, `retrieve`, `map`, `track`, `render`, `scattering`,
 `bench`, and the facade with `--no-default-features` and with each non-`net`
-feature on its own (16 cargo-hack runs). The normal dependency graph is pure
+feature on its own (16 cargo-hack runs). After `testdata` merged,
+`tools/ci/wasm-check.sh` passed as well (14 crates and 16 facade runs). The normal dependency graph is pure
 Rust (bzip2 through libbz2-rs-sys, flate2 through zlib-rs, zip with deflate,
 image with png/jpeg/tiff, sha2, chrono, serde, thiserror, rayon), so no crate
 needs a C toolchain for wasm32.

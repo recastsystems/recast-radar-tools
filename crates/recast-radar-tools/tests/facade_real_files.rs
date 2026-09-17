@@ -1,10 +1,9 @@
 //! The facade's default feature set runs a decode -> filter -> correct ->
 //! map pipeline on a real volume using only `recast_radar_tools` paths.
 //!
-//! Input: `recast-radar-io-odim/tests/data/espdg.pvol.20260707.dbzh_vradh.h5`,
-//! an AEMET Perdiguera (Spain) C-band Doppler PVOL from 2026-07-07 with two
-//! sweeps of DBZH + VRADH. Provenance and the decoder's own value checks are
-//! in `recast-radar-io-odim/tests/odim_real_files.rs`.
+//! Input: testdata `odim-espdg-20260707-1927-pvol-dbzh-vradh` (committed), an
+//! AEMET Perdiguera (Spain) C-band Doppler PVOL from 2026-07-07 with two
+//! sweeps of DBZH + VRADH. Provenance is in `testdata/other/manifest.toml`.
 
 use std::error::Error;
 
@@ -13,11 +12,14 @@ use recast_radar_tools::{correct, filters, io, map, odim};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-const ESPDG: &[u8] =
-    include_bytes!("../../recast-radar-io-odim/tests/data/espdg.pvol.20260707.dbzh_vradh.h5");
+const ESPDG: &str = "odim-espdg-20260707-1927-pvol-dbzh-vradh";
+
+fn espdg_bytes() -> Result<Vec<u8>, Box<dyn Error>> {
+    Ok(recast_radar_testdata::bytes(ESPDG)?)
+}
 
 fn decode() -> Result<RadarVolume, Box<dyn Error>> {
-    Ok(io::decode_supported_volume_bytes(ESPDG)?)
+    Ok(io::decode_supported_volume_bytes(&espdg_bytes()?)?)
 }
 
 fn moment<'a>(cut: &'a ElevationCut, moment: &MomentType) -> Result<&'a MomentGrid, String> {
@@ -53,7 +55,7 @@ fn assert_same_geometry(a: &MomentGrid, b: &MomentGrid, what: &str) {
 #[test]
 fn io_module_routes_to_the_odim_module_decoder() -> TestResult {
     let routed = decode()?;
-    let direct = odim::decode_odim_h5_volume(ESPDG)?;
+    let direct = odim::decode_odim_h5_volume(&espdg_bytes()?)?;
     assert_eq!(routed.site.id, "ESPDG");
     assert_eq!(direct.site.id, routed.site.id);
     assert_eq!(routed.cuts.len(), 2);

@@ -17,38 +17,48 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+# Toolchains: rustfmt and clippy run on Rust 1.94.0, the workspace
+# `rust-version` (MSRV). Each Rust release adds clippy lints, so a pinned
+# toolchain changes their results only in a commit that moves the pin, and
+# clippy's build of every target with --all-features doubles as the MSRV
+# check. The other jobs run on the latest stable Rust. When the MSRV changes,
+# move both pins with it (crates/recast-radar-tools/tests/readme.rs fails
+# until Cargo.toml, the README and these pins agree).
+
 jobs:
   fmt:
-    name: rustfmt
+    name: rustfmt (Rust 1.94.0)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: rustfmt
       - run: cargo fmt --all --check
 
   clippy:
-    name: clippy
+    name: clippy (Rust 1.94.0, MSRV)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # Not `-D warnings` until stream D.3 lands (plan G.2): unwrap/expect trips
-      # the workspace `unwrap_used`/`expect_used` lints, the only warnings today.
-      # At D.3, tests and examples still inherit the workspace `warn`, so unless
-      # D.3 also clears those, append
+      # Not `-D warnings` until stream D.3 lands (plan G.2). On Rust 1.94.0 the
+      # only warnings are `clippy::unwrap_used` and `clippy::expect_used` from
+      # the workspace lints (newer releases add others, for example 1.98's
+      # `clippy::chunks_exact_to_as_chunks`, so moving the pin means clearing
+      # those first). At D.3, tests and examples still inherit the workspace
+      # `warn`, so unless D.3 also clears those, append
       # `-- -D warnings -A clippy::unwrap_used -A clippy::expect_used`: the
       # crate-root `deny` D.3 adds still overrides the `-A` for library code.
       - run: cargo clippy --workspace --all-targets --all-features --locked
 
   test:
-    name: test
+    name: test (stable)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -95,7 +105,7 @@ jobs:
           key: ${{ steps.testdata-cache.outputs.cache-primary-key }}
 
   features:
-    name: facade features
+    name: facade features, pure Rust
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -105,9 +115,15 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
+      # `--no-dev-deps` removes dev-dependencies from the manifests while
+      # cargo-hack runs, so cargo prunes Cargo.lock and `--locked` would fail.
+      # Check that the lock file is current first instead.
+      - run: cargo fetch --locked
       # Each facade feature alone, plus no features, the defaults and all
       # features (cargo-hack adds those runs).
       - run: cargo hack check -p recast-radar-tools --each-feature --no-dev-deps
+      # No C or C++ build without `net`, for any target; see the script header.
+      - run: bash tools/ci/pure-rust-check.sh
 
   wasm:
     name: wasm32
@@ -122,6 +138,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      # Every crate except networking, the bench harness and the dev-only
-      # testdata crate; see the script header.
+      # Every library crate except networking, plus the facade without `net`;
+      # see the script header.
       - run: bash tools/ci/wasm-check.sh
