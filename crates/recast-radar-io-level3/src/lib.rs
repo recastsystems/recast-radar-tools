@@ -30,6 +30,7 @@ pub mod packets;
 mod products;
 mod read;
 
+pub use blocks::TextPage;
 pub use blocks::{
     GraphicAlphanumeric, GraphicLayout, GraphicPage, Symbology, TabularAlphanumeric, TabularLayout,
 };
