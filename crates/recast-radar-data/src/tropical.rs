@@ -2351,6 +2351,7 @@ pub fn merge_sources(
 /// is an error. As a best-effort last step, active JTWC warnings are matched to
 /// the GDACS storms so each carries a `forecast_url` for per-point intensity —
 /// a JTWC outage silently leaves the honest GDACS-only fallback in place.
+#[cfg(feature = "net")]
 pub fn fetch_active_cyclones(
     client: &reqwest::blocking::Client,
 ) -> Result<Vec<TropicalCyclone>, String> {
@@ -2413,6 +2414,7 @@ pub fn combine_source_results(
 /// intensity-less GDACS forecast points, so the West-Pacific dots color by the
 /// official JTWC per-point Saffir–Simpson category. The GDACS track and cone are
 /// always kept. A failed/empty JTWC fetch leaves the GDACS fallback untouched.
+#[cfg(feature = "net")]
 pub fn fetch_storm_geometry(
     client: &reqwest::blocking::Client,
     source: Source,
@@ -2520,6 +2522,7 @@ pub fn nhc_geometry_from_forecast_advisory(text: &str) -> StormGeometry {
     }
 }
 
+#[cfg(feature = "net")]
 fn fetch_text(client: &reqwest::blocking::Client, url: &str) -> Result<String, String> {
     let response = client
         .get(url)
@@ -3872,6 +3875,7 @@ REMARKS:
     /// manually: `cargo test -p recast-radar-data --release -- --ignored live_tropical`).
     /// Fetches + merges NHC/GDACS/JTWC and then every storm's geometry, so a
     /// live format drift in any product is caught before it ships.
+    #[cfg(feature = "net")]
     #[test]
     #[ignore]
     fn live_tropical_feeds_end_to_end() {

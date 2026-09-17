@@ -89,6 +89,7 @@ impl IntlProvider for DmiProvider {
         "Denmark"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         self.sites.get_or_fill(|| {
             let url = format!("{ITEMS_URL}?limit={SITE_DISCOVERY_LIMIT}&sortorder=datetime%2CDESC");
@@ -98,6 +99,7 @@ impl IntlProvider for DmiProvider {
         })
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         validate_station_id(site_id)?;
         let url = format!("{ITEMS_URL}?stationId={site_id}&limit=1&sortorder=datetime%2CDESC");
@@ -129,6 +131,7 @@ impl IntlProvider for DmiProvider {
 }
 
 impl RecentFrames for DmiProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         validate_station_id(site_id)?;
         let limit = count.clamp(1, RECENT_ITEMS_LIMIT);

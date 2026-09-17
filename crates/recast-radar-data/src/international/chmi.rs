@@ -40,6 +40,7 @@ use chrono::NaiveDateTime;
 
 use super::listing::{ListingEntry, digit_run, fnv1a64, join_url, parse_autoindex};
 use super::{FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames};
+#[cfg(feature = "net")]
 use crate::{fetch_listing_text, fetch_text};
 
 const CHMI_SITES_ROOT: &str = "https://opendata.chmi.cz/meteorology/weather/radar/sites/";
@@ -117,6 +118,7 @@ impl IntlProvider for ChmiProvider {
         "Czechia"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         let html = fetch_text(CHMI_SITES_ROOT)
             .map_err(|err| format!("CHMI station listing {CHMI_SITES_ROOT}: {err}"))?;
@@ -147,6 +149,7 @@ impl IntlProvider for ChmiProvider {
         Ok(sites)
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         if !is_safe_path_segment(site_id) {
             return Err(format!("CHMI: invalid site id '{site_id}'"));
@@ -181,6 +184,7 @@ impl IntlProvider for ChmiProvider {
 }
 
 impl RecentFrames for ChmiProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         if !is_safe_path_segment(site_id) {
             return Err(format!("CHMI: invalid site id '{site_id}'"));
@@ -222,6 +226,7 @@ struct ChmiProductListing {
 /// the required `vol_z` listing with at least one parsed file — missing or
 /// empty required listings are errors — so callers can anchor frames on
 /// `listings[0]`.
+#[cfg(feature = "net")]
 fn fetch_product_listings(site_id: &str) -> Result<Vec<ChmiProductListing>, String> {
     let mut listings = Vec::new();
     for (product_rank, product) in CHMI_PRODUCTS.iter().enumerate() {

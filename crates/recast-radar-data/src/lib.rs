@@ -1,4 +1,24 @@
 //! Public radar data-source helpers.
+//!
+//! # Features
+//!
+//! - `net` (default): the blocking HTTPS client (reqwest + rustls) and
+//!   everything that performs requests: AWS Level II archive and real-time
+//!   chunk listing/download, the network methods of the international
+//!   provider traits ([`international::IntlProvider::list_sites`],
+//!   [`international::IntlProvider::latest`], ...), GDEX, grid-product and
+//!   tropical feed fetches.
+//!
+//! Without `net` the crate is network-free and builds for
+//! `wasm32-unknown-unknown`: data types, embedded site catalogs
+//! ([`sites`], [`fallback_sites`], [`international::intl_static_sites`]),
+//! object-key and listing parsers, archive window selection, and local cache
+//! helpers stay available, so a caller with its own transport can reuse them.
+
+// Without `net`, helpers that only the network paths call (listing parsers,
+// request caches, URL builders) stay compiled and unit-tested rather than
+// being gated one by one; they and their imports are unused in that build.
+#![cfg_attr(not(feature = "net"), allow(dead_code, unused_imports))]
 
 pub mod community_feeds;
 mod embedded_sites;
@@ -18,6 +38,7 @@ use std::thread;
 use std::time::{Duration as StdDuration, Instant, SystemTime};
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
+#[cfg(feature = "net")]
 use reqwest::header::{ACCEPT, COOKIE, REFERER, SET_COOKIE};
 use serde::Deserialize;
 use thiserror::Error;
@@ -186,6 +207,7 @@ pub enum DataSourceError {
     // field statuses read "error decoding response body" when the actual
     // cause was a mid-body timeout, or "error sending request" when DNS
     // or a reset connection was at fault.
+    #[cfg(feature = "net")]
     #[error("HTTP request failed: {}", reqwest_error_chain(.0))]
     Http(#[from] reqwest::Error),
     #[error("S3 XML parse failed: {0}")]
@@ -221,6 +243,7 @@ impl DataSourceError {
     /// not an error worth surfacing or retrying).
     pub fn is_not_found(&self) -> bool {
         match self {
+            #[cfg(feature = "net")]
             DataSourceError::Http(err) => err.status() == Some(reqwest::StatusCode::NOT_FOUND),
             DataSourceError::NoObjects { .. } => true,
             _ => false,
@@ -280,6 +303,7 @@ fn embedded_site_table() -> Vec<RadarSite> {
         .collect()
 }
 
+#[cfg(feature = "net")]
 pub fn list_level2_sites_for_date(date: NaiveDate) -> Result<Vec<RadarSite>> {
     let prefix = format!("{:04}/{:02}/{:02}/", date.year(), date.month(), date.day());
     let listing = list_s3(LEVEL2_ARCHIVE_BUCKET, &prefix, Some("/"), None)?;
@@ -302,6 +326,7 @@ pub fn list_level2_sites_for_date(date: NaiveDate) -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+#[cfg(feature = "net")]
 pub fn list_recent_level2_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     let today = Utc::now().date_naive();
     let mut sites_by_id = BTreeMap::<String, RadarSite>::new();
@@ -326,6 +351,7 @@ pub fn list_recent_level2_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+#[cfg(feature = "net")]
 pub fn fetch_weather_gov_radar_sites() -> Result<Vec<RadarSite>> {
     let client = metadata_http_client();
     let text = client
@@ -355,6 +381,7 @@ pub fn fetch_weather_gov_radar_sites() -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+#[cfg(feature = "net")]
 pub fn fetch_text(url: &str) -> Result<String> {
     let response = send_with_retry(&metadata_http_client(), url)?.error_for_status()?;
     read_response_text_limited(response, MAX_METADATA_TEXT_BYTES, "text resource")
@@ -367,6 +394,7 @@ pub fn fetch_text(url: &str) -> Result<String> {
 /// session cookie created by first visiting `/display/` plus a GeoJSON Accept
 /// header. Keep those quirks in one place so callers can treat it as a normal
 /// public display feed.
+#[cfg(feature = "net")]
 pub fn fetch_mping_reports_geojson() -> Result<String> {
     let client = metadata_http_client();
     let display_response = client
@@ -398,6 +426,7 @@ pub fn fetch_mping_reports_geojson() -> Result<String> {
 /// stale-pooled-connection class: the server closed an idle keep-alive
 /// and the first reuse fails before any response). Status and body
 /// errors are NOT retried — they are real answers.
+#[cfg(feature = "net")]
 fn send_with_retry(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -416,6 +445,7 @@ fn send_with_retry(
 /// it), which can outrun the 8-second metadata-client budget of
 /// [`fetch_text`] on a slow link. Listings still must complete within the
 /// download-client budget.
+#[cfg(feature = "net")]
 pub fn fetch_listing_text(url: &str) -> Result<String> {
     let response = send_with_retry(&download_http_client(), url)?.error_for_status()?;
     read_response_text_limited(response, MAX_LISTING_TEXT_BYTES, "listing")
@@ -425,6 +455,7 @@ pub fn fetch_listing_text(url: &str) -> Result<String> {
 /// 404/410, `Err` on transport failures and other HTTP statuses. The cheap
 /// existence probe for feeds whose newest file name must be guessed
 /// (e.g. the 5-minute-aligned JMA/NICT tar stamps).
+#[cfg(feature = "net")]
 pub fn url_exists(url: &str) -> Result<bool> {
     let response = metadata_http_client().head(url).send()?;
     let status = response.status();
@@ -440,6 +471,7 @@ pub fn url_exists(url: &str) -> Result<bool> {
 
 /// Fetch a small binary resource (e.g. a placefile icon sheet). Capped at
 /// 4 MiB — these are sprite sheets, not data files.
+#[cfg(feature = "net")]
 pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
     let response = metadata_http_client().get(url).send()?.error_for_status()?;
     read_response_limited(response, MAX_SMALL_RESOURCE_BYTES, "resource")
@@ -451,6 +483,7 @@ pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
 /// timeout) with a generous cap — unlike `fetch_bytes`, which is sized
 /// for sprite sheets on the metadata client and rejects anything over
 /// 4 MiB.
+#[cfg(feature = "net")]
 pub fn fetch_volume_bytes(url: &str) -> Result<Vec<u8>> {
     let client = download_http_client();
     let result = fetch_limited_bytes(&client, url, MAX_RADAR_VOLUME_BYTES, "volume");
@@ -464,6 +497,7 @@ pub fn fetch_volume_bytes(url: &str) -> Result<Vec<u8>> {
     }
 }
 
+#[cfg(feature = "net")]
 fn fetch_limited_bytes(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -477,6 +511,7 @@ fn fetch_limited_bytes(
 /// Stream a response into a bounded sink. Checking `Content-Length` is only
 /// an early rejection: the writer remains authoritative for chunked and
 /// content-encoded responses whose decoded body is larger than the header.
+#[cfg(feature = "net")]
 fn read_response_limited(
     mut response: reqwest::blocking::Response,
     max_bytes: usize,
@@ -497,6 +532,7 @@ fn read_response_limited(
     }
 }
 
+#[cfg(feature = "net")]
 fn read_response_text_limited(
     response: reqwest::blocking::Response,
     max_bytes: usize,
@@ -559,12 +595,14 @@ impl Write for LimitedBody {
     }
 }
 
+#[cfg(feature = "net")]
 fn should_retry_volume_fetch(err: &reqwest::Error) -> bool {
     !err.is_status() && (err.is_timeout() || err.is_body() || err.is_decode())
 }
 
 /// reqwest's Display drops the cause ("error decoding response body" with
 /// the timeout hidden in source()) — join the whole chain for status text.
+#[cfg(feature = "net")]
 fn reqwest_error_chain(err: &reqwest::Error) -> String {
     use std::error::Error as _;
     let mut text = err.to_string();
@@ -580,6 +618,7 @@ fn reqwest_error_chain(err: &reqwest::Error) -> String {
     text
 }
 
+#[cfg(feature = "net")]
 pub fn fetch_level2_radar_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     // Embedded base FIRST, live API overlay second: site locations must
     // never depend on the network being up.
@@ -604,6 +643,7 @@ pub fn fetch_level2_radar_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+#[cfg(feature = "net")]
 pub fn latest_level2_object(site: &str, days_back: i64) -> Result<S3Object> {
     recent_level2_objects(site, days_back, 1)?
         .into_iter()
@@ -616,6 +656,7 @@ pub fn latest_level2_object(site: &str, days_back: i64) -> Result<S3Object> {
 
 /// All Level 2 volumes for one site on one UTC date, oldest first — the
 /// archive-browser listing.
+#[cfg(feature = "net")]
 pub fn level2_objects_for_date(site: &str, date: NaiveDate) -> Result<Vec<S3Object>> {
     let site = site.to_ascii_uppercase();
     let prefix = format!(
@@ -651,6 +692,7 @@ pub struct Level2ArchiveWindowSelection {
     pub selected_index: usize,
 }
 
+#[cfg(feature = "net")]
 pub fn level2_objects_for_window(
     site: &str,
     request: &Level2ArchiveWindowRequest,
@@ -799,6 +841,7 @@ fn parse_level2_object_time_utc(key: &str) -> Option<DateTime<Utc>> {
     Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc))
 }
 
+#[cfg(feature = "net")]
 pub fn recent_level2_objects(
     site: &str,
     days_back: i64,
@@ -844,6 +887,7 @@ pub fn recent_level2_objects(
     }
 }
 
+#[cfg(feature = "net")]
 pub fn latest_level2_object_cached(
     site: &str,
     days_back: i64,
@@ -881,6 +925,7 @@ pub fn latest_level2_object_cached(
     })
 }
 
+#[cfg(feature = "net")]
 pub fn latest_realtime_level2_volume(site: &str) -> Result<RealtimeLevel2Volume> {
     latest_realtime_level2_volume_with_listing_ttl(site, REALTIME_ACTIVE_IDS_LISTING_TTL)
 }
@@ -891,6 +936,7 @@ pub fn latest_realtime_level2_volume(site: &str) -> Result<RealtimeLevel2Volume>
 /// (pass [`StdDuration::ZERO`] to force fresh listings); completed volumes
 /// are served from an immutable cache, since their chunk lists can never
 /// change again.
+#[cfg(feature = "net")]
 pub fn latest_realtime_level2_volume_with_listing_ttl(
     site: &str,
     listing_ttl: StdDuration,
@@ -915,6 +961,7 @@ pub fn latest_realtime_level2_volume_with_listing_ttl(
     Ok(volume)
 }
 
+#[cfg(feature = "net")]
 fn resolve_latest_realtime_volume(
     site: &str,
     listing_ttl: StdDuration,
@@ -998,6 +1045,7 @@ fn realtime_volume_is_stale(volume: &RealtimeLevel2Volume, now: DateTime<Utc>) -
         > REALTIME_CHUNK_STALE_RESCAN_AGE_SECONDS
 }
 
+#[cfg(feature = "net")]
 fn latest_realtime_volume_by_chunk_scan(site: &str) -> Result<RealtimeLevel2Volume> {
     let site_prefix = format!("{site}/");
     let listing = list_s3_all_limited(
@@ -1028,6 +1076,7 @@ fn latest_realtime_volume_by_chunk_scan(site: &str) -> Result<RealtimeLevel2Volu
 /// memo: within `max_age` of a fetch, pollers of the same (site, volume id)
 /// reuse the listing instead of issuing duplicate chunk LISTs. The outer
 /// per-site single-flight covers the network fetch; errors are never memoized.
+#[cfg(feature = "net")]
 fn realtime_level2_volume_for_id_memoized(
     site: &str,
     volume_id: u16,
@@ -1040,6 +1089,7 @@ fn realtime_level2_volume_for_id_memoized(
         .inspect(|volume| live_volume_listing_cache().insert(volume.clone()))
 }
 
+#[cfg(feature = "net")]
 fn realtime_level2_volume_for_id(site: &str, volume_id: u16) -> Result<RealtimeLevel2Volume> {
     let first = list_realtime_level2_volume_for_id(site, volume_id)?;
     if !first.complete {
@@ -1065,6 +1115,7 @@ fn stable_completed_listing(
     second
 }
 
+#[cfg(feature = "net")]
 fn list_realtime_level2_volume_for_id(site: &str, volume_id: u16) -> Result<RealtimeLevel2Volume> {
     let volume_prefix = format!("{site}/{volume_id}/");
     let mut chunks = list_s3_limited(
@@ -1181,6 +1232,7 @@ fn validated_realtime_chunk_prefix(
     (prefix, complete)
 }
 
+#[cfg(feature = "net")]
 pub fn download_realtime_volume(
     volume: &RealtimeLevel2Volume,
     cache_dir: &Path,
@@ -1370,6 +1422,7 @@ fn finish_realtime_download(
     }
 }
 
+#[cfg(feature = "net")]
 pub fn download_object(
     bucket: &str,
     object: S3Object,
@@ -1435,6 +1488,7 @@ pub fn newest_cached_level2_path(cache_dir: &Path) -> Result<Option<PathBuf>> {
     Ok(newest.map(|(_, path)| path))
 }
 
+#[cfg(feature = "net")]
 fn list_s3(
     bucket: &str,
     prefix: &str,
@@ -1444,6 +1498,7 @@ fn list_s3(
     list_s3_limited(bucket, prefix, delimiter, continuation_token, None)
 }
 
+#[cfg(feature = "net")]
 fn list_s3_limited(
     bucket: &str,
     prefix: &str,
@@ -1473,6 +1528,7 @@ fn list_s3_limited(
     Ok(parsed.into())
 }
 
+#[cfg(feature = "net")]
 fn list_s3_all_limited(
     bucket: &str,
     prefix: &str,
@@ -1673,6 +1729,7 @@ fn append_realtime_chunks(
     Ok(())
 }
 
+#[cfg(feature = "net")]
 fn download_s3_object_to_path(bucket: &str, object: &S3Object, path: &Path) -> Result<()> {
     let path_flight = download_path_flights().mutex_for(path.to_path_buf());
     let _path_guard = path_flight
@@ -1880,6 +1937,7 @@ fn remove_empty_cache_dirs(dir: &Path, depth: usize) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "net")]
 fn metadata_http_client() -> reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT
@@ -1890,6 +1948,7 @@ fn metadata_http_client() -> reqwest::blocking::Client {
         .clone()
 }
 
+#[cfg(feature = "net")]
 fn download_http_client() -> reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT
@@ -1909,9 +1968,11 @@ fn download_http_client() -> reqwest::blocking::Client {
 /// sends an incomplete TLS chain — the leaf only. Browsers and schannel
 /// repair that by chasing the AIA URL; rustls deliberately does not, so
 /// without this anchor every fetch from the feed fails the TLS handshake.
+#[cfg(feature = "net")]
 const SECTIGO_DV_R36_INTERMEDIATE_PEM: &str =
     include_str!("../certs/sectigo_public_server_authentication_ca_dv_r36.pem");
 
+#[cfg(feature = "net")]
 fn build_http_client(timeout: StdDuration) -> Result<reqwest::blocking::Client> {
     let mut builder = reqwest::blocking::Client::builder()
         .user_agent(HTTP_USER_AGENT)
@@ -2907,6 +2968,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "network: hits live Unidata realtime chunk bucket"]
     fn latest_realtime_level2_volume_live_klnx() {
@@ -3000,6 +3062,7 @@ mod tests {
         fs::remove_dir_all(&dir).expect("clean append test dir");
     }
 
+    #[cfg(feature = "net")]
     #[test]
     fn completed_realtime_cache_hit_removes_duplicated_chunk_directory() {
         let unique = std::time::SystemTime::now()

@@ -61,10 +61,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 
+#[cfg(feature = "net")]
+use super::fetch_s3_style_listing;
 use super::listing::fnv1a64;
 use super::{
     ArchiveFrames, ArchiveListProgress, FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames,
-    SiteCache, fetch_s3_style_listing, s3_style_listing_url,
+    SiteCache, s3_style_listing_url,
 };
 
 const BUCKET_BASE: &str = "https://s3.waw3-1.cloudferro.com/openradar-24h";
@@ -350,6 +352,7 @@ struct OrdPlanCollection {
 /// The public CloudFerro archive uses the same key grammar as the live
 /// 24-hour cache, so this reuses the live ORD split-file planner but swaps
 /// the bucket base. Plans are returned oldest-first for loop installation.
+#[cfg(feature = "net")]
 pub fn archive_plans_for_hour(
     site_id: &str,
     hour_utc: DateTime<Utc>,
@@ -395,6 +398,7 @@ pub fn archive_plans_for_hour(
 /// each hour's key pages into the next phase. Boundary scan assembly stays
 /// identical while the catalog request bound drops from 96 to
 /// [`ORD_ARCHIVE_DAY_MAX_CATALOG_REQUESTS`].
+#[cfg(feature = "net")]
 pub fn archive_plans_for_day(
     site_id: &str,
     date_utc: NaiveDate,
@@ -408,6 +412,7 @@ pub fn archive_plans_for_day(
 /// One progress snapshot is emitted before work and after each completed UTC
 /// hour. Cancellation is cooperative between S3 catalog requests; no volume
 /// bytes are downloaded by this function.
+#[cfg(feature = "net")]
 pub fn archive_plans_for_day_with_progress(
     site_id: &str,
     date_utc: NaiveDate,
@@ -553,6 +558,7 @@ fn archive_plans_for_hour_from_kind_keys(
 }
 
 /// Build the archive plan nearest a requested UTC time.
+#[cfg(feature = "net")]
 pub fn archive_plan_nearest(
     site_id: &str,
     target_utc: DateTime<Utc>,
@@ -592,6 +598,7 @@ impl IntlProvider for OrdProvider {
         "Europe (OPERA)"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         self.sites.get_or_fill(|| {
             let mut sites: Vec<IntlSite> = Vec::new();
@@ -633,6 +640,7 @@ impl IntlProvider for OrdProvider {
         })
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         validate_site_code(site_id)?;
         let (_, dir, _) = country_for_live_code(site_id)
@@ -734,6 +742,7 @@ impl IntlProvider for OrdProvider {
 }
 
 impl RecentFrames for OrdProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         if count == 0 {
             return Ok(Vec::new());
@@ -822,6 +831,7 @@ impl RecentFrames for OrdProvider {
 
 impl ArchiveFrames for OrdProvider {
     /// Phased full-day walk over the immutable archive bucket.
+    #[cfg(feature = "net")]
     fn day_plans(&self, site_id: &str, date_utc: NaiveDate) -> Result<Vec<FramePlan>, String> {
         Ok(archive_plans_for_day(site_id, date_utc)?
             .into_iter()
@@ -829,6 +839,7 @@ impl ArchiveFrames for OrdProvider {
             .collect())
     }
 
+    #[cfg(feature = "net")]
     fn day_plans_with_progress(
         &self,
         site_id: &str,
@@ -847,6 +858,7 @@ impl ArchiveFrames for OrdProvider {
     /// Hour-granular override of the day-folding default: ORD's archive
     /// keys carry per-scan stamps, so the window trims to the exact
     /// `[start, end]` bounds instead of whole days.
+    #[cfg(feature = "net")]
     fn window_plans(
         &self,
         site_id: &str,
@@ -1019,6 +1031,7 @@ fn sites_from_prefixes(common_prefixes: &[String]) -> Vec<IntlSite> {
 
 /// List one hourly key prefix
 /// (`{date}/{CC}/{site}/{kind}/{site}@{yyyymmdd}T{hh}`).
+#[cfg(feature = "net")]
 fn list_hour_keys(
     dir: &str,
     site_id: &str,
@@ -1028,6 +1041,7 @@ fn list_hour_keys(
     list_hour_keys_from_base(BUCKET_BASE, dir, site_id, kind, hour)
 }
 
+#[cfg(feature = "net")]
 fn list_hour_keys_from_base(
     bucket_base: &str,
     dir: &str,
@@ -2815,6 +2829,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live ORD full-day archive catalog probe — run manually with --ignored"]
     fn ord_live_full_day_catalog_is_not_capped_at_twenty_scans() {
@@ -2855,6 +2870,7 @@ mod tests {
     /// list sites, plan, download every part, decode through the shared
     /// ODIM router, and (for split plans) merge. Network test; run with
     /// `cargo test -p recast-radar-data ord_live -- --ignored --nocapture`
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live ORD bucket probe — run manually with --ignored"]
     fn ord_live_roundtrip_lists_plans_downloads_and_decodes() {
@@ -2913,6 +2929,7 @@ mod tests {
     /// leaf metadata groups — the dialect hdf5lite gained for v0.30 after
     /// the v0.30-RC1 live-poll regression on espdg. Network test; run with
     /// `cargo test -p recast-radar-data ord_live_spain -- --ignored --nocapture`
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live ORD bucket probe — run manually with --ignored"]
     fn ord_live_spain_decodes_all_11_aemet_sites() {

@@ -17,9 +17,10 @@
 
 use chrono::{Datelike, Days, NaiveDate, Utc};
 
+#[cfg(feature = "net")]
+use super::fetch_s3_style_listing;
 use super::{
-    FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames, SiteCache, fetch_s3_style_listing,
-    s3_style_listing_url,
+    FramePlan, IntlProvider, IntlSite, PlanPart, RecentFrames, SiteCache, s3_style_listing_url,
 };
 
 const BUCKET_BASE: &str = "https://fmi-opendata-radar-volume-hdf5.s3.amazonaws.com";
@@ -85,6 +86,7 @@ impl IntlProvider for FmiProvider {
         "Finland"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         self.sites.get_or_fill(|| {
             for date in candidate_utc_dates() {
@@ -100,6 +102,7 @@ impl IntlProvider for FmiProvider {
         })
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         validate_site_code(site_id)?;
         for date in candidate_utc_dates() {
@@ -144,6 +147,7 @@ impl IntlProvider for FmiProvider {
 }
 
 impl RecentFrames for FmiProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         validate_site_code(site_id)?;
         let count = count.max(1);

@@ -190,6 +190,7 @@ impl IntlProvider for AustraliaNciProvider {
         "Australia"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         self.sites.get_or_fill(|| {
             let csv = crate::fetch_text(SITE_LIST_URL)
@@ -202,6 +203,7 @@ impl IntlProvider for AustraliaNciProvider {
         })
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         validate_site_id(site_id)?;
         latest_frame(site_id).map(|frame| frame_plan(&frame)).ok_or_else(|| {
@@ -225,6 +227,7 @@ impl IntlProvider for AustraliaNciProvider {
 }
 
 impl RecentFrames for AustraliaNciProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         validate_site_id(site_id)?;
         let count = count.clamp(1, MAX_RECENT_FRAMES);
@@ -245,6 +248,7 @@ impl ArchiveFrames for AustraliaNciProvider {
     /// oldest first. NCI publishes ~3 days behind real time, so "today"
     /// usually errors while any settled archive date lists in full — the
     /// plan stamps stay the real data times either way.
+    #[cfg(feature = "net")]
     fn day_plans(&self, site_id: &str, date_utc: NaiveDate) -> Result<Vec<FramePlan>, String> {
         validate_site_id(site_id)?;
         let frames = tarlist_frames(site_id, date_utc)?;
@@ -262,6 +266,7 @@ impl ArchiveFrames for AustraliaNciProvider {
     /// error (unpublished tail of the ~3-day ingest lag, transient fetch
     /// failure) are skipped and the first error is reported only when the
     /// whole window yields nothing (a partial archive loop beats none).
+    #[cfg(feature = "net")]
     fn window_plans(
         &self,
         site_id: &str,
@@ -454,6 +459,7 @@ fn parse_csv_record(line: &str) -> Vec<String> {
     fields
 }
 
+#[cfg(feature = "net")]
 fn latest_frame(site_id: &str) -> Option<TarlistFrame> {
     candidate_dates(LATEST_LOOKBACK_DAYS)
         .into_iter()
@@ -462,6 +468,7 @@ fn latest_frame(site_id: &str) -> Option<TarlistFrame> {
         .max_by_key(|frame| frame.timestamp)
 }
 
+#[cfg(feature = "net")]
 fn recent_frames(site_id: &str, count: usize) -> Vec<TarlistFrame> {
     let newest_days = candidate_dates(RECENT_LOOKBACK_DAYS)
         .into_iter()
@@ -500,6 +507,7 @@ fn candidate_dates(lookback_days: u64) -> Vec<NaiveDate> {
         .collect()
 }
 
+#[cfg(feature = "net")]
 fn tarlist_frames(site_id: &str, date: NaiveDate) -> Result<Vec<TarlistFrame>, String> {
     let url = tarlist_url(site_id, date);
     let text = crate::fetch_text(&url)
@@ -762,6 +770,7 @@ id,id_long,WIGOS,short_name,location,radar_type,postchange_start,prechange_end,s
     /// `archive_source` guards its inputs the same way `latest` does: a
     /// corrupt saved site id can never be interpolated into a THREDDS
     /// path, and a reversed window is a descriptive error.
+    #[cfg(feature = "net")]
     #[test]
     fn archive_lookup_validates_site_ids_and_window_bounds() {
         let provider = AustraliaNciProvider::new();
@@ -791,6 +800,7 @@ id,id_long,WIGOS,short_name,location,radar_type,postchange_start,prechange_end,s
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live NCI THREDDS dated-tarlist archive probe — run with --ignored"]
     fn live_melbourne_archive_day_and_window_plans_are_dated_oldest_first() {
@@ -844,6 +854,7 @@ id,id_long,WIGOS,short_name,location,radar_type,postchange_start,prechange_end,s
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live NCI THREDDS catalog probe"]
     fn live_latest_melbourne_resolves_member_hdf5() {
@@ -856,6 +867,7 @@ id,id_long,WIGOS,short_name,location,radar_type,postchange_start,prechange_end,s
         assert!(plan.parts[0].url.ends_with(".pvol.h5"));
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live NCI THREDDS download/decode probe"]
     fn live_melbourne_member_hdf5_decodes_through_router() {

@@ -48,6 +48,7 @@ use std::thread;
 use std::time::Duration as StdDuration;
 
 use chrono::Utc;
+#[cfg(feature = "net")]
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use serde::{Deserialize, Serialize};
 
@@ -411,6 +412,7 @@ fn gdex_error(message: impl Into<String>) -> DataSourceError {
 /// Fetch a text resource (catalog.xml / dataset.xml) with the GDEX retry
 /// policy on the long-timeout download client (these documents run to
 /// hundreds of KB).
+#[cfg(feature = "net")]
 fn gdex_fetch_text(url: &str) -> Result<String> {
     with_retry(GDEX_RETRY_BACKOFFS, |_| {
         let client = crate::download_http_client();
@@ -440,6 +442,7 @@ fn gdex_fetch_text(url: &str) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 /// Fetch and parse a single catalog level.
+#[cfg(feature = "net")]
 pub fn fetch_and_parse_catalog(catalog_url: &str) -> Result<ParsedCatalog> {
     let xml = gdex_fetch_text(catalog_url)?;
     parse_catalog(&xml, catalog_url)
@@ -610,6 +613,7 @@ fn normalize_path(path: &str) -> String {
 /// Recursively crawl a dataset and cache the flat leaf list to disk as JSON.
 /// With `refresh == false` a valid cache is returned without touching the
 /// network; `refresh == true` always re-crawls and rewrites the cache.
+#[cfg(feature = "net")]
 pub fn crawl_dataset(dataset_id: &str, cache_dir: &Path, refresh: bool) -> Result<CatalogCache> {
     let cache_path = catalog_cache_path(cache_dir, dataset_id);
     if !refresh && let Some(cached) = read_catalog_cache(&cache_path)? {
@@ -627,6 +631,7 @@ pub fn crawl_dataset(dataset_id: &str, cache_dir: &Path, refresh: bool) -> Resul
 
 /// Breadth-first crawl from a starting catalog URL, capping concurrency and
 /// guarding against revisits.
+#[cfg(feature = "net")]
 fn crawl_from(start_url: &str) -> Result<Vec<Leaf>> {
     let mut frontier = vec![start_url.to_owned()];
     let mut visited: HashSet<String> = HashSet::new();
@@ -687,6 +692,7 @@ fn write_catalog_cache(path: &Path, cache: &CatalogCache) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Fetch and parse an NCSS grid `dataset.xml` for a leaf's `urlPath`.
+#[cfg(feature = "net")]
 pub fn fetch_ncss_dataset(url_path: &str) -> Result<NcssGridDataset> {
     let xml = gdex_fetch_text(&ncss_dataset_url(url_path))?;
     parse_ncss_dataset(&xml)
@@ -755,6 +761,7 @@ pub fn local_path_for_leaf(cache_dir: &Path, leaf: &Leaf) -> PathBuf {
 
 /// Download a leaf to `cache_dir`, choosing the local path from its (sanitized)
 /// name. The returned [`DownloadOutcome::path`] is the ingest seam for Stage 1b.
+#[cfg(feature = "net")]
 pub fn download_leaf(leaf: &Leaf, cache_dir: &Path) -> Result<DownloadOutcome> {
     let dest = local_path_for_leaf(cache_dir, leaf);
     download_to_path(&leaf.download_url, &dest)
@@ -810,6 +817,7 @@ fn copy_with_cancel(
 /// `Range` when the server supports it. Verifies the final size against the
 /// server's `Content-Length` (when advertised) and atomically renames the temp
 /// into place. Never buffers the body in memory.
+#[cfg(feature = "net")]
 pub fn download_to_path(url: &str, dest: &Path) -> Result<DownloadOutcome> {
     download_to_path_with_cancel(url, dest, &AtomicBool::new(false))
 }
@@ -822,6 +830,7 @@ pub fn download_to_path(url: &str, dest: &Path) -> Result<DownloadOutcome> {
 /// PLACE — the next call for the same `dest` Range-resumes it exactly like an
 /// interrupted download — and `Err(`[`DataSourceError::DownloadCancelled`]`)`
 /// is returned so callers can tell a user stop from a failure.
+#[cfg(feature = "net")]
 pub fn download_to_path_with_cancel(
     url: &str,
     dest: &Path,
@@ -942,6 +951,7 @@ pub fn download_to_path_with_cancel(
 /// cache-hit shortcut. Any ultimate failure (exhausted retries, a 4xx, or a
 /// missing header) yields `None`; the download then relies on the GET's own
 /// status rather than failing.
+#[cfg(feature = "net")]
 fn head_content_length(url: &str, cancel: &AtomicBool) -> Option<u64> {
     with_retry(GDEX_RETRY_BACKOFFS, |_| {
         // A cancel during the HEAD's flaky-server retries falls out as `None`
@@ -1659,6 +1669,7 @@ mod tests {
     //   cargo test -p recast-radar-data gdex -- --ignored
     // -----------------------------------------------------------------------
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: crawls GDEX; run once on a node"]
     fn live_crawl_d612005_top_and_one_month() {
@@ -1698,6 +1709,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: lists the ERA-20C catalog root + one decade; run once on a node"]
     fn live_era20c_catalog_root_and_one_decade() {
@@ -1748,6 +1760,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: NCSS subset download; run once on a node"]
     fn live_ncss_tiny_subset_is_valid_netcdf3() {
@@ -1784,6 +1797,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live: Range probe (1 KB, not a full download); run once on a node"]
     fn live_fileserver_supports_range_resume() {
