@@ -31,20 +31,19 @@
 //!   large `rstart` values are reinterpreted as metres — see
 //!   [`first_gate_m_from_rstart`] for the writer quirk that requires it.
 //! - `nyquist_velocity(time)` broadcasts `how/NI` (dataset, else root).
-//! - Doppler-velocity no-data recovery: some IRIS exporters (AEMET Spain,
+//! - Planes are stored verbatim (design note 7.2): no rewrite pass, so the
+//!   raw arrays hash equal to xradar's. Some IRIS exporters (AEMET Spain,
 //!   IRIS 10.3) copy the REFLECTIVITY `what` group onto the velocity plane —
 //!   the VRADH `nodata`/`undetect` carry the dBZ sentinels (e.g. 95.5 / -32)
 //!   while no-echo velocity gates are filled with the physical `offset`
 //!   (0 m/s for gain=1/offset=0). Those fill gates match neither declared
-//!   sentinel, so the base decode leaves a spurious 0 m/s wall over the whole
-//!   plane. `recover_copied_whatgroup_velocity_nodata` masks a velocity gate
-//!   sitting on `offset` when the co-located reflectivity gate is no-echo,
-//!   and only when the velocity sentinels equal the reflectivity sentinels
-//!   (the copied-what-group signature) — genuine 0 m/s gates with echo, and
-//!   conformant writers with distinct velocity sentinels, are untouched.
-//!
-//! The pre-FM301 [`decode_odim_h5_volume`] (legacy `RadarVolume`) lives in
-//! [`crate::legacy_api`] during the migration.
+//!   sentinel, so the decoded plane is a spurious 0 m/s wall (as it is in
+//!   xradar and Py-ART). [`recover_copied_whatgroup_velocity_nodata`] is the
+//!   opt-in post-pass that masks a velocity gate sitting on `offset` when
+//!   the co-located reflectivity gate is no-echo, and only when the velocity
+//!   sentinels equal the reflectivity sentinels (the copied-what-group
+//!   signature) — genuine 0 m/s gates with echo, and conformant writers with
+//!   distinct velocity sentinels, are untouched.
 //!
 //! Known limitations (explicit, not silent): non-polar objects (ELEV/RHI
 //! cross-section products, CVOL, IMAGE) are rejected with a clear error;
@@ -61,8 +60,6 @@ use recast_radar_core::model::{
 
 pub use crate::hdf5lite::looks_like_hdf5_bytes;
 use crate::hdf5lite::{H5Attr, H5Data, H5File};
-#[allow(deprecated)]
-pub use crate::legacy_api::decode_odim_h5_volume;
 use crate::{OdimError, Result};
 
 /// Decode an ODIM_H5 PVOL/SCAN byte buffer into the FM301 model.
@@ -110,7 +107,7 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
         .and_then(|attr| attr.as_str().map(str::to_owned));
     volume.provenance.compression = Some("odim-h5".to_owned());
     if let Some(mhz) = odim_radar_frequency_mhz(&file) {
-        volume.radar_parameters.frequency_hz = vec![f64::from(mhz) * 1e6];
+        volume.radar_parameters.frequency_hz = vec![mhz * 1e6];
     }
     let root_nyquist = attr_f64(&file, "/how", "NI");
 
@@ -303,7 +300,6 @@ fn decode_sweep(
     }
 
     let mut skipped_planes = 0usize;
-    let mut plane_meta: Vec<PlaneNoData> = Vec::with_capacity(data_names.len());
     let mut first_plane = Some(first_plane);
     for (plane_index, plane_name) in data_names.iter().enumerate() {
         let plane_what = format!("/{dataset}/{plane_name}/what");
@@ -380,17 +376,10 @@ fn decode_sweep(
             field.quantity = Quantity::TotalPower;
             field.attrs.units = Some("dBZ".into());
         }
-        plane_meta.push(PlaneNoData {
-            name: field.name.clone(),
-            nodata,
-            undetect,
-            offset,
-        });
         sweep
             .add_field(field)
             .map_err(|err| invalid(format!("{dataset}/{plane_name}: {err}")))?;
     }
-    recover_copied_whatgroup_velocity_nodata(&mut sweep, &plane_meta);
     Ok((
         DecodedSweep {
             sweep,
@@ -503,68 +492,106 @@ pub(crate) fn first_gate_m_from_rstart(rstart: f64) -> i32 {
     }
 }
 
-/// The `what` no-data attributes of the plane a field was decoded from,
-/// captured alongside its field so a sweep-level pass can cross-reference
-/// them.
-struct PlaneNoData {
-    name: FieldName,
-    nodata: Option<f64>,
-    undetect: Option<f64>,
-    offset: f64,
-}
-
 /// A velocity gate within this distance of the plane's physical `offset` is
 /// treated as sitting exactly on the collapsed no-data / zero code. The gate
 /// spacing of any Doppler quantum (≈0.3 m/s for a 40 m/s Nyquist) is orders of
 /// magnitude larger, so this only ever catches the exact `offset` fill.
 const VELOCITY_OFFSET_EPS: f32 = 1.0e-6;
 
+/// The `nodata` / `undetect` sentinels and physical offset a field's coding
+/// declares, in physical units: the values the plane's `what` group wrote.
+fn plane_sentinels(field: &Field) -> (Option<f64>, Option<f64>, f64) {
+    fn packed<T: Copy + Into<f64>>(code: Option<T>, transform: LinearTransform) -> Option<f64> {
+        code.map(|code| f64::from(transform.apply(code.into())))
+    }
+    match &field.data {
+        FieldData::U8 { coding, .. } => (
+            packed(coding.fill_value, coding.transform),
+            packed(coding.undetect, coding.transform),
+            coding.transform.add_offset(),
+        ),
+        FieldData::U16 { coding, .. } => (
+            packed(coding.fill_value, coding.transform),
+            packed(coding.undetect, coding.transform),
+            coding.transform.add_offset(),
+        ),
+        FieldData::I8 { coding, .. } => (
+            packed(coding.fill_value, coding.transform),
+            packed(coding.undetect, coding.transform),
+            coding.transform.add_offset(),
+        ),
+        FieldData::I16 { coding, .. } => (
+            packed(coding.fill_value, coding.transform),
+            packed(coding.undetect, coding.transform),
+            coding.transform.add_offset(),
+        ),
+        FieldData::F32 { coding, .. } => {
+            let offset = coding.transform.map_or(0.0, LinearTransform::add_offset);
+            (
+                coding.fill_value.map(f64::from),
+                coding.undetect.map(f64::from),
+                offset,
+            )
+        }
+        FieldData::F64 { coding, .. } => {
+            let offset = coding.transform.map_or(0.0, LinearTransform::add_offset);
+            (coding.fill_value, coding.undetect, offset)
+        }
+    }
+}
+
 /// Recover no-echo Doppler-velocity gates that a copied-`what`-group writer
 /// (AEMET Spain / IRIS 10.3) leaves decoding to a spurious `offset` (0 m/s).
+/// Returns the number of gates masked.
 ///
 /// Such writers stamp the velocity plane's `nodata`/`undetect` with the
 /// REFLECTIVITY sentinels while filling no-echo velocity gates with the
-/// physical `offset`, so those gates match no declared sentinel and survive
-/// the base decode as a wall of 0 m/s. There is no per-plane attribute that
-/// distinguishes the fill from a genuine 0 m/s reading, so the file's own
-/// reflectivity no-echo mask is the only ground truth: a velocity gate on
-/// `offset` with no co-located reflectivity echo is the writer's collapsed
-/// no-data code; the same value where reflectivity IS present is a real
-/// 0 m/s reading and is preserved.
+/// physical `offset`, so those gates match no declared sentinel and decode
+/// as a wall of 0 m/s (in xradar and Py-ART too). There is no per-plane
+/// attribute that distinguishes the fill from a genuine 0 m/s reading, so
+/// the file's own reflectivity no-echo mask is the only ground truth: a
+/// velocity gate on `offset` with no co-located reflectivity echo is the
+/// writer's collapsed no-data code; the same value where reflectivity IS
+/// present is a real 0 m/s reading and is preserved.
 ///
-/// The velocity and reflectivity planes are the ones the pre-FM301 decoder
-/// folded onto its canonical moments ([`canonical_field`], highest
-/// [`canonical_quantity_priority`] first). Guarded by the copied-what-group
+/// This is an opt-in post-pass: [`read_odim_h5_volume`] stores every plane
+/// verbatim. The velocity and reflectivity planes are the highest-priority
+/// ones of each kind ([`canonical_field`]). Guarded by the copied-what-group
 /// signature (velocity sentinels equal the reflectivity sentinels) so
 /// conformant writers — which give velocity its own distinct sentinels,
-/// already masked by the base decode — are never touched. Also a no-op
-/// unless both planes share ray/gate geometry.
-fn recover_copied_whatgroup_velocity_nodata(sweep: &mut Sweep, plane_meta: &[PlaneNoData]) {
+/// already masked by the coding — are never touched. Also a no-op for a
+/// sweep whose two planes do not share ray/gate geometry.
+pub fn recover_copied_whatgroup_velocity_nodata(volume: &mut Volume) -> usize {
+    volume
+        .sweeps
+        .iter_mut()
+        .map(recover_sweep_velocity_nodata)
+        .sum()
+}
+
+fn recover_sweep_velocity_nodata(sweep: &mut Sweep) -> usize {
     let (Some(velocity_name), Some(reflectivity_name)) = (
         canonical_field(sweep, CanonicalMoment::Velocity),
         canonical_field(sweep, CanonicalMoment::Reflectivity),
     ) else {
-        return;
+        return 0;
     };
-    let meta = |name: &FieldName| plane_meta.iter().find(|meta| meta.name == *name);
-    let (Some(vel_meta), Some(ref_meta)) = (meta(&velocity_name), meta(&reflectivity_name)) else {
-        return;
-    };
-    // Copied-what-group signature: the velocity plane carries the reflectivity
-    // plane's no-data sentinels verbatim (and at least one is present).
-    let sentinels_copied = vel_meta.nodata == ref_meta.nodata
-        && vel_meta.undetect == ref_meta.undetect
-        && (vel_meta.nodata.is_some() || vel_meta.undetect.is_some());
-    if !sentinels_copied {
-        return;
-    }
-    let offset = vel_meta.offset as f32;
     let (Some(velocity_index), Some(reflectivity_index)) = (
         sweep.field_index(&velocity_name),
         sweep.field_index(&reflectivity_name),
     ) else {
-        return;
+        return 0;
     };
+    let (vel_nodata, vel_undetect, offset) = plane_sentinels(&sweep.fields[velocity_index]);
+    let (ref_nodata, ref_undetect, _) = plane_sentinels(&sweep.fields[reflectivity_index]);
+    // Copied-what-group signature: the velocity plane carries the reflectivity
+    // plane's no-data sentinels verbatim (and at least one is present).
+    let sentinels_copied = vel_nodata == ref_nodata
+        && vel_undetect == ref_undetect
+        && (vel_nodata.is_some() || vel_undetect.is_some());
+    if !sentinels_copied {
+        return 0;
+    }
     // Mask in place (reflectivity borrowed, velocity taken out for the pass)
     // so no gate-index list proportional to the sweep is built.
     let mut velocity = std::mem::replace(
@@ -582,18 +609,24 @@ fn recover_copied_whatgroup_velocity_nodata(sweep: &mut Sweep, plane_meta: &[Pla
             },
         ),
     );
-    mask_offset_fill_without_echo(&mut velocity, &sweep.fields[reflectivity_index], offset);
+    let masked = mask_offset_fill_without_echo(
+        &mut velocity,
+        &sweep.fields[reflectivity_index],
+        offset as f32,
+    );
     sweep.fields[velocity_index] = velocity;
+    masked
 }
 
 /// Set velocity gates that sit on the plane's physical `offset` where the
 /// reflectivity field has no echo to the velocity field's fill code. A no-op
-/// unless both fields share ray/gate geometry.
-fn mask_offset_fill_without_echo(velocity: &mut Field, reflectivity: &Field, offset: f32) {
+/// unless both fields share ray/gate geometry. Returns the gates masked.
+fn mask_offset_fill_without_echo(velocity: &mut Field, reflectivity: &Field, offset: f32) -> usize {
     let (rows, gates) = velocity.shape();
     if reflectivity.shape() != (rows, gates) {
-        return; // differing geometry: do not risk mis-masking
+        return 0; // differing geometry: do not risk mis-masking
     }
+    let mut masked = 0;
     for row in 0..rows {
         for gate in 0..gates {
             // Reflectivity no-echo: no value (sentinel) or NaN.
@@ -606,9 +639,11 @@ fn mask_offset_fill_without_echo(velocity: &mut Field, reflectivity: &Field, off
                 && (value - offset).abs() <= VELOCITY_OFFSET_EPS
             {
                 mask_gate_no_data(velocity, row * gates + gate);
+                masked += 1;
             }
         }
     }
+    masked
 }
 
 /// Set one flat gate index to the field's fill code: `_FillValue` for
@@ -649,9 +684,9 @@ fn mask_gate_no_data(field: &mut Field, index: usize) {
     }
 }
 
-/// The canonical moments the pre-FM301 decoder folded ODIM quantity codes
-/// (spec Table 16) onto. Still used to pick the reflectivity and velocity
-/// planes of the copied-what-group recovery and by the legacy wrapper.
+/// Canonical moment kinds of ODIM quantity codes (spec Table 16), used to
+/// pick the reflectivity and velocity planes of the copied-what-group
+/// recovery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum CanonicalMoment {
     Reflectivity,
@@ -694,9 +729,8 @@ pub(crate) fn canonical_quantity_priority(quantity: &str) -> u8 {
     }
 }
 
-/// The field of `sweep` the pre-FM301 decoder used as `moment`: the plane
-/// with the highest [`canonical_quantity_priority`], earliest first among
-/// equals.
+/// The field of `sweep` that best represents `moment`: the plane with the
+/// highest [`canonical_quantity_priority`], earliest first among equals.
 pub(crate) fn canonical_field(sweep: &Sweep, moment: CanonicalMoment) -> Option<FieldName> {
     let mut best: Option<(u8, &FieldName)> = None;
     for field in &sweep.fields {
@@ -789,7 +823,7 @@ fn attr_array(file: &H5File<'_>, path: &str, name: &str) -> Option<Vec<f64>> {
     }
 }
 
-fn odim_radar_frequency_mhz(file: &H5File<'_>) -> Option<u32> {
+fn odim_radar_frequency_mhz(file: &H5File<'_>) -> Option<f64> {
     for name in ["frequency", "freq", "radar_frequency", "radar_frequency_hz"] {
         if let Some(value) = attr_f64(file, "/how", name)
             && let Some(mhz) = normalize_frequency_mhz(value)
@@ -807,7 +841,7 @@ fn odim_radar_frequency_mhz(file: &H5File<'_>) -> Option<u32> {
     None
 }
 
-fn normalize_frequency_mhz(value: f64) -> Option<u32> {
+fn normalize_frequency_mhz(value: f64) -> Option<f64> {
     if !value.is_finite() || value <= 0.0 {
         return None;
     }
@@ -818,20 +852,16 @@ fn normalize_frequency_mhz(value: f64) -> Option<u32> {
     } else {
         value * 1000.0
     };
-    (1000.0..=12_000.0)
-        .contains(&mhz)
-        .then_some(mhz.round() as u32)
+    (1000.0..=12_000.0).contains(&mhz).then_some(mhz)
 }
 
-fn frequency_mhz_from_wavelength(value: f64) -> Option<u32> {
+fn frequency_mhz_from_wavelength(value: f64) -> Option<f64> {
     if !value.is_finite() || value <= 0.0 {
         return None;
     }
     let meters = if value > 1.0 { value / 100.0 } else { value };
     let mhz = 299.792_458 / meters;
-    (1000.0..=12_000.0)
-        .contains(&mhz)
-        .then_some(mhz.round() as u32)
+    (1000.0..=12_000.0).contains(&mhz).then_some(mhz)
 }
 
 pub(crate) fn invalid(reason: impl Into<String>) -> OdimError {
@@ -950,23 +980,33 @@ mod tests {
         assert_eq!(coding.undetect, Some(3));
     }
 
-    /// Build a one-ray float field (physical values) for the recovery tests:
-    /// NaN encodes no-echo, finite values are physical readings.
-    fn float_field(name: FieldName, row: Vec<f32>) -> Field {
+    /// Build a one-ray float field (physical values) for the recovery tests
+    /// with the given `nodata` / `undetect` sentinels (the AEMET dBZ pair
+    /// when copied). `NaN` encodes no-echo, finite values are readings.
+    fn float_field(
+        name: FieldName,
+        row: Vec<f32>,
+        nodata: Option<f32>,
+        undetect: Option<f32>,
+    ) -> Field {
         let mut field = Field::new(
             name,
             GateMapping::IDENTITY,
             row.len() as u32,
             FieldData::F32 {
                 values: Vec::new(),
-                coding: FloatCoding::default(),
+                coding: FloatCoding {
+                    transform: None,
+                    fill_value: nodata,
+                    undetect,
+                },
             },
         );
         field.push_row_f32(0, &row).expect("push row");
         field
     }
 
-    fn copied_sentinel_sweep() -> Sweep {
+    fn copied_sentinel_sweep(vel_nodata: f32, vel_undetect: f32) -> Sweep {
         // gate0: Z no-echo, V=0  -> collapsed no-data fill (must mask)
         // gate1: Z echo,    V=0  -> genuine 0 m/s reading (must keep)
         // gate2: Z no-echo, V=5  -> velocity off `offset` (must keep)
@@ -976,31 +1016,27 @@ mod tests {
             .add_field(float_field(
                 FieldName::Dbzh,
                 vec![f32::NAN, 10.0, f32::NAN, 20.0],
+                Some(95.5),
+                Some(-32.0),
             ))
             .unwrap();
         sweep
-            .add_field(float_field(FieldName::Vradh, vec![0.0, 0.0, 5.0, 3.0]))
+            .add_field(float_field(
+                FieldName::Vradh,
+                vec![0.0, 0.0, 5.0, 3.0],
+                Some(vel_nodata),
+                Some(vel_undetect),
+            ))
             .unwrap();
         sweep
     }
 
     #[test]
     fn copied_whatgroup_recovery_masks_only_no_echo_offset_gates() {
-        let mut sweep = copied_sentinel_sweep();
         // Copied-what-group signature: velocity carries the reflectivity
         // sentinels (the AEMET/IRIS bug), so recovery engages.
-        let sentinels = |name: FieldName, offset| PlaneNoData {
-            name,
-            nodata: Some(95.5),
-            undetect: Some(-32.0),
-            offset,
-        };
-        let plane_meta = vec![
-            sentinels(FieldName::Dbzh, -32.0),
-            sentinels(FieldName::Vradh, 0.0),
-        ];
-
-        recover_copied_whatgroup_velocity_nodata(&mut sweep, &plane_meta);
+        let mut sweep = copied_sentinel_sweep(95.5, -32.0);
+        assert_eq!(recover_sweep_velocity_nodata(&mut sweep), 1);
         let vel = sweep.field(&FieldName::Vradh).unwrap();
         assert_eq!(vel.value(0, 0), None, "no-echo 0 m/s fill masked");
         assert_eq!(vel.value(0, 1), Some(0.0), "genuine 0 m/s with echo kept");
@@ -1017,23 +1053,8 @@ mod tests {
         // Velocity declares its OWN sentinels (not the reflectivity ones):
         // a conformant writer. Recovery must not touch the plane, so the
         // 0 m/s gate co-located with no-echo reflectivity survives unchanged.
-        let mut sweep = copied_sentinel_sweep();
-        let plane_meta = vec![
-            PlaneNoData {
-                name: FieldName::Dbzh,
-                nodata: Some(95.5),
-                undetect: Some(-32.0),
-                offset: -32.0,
-            },
-            PlaneNoData {
-                name: FieldName::Vradh,
-                nodata: Some(-999.0),
-                undetect: Some(888.0),
-                offset: 0.0,
-            },
-        ];
-
-        recover_copied_whatgroup_velocity_nodata(&mut sweep, &plane_meta);
+        let mut sweep = copied_sentinel_sweep(-999.0, 888.0);
+        assert_eq!(recover_sweep_velocity_nodata(&mut sweep), 0);
         let vel = sweep.field(&FieldName::Vradh).unwrap();
         assert_eq!(
             vel.value(0, 0),

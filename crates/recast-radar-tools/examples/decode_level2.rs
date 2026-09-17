@@ -11,19 +11,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = PathBuf::from(std::env::args_os().nth(1).ok_or("usage: <level2-file>")?);
 
     // Uncompressed, gzip, bzip2 and LDM block-bzip2 archives all decode here.
-    let volume = nexrad::decode_volume_from_path(&path)?;
+    let volume = nexrad::read_volume_from_path(&path)?;
 
-    println!("{} at {}", volume.site.id, volume.volume_time);
-    if let Some(vcp) = &volume.vcp {
-        println!("VCP {}", vcp.pattern);
+    println!(
+        "{} at {}",
+        volume.attrs.instrument_name, volume.time_reference
+    );
+    if let Some(vcp) = volume.scan.vcp_pattern {
+        println!("VCP {vcp}");
     }
-    for (index, cut) in volume.cuts.iter().enumerate() {
-        let moments: Vec<String> = cut.moments.keys().map(ToString::to_string).collect();
+    for (index, sweep) in volume.sweeps.iter().enumerate() {
+        let fields: Vec<&str> = sweep.fields.iter().map(|f| f.name.as_str()).collect();
         println!(
-            "sweep {index:>2}: {:>5.2} deg, {} radials, {}",
-            cut.elevation_deg,
-            cut.radials.len(),
-            moments.join(" ")
+            "sweep {index:>2}: {:>5.2} deg, {} rays, {}",
+            sweep.fixed_angle_deg,
+            sweep.nrays(),
+            fields.join(" ")
         );
     }
     Ok(())

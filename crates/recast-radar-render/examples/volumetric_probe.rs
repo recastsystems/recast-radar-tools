@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Verify volume-derived products on a real scan: render composite reflectivity
 // to PNG (REF palette) and print numeric stats for composite / echo-top / VIL.
@@ -13,9 +12,9 @@ use image::{ImageBuffer, Rgba};
 use recast_radar_core::{Field, Quantity};
 use recast_radar_render::{RasterOptions, render_field_image};
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
-use legacy_bridge::ECHO_TOP_THRESHOLD_DBZ;
+#[path = "support/mod.rs"]
+mod support;
+use support::ECHO_TOP_THRESHOLD_DBZ;
 
 fn stats(field: &Field, label: &str, scale: f32, unit: &str) {
     let (rows, gates) = field.shape();
@@ -80,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "vol".into());
 
-    let mut decoded = legacy_bridge::Decoded::from_path(&input)?;
+    let mut decoded = support::Decoded::from_path(&input)?;
 
     let base_idx = decoded
         .lowest_sweep_with(Quantity::Reflectivity)

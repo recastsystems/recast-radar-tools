@@ -8,9 +8,7 @@
 //! sweep's rays and native gates, named by product id.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
-pub mod legacy_api;
 mod rhi;
 mod volumetric;
 
@@ -24,11 +22,6 @@ pub use volumetric::{
     reflectivity_section_with_smoothing, velocity_section, velocity_section_cached,
     velocity_section_cached_with_smoothing, vil, vil_density,
 };
-
-// Legacy signatures, kept until the FM301 shim is removed
-// (docs/design/fm301-model.md section 13.3).
-#[allow(deprecated)]
-pub use legacy_api::*;
 
 #[cfg(test)]
 pub(crate) mod test_support {

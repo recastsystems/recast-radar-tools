@@ -1,14 +1,13 @@
-//! FM301 view over real volumes (docs/design/fm301-model.md section 12). The
-//! volumes come from the legacy decoders through `volume_from_legacy`; F.4
-//! adds golden comparisons against xradar and Py-ART.
+//! FM301 view over real volumes (docs/design/fm301-model.md section 12):
+//! layout, padding, ray order and flavor rules. `tests/fm301_conformance.rs`
+//! compares the view against the xradar and Py-ART goldens (F.4).
 
-#![allow(deprecated, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use recast_radar_core::fm301::{
     self, DataRef, FirstDim, Flavor, Passthrough, RowOrder, Values, ViewError, ViewOptions,
     ViewWarning,
 };
-use recast_radar_core::legacy::volume_from_legacy;
 use recast_radar_core::model::{
     ArrayBuf, AttrValue, FieldData, FieldName, GateMapping, RangeCoord, Scalar, SweepMode, Volume,
 };
@@ -23,8 +22,7 @@ fn volume(id: &str) -> Option<Volume> {
         Err(err) => panic!("{err}"),
     };
     let bytes = std::fs::read(path).unwrap();
-    let legacy = recast_radar_io::decode_supported_volume_bytes(&bytes).unwrap();
-    Some(volume_from_legacy(legacy).unwrap().0)
+    Some(recast_radar_io::read_supported_volume_bytes(&bytes).unwrap())
 }
 
 const TIME_ORDER: ViewOptions = ViewOptions {

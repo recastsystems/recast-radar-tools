@@ -156,7 +156,7 @@ fn message_29_record_inside_a_volume_is_skipped_whole() {
     assert_eq!(reference.provenance.decode.decoded_ray_count, 120);
     let reference_site_and_sweeps = (
         reference.attrs.clone(),
-        reference.location.clone(),
+        reference.location,
         reference.sweeps.clone(),
     );
 

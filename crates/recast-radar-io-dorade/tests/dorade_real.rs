@@ -8,9 +8,9 @@
 //! independent Python block walker + RLE decoder, not with this crate.
 
 use chrono::{TimeZone, Utc};
-use recast_radar_core::MomentType;
+use recast_radar_core::model::Quantity;
 use recast_radar_io_dorade::dorade::{
-    decode_dorade_sweep_volume, looks_like_dorade_bytes, peek_dorade_sweep,
+    looks_like_dorade_bytes, peek_dorade_sweep, read_dorade_sweep_volume,
 };
 
 const FIXTURE: &[u8] = include_bytes!("data/swp.1260521225514.COW2.229.1.0_SUR_v215.head24");
@@ -25,118 +25,140 @@ fn assert_close(actual: f32, expected: f32, tolerance: f32, what: &str) {
 #[test]
 fn real_cow2_sweep_decodes_site_and_geometry() {
     assert!(looks_like_dorade_bytes(FIXTURE));
-    let volume = decode_dorade_sweep_volume(FIXTURE).expect("decode COW2 fixture");
+    let volume = read_dorade_sweep_volume(FIXTURE).expect("decode COW2 fixture");
 
     // Site identity and deployment coordinates come from RADD.
-    assert_eq!(volume.site.id, "COW2");
-    assert_close(volume.site.latitude_deg.unwrap(), 39.74, 1e-4, "latitude");
+    assert_eq!(volume.attrs.instrument_name, "COW2");
     assert_close(
-        volume.site.longitude_deg.unwrap(),
+        volume.location.latitude_deg.unwrap() as f32,
+        39.74,
+        1e-4,
+        "latitude",
+    );
+    assert_close(
+        volume.location.longitude_deg.unwrap() as f32,
         -103.2927,
         1e-4,
         "longitude",
     );
-    assert_close(volume.site.elevation_m.unwrap(), 1519.0, 0.5, "altitude");
+    assert_close(
+        volume.location.altitude_m.unwrap() as f32,
+        1519.0,
+        0.5,
+        "altitude",
+    );
 
-    // Volume time from SSWB.
+    // Time reference from SSWB.
     assert_eq!(
-        volume.volume_time,
+        volume.time_reference,
         Utc.with_ymd_and_hms(2026, 5, 21, 22, 55, 14).unwrap()
     );
     assert_eq!(
-        volume.metadata.compression.as_deref(),
+        volume.provenance.compression.as_deref(),
         Some("dorade-hrd-rle")
     );
 
-    // One cut; the fixture's 24 rays include 3 antenna-transition rays that
-    // must be dropped.
-    assert_eq!(volume.cuts.len(), 1);
-    let cut = &volume.cuts[0];
-    assert_close(cut.elevation_deg, 1.005_255_6, 1e-5, "fixed angle");
-    assert_eq!(cut.radials.len(), 21);
-    assert_eq!(volume.metadata.skipped_message_count, 3);
+    // One sweep; the fixture's 24 rays include 3 antenna-transition rays
+    // that must be dropped.
+    assert_eq!(volume.sweeps.len(), 1);
+    let sweep = &volume.sweeps[0];
+    assert_close(sweep.fixed_angle_deg, 1.005_255_6, 1e-5, "fixed angle");
+    assert_eq!(sweep.nrays(), 21);
+    assert_eq!(volume.provenance.decode.skipped_message_count, 3);
 
-    // CSFD gate geometry: 375 gates, first at 50 m, 100 m spacing.
-    let radial = &cut.radials[0];
-    assert_eq!(radial.gate_range.gate_count, 375);
-    assert_eq!(radial.gate_range.first_gate_m, 50);
-    assert_eq!(radial.gate_range.gate_spacing_m, 100);
-
-    // First kept ray: az 73.0, el 0.8184814453125, 22:55:14.280 (offset
-    // 280 ms from the SSWB start).
-    assert_close(radial.azimuth_deg, 73.0, 1e-4, "azimuth");
-    assert_close(radial.elevation_deg, 0.818_481_4, 1e-5, "ray elevation");
-    assert_eq!(radial.time_offset_ms, 280);
-
-    // RADD eff_unamb_vel (staggered-PRT extended Nyquist) on every radial.
-    assert_close(radial.nyquist_velocity_mps.unwrap(), 68.76, 0.01, "nyquist");
-    assert!(
-        cut.radials
-            .iter()
-            .all(|radial| radial.nyquist_velocity_mps.is_some())
+    // CSFD gate geometry: 375 gates, first centre at 50 m, 100 m spacing.
+    assert_eq!(sweep.range.ngates(), 375);
+    assert_close(
+        sweep.range.center_m(0).unwrap() as f32,
+        50.0,
+        1e-3,
+        "gate 0",
     );
+    assert_close(
+        sweep.range.center_m(1).unwrap() as f32,
+        150.0,
+        1e-3,
+        "gate 1",
+    );
+
+    // First kept ray: az 73.0, el 0.8184814453125, 22:55:14.280 (0.280 s
+    // from the SSWB start).
+    assert_close(sweep.rays.azimuth_deg[0], 73.0, 1e-4, "azimuth");
+    assert_close(
+        sweep.rays.elevation_deg[0],
+        0.818_481_4,
+        1e-5,
+        "ray elevation",
+    );
+    assert_close(sweep.rays.time_s[0] as f32, 0.280, 1e-6, "ray time");
+
+    // RADD eff_unamb_vel (staggered-PRT extended Nyquist) on every ray.
+    let nyquist = sweep
+        .ray_vars
+        .nyquist_velocity_mps
+        .as_ref()
+        .expect("nyquist");
+    assert_eq!(nyquist.len(), 21);
+    assert_close(nyquist[0], 68.76, 0.01, "nyquist");
+    assert!(nyquist.iter().all(|value| value.is_finite()));
 }
 
 #[test]
 fn real_cow2_sweep_decodes_known_moment_values() {
-    let volume = decode_dorade_sweep_volume(FIXTURE).expect("decode COW2 fixture");
-    let cut = &volume.cuts[0];
+    let volume = read_dorade_sweep_volume(FIXTURE).expect("decode COW2 fixture");
+    let sweep = &volume.sweeps[0];
 
-    for moment in [
-        MomentType::Reflectivity,
-        MomentType::Velocity,
-        MomentType::DifferentialReflectivity,
-        MomentType::CorrelationCoefficient,
+    for quantity in [
+        Quantity::Reflectivity,
+        Quantity::RadialVelocity,
+        Quantity::DifferentialReflectivity,
+        Quantity::CorrelationCoefficient,
     ] {
-        let grid = cut.moments.get(&moment).unwrap_or_else(|| {
-            panic!("missing {moment}");
+        let field = sweep.find(quantity).unwrap_or_else(|| {
+            panic!("missing {quantity:?}");
         });
-        assert_eq!(grid.radial_count(), 21, "{moment} rows");
-        assert_eq!(grid.gate_range.gate_count, 375, "{moment} gates");
+        assert_eq!(field.nrays, 21, "{quantity:?} rows");
+        assert!(field.absent_rows.is_empty(), "{quantity:?} rows");
+        assert_eq!(field.ngates, 375, "{quantity:?} gates");
     }
 
     // Row 0 = first kept ray (file ray index 3). Raw i16 values from the
     // independent decoder: REF (scale 100) -3030, bad, -69; VEL (scale 100)
     // -586, 478, 452, ..., 5805; ZDR (scale 100) -189, bad, 221; RHOHV
     // (scale 10000) 3235, bad, 9759.
-    let reflectivity = &cut.moments[&MomentType::Reflectivity];
+    let reflectivity = sweep.find(Quantity::Reflectivity).unwrap();
     assert_close(
-        reflectivity.scaled_value(0, 0).unwrap(),
+        reflectivity.value(0, 0).unwrap(),
         -30.30,
         1e-3,
         "REF gate 0",
     );
-    assert_eq!(reflectivity.scaled_value(0, 50), None, "REF gate 50 is bad");
+    assert_eq!(reflectivity.value(0, 50), None, "REF gate 50 is bad");
     assert_close(
-        reflectivity.scaled_value(0, 100).unwrap(),
+        reflectivity.value(0, 100).unwrap(),
         -0.69,
         1e-3,
         "REF gate 100",
     );
 
-    let velocity = &cut.moments[&MomentType::Velocity];
-    assert_close(velocity.scaled_value(0, 0).unwrap(), -5.86, 1e-3, "VEL 0");
-    assert_close(velocity.scaled_value(0, 50).unwrap(), 4.78, 1e-3, "VEL 50");
+    let velocity = sweep.find(Quantity::RadialVelocity).unwrap();
+    assert_close(velocity.value(0, 0).unwrap(), -5.86, 1e-3, "VEL 0");
+    assert_close(velocity.value(0, 50).unwrap(), 4.78, 1e-3, "VEL 50");
+    assert_close(velocity.value(0, 100).unwrap(), 4.52, 1e-3, "VEL 100");
     assert_close(
-        velocity.scaled_value(0, 100).unwrap(),
-        4.52,
-        1e-3,
-        "VEL 100",
-    );
-    assert_close(
-        velocity.scaled_value(0, 374).unwrap(),
+        velocity.value(0, 374).unwrap(),
         58.05,
         1e-3,
         "VEL 374 (last gate)",
     );
 
-    let zdr = &cut.moments[&MomentType::DifferentialReflectivity];
-    assert_close(zdr.scaled_value(0, 0).unwrap(), -1.89, 1e-3, "ZDR 0");
-    assert_close(zdr.scaled_value(0, 100).unwrap(), 2.21, 1e-3, "ZDR 100");
+    let zdr = sweep.find(Quantity::DifferentialReflectivity).unwrap();
+    assert_close(zdr.value(0, 0).unwrap(), -1.89, 1e-3, "ZDR 0");
+    assert_close(zdr.value(0, 100).unwrap(), 2.21, 1e-3, "ZDR 100");
 
-    let rhohv = &cut.moments[&MomentType::CorrelationCoefficient];
-    assert_close(rhohv.scaled_value(0, 0).unwrap(), 0.3235, 1e-4, "RHO 0");
-    assert_close(rhohv.scaled_value(0, 100).unwrap(), 0.9759, 1e-4, "RHO 100");
+    let rhohv = sweep.find(Quantity::CorrelationCoefficient).unwrap();
+    assert_close(rhohv.value(0, 0).unwrap(), 0.3235, 1e-4, "RHO 0");
+    assert_close(rhohv.value(0, 100).unwrap(), 0.9759, 1e-4, "RHO 100");
 }
 
 #[test]
@@ -177,30 +199,30 @@ fn mobile_radar_corpus_decodes_every_archive() {
             continue;
         }
         archives += 1;
-        let decoded = recast_radar_io_dorade::mobile_archive::decode_mobile_archive_from_path(
+        let decoded = recast_radar_io_dorade::mobile_archive::read_mobile_archive_from_path(
             &path,
-            recast_radar_io_nexrad::decode_volume_from_bytes,
+            recast_radar_io_nexrad::read_volume_from_bytes,
         )
         .unwrap_or_else(|err| panic!("decode {}: {err}", path.display()));
         assert!(!decoded.is_empty(), "{} has no volumes", path.display());
         for entry in &decoded {
             let volume = &entry.volume;
-            assert!(!volume.site.id.is_empty());
+            assert!(!volume.attrs.instrument_name.is_empty());
             assert!(
-                !volume.cuts.is_empty(),
+                !volume.sweeps.is_empty(),
                 "{} empty volume",
                 entry.member_label
             );
             assert!(
-                volume.site.latitude_deg.is_some() && volume.site.longitude_deg.is_some(),
+                volume.location.latitude_deg.is_some() && volume.location.longitude_deg.is_some(),
                 "{} missing site coords",
                 entry.member_label
             );
-            for cut in &volume.cuts {
-                assert!(!cut.radials.is_empty());
-                assert!(!cut.moments.is_empty());
-                for grid in cut.moments.values() {
-                    assert_eq!(grid.radial_count(), cut.radials.len());
+            for sweep in &volume.sweeps {
+                assert!(sweep.nrays() > 0);
+                assert!(!sweep.fields.is_empty());
+                for field in &sweep.fields {
+                    assert_eq!(field.nrays as usize, sweep.nrays());
                 }
             }
         }

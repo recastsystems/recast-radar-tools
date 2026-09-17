@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -10,8 +9,8 @@ use recast_radar_render::{
     StormMotion, ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len,
 };
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 const DEFAULT_RUNS: usize = 8;
 const DEFAULT_DECODE_RUNS: usize = 5;
@@ -36,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut volume = None;
     for _ in 0..config.decode_runs {
         let start = Instant::now();
-        let decoded = legacy_bridge::read_volume_bytes(&raw)?;
+        let decoded = support::read_volume_bytes(&raw)?;
         decode_timings.push(start.elapsed());
         volume = Some(decoded);
     }
@@ -56,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let decoded = if raw.starts_with(&[0x1f, 0x8b])
             || should_preview_block_bzip_loads_for_threads(rayon::current_num_threads())
         {
-            legacy_bridge::read_volume_bytes_with_preview(
+            support::read_volume_bytes_with_preview(
                 &raw,
                 MIN_DISPLAYABLE_RADIALS,
                 |preview_rays| {
@@ -65,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             )?
         } else {
-            legacy_bridge::read_volume_bytes(&raw)?
+            support::read_volume_bytes(&raw)?
         };
         std::hint::black_box(decoded.provenance.decode.decoded_ray_count);
         if let Some(first_preview) = first_preview {

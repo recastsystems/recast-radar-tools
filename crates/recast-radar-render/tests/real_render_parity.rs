@@ -14,11 +14,14 @@
 //!
 //! The goldens were produced by the pre-FM301 renderer, so their labels use
 //! the legacy moment names (`REF`, `VEL`, `CFP`, ...); [`legacy_label`] maps
-//! each FM301 field name back. The pixels must be identical.
+//! each FM301 field name back. The pixels must be identical. Since the shim
+//! removal the volumes come from the native decoder, whose `fixed_angle_deg`
+//! is the VCP cut angle (design note 5.2): the lowest reflectivity sweep of
+//! KTLX 2024 is now sweep 0 (0.5 deg surveillance), not sweep 1 (whose first
+//! ray sat at 0.48 deg); the derived-product labels moved with it.
 
 // Test code: a panic is the failure report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use recast_radar_core::{Field, FieldData, FieldName, FloatCoding, Quantity, Volume};
 use recast_radar_render::{
@@ -300,7 +303,7 @@ fn physical_copy(field: &Field) -> Field {
     copy
 }
 
-fn fingerprint_volume(volume: &Volume, legacy: &legacy_bridge::LegacyVolume) -> Fingerprints {
+fn fingerprint_volume(volume: &Volume) -> Fingerprints {
     let mut fp = Fingerprints::default();
     let tables = ColorTableSet::default();
 
@@ -366,7 +369,7 @@ fn fingerprint_volume(volume: &Volume, legacy: &legacy_bridge::LegacyVolume) -> 
     }
 
     if let Some(sweep) = lowest_sweep_with(volume, Quantity::Reflectivity) {
-        if let Some((composite, range)) = legacy.composite_reflectivity(volume, sweep) {
+        if let Some((composite, range)) = derived::composite_reflectivity(volume, sweep) {
             let label = format!("cut{sweep}/CREF");
             let derived = ViewportFieldCache::new_derived(
                 volume,
@@ -380,7 +383,7 @@ fn fingerprint_volume(volume: &Volume, legacy: &legacy_bridge::LegacyVolume) -> 
             cache_paths(&mut fp, &label, volume, &derived);
         }
         let label = format!("cut{sweep}/REF_SMOOTH");
-        let (smoothed, range) = legacy.smoothed_reflectivity(volume, sweep);
+        let (smoothed, range) = derived::smoothed_reflectivity(volume, sweep);
         let derived = ViewportFieldCache::new_derived(
             volume,
             sweep,
@@ -391,7 +394,8 @@ fn fingerprint_volume(volume: &Volume, legacy: &legacy_bridge::LegacyVolume) -> 
         )
         .unwrap();
         cache_paths(&mut fp, &label, volume, &derived);
-        if let Some((field, range, row_azimuths_deg)) = legacy.upsampled_reflectivity(volume, sweep)
+        if let Some((field, range, row_azimuths_deg)) =
+            derived::upsampled_reflectivity(volume, sweep)
         {
             let label = format!("cut{sweep}/REF_UPSAMPLED");
             let resampled = ViewportFieldCache::new_resampled(
@@ -410,7 +414,7 @@ fn fingerprint_volume(volume: &Volume, legacy: &legacy_bridge::LegacyVolume) -> 
     fp
 }
 
-fn decode(id: &str) -> Option<(Volume, legacy_bridge::LegacyVolume)> {
+fn decode(id: &str) -> Option<Volume> {
     let path = match recast_radar_testdata::path(id) {
         Ok(path) => path,
         Err(err) if err.is_offline() => {
@@ -419,7 +423,7 @@ fn decode(id: &str) -> Option<(Volume, legacy_bridge::LegacyVolume)> {
         }
         Err(err) => panic!("{err}"),
     };
-    Some(legacy_bridge::read_volume(&path))
+    Some(recast_radar_io_nexrad::read_volume_from_path(&path).unwrap())
 }
 
 /// Golden lines `<case id> <label> 0x<hash>` for one case.
@@ -434,10 +438,10 @@ fn golden_lines(id: &str) -> Vec<&'static str> {
 fn raster_paths_match_pinned_fingerprints() {
     let mut failures = String::new();
     for id in CASES {
-        let Some((volume, legacy)) = decode(id) else {
+        let Some(volume) = decode(id) else {
             continue;
         };
-        let actual: Vec<String> = fingerprint_volume(&volume, &legacy)
+        let actual: Vec<String> = fingerprint_volume(&volume)
             .0
             .iter()
             .map(|(label, value)| format!("{id} {label} 0x{value:016x}"))
@@ -459,122 +463,39 @@ fn raster_paths_match_pinned_fingerprints() {
     assert!(failures.is_empty(), "{failures}");
 }
 
-/// Decoding and the derived products still come from the pre-FM301 APIs of
-/// `recast-radar-io-nexrad`, `recast-radar-map` and `recast-radar-filters`
-/// (docs/design/fm301-model.md section 13.3). Goes when those crates migrate.
-#[allow(deprecated)]
-mod legacy_bridge {
-    use std::path::Path;
+/// The derived products of `recast-radar-map` and `recast-radar-filters`,
+/// each with the range coordinate its gate mapping refers to.
+mod derived {
+    use recast_radar_core::{Field, FieldName, RangeCoord, Volume};
 
-    use recast_radar_core::legacy::{self, LegacyConvention};
-    use recast_radar_core::{
-        Field, FieldData, FloatCoding, IntCoding, LinearTransform, MomentGrid, MomentStorage,
-        MomentType, RadarVolume, RangeCoord, Volume,
-    };
-
-    /// The legacy decode of a volume, kept beside its FM301 form for the
-    /// legacy algorithm calls.
-    pub struct LegacyVolume(RadarVolume);
-
-    pub fn read_volume(path: &Path) -> (Volume, LegacyVolume) {
-        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path).unwrap();
-        let volume = Volume::try_from(legacy.clone()).unwrap();
-        (volume, LegacyVolume(legacy))
+    /// The composite (column maximum) reflectivity, computed on the base
+    /// reflectivity sweep; `sweep` must be that sweep.
+    pub fn composite_reflectivity(volume: &Volume, sweep: usize) -> Option<(Field, RangeCoord)> {
+        let composite = recast_radar_map::composite_reflectivity(volume)?;
+        assert_eq!(composite.nrays as usize, volume.sweeps[sweep].nrays());
+        Some((composite, volume.sweeps[sweep].range.clone()))
     }
 
-    /// A legacy grid as a field on `sweep`'s rays, with the range its gate
-    /// mapping refers to: the sweep's range, refined or lengthened when the
-    /// grid's gates are finer or reach further (a composite over 250 m
-    /// Doppler sweeps drawn on a 1 km surveillance sweep).
-    fn field_on(volume: &Volume, sweep: usize, grid: &MomentGrid) -> (Field, RangeCoord) {
-        let mut scratch = volume.sweeps[sweep].clone();
-        scratch.fields.clear();
-        let (index, _) =
-            legacy::field_from_grid(grid, &mut scratch, LegacyConvention::Nexrad).unwrap();
-        (scratch.fields.swap_remove(index), scratch.range)
+    pub fn smoothed_reflectivity(volume: &Volume, sweep: usize) -> (Field, RangeCoord) {
+        let model = &volume.sweeps[sweep];
+        let field = model.field(&FieldName::Dbzh).unwrap();
+        (
+            recast_radar_filters::smooth_field(field),
+            model.range.clone(),
+        )
     }
 
-    /// A legacy grid whose rows are NOT the sweep's rays (the display-upsampled
-    /// grid: `radial_indices` name each synthetic row's nearest source radial)
-    /// as a field of `grid.radial_indices.len()` rows, with its range.
-    fn field_rows_on(volume: &Volume, sweep: usize, grid: &MomentGrid) -> (Field, RangeCoord) {
-        let mut scratch = volume.sweeps[sweep].clone();
-        scratch.fields.clear();
-        let gates = scratch
-            .attach_geometry(
-                f64::from(grid.gate_range.first_gate_m),
-                f64::from(grid.gate_range.gate_spacing_m),
-                grid.gate_range.gate_count as u32,
-            )
-            .unwrap();
-        let transform = LinearTransform::IcdScaleOffset {
-            scale: grid.scale,
-            offset: grid.offset,
-        };
-        let data = match &grid.storage {
-            MomentStorage::U8(values) => FieldData::U8 {
-                values: values.clone(),
-                coding: IntCoding {
-                    transform,
-                    fill_value: grid.nodata.and_then(|code| u8::try_from(code).ok()),
-                    undetect: None,
-                    range_folded: grid.range_folded.and_then(|code| u8::try_from(code).ok()),
-                    valid_range: None,
-                },
-            },
-            MomentStorage::U16(values) => FieldData::U16 {
-                values: values.clone(),
-                coding: IntCoding {
-                    transform,
-                    fill_value: grid.nodata,
-                    undetect: None,
-                    range_folded: grid.range_folded,
-                    valid_range: None,
-                },
-            },
-            MomentStorage::F32(values) => FieldData::F32 {
-                values: values.clone(),
-                coding: FloatCoding::default(),
-            },
-        };
-        let name = grid.moment.to_field_name(LegacyConvention::Nexrad);
-        let field = Field::new(name, gates, grid.gate_range.gate_count as u32, data);
-        assert_eq!(field.nrays as usize, grid.radial_indices.len());
-        (field, scratch.range)
-    }
-
-    impl LegacyVolume {
-        fn reflectivity(&self, sweep: usize) -> &MomentGrid {
-            &self.0.cuts[sweep].moments[&MomentType::Reflectivity]
-        }
-
-        pub fn composite_reflectivity(
-            &self,
-            volume: &Volume,
-            sweep: usize,
-        ) -> Option<(Field, RangeCoord)> {
-            recast_radar_map::composite_reflectivity_grid(&self.0)
-                .map(|grid| field_on(volume, sweep, &grid))
-        }
-
-        pub fn smoothed_reflectivity(&self, volume: &Volume, sweep: usize) -> (Field, RangeCoord) {
-            let grid = recast_radar_filters::smooth_moment_grid(self.reflectivity(sweep));
-            field_on(volume, sweep, &grid)
-        }
-
-        /// The display-upsampled reflectivity with its range and synthetic
-        /// row azimuths.
-        pub fn upsampled_reflectivity(
-            &self,
-            volume: &Volume,
-            sweep: usize,
-        ) -> Option<(Field, RangeCoord, Vec<f32>)> {
-            let up = recast_radar_filters::upsample_moment_grid(
-                &self.0.cuts[sweep],
-                self.reflectivity(sweep),
-            )?;
-            let (field, range) = field_rows_on(volume, sweep, &up.grid);
-            Some((field, range, up.row_azimuths_deg))
-        }
+    /// The display-upsampled reflectivity with its range and synthetic row
+    /// azimuths.
+    pub fn upsampled_reflectivity(
+        volume: &Volume,
+        sweep: usize,
+    ) -> Option<(Field, RangeCoord, Vec<f32>)> {
+        let model = &volume.sweeps[sweep];
+        let field = model.field(&FieldName::Dbzh).unwrap();
+        let up = recast_radar_filters::upsample_field(model, field)?;
+        let mut sweep = up.sweep;
+        let field = sweep.fields.swap_remove(0);
+        Some((field, sweep.range, sweep.rays.azimuth_deg))
     }
 }

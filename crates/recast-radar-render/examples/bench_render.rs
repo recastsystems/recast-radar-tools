@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -11,9 +10,9 @@ use recast_radar_render::{
     render_storm_relative_velocity_image, viewport_rgba_buffer_len,
 };
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
-use legacy_bridge::stages;
+#[path = "support/mod.rs"]
+mod support;
+use support::stages;
 
 const DECODE_RUNS: usize = 5;
 
@@ -29,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut volume = None;
     for _ in 0..DECODE_RUNS {
         let decode_start = Instant::now();
-        let decoded = legacy_bridge::read_volume(&input)?;
+        let decoded = support::read_volume(&input)?;
         decode_timings.push(decode_start.elapsed());
         volume = Some(decoded);
     }

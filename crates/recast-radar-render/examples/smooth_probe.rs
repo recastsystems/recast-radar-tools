@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Render native vs smoothed reflectivity PNGs for visual comparison.
 // usage: smooth_probe <l2-file> <out-dir>
@@ -13,8 +12,8 @@ use recast_radar_render::{
 use std::path::PathBuf;
 use std::time::Instant;
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 fn save(volume: &Volume, cache: &ViewportFieldCache, options: ViewportRasterOptions, path: &str) {
     let mut px = vec![0u8; viewport_rgba_buffer_len(options)];
@@ -47,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| ".".into());
-    let decoded = legacy_bridge::Decoded::from_path(&input)?;
+    let decoded = support::Decoded::from_path(&input)?;
     let volume = &decoded.volume;
     let tables = ColorTableSet::default();
     // Zoomed view (~±60 km) where smoothing is most visible.

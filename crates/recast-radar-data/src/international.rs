@@ -35,7 +35,7 @@
 //! archives, and `recast_radar_io::read_supported_volume_bytes` decodes only
 //! the FIRST station of such a tar. The poll consumer must therefore pass
 //! the selected site as a `site_filter` to
-//! `recast_radar_io_jma::decode_jma_tar_volumes` when the plan came from
+//! `recast_radar_io_jma::read_jma_tar_volumes` when the plan came from
 //! [`JmaProvider`] (see its docs).
 
 #[cfg(feature = "net")]
@@ -729,8 +729,8 @@ const JMA_LOOKBACK_MINUTES: i64 = 40;
 ///
 /// Decode contract: the plan's first part is the N5 (reflectivity) tar
 /// containing ALL stations — the poll consumer must decode JMA parts with
-/// `recast_radar_io_jma::decode_jma_tar_volumes(bytes, Some(site_id))`; the
-/// generic `decode_supported_volume_bytes` router would return the tar's
+/// `recast_radar_io_jma::read_jma_tar_volumes(bytes, Some(site_id))`; the
+/// generic `read_supported_volume_bytes` router would return the tar's
 /// first station regardless of the selection. When the `_N6_` sibling exists
 /// at the same stamp, the plan includes it and requests a per-elevation merge
 /// so Japan exposes Doppler velocity in the same live frame.

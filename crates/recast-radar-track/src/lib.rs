@@ -8,10 +8,8 @@
 //! geometry.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 mod cells;
-pub mod legacy_api;
 mod swath;
 mod temporal;
 mod tracking;
@@ -24,11 +22,6 @@ pub use temporal::{
     minimum_swath, trend,
 };
 pub use tracking::{StormTrack, StormTracker, TIME_GATE_S};
-
-// Legacy signatures, kept until the FM301 shim is removed
-// (docs/design/fm301-model.md section 13.3).
-#[allow(deprecated)]
-pub use legacy_api::*;
 
 use recast_radar_core::{Field, FieldData, FieldName, FloatCoding, Quantity};
 

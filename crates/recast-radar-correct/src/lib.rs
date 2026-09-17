@@ -13,11 +13,9 @@
 //! same rays and gates out.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 mod dealias_pyart;
 mod dealias_v4;
-pub mod legacy_api;
 mod region_core;
 
 pub use dealias_pyart::dealias_velocity_pyart_region;
@@ -25,11 +23,6 @@ pub use dealias_v4::{
     ConfidenceGrid, EnvWindLevel, EnvironmentalWindProfile, TemporalPrior, V4Diagnostics,
     V4VolumeSolution, dealias_velocity_v4, dealias_volume, project_environmental_winds_onto,
 };
-
-// Legacy signatures, kept until the FM301 shim is removed
-// (docs/design/fm301-model.md section 13.3).
-#[allow(deprecated)]
-pub use legacy_api::*;
 
 use chrono::{DateTime, Utc};
 use recast_radar_core::model::{Coding, RowRef};

@@ -880,10 +880,18 @@ fn next_volume_join_downloads_real_chunk_bytes() {
         .iter()
         .flat_map(|c| c.data.clone().expect("downloaded"))
         .collect();
-    let volume = recast_radar_io::decode_supported_volume_bytes(&bytes).expect("decode");
-    assert_eq!(volume.site.id, "TLAS");
-    assert_eq!(volume.volume_time, delivered[0].info.volume_time);
-    let radials: usize = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
+    let decoded = recast_radar_io_nexrad::read_volume_with_metadata(&bytes).expect("decode");
+    assert_eq!(decoded.volume.attrs.instrument_name, "TLAS");
+    assert_eq!(
+        decoded.metadata.volume_header_time,
+        Some(delivered[0].info.volume_time)
+    );
+    let radials: usize = decoded
+        .volume
+        .sweeps
+        .iter()
+        .map(|sweep| sweep.nrays())
+        .sum();
     assert_eq!(radials, 240);
     assert_eq!(
         iter.stats().chunk_requests,

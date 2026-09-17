@@ -3,8 +3,6 @@
 //!
 //! - [`dorade`]: native DORADE `swp.*` sweepfile decoder
 //!   ([`read_dorade_sweep_volume`], [`dorade::DoradeVolumeBuilder`]).
-//! - [`legacy_api`]: the pre-FM301 `decode_*` signatures (legacy
-//!   `RadarVolume`), kept during the migration.
 //! - [`mobile_archive`]: zip-archive and folder ingest that groups DORADE
 //!   sweeps into volume scans. Level II (`.msg31`/`AR2V`) members inside
 //!   those archives are decoded by a caller-supplied decoder, so this crate
@@ -38,12 +36,8 @@
 //! [`DoradeError::Compression`] errors.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 pub mod dorade;
-#[allow(deprecated)]
-pub mod legacy_api;
 pub mod mobile_archive;
 
 use thiserror::Error;
@@ -51,12 +45,6 @@ use thiserror::Error;
 pub use dorade::{
     DoradeVolumeBuilder, looks_like_dorade_bytes, peek_dorade_sweep, read_dorade_sweep_volume,
     read_dorade_volume_from_paths, read_dorade_volume_from_slices,
-};
-#[allow(deprecated)]
-pub use legacy_api::{
-    MobileRadarVolume, decode_dorade_sweep_volume, decode_dorade_volume_for_path,
-    decode_dorade_volume_from_paths, decode_dorade_volume_from_slices,
-    decode_mobile_archive_from_path, decode_mobile_dir_from_path,
 };
 pub use mobile_archive::{
     MobileDecode, MobileVolume, looks_like_zip_bytes, read_dorade_volume_for_path,

@@ -36,9 +36,6 @@
 //! and `SimulationProvenance`; sweeps whose `vcp_moment_coverage_code`
 //! restricts their moments get only those fields. For RHI sweeps the fixed
 //! angle is the AZIMUTH (CfRadial §5.8).
-//!
-//! The pre-FM301 [`decode_cfradial1_volume`] (legacy `RadarVolume`) lives
-//! in [`crate::legacy_api`] during the migration.
 
 use std::borrow::Cow;
 
@@ -51,61 +48,19 @@ use recast_radar_core::model::{
     ScanDefinition, ScanLeg, SimulationProvenance, SourceFormat, Sweep, SweepMode, Volume,
 };
 
-#[allow(deprecated)]
-pub use crate::legacy_api::decode_cfradial1_volume;
 pub use crate::netcdf3::looks_like_netcdf3_bytes;
 use crate::netcdf3::{Nc3File, NcArray, NcValue, NcVar};
 use crate::{CfRadialError, Result};
 
 /// Decode a CfRadial 1.x byte buffer into the FM301 model.
 pub fn read_cfradial1_volume(bytes: &[u8]) -> Result<Volume> {
-    Ok(decode(bytes, DecodeBudget::volume(), false)?.volume)
+    decode(bytes, DecodeBudget::volume())
 }
 
 /// [`read_cfradial1_volume`] with an explicit output budget.
 #[cfg(test)]
 fn read_cfradial1_volume_within(bytes: &[u8], budget: DecodeBudget) -> Result<Volume> {
-    Ok(decode(bytes, budget, false)?.volume)
-}
-
-/// A decoded volume plus the values only the legacy wrapper needs.
-pub(crate) struct Decoded {
-    pub volume: Volume,
-    pub legacy: Option<LegacyLog>,
-}
-
-/// Values the pre-FM301 decoder derived with its own rounding and filters,
-/// recorded so [`crate::legacy_api`] reproduces them exactly.
-#[derive(Default)]
-pub(crate) struct LegacyLog {
-    /// `time_coverage_start` (the legacy volume time), when it parsed.
-    pub volume_time: Option<DateTime<Utc>>,
-    pub pulse_width_us: Option<f32>,
-    pub unambiguous_range_km: Option<f32>,
-    /// The legacy `scan_mode` (Ppi/Rhi/VerticalPointing/Other) per declared
-    /// sweep, for the legacy combined mode.
-    pub sweep_modes: Vec<Option<LegacyScanMode>>,
-    /// Per decoded sweep (in sweep order), the legacy per-ray instrument
-    /// metadata; empty when the file has none of the four variables.
-    pub ray_instruments: Vec<Vec<LegacyRayInstrument>>,
-}
-
-/// The legacy `RayInstrumentMetadata` values of one ray.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct LegacyRayInstrument {
-    pub prt_s: Option<f32>,
-    pub unambiguous_range_km: Option<f32>,
-    pub pulse_count: Option<u32>,
-    pub independent_samples: Option<f32>,
-}
-
-/// The legacy `ScanMode` vocabulary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LegacyScanMode {
-    Ppi,
-    Rhi,
-    VerticalPointing,
-    Other,
+    decode(bytes, budget)
 }
 
 /// Global attributes with a typed slot in the model; every other global
@@ -198,7 +153,7 @@ const SLOTTED_ROOT_VARS: &[&str] = &[
     "radar_receiver_bandwidth",
 ];
 
-pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget, legacy: bool) -> Result<Decoded> {
+pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget) -> Result<Volume> {
     let file = Nc3File::open(bytes)?;
     let dim = |name: &str| file.dims.iter().position(|(dim_name, _)| dim_name == name);
     let (Some(time_dim), Some(range_dim)) = (dim("time"), dim("range")) else {
@@ -374,11 +329,10 @@ pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget, legacy: bool) -> Re
     volume.radar_parameters.receiver_bandwidth_hz = numeric_var_first(&file, "radar_rx_bandwidth")
         .or_else(|| numeric_var_first(&file, "radar_receiver_bandwidth"))
         .map(|v| v as f32);
-    let legacy_pulse_width_us = cfradial_pulse_width_us(&file);
-    let legacy_unambiguous_range_km = cfradial_unambiguous_range_km(&file);
-    volume.radar_parameters.pulse_width_s = legacy_pulse_width_us.map(|us| us * 1e-6);
+    volume.radar_parameters.pulse_width_s = cfradial_pulse_width_us(&file).map(|us| us * 1e-6);
     volume.radar_parameters.prt_s = cfradial_prt_s(&file);
-    volume.radar_parameters.unambiguous_range_m = legacy_unambiguous_range_km.map(|km| km * 1000.0);
+    volume.radar_parameters.unambiguous_range_m =
+        cfradial_unambiguous_range_km(&file).map(|km| km * 1000.0);
 
     // Scan strategy (BowEcho export attributes).
     volume.scan.name = metadata_text(&file, "scan_name");
@@ -484,21 +438,6 @@ pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget, legacy: bool) -> Re
         .map(|sweep| sweep_ray_range(&sweep_starts, &sweep_ends, sweep, n_rays))
         .collect();
     check_disjoint_sweeps(&ray_ranges)?;
-
-    let mut log = legacy.then(LegacyLog::default);
-    if let Some(log) = log.as_mut() {
-        log.volume_time = coverage_start;
-        log.pulse_width_us = legacy_pulse_width_us;
-        log.unambiguous_range_km = legacy_unambiguous_range_km;
-        log.sweep_modes = sweep_modes
-            .iter()
-            .map(|mode| mode.as_deref().map(legacy_scan_mode))
-            .collect();
-    }
-    let has_ray_instrument_metadata = prt.is_some()
-        || unambiguous_range.is_some()
-        || pulse_count.is_some()
-        || independent_samples.is_some();
 
     // Build sweep geometry first, then read each full (time, range) field
     // once and distribute its rows across every sweep.
@@ -625,32 +564,6 @@ pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget, legacy: bool) -> Re
                 sweep.extra_vars.push(extra);
             }
         }
-        if let Some(log) = log.as_mut() {
-            log.ray_instruments.push(if has_ray_instrument_metadata {
-                rays.clone()
-                    .map(|ray| LegacyRayInstrument {
-                        prt_s: prt.as_ref().and_then(|v| positive_f32(v[ray] * prt_scale)),
-                        unambiguous_range_km: unambiguous_range
-                            .as_ref()
-                            .and_then(|v| positive_f32(v[ray] * unambiguous_range_scale * 1e-3)),
-                        pulse_count: pulse_count.as_ref().and_then(|v| {
-                            let value = v[ray];
-                            (value.is_finite()
-                                && value > 0.0
-                                && value.fract() == 0.0
-                                && value <= f64::from(u32::MAX))
-                            .then_some(value as u32)
-                        }),
-                        independent_samples: independent_samples
-                            .as_ref()
-                            .and_then(|v| positive_f32(v[ray])),
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            });
-        }
-
         let leg = ScanLeg {
             source_row_index: numeric_u16_at(&source_row_indices, index),
             elevation_deg: has_scan_leg_metadata.then_some(fixed),
@@ -795,10 +708,7 @@ pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget, legacy: bool) -> Re
     if volume.time_coverage.is_none() {
         volume.time_coverage = volume.ray_time_extent();
     }
-    Ok(Decoded {
-        volume,
-        legacy: log,
-    })
+    Ok(volume)
 }
 
 struct SweepBuild {
@@ -1295,16 +1205,6 @@ fn char_var_text(file: &Nc3File<'_>, name: &str) -> Option<String> {
     }
 }
 
-/// CfRadial 1.4 §5.8 sweep_mode vocabulary onto the legacy scan modes.
-pub(crate) fn legacy_scan_mode(mode: &str) -> LegacyScanMode {
-    match mode {
-        "azimuth_surveillance" | "sector" | "manual_ppi" => LegacyScanMode::Ppi,
-        "rhi" | "manual_rhi" => LegacyScanMode::Rhi,
-        "vertical_pointing" => LegacyScanMode::VerticalPointing,
-        _ => LegacyScanMode::Other,
-    }
-}
-
 fn parse_bool(text: &str) -> Option<bool> {
     match text.trim().to_ascii_lowercase().as_str() {
         "true" | "1" | "yes" => Some(true),
@@ -1583,22 +1483,6 @@ mod tests {
             matches!(&error, CfRadialError::LimitExceeded(reason) if reason.contains("limit")),
             "unexpected error: {error}"
         );
-    }
-
-    #[test]
-    fn sweep_mode_vocabulary_maps_to_legacy_scan_modes() {
-        assert_eq!(
-            legacy_scan_mode("azimuth_surveillance"),
-            LegacyScanMode::Ppi
-        );
-        assert_eq!(legacy_scan_mode("sector"), LegacyScanMode::Ppi);
-        assert_eq!(legacy_scan_mode("rhi"), LegacyScanMode::Rhi);
-        assert_eq!(legacy_scan_mode("manual_rhi"), LegacyScanMode::Rhi);
-        assert_eq!(
-            legacy_scan_mode("vertical_pointing"),
-            LegacyScanMode::VerticalPointing
-        );
-        assert_eq!(legacy_scan_mode("coplane"), LegacyScanMode::Other);
     }
 
     #[test]

@@ -343,8 +343,7 @@ pub struct RayVariables {
     pub calib_index: Option<Vec<i32>>,
     /// `rx_range_resolution(time)`, m.
     pub rx_range_resolution_m: Option<Vec<f32>>,
-    /// Not FM301: effective independent samples (legacy
-    /// `RayInstrumentMetadata`).
+    /// Not FM301: effective independent samples (DORADE / research radars).
     pub independent_samples: Option<Vec<f32>>,
 }
 

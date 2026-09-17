@@ -58,19 +58,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = PathBuf::from(std::env::args_os().nth(1).ok_or("usage: <level2-file>")?);
 
     // Uncompressed, gzip, bzip2 and LDM block-bzip2 archives all decode here.
-    let volume = nexrad::decode_volume_from_path(&path)?;
+    let volume = nexrad::read_volume_from_path(&path)?;
 
-    println!("{} at {}", volume.site.id, volume.volume_time);
-    if let Some(vcp) = &volume.vcp {
-        println!("VCP {}", vcp.pattern);
+    println!(
+        "{} at {}",
+        volume.attrs.instrument_name, volume.time_reference
+    );
+    if let Some(vcp) = volume.scan.vcp_pattern {
+        println!("VCP {vcp}");
     }
-    for (index, cut) in volume.cuts.iter().enumerate() {
-        let moments: Vec<String> = cut.moments.keys().map(ToString::to_string).collect();
+    for (index, sweep) in volume.sweeps.iter().enumerate() {
+        let fields: Vec<&str> = sweep.fields.iter().map(|f| f.name.as_str()).collect();
         println!(
-            "sweep {index:>2}: {:>5.2} deg, {} radials, {}",
-            cut.elevation_deg,
-            cut.radials.len(),
-            moments.join(" ")
+            "sweep {index:>2}: {:>5.2} deg, {} rays, {}",
+            sweep.fixed_angle_deg,
+            sweep.nrays(),
+            fields.join(" ")
         );
     }
     Ok(())
@@ -80,14 +83,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 Output (first five lines):
 
 ```text
-KTLX at 2024-03-15 00:02:17.182 UTC
+KTLX at 2024-03-15 00:02:17 UTC
 VCP 212
-sweep  0:  0.58 deg, 720 radials, REF ZDR RHO PHI CFP
-sweep  1:  0.48 deg, 720 radials, REF VEL SW
-sweep  2:  0.78 deg, 720 radials, REF ZDR RHO PHI CFP
+sweep  0:  0.48 deg, 720 rays, DBZH ZDR PHIDP RHOHV CCORH
+sweep  1:  0.48 deg, 720 rays, DBZH VRADH WRADH
+sweep  2:  0.88 deg, 720 rays, DBZH ZDR PHIDP RHOHV CCORH
 ```
 
-For bytes of unknown format, `io::decode_supported_volume_bytes(&bytes)`
+For bytes of unknown format, `io::read_supported_volume_bytes(&bytes)`
 (feature `io`) sniffs the format and calls the matching decoder: DORADE,
 ODIM_H5, CfRadial 1, JMA GRIB2 tar, or Level II. It also unwraps gzip and
 single-file ZIP archives. Level III products are not radar volumes and the
@@ -105,39 +108,45 @@ router does not read them: use `level3::decode_product(&bytes)` (feature
 use std::error::Error;
 use std::path::PathBuf;
 
-use recast_radar_tools::core::MomentType;
+use recast_radar_tools::core::Quantity;
 use recast_radar_tools::{correct, nexrad};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let path = PathBuf::from(std::env::args_os().nth(1).ok_or("usage: <level2-file>")?);
-    let mut volume = nexrad::decode_volume_from_path(&path)?;
+    let mut volume = nexrad::read_volume_from_path(&path)?;
 
-    for cut in &mut volume.cuts {
-        let Some(raw) = cut.moments.get(&MomentType::Velocity) else {
+    for sweep in &mut volume.sweeps {
+        let Some(raw) = sweep.find(Quantity::RadialVelocity) else {
             continue;
         };
-        // Region-based unfolding. The result has the same rows and gates.
-        let dealiased = correct::dealias_velocity_grid(cut, raw);
+        // Region-based unfolding. The result (VRADDH) has the same rays and
+        // gates as the source field.
+        let dealiased = correct::dealias_velocity(sweep, raw);
 
         let mut unfolded = 0;
-        for row in 0..raw.radial_count() {
-            for gate in 0..raw.gate_range.gate_count {
-                let before = raw.scaled_value(row, gate).unwrap_or(f32::NAN);
-                let after = dealiased.scaled_value(row, gate).unwrap_or(f32::NAN);
+        let (rows, gates) = raw.shape();
+        for row in 0..rows {
+            for gate in 0..gates {
+                let before = raw.value(row, gate).unwrap_or(f32::NAN);
+                let after = dealiased.value(row, gate).unwrap_or(f32::NAN);
                 if (after - before).abs() > 1.0 {
                     unfolded += 1;
                 }
             }
         }
-        let nyquist = cut.radials.first().and_then(|r| r.nyquist_velocity_mps);
+        let nyquist = sweep
+            .ray_vars
+            .nyquist_velocity_mps
+            .as_ref()
+            .and_then(|values| values.first().copied());
         println!(
             "{:>5.2} deg: Nyquist {:.1} m/s, {unfolded} gates unfolded",
-            cut.elevation_deg,
+            sweep.fixed_angle_deg,
             nyquist.unwrap_or(f32::NAN)
         );
 
-        // Keep the dealiased copy in place of the raw velocity.
-        cut.moments.insert(MomentType::Velocity, dealiased);
+        // Keep the dealiased field beside the raw velocity.
+        sweep.add_field(dealiased)?;
     }
     Ok(())
 }
@@ -147,13 +156,13 @@ Output (first three lines):
 
 ```text
  0.48 deg: Nyquist 23.8 m/s, 1833 gates unfolded
- 0.92 deg: Nyquist 23.8 m/s, 2459 gates unfolded
+ 0.88 deg: Nyquist 23.8 m/s, 2459 gates unfolded
  0.48 deg: Nyquist 23.8 m/s, 1878 gates unfolded
 ```
 
 `correct` has two more dealiasers: a model-anchored volume engine
 (`dealias_volume_v4`) and a port of Py-ART's region-based dealiaser
-(`dealias_velocity_grid_pyart_region`).
+(`dealias_velocity_pyart_region`).
 
 ### Render PNG images
 
@@ -167,12 +176,11 @@ This example needs the `render` feature.
 // cargo run --release -p recast-radar-tools --features render \
 //     --example render_png -- <level2-file> <out-dir>
 
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
 use std::error::Error;
 use std::path::PathBuf;
 
 use recast_radar_tools::core::{FieldName, Quantity, Volume};
+use recast_radar_tools::nexrad;
 use recast_radar_tools::render::{self, RasterOptions};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -180,7 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (Some(input), Some(out_dir)) = (args.next(), args.next()) else {
         return Err("usage: <level2-file> <out-dir>".into());
     };
-    let mut volume = legacy_bridge::read_volume(&input)?;
+    let mut volume = nexrad::read_volume_from_path(&input)?;
     let options = RasterOptions::default(); // 1024 x 1024
 
     let (index, name) = first_sweep_with(&volume, Quantity::Reflectivity)?;
@@ -213,21 +221,6 @@ fn first_sweep_with(volume: &Volume, quantity: Quantity) -> Result<(usize, Field
         })
         .ok_or_else(|| format!("no sweep has a {quantity:?} field"))
 }
-
-/// Level II decoding still returns the pre-FM301 volume; the shim moves it
-/// into the FM301 model. This module goes when the decoder migrates.
-#[allow(deprecated)]
-mod legacy_bridge {
-    use std::error::Error;
-    use std::path::Path;
-
-    use recast_radar_tools::core::Volume;
-    use recast_radar_tools::nexrad;
-
-    pub fn read_volume(path: &Path) -> Result<Volume, Box<dyn Error>> {
-        Ok(Volume::try_from(nexrad::decode_volume_from_path(path)?)?)
-    }
-}
 ```
 
 Each image is 1024 by 1024 RGBA with a transparent background. The radar is at
@@ -240,7 +233,7 @@ the centre to the edge.
 | Crate | Module | Contents |
 |---|---|---|
 | `recast-radar-tools` | | The facade: re-exports the crates below as modules behind features |
-| `recast-radar-core` | `core` | Data model: volumes, sweeps, radials, moment grids, beam geometry, field names |
+| `recast-radar-core` | `core` | FM301 data model: volumes, sweeps, ray coordinates, fields with CF packing, the FM301 group view, beam geometry, field names |
 | `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2; the Level III VAD Wind Profile product |
 | `recast-radar-io-level3` | `level3` | NEXRAD and TDWR Level III products: NOAAPort/WMO framing, message and product description headers, symbology, graphic and tabular blocks, display packets, data levels |
 | `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through an HDF5 reader written in Rust |
@@ -334,7 +327,7 @@ The same split applies to WebAssembly. Every library crate except
 single feature other than `net` and `full`. CI checks this with
 [`tools/ci/wasm-check.sh`](tools/ci/wasm-check.sh), which also leaves out the
 benchmark binary. On that target, use the byte-slice entry points (such
-as `nexrad::decode_volume_from_bytes`), because the path-based ones return I/O
+as `nexrad::read_volume_from_bytes`), because the path-based ones return I/O
 errors. rayon runs everything on the calling thread there. Details:
 [docs/design/wasm.md](docs/design/wasm.md).
 

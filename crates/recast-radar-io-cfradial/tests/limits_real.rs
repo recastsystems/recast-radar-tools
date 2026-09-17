@@ -4,7 +4,7 @@
 //! (dimensions `time` = 719, `range` = 1107, `sweep` = 2).
 
 use recast_radar_core::bounded_read::{MAX_GATES_PER_RADIAL, MAX_SWEEPS_PER_VOLUME};
-use recast_radar_io_cfradial::{CfRadialError, decode_cfradial1_volume};
+use recast_radar_io_cfradial::{CfRadialError, read_cfradial1_volume};
 
 fn irene() -> Vec<u8> {
     let path = recast_radar_testdata::path("cfrad1-irene-sr2-20110827-120420-sur-sweeps01")
@@ -35,7 +35,7 @@ fn set_dimension_len(bytes: &mut [u8], wanted: &str, len: u32) {
 }
 
 fn assert_limit_error(bytes: &[u8], what: &str) {
-    match decode_cfradial1_volume(bytes) {
+    match read_cfradial1_volume(bytes) {
         Err(CfRadialError::LimitExceeded(reason)) => {
             assert!(reason.contains("limit"), "{what}: {reason}");
         }
@@ -49,8 +49,8 @@ fn unmodified_real_volume_decodes_within_limits() {
     let mut bytes = irene();
     set_dimension_len(&mut bytes, "range", 1107); // identity edit
     assert_eq!(bytes, irene());
-    let volume = decode_cfradial1_volume(&bytes).expect("real Irene volume decodes");
-    assert_eq!(volume.cuts.len(), 2);
+    let volume = read_cfradial1_volume(&bytes).expect("real Irene volume decodes");
+    assert_eq!(volume.sweeps.len(), 2);
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn record_count_the_file_cannot_back_fails_before_reserving() {
     // cap, but the 13.6 KiB file holds 40. The reader checks the whole record
     // range against the file before reserving the 200 MiB array, so the
     // decode fails as truncated.
-    match decode_cfradial1_volume(&xsapr_with_numrecs(50_000_000)) {
+    match read_cfradial1_volume(&xsapr_with_numrecs(50_000_000)) {
         Err(CfRadialError::Truncated { .. }) => {}
         Err(other) => panic!("expected a truncation error, got {other}"),
         Ok(_) => panic!("50 million claimed records decoded"),

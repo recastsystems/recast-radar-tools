@@ -5,7 +5,6 @@
 //! full conformance comparison is plan F.4; these tests pin the decoder's
 //! packed storage, codings, coordinates, per-ray variables and passthrough.
 
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::excessive_precision)]
 
 use chrono::{TimeZone, Utc};

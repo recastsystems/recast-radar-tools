@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -11,15 +10,15 @@ use recast_radar_render::{
     ColorTableSet, ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len,
 };
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 const DEFAULT_KM_PER_PX: f32 = 0.16;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = parse_args().map_err(|err| format!("{err}\n\n{}", usage()))?;
     let decode_start = Instant::now();
-    let volume = legacy_bridge::read_volume(&config.input)?;
+    let volume = support::read_volume(&config.input)?;
     let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
     println!(
         "visual_probe file={} site={} sweeps={} rays={} decode_ms={decode_ms:.3}",

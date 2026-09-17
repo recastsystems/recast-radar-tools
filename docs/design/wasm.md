@@ -90,7 +90,7 @@ return I/O errors there, so use the byte-slice entry points. `Instant::now` and
 
 To confirm that the crates also run on wasm32, a throwaway cdylib outside the
 repository reproduced `recast-radar-bench`'s checksum pipeline without timers:
-`recast_radar_io::decode_supported_volume_bytes`, the reflectivity raster and
+`recast_radar_io::read_supported_volume_bytes`, the reflectivity raster and
 the dealiased velocity raster, each at three viewports. It was built with
 `--release --target wasm32-unknown-unknown` and run under Node 22 through a
 bare `WebAssembly.instantiate` with no imports and no JS glue, on the three

@@ -16,8 +16,7 @@ use recast_radar_core::model::{
 use crate::messages::vcp::VolumeCoveragePattern;
 use crate::{ArchiveCompression, NexradError, RadialStatus, Result};
 
-/// Two cut elevations closer than this (degrees) are the same tilt (the
-/// legacy `CUT_ELEVATION_MATCH_TOLERANCE_DEG`).
+/// Two cut elevations closer than this (degrees) are the same tilt.
 const CUT_ELEVATION_MATCH_TOLERANCE_DEG: f32 = 0.05;
 pub(crate) const DAY_MS: i64 = 86_400_000;
 
@@ -53,27 +52,13 @@ pub(crate) enum MomentPayload<'a> {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SweepState {
     /// Elevation angle of the radial that opened the sweep: the value later
-    /// radials are matched against (the legacy `ElevationCut::elevation_deg`).
+    /// radials are matched against.
     pub first_elevation_deg: f32,
     /// Status of the last radial appended to the sweep.
     pub last_status: Option<RadialStatus>,
     /// Block name to field index; `usize::MAX` marks a moment whose gates do
     /// not align with the sweep range (it is dropped).
     blocks: Vec<([u8; 3], usize)>,
-    /// Legacy-output log (only when requested).
-    pub legacy: Option<LegacyRays>,
-}
-
-/// Per-ray values the legacy model kept on every radial and the FM301 model
-/// does not: the record's millisecond-of-day time, the radial status and the
-/// gate geometry of the radial's first moment. Recorded only for the legacy
-/// wrappers.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct LegacyRays {
-    /// `collect_ms as i32`, the legacy `Radial::time_offset_ms`.
-    pub times_ms: Vec<i32>,
-    pub statuses: Vec<RadialStatus>,
-    pub gates: Vec<BlockGates>,
 }
 
 /// A Level II volume under construction.
@@ -81,9 +66,9 @@ pub(crate) struct LegacyRays {
 pub(crate) struct VolumeBuilder {
     pub volume: Volume,
     pub sweeps: Vec<SweepState>,
-    /// The legacy `RadarVolume::volume_time`: the volume header time, replaced
-    /// by the first Message 1 radial's collection time, or by the first
-    /// Message 31 collection time when the header date is the epoch.
+    /// The volume header time, replaced by the first Message 1 radial's
+    /// collection time, or by the first Message 31 collection time when the
+    /// header date is the epoch.
     pub header_time: DateTime<Utc>,
     /// `true` once `Volume::time_reference` follows the first radial.
     reference_from_radial: bool,
@@ -92,7 +77,6 @@ pub(crate) struct VolumeBuilder {
     /// `fixed_angle` xradar and Py-ART report.
     vcp_cut_angles_deg: Vec<f32>,
     pub budget: DecodeBudget,
-    record_legacy: bool,
 }
 
 impl VolumeBuilder {
@@ -102,7 +86,6 @@ impl VolumeBuilder {
         header_time: DateTime<Utc>,
         compression: ArchiveCompression,
         budget: DecodeBudget,
-        record_legacy: bool,
     ) -> Self {
         let mut volume = Volume::new(icao, header_time);
         volume.attrs.source = Some("NEXRAD Level II".to_owned());
@@ -118,7 +101,6 @@ impl VolumeBuilder {
             reference_ms,
             vcp_cut_angles_deg: Vec::new(),
             budget,
-            record_legacy,
         }
     }
 
@@ -244,7 +226,6 @@ impl VolumeBuilder {
         self.volume.sweeps.push(sweep);
         self.sweeps.push(SweepState {
             first_elevation_deg: elevation_angle,
-            legacy: self.record_legacy.then(LegacyRays::default),
             ..SweepState::default()
         });
         Ok(index)
@@ -261,7 +242,6 @@ impl VolumeBuilder {
         elevation_deg: f32,
         nyquist_velocity_mps: Option<f32>,
         status: RadialStatus,
-        first_gates: BlockGates,
         expected_rays: usize,
     ) -> usize {
         let instant_ms = self.ray_instant_ms(collect_date, collect_ms);
@@ -285,11 +265,6 @@ impl VolumeBuilder {
         nyquist.push(nyquist_velocity_mps.unwrap_or(f32::NAN));
         let state = &mut self.sweeps[sweep];
         state.last_status = Some(status);
-        if let Some(log) = state.legacy.as_mut() {
-            log.times_ms.push(collect_ms as i32);
-            log.statuses.push(status);
-            log.gates.push(first_gates);
-        }
         ray
     }
 

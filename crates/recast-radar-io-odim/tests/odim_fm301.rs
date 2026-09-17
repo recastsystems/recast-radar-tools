@@ -5,7 +5,6 @@
 //! comparison is plan F.4; these tests pin the decoder's ray coordinates,
 //! range, field names, codings and raw values.
 
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::excessive_precision)]
 
 use chrono::{TimeZone, Utc};

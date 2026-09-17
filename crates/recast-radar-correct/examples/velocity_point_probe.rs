@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Probe raw vs dealiased velocity at given az/range points on the lowest
 // velocity tilt — for debugging fold failures reported in the field.
@@ -8,24 +7,11 @@
 use recast_radar_core::Quantity;
 use recast_radar_correct::dealias_velocity;
 
-/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
-/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
-#[allow(deprecated)]
-mod legacy_bridge {
-    use recast_radar_core::Volume;
-    use std::path::Path;
-
-    pub fn decode_level2(path: &Path) -> Result<Volume, Box<dyn std::error::Error>> {
-        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path)?;
-        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let path = args.next().ok_or("usage: <l2> <az> <rng_km> ...")?;
     let points: Vec<f64> = args.filter_map(|a| a.parse().ok()).collect();
-    let volume = legacy_bridge::decode_level2(path.as_ref() as &std::path::Path)?;
+    let volume = recast_radar_io_nexrad::read_volume_from_path(path.as_ref() as &std::path::Path)?;
     let (index, sweep) = volume
         .sweeps
         .iter()

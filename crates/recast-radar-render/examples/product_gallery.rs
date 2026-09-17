@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Render the full product set for a scan to PNGs through the SAME
 // ViewportFieldCache path the GUI uses — visual proof every product + palette
@@ -16,9 +15,9 @@ use recast_radar_render::{
     viewport_rgba_buffer_len,
 };
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
-use legacy_bridge::{Decoded, Derived, ECHO_TOP_THRESHOLD_DBZ};
+#[path = "support/mod.rs"]
+mod support;
+use support::{Decoded, Derived, ECHO_TOP_THRESHOLD_DBZ};
 
 fn save_cache(
     volume: &Volume,

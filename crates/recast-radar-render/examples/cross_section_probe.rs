@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Verify the vertical cross-section on a real scan: locate the strongest
 // composite-reflectivity cell, slice a W->E section through it, and render it
@@ -14,8 +13,8 @@ use image::{ImageBuffer, Rgba};
 use recast_radar_core::Quantity;
 use recast_radar_render::color::builtin_reflectivity_table;
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
@@ -28,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "xs.png".into());
 
-    let decoded = legacy_bridge::Decoded::from_path(&input)?;
+    let decoded = support::Decoded::from_path(&input)?;
     let volume = &decoded.volume;
 
     // base reflectivity sweep (lowest elevation)

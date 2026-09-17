@@ -134,6 +134,7 @@ pixel-exact spot check still passes.
 ## Evidence (acceptance, design note 13.4)
 
 - **Behaviour identical.** `crates/recast-radar-track/examples/fm301_algo_golden.rs`
+  (at `ce3e6b3`; deleted with the shim)
   hashes every public product of the five crates through the legacy API
   over seven real volumes (KTLX 2024-03-15 and 2013-05-20 Level II, KLIX
   2005 Message 1, dkrom and iesha ODIM, DOW8 RHI and IRENE CfRadial; `CORPUS`
@@ -145,7 +146,8 @@ pixel-exact spot check still passes.
   before hashing; values are untouched. Deleted with the shim.
 - **Checksums.** `cargo run --release -p recast-radar-bench -- <file> --iters 1`
   prints the three checksums of `docs/baselines/import-checksums.txt`
-  (0xc04a5e2dfecc4c1f, 0xd5080047ae5dfeb5, 0x19e3735f42cdca4b); the
+  (0xc04a5e2dfecc4c1f, 0xd5080047ae5dfeb5, 0x19e3735f42cdca4b at the time;
+  the KTLX values were re-recorded at the shim removal, see that file); the
   velocity render goes through `dealias_velocity_grid` -> `dealias_velocity`.
 - **Single-core decode** (`RAYON_NUM_THREADS=1`, KTLX20240315_000217_V06,
   `--iters 10`, three interleaved rounds, release builds of `349c8e4` and

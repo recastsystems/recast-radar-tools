@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Validate TEMPORAL-reference dealiasing: dealias volume A (plain region
 // engine), fit the range-band reference from its lowest tilt, then dealias
@@ -11,19 +10,6 @@ use recast_radar_core::{Quantity, Volume};
 use recast_radar_correct::{
     dealias_velocity, dealias_velocity_with_reference, range_band_reference,
 };
-
-/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
-/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
-#[allow(deprecated)]
-mod legacy_bridge {
-    use recast_radar_core::Volume;
-    use std::path::Path;
-
-    pub fn decode_level2(path: &Path) -> Result<Volume, Box<dyn std::error::Error>> {
-        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path)?;
-        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
-    }
-}
 
 fn lowest_velocity_sweep(volume: &Volume) -> Option<usize> {
     volume
@@ -40,7 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path_a = args.next().ok_or("usage: <volA> <volB>")?;
     let path_b = args.next().ok_or("usage: <volA> <volB>")?;
 
-    let volume_a = legacy_bridge::decode_level2(path_a.as_ref() as &std::path::Path)?;
+    let volume_a =
+        recast_radar_io_nexrad::read_volume_from_path(path_a.as_ref() as &std::path::Path)?;
     let sweep_a = &volume_a.sweeps[lowest_velocity_sweep(&volume_a).ok_or("A: no velocity")?];
     let field_a = sweep_a.find(Quantity::RadialVelocity).unwrap();
     let dealiased_a = dealias_velocity(sweep_a, field_a);
@@ -53,7 +40,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         reference.fits.len()
     );
 
-    let volume_b = legacy_bridge::decode_level2(path_b.as_ref() as &std::path::Path)?;
+    let volume_b =
+        recast_radar_io_nexrad::read_volume_from_path(path_b.as_ref() as &std::path::Path)?;
     let sweep = &volume_b.sweeps[lowest_velocity_sweep(&volume_b).ok_or("B: no velocity")?];
     let field_b = sweep.find(Quantity::RadialVelocity).unwrap();
     let dealiased = dealias_velocity_with_reference(sweep, field_b, Some(&reference));

@@ -5,9 +5,7 @@
 
 use recast_radar_core::bounded_read::{MAX_GATES_PER_RADIAL, MAX_SWEEPS_PER_VOLUME};
 use recast_radar_io_dorade::DoradeError;
-use recast_radar_io_dorade::dorade::{
-    decode_dorade_sweep_volume, decode_dorade_volume_from_slices,
-};
+use recast_radar_io_dorade::dorade::{read_dorade_sweep_volume, read_dorade_volume_from_slices};
 
 const COW2: &str = "dorade-cow2-20260521-225514-sur-head24";
 const NOXP: &str = "dorade-noxp-20090501-190244-ppi";
@@ -67,8 +65,8 @@ fn assert_limit_error<T>(result: Result<T, DoradeError>, what: &str) {
 fn unmodified_real_sweeps_decode_within_limits() {
     for id in [COW2, NOXP] {
         let volume =
-            decode_dorade_sweep_volume(&read_testdata(id)).unwrap_or_else(|e| panic!("{id}: {e}"));
-        assert_eq!(volume.cuts.len(), 1);
+            read_dorade_sweep_volume(&read_testdata(id)).unwrap_or_else(|e| panic!("{id}: {e}"));
+        assert_eq!(volume.sweeps.len(), 1);
     }
 }
 
@@ -82,7 +80,7 @@ fn cell_spacing_descriptor_claiming_too_many_cells_is_rejected() {
         375
     );
     bytes[csfd + 48..csfd + 50].copy_from_slice(&i16::MAX.to_be_bytes());
-    assert_limit_error(decode_dorade_sweep_volume(&bytes), "32,767-cell CSFD");
+    assert_limit_error(read_dorade_sweep_volume(&bytes), "32,767-cell CSFD");
 }
 
 #[test]
@@ -92,7 +90,7 @@ fn parameter_descriptor_claiming_too_many_cells_is_rejected() {
     // Extended PARM number_cells (i32 at +200): the real 1,001 becomes 1e6.
     assert_eq!(read_i32(&bytes, parm + 200, Endian::Little), 1001);
     write_i32(&mut bytes, parm + 200, 1_000_000, Endian::Little);
-    assert_limit_error(decode_dorade_sweep_volume(&bytes), "one-million-cell PARM");
+    assert_limit_error(read_dorade_sweep_volume(&bytes), "one-million-cell PARM");
 }
 
 #[test]
@@ -104,7 +102,7 @@ fn uncompressed_ray_longer_than_the_gate_limit_is_rejected() {
     let stretched = bytes.len() - rdat;
     assert!((stretched - 16) / 2 > MAX_GATES_PER_RADIAL);
     write_i32(&mut bytes, rdat + 4, stretched as i32, Endian::Little);
-    assert_limit_error(decode_dorade_sweep_volume(&bytes), "stretched RDAT block");
+    assert_limit_error(read_dorade_sweep_volume(&bytes), "stretched RDAT block");
 }
 
 #[test]
@@ -112,7 +110,7 @@ fn volume_with_more_sweeps_than_the_limit_is_rejected() {
     let sweep = read_testdata(COW2);
     let sweeps = vec![sweep.as_slice(); MAX_SWEEPS_PER_VOLUME + 1];
     assert_limit_error(
-        decode_dorade_volume_from_slices(&sweeps),
+        read_dorade_volume_from_slices(&sweeps),
         "1,025 sweeps in one volume",
     );
 }

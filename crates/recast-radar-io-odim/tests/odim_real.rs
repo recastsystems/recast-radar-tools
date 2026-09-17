@@ -9,7 +9,7 @@
 //! VRADH raw = (ray·2 + bin) % 254 + 1 (gain 0.1875, offset −24, contiguous).
 
 use chrono::{TimeZone, Utc};
-use recast_radar_core::{MomentType, ScanMode};
+use recast_radar_core::model::{FieldName, Gate, RangeCoord, SweepMode};
 
 const FIXTURE: &[u8] = include_bytes!("data/odim_pvol_synth.h5");
 
@@ -17,56 +17,62 @@ const FIXTURE: &[u8] = include_bytes!("data/odim_pvol_synth.h5");
 fn decodes_synthetic_odim_pvol() {
     assert!(recast_radar_io_odim::odim::looks_like_hdf5_bytes(FIXTURE));
     let volume =
-        recast_radar_io_odim::odim::decode_odim_h5_volume(FIXTURE).expect("decode ODIM fixture");
+        recast_radar_io_odim::odim::read_odim_h5_volume(FIXTURE).expect("decode ODIM fixture");
 
     // /what + /where metadata.
-    assert_eq!(volume.site.id, "TEST");
-    assert_eq!(volume.site.name.as_deref(), Some("Synthetic"));
-    assert_eq!(volume.site.latitude_deg, Some(39.74));
-    assert_eq!(volume.site.longitude_deg, Some(-103.2927));
-    assert_eq!(volume.site.elevation_m, Some(1519.0));
+    assert_eq!(volume.attrs.instrument_name, "TEST");
+    assert_eq!(volume.attrs.site_name.as_deref(), Some("Synthetic"));
+    assert_eq!(volume.location.latitude_deg, Some(39.74));
+    assert_eq!(volume.location.longitude_deg, Some(-103.2927));
+    assert_eq!(volume.location.altitude_m, Some(1519.0));
     assert_eq!(
-        volume.volume_time,
+        volume.time_reference,
         Utc.with_ymd_and_hms(2026, 6, 9, 5, 51, 0).unwrap()
     );
-    assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Ppi));
-    assert_eq!(volume.metadata.decoded_radial_count, 72);
+    assert_eq!(volume.provenance.decode.decoded_ray_count, 72);
 
-    // Two elevation cuts, ascending.
-    assert_eq!(volume.cuts.len(), 2);
-    assert_eq!(volume.cuts[0].elevation_deg, 0.5);
-    assert_eq!(volume.cuts[1].elevation_deg, 1.5);
+    // Two elevation sweeps, ascending.
+    assert_eq!(volume.sweeps.len(), 2);
+    assert_eq!(volume.sweeps[0].fixed_angle_deg, 0.5);
+    assert_eq!(volume.sweeps[1].fixed_angle_deg, 1.5);
+    assert_eq!(volume.sweeps[0].sweep_mode, SweepMode::AzimuthSurveillance);
 
-    let cut = &volume.cuts[0];
-    assert_eq!(cut.radials.len(), 36);
-    // Rays are north-relative scan-order bins: ray 0 centered at 5°.
-    assert_eq!(cut.radials[0].azimuth_deg, 5.0);
-    assert_eq!(cut.radials[9].azimuth_deg, 95.0);
-    // rstart 0.05 km + rscale 150 m × 25 bins; how/NI = 48 m/s.
-    assert_eq!(cut.radials[0].gate_range.first_gate_m, 50);
-    assert_eq!(cut.radials[0].gate_range.gate_spacing_m, 150);
-    assert_eq!(cut.radials[0].gate_range.gate_count, 25);
-    assert_eq!(cut.radials[0].nyquist_velocity_mps, Some(48.0));
+    let sweep = &volume.sweeps[0];
+    assert_eq!(sweep.nrays(), 36);
+    // Rays are north-relative scan-order bins: ray 0 centred at 5°.
+    assert_eq!(sweep.rays.azimuth_deg[0], 5.0);
+    assert_eq!(sweep.rays.azimuth_deg[9], 95.0);
+    // rstart 0.05 km + rscale 150 m × 25 bins (centres from 125 m);
+    // how/NI = 48 m/s.
+    assert_eq!(
+        sweep.range,
+        RangeCoord::Uniform {
+            first_center_m: 125.0,
+            spacing_m: 150.0,
+            ngates: 25,
+        }
+    );
+    assert_eq!(
+        sweep.ray_vars.nyquist_velocity_mps.as_ref().expect("NI")[0],
+        48.0
+    );
 
     // DBZH (gzip-chunked u8): physical = 0.5·raw − 32.
-    let dbzh = cut.moments.get(&MomentType::Reflectivity).expect("DBZH");
-    assert_eq!(dbzh.scaled_value(0, 0), None); // forced nodata (255)
-    assert_eq!(dbzh.scaled_value(0, 1), None); // forced undetect (0) → sentinel
-    assert_eq!(dbzh.scaled_value(0, 2), Some(0.5 * 3.0 - 32.0)); // raw 3
-    assert_eq!(dbzh.scaled_value(10, 4), Some(0.5 * 15.0 - 32.0)); // raw 15
-    assert_eq!(dbzh.scaled_value(35, 24), Some(0.5 * 60.0 - 32.0)); // raw 60
+    let dbzh = sweep.field(&FieldName::Dbzh).expect("DBZH");
+    assert_eq!(dbzh.gate(0, 0), Some(Gate::Missing)); // forced nodata (255)
+    assert_eq!(dbzh.gate(0, 1), Some(Gate::Undetect)); // forced undetect (0)
+    assert_eq!(dbzh.value(0, 2), Some(0.5 * 3.0 - 32.0)); // raw 3
+    assert_eq!(dbzh.value(10, 4), Some(0.5 * 15.0 - 32.0)); // raw 15
+    assert_eq!(dbzh.value(35, 24), Some(0.5 * 60.0 - 32.0)); // raw 60
 
     // VRADH (contiguous u8): physical = 0.1875·raw − 24.
-    let vradh = cut.moments.get(&MomentType::Velocity).expect("VRADH");
-    assert_eq!(vradh.scaled_value(2, 3), Some(0.1875 * 8.0 - 24.0)); // raw 8
-    assert_eq!(vradh.scaled_value(0, 0), Some(0.1875 * 1.0 - 24.0)); // raw 1
+    let vradh = sweep.field(&FieldName::Vradh).expect("VRADH");
+    assert_eq!(vradh.value(2, 3), Some(0.1875 * 8.0 - 24.0)); // raw 8
+    assert_eq!(vradh.value(0, 0), Some(0.1875 * 1.0 - 24.0)); // raw 1
 
-    // Second cut left its (0,0) untouched: DBZH raw 1 → −31.5 dBZ.
-    let upper = volume.cuts[1]
-        .moments
-        .get(&MomentType::Reflectivity)
-        .unwrap();
-    assert_eq!(upper.scaled_value(0, 0), Some(0.5 * 1.0 - 32.0));
+    // Second sweep left its (0,0) untouched: DBZH raw 1 → −31.5 dBZ.
+    let upper = volume.sweeps[1].field(&FieldName::Dbzh).unwrap();
+    assert_eq!(upper.value(0, 0), Some(0.5 * 1.0 - 32.0));
 }
 
 #[test]
@@ -74,7 +80,7 @@ fn non_odim_hdf5_is_rejected_with_guidance() {
     // Corrupt the /what object attribute lookup by handing the decoder a
     // valid-but-non-ODIM HDF5: easiest is to check the error path through a
     // truncated buffer that still carries the signature.
-    let err = recast_radar_io_odim::odim::decode_odim_h5_volume(&FIXTURE[..512]).unwrap_err();
+    let err = recast_radar_io_odim::odim::read_odim_h5_volume(&FIXTURE[..512]).unwrap_err();
     let message = err.to_string();
     assert!(!message.is_empty());
 }

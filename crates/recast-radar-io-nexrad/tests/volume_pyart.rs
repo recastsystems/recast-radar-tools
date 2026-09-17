@@ -138,7 +138,11 @@ fn check_volume(name: &str, volume: &Volume, golden: &Value) {
 
     let scans = golden["scans"].as_array().unwrap();
     for sweep in &volume.sweeps {
-        let number = u64::from(sweep.elevation_number.expect("message 31 sweeps are numbered"));
+        let number = u64::from(
+            sweep
+                .elevation_number
+                .expect("message 31 sweeps are numbered"),
+        );
         assert!(
             (1..=scans.len() as u64).contains(&number),
             "{name}: sweep with elevation number {number}, Py-ART has {} scans",

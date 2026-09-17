@@ -1,5 +1,3 @@
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -8,8 +6,8 @@ use recast_radar_render::{
     ViewportFieldCache, ViewportRasterOptions, ViewportSampleCache, viewport_rgba_buffer_len,
 };
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 const DEFAULT_VIEWPORT_WIDTH: u32 = 1500;
 const DEFAULT_VIEWPORT_HEIGHT: u32 = 950;
@@ -44,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let read = read_start.elapsed();
 
         let decode_start = Instant::now();
-        let volume = legacy_bridge::read_volume_bytes(&raw)?;
+        let volume = support::read_volume_bytes(&raw)?;
         let decode = decode_start.elapsed();
 
         let (cut, name) = first_sweep_with(&volume, Quantity::Reflectivity)

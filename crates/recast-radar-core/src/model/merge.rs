@@ -34,8 +34,7 @@ pub enum MergeError {
 
 /// Merge per-product / per-sweep partial volumes of one scan into one volume.
 ///
-/// The FM301 counterpart of the legacy `merge_radar_volumes`, with the same
-/// semantics:
+/// Semantics:
 /// - All parts share `attrs.instrument_name`; the first part supplies every
 ///   volume-level item.
 /// - `time_reference` becomes the earliest part's; ray times of the other parts

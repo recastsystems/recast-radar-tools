@@ -5,15 +5,13 @@
 // `field` is an FM301 name (DBZH, VRADH, ZDR, ...) or a NEXRAD block name
 // (REF, VEL, SW, ...); the default is DBZH.
 
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
 use std::path::{Path, PathBuf};
 
 use recast_radar_core::FieldName;
 use recast_radar_render::{RasterOptions, render_field_png};
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 fn main() {
     let mut args = std::env::args_os().skip(1).map(PathBuf::from);
@@ -54,7 +52,7 @@ fn run(
     sweep_index: usize,
     field: &FieldName,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let volume = legacy_bridge::read_volume(input)?;
+    let volume = support::read_volume(input)?;
     render_field_png(
         &volume,
         sweep_index,

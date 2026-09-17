@@ -1,13 +1,13 @@
 //! The format router surfaces every decoder's resource-limit error unchanged
 //! (crate docs, `# Limits`). Each case mutates committed real bytes to claim
 //! more than a documented cap and routes them through
-//! `decode_supported_volume_bytes`.
+//! `read_supported_volume_bytes`.
 
 use std::io::Write;
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use recast_radar_io::{IoError, decode_supported_volume_bytes};
+use recast_radar_io::{IoError, read_supported_volume_bytes};
 use recast_radar_io_cfradial::CfRadialError;
 use recast_radar_io_dorade::DoradeError;
 use recast_radar_io_jma::JmaError;
@@ -34,7 +34,7 @@ fn odim_claiming_too_many_messages() -> Vec<u8> {
     bytes
 }
 
-fn assert_limit(result: Result<recast_radar_core::RadarVolume, IoError>, what: &str) {
+fn assert_limit(result: Result<recast_radar_core::Volume, IoError>, what: &str) {
     let error = match result {
         Err(error) => error,
         Ok(_) => panic!("{what}: mutated input decoded"),
@@ -70,20 +70,17 @@ fn level2_gate_limit_error_is_routed() {
     assert_eq!(&bytes[body + pointer..body + pointer + 4], b"DREF");
     let gate_count = body + pointer + 8;
     bytes[gate_count..gate_count + 2].copy_from_slice(&u16::MAX.to_be_bytes());
-    assert_limit(
-        decode_supported_volume_bytes(&bytes),
-        "Level II 65,535 gates",
-    );
+    assert_limit(read_supported_volume_bytes(&bytes), "Level II 65,535 gates");
 }
 
 #[test]
 fn odim_header_limit_error_is_routed_plain_and_gzip_wrapped() {
     let bytes = odim_claiming_too_many_messages();
-    assert_limit(decode_supported_volume_bytes(&bytes), "ODIM root header");
+    assert_limit(read_supported_volume_bytes(&bytes), "ODIM root header");
     let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
     encoder.write_all(&bytes).expect("gzip in memory");
     let gzipped = encoder.finish().expect("gzip in memory");
-    assert_limit(decode_supported_volume_bytes(&gzipped), "gzip-wrapped ODIM");
+    assert_limit(read_supported_volume_bytes(&gzipped), "gzip-wrapped ODIM");
 }
 
 #[test]
@@ -94,10 +91,7 @@ fn cfradial_gate_limit_error_is_routed() {
     assert_eq!(&bytes[32..37], b"range");
     assert_eq!(be_u32(&bytes, 40), 1107);
     bytes[40..44].copy_from_slice(&20_000u32.to_be_bytes());
-    assert_limit(
-        decode_supported_volume_bytes(&bytes),
-        "CfRadial 20,000 gates",
-    );
+    assert_limit(read_supported_volume_bytes(&bytes), "CfRadial 20,000 gates");
 }
 
 #[test]
@@ -106,7 +100,7 @@ fn dorade_gate_limit_error_is_routed() {
     // Big-endian COW2 sweep: CSFD descriptor at byte 1944, num_cells[0] at +48.
     assert_eq!(&bytes[1944..1948], b"CSFD");
     bytes[1944 + 48..1944 + 50].copy_from_slice(&i16::MAX.to_be_bytes());
-    assert_limit(decode_supported_volume_bytes(&bytes), "DORADE 32,767 cells");
+    assert_limit(read_supported_volume_bytes(&bytes), "DORADE 32,767 cells");
 }
 
 #[test]
@@ -114,8 +108,5 @@ fn jma_member_limit_error_is_routed() {
     let mut bytes = read_testdata("jma-n5-20191012-090000-rs47773");
     // ustar size field of the first member: 32 MiB + 1 byte, octal.
     bytes[124..136].copy_from_slice(b"00200000001\0");
-    assert_limit(
-        decode_supported_volume_bytes(&bytes),
-        "JMA 32 MiB + 1 member",
-    );
+    assert_limit(read_supported_volume_bytes(&bytes), "JMA 32 MiB + 1 member");
 }

@@ -1,9 +1,0 @@
-[package]
-name = "render_t"
-version = "0.1.0"
-edition.workspace = true
-[dependencies]
-core_t = { path = "../core" }
-algo_t = { path = "../algo" }
-[lints]
-workspace = true

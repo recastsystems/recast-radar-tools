@@ -9,16 +9,15 @@
 
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::PathBuf;
 
 use recast_radar_core::{Quantity, Volume};
 use recast_radar_render::{RasterOptions, render_field_png};
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
-use legacy_bridge::swath::{SwathAggregation, base_tilt_sweep, max_value_swath};
+#[path = "support/mod.rs"]
+mod support;
+use support::swath::{SwathAggregation, base_tilt_sweep, max_value_swath};
 
 fn main() {
     let mut args = std::env::args_os().skip(1);
@@ -36,7 +35,7 @@ fn main() {
 
     let mut volumes = Vec::new();
     for path in &paths {
-        match legacy_bridge::Decoded::from_path(path) {
+        match support::Decoded::from_path(path) {
             Ok(decoded) => {
                 println!(
                     "decoded {} -> {} sweeps, {} @ {}",
@@ -55,7 +54,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let refs: Vec<&legacy_bridge::Decoded> = volumes.iter().collect();
+    let refs: Vec<&support::Decoded> = volumes.iter().collect();
     let options = RasterOptions {
         width: 1200,
         height: 1200,

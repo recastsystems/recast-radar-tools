@@ -6,11 +6,9 @@
 //! gate geometry. Outputs are new physical (`F32`) fields.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 mod gate_filter;
 mod interpolate;
-pub mod legacy_api;
 mod smooth;
 
 pub use gate_filter::apply_reflectivity_gate_filter;
@@ -20,11 +18,6 @@ pub use interpolate::{
     UpsampledSweep, upsample_factors, upsample_field,
 };
 pub use smooth::smooth_field;
-
-// Legacy signatures, kept until the FM301 shim is removed
-// (docs/design/fm301-model.md section 13.3).
-#[allow(deprecated)]
-pub use legacy_api::*;
 
 use recast_radar_core::{Field, FieldAttrs, FieldData, FloatCoding};
 

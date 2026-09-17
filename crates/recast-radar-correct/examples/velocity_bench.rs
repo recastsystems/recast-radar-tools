@@ -1,6 +1,5 @@
 // Time dealias_velocity on every velocity sweep of a volume.
 // usage: cargo run --release -p recast-radar-correct --example velocity_bench -- <l2-file>
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -8,26 +7,13 @@ use std::time::Instant;
 use recast_radar_core::Quantity;
 use recast_radar_correct::dealias_velocity;
 
-/// Level II decoding through the un-migrated `recast-radar-io-nexrad`,
-/// bridged to the FM301 model (design note 13.3) until `fm301-io` lands.
-#[allow(deprecated)]
-mod legacy_bridge {
-    use recast_radar_core::Volume;
-    use std::path::Path;
-
-    pub fn decode_level2(path: &Path) -> Result<Volume, Box<dyn std::error::Error>> {
-        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path)?;
-        Ok(recast_radar_core::legacy::volume_from_legacy(legacy)?.0)
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = PathBuf::from(
         std::env::args_os()
             .nth(1)
             .ok_or("usage: velocity_bench <l2-file>")?,
     );
-    let volume = legacy_bridge::decode_level2(&input)?;
+    let volume = recast_radar_io_nexrad::read_volume_from_path(&input)?;
 
     let mut total = std::time::Duration::ZERO;
     let mut total_gates = 0usize;

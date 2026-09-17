@@ -5,8 +5,7 @@
 //! several radars in one archive (e.g. a Goodland deployment zip carries
 //! `DORADE/DOW7/...` next to `DORADE/COW2/...`). This module discovers radar
 //! members, groups DORADE sweeps into volume scans, and decodes everything
-//! into FM301 [`recast_radar_core::model::Volume`]s (the pre-FM301
-//! signatures live in [`crate::legacy_api`] during the migration).
+//! into FM301 [`recast_radar_core::model::Volume`]s.
 //!
 //! Lift-and-improve of `gurt-rs/src/archive.rs`. Divergences:
 //! - **Volume grouping**: the reference treated every archive member as its
@@ -50,11 +49,6 @@ use zip::ZipArchive;
 use crate::dorade::{
     DoradeVolumeBuilder, looks_like_dorade_bytes, looks_like_dorade_name, peek_dorade_sweep,
 };
-#[allow(deprecated)]
-pub use crate::legacy_api::{
-    MobileRadarVolume, decode_dorade_volume_for_path, decode_mobile_archive_from_path,
-    decode_mobile_dir_from_path,
-};
 use crate::{DoradeError, Result};
 
 const ZIP_MAGIC: &[u8; 4] = b"PK\x03\x04";
@@ -91,8 +85,7 @@ pub struct MobileVolume<V = Volume> {
     pub member_count: usize,
 }
 
-/// A volume type the archive ingest can build: the FM301 [`Volume`], or the
-/// legacy model through [`crate::legacy_api`].
+/// A volume type the archive ingest can build (the FM301 [`Volume`]).
 pub trait MobileDecode: Sized + Send {
     /// Decode one DORADE volume run from its sweepfile bytes, in order.
     fn decode_dorade_run(sweeps: &[&[u8]]) -> Result<Self>;

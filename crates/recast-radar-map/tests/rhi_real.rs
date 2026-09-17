@@ -8,37 +8,20 @@
 //! (open-radar-data, MIT; netCDF-4 -> classic container conversion,
 //! 3 of 8 fields kept).
 //!
-//! The decoder is still the legacy one, bridged to the FM301 model with
-//! `recast_radar_core::legacy::volume_from_legacy` (design note 13.3) until
-//! `fm301-io` lands; the bridge places CfRadial gate centres at the file's
-//! `range` values, half a gate past the legacy decoder's start-of-gate
-//! reading (design note 6.6), so the expected extents come from the sweep's
-//! own range coordinate.
+//! The decoder places CfRadial gate centres at the file's `range` values
+//! (design note 6.6), so the expected extents come from the sweep's own
+//! range coordinate.
 
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
-use recast_radar_core::{Quantity, SweepMode, Volume};
+use recast_radar_core::{Quantity, SweepMode};
 
 const DOW8_RHI: &[u8] = include_bytes!(
     "../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc"
 );
 
-#[allow(deprecated)]
-mod legacy_bridge {
-    use super::Volume;
-
-    pub fn decode_cfradial(bytes: &[u8]) -> Result<Volume, String> {
-        let legacy = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(bytes)
-            .map_err(|e| e.to_string())?;
-        recast_radar_core::legacy::volume_from_legacy(legacy)
-            .map(|(volume, _residue)| volume)
-            .map_err(|e| e.to_string())
-    }
-}
-
 #[test]
 fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
-    let volume = legacy_bridge::decode_cfradial(DOW8_RHI).expect("decode DOW8 RHI");
+    let volume = recast_radar_io_cfradial::cfradial::read_cfradial1_volume(DOW8_RHI)
+        .expect("decode DOW8 RHI");
     let sweep = &volume.sweeps[0];
     // The app's panel gate: the declared sweep mode wins.
     assert_eq!(sweep.sweep_mode, SweepMode::Rhi);
@@ -54,7 +37,9 @@ fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
     let field = sweep.find(Quantity::Reflectivity).expect("reflectivity");
     let (first_m, spacing_m) = field.native_geometry(&sweep.range).expect("geometry");
     assert_eq!(field.ngates, 950);
-    assert_eq!(spacing_m, 125.0);
+    // The file's `range` spacing is 124.913 m (the legacy decoder rounded it
+    // to whole metres).
+    assert!((spacing_m - 124.913).abs() < 1e-3, "spacing {spacing_m}");
 
     // Coverage extents: 950 gates x 125 m of slant range past the first
     // centre, top beam at 70 deg elevation -> ~112 km of height, lowest

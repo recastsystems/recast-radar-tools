@@ -3,7 +3,7 @@
 //! mutation starts from the committed RMI Belgium Jabbeke PVOL bytes.
 
 use recast_radar_core::bounded_read::MAX_GATES_PER_RADIAL;
-use recast_radar_io_odim::{OdimError, decode_odim_h5_volume};
+use recast_radar_io_odim::{OdimError, read_odim_h5_volume};
 
 /// Superblock v0 with 8-byte offsets: the root group symbol-table entry
 /// starts after the 24 fixed bytes and four addresses; its object header
@@ -49,7 +49,7 @@ fn set_plane_dims(bytes: &mut [u8], rays: u64, bins: u64) {
     }
 }
 
-fn assert_limit_error(result: Result<recast_radar_core::RadarVolume, OdimError>, what: &str) {
+fn assert_limit_error(result: Result<recast_radar_core::Volume, OdimError>, what: &str) {
     match result {
         Err(OdimError::LimitExceeded(reason)) => {
             assert!(reason.contains("limit"), "{what}: {reason}");
@@ -61,8 +61,8 @@ fn assert_limit_error(result: Result<recast_radar_core::RadarVolume, OdimError>,
 
 #[test]
 fn unmodified_real_volume_decodes_within_limits() {
-    let volume = decode_odim_h5_volume(&bejab()).expect("real bejab decodes");
-    assert_eq!(volume.cuts.len(), 11);
+    let volume = read_odim_h5_volume(&bejab()).expect("real bejab decodes");
+    assert_eq!(volume.sweeps.len(), 11);
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn root_object_header_claiming_too_many_messages_is_rejected() {
     let root = le_u64(&bytes, ROOT_ENTRY + 8) as usize;
     assert_eq!(bytes[root], 1, "version-1 root object header");
     bytes[root + 2..root + 4].copy_from_slice(&5000u16.to_le_bytes());
-    assert_limit_error(decode_odim_h5_volume(&bytes), "5,000 header messages");
+    assert_limit_error(read_odim_h5_volume(&bytes), "5,000 header messages");
 }
 
 #[test]
@@ -79,14 +79,14 @@ fn root_object_header_claiming_a_huge_message_block_is_rejected() {
     let mut bytes = bejab();
     let root = le_u64(&bytes, ROOT_ENTRY + 8) as usize;
     bytes[root + 8..root + 12].copy_from_slice(&u32::MAX.to_le_bytes());
-    assert_limit_error(decode_odim_h5_volume(&bytes), "4 GiB header block");
+    assert_limit_error(read_odim_h5_volume(&bytes), "4 GiB header block");
 }
 
 #[test]
 fn dataspace_dimension_beyond_the_limit_is_rejected() {
     let mut bytes = bejab();
     set_plane_dims(&mut bytes, 360, u64::MAX / 2);
-    assert_limit_error(decode_odim_h5_volume(&bytes), "absurd bin count");
+    assert_limit_error(read_odim_h5_volume(&bytes), "absurd bin count");
 }
 
 #[test]
@@ -94,14 +94,14 @@ fn dataset_claiming_more_bytes_than_the_limit_is_rejected() {
     let mut bytes = bejab();
     // Each dimension is individually plausible; the product (36 GiB) is not.
     set_plane_dims(&mut bytes, 360, 100_000_000);
-    assert_limit_error(decode_odim_h5_volume(&bytes), "36 GiB data plane");
+    assert_limit_error(read_odim_h5_volume(&bytes), "36 GiB data plane");
 }
 
 #[test]
 fn sweep_claiming_more_bins_than_the_gate_limit_is_rejected() {
     let mut bytes = bejab();
     set_plane_dims(&mut bytes, 360, (MAX_GATES_PER_RADIAL + 1) as u64);
-    assert_limit_error(decode_odim_h5_volume(&bytes), "16,385 bins per ray");
+    assert_limit_error(read_odim_h5_volume(&bytes), "16,385 bins per ray");
 }
 
 #[test]
@@ -110,5 +110,5 @@ fn sweep_claiming_more_rays_than_the_output_budget_is_rejected() {
     // 30 MiB of (mostly unwritten, zero-filled) plane data is within the
     // per-dataset cap, but 30 million radials exceed the volume budget.
     set_plane_dims(&mut bytes, 30_000_000, 1);
-    assert_limit_error(decode_odim_h5_volume(&bytes), "30 million rays");
+    assert_limit_error(read_odim_h5_volume(&bytes), "30 million rays");
 }

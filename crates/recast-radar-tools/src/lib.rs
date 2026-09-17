@@ -33,8 +33,6 @@
 //! exception: `io` also enables `level3`, so that `io` means every format
 //! decoder, although the router does not read Level III products.
 
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
 pub use recast_radar_core as core;
 
 #[cfg(feature = "io")]

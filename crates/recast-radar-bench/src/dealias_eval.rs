@@ -34,11 +34,13 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
-use recast_radar_core::{ElevationCut, MomentGrid, MomentStorage, MomentType, RadarVolume};
+use recast_radar_core::{
+    Field, FieldData, FieldName, FloatCoding, GateMapping, Quantity, Sweep, Volume,
+};
 use recast_radar_correct::{
-    EnvWindLevel, EnvironmentalWindProfile, TemporalPrior, dealias_velocity_grid,
-    dealias_velocity_grid_pyart_region, dealias_volume_v4, fit_range_band_reference,
-    project_environmental_winds,
+    EnvWindLevel, EnvironmentalWindProfile, TemporalPrior, dealias_velocity,
+    dealias_velocity_pyart_region, dealias_volume, project_environmental_winds_onto,
+    range_band_reference,
 };
 
 pub const DEALIAS_USAGE: &str = "usage: recast-radar-bench --dealias --target <vol> [options]
@@ -255,7 +257,7 @@ fn load_env_fixture(path: &PathBuf) -> Result<(EnvironmentalWindProfile, String,
 
 // ---- decoded per-tilt field ----
 
-struct Field {
+struct Plane {
     rows: usize,
     gates: usize,
     wraps: bool,
@@ -265,26 +267,29 @@ struct Field {
     nyq: Vec<f32>,
 }
 
-fn decode_field(cut: &ElevationCut, grid: &MomentGrid) -> Field {
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
+/// Centre of native gate 0 and native gate spacing of `field` on `sweep`,
+/// in metres.
+fn geometry(sweep: &Sweep, field: &Field) -> (f64, f64) {
+    field.native_geometry(&sweep.range).unwrap_or((0.0, 1.0))
+}
+
+fn decode_field(sweep: &Sweep, field: &Field) -> Plane {
+    let (rows, gates) = field.shape();
     let mut values = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         for gate in 0..gates {
-            if let Some(value) = grid
-                .scaled_value(row, gate)
-                .filter(|value| value.is_finite())
-            {
+            if let Some(value) = field.value(row, gate).filter(|value| value.is_finite()) {
                 values[row * gates + gate] = value;
             }
         }
     }
     let mut per_row: Vec<f32> = (0..rows)
         .map(|row| {
-            grid.radial_indices
-                .get(row)
-                .and_then(|&radial| cut.radials.get(radial))
-                .and_then(|radial| radial.nyquist_velocity_mps)
+            sweep
+                .ray_vars
+                .nyquist_velocity_mps
+                .as_ref()
+                .and_then(|values| values.get(row).copied())
                 .filter(|nyquist| nyquist.is_finite() && *nyquist > 0.0)
                 .unwrap_or(f32::NAN)
         })
@@ -302,15 +307,16 @@ fn decode_field(cut: &ElevationCut, grid: &MomentGrid) -> Field {
     }
     let azimuths: Vec<f32> = (0..rows)
         .map(|row| {
-            grid.radial_indices
+            sweep
+                .rays
+                .azimuth_deg
                 .get(row)
-                .and_then(|&radial| cut.radials.get(radial))
-                .map(|radial| radial.azimuth_deg.rem_euclid(360.0))
+                .map(|azimuth| azimuth.rem_euclid(360.0))
                 .unwrap_or(f32::NAN)
         })
         .collect();
     let wraps = sweep_wraps(&azimuths);
-    Field {
+    Plane {
         rows,
         gates,
         wraps,
@@ -340,7 +346,7 @@ fn sweep_wraps(azimuths: &[f32]) -> bool {
 
 // ---- metrics ----
 
-fn boundary_pairs(field: &Field) -> usize {
+fn boundary_pairs(field: &Plane) -> usize {
     let mut boundaries = 0;
     let (rows, gates) = (field.rows, field.gates);
     let mut check = |a: usize, b: usize| {
@@ -372,7 +378,7 @@ fn boundary_pairs(field: &Field) -> usize {
     boundaries
 }
 
-fn rms_against(field: &Field, reference: &[f32]) -> Option<f64> {
+fn rms_against(field: &Plane, reference: &[f32]) -> Option<f64> {
     let mut sum = 0.0f64;
     let mut count = 0u64;
     for (value, predicted) in field.values.iter().zip(reference) {
@@ -385,16 +391,12 @@ fn rms_against(field: &Field, reference: &[f32]) -> Option<f64> {
     (count > 0).then(|| (sum / count as f64).sqrt())
 }
 
-fn harmonic_rms(cut: &ElevationCut, grid: &MomentGrid, field: &Field) -> Option<f64> {
-    let fit = fit_range_band_reference(cut, grid);
+fn harmonic_rms(sweep: &Sweep, source: &Field, field: &Plane) -> Option<f64> {
+    let fit = range_band_reference(sweep, source);
     let mut sum = 0.0f64;
     let mut count = 0u64;
     for row in 0..field.rows {
-        let azimuth = grid
-            .radial_indices
-            .get(row)
-            .and_then(|&radial| cut.radials.get(radial))
-            .map(|radial| radial.azimuth_deg)?;
+        let azimuth = sweep.rays.azimuth_deg.get(row).copied()?;
         let (sin_az, cos_az) = azimuth.to_radians().sin_cos();
         for gate in 0..field.gates {
             let value = field.values[row * field.gates + gate];
@@ -413,7 +415,7 @@ fn harmonic_rms(cut: &ElevationCut, grid: &MomentGrid, field: &Field) -> Option<
     (count > 0).then(|| (sum / count as f64).sqrt())
 }
 
-fn percent_modified(output: &Field, raw: &Field) -> f64 {
+fn percent_modified(output: &Plane, raw: &Plane) -> f64 {
     let mut modified = 0u64;
     let mut finite = 0u64;
     for idx in 0..output.values.len().min(raw.values.len()) {
@@ -436,7 +438,7 @@ fn percent_modified(output: &Field, raw: &Field) -> f64 {
 
 /// Isolated specks: 4-connected components (≤ 3 gates) of gates more than a
 /// Nyquist off their finite 8-neighborhood median.
-fn speck_count(field: &Field) -> usize {
+fn speck_count(field: &Plane) -> usize {
     let (rows, gates) = (field.rows, field.gates);
     let total = rows * gates;
     let mut flagged = vec![false; total];
@@ -528,9 +530,9 @@ fn speck_count(field: &Field) -> usize {
 
 /// Strongest azimuthal gate-to-gate ΔV in the 15–40 km annulus (Case B
 /// couplet-preservation check: repair must not smooth the mesocyclone).
-fn couplet_max_delta(grid: &MomentGrid, field: &Field) -> Option<f64> {
-    let first = grid.gate_range.first_gate_m as f64;
-    let spacing = f64::from(grid.gate_range.gate_spacing_m.max(1));
+fn couplet_max_delta(sweep: &Sweep, source: &Field, field: &Plane) -> Option<f64> {
+    let (first, spacing) = geometry(sweep, source);
+    let spacing = spacing.max(1.0);
     let gate_lo = (((15_000.0 - first) / spacing).ceil().max(0.0)) as usize;
     let gate_hi = ((40_000.0 - first) / spacing).floor() as usize;
     let mut strongest: Option<f64> = None;
@@ -558,7 +560,7 @@ fn couplet_max_delta(grid: &MomentGrid, field: &Field) -> Option<f64> {
 
 /// Max inbound (most negative) velocity on the tilt (Case C: the eyewall
 /// must not be under-unfolded).
-fn max_inbound(field: &Field) -> Option<f32> {
+fn max_inbound(field: &Plane) -> Option<f32> {
     field
         .values
         .iter()
@@ -570,7 +572,7 @@ fn max_inbound(field: &Field) -> Option<f32> {
 /// Multi-fold structure (Case C): gates moved by |fold| ≥ 2 (|out − raw| >
 /// 3·N) must form coherent regions, not speckle.  Returns (gate count,
 /// number of 4-connected components smaller than 32 gates).
-fn multifold_structure(output: &Field, raw: &Field) -> (usize, usize) {
+fn multifold_structure(output: &Plane, raw: &Plane) -> (usize, usize) {
     let (rows, gates) = (output.rows, output.gates);
     let total = rows * gates;
     let mut flagged = vec![false; total];
@@ -634,24 +636,19 @@ fn multifold_structure(output: &Field, raw: &Field) -> (usize, usize) {
 }
 
 /// 5×5-gate mean around the nearest (azimuth, range) gate.
-fn probe_mean(cut: &ElevationCut, grid: &MomentGrid, field: &Field, probe: &Probe) -> Option<f32> {
+fn probe_mean(sweep: &Sweep, source: &Field, field: &Plane, probe: &Probe) -> Option<f32> {
     let target_azimuth = probe.azimuth_deg.rem_euclid(360.0);
     let row = (0..field.rows)
         .filter_map(|row| {
-            let azimuth = grid
-                .radial_indices
-                .get(row)
-                .and_then(|&radial| cut.radials.get(radial))
-                .map(|radial| radial.azimuth_deg.rem_euclid(360.0))?;
+            let azimuth = sweep.rays.azimuth_deg.get(row)?.rem_euclid(360.0);
             let distance = ((azimuth - target_azimuth + 180.0).rem_euclid(360.0) - 180.0).abs();
             Some((row, distance))
         })
         .min_by(|left, right| left.1.total_cmp(&right.1))?
         .0;
     let range_m = probe.range_km * 1000.0;
-    let gate = ((range_m - grid.gate_range.first_gate_m as f32)
-        / grid.gate_range.gate_spacing_m.max(1) as f32)
-        .round();
+    let (first, spacing) = geometry(sweep, source);
+    let gate = ((range_m - first as f32) / spacing.max(1.0) as f32).round();
     if gate < 0.0 || gate >= field.gates as f32 {
         return None;
     }
@@ -682,17 +679,11 @@ fn probe_mean(cut: &ElevationCut, grid: &MomentGrid, field: &Field, probe: &Prob
 
 // ---- field dumps (external metric-parity validation) ----
 
-/// Raw per-row azimuths (`radial.azimuth_deg`, no wrapping) — the exact
+/// Raw per-row azimuths (`rays.azimuth_deg`, no wrapping) — the exact
 /// accessor the harmonic fit and env projection read.
-fn row_azimuths(cut: &ElevationCut, grid: &MomentGrid) -> Vec<f32> {
-    (0..grid.radial_count())
-        .map(|row| {
-            grid.radial_indices
-                .get(row)
-                .and_then(|&radial| cut.radials.get(radial))
-                .map(|radial| radial.azimuth_deg)
-                .unwrap_or(f32::NAN)
-        })
+fn row_azimuths(sweep: &Sweep, field: &Field) -> Vec<f32> {
+    (0..field.nrays as usize)
+        .map(|row| sweep.rays.azimuth_deg.get(row).copied().unwrap_or(f32::NAN))
         .collect()
 }
 
@@ -712,11 +703,12 @@ fn dump_field(
     dir: &Path,
     label: &str,
     cut_index: usize,
-    cut: &ElevationCut,
-    grid: &MomentGrid,
-    field: &Field,
+    sweep: &Sweep,
+    source: &Field,
+    field: &Plane,
     lowest: bool,
 ) -> Result<(), String> {
+    let (first_gate_m, gate_spacing_m) = geometry(sweep, source);
     let stem = format!("{label}_cut{cut_index:02}");
     write_field_bin(&dir.join(format!("{stem}.bin")), &field.values)?;
     let finite_or_null = |value: f32| {
@@ -729,15 +721,15 @@ fn dump_field(
     let meta = serde_json::json!({
         "label": label,
         "cut_index": cut_index,
-        "elevation_deg": cut.elevation_deg,
+        "elevation_deg": sweep.fixed_angle_deg,
         "rows": field.rows,
         "gates": field.gates,
         "wraps": field.wraps,
-        "first_gate_m": grid.gate_range.first_gate_m,
-        "gate_spacing_m": grid.gate_range.gate_spacing_m,
+        "first_gate_m": first_gate_m,
+        "gate_spacing_m": gate_spacing_m,
         "lowest": lowest,
         "nyquist_mps": field.nyq.iter().copied().map(finite_or_null).collect::<Vec<_>>(),
-        "azimuth_deg": row_azimuths(cut, grid)
+        "azimuth_deg": row_azimuths(sweep, source)
             .iter()
             .copied()
             .map(finite_or_null)
@@ -753,29 +745,37 @@ fn dump_field(
 
 // ---- engine drivers ----
 
-fn velocity_cuts(volume: &RadarVolume) -> Vec<usize> {
-    (0..volume.cuts.len())
+/// The radial velocity field of a sweep.
+fn velocity_field(sweep: &Sweep) -> &Field {
+    sweep
+        .find(Quantity::RadialVelocity)
+        .expect("velocity sweep")
+}
+
+fn velocity_cuts(volume: &Volume) -> Vec<usize> {
+    (0..volume.sweeps.len())
         .filter(|&index| {
-            volume.cuts[index]
-                .moments
-                .get(&MomentType::Velocity)
-                .is_some_and(|grid| grid.radial_count() > 0 && grid.gate_range.gate_count > 0)
+            volume.sweeps[index]
+                .find(Quantity::RadialVelocity)
+                .is_some_and(|field| {
+                    field.nrays as usize > field.absent_rows.len() && field.ngates > 0
+                })
         })
         .collect()
 }
 
-fn lowest_velocity_cut(volume: &RadarVolume) -> Option<usize> {
+fn lowest_velocity_cut(volume: &Volume) -> Option<usize> {
     velocity_cuts(volume).into_iter().min_by(|&a, &b| {
-        volume.cuts[a]
-            .elevation_deg
-            .total_cmp(&volume.cuts[b].elevation_deg)
+        volume.sweeps[a]
+            .fixed_angle_deg
+            .total_cmp(&volume.sweeps[b].fixed_angle_deg)
             .then_with(|| a.cmp(&b))
     })
 }
 
 struct EngineRun {
-    /// Output grid per velocity cut (aligned with `velocity_cuts`).
-    grids: Vec<Option<MomentGrid>>,
+    /// Output field per velocity cut (aligned with `velocity_cuts`).
+    grids: Vec<Option<Field>>,
     volume_ms: f64,
     worst_tilt_ms: f64,
     /// True when `worst_tilt_ms` is amortized (single volume solve).
@@ -785,7 +785,7 @@ struct EngineRun {
 
 fn run_engine(
     engine: Engine,
-    volume: &RadarVolume,
+    volume: &Volume,
     priors: &PriorSolutions,
     environment: Option<&EnvironmentalWindProfile>,
 ) -> EngineRun {
@@ -800,7 +800,7 @@ fn run_engine(
                 (None, priors.without_env.as_ref())
             };
             let started = Instant::now();
-            let solution = dealias_volume_v4(
+            let solution = dealias_volume(
                 volume,
                 prior_solution.map(TemporalPrior::Solution),
                 environment,
@@ -808,7 +808,7 @@ fn run_engine(
             let volume_ms = started.elapsed().as_secs_f64() * 1000.0;
             let grids = cuts
                 .iter()
-                .map(|&cut| solution.tilt_grid(cut).cloned())
+                .map(|&cut| solution.tilt_field(cut).cloned())
                 .collect();
             EngineRun {
                 grids,
@@ -824,13 +824,13 @@ fn run_engine(
             let mut worst_tilt_ms = 0.0f64;
             let mut worst_is_superres = false;
             for &cut_index in &cuts {
-                let cut = &volume.cuts[cut_index];
-                let grid = cut.moments.get(&MomentType::Velocity).expect("velocity");
+                let sweep = &volume.sweeps[cut_index];
+                let source = velocity_field(sweep);
                 let started = Instant::now();
-                let output = Some(dealias_velocity_grid(cut, grid));
+                let output = Some(dealias_velocity(sweep, source));
                 let elapsed = started.elapsed().as_secs_f64() * 1000.0;
                 volume_ms += elapsed;
-                let superres = grid.radial_count() >= 600;
+                let superres = source.nrays >= 600;
                 // Prefer the worst SUPER-RES tilt; fall back to any tilt.
                 if (superres && (!worst_is_superres || elapsed > worst_tilt_ms))
                     || (!worst_is_superres && elapsed > worst_tilt_ms)
@@ -854,13 +854,13 @@ fn run_engine(
             let mut worst_tilt_ms = 0.0f64;
             let mut worst_is_superres = false;
             for &cut_index in &cuts {
-                let cut = &volume.cuts[cut_index];
-                let grid = cut.moments.get(&MomentType::Velocity).expect("velocity");
+                let sweep = &volume.sweeps[cut_index];
+                let source = velocity_field(sweep);
                 let started = Instant::now();
-                let output = Some(dealias_velocity_grid_pyart_region(cut, grid));
+                let output = Some(dealias_velocity_pyart_region(sweep, source));
                 let elapsed = started.elapsed().as_secs_f64() * 1000.0;
                 volume_ms += elapsed;
-                let superres = grid.radial_count() >= 600;
+                let superres = source.nrays >= 600;
                 // Prefer the worst SUPER-RES tilt; fall back to any tilt.
                 if (superres && (!worst_is_superres || elapsed > worst_tilt_ms))
                     || (!worst_is_superres && elapsed > worst_tilt_ms)
@@ -912,7 +912,7 @@ struct PriorSolutions {
 #[allow(clippy::too_many_arguments)]
 fn evaluate_engine(
     engine: Engine,
-    volume: &RadarVolume,
+    volume: &Volume,
     priors: &PriorSolutions,
     environment: Option<&EnvironmentalWindProfile>,
     probes: &[Probe],
@@ -942,7 +942,7 @@ fn evaluate_engine(
             .iter()
             .zip(&second.grids)
             .all(|(left, right)| match (left, right) {
-                (Some(left), Some(right)) => left.storage == right.storage,
+                (Some(left), Some(right)) => left.data == right.data,
                 (None, None) => true,
                 _ => false,
             });
@@ -979,30 +979,30 @@ fn evaluate_engine(
         let Some(grid) = timed.grids[slot].as_ref() else {
             continue;
         };
-        let cut = &volume.cuts[cut_index];
-        let field = decode_field(cut, grid);
+        let sweep = &volume.sweeps[cut_index];
+        let field = decode_field(sweep, grid);
         let boundaries = boundary_pairs(&field);
         report.boundaries_volume += boundaries;
         if Some(cut_index) == lowest {
             report.boundaries_lowest = boundaries;
             report.specks_lowest = speck_count(&field);
-            let raw_grid = cut.moments.get(&MomentType::Velocity).expect("velocity");
-            let raw = decode_field(cut, raw_grid);
+            let raw_grid = velocity_field(sweep);
+            let raw = decode_field(sweep, raw_grid);
             report.percent_modified = percent_modified(&field, &raw);
-            report.couplet_max_dv = couplet_max_delta(grid, &field);
+            report.couplet_max_dv = couplet_max_delta(sweep, grid, &field);
             report.max_inbound = max_inbound(&field);
             let (multifold_gates, multifold_speckle) = multifold_structure(&field, &raw);
             report.multifold_gates = multifold_gates;
             report.multifold_speckle = multifold_speckle;
             if let Some(profile) = environment {
-                let projected = project_environmental_winds(profile, cut, raw_grid);
+                let projected = project_environmental_winds_onto(profile, sweep, raw_grid);
                 report.rms_env = rms_against(&field, &projected);
             }
-            report.rms_harmonic = harmonic_rms(cut, grid, &field);
+            report.rms_harmonic = harmonic_rms(sweep, grid, &field);
             for probe in probes {
                 report
                     .probes
-                    .push((probe.label.clone(), probe_mean(cut, grid, &field, probe)));
+                    .push((probe.label.clone(), probe_mean(sweep, grid, &field, probe)));
             }
             if let Some(truth) = truth_lowest {
                 let mut correct = 0u64;
@@ -1027,27 +1027,13 @@ fn evaluate_engine(
 
 /// Build the synthetic low-Nyquist cold-start volume: the lowest velocity
 /// tilt's `truth` re-wrapped into ±nyquist, single tilt, no priors.
-fn build_rewrapped_volume(
-    volume: &RadarVolume,
-    lowest: usize,
-    truth: &[f32],
-    nyquist: f32,
-) -> RadarVolume {
-    let source_cut = &volume.cuts[lowest];
-    let source_grid = source_cut
-        .moments
-        .get(&MomentType::Velocity)
-        .expect("velocity");
-    let mut cut = ElevationCut::new(source_cut.elevation_deg, source_cut.elevation_number);
-    cut.radials = source_cut
-        .radials
-        .iter()
-        .map(|radial| {
-            let mut radial = radial.clone();
-            radial.nyquist_velocity_mps = Some(nyquist);
-            radial
-        })
-        .collect();
+fn build_rewrapped_volume(volume: &Volume, lowest: usize, truth: &[f32], nyquist: f32) -> Volume {
+    let source_sweep = &volume.sweeps[lowest];
+    let source = velocity_field(source_sweep);
+    let mut sweep = source_sweep.clone();
+    sweep.sweep_number = 0;
+    sweep.fields.clear();
+    sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyquist; sweep.nrays()]);
     let wrapped: Vec<f32> = truth
         .iter()
         .map(|&value| {
@@ -1058,21 +1044,27 @@ fn build_rewrapped_volume(
             }
         })
         .collect();
-    cut.moments.insert(
-        MomentType::Velocity,
-        MomentGrid {
-            moment: MomentType::Velocity,
-            gate_range: source_grid.gate_range.clone(),
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: source_grid.radial_indices.clone(),
-            storage: MomentStorage::F32(wrapped),
+    let mut field = Field::new(
+        FieldName::Vradh,
+        GateMapping {
+            start: source.gates.start,
+            stride: source.gates.stride,
+        },
+        source.ngates,
+        FieldData::F32 {
+            values: wrapped,
+            coding: FloatCoding::default(),
         },
     );
-    let mut synthetic = RadarVolume::new(volume.site.clone(), volume.volume_time);
-    synthetic.cuts = vec![cut];
+    field.nrays = source.nrays;
+    field.absent_rows = source.absent_rows.clone();
+    sweep.add_field(field).expect("one velocity field");
+    let mut synthetic = Volume::new(volume.attrs.instrument_name.clone(), volume.time_reference);
+    synthetic.time_coverage = volume.time_coverage;
+    synthetic.location = volume.location;
+    synthetic.provenance.source_format = volume.provenance.source_format;
+    synthetic.sweeps = vec![sweep];
+    synthetic.seal().expect("rewrapped volume seals");
     synthetic
 }
 
@@ -1089,13 +1081,13 @@ fn format_option_f32(value: Option<f32>) -> String {
 pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
     let raw =
         fs::read(&args.target).map_err(|err| format!("read {}: {err}", args.target.display()))?;
-    let volume = recast_radar_io::decode_supported_volume_bytes(raw.as_slice())
+    let volume = recast_radar_io::read_supported_volume_bytes(raw.as_slice())
         .map_err(|err| err.to_string())?;
     let prior_volume = match &args.prior {
         Some(path) => {
             let bytes = fs::read(path).map_err(|err| format!("read {}: {err}", path.display()))?;
             Some(
-                recast_radar_io::decode_supported_volume_bytes(bytes.as_slice())
+                recast_radar_io::read_supported_volume_bytes(bytes.as_slice())
                     .map_err(|err| err.to_string())?,
             )
         }
@@ -1104,10 +1096,10 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
     let environment = match &args.env {
         Some(path) => {
             let (profile, site, source) = load_env_fixture(path)?;
-            if !site.eq_ignore_ascii_case(&volume.site.id) {
+            if !site.eq_ignore_ascii_case(&volume.attrs.instrument_name) {
                 return Err(format!(
                     "env fixture is for {site}, volume is {}",
-                    volume.site.id
+                    volume.attrs.instrument_name
                 ));
             }
             Some((profile, source))
@@ -1121,26 +1113,26 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
     let priors = PriorSolutions {
         with_env: prior_volume
             .as_ref()
-            .map(|prior| dealias_volume_v4(prior, None, profile)),
+            .map(|prior| dealias_volume(prior, None, profile)),
         without_env: prior_volume
             .as_ref()
-            .map(|prior| dealias_volume_v4(prior, None, None)),
+            .map(|prior| dealias_volume(prior, None, None)),
     };
 
     let lowest = lowest_velocity_cut(&volume).ok_or("volume has no velocity cut")?;
 
     // Case E: replace the working volume with the rewrapped single tilt.
-    let (volume, priors, truth): (RadarVolume, PriorSolutions, Option<Vec<f32>>) =
+    let (volume, priors, truth): (Volume, PriorSolutions, Option<Vec<f32>>) =
         if let Some(nyquist) = args.rewrap {
-            let truth_solution = dealias_volume_v4(
+            let truth_solution = dealias_volume(
                 &volume,
                 priors.with_env.as_ref().map(TemporalPrior::Solution),
                 profile,
             );
             let truth_grid = truth_solution
-                .tilt_grid(lowest)
-                .ok_or("v4 produced no grid for the lowest velocity cut")?;
-            let truth_field = decode_field(&volume.cuts[lowest], truth_grid);
+                .tilt_field(lowest)
+                .ok_or("v4 produced no field for the lowest velocity cut")?;
+            let truth_field = decode_field(&volume.sweeps[lowest], truth_grid);
             let synthetic = build_rewrapped_volume(&volume, lowest, &truth_field.values, nyquist);
             (
                 synthetic,
@@ -1159,14 +1151,14 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
         let cuts = velocity_cuts(&volume);
         let lowest_cut = lowest_velocity_cut(&volume);
         for &cut_index in &cuts {
-            let cut = &volume.cuts[cut_index];
-            let grid = cut.moments.get(&MomentType::Velocity).expect("velocity");
-            let field = decode_field(cut, grid);
+            let sweep = &volume.sweeps[cut_index];
+            let grid = velocity_field(sweep);
+            let field = decode_field(sweep, grid);
             let lowest = Some(cut_index) == lowest_cut;
-            dump_field(dir, "raw", cut_index, cut, grid, &field, lowest)?;
+            dump_field(dir, "raw", cut_index, sweep, grid, &field, lowest)?;
             if lowest {
                 if let Some(profile) = profile {
-                    let projected = project_environmental_winds(profile, cut, grid);
+                    let projected = project_environmental_winds_onto(profile, sweep, grid);
                     write_field_bin(&dir.join(format!("env_cut{cut_index:02}.bin")), &projected)?;
                 }
                 if let Some(truth_values) = &truth {
@@ -1183,13 +1175,13 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
                 let Some(grid) = run.grids[slot].as_ref() else {
                     continue;
                 };
-                let cut = &volume.cuts[cut_index];
-                let field = decode_field(cut, grid);
+                let sweep = &volume.sweeps[cut_index];
+                let field = decode_field(sweep, grid);
                 dump_field(
                     dir,
                     engine.name(),
                     cut_index,
-                    cut,
+                    sweep,
                     grid,
                     &field,
                     Some(cut_index) == lowest_cut,
@@ -1311,10 +1303,13 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
         println!(
             "case {}  site {}  volume {}  lowest vel cut {} ({:.2} deg)",
             args.case,
-            volume.site.id,
-            volume.volume_time.to_rfc3339(),
+            volume.attrs.instrument_name,
+            volume
+                .time_coverage
+                .map_or(volume.time_reference, |coverage| coverage.start)
+                .to_rfc3339(),
             lowest_velocity_cut(&volume).unwrap_or(0),
-            volume.cuts[lowest_velocity_cut(&volume).unwrap_or(0)].elevation_deg,
+            volume.sweeps[lowest_velocity_cut(&volume).unwrap_or(0)].fixed_angle_deg,
         );
         if let Some((_, source)) = &environment {
             println!("env  {source}");
@@ -1334,8 +1329,8 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
 mod tests {
     use super::*;
 
-    fn field(values: Vec<f32>, nyq: f32, rows: usize, gates: usize) -> Field {
-        Field {
+    fn field(values: Vec<f32>, nyq: f32, rows: usize, gates: usize) -> Plane {
+        Plane {
             rows,
             gates,
             wraps: false,

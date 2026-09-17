@@ -1292,8 +1292,7 @@ const PYART_NAMES: &[(&str, Quantity, Polarization)] = &[
 ];
 
 impl Quantity {
-    /// Semantic class of a verbatim source name. Replaces the legacy
-    /// `canonical_moment`. Tries, in order:
+    /// Semantic class of a verbatim source name. Tries, in order:
     ///
     /// 1. `standard_name`: a known name's own standard name when `name` is that
     ///    known name, then FM301 Table 301-9 / xradar and CF / Py-ART standard

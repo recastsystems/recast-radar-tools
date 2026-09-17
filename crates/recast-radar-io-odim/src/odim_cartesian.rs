@@ -1,7 +1,7 @@
 //! ODIM_H5 Cartesian `IMAGE` / `MAX` decoder.
 //!
 //! This is deliberately separate from [`crate::odim`]. Polar `PVOL` and
-//! `SCAN` objects decode into `recast_radar_core::RadarVolume`; a Cartesian maximum
+//! `SCAN` objects decode into `recast_radar_core::Volume`; a Cartesian maximum
 //! product does not contain rays, tilts, or gate geometry and must not be
 //! disguised as one. The returned [`OdimCartesianGrid`] retains the ODIM
 //! projection, grid geometry, source metadata, physical values, and raw

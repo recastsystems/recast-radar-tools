@@ -5,10 +5,6 @@
 //!   (`docs/design/fm301-model.md`).
 //! - [`fm301`]: the FM301 group view over a [`model::Volume`], the conformance
 //!   surface for xradar `DataTree` and CfRadial 2 output.
-//! - [`legacy`]: the pre-FM301 model (`RadarVolume`, `ElevationCut`,
-//!   `MomentGrid`, ...) and exact conversions to and from the FM301 model. Its
-//!   items stay re-exported at their old paths until FM301 migration task F.3
-//!   removes them.
 //! - Beam geometry, refractivity and bounded decompression helpers shared by
 //!   every crate.
 //!
@@ -23,27 +19,14 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod bounded_read;
-mod field_names;
 pub mod fm301;
-pub mod legacy;
 pub mod model;
 mod refractivity;
 
-// Every legacy model name at its old path, so un-migrated code compiles
-// unchanged (docs/design/fm301-model.md section 13.2).
-#[allow(deprecated)]
-pub use field_names::canonical_moment;
-#[allow(deprecated)]
-pub use legacy::{
-    CUT_ELEVATION_MATCH_TOLERANCE_DEG, ElevationCut, GateRange, MergeReport, MomentGrid,
-    MomentGridError, MomentRow, MomentStorage, MomentType, ProductId, RadarSite, RadarVolume,
-    Radial, RadialStatus, RayInstrumentMetadata, RayInstrumentMetadataAlignmentError,
-    ScanLegMetadata, ScanMode, VcpInfo, VolumeMetadata, merge_radar_volumes,
-};
 pub use model::{
     ArrayBuf, AttrValue, ExtraVariable, Field, FieldAttrs, FieldData, FieldName, FloatCoding, Gate,
-    GateMapping, IntCoding, LinearTransform, Polarization, Quantity, RangeCoord, RayVariables,
-    Rays, Scalar, SourceFormat, Sweep, SweepMode, Volume,
+    GateMapping, IntCoding, LinearTransform, MergeError, MergeReport, Polarization, Quantity,
+    RangeCoord, RayVariables, Rays, Scalar, SourceFormat, Sweep, SweepMode, Volume, merge_volumes,
 };
 pub use refractivity::{
     EARTH_DUCTING_GRADIENT_N_PER_KM, PropagationRegime, RefractedBeamError, RefractedBeamPoint,

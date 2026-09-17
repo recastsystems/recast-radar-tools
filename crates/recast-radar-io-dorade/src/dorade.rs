@@ -19,9 +19,6 @@
 //! time), the time reference is the earliest sweep start, and every ray's
 //! RYIB time is a `time(time)` value relative to it.
 //!
-//! The pre-FM301 `decode_*` functions (legacy `RadarVolume`) live in
-//! [`crate::legacy_api`] during the migration.
-//!
 //! Format references:
 //! - R. Oye and M. Case, "DORADE Data Format" (NCAR/ATD, 1995; revised
 //!   2003/2010 by W.-C. Lee, NCAR/EOL) — block layouts and semantics.
@@ -74,11 +71,6 @@ use recast_radar_core::model::{
     RangeCoord, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
 };
 
-#[allow(deprecated)]
-pub use crate::legacy_api::{
-    append_dorade_sweep, decode_dorade_sweep_volume, decode_dorade_volume_from_paths,
-    decode_dorade_volume_from_slices, finalize_dorade_volume,
-};
 use crate::{DoradeError, Result};
 
 const BLOCK_HEADER_LEN: usize = 8;
@@ -236,9 +228,6 @@ pub struct DoradeVolumeBuilder {
     volume: Volume,
     /// SSWB/VOLD start time of each appended sweep.
     sweep_starts: Vec<Option<DateTime<Utc>>>,
-    /// Gate count of each appended sweep's range as the descriptors state
-    /// it, before `seal` widens the range to the widest field row.
-    sweep_gate_counts: Vec<usize>,
 }
 
 impl Default for DoradeVolumeBuilder {
@@ -252,7 +241,6 @@ impl DoradeVolumeBuilder {
         Self {
             volume: Volume::new("", DateTime::<Utc>::UNIX_EPOCH),
             sweep_starts: Vec::new(),
-            sweep_gate_counts: Vec::new(),
         }
     }
 
@@ -288,27 +276,11 @@ impl DoradeVolumeBuilder {
 
     /// Seal the volume: ray-time coverage and invariants.
     pub fn finish(self) -> Result<Volume> {
-        let (volume, _) = self.finish_with_log()?;
-        Ok(volume)
-    }
-
-    /// [`Self::finish`] returning each sweep's start time and descriptor
-    /// gate count as well.
-    pub(crate) fn finish_with_log(self) -> Result<(Volume, Vec<SweepLog>)> {
-        let Self {
-            mut volume,
-            sweep_starts,
-            sweep_gate_counts,
-        } = self;
+        let Self { mut volume, .. } = self;
         volume.provenance.decode.decoded_ray_count = volume.sweeps.iter().map(Sweep::nrays).sum();
         volume.seal().map_err(|err| invalid(0, err.to_string()))?;
         volume.time_coverage = volume.ray_time_extent();
-        let log = sweep_starts
-            .into_iter()
-            .zip(sweep_gate_counts)
-            .map(|(start, gate_count)| SweepLog { start, gate_count })
-            .collect();
-        Ok((volume, log))
+        Ok(volume)
     }
 
     /// Move the time reference earlier, rebasing every ray time.
@@ -324,13 +296,6 @@ impl DoradeVolumeBuilder {
         }
         self.volume.time_reference = reference;
     }
-}
-
-/// Per-sweep values the legacy wrapper needs.
-pub(crate) struct SweepLog {
-    pub start: Option<DateTime<Utc>>,
-    /// The CELV / CSFD / PARM gate count (the legacy radial gate range).
-    pub gate_count: usize,
 }
 
 /// Bytes a ray occupies in the model (three coordinates plus a Nyquist and
@@ -1147,7 +1112,6 @@ impl SweepParse {
             skipped_transition_rays + self.skipped_field_blocks;
         volume.sweeps.push(sweep);
         builder.sweep_starts.push(sweep_start);
-        builder.sweep_gate_counts.push(ngates);
         Ok(())
     }
 }

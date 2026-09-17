@@ -32,7 +32,7 @@
 //!   case the classic decoder cannot read.
 
 use chrono::{TimeZone, Utc};
-use recast_radar_core::{MomentType, ScanMode};
+use recast_radar_core::model::{FieldName, Quantity, RangeCoord, SweepMode};
 
 const XSAPR_PPI: &[u8] = include_bytes!("data/cfrad.xsapr_sgp_ppi_20110520.classic.nc");
 const DOW8_RHI: &[u8] = include_bytes!("data/cfrad.20211011_223602_DOW8_RHI.trim3.nc");
@@ -47,183 +47,193 @@ fn assert_close(actual: f32, expected: f32, tolerance: f32, what: &str) {
 #[test]
 fn real_xsapr_ppi_decodes_site_geometry_and_gates() {
     assert!(recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(XSAPR_PPI));
-    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(XSAPR_PPI)
+    let volume = recast_radar_io_cfradial::cfradial::read_cfradial1_volume(XSAPR_PPI)
         .expect("decode X-SAPR PPI");
 
-    assert_eq!(volume.site.id, "xsapr-sgp");
-    assert_close(volume.site.latitude_deg.unwrap(), 36.4908, 1e-4, "lat");
-    assert_close(volume.site.longitude_deg.unwrap(), -97.5942, 1e-4, "lon");
-    assert_close(volume.site.elevation_m.unwrap(), 214.0, 1e-3, "alt");
-    assert_eq!(
-        volume.volume_time,
-        Utc.with_ymd_and_hms(2011, 5, 20, 10, 54, 16).unwrap()
-    );
-    assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Ppi));
-
-    assert_eq!(volume.cuts.len(), 1);
-    let cut = &volume.cuts[0];
-    assert_close(cut.elevation_deg, 0.5, 1e-3, "fixed angle");
-    assert_eq!(cut.radials.len(), 40);
-    assert_close(cut.radials[0].azimuth_deg, 359.9368, 1e-3, "az0");
-    assert_close(cut.radials[0].elevation_deg, 0.4834, 1e-3, "el0");
+    assert_eq!(volume.attrs.instrument_name, "xsapr-sgp");
     assert_close(
-        cut.radials[0].nyquist_velocity_mps.expect("nyquist"),
+        volume.location.latitude_deg.unwrap() as f32,
+        36.4908,
+        1e-4,
+        "lat",
+    );
+    assert_close(
+        volume.location.longitude_deg.unwrap() as f32,
+        -97.5942,
+        1e-4,
+        "lon",
+    );
+    assert_close(
+        volume.location.altitude_m.unwrap() as f32,
+        214.0,
+        1e-3,
+        "alt",
+    );
+    assert_eq!(
+        volume.time_coverage.map(|coverage| coverage.start),
+        Some(Utc.with_ymd_and_hms(2011, 5, 20, 10, 54, 16).unwrap())
+    );
+
+    assert_eq!(volume.sweeps.len(), 1);
+    let sweep = &volume.sweeps[0];
+    assert_eq!(sweep.sweep_mode, SweepMode::AzimuthSurveillance);
+    assert_close(sweep.fixed_angle_deg, 0.5, 1e-3, "fixed angle");
+    assert_eq!(sweep.nrays(), 40);
+    assert_close(sweep.rays.azimuth_deg[0], 359.9368, 1e-3, "az0");
+    assert_close(sweep.rays.elevation_deg[0], 0.4834, 1e-3, "el0");
+    assert_close(
+        sweep
+            .ray_vars
+            .nyquist_velocity_mps
+            .as_ref()
+            .expect("nyquist")[0],
         17.2205,
         1e-3,
         "nyq",
     );
-    // Py-ART's decimation left range centers 0, 960, ... -> derived start
-    // is -480 m (center minus half a gate). Faithful to the file.
-    let gates = &cut.radials[0].gate_range;
+    // Py-ART's decimation left range centres 0, 960, ...; the range
+    // coordinate keeps the centres, faithful to the file.
     assert_eq!(
-        (gates.first_gate_m, gates.gate_spacing_m, gates.gate_count),
-        (-480, 960, 42)
+        sweep.range,
+        RangeCoord::Uniform {
+            first_center_m: 0.0,
+            spacing_m: 960.0,
+            ngates: 42,
+        }
     );
 
-    // Field name "reflectivity_horizontal" has no canonical stem: stays an
-    // Unknown moment under its CF name rather than guessing.
-    let reflectivity = cut
-        .moments
-        .get(&MomentType::Unknown("reflectivity_horizontal".to_owned()))
+    // Field name "reflectivity_horizontal" is kept verbatim (CfRadial names
+    // are not renamed); its quantity is classified from the Py-ART name.
+    let reflectivity = sweep
+        .field(&FieldName::parse("reflectivity_horizontal"))
         .expect("reflectivity_horizontal");
-    assert_close(
-        reflectivity.scaled_value(0, 0).unwrap(),
-        -6.05,
-        1e-3,
-        "v[0,0]",
-    );
-    assert_close(
-        reflectivity.scaled_value(0, 21).unwrap(),
-        23.30,
-        1e-3,
-        "v[0,21]",
-    );
-    assert_close(
-        reflectivity.scaled_value(10, 14).unwrap(),
-        25.23,
-        1e-3,
-        "v[10,14]",
-    );
-    assert_close(
-        reflectivity.scaled_value(20, 10).unwrap(),
-        20.54,
-        1e-3,
-        "v[20,10]",
-    );
-    assert_close(
-        reflectivity.scaled_value(39, 41).unwrap(),
-        19.68,
-        1e-3,
-        "v[39,41]",
-    );
+    assert_eq!(reflectivity.quantity, Quantity::Reflectivity);
+    assert_close(reflectivity.value(0, 0).unwrap(), -6.05, 1e-3, "v[0,0]");
+    assert_close(reflectivity.value(0, 21).unwrap(), 23.30, 1e-3, "v[0,21]");
+    assert_close(reflectivity.value(10, 14).unwrap(), 25.23, 1e-3, "v[10,14]");
+    assert_close(reflectivity.value(20, 10).unwrap(), 20.54, 1e-3, "v[20,10]");
+    assert_close(reflectivity.value(39, 41).unwrap(), 19.68, 1e-3, "v[39,41]");
 }
 
 #[test]
 fn real_dow8_rhi_decodes_scan_mode_geometry_and_gates() {
     assert!(recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(DOW8_RHI));
-    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(DOW8_RHI)
+    let volume = recast_radar_io_cfradial::cfradial::read_cfradial1_volume(DOW8_RHI)
         .expect("decode DOW8 RHI");
 
     // Mobile platform: latitude/longitude are (time) arrays; first sample.
-    assert_eq!(volume.site.id, "DOW8");
-    assert_eq!(volume.site.name.as_deref(), Some("ILLINOIS"));
-    assert_close(volume.site.latitude_deg.unwrap(), 40.0148, 1e-4, "lat");
-    assert_close(volume.site.longitude_deg.unwrap(), -88.3318, 1e-4, "lon");
-    assert_close(volume.site.elevation_m.unwrap(), 214.0, 0.5, "alt");
-    assert_eq!(
-        volume.volume_time,
-        Utc.with_ymd_and_hms(2021, 10, 11, 22, 36, 2).unwrap()
+    assert_eq!(volume.attrs.instrument_name, "DOW8");
+    assert_eq!(volume.attrs.site_name.as_deref(), Some("ILLINOIS"));
+    assert_close(
+        volume.location.latitude_deg.unwrap() as f32,
+        40.0148,
+        1e-4,
+        "lat",
     );
-    // sweep_mode = "rhi" must surface as ScanMode::Rhi.
-    assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Rhi));
+    assert_close(
+        volume.location.longitude_deg.unwrap() as f32,
+        -88.3318,
+        1e-4,
+        "lon",
+    );
+    assert_close(
+        volume.location.altitude_m.unwrap() as f32,
+        214.0,
+        0.5,
+        "alt",
+    );
+    assert_eq!(
+        volume.time_coverage.map(|coverage| coverage.start),
+        Some(Utc.with_ymd_and_hms(2021, 10, 11, 22, 36, 2).unwrap())
+    );
 
-    assert_eq!(volume.cuts.len(), 1);
-    let cut = &volume.cuts[0];
+    assert_eq!(volume.sweeps.len(), 1);
+    let sweep = &volume.sweeps[0];
+    // sweep_mode = "rhi" must surface as SweepMode::Rhi.
+    assert_eq!(sweep.sweep_mode, SweepMode::Rhi);
     // RHI convention: the fixed angle is the pointing AZIMUTH (184 deg).
-    assert_close(cut.elevation_deg, 184.0, 1e-3, "fixed azimuth");
-    assert_eq!(cut.radials.len(), 148);
+    assert_close(sweep.fixed_angle_deg, 184.0, 1e-3, "fixed azimuth");
+    assert_eq!(sweep.nrays(), 148);
 
     // Rays sweep in elevation at near-constant azimuth.
-    assert_close(cut.radials[0].azimuth_deg, 182.1149, 1e-3, "az0");
-    assert_close(cut.radials[0].elevation_deg, 1.5, 1e-3, "el0");
-    assert_close(cut.radials[147].elevation_deg, 70.0, 1e-3, "el147");
+    assert_close(sweep.rays.azimuth_deg[0], 182.1149, 1e-3, "az0");
+    assert_close(sweep.rays.elevation_deg[0], 1.5, 1e-3, "el0");
+    assert_close(sweep.rays.elevation_deg[147], 70.0, 1e-3, "el147");
     let (mut el_min, mut el_max) = (f32::INFINITY, f32::NEG_INFINITY);
-    for radial in &cut.radials {
-        el_min = el_min.min(radial.elevation_deg);
-        el_max = el_max.max(radial.elevation_deg);
-        assert!(
-            (182.0..=184.2).contains(&radial.azimuth_deg),
-            "azimuth fixed"
-        );
+    for (azimuth, elevation) in sweep.rays.azimuth_deg.iter().zip(&sweep.rays.elevation_deg) {
+        el_min = el_min.min(*elevation);
+        el_max = el_max.max(*elevation);
+        assert!((182.0..=184.2).contains(azimuth), "azimuth fixed");
     }
     assert_close(el_min, -0.7306, 1e-3, "el min");
     assert_close(el_max, 70.0, 1e-3, "el max");
 
-    // Gate geometry from the range coordinate: centers 62.46, 187.37, ...
-    let gates = &cut.radials[0].gate_range;
-    assert_eq!(
-        (gates.first_gate_m, gates.gate_spacing_m, gates.gate_count),
-        (0, 125, 950)
-    );
+    // Gate geometry from the range coordinate: centres 62.46, 187.37, ...
+    let RangeCoord::Uniform {
+        first_center_m,
+        spacing_m,
+        ngates,
+    } = sweep.range
+    else {
+        panic!("DOW8 range is uniform");
+    };
+    assert_close(first_center_m as f32, 62.4565, 1e-3, "first centre");
+    assert_close(spacing_m as f32, 124.913, 1e-3, "spacing");
+    assert_eq!(ngates, 950);
     assert_close(
-        cut.radials[0].nyquist_velocity_mps.expect("nyquist"),
+        sweep
+            .ray_vars
+            .nyquist_velocity_mps
+            .as_ref()
+            .expect("nyquist")[0],
         19.8275,
         1e-3,
         "nyq",
     );
-    // Ray times: 0.712 s and 10.091 s offsets from time_coverage_start.
-    assert_eq!(cut.radials[0].time_offset_ms, 711);
-    assert_eq!(cut.radials[147].time_offset_ms, 10091);
+    // Ray times: 0.712 s and 10.091 s offsets from time_coverage_start
+    // (float32 in the file).
+    assert_close(sweep.rays.time_s[0] as f32, 0.712, 1e-5, "time 0");
+    assert_close(sweep.rays.time_s[147] as f32, 10.091, 1e-5, "time 147");
 
-    // Golden gates from the independent netCDF4 reader (DBZHC -> REF,
-    // VEL -> VEL, WIDTH -> SW via the shared canonical-name stems).
-    let reflectivity = cut.moments.get(&MomentType::Reflectivity).expect("REF");
+    // Golden gates from the independent netCDF4 reader. Names stay
+    // verbatim (DBZHC, VEL, WIDTH); quantities come from the name stems.
+    let reflectivity = sweep.find(Quantity::Reflectivity).expect("DBZHC");
+    assert_eq!(reflectivity.name.as_str(), "DBZHC");
+    assert_close(reflectivity.value(0, 0).unwrap(), -2.48, 1e-3, "REF[0,0]");
     assert_close(
-        reflectivity.scaled_value(0, 0).unwrap(),
-        -2.48,
-        1e-3,
-        "REF[0,0]",
-    );
-    assert_close(
-        reflectivity.scaled_value(0, 475).unwrap(),
+        reflectivity.value(0, 475).unwrap(),
         0.26,
         1e-3,
         "REF[0,475]",
     );
     assert_close(
-        reflectivity.scaled_value(37, 316).unwrap(),
+        reflectivity.value(37, 316).unwrap(),
         0.79,
         1e-3,
         "REF[37,316]",
     );
     assert_close(
-        reflectivity.scaled_value(74, 10).unwrap(),
+        reflectivity.value(74, 10).unwrap(),
         -23.30,
         1e-3,
         "REF[74,10]",
     );
-    assert!(
-        reflectivity.scaled_value(147, 949).is_none_or(f32::is_nan),
-        "REF[147,949] fill"
-    );
+    assert!(reflectivity.value(147, 949).is_none(), "REF[147,949] fill");
 
-    let velocity = cut.moments.get(&MomentType::Velocity).expect("VEL");
-    assert_close(velocity.scaled_value(0, 0).unwrap(), 0.91, 1e-3, "VEL[0,0]");
+    let velocity = sweep.find(Quantity::RadialVelocity).expect("VEL");
+    assert_eq!(velocity.name.as_str(), "VEL");
+    assert_close(velocity.value(0, 0).unwrap(), 0.91, 1e-3, "VEL[0,0]");
+    assert_close(velocity.value(0, 475).unwrap(), -16.56, 1e-3, "VEL[0,475]");
     assert_close(
-        velocity.scaled_value(0, 475).unwrap(),
-        -16.56,
-        1e-3,
-        "VEL[0,475]",
-    );
-    assert_close(
-        velocity.scaled_value(147, 949).unwrap(),
+        velocity.value(147, 949).unwrap(),
         -5.09,
         1e-3,
         "VEL[147,949]",
     );
 
-    let width = cut.moments.get(&MomentType::SpectrumWidth).expect("SW");
-    assert_close(width.scaled_value(0, 475).unwrap(), 4.37, 1e-3, "SW[0,475]");
+    let width = sweep.find(Quantity::SpectrumWidth).expect("WIDTH");
+    assert_eq!(width.name.as_str(), "WIDTH");
+    assert_close(width.value(0, 475).unwrap(), 4.37, 1e-3, "SW[0,475]");
 }
 
 /// The PUBLISHED Py-ART file before container conversion: netCDF-4, i.e.
@@ -246,7 +256,7 @@ fn netcdf4_cfradial_routes_to_hdf5_and_gets_conversion_guidance() {
     ));
 
     // The explicit error must tell a CfRadial user the fix that works.
-    let err = recast_radar_io_odim::odim::decode_odim_h5_volume(XSAPR_PPI_NETCDF4).unwrap_err();
+    let err = recast_radar_io_odim::odim::read_odim_h5_volume(XSAPR_PPI_NETCDF4).unwrap_err();
     let message = err.to_string();
     assert!(
         message.contains("netCDF-4 CfRadial") && message.contains("nccopy -k classic"),

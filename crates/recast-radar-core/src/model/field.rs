@@ -167,7 +167,7 @@ impl<T: PackedInt> IntCoding<T> {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LinearTransform {
     /// `physical = (raw - offset) / scale`, evaluated in f32. NEXRAD ICD form;
-    /// the legacy decoder and Py-ART both evaluate exactly this expression. The
+    /// Py-ART evaluates exactly this expression. The
     /// view writes `scale_factor = 1/scale` and `add_offset = -offset/scale` as
     /// float64, as xradar does.
     IcdScaleOffset { scale: f32, offset: f32 },
@@ -738,7 +738,7 @@ impl Field {
     }
 
     /// Physical value of a native gate; `None` for every sentinel and outside
-    /// the native extent (the legacy `MomentGrid::scaled_value` semantics).
+    /// the native extent.
     #[inline]
     pub fn value(&self, ray: usize, gate: usize) -> Option<f32> {
         self.gate(ray, gate)?.value()

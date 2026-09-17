@@ -1,9 +1,7 @@
 //! CfRadial 1.x decoding through a pure-Rust classic netCDF reader.
 //!
 //! - [`cfradial`]: CfRadial 1.x volumes into the FM301
-//!   [`recast_radar_core::model::Volume`] ([`read_cfradial1_volume`]); the
-//!   pre-FM301 [`decode_cfradial1_volume`] lives in [`legacy_api`] during the
-//!   migration.
+//!   [`recast_radar_core::model::Volume`] ([`read_cfradial1_volume`]).
 //! - [`netcdf3`]: the minimal read-only classic netCDF (CDF-1/CDF-2) parser.
 //!
 //! # Limits
@@ -33,19 +31,13 @@
 //! exceeds a limit fails the decode.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 pub mod cfradial;
-#[allow(deprecated)]
-pub mod legacy_api;
 pub mod netcdf3;
 
 use thiserror::Error;
 
 pub use cfradial::read_cfradial1_volume;
-#[allow(deprecated)]
-pub use legacy_api::decode_cfradial1_volume;
 pub use netcdf3::looks_like_netcdf3_bytes;
 
 /// Result type for CfRadial and netCDF decoding.

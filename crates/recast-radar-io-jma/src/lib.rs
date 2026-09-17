@@ -33,8 +33,7 @@
 //! want a single station pass `site_filter`. The shared byte router
 //! (`recast_radar_io::read_supported_volume_bytes`) uses
 //! [`read_jma_tar_first_station`] instead, which keeps only the first
-//! station in the archive. The pre-FM301 `decode_*` signatures (legacy
-//! `RadarVolume`) live in [`legacy_api`] during the migration.
+//! station in the archive.
 //!
 //! Each GRIB data section becomes one [`Sweep`], sorted lowest elevation
 //! first (members carry sweeps high-tilt-first) and numbered in that order,
@@ -72,11 +71,6 @@
 //! fails the whole call.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
-#[allow(deprecated)]
-pub mod legacy_api;
 
 use chrono::{DateTime, TimeZone, Utc};
 use recast_radar_core::bounded_read::MAX_DECODED_BATCH_BYTES;
@@ -85,9 +79,6 @@ use recast_radar_core::model::{
     Sweep, SweepMode, Volume,
 };
 use thiserror::Error;
-
-#[allow(deprecated)]
-pub use legacy_api::{decode_jma_tar_first_station, decode_jma_tar_volumes};
 
 /// Errors from JMA radar GRIB2 tar decoding.
 #[derive(Debug, Error)]

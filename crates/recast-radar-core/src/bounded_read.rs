@@ -19,14 +19,14 @@
 //! actually allocated afterwards. A decode that would exceed its budget
 //! returns an error. Because a growing buffer is recorded after it
 //! reallocates, a failing decode can briefly pass the ceiling by one
-//! reallocation of its largest moment grid.
+//! reallocation of its largest field.
 //!
 //! Errors are returned as the complete diagnostic message; each decoder
 //! crate wraps it in its own error variant.
 
 use std::io::Read;
 
-use crate::{MomentGrid, MomentStorage, RadarVolume};
+use crate::model::{Field, FieldData, Volume};
 
 /// Hard ceiling for one expanded radar payload. Operational Level II,
 /// ODIM, CfRadial, and DORADE files are far smaller; this remains generous
@@ -35,7 +35,7 @@ use crate::{MomentGrid, MomentStorage, RadarVolume};
 pub const MAX_DECODED_RADAR_BYTES: usize = 512 * 1024 * 1024;
 
 /// Ceiling on the output one decoded volume retains: the allocated bytes of
-/// every moment grid (gate values plus row index) and the per-radial tables
+/// every field's value buffer and the per-ray tables
 /// a decoder charges to its [`DecodeBudget`].
 pub const MAX_DECODED_VOLUME_BYTES: usize = 1024 * 1024 * 1024;
 
@@ -138,28 +138,26 @@ impl DecodeBudget {
     }
 }
 
-/// Allocated bytes of a moment grid: gate storage plus the row index.
-pub fn moment_grid_capacity_bytes(grid: &MomentGrid) -> usize {
-    let storage = match &grid.storage {
-        MomentStorage::U8(values) => values.capacity(),
-        MomentStorage::U16(values) => values.capacity().saturating_mul(2),
-        MomentStorage::F32(values) => values.capacity().saturating_mul(4),
-    };
-    storage.saturating_add(
-        grid.radial_indices
-            .capacity()
-            .saturating_mul(size_of::<usize>()),
-    )
+/// Bytes allocated by a field's value buffer.
+pub fn field_capacity_bytes(field: &Field) -> usize {
+    match &field.data {
+        FieldData::U8 { values, .. } => values.capacity(),
+        FieldData::I8 { values, .. } => values.capacity(),
+        FieldData::U16 { values, .. } => values.capacity().saturating_mul(2),
+        FieldData::I16 { values, .. } => values.capacity().saturating_mul(2),
+        FieldData::F32 { values, .. } => values.capacity().saturating_mul(4),
+        FieldData::F64 { values, .. } => values.capacity().saturating_mul(8),
+    }
 }
 
-/// Allocated bytes of every moment grid in a volume.
-pub fn volume_moment_capacity_bytes(volume: &RadarVolume) -> usize {
+/// Allocated bytes of every field's value buffer in a volume.
+pub fn volume_field_capacity_bytes(volume: &Volume) -> usize {
     volume
-        .cuts
+        .sweeps
         .iter()
-        .flat_map(|cut| cut.moments.values())
-        .fold(0usize, |total, grid| {
-            total.saturating_add(moment_grid_capacity_bytes(grid))
+        .flat_map(|sweep| sweep.fields.iter())
+        .fold(0usize, |total, field| {
+            total.saturating_add(field_capacity_bytes(field))
         })
 }
 

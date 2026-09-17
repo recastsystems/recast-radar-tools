@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Reproduction harness for velocity dealias spokes + color-table edge cases.
 // Renders raw velocity and dealiased velocity (current algorithm) to PNGs so
@@ -14,8 +13,8 @@ use image::{ImageBuffer, Rgba};
 use recast_radar_core::{FieldName, Quantity};
 use recast_radar_render::{RasterOptions, dealiased_velocity_field, render_field_image};
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 /// Composite an RGBA image over a dark background (radar displays are black)
 /// and save, so near-white strong velocities are visible.
@@ -58,10 +57,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "velrepro".to_string());
 
-    let mut volume = legacy_bridge::read_volume(&input)?;
+    let mut volume = support::read_volume(&input)?;
 
     // Lowest-elevation sweep that actually carries velocity.
-    let sweep_index = legacy_bridge::lowest_sweep_with(&volume, Quantity::RadialVelocity)
+    let sweep_index = support::lowest_sweep_with(&volume, Quantity::RadialVelocity)
         .ok_or("no velocity field in volume")?;
     let sweep = &volume.sweeps[sweep_index];
     let elev = sweep.fixed_angle_deg;

@@ -159,7 +159,12 @@ expected: ...{}...",
 /// [`NexradMetadata::from_metadata_record`].
 fn assert_matches_metadata_record(name: &str, bytes: &[u8], metadata: &NexradMetadata) {
     let alone = NexradMetadata::from_metadata_record(bytes);
+    assert!(
+        metadata.volume_header_time.is_some(),
+        "{name}: the volume decode records the header time"
+    );
     let without_sweeps = NexradMetadata {
+        volume_header_time: None,
         per_sweep_elevation_data: None,
         errors: alone.errors.clone(),
         ..metadata.clone()

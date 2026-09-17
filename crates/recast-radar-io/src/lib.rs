@@ -8,9 +8,7 @@
 //! beside it ([`Decoded`], [`FormatMetadata`]; design note
 //! `docs/design/fm301-model.md` section 2). [`read_mobile_archive_from_path`]
 //! and [`read_mobile_dir_from_path`] wire the NEXRAD Level II decoder into
-//! the DORADE crate's mobile-radar archive ingest. The pre-FM301 `decode_*`
-//! signatures (legacy `RadarVolume`) live in [`legacy_api`] during the
-//! migration.
+//! the DORADE crate's mobile-radar archive ingest.
 //!
 //! # Limits
 //!
@@ -24,11 +22,6 @@
 //! limits.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
-#[allow(deprecated)]
-pub mod legacy_api;
 
 use std::path::Path;
 
@@ -45,14 +38,9 @@ use recast_radar_io_nexrad::{ArchiveCompression, NexradError, NexradMetadata};
 use recast_radar_io_odim::{OdimError, hdf5lite, odim};
 use thiserror::Error;
 
-#[allow(deprecated)]
-pub use legacy_api::{
-    decode_mobile_archive_from_path, decode_mobile_dir_from_path, decode_supported_volume_bytes,
-};
-
 const ZIP_LOCAL_FILE_HEADER_LEN: usize = 30;
 
-/// Error from [`decode_supported_volume_bytes`] and the mobile-archive
+/// Error from [`read_supported_volume_bytes`] and the mobile-archive
 /// wrappers.
 ///
 /// Decoder errors are transparent: `to_string()` yields exactly the
@@ -80,12 +68,12 @@ pub enum IoError {
     Compression(String),
 }
 
-/// A radar container format [`decode_supported_volume_bytes`] can decode
+/// A radar container format [`read_supported_volume_bytes`] can decode
 /// from a single byte buffer, in magic-byte sniff precedence order.
 ///
 /// The variants and their order are the one shared routing contract used by
 /// local file open, URL polling, and international providers — keep
-/// [`sniff_supported_volume_format`] and [`decode_supported_volume_bytes`]
+/// [`sniff_supported_volume_format`] and [`read_supported_volume_bytes`]
 /// in lockstep with it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SupportedVolumeFormat {
@@ -106,7 +94,7 @@ pub enum SupportedVolumeFormat {
     NexradLevel2,
 }
 
-/// Sniff which decoder [`decode_supported_volume_bytes`] would route to.
+/// Sniff which decoder [`read_supported_volume_bytes`] would route to.
 ///
 /// Most magic signatures live in the first 8 bytes, but the JMA tar check
 /// reads the first 512-byte tar header block (ustar magic at byte 257), and

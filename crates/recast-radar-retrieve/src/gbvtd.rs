@@ -675,8 +675,8 @@ mod tests {
         let Some(path) = std::env::var_os("BOWECHO_GBVTD_VOLUME") else {
             return;
         };
-        let volume = crate::legacy_bridge::decode_level2(std::path::Path::new(&path))
-            .expect("decode volume");
+        let volume =
+            crate::test_decode::decode_level2(std::path::Path::new(&path)).expect("decode volume");
         let (sweep_index, sweep) = volume
             .sweeps
             .iter()
@@ -803,7 +803,7 @@ mod tests {
 
         for path in &entries {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            let volume = match crate::legacy_bridge::decode_level2(path) {
+            let volume = match crate::test_decode::decode_level2(path) {
                 Ok(v) => v,
                 Err(_) => {
                     decode_fail += 1;

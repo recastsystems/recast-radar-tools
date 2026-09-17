@@ -1,6 +1,5 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Verify azimuthal shear on a real scan: compute LLSD az-shear on the lowest
 // velocity tilt and render it (velocity diverging palette) so rotational
@@ -12,8 +11,8 @@ use image::{ImageBuffer, Rgba};
 use recast_radar_core::Quantity;
 use recast_radar_render::{RasterOptions, render_field_image};
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 fn save_on_black(img: &ImageBuffer<Rgba<u8>, Vec<u8>>, path: &str) {
     let (w, h) = img.dimensions();
@@ -49,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "shear.png".into());
-    let mut decoded = legacy_bridge::Decoded::from_path(&input)?;
+    let mut decoded = support::Decoded::from_path(&input)?;
 
     let idx = decoded
         .lowest_sweep_with(Quantity::RadialVelocity)

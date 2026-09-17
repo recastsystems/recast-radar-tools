@@ -21,6 +21,7 @@
 //!   data is decompressed once. Only the metadata record is decompressed a
 //!   second time.
 
+use chrono::{DateTime, Utc};
 use recast_radar_core::model::Volume;
 
 use crate::messages::adaptation::RdaAdaptationData;
@@ -52,6 +53,13 @@ pub struct NexradVolume {
 /// documentation for where each comes from.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct NexradMetadata {
+    /// The Archive II volume header time (Table I), or, when the header
+    /// date is the epoch (ARCHIVE2 files without a date, GR2 `.msg31`
+    /// exports) or the volume is Message 1, the first radial's collection
+    /// time. `Volume::time_reference` is the first radial's time floored to
+    /// the second; this is what the header says. Set by
+    /// [`read_volume_with_metadata`] only.
+    pub volume_header_time: Option<DateTime<Utc>>,
     /// Message 2, RDA Status Data (Table IV).
     pub rda_status: Option<RdaStatus>,
     /// Message 3, Performance/Maintenance Data (Table V).
@@ -122,10 +130,11 @@ pub struct SweepElevationData {
 /// not fail the call; they are listed in [`NexradMetadata::errors`].
 pub fn read_volume_with_metadata(bytes: &[u8]) -> Result<NexradVolume> {
     let mut sweeps = SweepCollector::default();
-    let volume = crate::builder_observed(bytes, false, &mut sweeps)?
-        .finish()?
-        .0;
+    let builder = crate::builder_observed(bytes, &mut sweeps)?;
+    let header_time = builder.header_time;
+    let volume = builder.finish()?.0;
     let mut metadata = NexradMetadata::from_metadata_record(bytes);
+    metadata.volume_header_time = Some(header_time);
     metadata.per_sweep_elevation_data = sweeps.saw_message_31.then_some(sweeps.sweeps);
     metadata.errors.extend(sweeps.errors);
     Ok(NexradVolume { volume, metadata })

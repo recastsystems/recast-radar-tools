@@ -4,8 +4,6 @@
 //
 // usage: cargo run --release -p recast-radar-render --example velocity_event_probe -- <level2-file>
 
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
-
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
@@ -13,8 +11,8 @@ use recast_radar_core::{Field, Quantity, Sweep, Volume};
 use recast_radar_render::color::{ColorTable, builtin_velocity_table};
 use recast_radar_render::dealiased_velocity_field;
 
-#[path = "legacy_bridge/mod.rs"]
-mod legacy_bridge;
+#[path = "support/mod.rs"]
+mod support;
 
 const EARTH_KM_PER_DEG: f32 = 111.32;
 
@@ -24,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.next()
             .ok_or("usage: velocity_event_probe <level2-file>")?,
     );
-    let volume = legacy_bridge::read_volume(&input)?;
+    let volume = support::read_volume(&input)?;
     let table = builtin_velocity_table();
     let flipped = table.mirrored_values(format!("{} flipped", table.name()));
 

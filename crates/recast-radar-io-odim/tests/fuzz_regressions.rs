@@ -5,7 +5,7 @@
 //! the seed it derives from. The decoder must reject it with an error, not
 //! panic.
 
-use recast_radar_io_odim::{OdimError, decode_odim_h5_cartesian_max, decode_odim_h5_volume};
+use recast_radar_io_odim::{OdimError, decode_odim_h5_cartesian_max, read_odim_h5_volume};
 
 fn fuzz_input(id: &str) -> Vec<u8> {
     let path = recast_radar_testdata::path(id).unwrap_or_else(|e| panic!("{e}"));
@@ -25,7 +25,7 @@ fn local_heap_name_offset_overflow_is_an_error() {
         Some("odim-imgw-ram-20260711-0015-kdp-max")
     );
     let bytes = fuzz_input(&entry.id);
-    let polar = decode_odim_h5_volume(&bytes);
+    let polar = read_odim_h5_volume(&bytes);
     let cartesian = decode_odim_h5_cartesian_max(&bytes);
     for (entry_point, result) in [("polar", polar.err()), ("cartesian", cartesian.err())] {
         match result {

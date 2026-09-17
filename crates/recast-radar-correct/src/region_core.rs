@@ -3,7 +3,7 @@
 //! This is the v1 region core extracted VERBATIM from `lib.rs`
 //! (`region_based_dealias_folds` steps 1–4) so the v4 volume solver can reuse
 //! the exact same segmentation without re-implementing it. INVARIANT: zero
-//! behavior change — `dealias_velocity_grid` output is pinned by the existing
+//! behavior change — `dealias_velocity` output is pinned by the existing
 //! test suite (`region_dealias_recovers_smooth_folded_ramp` and friends) and
 //! must be byte-identical before/after this extraction.
 //!

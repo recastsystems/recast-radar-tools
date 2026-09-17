@@ -400,42 +400,6 @@ pub enum SourceFormat {
     Unknown,
 }
 
-impl SourceFormat {
-    /// Infer the format of a volume produced by one of the legacy decoders from
-    /// the provenance markers each writes (`archive_version`, `compression`):
-    ///
-    /// | Decoder | `compression` | `archive_version` |
-    /// |---|---|---|
-    /// | io-nexrad | `gzip`, `bzip2-whole-file`, `bzip2-blocks`, `uncompressed` | `AR2V…`, `ARCHIVE2…` |
-    /// | io-odim | `odim-h5` | `/what/version` |
-    /// | io-cfradial | `cfradial1-netcdf3` | `version` attribute |
-    /// | io-dorade | `dorade-hrd-rle`, `dorade-uncompressed` | `DORADE` |
-    /// | io-jma | `jma-grib2-tar` | `JMA GRIB2` |
-    pub fn infer_from_markers(archive_version: Option<&str>, compression: Option<&str>) -> Self {
-        match compression {
-            Some("odim-h5") => return Self::OdimH5,
-            Some("cfradial1-netcdf3") => return Self::CfRadial1,
-            Some("jma-grib2-tar") => return Self::JmaGrib2,
-            Some(text) if text.starts_with("dorade") => return Self::Dorade,
-            _ => {}
-        }
-        match archive_version {
-            Some("DORADE") => return Self::Dorade,
-            Some("JMA GRIB2") => return Self::JmaGrib2,
-            Some(text) if text.starts_with("AR2V") || text.starts_with("ARCHIVE2") => {
-                return Self::NexradLevel2;
-            }
-            _ => {}
-        }
-        match compression {
-            Some("gzip" | "bzip2-whole-file" | "bzip2-blocks" | "uncompressed") => {
-                Self::NexradLevel2
-            }
-            _ => Self::Unknown,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DecodeStats {
     pub message_count: usize,
@@ -601,26 +565,6 @@ impl Volume {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn source_format_markers() {
-        assert_eq!(
-            SourceFormat::infer_from_markers(Some("AR2V0006"), Some("bzip2-blocks")),
-            SourceFormat::NexradLevel2
-        );
-        assert_eq!(
-            SourceFormat::infer_from_markers(Some("H5rad 2.2"), Some("odim-h5")),
-            SourceFormat::OdimH5
-        );
-        assert_eq!(
-            SourceFormat::infer_from_markers(Some("DORADE"), Some("dorade-uncompressed")),
-            SourceFormat::Dorade
-        );
-        assert_eq!(
-            SourceFormat::infer_from_markers(None, None),
-            SourceFormat::Unknown
-        );
-    }
 
     #[test]
     fn time_reference_is_whole_seconds() {

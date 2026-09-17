@@ -10,8 +10,7 @@
 //! VCP cut angle from Message 5 when the file has one (what xradar and
 //! Py-ART report), else the opening radial's elevation. A moment whose gates
 //! cannot share the sweep range (garbage radials of misframed files) is
-//! dropped for that sweep. The `decode_*` functions in [`legacy_api`] keep the
-//! pre-FM301 signatures during the migration.
+//! dropped for that sweep.
 //!
 //! Unsupported records stay non-fatal so an app can inspect partially decoded
 //! volumes while the edge-case corpus grows.
@@ -54,12 +53,8 @@
 //! whole file first; callers choose which files to open.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 mod builder;
-#[allow(deprecated)]
-pub mod legacy_api;
 pub mod messages;
 pub mod metadata;
 
@@ -80,9 +75,6 @@ use recast_radar_core::model::Volume;
 use thiserror::Error;
 
 use crate::builder::{BlockGates, MomentBlock, MomentPayload, VolumeBuilder};
-#[allow(deprecated)]
-pub use crate::legacy_api::*;
-
 const VOLUME_HEADER_LEN: usize = 24;
 const CONTROL_WORD_LEN: usize = 12;
 const MESSAGE_HEADER_LEN: usize = 16;
@@ -120,7 +112,7 @@ pub enum NexradError {
     /// none: their messages are read with [`messages::record_bytes`] and
     /// [`messages::MessageWalker`], and their metadata with
     /// [`NexradMetadata::from_metadata_record`]. Without a header there is no
-    /// site or volume time, so no [`RadarVolume`] is built from them.
+    /// site or volume time, so no [`Volume`] is built from them.
     #[error(
         "no Archive II volume header: the input starts with `{found}`, not AR2V or ARCHIVE2 (model-data _MDM files and intermediate real-time chunks have no header; read their messages with messages::MessageWalker)"
     )]
@@ -208,7 +200,7 @@ pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>> {
 /// Decode an Archive II / Level II byte buffer (gzip, whole-file bzip2, LDM
 /// block-bzip2 or uncompressed) into the FM301 model.
 pub fn read_volume_from_bytes(bytes: &[u8]) -> Result<Volume> {
-    Ok(builder_from_bytes(bytes, false)?.finish()?.0)
+    Ok(builder_from_bytes(bytes)?.finish()?.0)
 }
 
 /// Receives each message 31 body the volume decoders turn into a radial,
@@ -225,16 +217,12 @@ impl RadialObserver for () {
     fn message_31(&mut self, _body: &[u8], _volume: &Volume) {}
 }
 
-pub(crate) fn builder_from_bytes(bytes: &[u8], legacy: bool) -> Result<VolumeBuilder> {
-    builder_observed(bytes, legacy, &mut ())
+pub(crate) fn builder_from_bytes(bytes: &[u8]) -> Result<VolumeBuilder> {
+    builder_observed(bytes, &mut ())
 }
 
 /// [`builder_from_bytes`] with a [`RadialObserver`].
-fn builder_observed(
-    bytes: &[u8],
-    legacy: bool,
-    observer: &mut impl RadialObserver,
-) -> Result<VolumeBuilder> {
+fn builder_observed(bytes: &[u8], observer: &mut impl RadialObserver) -> Result<VolumeBuilder> {
     if bytes.len() < VOLUME_HEADER_LEN {
         return Err(NexradError::ShortVolumeHeader {
             actual: bytes.len(),
@@ -244,42 +232,26 @@ fn builder_observed(
         && !bytes.starts_with(b"BZh")
         && let Some(blocks) = collect_bzip_block_slices(bytes)?
     {
-        return decode_bzip_blocks_pipelined(
-            bytes,
-            blocks,
-            None,
-            false,
-            legacy,
-            |_| Ok(()),
-            observer,
-        )
-        .map(|outcome| outcome.builder);
+        return decode_bzip_blocks_pipelined(bytes, blocks, None, false, |_| Ok(()), observer)
+            .map(|outcome| outcome.builder);
     }
 
     let (bytes, compression) = normalize_archive_bytes(bytes)?;
-    builder_from_normalized_observed(
-        &bytes,
-        compression,
-        DecodeBudget::volume(),
-        legacy,
-        observer,
-    )
+    builder_from_normalized_observed(&bytes, compression, DecodeBudget::volume(), observer)
 }
 
 /// Decode a gzip-wrapped Archive II stream into the FM301 model.
 pub fn read_gzip_volume_from_reader(reader: impl Read) -> Result<Volume> {
-    Ok(builder_from_gzip_reader(reader, false)?.finish()?.0)
+    Ok(builder_from_gzip_reader(reader)?.finish()?.0)
 }
 
-pub(crate) fn builder_from_gzip_reader(reader: impl Read, legacy: bool) -> Result<VolumeBuilder> {
+pub(crate) fn builder_from_gzip_reader(reader: impl Read) -> Result<VolumeBuilder> {
     let decoder = GzDecoder::new(reader);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
-    decode_volume_from_stream_until(&mut decoder, ArchiveCompression::Gzip, None, legacy).map(
-        |result| {
-            debug_assert!(!result.stopped_at_preview);
-            result.builder
-        },
-    )
+    decode_volume_from_stream_until(&mut decoder, ArchiveCompression::Gzip, None).map(|result| {
+        debug_assert!(!result.stopped_at_preview);
+        result.builder
+    })
 }
 
 /// Decode a gzip-wrapped volume, calling `on_preview` once with a sealed copy
@@ -294,7 +266,7 @@ pub fn read_gzip_volume_from_bytes_with_preview<F>(
 where
     F: FnMut(Volume),
 {
-    builder_from_gzip_bytes_with_preview(raw, min_displayable_radials, false, |builder| {
+    builder_from_gzip_bytes_with_preview(raw, min_displayable_radials, |builder| {
         on_preview(builder.snapshot()?);
         Ok(())
     })?
@@ -305,14 +277,13 @@ where
 pub(crate) fn builder_from_gzip_bytes_with_preview(
     raw: &[u8],
     min_displayable_radials: usize,
-    legacy: bool,
     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
 ) -> Result<VolumeBuilder> {
     if raw.len() < VOLUME_HEADER_LEN {
         return Err(NexradError::ShortVolumeHeader { actual: raw.len() });
     }
     if !raw.starts_with(&[0x1f, 0x8b]) {
-        return builder_from_bytes(raw, legacy);
+        return builder_from_bytes(raw);
     }
 
     let decoder = GzDecoder::new(raw);
@@ -322,7 +293,6 @@ pub(crate) fn builder_from_gzip_bytes_with_preview(
         ArchiveCompression::Gzip,
         Some(min_displayable_radials),
         false,
-        legacy,
         on_preview,
     )
     .map(|result| {
@@ -337,7 +307,7 @@ pub fn read_gzip_preview_from_bytes(
     raw: &[u8],
     min_displayable_radials: usize,
 ) -> Result<Option<Volume>> {
-    match builder_gzip_preview(raw, min_displayable_radials, false)? {
+    match builder_gzip_preview(raw, min_displayable_radials)? {
         Some(builder) => Ok(Some(builder.finish()?.0)),
         None => Ok(None),
     }
@@ -346,7 +316,6 @@ pub fn read_gzip_preview_from_bytes(
 pub(crate) fn builder_gzip_preview(
     raw: &[u8],
     min_displayable_radials: usize,
-    legacy: bool,
 ) -> Result<Option<VolumeBuilder>> {
     if raw.len() < VOLUME_HEADER_LEN {
         return Err(NexradError::ShortVolumeHeader { actual: raw.len() });
@@ -361,7 +330,6 @@ pub(crate) fn builder_gzip_preview(
         &mut decoder,
         ArchiveCompression::Gzip,
         Some(min_displayable_radials),
-        legacy,
     )?;
     Ok(result.stopped_at_preview.then_some(result.builder))
 }
@@ -376,7 +344,7 @@ pub fn read_bzip_block_preview_from_bytes(
     raw: &[u8],
     min_displayable_radials: usize,
 ) -> Result<Option<Volume>> {
-    match builder_bzip_block_preview(raw, min_displayable_radials, false)? {
+    match builder_bzip_block_preview(raw, min_displayable_radials)? {
         Some(builder) => Ok(Some(builder.finish()?.0)),
         None => Ok(None),
     }
@@ -385,7 +353,6 @@ pub fn read_bzip_block_preview_from_bytes(
 pub(crate) fn builder_bzip_block_preview(
     raw: &[u8],
     min_displayable_radials: usize,
-    legacy: bool,
 ) -> Result<Option<VolumeBuilder>> {
     if raw.len() < VOLUME_HEADER_LEN {
         return Err(NexradError::ShortVolumeHeader { actual: raw.len() });
@@ -400,7 +367,6 @@ pub(crate) fn builder_bzip_block_preview(
         blocks,
         Some(min_displayable_radials),
         true,
-        legacy,
         |_| Ok(()),
         &mut (),
     )?;
@@ -422,7 +388,7 @@ pub fn read_volume_from_bytes_with_bzip_preview<F>(
 where
     F: FnMut(Volume),
 {
-    builder_with_bzip_preview(raw, min_displayable_radials, false, |builder| {
+    builder_with_bzip_preview(raw, min_displayable_radials, |builder| {
         on_preview(builder.snapshot()?);
         Ok(())
     })?
@@ -433,7 +399,6 @@ where
 pub(crate) fn builder_with_bzip_preview(
     raw: &[u8],
     min_displayable_radials: usize,
-    legacy: bool,
     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
 ) -> Result<VolumeBuilder> {
     if raw.len() < VOLUME_HEADER_LEN {
@@ -441,7 +406,7 @@ pub(crate) fn builder_with_bzip_preview(
     }
 
     let Some(blocks) = collect_bzip_block_slices(raw)? else {
-        return builder_from_bytes(raw, legacy);
+        return builder_from_bytes(raw);
     };
 
     let outcome = decode_bzip_blocks_pipelined(
@@ -449,7 +414,6 @@ pub(crate) fn builder_with_bzip_preview(
         blocks,
         Some(min_displayable_radials),
         false,
-        legacy,
         on_preview,
         &mut (),
     )?;
@@ -641,7 +605,7 @@ pub fn read_normalized_volume_bytes(
     compression: ArchiveCompression,
 ) -> Result<Volume> {
     Ok(
-        builder_from_normalized(bytes, compression, DecodeBudget::volume(), false)?
+        builder_from_normalized(bytes, compression, DecodeBudget::volume())?
             .finish()?
             .0,
     )
@@ -652,9 +616,8 @@ pub(crate) fn builder_from_normalized(
     bytes: &[u8],
     compression: ArchiveCompression,
     budget: DecodeBudget,
-    legacy: bool,
 ) -> Result<VolumeBuilder> {
-    builder_from_normalized_observed(bytes, compression, budget, legacy, &mut ())
+    builder_from_normalized_observed(bytes, compression, budget, &mut ())
 }
 
 /// [`read_normalized_volume_bytes`] with an explicit output budget and a
@@ -663,7 +626,6 @@ fn builder_from_normalized_observed(
     bytes: &[u8],
     compression: ArchiveCompression,
     budget: DecodeBudget,
-    legacy: bool,
     observer: &mut impl RadialObserver,
 ) -> Result<VolumeBuilder> {
     let volume_header = parse_volume_header(bytes)?;
@@ -673,7 +635,6 @@ fn builder_from_normalized_observed(
         volume_header.volume_time,
         compression,
         budget,
-        legacy,
     );
 
     let mut cursor = VOLUME_HEADER_LEN;
@@ -802,16 +763,8 @@ fn decode_volume_from_stream_until<R: Read>(
     reader: &mut R,
     compression: ArchiveCompression,
     preview_min_radials: Option<usize>,
-    legacy: bool,
 ) -> Result<StreamDecodeResult> {
-    decode_volume_from_stream(
-        reader,
-        compression,
-        preview_min_radials,
-        true,
-        legacy,
-        |_| Ok(()),
-    )
+    decode_volume_from_stream(reader, compression, preview_min_radials, true, |_| Ok(()))
 }
 
 fn decode_volume_from_stream<R: Read, F>(
@@ -819,7 +772,6 @@ fn decode_volume_from_stream<R: Read, F>(
     compression: ArchiveCompression,
     preview_min_radials: Option<usize>,
     stop_at_preview: bool,
-    legacy: bool,
     mut on_preview: F,
 ) -> Result<StreamDecodeResult>
 where
@@ -834,7 +786,6 @@ where
         volume_header.volume_time,
         compression,
         DecodeBudget::volume(),
-        legacy,
     );
 
     let mut cursor = VOLUME_HEADER_LEN;
@@ -1274,7 +1225,6 @@ fn decode_bzip_blocks_pipelined(
     blocks: Vec<&[u8]>,
     min_displayable_radials: Option<usize>,
     stop_at_preview: bool,
-    legacy: bool,
     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
@@ -1294,7 +1244,6 @@ fn decode_bzip_blocks_pipelined(
             &slots,
             min_displayable_radials,
             stop_at_preview,
-            legacy,
             on_preview,
             observer,
         );
@@ -1310,7 +1259,6 @@ fn parse_bzip_block_volume(
     blocks: &BlockSlots<'_>,
     min_displayable_radials: Option<usize>,
     stop_at_preview: bool,
-    legacy: bool,
     mut on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
@@ -1330,7 +1278,6 @@ fn parse_bzip_block_volume(
         volume_header.volume_time,
         ArchiveCompression::Bzip2Blocks,
         DecodeBudget::volume(),
-        legacy,
     );
 
     let mut cursor = VOLUME_HEADER_LEN;
@@ -1713,11 +1660,6 @@ fn parse_message_1(
             .map_err(NexradError::LimitExceeded)?;
     }
 
-    let first_gates = if reflectivity_row.is_some() {
-        reflectivity_gates
-    } else {
-        doppler_gates
-    };
     let sweep = builder.sweep_for_radial(radial_status, elevation_angle, elevation_number)?;
     let ray = builder.push_ray(
         sweep,
@@ -1727,7 +1669,6 @@ fn parse_message_1(
         elevation_angle,
         nyquist_velocity_mps,
         radial_status,
-        first_gates,
         ONE_DEGREE_RADIALS_PER_CUT,
     );
 
@@ -1831,12 +1772,6 @@ fn parse_message_31(
         }
     }
 
-    let first_gates = moments[..moment_count]
-        .iter()
-        .flatten()
-        .next()
-        .map(|moment| moment.gates)
-        .unwrap_or_default();
     let sweep = builder.sweep_for_radial(
         header.radial_status,
         header.elevation_angle,
@@ -1850,7 +1785,6 @@ fn parse_message_31(
         header.elevation_angle,
         nyquist_velocity_mps,
         header.radial_status,
-        first_gates,
         expected_radials,
     );
 
@@ -2204,7 +2138,6 @@ mod tests {
             DateTime::<Utc>::UNIX_EPOCH,
             ArchiveCompression::Uncompressed,
             DecodeBudget::volume(),
-            false,
         );
 
         parse_message_1(&body, &header, &mut builder).unwrap();
@@ -2275,7 +2208,6 @@ mod tests {
             DateTime::<Utc>::UNIX_EPOCH,
             ArchiveCompression::Uncompressed,
             DecodeBudget::volume(),
-            false,
         );
 
         parse_message_1(&body, &header, &mut builder).unwrap();
@@ -2644,7 +2576,6 @@ mod tests {
             &bytes,
             ArchiveCompression::Bzip2Blocks,
             DecodeBudget::volume(),
-            false,
         )
         .expect("real chunks fit the default budget")
         .finish()
@@ -2665,7 +2596,6 @@ mod tests {
             &bytes,
             ArchiveCompression::Bzip2Blocks,
             DecodeBudget::new(needed / 2),
-            false,
         )
         .expect_err("half the needed budget must fail");
         assert!(

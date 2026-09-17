@@ -13,7 +13,7 @@
 //! of the real Irene file.
 
 use recast_radar_core::bounded_read::MAX_SWEEPS_PER_VOLUME;
-use recast_radar_io_cfradial::{CfRadialError, decode_cfradial1_volume};
+use recast_radar_io_cfradial::{CfRadialError, read_cfradial1_volume};
 
 const FUZZ_INPUT: &str = "fuzz-cfradial-overlapping-sweep-ray-ranges";
 const IRENE: &str = "cfrad1-irene-sr2-20110827-120420-sur-sweeps01";
@@ -81,12 +81,12 @@ fn irene_with_second_sweep_start(start: i32) -> Vec<u8> {
 }
 
 fn assert_overlap_error(bytes: &[u8], what: &str) {
-    match decode_cfradial1_volume(bytes) {
+    match read_cfradial1_volume(bytes) {
         Err(CfRadialError::InvalidMessage { reason, .. }) => {
             assert!(reason.contains("overlap"), "{what}: {reason}");
         }
         Err(other) => panic!("{what}: expected an overlapping-sweeps error, got {other}"),
-        Ok(volume) => panic!("{what}: decoded {} cuts", volume.cuts.len()),
+        Ok(volume) => panic!("{what}: decoded {} cuts", volume.sweeps.len()),
     }
 }
 
@@ -97,7 +97,7 @@ fn fuzz_input_is_rejected_by_the_sweep_limit() {
     assert_eq!(entry.derived_from.as_deref(), Some(IRENE));
     let bytes = testdata_bytes(FUZZ_INPUT);
     assert_eq!(be_u32(&bytes, dimension_len_at(&bytes, "sweep")), 6146);
-    match decode_cfradial1_volume(&bytes) {
+    match read_cfradial1_volume(&bytes) {
         Err(CfRadialError::LimitExceeded(reason)) => {
             assert!(reason.contains("6146 sweeps"), "{reason}");
         }
@@ -135,19 +135,19 @@ fn real_sweeps_sharing_one_ray_are_rejected() {
 fn sweep_with_a_fill_value_ray_index_is_skipped() {
     // A fill value used to become ray 0 (`as usize`), so sweep 1 repeated
     // all 719 rays including sweep 0's. Now only sweep 1 is dropped.
-    let volume = decode_cfradial1_volume(&irene_with_second_sweep_start(NC_FILL_INT))
+    let volume = read_cfradial1_volume(&irene_with_second_sweep_start(NC_FILL_INT))
         .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(volume.metadata.skipped_message_count, 1);
-    let rays: Vec<usize> = volume.cuts.iter().map(|cut| cut.radials.len()).collect();
+    assert_eq!(volume.provenance.decode.skipped_message_count, 1);
+    let rays: Vec<usize> = volume.sweeps.iter().map(|sweep| sweep.nrays()).collect();
     assert_eq!(rays, [360]);
 
-    let unmodified = decode_cfradial1_volume(&irene_with_second_sweep_start(360))
+    let unmodified = read_cfradial1_volume(&irene_with_second_sweep_start(360))
         .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(unmodified.metadata.skipped_message_count, 0);
+    assert_eq!(unmodified.provenance.decode.skipped_message_count, 0);
     let rays: Vec<usize> = unmodified
-        .cuts
+        .sweeps
         .iter()
-        .map(|cut| cut.radials.len())
+        .map(|sweep| sweep.nrays())
         .collect();
     assert_eq!(rays, [360, 359]);
 }

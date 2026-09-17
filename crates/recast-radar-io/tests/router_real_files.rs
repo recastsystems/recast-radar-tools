@@ -1,4 +1,4 @@
-//! Routing-equivalence tests for `decode_supported_volume_bytes` against the
+//! Routing-equivalence tests for `read_supported_volume_bytes` against the
 //! format crates' REAL format-validation fixtures.
 //!
 //! The shared magic-byte router (DORADE → ODIM_H5 → CfRadial classic netCDF →
@@ -17,8 +17,8 @@
 //! synthetic single-radial volume the `recast-radar-io-nexrad` unit tests
 //! pin, rebuilt here byte-for-byte.
 
-use recast_radar_core::{MomentStorage, RadarVolume};
-use recast_radar_io::decode_supported_volume_bytes;
+use recast_radar_core::model::{FieldData, Volume};
+use recast_radar_io::read_supported_volume_bytes;
 use recast_radar_io_odim::odim_cartesian::decode_odim_h5_cartesian_max;
 
 const BEJAB: &[u8] = include_bytes!("../../recast-radar-io-odim/tests/data/bejab.pvol.hdf");
@@ -50,38 +50,47 @@ const COW2_SWEEP: &[u8] = include_bytes!(
 
 fn assert_routed_matches_direct(
     bytes: &[u8],
-    direct: Result<RadarVolume, String>,
+    direct: Result<Volume, String>,
     expected_site: &str,
     what: &str,
 ) {
     let direct = direct.unwrap_or_else(|err| panic!("direct decode of {what} failed: {err}"));
-    let routed = decode_supported_volume_bytes(bytes)
+    let routed = read_supported_volume_bytes(bytes)
         .unwrap_or_else(|err| panic!("routed decode of {what} failed: {err}"));
-    assert_eq!(routed.site.id, expected_site, "{what} site id");
-    assert!(!routed.cuts.is_empty(), "{what} decoded no cuts");
-    // Float moment planes carry NaN fills, and `NaN != NaN` under PartialEq
-    // would fail even for byte-identical decodes — compare F32 storage
-    // bitwise, everything else structurally.
     assert_eq!(
-        f32_plane_bits(&routed),
-        f32_plane_bits(&direct),
-        "{what}: routed F32 planes != direct decode"
+        routed.attrs.instrument_name, expected_site,
+        "{what} instrument name"
+    );
+    assert!(!routed.sweeps.is_empty(), "{what} decoded no sweeps");
+    // Float planes carry NaN fills, and `NaN != NaN` under PartialEq would
+    // fail even for byte-identical decodes — compare float storage bitwise,
+    // everything else structurally.
+    assert_eq!(
+        float_plane_bits(&routed),
+        float_plane_bits(&direct),
+        "{what}: routed float planes != direct decode"
     );
     assert_eq!(
-        with_f32_planes_cleared(routed),
-        with_f32_planes_cleared(direct),
+        with_float_planes_cleared(routed),
+        with_float_planes_cleared(direct),
         "{what}: routed != direct decode"
     );
 }
 
-/// Every F32 moment plane in cut/moment iteration order, as raw bit patterns.
-fn f32_plane_bits(volume: &RadarVolume) -> Vec<Vec<u32>> {
+/// Every float plane in sweep/field order, as raw bit patterns.
+fn float_plane_bits(volume: &Volume) -> Vec<Vec<u64>> {
     volume
-        .cuts
+        .sweeps
         .iter()
-        .flat_map(|cut| cut.moments.values())
-        .filter_map(|grid| match &grid.storage {
-            MomentStorage::F32(values) => {
+        .flat_map(|sweep| sweep.fields.iter())
+        .filter_map(|field| match &field.data {
+            FieldData::F32 { values, .. } => Some(
+                values
+                    .iter()
+                    .map(|value| u64::from(value.to_bits()))
+                    .collect(),
+            ),
+            FieldData::F64 { values, .. } => {
                 Some(values.iter().map(|value| value.to_bits()).collect())
             }
             _ => None,
@@ -89,12 +98,14 @@ fn f32_plane_bits(volume: &RadarVolume) -> Vec<Vec<u32>> {
         .collect()
 }
 
-/// The same volume with F32 plane contents emptied (compared bitwise above).
-fn with_f32_planes_cleared(mut volume: RadarVolume) -> RadarVolume {
-    for cut in &mut volume.cuts {
-        for grid in cut.moments.values_mut() {
-            if let MomentStorage::F32(values) = &mut grid.storage {
-                values.clear();
+/// The same volume with float plane contents emptied (compared bitwise above).
+fn with_float_planes_cleared(mut volume: Volume) -> Volume {
+    for sweep in &mut volume.sweeps {
+        for field in &mut sweep.fields {
+            match &mut field.data {
+                FieldData::F32 { values, .. } => values.clear(),
+                FieldData::F64 { values, .. } => values.clear(),
+                _ => {}
             }
         }
     }
@@ -112,7 +123,7 @@ fn router_matches_direct_odim_decoder_on_real_pvols() {
     ] {
         assert_routed_matches_direct(
             bytes,
-            recast_radar_io_odim::odim::decode_odim_h5_volume(bytes).map_err(|err| err.to_string()),
+            recast_radar_io_odim::odim::read_odim_h5_volume(bytes).map_err(|err| err.to_string()),
             site,
             what,
         );
@@ -128,7 +139,7 @@ fn router_matches_direct_cfradial_decoder_on_classic_netcdf() {
     ] {
         assert_routed_matches_direct(
             bytes,
-            recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(bytes)
+            recast_radar_io_cfradial::cfradial::read_cfradial1_volume(bytes)
                 .map_err(|err| err.to_string()),
             site,
             what,
@@ -140,7 +151,7 @@ fn router_matches_direct_cfradial_decoder_on_classic_netcdf() {
 fn router_matches_direct_dorade_decoder_on_real_cow2_sweep() {
     assert_routed_matches_direct(
         COW2_SWEEP,
-        recast_radar_io_dorade::dorade::decode_dorade_sweep_volume(COW2_SWEEP)
+        recast_radar_io_dorade::dorade::read_dorade_sweep_volume(COW2_SWEEP)
             .map_err(|err| err.to_string()),
         "COW2",
         "COW2 sweepfile head24",
@@ -152,10 +163,10 @@ fn router_sends_netcdf4_cfradial_to_the_hdf5_side_like_the_app_chains_did() {
     // netCDF-4 is an HDF5 container: the router must dispatch it to the ODIM
     // decoder (HDF5 magic outranks netCDF), reproducing the historical app
     // routing chains and their conversion-guidance error text exactly.
-    let direct_err = recast_radar_io_odim::odim::decode_odim_h5_volume(XSAPR_PPI_NETCDF4)
+    let direct_err = recast_radar_io_odim::odim::read_odim_h5_volume(XSAPR_PPI_NETCDF4)
         .expect_err("netCDF-4 CfRadial must not decode as ODIM")
         .to_string();
-    let routed_err = decode_supported_volume_bytes(XSAPR_PPI_NETCDF4)
+    let routed_err = read_supported_volume_bytes(XSAPR_PPI_NETCDF4)
         .expect_err("netCDF-4 CfRadial must not decode through the router")
         .to_string();
     assert_eq!(routed_err, direct_err);
@@ -169,10 +180,10 @@ fn router_sends_netcdf4_cfradial_to_the_hdf5_side_like_the_app_chains_did() {
 fn router_rejects_model_data_file_like_the_direct_decoder() {
     let path = recast_radar_testdata::require_file!("l2-klix-20210829-175748-mdm");
     let bytes = std::fs::read(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
-    let direct_err = recast_radar_io_nexrad::decode_volume_from_bytes(&bytes)
+    let direct_err = recast_radar_io_nexrad::read_volume_from_bytes(&bytes)
         .expect_err("model-data file must not decode")
         .to_string();
-    let routed_err = decode_supported_volume_bytes(&bytes)
+    let routed_err = read_supported_volume_bytes(&bytes)
         .expect_err("model-data file must not decode")
         .to_string();
     assert_eq!(routed_err, direct_err);
@@ -184,8 +195,8 @@ fn router_rejects_model_data_file_like_the_direct_decoder() {
 
 #[test]
 fn image_decoder_and_volume_router_remain_separate() {
-    let volume_error = decode_supported_volume_bytes(IMGW_KDP_MAX)
-        .expect_err("IMAGE must not route into RadarVolume")
+    let volume_error = read_supported_volume_bytes(IMGW_KDP_MAX)
+        .expect_err("IMAGE must not route into a Volume")
         .to_string();
     assert!(
         volume_error.contains("PVOL and SCAN only"),
@@ -201,8 +212,8 @@ fn image_decoder_and_volume_router_remain_separate() {
 fn router_decodes_synthetic_archive_ii_same_as_direct_decoder() {
     let bytes = synthetic_archive_ii();
     let direct =
-        recast_radar_io_nexrad::decode_volume_from_bytes(&bytes).expect("direct Archive II decode");
-    let routed = decode_supported_volume_bytes(&bytes).expect("routed Archive II decode");
+        recast_radar_io_nexrad::read_volume_from_bytes(&bytes).expect("direct Archive II decode");
+    let routed = read_supported_volume_bytes(&bytes).expect("routed Archive II decode");
     assert_eq!(routed, direct);
 }
 
@@ -211,7 +222,7 @@ fn router_matches_direct_archive_ii_decoder_on_synthetic_volume() {
     let bytes = synthetic_archive_ii();
     assert_routed_matches_direct(
         &bytes,
-        recast_radar_io_nexrad::decode_volume_from_bytes(&bytes).map_err(|err| err.to_string()),
+        recast_radar_io_nexrad::read_volume_from_bytes(&bytes).map_err(|err| err.to_string()),
         "KTLX",
         "synthetic Archive II",
     );

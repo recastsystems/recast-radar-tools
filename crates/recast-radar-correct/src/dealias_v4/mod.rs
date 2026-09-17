@@ -136,9 +136,6 @@ pub struct V4VolumeSolution {
     /// Indexed by sweep index (None for sweeps without velocity).
     tilts: Vec<Option<V4TiltSolution>>,
     diagnostics: V4Diagnostics,
-    /// Legacy-model copies of the tilts, filled only by the legacy
-    /// `dealias_volume_v4` wrapper (removed with the FM301 shim).
-    pub(crate) legacy_tilts: crate::legacy_api::LegacyTilts,
 }
 
 impl V4VolumeSolution {
@@ -316,7 +313,6 @@ pub fn dealias_volume(
         volume_time,
         tilts: solutions,
         diagnostics,
-        legacy_tilts: crate::legacy_api::LegacyTilts::default(),
     }
 }
 

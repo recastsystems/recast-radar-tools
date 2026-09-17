@@ -8,16 +8,14 @@
 
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-mod legacy_bridge;
+mod dealias_eval;
 
-use legacy_bridge::dealias_eval;
 use recast_radar_core::{FieldName, Quantity, Volume};
 use recast_radar_render::{
     ColorTableSet, ViewportFieldCache, ViewportRasterOptions, color_family_for_name,
@@ -229,11 +227,12 @@ fn run_iteration(
     let started = Instant::now();
     // The app's one shared byte router (local open / URL polling /
     // provider downloads); a Level-II buffer falls through to
-    // decode_volume_from_bytes, the same entry the archive path uses.
+    // read_volume_from_bytes, the same entry the archive path uses.
     // No site hint is needed: Archive II embeds the ICAO in the header.
     // Until the router returns the FM301 model, the stage also includes the
     // shim conversion, which moves the decoded buffers and copies nothing.
-    let volume = legacy_bridge::read_volume_bytes(raw)?;
+    let volume =
+        recast_radar_io::read_supported_volume_bytes(raw).map_err(|err| err.to_string())?;
     let decode_ms = elapsed_ms(started);
 
     let (reflectivity_sweep, reflectivity) = lowest_sweep_with(&volume, Quantity::Reflectivity)

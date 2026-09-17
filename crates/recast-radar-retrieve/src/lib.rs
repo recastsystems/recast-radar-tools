@@ -31,12 +31,10 @@
 //! and the ones the derivation could produce from them on demand.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 mod availability;
 mod detect;
 mod gbvtd;
-pub mod legacy_api;
 mod shear;
 mod sweep;
 mod volume;
@@ -74,11 +72,6 @@ pub use vwp::{
     VwpQuality, VwpRejectedLevel, VwpRejectionReason, VwpWindLevel, compute_vwp,
 };
 pub use wind::{gust_proxy, gust_proxy_from_dealiased, marc, marc_from_dealiased};
-
-// Legacy signatures, kept until the FM301 shim is removed
-// (docs/design/fm301-model.md section 13.3).
-#[allow(deprecated)]
-pub use legacy_api::*;
 
 use recast_radar_core::FieldName;
 
@@ -181,23 +174,15 @@ pub fn temporal_products() -> Vec<ProductDescriptor> {
     .collect()
 }
 
-/// Decoding through the un-migrated `recast-radar-io-nexrad` for real-file
-/// tests, bridged to the FM301 model (design note 13.3). Deleted with the
-/// shim once the io crates decode natively.
+/// Level II decoding for real-file tests.
 #[cfg(test)]
-#[allow(deprecated)]
-pub(crate) mod legacy_bridge {
+pub(crate) mod test_decode {
     use std::path::Path;
 
     use recast_radar_core::Volume;
-    use recast_radar_core::legacy::volume_from_legacy;
 
     pub(crate) fn decode_level2(path: &Path) -> Result<Volume, String> {
-        let legacy =
-            recast_radar_io_nexrad::decode_volume_from_path(path).map_err(|e| e.to_string())?;
-        volume_from_legacy(legacy)
-            .map(|(volume, _residue)| volume)
-            .map_err(|e| e.to_string())
+        recast_radar_io_nexrad::read_volume_from_path(path).map_err(|e| e.to_string())
     }
 }
 

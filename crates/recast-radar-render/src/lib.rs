@@ -11,7 +11,6 @@
 //! not provide ([`Field::absent_rows`]) are never drawn.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::f32::consts::PI;
 use std::ops::Range;
@@ -221,8 +220,6 @@ pub enum RenderError {
     CacheStorageMismatch,
     #[error("viewport geometry cache does not match this field's gate geometry")]
     GeometryCacheMismatch,
-    #[error("velocity dealiasing failed: {0}")]
-    Dealias(String),
     #[error("image write failed: {0}")]
     Image(#[from] ImageError),
 }
@@ -352,9 +349,8 @@ pub fn render_field_image(
 /// hands to [`ViewportFieldCache::new_dealiased_velocity_from_field_with_color_tables`],
 /// so a loop replay or product toggle does not dealias again.
 ///
-/// Transitional: the dealiaser is `recast-radar-correct`'s pre-FM301
-/// `dealias_velocity_grid`, run through the legacy shim until that crate
-/// migrates; the result is identical.
+/// The dealiaser is `recast_radar_correct::dealias_velocity`, the region-based
+/// engine.
 pub fn dealiased_velocity_field(
     volume: &Volume,
     sweep_index: usize,
@@ -367,7 +363,7 @@ pub fn dealiased_velocity_field(
             field: source.clone(),
         });
     }
-    legacy_bridge::dealias_velocity(volume, sweep_index, view.field).map_err(RenderError::Dealias)
+    Ok(recast_radar_correct::dealias_velocity(sweep, view.field))
 }
 
 pub fn render_field_viewport_image(
@@ -3827,111 +3823,6 @@ fn unfiltered_reflectivity_name(name: &str) -> bool {
     )
 }
 
-/// Velocity dealiasing through `recast-radar-correct`'s pre-FM301 API, until
-/// that crate's FM301 migration lands. The only place this crate names legacy
-/// model types (docs/design/fm301-model.md section 13.3).
-#[allow(deprecated)]
-mod legacy_bridge {
-    use recast_radar_core::legacy::{self, LegacyConvention};
-    use recast_radar_core::{
-        Field, FieldData, FieldName, FloatCoding, IntCoding, LinearTransform, MomentGrid,
-        MomentStorage, Volume,
-    };
-
-    /// Region-based dealiasing (`recast_radar_correct::dealias_velocity_grid`)
-    /// of `velocity`, a field of sweep `sweep_index`. Returns `VRADDH` on the
-    /// same rays, gates and gate mapping.
-    pub(crate) fn dealias_velocity(
-        volume: &Volume,
-        sweep_index: usize,
-        velocity: &Field,
-    ) -> Result<Field, String> {
-        let sweep = volume
-            .sweeps
-            .get(sweep_index)
-            .ok_or_else(|| format!("no sweep {sweep_index}"))?;
-        // A one-sweep, one-field volume, so only the velocity buffer is copied.
-        let mut single =
-            recast_radar_core::Sweep::new(0, sweep.sweep_mode.clone(), sweep.fixed_angle_deg);
-        single.elevation_number = sweep.elevation_number;
-        single.rays = sweep.rays.clone();
-        single.range = sweep.range.clone();
-        single.ray_vars = sweep.ray_vars.clone();
-        single.fields.push(velocity.clone());
-        let mut scratch = Volume::new(volume.attrs.instrument_name.clone(), volume.time_reference);
-        scratch.provenance.source_format = volume.provenance.source_format;
-        scratch.sweeps.push(single);
-        let convention = LegacyConvention::from(volume.provenance.source_format);
-        let legacy_volume =
-            legacy::legacy_from_volume(scratch, None, convention).map_err(|err| err.to_string())?;
-        let cut = legacy_volume
-            .cuts
-            .first()
-            .ok_or("velocity sweep did not convert")?;
-        let grid = cut
-            .moments
-            .values()
-            .next()
-            .ok_or("velocity field did not convert")?;
-        let dealiased = recast_radar_correct::dealias_velocity_grid(cut, grid);
-        field_from_dealiased(dealiased, velocity)
-    }
-
-    fn field_from_dealiased(grid: MomentGrid, source: &Field) -> Result<Field, String> {
-        let MomentGrid {
-            gate_range,
-            scale,
-            offset,
-            nodata,
-            range_folded,
-            radial_indices,
-            storage,
-            ..
-        } = grid;
-        if gate_range.gate_count != source.ngates as usize
-            || radial_indices.len() != source.nrays as usize
-        {
-            return Err(format!(
-                "dealiased grid is {} x {}, source field is {} x {}",
-                radial_indices.len(),
-                gate_range.gate_count,
-                source.nrays,
-                source.ngates
-            ));
-        }
-        let transform = LinearTransform::IcdScaleOffset { scale, offset };
-        let data = match storage {
-            MomentStorage::U8(values) => FieldData::U8 {
-                values,
-                coding: IntCoding {
-                    transform,
-                    fill_value: nodata.and_then(|code| u8::try_from(code).ok()),
-                    undetect: None,
-                    range_folded: range_folded.and_then(|code| u8::try_from(code).ok()),
-                    valid_range: None,
-                },
-            },
-            MomentStorage::U16(values) => FieldData::U16 {
-                values,
-                coding: IntCoding {
-                    transform,
-                    fill_value: nodata,
-                    undetect: None,
-                    range_folded,
-                    valid_range: None,
-                },
-            },
-            MomentStorage::F32(values) => FieldData::F32 {
-                values,
-                coding: FloatCoding::default(),
-            },
-        };
-        let mut field = Field::new(FieldName::Vraddh, source.gates, source.ngates, data);
-        field.absent_rows = source.absent_rows.clone();
-        Ok(field)
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -5536,83 +5427,57 @@ mod tests {
     }
 }
 
-/// Derived grids from `recast-radar-map` drawn through the viewport cache.
-/// `recast-radar-map` still produces legacy `MomentGrid`s, so this test
-/// bridges them into fields; it moves to the native API when `map` migrates.
+/// Derived fields from `recast-radar-map` drawn through the viewport cache.
 #[cfg(test)]
-#[allow(deprecated, clippy::unwrap_used, clippy::expect_used)]
-mod legacy_bridge_tests {
-    use recast_radar_core::legacy::{self, LegacyConvention};
-    use recast_radar_core::{
-        ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType, RadarVolume, Radial, Volume,
-    };
-    use recast_radar_map::{
-        ECHO_TOP_THRESHOLD_DBZ, composite_reflectivity_grid, echo_top_grid, vil_grid,
-    };
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod derived_product_tests {
+    use recast_radar_core::{Field, FieldData, FieldName, FloatCoding, Sweep, SweepMode, Volume};
+    use recast_radar_map::{ECHO_TOP_THRESHOLD_DBZ, composite_reflectivity, echo_top, vil};
 
-    fn cut_with_ref(elev: f32, az_count: usize, gates: usize, dbz: f32) -> ElevationCut {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: gates,
-        };
-        let mut cut = ElevationCut::new(elev, None);
+    fn sweep_with_ref(number: u32, elev: f32, az_count: usize, gates: usize, dbz: f32) -> Sweep {
+        let mut sweep = Sweep::new(number, SweepMode::AzimuthSurveillance, elev);
+        let mapping = sweep.attach_geometry(0.0, 1_000.0, gates as u32).unwrap();
         for k in 0..az_count {
-            cut.radials.push(Radial {
-                azimuth_deg: k as f32 * (360.0 / az_count as f32),
-                elevation_deg: elev,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
+            sweep.push_ray(k as f64, k as f32 * (360.0 / az_count as f32), elev);
         }
-        let grid = MomentGrid {
-            moment: MomentType::Reflectivity,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: (0..az_count).collect(),
-            storage: MomentStorage::F32(vec![dbz; az_count * gates]),
-        };
-        cut.moments.insert(MomentType::Reflectivity, grid);
-        cut
-    }
-
-    fn volume_with(cuts: Vec<ElevationCut>) -> RadarVolume {
-        RadarVolume {
-            cuts,
-            ..Default::default()
+        let mut field = Field::new(
+            FieldName::Dbzh,
+            mapping,
+            gates as u32,
+            FieldData::F32 {
+                values: Vec::new(),
+                coding: FloatCoding::default(),
+            },
+        );
+        let row = vec![dbz; gates];
+        for ray in 0..az_count {
+            field.push_row_f32(ray, &row).unwrap();
         }
+        sweep.add_field(field).unwrap();
+        sweep
     }
 
     #[test]
     fn derived_products_render_through_viewport_cache() {
-        // End-to-end: compute each derived grid and render it through the same
-        // ViewportFieldCache path the GUI worker uses, with its dedicated
+        // End-to-end: compute each derived field and render it through the
+        // same ViewportFieldCache path the GUI worker uses, with its dedicated
         // color family. Asserts the render produces opaque pixels (no panic,
         // correct plumbing).
         use crate::color::{ColorTableFamily, ColorTableSet};
         use crate::{ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len};
 
-        let legacy_volume = volume_with(vec![
-            cut_with_ref(0.5, 360, 120, 45.0),
-            cut_with_ref(3.0, 360, 120, 50.0),
-        ]);
+        let mut v = Volume::new("TST", chrono::Utc::now());
+        v.sweeps.push(sweep_with_ref(0, 0.5, 360, 120, 45.0));
+        v.sweeps.push(sweep_with_ref(1, 3.0, 360, 120, 50.0));
+        v.seal().unwrap();
         let cases = [
+            (composite_reflectivity(&v), ColorTableFamily::Reflectivity),
             (
-                composite_reflectivity_grid(&legacy_volume),
-                ColorTableFamily::Reflectivity,
-            ),
-            (
-                echo_top_grid(&legacy_volume, ECHO_TOP_THRESHOLD_DBZ),
+                echo_top(&v, ECHO_TOP_THRESHOLD_DBZ),
                 ColorTableFamily::EchoTops,
             ),
-            (vil_grid(&legacy_volume), ColorTableFamily::Vil),
+            (vil(&v), ColorTableFamily::Vil),
         ];
-        let v = Volume::try_from(legacy_volume).expect("FM301 volume");
         let tables = ColorTableSet::default();
         let opts = ViewportRasterOptions {
             width: 256,
@@ -5623,17 +5488,11 @@ mod legacy_bridge_tests {
             km_per_px_y: 1.0,
             rotation_rad: 0.0,
         };
-        for (grid, family) in cases {
-            let grid = grid.expect("derived grid");
+        for (field, family) in cases {
+            let field = field.expect("derived field");
             // The derived field lies on sweep 0's rays and range.
-            let mut scratch = v.sweeps[0].clone();
-            scratch.fields.clear();
-            let (index, _) =
-                legacy::field_from_grid(&grid, &mut scratch, LegacyConvention::Generic)
-                    .expect("derived field");
-            let field = scratch.fields.swap_remove(index);
             let cache =
-                ViewportFieldCache::new_derived(&v, 0, field, &scratch.range, family, &tables)
+                ViewportFieldCache::new_derived(&v, 0, field, &v.sweeps[0].range, family, &tables)
                     .expect("derived cache");
             let mut pixels = vec![0u8; viewport_rgba_buffer_len(opts)];
             cache
