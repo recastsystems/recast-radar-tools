@@ -15,9 +15,15 @@
 //! Every decoded volume must name the requested site, carry a VCP, have a
 //! volume time within [`MAX_KEY_TIME_DIFFERENCE_SECS`] of the time in its
 //! object key, and have at least one cut, each with radials and moments.
-//! Any download, listing or decode error, a failed check, or a real-time
-//! volume that does not end within the timeout fails the site. The process
-//! exits with status 1 when any site failed.
+//!
+//! Network failures are retried rather than failing the site at once: the
+//! archive listing and download under [`ARCHIVE_RETRY`], and the real-time
+//! iterator by its own design (after a request error it pauses and carries
+//! on, relisting or abandoning a volume whose chunk cannot be downloaded).
+//! Iterator errors are listed in the report. A site fails on a decode error,
+//! a failed check, archive requests that still fail after the retries, or a
+//! real-time volume that does not end within the timeout. The process exits
+//! with status 1 when any site failed.
 //!
 //! Usage:
 //!   cargo run --release -p recast-radar-data --example live_decode -- KTLX KMKX KHDC PAHG TJUA
@@ -34,13 +40,26 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use recast_radar_data::realtime::iterator::{ChunkEvent, ChunkIterator, ChunkIteratorConfig};
+use recast_radar_data::realtime::retry::{Jitter, RetryPolicy, random_seed};
 use recast_radar_data::{
-    LEVEL2_ARCHIVE_BUCKET, RealtimeChunkType, latest_level2_object, level2_object_time_utc,
+    LEVEL2_ARCHIVE_BUCKET, RealtimeChunkType, VOLUME_FETCH_RETRY, fetch_volume_bytes_with_retry,
+    latest_level2_object, level2_object_time_utc,
 };
 
 /// Largest accepted difference between a decoded volume time and the time
 /// in the object key (archive file name or real-time chunk key).
 const MAX_KEY_TIME_DIFFERENCE_SECS: i64 = 60;
+
+/// Retries of the archive listing and download: five attempts over about a
+/// minute (delay ceilings 4, 8, 16 and 32 s), enough to ride out a short S3
+/// or network outage.
+const ARCHIVE_RETRY: RetryPolicy = RetryPolicy {
+    max_attempts: 5,
+    initial_delay: Duration::from_secs(4),
+    max_delay: Duration::from_secs(32),
+    multiplier: 2.0,
+    jitter: Jitter::Equal,
+};
 
 /// Default wait for the joined real-time volume's End chunk. The longest
 /// WSR-88D volumes (VCP 31/32) take about 10 minutes; a volume abandoned
@@ -181,9 +200,42 @@ impl ArchiveReport {
     }
 }
 
+/// Run `attempt` under [`ARCHIVE_RETRY`], logging each failure.
+fn with_archive_retries<T>(
+    site: &str,
+    what: &str,
+    mut attempt: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    let mut backoff = ARCHIVE_RETRY.backoff(random_seed());
+    loop {
+        match attempt() {
+            Ok(value) => return Ok(value),
+            Err(message) => match backoff.next_delay() {
+                Some(delay) => {
+                    progress(
+                        site,
+                        &format!(
+                            "archive: {what} failed ({message}); retrying in {:.1} s",
+                            delay.as_secs_f64()
+                        ),
+                    );
+                    std::thread::sleep(delay);
+                }
+                None => {
+                    return Err(format!(
+                        "{what}: {message} (after {} attempts)",
+                        backoff.failures()
+                    ));
+                }
+            },
+        }
+    }
+}
+
 fn check_archive(site: &str) -> Result<ArchiveReport, String> {
-    let object = latest_level2_object(site, 1)
-        .map_err(|err| format!("listing the newest archive volume: {err}"))?;
+    let object = with_archive_retries(site, "listing the newest archive volume", || {
+        latest_level2_object(site, 1).map_err(|err| err.to_string())
+    })?;
     let key_time = level2_object_time_utc(&object)
         .ok_or_else(|| format!("no volume time in archive key {}", object.key))?;
     let url = format!(
@@ -199,16 +251,20 @@ fn check_archive(site: &str) -> Result<ArchiveReport, String> {
         ),
     );
     let download_started = Instant::now();
-    let bytes = recast_radar_data::fetch_volume_bytes(&url)
-        .map_err(|err| format!("downloading {url}: {err}"))?;
+    let bytes = with_archive_retries(site, &format!("downloading {url}"), || {
+        let bytes = fetch_volume_bytes_with_retry(&url, &VOLUME_FETCH_RETRY, std::thread::sleep)
+            .map_err(|err| err.to_string())?;
+        if bytes.len() as u64 == object.size {
+            Ok(bytes)
+        } else {
+            Err(format!(
+                "downloaded {} bytes, listing says {}",
+                bytes.len(),
+                object.size
+            ))
+        }
+    })?;
     let download = download_started.elapsed();
-    if bytes.len() as u64 != object.size {
-        return Err(format!(
-            "{url}: downloaded {} bytes, listing says {}",
-            bytes.len(),
-            object.size
-        ));
-    }
     let summary = decode_and_check(&bytes, site, key_time)
         .map_err(|message| format!("{}: {message}", object.key))?;
     progress(site, &format!("archive: {}", summary.describe()));
@@ -241,6 +297,8 @@ struct RealtimeReport {
     waited: Duration,
     abandoned: Vec<String>,
     retries: Vec<String>,
+    /// Errors the iterator reported and carried on after.
+    errors: Vec<String>,
     requests: u64,
     listing_bytes: u64,
     chunk_bytes: u64,
@@ -280,6 +338,9 @@ impl RealtimeReport {
         for note in &self.retries {
             lines.push(format!("retry     {note}"));
         }
+        for note in &self.errors {
+            lines.push(format!("error     {note}"));
+        }
         lines
     }
 }
@@ -287,7 +348,8 @@ impl RealtimeReport {
 fn check_realtime(site: &str, timeout: Duration) -> Result<RealtimeReport, String> {
     let started = Instant::now();
     let deadline = started + timeout;
-    let mut iter = ChunkIterator::live(site, ChunkIteratorConfig::default());
+    let mut iter = ChunkIterator::try_live(site, ChunkIteratorConfig::default())
+        .map_err(|err| format!("building the HTTPS client: {err}"))?;
 
     // The volume being assembled: id, start time, chunk count, bytes.
     let mut current: Option<(u16, DateTime<Utc>)> = None;
@@ -297,12 +359,22 @@ fn check_realtime(site: &str, timeout: Duration) -> Result<RealtimeReport, Strin
     let mut partial: Option<(u16, usize, VolumeSummary)> = None;
     let mut abandoned = Vec::new();
     let mut retries = Vec::new();
+    let mut errors = Vec::new();
 
     loop {
-        let event = iter
+        let event = match iter
             .next()
             .ok_or_else(|| "chunk iterator ended".to_owned())?
-            .map_err(|err| format!("chunk iterator: {err}"))?;
+        {
+            Ok(event) => event,
+            Err(err) => {
+                // The iterator pauses (an Idle event follows) and carries
+                // on; the deadline bounds how long errors can go on.
+                progress(site, &format!("realtime: error, continuing: {err}"));
+                errors.push(err.to_string());
+                continue;
+            }
+        };
         match event {
             ChunkEvent::Chunk(chunk) => {
                 let info = chunk.info;
@@ -360,6 +432,7 @@ fn check_realtime(site: &str, timeout: Duration) -> Result<RealtimeReport, Strin
                         waited: started.elapsed(),
                         abandoned,
                         retries,
+                        errors,
                         requests: stats.requests,
                         listing_bytes: stats.listing_bytes,
                         chunk_bytes: stats.chunk_bytes,
