@@ -95,7 +95,8 @@ fn violent_tornadoes_are_detected_where_the_damage_survey_puts_them() {
         assert!(best.vrot_mps >= 20.0, "{id}: {best:?}");
         // The lowest-tilt feature sits on the lowest Doppler tilt of the volume.
         let lowest = rotation_velocity_sweep_indices(&volume)[0];
-        assert!((best.base_elevation_deg - volume.sweeps[lowest].fixed_angle_deg).abs() < 0.05);
+        let lowest_elevation = volume.tilt_elevation_deg(lowest).expect("sweep");
+        assert!((best.base_elevation_deg - lowest_elevation).abs() < 0.05);
         // No other site is reported within the survey tolerance (one tornado, one site).
         let nearby = sites
             .iter()

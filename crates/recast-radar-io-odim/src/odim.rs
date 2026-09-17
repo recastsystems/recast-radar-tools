@@ -153,8 +153,13 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
         }
         volume.sweeps.push(sweep.sweep);
     }
-    // The root `how` attributes no typed slot holds, verbatim.
+    // The root `what/object` (PVOL or SCAN) and the root `how` attributes no
+    // typed slot holds, verbatim. `what/version` is `source_version`.
     volume.attrs.other = root_how.unused(&root_used, None);
+    volume.attrs.other.insert(
+        0,
+        ("object".into(), AttrValue::Text(object.as_str().into())),
+    );
 
     // Time reference: the nominal volume time, else the earliest ray.
     if nominal_time.is_none() {
@@ -286,7 +291,17 @@ fn decode_sweep(
         root_used,
         ..
     } = settings;
+    // The dataset's `what/product` (SCAN) and the `how` attributes no typed
+    // slot holds, verbatim.
     sweep.other = how.unused(&dataset_used, Some(nrays));
+    if let Some(product) = file
+        .attr(&what_path, "product")
+        .and_then(|attr| attr.as_str().map(str::to_owned))
+    {
+        sweep
+            .other
+            .insert(0, ("product".into(), AttrValue::Text(product.into())));
+    }
     sweep.range = RangeCoord::Uniform {
         first_center_m,
         spacing_m,
@@ -589,6 +604,11 @@ fn plane_sentinels(field: &Field) -> (Option<f64>, Option<f64>, f64) {
             packed(coding.undetect, coding.transform),
             coding.transform.add_offset(),
         ),
+        FieldData::I32 { coding, .. } => (
+            packed(coding.fill_value, coding.transform),
+            packed(coding.undetect, coding.transform),
+            coding.transform.add_offset(),
+        ),
         FieldData::F32 { coding, .. } => {
             let offset = coding.transform.map_or(0.0, LinearTransform::add_offset);
             (
@@ -731,6 +751,11 @@ fn mask_gate_no_data(field: &mut Field, index: usize) {
             }
         }
         FieldData::I16 { values, coding } => {
+            if let (Some(fill), Some(slot)) = (coding.fill_value, values.get_mut(index)) {
+                *slot = fill;
+            }
+        }
+        FieldData::I32 { values, coding } => {
             if let (Some(fill), Some(slot)) = (coding.fill_value, values.get_mut(index)) {
                 *slot = fill;
             }

@@ -66,11 +66,13 @@ fn provided_rows(field: &Field) -> usize {
     (field.nrays as usize).saturating_sub(field.absent_rows.len())
 }
 
-/// Lowest-elevation sweep of `volume` that carries a field named `name` with
-/// decoded rows — the base tilt for that field. Split super-res cuts
-/// (reflectivity and velocity in separate sweeps) are handled naturally:
-/// this picks the lowest sweep that actually holds the requested field.
+/// Lowest sweep of `volume` ([`Sweep::tilt_elevation_deg`], the first on
+/// ties) that carries a field named `name` with decoded rows — the base tilt
+/// for that field. Split super-res cuts (reflectivity and velocity in
+/// separate sweeps) are handled naturally: this picks the lowest sweep that
+/// actually holds the requested field.
 pub fn base_tilt_sweep(volume: &Volume, name: &FieldName) -> Option<usize> {
+    let source = volume.provenance.source_format;
     volume
         .sweeps
         .iter()
@@ -80,8 +82,9 @@ pub fn base_tilt_sweep(volume: &Volume, name: &FieldName) -> Option<usize> {
                 .field(name)
                 .is_some_and(|field| provided_rows(field) > 0)
         })
-        .filter(|(_, sweep)| sweep.fixed_angle_deg.is_finite())
-        .min_by(|(_, a), (_, b)| a.fixed_angle_deg.total_cmp(&b.fixed_angle_deg))
+        .map(|(index, sweep)| (index, sweep.tilt_elevation_deg(source)))
+        .filter(|(_, elevation)| elevation.is_finite())
+        .min_by(|(_, a), (_, b)| a.total_cmp(b))
         .map(|(index, _)| index)
 }
 
@@ -89,6 +92,8 @@ pub fn base_tilt_sweep(volume: &Volume, name: &FieldName) -> Option<usize> {
 /// field sampled onto the swath and the field's native geometry.
 struct FrameTilt<'a> {
     sweep: &'a Sweep,
+    /// [`Sweep::tilt_elevation_deg`] of `sweep`.
+    tilt_elevation_deg: f32,
     field: &'a Field,
     first_gate_m: f64,
     spacing_m: f64,
@@ -124,6 +129,7 @@ pub fn value_swath(
             let (first_gate_m, spacing_m) = field.native_geometry(&sweep.range)?;
             Some(FrameTilt {
                 sweep,
+                tilt_elevation_deg: volume.tilt_elevation_deg(sweep_index)?,
                 field,
                 first_gate_m,
                 spacing_m,
@@ -169,7 +175,7 @@ pub fn value_swath(
     }
 
     // Everything in the swath is finite-or-NaN; NaN gates render transparent.
-    let reference_elevation = reference.sweep.fixed_angle_deg;
+    let reference_elevation = reference.tilt_elevation_deg;
     let newest = frames
         .iter()
         .max_by_key(|volume| swath_time(volume))

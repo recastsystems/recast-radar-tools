@@ -14,9 +14,8 @@ Every input value comes from a reader that is independent of recast-radar-tools:
 
 - NEXRAD Level II: Py-ART 2.2.5 ``pyart.io.read_nexrad_archive`` (fields, azimuths, ranges,
   ``pyart.retrieve.composite_reflectivity``, ``pyart.correct.dealias_region_based``) and
-  MetPy 1.7.1 ``metpy.io.Level2File`` (per-sweep moment lists, Message 5 fixed angles and
-  ray elevations, volume times). A sweep's tilt elevation is its fixed angle, the Message 5
-  cut angle the Rust reader reports.
+  MetPy 1.7.1 ``metpy.io.Level2File`` (per-sweep moment lists and ray elevations, volume
+  times).
 - NEXRAD Level III Storm Tracking Information (product 58): MetPy ``metpy.io.Level3File``
   (storm-id symbology packets and the tabular STORM ID / FCST MVT / DBZM HGT pages).
 - DORADE: the block walker below (VOLD/SSWB/RADD/PARM/CELV/CSFD/CFAC/SWIB/RYIB/RDAT),
@@ -66,7 +65,7 @@ import sys
 import tarfile
 import tomllib
 import warnings
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -274,23 +273,8 @@ def metpy_file(entry_id):
     return Level2File(io.BytesIO(raw))
 
 
-def reader_fixed_angle(f, first):
-    """The Rust Level II reader's fixed angle for a sweep whose first radial header is `first`:
-    the Message 5 (MetPy ``vcp_info``) cut angle of the radial's elevation number, as xradar
-    and Py-ART report it, with angles above 90 degrees made negative; the first radial's
-    elevation when the file has no usable VCP message. The products use it as the tilt
-    elevation (design note docs/design/fm301-model.md 5.2)."""
-    vcp = getattr(f, "vcp_info", None)
-    number = int(first.el_num)
-    if vcp is not None and 1 <= number <= len(vcp.els):
-        angle = F32(vcp.els[number - 1].el_angle)
-        return F32(angle - F32(360.0)) if angle > 90.0 else angle
-    return F32(first.el_angle)
-
-
 def metpy_sweep_summary(entry_id):
-    """Per sweep: the reader's fixed angle, the first ray's elevation and the moment names its
-    rays carry."""
+    """Per sweep: first-ray elevation and the moment names its rays carry."""
     f = metpy_file(entry_id)
     sweeps = []
     for rays in f.sweeps:
@@ -303,19 +287,18 @@ def metpy_sweep_summary(entry_id):
             for name in names:
                 if name not in moments:
                     moments.append(name)
-        sweeps.append({"fixed_angle_deg": jf(reader_fixed_angle(f, rays[0][0])),
-                       "first_ray_elevation_deg": jf(F32(rays[0][0].el_angle)),
+        sweeps.append({"first_ray_elevation_deg": jf(F32(rays[0][0].el_angle)),
                        "rays": len(rays), "moments": moments})
     return f, sweeps
 
 
 def expected_base_tilt(sweeps, moment):
-    """Index of the lowest sweep (fixed angle, first on ties) carrying `moment`."""
+    """Index of the lowest sweep (first-ray elevation, first on ties) carrying `moment`."""
     best = None
     for index, sweep in enumerate(sweeps):
         if moment not in sweep["moments"]:
             continue
-        if best is None or sweep["fixed_angle_deg"] < sweeps[best]["fixed_angle_deg"]:
+        if best is None or sweep["first_ray_elevation_deg"] < sweeps[best]["first_ray_elevation_deg"]:
             best = index
     return best
 
@@ -328,12 +311,50 @@ def iso(dt):
 
 # ------------------------------------------------------------- DORADE walker ---
 
+def reference_unix(sweep):
+    """The Rust reader's volume time reference for one walked sweep: the earlier of the
+    SSWB start and the earliest RYIB time, truncated to the second (`dorade.rs`). RYIB
+    stores a julian day and h/m/s/ms; the year comes from the SSWB start, else from VOLD,
+    and a ray more than 180 days from the start is on the neighbouring year."""
+    start = sweep["start_unix"]
+    base = datetime.fromtimestamp(start, timezone.utc) if start is not None else None
+    year = base.year if base is not None else sweep["vold_year"]
+    earliest = None
+    for ray in sweep["rays"]:
+        day = ray["julian_day"]
+        if year is None or not 1 <= day <= 366:
+            continue
+        stamp = (datetime(int(year), 1, 1, tzinfo=timezone.utc)
+                 + timedelta(days=day - 1,
+                             hours=min(max(ray["hour"], 0), 23),
+                             minutes=min(max(ray["minute"], 0), 59),
+                             seconds=min(max(ray["second"], 0), 59),
+                             milliseconds=min(max(ray["millisecond"], 0), 999)))
+        if base is not None:
+            if stamp < base - timedelta(days=180):
+                stamp = stamp.replace(year=int(year) + 1)
+            elif stamp > base + timedelta(days=180):
+                stamp = stamp.replace(year=int(year) - 1)
+        if earliest is None or stamp < earliest:
+            earliest = stamp
+    candidates = [t for t in (base, earliest) if t is not None]
+    if not candidates:
+        return None
+    return int(math.floor(min(candidates).timestamp()))
+
+
 def dorade_walk(raw, fields):
-    """One DORADE sweep file: SSWB start time, RYIB azimuth/elevation (CFAC-corrected in
-    float32, then folded into [0, 360) like the Rust reader), the CSFD/CELV gate geometry
-    and every requested field decoded from RDAT (16-bit words: value = stored / scale -
-    bias, NaN at the PARM bad-data flag; every word of the block is kept, like the Rust
-    reader, so a trailing word past the CSFD cell count becomes a no-data gate)."""
+    """One DORADE sweep file: SSWB start time, RYIB times and azimuth/elevation
+    (CFAC-corrected in float32, then folded into [0, 360) like the Rust reader), the
+    CSFD/CELV gate geometry and every requested field decoded from RDAT (16-bit words:
+    value = stored / scale - bias, NaN at the PARM bad-data flag; every word of the block
+    is kept, like the Rust reader, so a trailing word past the CSFD cell count becomes a
+    no-data gate).
+
+    ``reference_unix`` is the volume time reference the Rust reader writes: the earlier of
+    the SSWB start and the earliest RYIB time, truncated to the second, so that no ray time
+    is negative (design note docs/design/fm301-model.md, DORADE time reference). NOXP
+    sweepfiles store their rays backwards, a few seconds past the SSWB start."""
     endian = "<" if struct.unpack_from("<i", raw, 4)[0] < 65536 else ">"
 
     def i16(b, o):
@@ -345,7 +366,7 @@ def dorade_walk(raw, fields):
     def f32(b, o):
         return struct.unpack_from(endian + "f", b, o)[0]
 
-    out = {"rays": [], "params": {}, "start_unix": None}
+    out = {"rays": [], "params": {}, "start_unix": None, "vold_year": None}
     cfac = (0.0, 0.0, 0.0)
     offset = 0
     current = None
@@ -358,6 +379,9 @@ def dorade_walk(raw, fields):
         if name == "SSWB":
             start = i32(block, 12)
             out["start_unix"] = start if start > 0 else None
+        elif name == "VOLD":
+            # proj_name[20] at 16, then year at 36 (dorade.rs).
+            out["vold_year"] = i16(block, 36)
         elif name == "RADD":
             out["compression"] = i16(block, 68)
         elif name == "PARM":
@@ -382,7 +406,9 @@ def dorade_walk(raw, fields):
         elif name == "RYIB":
             az = np.remainder(F32(F32(f32(block, 24)) + F32(cfac[0])), F32(360.0))
             current = {"azimuth_deg": F32(az), "elevation_deg": F32(F32(f32(block, 28)) + F32(cfac[1])),
-                       "data": {}}
+                       "julian_day": i32(block, 12), "hour": i16(block, 16),
+                       "minute": i16(block, 18), "second": i16(block, 20),
+                       "millisecond": i16(block, 22), "data": {}}
             out["rays"].append(current)
         elif name == "RDAT" and current is not None:
             pname = block[8:16].decode("latin-1").strip("\x00 ")
@@ -391,6 +417,7 @@ def dorade_walk(raw, fields):
         offset += length
     if out.get("compression", 0) != 0:
         raise SystemExit("compressed DORADE fields are not handled by this walker")
+    out["reference_unix"] = reference_unix(out)
     out["fields"] = {}
     for field in fields:
         param = out["params"][field]
@@ -665,6 +692,7 @@ def section_swath():
             "archive": NOXP_ARCHIVE,
             "members": names,
             "start_unix": [f["start_unix"] for f in frames],
+            "reference_unix": [f["reference_unix"] for f in frames],
             "rays": [len(f["rays"]) for f in frames],
             "gate_count": reference["gate_count"],
             "first_gate_m": int(round(reference["first_cell_m"])),
@@ -696,7 +724,9 @@ def section_temporal():
     frames = [f for f in frames if len(f["rays"]) == rays]
     if len(frames) != 11:
         raise SystemExit(f"expected 11 NOXP sweeps with {rays} rays, found {len(frames)}")
-    times = [f["start_unix"] for f in frames]
+    # The trend and the accumulation run on the volume time reference, which is what the
+    # tracker reads from a decoded volume.
+    times = [f["reference_unix"] for f in frames]
     dz = [f["fields"]["DZ"] for f in frames]
     older, newer = dz[0], dz[1]
     both = np.isfinite(older) & np.isfinite(newer)
@@ -758,7 +788,8 @@ def section_temporal():
         "noxp": {
             "archive": NOXP_ARCHIVE,
             "members": [f["name"] for f in frames],
-            "start_unix": times,
+            "start_unix": [f["start_unix"] for f in frames],
+            "reference_unix": times,
             "rays": rays,
             "gate_count": frames[0]["gate_count"],
             "first_gate_m": int(round(frames[0]["first_cell_m"])),
@@ -852,9 +883,7 @@ def section_tracks():
 
     def sweep_fields(s):
         """Azimuth-sorted velocity, reflectivity, centred azimuthal shear (1e-3 s^-1,
-        cyclonic positive, both neighbours valid, rows wrap), ENU and tilt elevation of one
-        sweep. The tilt elevation is the sweep's fixed angle (Py-ART's, the Message 5 cut
-        angle), which is what the Rust reader reports and the products use."""
+        cyclonic positive, both neighbours valid, rows wrap) and ENU of one sweep."""
         sl = radar.get_slice(s)
         az = np.asarray(radar.azimuth["data"][sl], dtype=np.float64)
         order = np.argsort(az)
@@ -868,7 +897,7 @@ def section_tracks():
         shear[~(np.isfinite(up) & np.isfinite(down))] = np.nan
         east, north = polar_enu(az, rng)
         return {"az": az, "v": vs, "z": zs, "up": up, "down": down, "shear": shear,
-                "east": east, "north": north, "el": sweep_el[s]}
+                "east": east, "north": north, "el": float(np.mean(radar.elevation["data"][sl]))}
 
     # The low-level composite draws on the lowest velocity sweeps at or below 2 deg
     # (at most three: 0.5, 0.9 and 1.3 deg here).
@@ -942,7 +971,7 @@ def section_tracks():
     az_d = np.asarray(radar.azimuth["data"][sd], dtype=np.float64)
     rho_d = np.ma.filled(rho[sd].astype(np.float64), np.nan)
     ref_d = np.ma.filled(ref[sd].astype(np.float64), np.nan)
-    el_d = sweep_el[dualpol]
+    el_d = float(np.mean(radar.elevation["data"][sd]))
     east_d, north_d = polar_enu(az_d, rng)
     within = np.hypot(east_d - peak_e, north_d - peak_n) <= 5.0
     within &= (r_km[None, :] >= 5.0)

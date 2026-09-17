@@ -538,6 +538,7 @@ pub fn copy_scaled_velocity_row(source: &Field, row: usize, row_values: &mut [f3
         (RowRef::U16(raw), Coding::U16(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
         (RowRef::I8(raw), Coding::I8(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
         (RowRef::I16(raw), Coding::I16(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
+        (RowRef::I32(raw), Coding::I32(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
         (RowRef::F32(raw), Coding::F32(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
         (RowRef::F64(raw), Coding::F64(coding)) => fill(raw, row_values, |r| coding.resolve(r)),
         _ => {}

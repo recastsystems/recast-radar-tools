@@ -180,7 +180,7 @@ fn velocity_sweeps_from_dealiased(
                 .flat_map_iter(|row| radial_convergence_row(row, half_gates))
                 .collect();
             Some(VelSweep {
-                elevation_deg: sweep.fixed_angle_deg,
+                elevation_deg: sweep.tilt_elevation_deg(volume.provenance.source_format),
                 az_rows,
                 conv,
                 gates,
@@ -241,7 +241,7 @@ pub fn marc_from_dealiased(
     let base_sweep = volume.sweeps.get(base_idx)?;
     let (rows, gates) = base_field.shape();
     let (base_first_m, base_spacing_m) = base_field.native_geometry(&base_sweep.range)?;
-    let base_elev = base_sweep.fixed_angle_deg as f64;
+    let base_elev = f64::from(base_sweep.tilt_elevation_deg(volume.provenance.source_format));
     let row_az = row_azimuths(base_sweep, base_field);
     let mut out = vec![f32::NAN; rows * gates];
     out.par_chunks_mut(gates)
@@ -325,7 +325,7 @@ pub fn gust_proxy_from_dealiased(
         .and_then(|field| Some((field, field.native_geometry(&sweep.range)?)));
     let (rows, gates) = dealiased.shape();
     let (first_m, spacing_m) = dealiased.native_geometry(&sweep.range)?;
-    let elev = sweep.fixed_angle_deg as f64;
+    let elev = f64::from(sweep.tilt_elevation_deg(volume.provenance.source_format));
     let mut out = vec![f32::NAN; rows * gates];
     for row in 0..rows {
         let raw: Vec<f32> = (0..gates)
@@ -433,7 +433,7 @@ mod tests {
         let (ref_first_m, ref_spacing_m) = reflectivity
             .native_geometry(&sweep.range)
             .expect("reflectivity geometry");
-        let elevation = f64::from(sweep.fixed_angle_deg);
+        let elevation = f64::from(volume.tilt_elevation_deg(sweep_index).expect("sweep"));
         let (rows, gates) = gust.shape();
         let (mut values, mut without_echo, mut too_high) = (0usize, 0usize, 0usize);
         for row in 0..rows {

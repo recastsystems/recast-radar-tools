@@ -87,6 +87,11 @@ pub enum FieldData {
         values: Vec<i16>,
         coding: IntCoding<i16>,
     },
+    /// 32-bit integer sources (CfRadial `int` fields), stored verbatim.
+    I32 {
+        values: Vec<i32>,
+        coding: IntCoding<i32>,
+    },
     /// Physical values (derived products, float32 sources), stored verbatim.
     F32 {
         values: Vec<f32>,
@@ -257,6 +262,7 @@ mod private {
     impl Sealed for u16 {}
     impl Sealed for i8 {}
     impl Sealed for i16 {}
+    impl Sealed for i32 {}
 }
 
 macro_rules! packed_int {
@@ -289,6 +295,7 @@ packed_int!(u8, U8, "uint8");
 packed_int!(u16, U16, "uint16");
 packed_int!(i8, I8, "int8");
 packed_int!(i16, I16, "int16");
+packed_int!(i32, I32, "int32");
 
 fn resolve_float(
     raw: f64,
@@ -400,6 +407,7 @@ pub enum RowRef<'a> {
     U16(&'a [u16]),
     I8(&'a [i8]),
     I16(&'a [i16]),
+    I32(&'a [i32]),
     F32(&'a [f32]),
     F64(&'a [f64]),
 }
@@ -426,6 +434,7 @@ pub enum Coding {
     U16(IntCoding<u16>),
     I8(IntCoding<i8>),
     I16(IntCoding<i16>),
+    I32(IntCoding<i32>),
     F32(FloatCoding<f32>),
     F64(FloatCoding<f64>),
 }
@@ -455,6 +464,7 @@ impl FieldData {
             Self::U16 { values, .. } => values.len(),
             Self::I8 { values, .. } => values.len(),
             Self::I16 { values, .. } => values.len(),
+            Self::I32 { values, .. } => values.len(),
             Self::F32 { values, .. } => values.len(),
             Self::F64 { values, .. } => values.len(),
         }
@@ -471,6 +481,7 @@ impl FieldData {
             Self::U16 { .. } => "uint16",
             Self::I8 { .. } => "int8",
             Self::I16 { .. } => "int16",
+            Self::I32 { .. } => "int32",
             Self::F32 { .. } => "float32",
             Self::F64 { .. } => "float64",
         }
@@ -483,6 +494,7 @@ impl FieldData {
             Self::U16 { coding, .. } => Scalar::U16(coding.fill_code()),
             Self::I8 { coding, .. } => Scalar::I8(coding.fill_code()),
             Self::I16 { coding, .. } => Scalar::I16(coding.fill_code()),
+            Self::I32 { coding, .. } => Scalar::I32(coding.fill_code()),
             Self::F32 { coding, .. } => Scalar::F32(coding.fill_code()),
             Self::F64 { coding, .. } => Scalar::F64(coding.fill_code()),
         }
@@ -495,6 +507,7 @@ impl FieldData {
             Self::U16 { coding, .. } => Coding::U16(*coding),
             Self::I8 { coding, .. } => Coding::I8(*coding),
             Self::I16 { coding, .. } => Coding::I16(*coding),
+            Self::I32 { coding, .. } => Coding::I32(*coding),
             Self::F32 { coding, .. } => Coding::F32(*coding),
             Self::F64 { coding, .. } => Coding::F64(*coding),
         }
@@ -507,6 +520,7 @@ impl FieldData {
             Self::U16 { coding, .. } => Some(coding.transform),
             Self::I8 { coding, .. } => Some(coding.transform),
             Self::I16 { coding, .. } => Some(coding.transform),
+            Self::I32 { coding, .. } => Some(coding.transform),
             Self::F32 { coding, .. } => coding.transform,
             Self::F64 { coding, .. } => coding.transform,
         }
@@ -519,6 +533,7 @@ impl FieldData {
             Self::U16 { values, coding } => (ArrayBuf::U16(values), Coding::U16(coding)),
             Self::I8 { values, coding } => (ArrayBuf::I8(values), Coding::I8(coding)),
             Self::I16 { values, coding } => (ArrayBuf::I16(values), Coding::I16(coding)),
+            Self::I32 { values, coding } => (ArrayBuf::I32(values), Coding::I32(coding)),
             Self::F32 { values, coding } => (ArrayBuf::F32(values), Coding::F32(coding)),
             Self::F64 { values, coding } => (ArrayBuf::F64(values), Coding::F64(coding)),
         }
@@ -703,6 +718,7 @@ impl Field {
             FieldData::U16 { values, .. } => RowRef::U16(values.get(start..end)?),
             FieldData::I8 { values, .. } => RowRef::I8(values.get(start..end)?),
             FieldData::I16 { values, .. } => RowRef::I16(values.get(start..end)?),
+            FieldData::I32 { values, .. } => RowRef::I32(values.get(start..end)?),
             FieldData::F32 { values, .. } => RowRef::F32(values.get(start..end)?),
             FieldData::F64 { values, .. } => RowRef::F64(values.get(start..end)?),
         })
@@ -732,6 +748,7 @@ impl Field {
             FieldData::U16 { values, coding } => coding.resolve(*values.get(index)?),
             FieldData::I8 { values, coding } => coding.resolve(*values.get(index)?),
             FieldData::I16 { values, coding } => coding.resolve(*values.get(index)?),
+            FieldData::I32 { values, coding } => coding.resolve(*values.get(index)?),
             FieldData::F32 { values, coding } => coding.resolve(*values.get(index)?),
             FieldData::F64 { values, coding } => coding.resolve(*values.get(index)?),
         })
@@ -818,6 +835,7 @@ impl Field {
             FieldData::U16 { values, .. } => values.reserve(additional),
             FieldData::I8 { values, .. } => values.reserve(additional),
             FieldData::I16 { values, .. } => values.reserve(additional),
+            FieldData::I32 { values, .. } => values.reserve(additional),
             FieldData::F32 { values, .. } => values.reserve(additional),
             FieldData::F64 { values, .. } => values.reserve(additional),
         }
@@ -850,6 +868,11 @@ impl Field {
     push_be_row!(
         /// Push a big-endian `i16` row; see [`Field::push_row_u8`].
         push_row_i16_be, I16, i16
+    );
+    push_slice_row!(
+        /// Push an `i32` row (CfRadial `int` fields); see
+        /// [`Field::push_row_u8`].
+        push_row_i32, I32, i32
     );
     push_slice_row!(
         /// Push an `f32` row; see [`Field::push_row_u8`].
@@ -899,6 +922,7 @@ impl Field {
             FieldData::U16 { values, coding } => fill_to!(values, coding.fill_code()),
             FieldData::I8 { values, coding } => fill_to!(values, coding.fill_code()),
             FieldData::I16 { values, coding } => fill_to!(values, coding.fill_code()),
+            FieldData::I32 { values, coding } => fill_to!(values, coding.fill_code()),
             FieldData::F32 { values, coding } => fill_to!(values, coding.fill_code()),
             FieldData::F64 { values, coding } => fill_to!(values, coding.fill_code()),
         }

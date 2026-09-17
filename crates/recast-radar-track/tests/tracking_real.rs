@@ -21,11 +21,7 @@
 mod common;
 
 use chrono::{DateTime, Utc};
-use common::{
-    array, as_f64, as_str, distance_km, golden, level2_with_time, timestamp,
-    with_first_ray_elevations,
-};
-use recast_radar_core::Volume;
+use common::{array, as_f64, as_str, distance_km, golden, level2_with_time, timestamp};
 use recast_radar_testdata::require_file;
 use recast_radar_track::{StormCell, StormTrack, StormTracker, TIME_GATE_S, identify_storm_cells};
 use serde_json::Value;
@@ -42,11 +38,6 @@ struct Frame {
 /// Decode the four volumes, identify cells and run the tracker; `None` when a
 /// volume is not available offline.
 fn run_sequence(expected: &Value) -> Option<Vec<Frame>> {
-    run_sequence_with(expected, |volume| volume)
-}
-
-/// [`run_sequence`] with each decoded volume passed through `prepare` first.
-fn run_sequence_with(expected: &Value, prepare: fn(Volume) -> Volume) -> Option<Vec<Frame>> {
     let mut tracker = StormTracker::default();
     let mut frames = Vec::new();
     for volume in array(&expected["volumes"]) {
@@ -60,7 +51,7 @@ fn run_sequence_with(expected: &Value, prepare: fn(Volume) -> Volume) -> Option<
         };
         let (decoded, volume_time) = level2_with_time(&path);
         assert_eq!(volume_time, timestamp(&volume["level2_volume_time"]));
-        let cells = identify_storm_cells(&prepare(decoded));
+        let cells = identify_storm_cells(&decoded);
         assert!(
             cells.len() >= 20,
             "derecho volume with {} cells",
@@ -238,15 +229,10 @@ fn co_identified_storms_keep_one_track_id_and_scit_motion() {
 }
 
 /// A track whose prediction lands inside a matched cell terminates into that
-/// cell's track with a `merged_into` link. Every merge joins two tracker
-/// fragments of ONE SCIT storm: at the volume before the merge both tracks'
-/// fixes lie within 8 km of the same SCIT storm, and at the merge volume SCIT
-/// has exactly one storm within 8 km of the survivor.
-///
-/// The decoded sequence (tilt elevations from the VCP cut angles) has no
-/// merge, so the merge path runs on the same volumes with the legacy
-/// first-radial tilt elevations ([`with_first_ray_elevations`]), whose
-/// perturbed column geometry gives the tracker one merge.
+/// cell's track with a `merged_into` link. Every merge of the sequence joins two
+/// tracker fragments of ONE SCIT storm: at the volume before the merge both
+/// tracks' fixes lie within 8 km of the same SCIT storm, and at the merge volume
+/// SCIT has exactly one storm within 8 km of the survivor.
 #[test]
 fn merge_terminates_the_loser_with_a_link() {
     let golden = golden("tracking.json");
@@ -255,19 +241,6 @@ fn merge_terminates_the_loser_with_a_link() {
         return;
     };
     let volumes = array(&expected["volumes"]);
-    check_merges(&frames, volumes);
-    let Some(perturbed) = run_sequence_with(expected, with_first_ray_elevations) else {
-        return;
-    };
-    let merges = check_merges(&perturbed, volumes);
-    assert!(
-        merges >= 1,
-        "no merge in the derecho sequence with first-radial tilt elevations"
-    );
-}
-
-/// Check every merge of a tracked sequence against SCIT; the merge count.
-fn check_merges(frames: &[Frame], volumes: &[Value]) -> usize {
     let mut merges = 0usize;
     for k in 1..frames.len() {
         let frame = &frames[k];
@@ -327,7 +300,7 @@ fn check_merges(frames: &[Frame], volumes: &[Value]) -> usize {
             }
         }
     }
-    merges
+    assert!(merges >= 1, "no merge in the derecho sequence");
 }
 
 /// An unmatched cell inside a track's forecast circle starts a child track that

@@ -14,14 +14,15 @@
 //!
 //! The goldens were produced by the pre-FM301 renderer, so their labels use
 //! the legacy moment names (`REF`, `VEL`, `CFP`, ...); [`legacy_label`] maps
-//! each FM301 field name back. The pixels must be identical. Since the shim
-//! removal the volumes come from the native decoder, whose `fixed_angle_deg`
-//! is the VCP cut angle (design note 5.2): the lowest reflectivity sweep of
-//! KTLX 2024 is now sweep 0 (0.5 deg surveillance), not sweep 1 (whose first
-//! ray sat at 0.48 deg); the derived-product labels moved with it. KLIX
-//! 2005's dealiased velocity (`DVEL`) was re-recorded when the Message 1
-//! Nyquist velocity moved from spare bytes 46-47 to halfword 31 (bytes
-//! 60-61, ICD Table III, as MetPy and Py-ART read it).
+//! each FM301 field name back. The pixels must be identical. The volumes come
+//! from the native decoder; the base sweep of the derived products is the
+//! lowest by tilt elevation (a Level II sweep's first-ray elevation, the
+//! legacy cut elevation), so KTLX 2024's derived products lie on sweep 1,
+//! whose first ray reads 0.483 deg against sweep 0's 0.582 deg, although
+//! both have the 0.4834 deg VCP cut angle as their fixed angle. KLIX 2005's
+//! dealiased velocity (`DVEL`) was re-recorded when the Message 1 Nyquist
+//! velocity moved from spare bytes 46-47 to halfword 31 (bytes 60-61, ICD
+//! Table III, as MetPy and Py-ART read it).
 
 // Test code: a panic is the failure report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -276,19 +277,17 @@ fn has_rows(field: &Field) -> bool {
     field.nrays as usize > field.absent_rows.len()
 }
 
-/// Lowest sweep (by fixed angle, then index) with rows of a `quantity` field.
+/// Lowest sweep (by tilt elevation, `Sweep::tilt_elevation_deg`, then index)
+/// with rows of a `quantity` field.
 fn lowest_sweep_with(volume: &Volume, quantity: Quantity) -> Option<usize> {
-    volume
-        .sweeps
-        .iter()
-        .enumerate()
-        .filter(|(_, sweep)| sweep.find(quantity).is_some_and(has_rows))
-        .min_by(|(li, ls), (ri, rs)| {
-            ls.fixed_angle_deg
-                .total_cmp(&rs.fixed_angle_deg)
-                .then_with(|| li.cmp(ri))
+    let tilt = |index: usize| volume.tilt_elevation_deg(index).unwrap_or(f32::NAN);
+    (0..volume.sweeps.len())
+        .filter(|index| volume.sweeps[*index].find(quantity).is_some_and(has_rows))
+        .min_by(|left, right| {
+            tilt(*left)
+                .total_cmp(&tilt(*right))
+                .then_with(|| left.cmp(right))
         })
-        .map(|(index, _)| index)
 }
 
 /// The real field re-encoded as physical `f32` (NaN for every sentinel),

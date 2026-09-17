@@ -24,10 +24,11 @@ pub fn golden(relative: &str) -> Value {
 
 /// Decode a real Level II file with the NEXRAD reader, unmodified.
 ///
-/// `Sweep::fixed_angle_deg` is the VCP cut angle (Message 5, design note
-/// 5.2), which the retrievals use as the tilt elevation; the goldens take the
-/// same angle from MetPy's `vcp_info`. The cuts of a split cut and the SAILS /
-/// MRLE repeats of one angle therefore have equal tilt elevations.
+/// The goldens take a tilt's elevation from its first radial (MetPy
+/// `Level2File`), as the retrievals do: they use
+/// `Sweep::tilt_elevation_deg`, which for Level II is the first ray's
+/// elevation, while `fixed_angle_deg` holds the VCP cut angle (design note
+/// 5.2).
 pub fn level2(path: &Path) -> Volume {
     recast_radar_io_nexrad::read_volume_from_path(path)
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
@@ -194,16 +195,20 @@ pub fn moment_mut<'a>(cut: &'a mut Sweep, name: &FieldName) -> &'a mut Field {
     &mut cut.fields[index]
 }
 
-/// Index of the lowest sweep carrying field `name`.
+/// Index of the lowest sweep (`Sweep::tilt_elevation_deg`, the first on
+/// ties) carrying field `name`.
 pub fn lowest_cut_with(volume: &Volume, name: &FieldName) -> usize {
-    volume
-        .sweeps
-        .iter()
-        .enumerate()
-        .filter(|(_, cut)| cut.field(name).is_some())
-        .min_by(|a, b| a.1.fixed_angle_deg.total_cmp(&b.1.fixed_angle_deg))
-        .map(|(index, _)| index)
+    (0..volume.sweeps.len())
+        .filter(|index| volume.sweeps[*index].field(name).is_some())
+        .min_by(|a, b| tilt(volume, *a).total_cmp(&tilt(volume, *b)))
         .unwrap_or_else(|| panic!("no sweep carries {name}"))
+}
+
+/// `Sweep::tilt_elevation_deg` of sweep `index`.
+pub fn tilt(volume: &Volume, index: usize) -> f32 {
+    volume
+        .tilt_elevation_deg(index)
+        .unwrap_or_else(|| panic!("no sweep {index}"))
 }
 
 /// Overwrite every finite value of a real field with `f(value)`, keeping no-data gates.

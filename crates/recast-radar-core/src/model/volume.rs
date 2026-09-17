@@ -584,6 +584,16 @@ impl Volume {
         self.instant(*self.sweeps.get(sweep)?.rays.time_s.get(ray)?)
     }
 
+    /// [`Sweep::tilt_elevation_deg`] of sweep `sweep` for this volume's
+    /// source format; `None` when the sweep does not exist.
+    pub fn tilt_elevation_deg(&self, sweep: usize) -> Option<f32> {
+        Some(
+            self.sweeps
+                .get(sweep)?
+                .tilt_elevation_deg(self.provenance.source_format),
+        )
+    }
+
     /// First and last ray time over all sweeps (by value, not storage order).
     pub fn ray_time_extent(&self) -> Option<TimeCoverage> {
         let mut extent: Option<(f64, f64)> = None;

@@ -61,11 +61,15 @@ pub fn identify_storm_cells(volume: &Volume) -> Vec<StormCell> {
     let Some(composite) = composite_reflectivity(volume) else {
         return Vec::new();
     };
+    let source = volume.provenance.source_format;
     let Some(base_sweep) = volume
         .sweeps
         .iter()
         .filter(|s| s.find(Quantity::Reflectivity).is_some())
-        .min_by(|a, b| a.fixed_angle_deg.total_cmp(&b.fixed_angle_deg))
+        .min_by(|a, b| {
+            a.tilt_elevation_deg(source)
+                .total_cmp(&b.tilt_elevation_deg(source))
+        })
     else {
         return Vec::new();
     };

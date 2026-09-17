@@ -244,6 +244,7 @@ pub fn volume_retained_bytes(volume: &Volume) -> usize {
                 FieldData::I8 { values, .. } => values.capacity(),
                 FieldData::U16 { values, .. } => values.capacity().saturating_mul(2),
                 FieldData::I16 { values, .. } => values.capacity().saturating_mul(2),
+                FieldData::I32 { values, .. } => values.capacity().saturating_mul(4),
                 FieldData::F32 { values, .. } => values.capacity().saturating_mul(4),
                 FieldData::F64 { values, .. } => values.capacity().saturating_mul(8),
             };

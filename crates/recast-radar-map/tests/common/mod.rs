@@ -23,10 +23,11 @@ pub fn golden(relative: &str) -> Value {
 
 /// Decode a real Level II file with the NEXRAD reader, unmodified.
 ///
-/// `Sweep::fixed_angle_deg` is the VCP cut angle (Message 5, design note
-/// 5.2), which the products use as the tilt elevation; the goldens take the
-/// same angle from MetPy's `vcp_info`. The cuts of a split cut and the SAILS /
-/// MRLE repeats of one angle therefore have equal tilt elevations.
+/// The goldens take a tilt's elevation from its first radial (MetPy
+/// `Level2File`), as the products do: they use
+/// `Sweep::tilt_elevation_deg`, which for Level II is the first ray's
+/// elevation, while `fixed_angle_deg` holds the VCP cut angle (design note
+/// 5.2).
 pub fn level2(path: &Path) -> Volume {
     recast_radar_io_nexrad::read_volume_from_path(path)
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()))

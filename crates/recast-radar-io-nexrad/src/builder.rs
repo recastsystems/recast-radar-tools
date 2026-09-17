@@ -514,6 +514,7 @@ pub(crate) fn field_capacity_bytes(field: &Field) -> usize {
         FieldData::U16 { values, .. } => values.capacity().saturating_mul(2),
         FieldData::I8 { values, .. } => values.capacity(),
         FieldData::I16 { values, .. } => values.capacity().saturating_mul(2),
+        FieldData::I32 { values, .. } => values.capacity().saturating_mul(4),
         FieldData::F32 { values, .. } => values.capacity().saturating_mul(4),
         FieldData::F64 { values, .. } => values.capacity().saturating_mul(8),
     }
@@ -523,7 +524,7 @@ fn word_bytes(field: &Field) -> usize {
     match &field.data {
         FieldData::U8 { .. } | FieldData::I8 { .. } => 1,
         FieldData::U16 { .. } | FieldData::I16 { .. } => 2,
-        FieldData::F32 { .. } => 4,
+        FieldData::I32 { .. } | FieldData::F32 { .. } => 4,
         FieldData::F64 { .. } => 8,
     }
 }

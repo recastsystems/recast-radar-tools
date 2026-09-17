@@ -11,7 +11,8 @@
 //! sweep's rays and native gates.
 
 use recast_radar_core::{
-    Field, FieldName, Quantity, Sweep, Volume, beam_ground_range_m, beam_height_above_radar_m,
+    Field, FieldName, Quantity, SourceFormat, Sweep, Volume, beam_ground_range_m,
+    beam_height_above_radar_m,
 };
 
 use crate::sweep::physical_field;
@@ -37,7 +38,9 @@ struct SweepSampler<'a> {
 }
 
 impl<'a> SweepSampler<'a> {
-    fn new(sweep: &'a Sweep, field: &'a Field) -> Option<Self> {
+    /// `source` is the volume's source format, which decides the tilt
+    /// elevation ([`Sweep::tilt_elevation_deg`]).
+    fn new(source: SourceFormat, sweep: &'a Sweep, field: &'a Field) -> Option<Self> {
         let (first_gate_m, gate_spacing_m) = field.native_geometry(&sweep.range)?;
         let gates = field.ngates as usize;
         if gates == 0 || gate_spacing_m <= 0.0 {
@@ -56,7 +59,7 @@ impl<'a> SweepSampler<'a> {
             return None;
         }
         azimuth_rows.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let elevation_deg = sweep.fixed_angle_deg;
+        let elevation_deg = sweep.tilt_elevation_deg(source);
         let mut ground_range_m = Vec::with_capacity(gates);
         let mut height_m = Vec::with_capacity(gates);
         for gate in 0..gates {
@@ -188,7 +191,11 @@ pub fn cappi(
         return None;
     }
     let (base_index, base_field) = base_sweep(volume, name)?;
-    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let base = SweepSampler::new(
+        volume.provenance.source_format,
+        &volume.sweeps[base_index],
+        base_field,
+    )?;
     let columns = field_columns(volume, name);
     let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
@@ -239,7 +246,11 @@ pub fn low_level_composite_reflectivity(volume: &Volume, maximum_height_m: f32) 
     }
     let name = reflectivity_name(volume)?;
     let (base_index, base_field) = base_sweep(volume, &name)?;
-    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let base = SweepSampler::new(
+        volume.provenance.source_format,
+        &volume.sweeps[base_index],
+        base_field,
+    )?;
     let columns = field_columns(volume, &name);
     let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
@@ -302,7 +313,11 @@ pub fn echo_depth(volume: &Volume, threshold_dbz: f32) -> Option<Field> {
 pub fn height_of_max_reflectivity(volume: &Volume) -> Option<Field> {
     let name = reflectivity_name(volume)?;
     let (base_index, base_field) = base_sweep(volume, &name)?;
-    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let base = SweepSampler::new(
+        volume.provenance.source_format,
+        &volume.sweeps[base_index],
+        base_field,
+    )?;
     let columns = field_columns(volume, &name);
     let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
@@ -333,7 +348,11 @@ enum ColumnStatistic {
 
 fn column_stat(volume: &Volume, name: &FieldName, statistic: ColumnStatistic) -> Option<Field> {
     let (base_index, base_field) = base_sweep(volume, name)?;
-    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let base = SweepSampler::new(
+        volume.provenance.source_format,
+        &volume.sweeps[base_index],
+        base_field,
+    )?;
     let columns = field_columns(volume, name);
     let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
@@ -380,7 +399,11 @@ enum EchoBoundary {
 fn echo_boundary(volume: &Volume, threshold_dbz: f32, boundary: EchoBoundary) -> Option<Field> {
     let name = reflectivity_name(volume)?;
     let (base_index, base_field) = base_sweep(volume, &name)?;
-    let base = SweepSampler::new(&volume.sweeps[base_index], base_field)?;
+    let base = SweepSampler::new(
+        volume.provenance.source_format,
+        &volume.sweeps[base_index],
+        base_field,
+    )?;
     let columns = field_columns(volume, &name);
     let (rows, gates) = base_field.shape();
     let azimuths = base.row_azimuths();
@@ -414,22 +437,26 @@ fn echo_boundary(volume: &Volume, threshold_dbz: f32, boundary: EchoBoundary) ->
 }
 
 /// The name of the volume's reflectivity: the preferred reflectivity field
-/// ([`Sweep::find`]) of the lowest sweep that has one.
+/// ([`Sweep::find`]) of the lowest sweep ([`Sweep::tilt_elevation_deg`]) that
+/// has one.
 fn reflectivity_name(volume: &Volume) -> Option<FieldName> {
+    let source = volume.provenance.source_format;
     volume
         .sweeps
         .iter()
         .filter_map(|sweep| {
             sweep
                 .find(Quantity::Reflectivity)
-                .map(|field| (sweep.fixed_angle_deg, field))
+                .map(|field| (sweep.tilt_elevation_deg(source), field))
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
         .map(|(_, field)| field.name.clone())
 }
 
-/// Lowest-elevation sweep carrying a field named `name`, and that field.
+/// Lowest sweep ([`Sweep::tilt_elevation_deg`], the first on ties) carrying
+/// a field named `name`, and that field.
 fn base_sweep<'a>(volume: &'a Volume, name: &FieldName) -> Option<(usize, &'a Field)> {
+    let source = volume.provenance.source_format;
     volume
         .sweeps
         .iter()
@@ -437,7 +464,7 @@ fn base_sweep<'a>(volume: &'a Volume, name: &FieldName) -> Option<(usize, &'a Fi
         .filter_map(|(index, sweep)| {
             sweep
                 .field(name)
-                .map(|field| (index, sweep.fixed_angle_deg, field))
+                .map(|field| (index, sweep.tilt_elevation_deg(source), field))
         })
         .min_by(|left, right| left.1.total_cmp(&right.1))
         .map(|(index, _, field)| (index, field))
@@ -449,7 +476,7 @@ fn field_columns<'a>(volume: &'a Volume, name: &FieldName) -> Vec<SweepSampler<'
         .iter()
         .filter_map(|sweep| {
             let field = sweep.field(name)?;
-            SweepSampler::new(sweep, field)
+            SweepSampler::new(volume.provenance.source_format, sweep, field)
         })
         .collect::<Vec<_>>();
     columns.sort_by(|left, right| left.elevation_deg.total_cmp(&right.elevation_deg));

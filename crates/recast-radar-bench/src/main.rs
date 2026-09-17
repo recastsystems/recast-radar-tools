@@ -320,9 +320,13 @@ fn run_iteration(
         volume_time: volume.time_reference.to_rfc3339(),
         sweeps: volume.sweeps.len(),
         reflectivity_sweep,
-        reflectivity_elevation_deg: volume.sweeps[reflectivity_sweep].fixed_angle_deg,
+        reflectivity_elevation_deg: volume
+            .tilt_elevation_deg(reflectivity_sweep)
+            .unwrap_or(f32::NAN),
         velocity_sweep,
-        velocity_elevation_deg: volume.sweeps[velocity_sweep].fixed_angle_deg,
+        velocity_elevation_deg: volume
+            .tilt_elevation_deg(velocity_sweep)
+            .unwrap_or(f32::NAN),
     })
 }
 
@@ -352,19 +356,20 @@ fn sweep_field(
 }
 
 /// Lowest sweep carrying rows of a `quantity` field, and that field's name:
-/// min by `Sweep::fixed_angle_deg`, then sweep index. The Level II fixed
-/// angle is the VCP cut angle (design note `docs/design/fm301-model.md`
-/// 5.2), so the cuts of a split cut and the SAILS / MRLE repeats of one
-/// angle tie, and the first of them in acquisition order wins. The legacy
-/// model used a Level II cut's first radial elevation here, which the
-/// BowEcho app still does (`docs/baselines/import-checksums.txt`).
+/// min by tilt elevation ([`Sweep::tilt_elevation_deg`]), then sweep index,
+/// the same rule as the BowEcho app's lowest-displayable-cut selection. For
+/// Level II the tilt elevation is the first ray's elevation, as the legacy
+/// model and the app take it, not the VCP cut angle in
+/// `Sweep::fixed_angle_deg` (design note `docs/design/fm301-model.md` 5.2).
 fn lowest_sweep_with(volume: &Volume, quantity: Quantity) -> Option<(usize, FieldName)> {
+    let source = volume.provenance.source_format;
     volume
         .sweeps
         .iter()
         .enumerate()
         .filter_map(|(index, sweep)| {
-            displayable_field(sweep, quantity).map(|name| (index, sweep.fixed_angle_deg, name))
+            displayable_field(sweep, quantity)
+                .map(|name| (index, sweep.tilt_elevation_deg(source), name))
         })
         .min_by(
             |(left_index, left_angle, _), (right_index, right_angle, _)| {
@@ -706,6 +711,45 @@ mod tests {
             );
         }
         assert!(parse_args(&args(&["vol.V06", "--sweeps"])).is_err());
+    }
+
+    /// The three baseline volumes (`docs/baselines/import-checksums.txt`):
+    /// the default selection renders the sweeps the import build rendered.
+    /// KTLX 2024 has eight REF sweeps at the 0.4834 deg VCP cut angle whose
+    /// first rays read 0.409 (sweep 4) to 0.637 deg (sweep 14), so the tilt
+    /// elevation picks sweep 4, not sweep 0 as the VCP cut angle would.
+    #[test]
+    fn default_sweeps_are_the_baseline_sweeps() {
+        for (id, reflectivity, velocity) in [
+            ("l2-ktlx-20240315-000217", 4, 9),
+            ("l2-kilx-20260418-013553", 0, 1),
+            ("l2-ktlx-20130520-201643", 1, 1),
+        ] {
+            let path = recast_radar_testdata::require_file!(id);
+            let raw = fs::read(&path).expect("read");
+            let volume = recast_radar_io::read_supported_volume_bytes(&raw).expect("decode");
+            let lowest_ref = lowest_sweep_with(&volume, Quantity::Reflectivity).expect("REF");
+            let lowest_vel = lowest_sweep_with(&volume, Quantity::RadialVelocity).expect("VEL");
+            assert_eq!(
+                (lowest_ref.0, lowest_vel.0),
+                (reflectivity, velocity),
+                "{id}"
+            );
+            assert_eq!(lowest_ref.1, FieldName::Dbzh, "{id}");
+            assert_eq!(lowest_vel.1, FieldName::Vradh, "{id}");
+            let first_ray = |index: usize| volume.sweeps[index].rays.elevation_deg[0];
+            assert_eq!(
+                volume.tilt_elevation_deg(reflectivity),
+                Some(first_ray(reflectivity))
+            );
+            assert!(
+                volume
+                    .sweeps
+                    .iter()
+                    .any(|sweep| sweep.fixed_angle_deg != sweep.rays.elevation_deg[0]),
+                "{id}: fixed angles are the VCP cut angles"
+            );
+        }
     }
 
     #[test]

@@ -184,22 +184,25 @@ fn rank_2d(delta_v_mps: f32, shear_ms_km: f32, gtg_dv_mps: f32, range_km: f64) -
 
 /// Ordered, bounded sweep set consumed by rotation detection. Callers that
 /// own dealiasing use this to resolve only fields the detector will inspect.
+/// Sweeps are ordered by tilt elevation ([`recast_radar_core::Sweep::tilt_elevation_deg`]),
+/// ties in acquisition order.
 pub fn rotation_velocity_sweep_indices(volume: &Volume) -> Vec<usize> {
-    let mut velocity_sweeps: Vec<usize> = volume
+    let source = volume.provenance.source_format;
+    let mut velocity_sweeps: Vec<(usize, f32)> = volume
         .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, sweep)| {
-            sweep.find(Quantity::RadialVelocity).is_some()
-                && sweep.fixed_angle_deg <= MAX_TILT_ELEVATION_DEG
+        .map(|(index, sweep)| (index, sweep, sweep.tilt_elevation_deg(source)))
+        .filter(|(_, sweep, elevation)| {
+            sweep.find(Quantity::RadialVelocity).is_some() && *elevation <= MAX_TILT_ELEVATION_DEG
         })
+        .map(|(index, _, elevation)| (index, elevation))
+        .collect();
+    velocity_sweeps.sort_by(|left, right| left.1.total_cmp(&right.1));
+    let mut velocity_sweeps: Vec<usize> = velocity_sweeps
+        .into_iter()
         .map(|(index, _)| index)
         .collect();
-    velocity_sweeps.sort_by(|left, right| {
-        volume.sweeps[*left]
-            .fixed_angle_deg
-            .total_cmp(&volume.sweeps[*right].fixed_angle_deg)
-    });
     velocity_sweeps.truncate(MAX_TILTS);
     velocity_sweeps
 }
@@ -276,7 +279,7 @@ pub fn rotation_features_per_tilt_from_dealiased(
                 .map_or_else(Vec::new, |field| tilt_features(volume, sweep_index, field));
             let best = features.iter().map(|f| f.rank).max().unwrap_or(0);
             (
-                volume.sweeps[sweep_index].fixed_angle_deg,
+                volume.tilt_elevation_deg(sweep_index).unwrap_or(f32::NAN),
                 features.len(),
                 best,
             )
@@ -464,7 +467,8 @@ fn tilt_features(
         return Vec::new();
     };
     let spacing_m = spacing_m.max(1.0);
-    let elevation = sweep.fixed_angle_deg as f64;
+    let tilt_elevation_deg = sweep.tilt_elevation_deg(volume.provenance.source_format);
+    let elevation = f64::from(tilt_elevation_deg);
     // Every field of a sweep is on the sweep's rays, so shear row `r` and
     // reflectivity row `r` are the same ray; ranges go through the
     // reflectivity's own gate geometry.
@@ -613,7 +617,7 @@ fn tilt_features(
     if debug {
         eprintln!(
             "tilt {:.2}: shear-pass {} -> ref-pass {} -> median-pass {} -> {} components",
-            sweep.fixed_angle_deg,
+            tilt_elevation_deg,
             n_shear,
             n_ref,
             n_median,
@@ -783,7 +787,7 @@ fn tilt_features(
             north_km: range_m / 1000.0 * az_rad.cos(),
             azimuth_deg: peak_azimuth,
             ground_range_m: range_m,
-            elevation_deg: sweep.fixed_angle_deg,
+            elevation_deg: tilt_elevation_deg,
             height_m,
             half_beam_depth_m,
             delta_v_mps: delta_v,
@@ -795,7 +799,7 @@ fn tilt_features(
     if debug {
         eprintln!(
             "tilt {:.2}: rejections size {} height {} validity {} diameter {} aspect {} rank {} -> kept {}",
-            sweep.fixed_angle_deg,
+            tilt_elevation_deg,
             rej[0],
             rej[1],
             rej[2],
@@ -865,13 +869,14 @@ struct CcSource<'a> {
 /// nearest-elevation sweep carrying CC (the paired surveillance sweep on
 /// split-cut VCPs).
 fn correlation_source(volume: &Volume, sweep_index: usize) -> Option<CcSource<'_>> {
-    let elevation = volume.sweeps[sweep_index].fixed_angle_deg;
+    let source = volume.provenance.source_format;
+    let elevation = volume.sweeps[sweep_index].tilt_elevation_deg(source);
     let (cc_sweep_index, _) = volume
         .sweeps
         .iter()
         .enumerate()
         .filter(|(_, s)| s.find(Quantity::CorrelationCoefficient).is_some())
-        .map(|(i, s)| (i, (s.fixed_angle_deg - elevation).abs()))
+        .map(|(i, s)| (i, (s.tilt_elevation_deg(source) - elevation).abs()))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .filter(|(_, diff)| *diff <= 0.5)?;
     let cc_sweep = &volume.sweeps[cc_sweep_index];

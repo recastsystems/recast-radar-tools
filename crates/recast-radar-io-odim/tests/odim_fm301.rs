@@ -395,6 +395,7 @@ fn iesha_how_constants_per_dataset() {
                 "lowprf",
                 "polmode",
                 "poltype",
+                "product",
                 "radomelossH",
                 "radomelossV",
                 "scan_count",
@@ -418,6 +419,7 @@ fn iesha_how_constants_per_dataset() {
             "endepochs",
             "highprf",
             "lowprf",
+            "object",
             "scan_optimized",
             "software",
             "startepochs",
@@ -454,7 +456,10 @@ fn dkrom_how_constants_from_the_root() {
         per_ray(&sweep.ray_vars.pulse_width_s, rays, 0.8e-6);
         assert_eq!(sweep.ray_vars.calib_index, None);
         // Per-ray angles and times written as text stay verbatim.
-        assert_eq!(names(&sweep.other), ["azangels", "aztimes", "elangels"]);
+        assert_eq!(
+            names(&sweep.other),
+            ["azangels", "aztimes", "elangels", "product"]
+        );
     }
     let azangels = attr(&volume.sweeps[0].other, "azangels").as_text().unwrap();
     assert_eq!(azangels.len(), 5659);
@@ -478,6 +483,7 @@ fn dkrom_how_constants_from_the_root() {
             "maxrange",
             "nscans",
             "number of rays",
+            "object",
             "polarity",
             "prf",
             "prffac",
@@ -523,7 +529,7 @@ fn espdg_how_constants_and_unconverted_values() {
         assert_eq!(sweep.ray_vars.pulse_width_s, None);
         assert_eq!(sweep.target_scan_rate_deg_per_s, Some(16.0), "antspeed");
         per_ray(&sweep.ray_vars.nyquist_velocity_mps, rays, 39.9217);
-        assert_eq!(names(&sweep.other), ["scan_index"]);
+        assert_eq!(names(&sweep.other), ["product", "scan_index"]);
     }
     let root = &volume.attrs.other;
     assert_eq!(
@@ -542,6 +548,7 @@ fn espdg_how_constants_and_unconverted_values() {
             "highprf",
             "lowprf",
             "melting_layer_top",
+            "object",
             "peakpwr",
             "polmode",
             "poltype",
@@ -572,7 +579,8 @@ fn norst_how_constants_with_older_names() {
     assert_eq!(parameters.beam_width_h_deg, Some(0.95));
     assert_eq!(parameters.beam_width_v_deg, Some(0.95));
     assert!(volume.radar_calibration.is_empty());
-    assert!(volume.attrs.other.is_empty());
+    // `what/object` is the only verbatim root attribute of this file.
+    assert_eq!(names(&volume.attrs.other), ["object"]);
     let rates: Vec<Option<f32>> = volume
         .sweeps
         .iter()
@@ -582,7 +590,7 @@ fn norst_how_constants_with_older_names() {
     let expected: Vec<Option<f32>> = rpm.iter().map(|rpm| Some((rpm * 6.0) as f32)).collect();
     assert_eq!(rates, expected);
     for sweep in &volume.sweeps {
-        assert_eq!(names(&sweep.other), ["NEZ", "radarconstH"]);
+        assert_eq!(names(&sweep.other), ["NEZ", "product", "radarconstH"]);
         assert_eq!(attr(&sweep.other, "radarconstH"), &f64_attr(10.9826));
         assert_eq!(attr(&sweep.other, "NEZ"), &f64_attr(0.0));
         assert_eq!(sweep.ray_vars.pulse_width_s, None);

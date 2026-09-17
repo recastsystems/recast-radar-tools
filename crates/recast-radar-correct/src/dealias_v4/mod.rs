@@ -402,7 +402,7 @@ fn build_tilt_field(
 
     TiltField {
         sweep_index,
-        elevation_deg: sweep.fixed_angle_deg,
+        elevation_deg: sweep.tilt_elevation_deg(volume.provenance.source_format),
         rows,
         gates,
         first_gate_m,

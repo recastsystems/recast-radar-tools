@@ -1,10 +1,21 @@
 # F.3 (algo): migration of the algorithm crates to the FM301 model
 
+> **Historical record (status 2026-09-17).** This note describes the
+> `fm301-algo` sub-branch as it was merged (`1c68329`). The compatibility shim
+> it relies on (`core::legacy`, each crate's `legacy_api` and `legacy_bridge`
+> modules, the `recast_legacy_deprecation` gate and the probes named below)
+> was removed at `b811f2d`, so the commands and files it cites no longer
+> exist on `fm301`; they remain in the history before that commit. Since the
+> verifier fixes of 2026-09-17 the products take a sweep's tilt elevation
+> from `Sweep::tilt_elevation_deg` (a Level II sweep's first-ray elevation,
+> as on `main`), and the bench checksums are the import values again. The
+> current state is in `fm301-model.md`, section Status.
+
 Companion to `fm301-model.md` (sections 13.3 and 13.4). Branch `fm301-algo`,
 from `fm301` @ `e4df5bd` (F.2) with `main` merged at `349c8e4`. Crates:
 `recast-radar-filters`, `recast-radar-correct`, `recast-radar-retrieve`,
-`recast-radar-map`, `recast-radar-track`. The shim in core stays; the io and
-render crates are migrated by `fm301-io` and `fm301-render`.
+`recast-radar-map`, `recast-radar-track`. At the time the shim in core stayed;
+the io and render crates were migrated by `fm301-io` and `fm301-render`.
 
 ## What changed
 
@@ -146,8 +157,9 @@ pixel-exact spot check still passes.
   before hashing; values are untouched. Deleted with the shim.
 - **Checksums.** `cargo run --release -p recast-radar-bench -- <file> --iters 1`
   prints the three checksums of `docs/baselines/import-checksums.txt`
-  (0xc04a5e2dfecc4c1f, 0xd5080047ae5dfeb5, 0x19e3735f42cdca4b at the time;
-  the KTLX values were re-recorded at the shim removal, see that file); the
+  (0xc04a5e2dfecc4c1f, 0xd5080047ae5dfeb5, 0x19e3735f42cdca4b; the KTLX
+  values were re-recorded at the shim removal and restored by the verifier
+  fixes of 2026-09-17, see that file); the
   velocity render goes through `dealias_velocity_grid` -> `dealias_velocity`.
 - **Single-core decode** (`RAYON_NUM_THREADS=1`, KTLX20240315_000217_V06,
   `--iters 10`, three interleaved rounds, release builds of `349c8e4` and

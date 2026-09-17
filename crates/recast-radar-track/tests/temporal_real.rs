@@ -34,13 +34,20 @@ fn frames(expected: &serde_json::Value, archive: &std::path::Path) -> Vec<Volume
             dorade(name, sweep_bytes(&sweeps, name))
         })
         .collect();
-    let starts = array(&expected["start_unix"]);
+    // The volume time reference is the earlier of the SSWB start and the
+    // earliest ray: NOXP stores its rays backwards, a few seconds past the
+    // SSWB start, and no ray time is negative.
+    let starts = array(&expected["reference_unix"]);
     assert_eq!(frames.len(), starts.len());
     for (frame, start) in frames.iter().zip(starts) {
         assert_eq!(
             frame.time_reference.timestamp(),
             as_i64(start),
             "sweep start time"
+        );
+        assert!(
+            frame.sweeps[0].rays.time_s.iter().all(|time| *time >= 0.0),
+            "negative ray time"
         );
         assert_eq!(frame.sweeps.len(), 1);
         assert_eq!(frame.sweeps[0].nrays(), as_usize(&expected["rays"]));

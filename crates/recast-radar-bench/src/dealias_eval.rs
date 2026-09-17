@@ -702,12 +702,13 @@ fn write_field_bin(path: &Path, values: &[f32]) -> Result<(), String> {
 fn dump_field(
     dir: &Path,
     label: &str,
+    volume: &Volume,
     cut_index: usize,
-    sweep: &Sweep,
     source: &Field,
     field: &Plane,
     lowest: bool,
 ) -> Result<(), String> {
+    let sweep = &volume.sweeps[cut_index];
     let (first_gate_m, gate_spacing_m) = geometry(sweep, source);
     let stem = format!("{label}_cut{cut_index:02}");
     write_field_bin(&dir.join(format!("{stem}.bin")), &field.values)?;
@@ -721,7 +722,7 @@ fn dump_field(
     let meta = serde_json::json!({
         "label": label,
         "cut_index": cut_index,
-        "elevation_deg": sweep.fixed_angle_deg,
+        "elevation_deg": sweep.tilt_elevation_deg(volume.provenance.source_format),
         "rows": field.rows,
         "gates": field.gates,
         "wraps": field.wraps,
@@ -764,13 +765,14 @@ fn velocity_cuts(volume: &Volume) -> Vec<usize> {
         .collect()
 }
 
+/// The velocity cut with the smallest tilt elevation
+/// ([`Sweep::tilt_elevation_deg`]), the first on ties.
 fn lowest_velocity_cut(volume: &Volume) -> Option<usize> {
-    velocity_cuts(volume).into_iter().min_by(|&a, &b| {
-        volume.sweeps[a]
-            .fixed_angle_deg
-            .total_cmp(&volume.sweeps[b].fixed_angle_deg)
-            .then_with(|| a.cmp(&b))
-    })
+    let tilt =
+        |index: usize| volume.sweeps[index].tilt_elevation_deg(volume.provenance.source_format);
+    velocity_cuts(volume)
+        .into_iter()
+        .min_by(|&a, &b| tilt(a).total_cmp(&tilt(b)).then_with(|| a.cmp(&b)))
 }
 
 struct EngineRun {
@@ -995,7 +997,8 @@ fn evaluate_engine(
             report.multifold_gates = multifold_gates;
             report.multifold_speckle = multifold_speckle;
             if let Some(profile) = environment {
-                let projected = project_environmental_winds_onto(profile, sweep, raw_grid);
+                let projected =
+                    project_environmental_winds_onto(profile, volume, cut_index, raw_grid);
                 report.rms_env = rms_against(&field, &projected);
             }
             report.rms_harmonic = harmonic_rms(sweep, grid, &field);
@@ -1155,10 +1158,11 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
             let grid = velocity_field(sweep);
             let field = decode_field(sweep, grid);
             let lowest = Some(cut_index) == lowest_cut;
-            dump_field(dir, "raw", cut_index, sweep, grid, &field, lowest)?;
+            dump_field(dir, "raw", &volume, cut_index, grid, &field, lowest)?;
             if lowest {
                 if let Some(profile) = profile {
-                    let projected = project_environmental_winds_onto(profile, sweep, grid);
+                    let projected =
+                        project_environmental_winds_onto(profile, &volume, cut_index, grid);
                     write_field_bin(&dir.join(format!("env_cut{cut_index:02}.bin")), &projected)?;
                 }
                 if let Some(truth_values) = &truth {
@@ -1180,8 +1184,8 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
                 dump_field(
                     dir,
                     engine.name(),
+                    &volume,
                     cut_index,
-                    sweep,
                     grid,
                     &field,
                     Some(cut_index) == lowest_cut,
@@ -1309,7 +1313,9 @@ pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
                 .map_or(volume.time_reference, |coverage| coverage.start)
                 .to_rfc3339(),
             lowest_velocity_cut(&volume).unwrap_or(0),
-            volume.sweeps[lowest_velocity_cut(&volume).unwrap_or(0)].fixed_angle_deg,
+            volume
+                .tilt_elevation_deg(lowest_velocity_cut(&volume).unwrap_or(0))
+                .unwrap_or(f32::NAN),
         );
         if let Some((_, source)) = &environment {
             println!("env  {source}");

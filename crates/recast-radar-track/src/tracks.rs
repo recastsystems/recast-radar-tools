@@ -173,25 +173,27 @@ struct TiltShearField {
     max_gate: usize,
 }
 
-/// Ordered, bounded sweep set consumed by the low-level track composite.
+/// Ordered, bounded sweep set consumed by the low-level track composite:
+/// ordered by tilt elevation ([`recast_radar_core::Sweep::tilt_elevation_deg`]),
+/// ties in acquisition order.
 pub fn low_level_azshear_sweep_indices(volume: &Volume) -> Vec<usize> {
-    let mut velocity_sweeps: Vec<usize> = volume
+    let source = volume.provenance.source_format;
+    let mut velocity_sweeps: Vec<(usize, f32)> = volume
         .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, sweep)| {
-            sweep.find(Quantity::RadialVelocity).is_some()
-                && sweep.fixed_angle_deg <= LOW_LEVEL_MAX_TILT_DEG
+        .map(|(index, sweep)| (index, sweep, sweep.tilt_elevation_deg(source)))
+        .filter(|(_, sweep, elevation)| {
+            sweep.find(Quantity::RadialVelocity).is_some() && *elevation <= LOW_LEVEL_MAX_TILT_DEG
         })
-        .map(|(index, _)| index)
+        .map(|(index, _, elevation)| (index, elevation))
         .collect();
-    velocity_sweeps.sort_by(|left, right| {
-        volume.sweeps[*left]
-            .fixed_angle_deg
-            .total_cmp(&volume.sweeps[*right].fixed_angle_deg)
-    });
+    velocity_sweeps.sort_by(|left, right| left.1.total_cmp(&right.1));
     velocity_sweeps.truncate(MAX_LOW_TILTS);
     velocity_sweeps
+        .into_iter()
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// Resample one volume's low-level (0–2 km ARL) cyclonic azimuthal shear onto
@@ -344,15 +346,17 @@ pub fn detect_tds_gates(volume: &Volume, sites: &[RotationSite]) -> Vec<TdsGate>
     }
 
     // Lowest tilt carrying both ρhv and Z (the split-cut surveillance tilt).
-    let Some(sweep) = volume
+    let source = volume.provenance.source_format;
+    let Some((sweep, tilt_elevation_deg)) = volume
         .sweeps
         .iter()
-        .filter(|sweep| {
-            sweep.fixed_angle_deg <= LOW_LEVEL_MAX_TILT_DEG
+        .map(|sweep| (sweep, sweep.tilt_elevation_deg(source)))
+        .filter(|(sweep, elevation)| {
+            *elevation <= LOW_LEVEL_MAX_TILT_DEG
                 && sweep.find(Quantity::CorrelationCoefficient).is_some()
                 && sweep.find(Quantity::Reflectivity).is_some()
         })
-        .min_by(|a, b| a.fixed_angle_deg.total_cmp(&b.fixed_angle_deg))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
     else {
         return Vec::new();
     };
@@ -365,7 +369,7 @@ pub fn detect_tds_gates(volume: &Volume, sites: &[RotationSite]) -> Vec<TdsGate>
     let Some(ref_sampler) = RangeSampler::new(sweep, ref_field) else {
         return Vec::new();
     };
-    let elevation = sweep.fixed_angle_deg as f64;
+    let elevation = f64::from(tilt_elevation_deg);
     let Some((first_gate_m, spacing_m)) = cc_field.native_geometry(&sweep.range) else {
         return Vec::new();
     };
@@ -453,7 +457,7 @@ fn low_level_tilt_fields_from_dealiased(
             continue;
         };
         let spacing_m = spacing_m.max(1.0);
-        let elevation = sweep.fixed_angle_deg as f64;
+        let elevation = f64::from(sweep.tilt_elevation_deg(volume.provenance.source_format));
 
         // Range window: clutter floor up to where the beam exits 0–2 km.
         let min_gate = ((TRACKS_MIN_RANGE_M - first_gate_m) / spacing_m)

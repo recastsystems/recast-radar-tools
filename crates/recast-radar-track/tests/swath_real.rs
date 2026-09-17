@@ -5,8 +5,8 @@
 //! `tools/track_golden.py` (section `swath`): the per-gate maximum / signed
 //! extreme of two consecutive NOXP sector sweeps (DORADE walker) mapped onto the
 //! reference sweep by the documented 0.1-degree nearest-azimuth rule, and the
-//! per-sweep moment lists, fixed angles (Message 5 cut angles) and first-ray
-//! elevations of two trimmed Level II volumes from MetPy.
+//! per-sweep moment lists and first-ray elevations of two trimmed Level II
+//! volumes from MetPy.
 
 // Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -74,7 +74,9 @@ fn max_reflectivity_takes_per_gate_maximum() {
     let expected = &golden["noxp"];
     let archive = require_file!(as_str(&expected["archive"]));
     let frames = noxp_frames(expected, &archive);
-    let starts = array(&expected["start_unix"]);
+    // The volume time reference is the earlier of the SSWB start and the
+    // earliest ray (NOXP stores its rays backwards).
+    let starts = array(&expected["reference_unix"]);
     for (frame, start) in frames.iter().zip(starts) {
         assert_eq!(frame.time_reference.timestamp(), as_i64(start));
         assert_eq!(frame.sweeps.len(), 1);
@@ -234,13 +236,13 @@ fn empty_when_no_frame_has_the_moment() {
     assert!(value_swath(&[&volume], &FieldName::Dbzh, SwathAggregation::Max).is_some());
 }
 
-/// Base tilt per moment on real split-cut volumes: the lowest cut (fixed
-/// angle, the Message 5 cut angle from MetPy, first on ties) that carries the
-/// moment. The two cuts of each split cut have the same angle (KTLX 2024:
-/// 0.48 deg, although the surveillance cut's first radial reads 0.58 deg), so
-/// REF, ZDR, RHO and PHI resolve to the surveillance cut and VEL and SW to
-/// the Doppler cut; TSTL's two 0.31 deg cuts (first radials 0.26 deg) tie
-/// the same way.
+/// Base tilt per moment on real split-cut volumes: the lowest cut (tilt
+/// elevation, which for Level II is the first-ray elevation MetPy reports;
+/// first on ties) that carries the moment. KTLX 2024 keeps its 0.48 deg
+/// Doppler cut below the 0.58 deg surveillance cut, so REF as well as VEL
+/// resolve to the Doppler cut while ZDR / RHO / PHI stay on the surveillance
+/// cut, although both cuts have the 0.4834 deg VCP cut angle as their fixed
+/// angle; TSTL's two 0.26 deg cuts tie and REF picks the first.
 #[test]
 fn picks_lowest_tilt_carrying_the_moment() {
     let golden = golden("swath.json");
@@ -250,16 +252,16 @@ fn picks_lowest_tilt_carrying_the_moment() {
         let volume = level2(&path);
         let sweeps = array(&expected["sweeps"]);
         assert_eq!(volume.sweeps.len(), sweeps.len(), "{key}: sweep count");
-        for (cut, sweep) in volume.sweeps.iter().zip(sweeps) {
-            assert_eq!(
-                cut.fixed_angle_deg,
-                as_f64(&sweep["fixed_angle_deg"]) as f32,
-                "{key}: fixed angle"
-            );
+        for (index, (cut, sweep)) in volume.sweeps.iter().zip(sweeps).enumerate() {
             assert_eq!(
                 cut.rays.elevation_deg[0],
                 as_f64(&sweep["first_ray_elevation_deg"]) as f32,
                 "{key}: first-ray elevation"
+            );
+            assert_eq!(
+                volume.tilt_elevation_deg(index),
+                Some(cut.rays.elevation_deg[0]),
+                "{key}: tilt elevation"
             );
             for name in array(&sweep["moments"]) {
                 let name = as_str(name);

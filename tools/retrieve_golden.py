@@ -15,8 +15,7 @@ retrieval algorithms compute against the JSON files this script writes:
 Every input value comes from a reader that is independent of recast-radar-tools:
 
 - NEXRAD Level II: MetPy 1.7.1 ``metpy.io.Level2File`` (ray azimuth, elevation and Nyquist
-  velocity, the Message 5 cut angle that is a sweep's fixed angle and tilt elevation, moment
-  gate geometry and scaled gate values) and Py-ART 2.2.5
+  velocity, moment gate geometry and scaled gate values) and Py-ART 2.2.5
   ``pyart.io.read_nexrad_archive`` (fields, ray times, radar position),
   ``pyart.correct.dealias_region_based``, ``pyart.retrieve.compute_cdr``,
   ``pyart.retrieve.kdp_vulpiani`` and ``pyart.retrieve.vad_browning``.
@@ -253,24 +252,9 @@ MSG31_NAMES = {b"REF": "REF", b"VEL": "VEL", b"SW ": "SW", b"SW": "SW", b"ZDR": 
                b"PHI": "PHI", b"RHO": "RHO", b"CFP": "CFP"}
 
 
-def reader_fixed_angle(f, first):
-    """The Rust Level II reader's fixed angle for a sweep whose first radial header is `first`:
-    the Message 5 (MetPy ``vcp_info``) cut angle of the radial's elevation number, as xradar
-    and Py-ART report it, with angles above 90 degrees made negative; the first radial's
-    elevation when the file has no usable VCP message. The products use it as the tilt
-    elevation (design note docs/design/fm301-model.md 5.2)."""
-    vcp = getattr(f, "vcp_info", None)
-    number = int(first.el_num)
-    if vcp is not None and 1 <= number <= len(vcp.els):
-        angle = F32(vcp.els[number - 1].el_angle)
-        return F32(angle - F32(360.0)) if angle > 90.0 else angle
-    return F32(first.el_angle)
-
-
 def level2_sweeps(entry_id):
     """Sweeps of a Level II file as read by MetPy: per sweep the ray azimuths and elevations
-    (f32 values of the file's angle fields), the reader's fixed angle (``fixed``,
-    `reader_fixed_angle`), the Nyquist velocity of each ray, and per moment
+    (f32 values of the file's angle fields), the Nyquist velocity of each ray, and per moment
     the rows (ray indices) carrying it, the gate geometry in metres and the scaled values
     (NaN below code 2, i.e. no data and range folded)."""
     from metpy.io import Level2File
@@ -310,7 +294,6 @@ def level2_sweeps(entry_id):
                      gate_count=gates, values=grid, rows=np.asarray(m["rows"]))
             del m["data"], m["first"], m["spacing"]
         sweeps.append({"az": np.asarray(az, dtype=F32), "el": np.asarray(el, dtype=F32),
-                       "fixed": reader_fixed_angle(f, rays[0][0]),
                        "nyquist": np.asarray(nyq, dtype=np.float64), "moments": moments})
     return sweeps, f
 
@@ -461,7 +444,7 @@ def section_availability():
             "sweeps": [{
                 "index": index,
                 "radials": int(len(s["az"])),
-                "elevation_deg": jf(s["fixed"], 3),
+                "elevation_deg": jf(s["el"][0], 3),
                 "moments": {name: int(len(m["rows"])) for name, m in sorted(s["moments"].items())},
             } for index, s in enumerate(sweeps)],
         })
@@ -891,7 +874,7 @@ def shear_case(entry, sweep_index, axis):
         "id": entry,
         "sweep": sweep_index,
         "axis": axis,
-        "elevation_deg": jf(s["fixed"], 3),
+        "elevation_deg": jf(s["el"][0], 3),
         "nyquist_mps": jf(np.median(s["nyquist"]), 3),
         "first_gate_m": vel["first_gate_m"],
         "gate_spacing_m": vel["gate_spacing_m"],
@@ -1245,7 +1228,7 @@ def section_sweep():
         "kdp": {
             "id": entry,
             "sweep": 0,
-            "elevation_deg": jf(s["fixed"], 3),
+            "elevation_deg": jf(s["el"][0], 3),
             "gate_spacing_m": spacing,
             "first_gate_m": phi_m["first_gate_m"],
             "window_gates": regression_window_gates(F32(spacing / 1000.0)),
@@ -1330,14 +1313,14 @@ def last_le_search(sorted_values, targets):
 
 def volume_columns(sweeps, moment):
     """volume.rs SweepSampler for every tilt carrying `moment`, sorted by elevation: the
-    tilt elevation is the sweep's fixed angle, gate centres first + i * spacing, 4/3-Earth
+    tilt elevation is the first radial's, gate centres first + i * spacing, 4/3-Earth
     ground range and height per gate, and azimuth -> row lookup."""
     cols = []
     for index, s in enumerate(sweeps):
         m = s["moments"].get(moment)
         if m is None:
             continue
-        elevation = float(s["fixed"])
+        elevation = float(s["el"][0])
         slant = np.asarray([float(m["first_gate_m"]) + g * float(m["gate_spacing_m"])
                             for g in range(m["gate_count"])])
         az = rem_euclid32(s["az"][m["rows"]])

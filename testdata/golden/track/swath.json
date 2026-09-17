@@ -3,6 +3,7 @@
   "archive": "dorade-noxp-20090525-sweeps-tgz",
   "members": ["swp.1090525203529.NOXPRVP.0.0.5_PPI_v1","swp.1090525203659.NOXPRVP.0.0.5_PPI_v1"],
   "start_unix": [1243283729,1243283819],
+  "reference_unix": [1243283723,1243283819],
   "rays": [171,171],
   "gate_count": 1002,
   "first_gate_m": 75,
@@ -42,13 +43,11 @@
   "entry": "l2-tstl-20230331-230314-trim",
   "sweeps": [
    {
-    "fixed_angle_deg": 0.3076172,
     "first_ray_elevation_deg": 0.26367188,
     "rays": 360,
     "moments": ["REF"]
    },
    {
-    "fixed_angle_deg": 0.3076172,
     "first_ray_elevation_deg": 0.26367188,
     "rays": 360,
     "moments": ["REF","VEL","SW"]
@@ -67,20 +66,18 @@
   "entry": "l2-ktlx-20240315-000217-trim",
   "sweeps": [
    {
-    "fixed_angle_deg": 0.48339844,
     "first_ray_elevation_deg": 0.5822754,
     "rays": 480,
     "moments": ["REF","ZDR","PHI","RHO","CFP"]
    },
    {
-    "fixed_angle_deg": 0.48339844,
     "first_ray_elevation_deg": 0.48339844,
     "rays": 480,
     "moments": ["REF","VEL","SW"]
    }
   ],
   "base_tilt": {
-   "REF": 0,
+   "REF": 1,
    "VEL": 1,
    "SW": 1,
    "ZDR": 0,

@@ -12,17 +12,31 @@ use recast_radar_core::model::{
     ArrayBuf, AttrValue, FieldData, FieldName, GateMapping, RangeCoord, Scalar, SweepMode, Volume,
 };
 
+/// Decode a corpus file. A file that is neither committed nor cached and
+/// cannot be downloaded skips the calling test only when
+/// `RECAST_RADAR_TESTDATA_OFFLINE` is set; otherwise the test fails, so the
+/// download-only cases never pass vacuously.
 fn volume(id: &str) -> Option<Volume> {
     let path = match recast_radar_testdata::path(id) {
         Ok(path) => path,
-        Err(err) if err.is_offline() => {
+        Err(err) if err.is_offline() && offline_requested() => {
             eprintln!("skipping: {err}");
             return None;
         }
-        Err(err) => panic!("{err}"),
+        Err(err) => panic!(
+            "{err} (set {}=1 to skip files that cannot be fetched)",
+            recast_radar_testdata::OFFLINE_ENV
+        ),
     };
     let bytes = std::fs::read(path).unwrap();
     Some(recast_radar_io::read_supported_volume_bytes(&bytes).unwrap())
+}
+
+/// `RECAST_RADAR_TESTDATA_OFFLINE` is set (as `recast-radar-testdata` reads
+/// it).
+fn offline_requested() -> bool {
+    std::env::var_os(recast_radar_testdata::OFFLINE_ENV)
+        .is_some_and(|value| !value.is_empty() && value != "0")
 }
 
 const TIME_ORDER: ViewOptions = ViewOptions {
@@ -355,7 +369,8 @@ fn zero_copy_fields_depend_on_first_dim() {
         );
     }
     // NOXP: RYIB seconds 44, 43, 42 within the sweep, so acquisition order
-    // reverses storage order.
+    // reverses storage order. The time reference is the earliest ray, before
+    // the SSWB start (19:02:44Z), so no ray time is negative.
     if let Some(noxp) = volume("dorade-noxp-20090501-190244-ppi") {
         let times = &noxp.sweeps[0].rays.time_s;
         assert!(
@@ -364,6 +379,15 @@ fn zero_copy_fields_depend_on_first_dim() {
             (times.first(), times.last())
         );
         assert!(times.windows(2).all(|pair| pair[0] >= pair[1]));
+        assert_eq!(
+            noxp.time_reference.to_rfc3339(),
+            "2009-05-01T19:02:42+00:00"
+        );
+        assert!(times.iter().all(|time| *time >= 0.0), "{times:?}");
+        assert_eq!(
+            noxp.time_coverage.map(|coverage| coverage.start),
+            Some(noxp.time_reference)
+        );
     }
 }
 
@@ -426,11 +450,28 @@ fn passthrough_all_adds_the_verbatim_source_metadata() {
         assert_eq!(dow8.attrs.other.len(), 9, "{:?}", dow8.attrs.other);
     }
 
-    // ODIM: root and dataset `how` attributes; two calibration entries
+    // ODIM: root and dataset `how` attributes, `what/object`, dataset
+    // `what/product` and the `what/version` the Xradar flavor writes as
+    // `version` (xradar itself writes "None"); two calibration entries
     // (datasets 1-9 at 2.0 microseconds, dataset 10 at 1.2).
     if let Some(iesha) = volume("odim-iesha-20260305-0115-pvol") {
         let view = fm301::volume_view(&iesha, all, None).unwrap();
         assert_eq!(view.root.attr("software"), Some(&text("RAINBOW 5.61.14")));
+        assert_eq!(view.root.attr("object"), Some(&text("PVOL")));
+        assert_eq!(view.root.attr("version"), Some(&text("H5rad 2.3")));
+        assert_eq!(
+            view.group("sweep_0").unwrap().attr("product"),
+            Some(&text("SCAN"))
+        );
+        let flavor = fm301::volume_view(&iesha, TIME_ORDER, None).unwrap();
+        assert_eq!(flavor.root.attr("version"), Some(&text("None")));
+        let wmo = ViewOptions {
+            flavor: Flavor::Wmo2022,
+            ..all
+        };
+        let wmo = fm301::volume_view(&iesha, wmo, None).unwrap();
+        assert_eq!(wmo.root.attr("source_version"), Some(&text("H5rad 2.3")));
+        assert_eq!(wmo.root.attr("version"), None);
         assert_eq!(
             view.group("sweep_0").unwrap().attr("NEZH"),
             Some(&AttrValue::Scalar(Scalar::F64(-47.7944)))
@@ -505,4 +546,212 @@ fn flag_values_that_do_not_fit_the_packed_type_are_an_error() {
             ..
         })
     ));
+}
+
+/// Calibration, monitoring and site variables carry their units in both
+/// flavors (FM301 Tables 301-11 and 301-14a; xradar shows the CfRadial files'
+/// units), vertical coordinates say `positive = up`, and the table entries
+/// of `/radar_calibration` are float32 like the CfRadial source.
+#[test]
+fn calibration_and_monitoring_variables_carry_units() {
+    let cases = [
+        "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
+        "cfrad1-dow8-20211011-223602-rhi-trim3-classic",
+        "dorade-noxp-20090501-190244-ppi",
+        "odim-iesha-20260305-0115-pvol",
+        "l2-ktlx-20240315-000217-trim",
+    ];
+    let mut counted = Vec::new();
+    for id in cases {
+        let Some(volume) = volume(id) else {
+            continue;
+        };
+        let (mut calibration_variables, mut monitoring_variables) = (0usize, 0usize);
+        for flavor in [Flavor::Xradar012, Flavor::Wmo2022] {
+            let options = ViewOptions {
+                flavor,
+                first_dim: FirstDim::Time,
+                passthrough: Passthrough::All,
+            };
+            let view = fm301::volume_view(&volume, options, None).unwrap();
+            let unit = |variable: &fm301::Variable<'_>| match variable.attr("units") {
+                Some(AttrValue::Text(units)) => Some(units.to_string()),
+                _ => None,
+            };
+            if let Some(calibration) = view.group("radar_calibration") {
+                for variable in &calibration.variables {
+                    if variable.name == "calib_index" {
+                        continue;
+                    }
+                    calibration_variables += 1;
+                    let units = unit(variable).unwrap_or_else(|| {
+                        panic!("{id} {flavor:?}: {} has no units", variable.name)
+                    });
+                    let expected: &[&str] = match &*variable.name {
+                        "time" => &[],
+                        "pulse_width" => &["seconds", "s"],
+                        "system_phidp" => &["degrees", "degree"],
+                        "k_squared_water" | "receiver_slope_hc" | "receiver_slope_vc"
+                        | "receiver_slope_hx" | "receiver_slope_vx" => &["", "1"],
+                        name if name.starts_with("base_1km") => &["dBZ"],
+                        name if name.contains("dbm")
+                            || name.starts_with("noise")
+                            || name.starts_with("xmit_power")
+                            || name.starts_with("sun_power")
+                            || name.starts_with("test_power") =>
+                        {
+                            &["dBm"]
+                        }
+                        _ => &["dB"],
+                    };
+                    if variable.name == "time" {
+                        assert!(units.starts_with("seconds since "), "{id}: {units}");
+                    } else {
+                        assert!(
+                            expected.contains(&units.as_str()),
+                            "{id} {flavor:?}: {} units {units:?}",
+                            variable.name
+                        );
+                    }
+                    if let Values::Owned(array) = &variable.values
+                        && variable.name != "time"
+                        && id.starts_with("cfrad1")
+                    {
+                        assert_eq!(array.dtype(), "float32", "{id}: {}", variable.name);
+                    }
+                }
+            }
+            for group in view
+                .root
+                .children
+                .iter()
+                .filter(|g| g.name.starts_with("sweep_"))
+            {
+                let monitoring = group
+                    .child("monitoring")
+                    .map(|child| child.variables.iter().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                let xradar_monitoring = group
+                    .variables
+                    .iter()
+                    .filter(|v| v.name.starts_with("measured_transmit_power"));
+                for variable in monitoring.into_iter().chain(xradar_monitoring) {
+                    monitoring_variables += 1;
+                    assert_eq!(
+                        unit(variable).as_deref(),
+                        Some("dBm"),
+                        "{id} {flavor:?}: {}",
+                        variable.name
+                    );
+                }
+                if let Some(ratio) = group.variable("prt_ratio") {
+                    let expected = if flavor == Flavor::Wmo2022 { "1" } else { "" };
+                    assert_eq!(unit(ratio).as_deref(), Some(expected), "{id}");
+                }
+                let elevation = group.variable("elevation").unwrap();
+                assert_eq!(elevation.attr("positive"), Some(&text("up")), "{id}");
+                for name in ["altitude", "altitude_agl"] {
+                    if let Some(variable) = group.variable(name) {
+                        assert_eq!(variable.attr("positive"), Some(&text("up")), "{id} {name}");
+                    }
+                }
+            }
+            for name in ["altitude", "altitude_agl"] {
+                if let Some(variable) = view.root.variable(name) {
+                    assert_eq!(variable.attr("positive"), Some(&text("up")), "{id} {name}");
+                }
+            }
+        }
+        counted.push((id, calibration_variables, monitoring_variables));
+    }
+    eprintln!("(case, calibration variables, monitoring variables): {counted:?}");
+    if !offline_requested() {
+        // Both flavors: IRENE and DOW8 carry the Table 301-14a entries the
+        // files set (DOW8 also k_squared_water, i0_dbm_* and dynamic_range_db_*)
+        // and measure the transmit power per ray; NOXP has DORADE's radar
+        // constant, powers, gains and system gain, and the RYIB transmit
+        // power per ray; iesha per-dataset radar constants and pulse widths;
+        // KTLX none.
+        let expected = [
+            ("cfrad1-irene-sr2-20110827-120420-sur-sweeps01", true, true),
+            ("cfrad1-dow8-20211011-223602-rhi-trim3-classic", true, true),
+            ("dorade-noxp-20090501-190244-ppi", true, true),
+            ("odim-iesha-20260305-0115-pvol", true, false),
+            ("l2-ktlx-20240315-000217-trim", false, false),
+        ];
+        for ((id, calibration, monitoring), (expected_id, has_calibration, has_monitoring)) in
+            counted.iter().zip(expected)
+        {
+            assert_eq!(*id, expected_id);
+            assert_eq!(*calibration > 0, has_calibration, "{id}: {calibration}");
+            assert_eq!(*monitoring > 0, has_monitoring, "{id}: {monitoring}");
+        }
+    }
+}
+
+/// 32-bit integer storage (CfRadial `int` fields; no corpus file has one):
+/// DOW8's int16 DBZHC widened to int32 keeps its physical values, and the
+/// view writes it as an int32 variable, borrowed in acquisition order, with
+/// its packing and fill in the packed type.
+#[test]
+fn int32_fields_stay_packed() {
+    let Some(mut volume) = volume("cfrad1-dow8-20211011-223602-rhi-trim3-classic") else {
+        return;
+    };
+    let name = FieldName::parse("DBZHC");
+    let field = volume.sweeps[0].field_mut(&name).unwrap();
+    let before = field.to_physical();
+    let FieldData::I16 { values, coding } = &field.data else {
+        panic!("DBZHC is int16");
+    };
+    let widened = FieldData::I32 {
+        values: values.iter().map(|value| i32::from(*value)).collect(),
+        coding: recast_radar_core::model::IntCoding {
+            transform: coding.transform,
+            fill_value: coding.fill_value.map(i32::from),
+            undetect: coding.undetect.map(i32::from),
+            range_folded: coding.range_folded.map(i32::from),
+            valid_range: coding
+                .valid_range
+                .map(|[lo, hi]| [i32::from(lo), i32::from(hi)]),
+        },
+    };
+    field.data = widened;
+    let after = field.to_physical();
+    assert_eq!(before.len(), after.len());
+    assert!(
+        before
+            .iter()
+            .zip(&after)
+            .all(|(a, b)| a.to_bits() == b.to_bits())
+    );
+    assert_eq!(field.data.dtype(), "int32");
+    volume.seal().unwrap();
+
+    let view = fm301::volume_view(&volume, TIME_ORDER, None).unwrap();
+    let variable = view.group("sweep_0").unwrap().variable("DBZHC").unwrap();
+    assert!(
+        matches!(variable.values, Values::Borrowed(_)),
+        "{:?}",
+        variable.values
+    );
+    let encoded = variable.values.materialize().unwrap();
+    assert_eq!(encoded.dtype(), "int32");
+    assert_eq!(
+        variable.attr("_FillValue"),
+        Some(&AttrValue::Scalar(Scalar::I32(-32768)))
+    );
+    assert!(matches!(
+        variable.attr("scale_factor"),
+        Some(AttrValue::Scalar(Scalar::F32(_)))
+    ));
+    let layout = view.layout();
+    let data = &layout
+        .root
+        .child("sweep_0")
+        .unwrap()
+        .variable("DBZHC")
+        .unwrap()
+        .data;
+    assert!(data.is_zero_copy());
 }

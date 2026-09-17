@@ -131,6 +131,7 @@ fn array_ref(data: &FieldData) -> ArrayRef<'_> {
         FieldData::U16 { values, .. } => ArrayRef::U16(values),
         FieldData::I8 { values, .. } => ArrayRef::I8(values),
         FieldData::I16 { values, .. } => ArrayRef::I16(values),
+        FieldData::I32 { values, .. } => ArrayRef::I32(values),
         FieldData::F32 { values, .. } => ArrayRef::F32(values),
         FieldData::F64 { values, .. } => ArrayRef::F64(values),
     }
@@ -147,6 +148,71 @@ fn buf_ref(values: &ArrayBuf) -> Option<ArrayRef<'_>> {
         ArrayBuf::F64(v) => ArrayRef::F64(v),
         ArrayBuf::U32(_) | ArrayBuf::I64(_) | ArrayBuf::Text(_) => return None,
     })
+}
+
+/// A unit the view spells per flavor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unit {
+    Db,
+    Dbm,
+    Dbz,
+    Seconds,
+    Degrees,
+    Unitless,
+}
+
+/// Unit of a Table 301-14a calibration entry (the unit suffixes of the
+/// `RadarCalibration` fields).
+fn calibration_unit(name: &str) -> Unit {
+    match name {
+        "pulse_width" => Unit::Seconds,
+        "system_phidp" => Unit::Degrees,
+        "probert_jones_correction"
+        | "dielectric_factor_used"
+        | "receiver_slope_hc"
+        | "receiver_slope_vc"
+        | "receiver_slope_hx"
+        | "receiver_slope_vx" => Unit::Unitless,
+        _ if name.starts_with("base_1km_") => Unit::Dbz,
+        _ if name.starts_with("xmit_power_")
+            || name.starts_with("noise_")
+            || name.starts_with("sun_power_")
+            || name.starts_with("test_power_") =>
+        {
+            Unit::Dbm
+        }
+        // Antenna and receiver gains, losses, radar constants, corrections.
+        _ => Unit::Db,
+    }
+}
+
+/// Unit of a calibration entry outside Table 301-14a, from its name (CfRadial
+/// `r_calib_*` and DORADE entries); `None` when the name does not say.
+fn extra_calibration_unit(name: &str) -> Option<Unit> {
+    if name.contains("dbm") || name == "noise_power" {
+        Some(Unit::Dbm)
+    } else if name.contains("_db") || name.ends_with("_correction") || name.ends_with("gain") {
+        Some(Unit::Db)
+    } else if name == "k_squared_water" {
+        Some(Unit::Unitless)
+    } else {
+        None
+    }
+}
+
+/// Unit of a Table 301-11 monitoring variable.
+fn monitoring_unit(name: &str) -> Unit {
+    match name {
+        "radar_measured_transmit_power_h"
+        | "radar_measured_transmit_power_v"
+        | "radar_measured_sky_noise"
+        | "radar_measured_cold_noise"
+        | "radar_measured_hot_noise" => Unit::Dbm,
+        "phase_difference_transmit_hv"
+        | "antenna_pointing_accuracy_elev"
+        | "antenna_pointing_accuracy_az" => Unit::Degrees,
+        _ => Unit::Db,
+    }
 }
 
 fn format_metres(value: f64) -> String {
@@ -184,6 +250,21 @@ impl<'a> Builder<'a> {
 
     fn metres(&self) -> AttrValue {
         text(if self.wmo() { "metres" } else { "meters" })
+    }
+
+    /// `unit` in the flavor's spelling: UDUNITS for Wmo2022; xradar's words
+    /// (`seconds`, `degrees`) and CfRadial's empty string for a ratio for
+    /// Xradar012.
+    fn unit(&self, unit: Unit) -> AttrValue {
+        let wmo = self.wmo();
+        match unit {
+            Unit::Db => text("dB"),
+            Unit::Dbm => text("dBm"),
+            Unit::Dbz => text("dBZ"),
+            Unit::Seconds => text(if wmo { "s" } else { "seconds" }),
+            Unit::Degrees => self.degrees(),
+            Unit::Unitless => text(if wmo { "1" } else { "" }),
+        }
     }
 
     fn time_units(&self) -> AttrValue {
@@ -307,6 +388,7 @@ impl<'a> Builder<'a> {
             vec![
                 ("long_name".into(), text("altitude")),
                 ("units".into(), text(metres)),
+                ("positive".into(), text("up")),
                 ("standard_name".into(), text("altitude")),
             ],
         );
@@ -317,6 +399,7 @@ impl<'a> Builder<'a> {
                 vec![
                     ("long_name".into(), text("altitude_above_ground_level")),
                     ("units".into(), text(metres)),
+                    ("positive".into(), text("up")),
                 ],
             );
         }
@@ -409,6 +492,13 @@ impl<'a> Builder<'a> {
                     scalar(Scalar::U32(sequence)),
                 ));
             }
+            // Not an FM301 attribute: the source format's version, for
+            // lossless output.
+            if self.all()
+                && let Some(version) = &volume.provenance.source_version
+            {
+                attrs.push(("source_version".into(), text(version.as_str())));
+            }
         } else {
             let none = |value: &Option<String>| text(value.as_deref().unwrap_or("None"));
             attrs.push((
@@ -427,7 +517,10 @@ impl<'a> Builder<'a> {
                 global.instrument_name.as_str()
             };
             attrs.push(("instrument_name".into(), text(instrument)));
-            let version = if self.is_cfradial() {
+            // xradar writes a CfRadial file's `version` and "None" for other
+            // sources; `Passthrough::All` writes every source's version
+            // ("AR2V0006", "H5rad 2.3").
+            let version = if self.is_cfradial() || self.all() {
                 volume
                     .provenance
                     .source_version
@@ -610,7 +703,10 @@ impl<'a> Builder<'a> {
                                 .map(|row| row[column].1.unwrap_or(f32::NAN))
                                 .collect(),
                         )),
-                        vec![("_FillValue".into(), scalar(Scalar::F32(f32::NAN)))],
+                        vec![
+                            ("units".into(), self.unit(calibration_unit(name))),
+                            ("_FillValue".into(), scalar(Scalar::F32(f32::NAN))),
+                        ],
                     ));
                 }
             }
@@ -625,23 +721,44 @@ impl<'a> Builder<'a> {
                 }
             }
             for name in names {
-                let values = calibration
+                let found: Vec<Option<&AttrValue>> = calibration
                     .iter()
                     .map(|entry| {
                         entry
                             .extra
                             .iter()
                             .find(|(key, _)| &**key == name)
-                            .and_then(|(_, value)| value.as_f64())
-                            .unwrap_or(f64::NAN)
+                            .map(|(_, value)| value)
                     })
                     .collect();
-                variables.push(variable(
-                    name,
-                    dim(),
-                    Values::Owned(ArrayBuf::F64(values)),
-                    vec![("_FillValue".into(), scalar(Scalar::F64(f64::NAN)))],
-                ));
+                // float32 when every value is (the CfRadial and DORADE
+                // entries), like the table entries; float64 otherwise.
+                let single = found
+                    .iter()
+                    .flatten()
+                    .all(|value| matches!(value, AttrValue::Scalar(Scalar::F32(_))));
+                let (values, fill) = if single {
+                    let values = found
+                        .iter()
+                        .map(|value| match value {
+                            Some(AttrValue::Scalar(Scalar::F32(value))) => *value,
+                            _ => f32::NAN,
+                        })
+                        .collect();
+                    (ArrayBuf::F32(values), Scalar::F32(f32::NAN))
+                } else {
+                    let values = found
+                        .iter()
+                        .map(|value| value.and_then(AttrValue::as_f64).unwrap_or(f64::NAN))
+                        .collect();
+                    (ArrayBuf::F64(values), Scalar::F64(f64::NAN))
+                };
+                let mut attrs: Attrs<'a> = Vec::new();
+                if let Some(unit) = extra_calibration_unit(name) {
+                    attrs.push(("units".into(), self.unit(unit)));
+                }
+                attrs.push(("_FillValue".into(), scalar(fill)));
+                variables.push(variable(name, dim(), Values::Owned(values), attrs));
             }
         }
         Ok(Some(Group {
@@ -778,6 +895,7 @@ impl<'a> Builder<'a> {
                 text("elevation_angle_from_horizontal_plane"),
             ),
             ("units".into(), self.degrees()),
+            ("positive".into(), text("up")),
         ];
         if !self.wmo() {
             azimuth_attrs.push(("axis".into(), text("radial_azimuth_coordinate")));
@@ -886,18 +1004,19 @@ impl<'a> Builder<'a> {
                     "radar_measured_transmit_power_v" => Some("measured_transmit_power_v"),
                     _ => None,
                 };
+                let attrs = vec![("units".into(), self.unit(monitoring_unit(name)))];
                 match xradar_name {
                     Some(xradar_name) if !self.wmo() => variables.push(variable(
                         xradar_name,
                         ray(),
                         f32::ray_values(values, &order),
-                        Vec::new(),
+                        attrs,
                     )),
                     _ => monitoring_variables.push(variable(
                         name,
                         ray(),
                         f32::ray_values(values, &order),
-                        Vec::new(),
+                        attrs,
                     )),
                 }
             }
@@ -926,18 +1045,24 @@ impl<'a> Builder<'a> {
                     f64::ray_values(&track.longitude_deg, &order),
                     vec![("units".into(), text("degrees_east"))],
                 ));
+                let vertical = || -> Attrs<'a> {
+                    vec![
+                        ("units".into(), self.metres()),
+                        ("positive".into(), text("up")),
+                    ]
+                };
                 variables.push(variable(
                     "altitude",
                     ray(),
                     f64::ray_values(&track.altitude_m, &order),
-                    vec![("units".into(), self.metres())],
+                    vertical(),
                 ));
                 if let Some(values) = &track.altitude_agl_m {
                     variables.push(variable(
                         "altitude_agl",
                         ray(),
                         f64::ray_values(values, &order),
-                        vec![("units".into(), self.metres())],
+                        vertical(),
                     ));
                 }
                 for (name, values) in [
@@ -1092,7 +1217,12 @@ impl<'a> Builder<'a> {
             parameters.prt_s,
             units("s", "seconds"),
         ));
-        variables.extend(float("prt_ratio", &vars.prt_ratio, None, Vec::new()));
+        variables.extend(float(
+            "prt_ratio",
+            &vars.prt_ratio,
+            None,
+            vec![("units".into(), self.unit(Unit::Unitless))],
+        ));
         if let Some(sequence) = &vars.prt_sequence_s {
             let values = match order {
                 RowOrder::Identity => Values::Borrowed(ArrayRef::F32(&sequence.values_s)),
@@ -1114,7 +1244,10 @@ impl<'a> Builder<'a> {
                 "n_samples",
                 ray(),
                 i32::ray_values(samples, order),
-                vec![("_FillValue".into(), scalar(Scalar::I32(-9999)))],
+                vec![
+                    ("units".into(), self.unit(Unit::Unitless)),
+                    ("_FillValue".into(), scalar(Scalar::I32(-9999))),
+                ],
             ));
         }
         variables.extend(float(
@@ -1243,6 +1376,7 @@ impl<'a> Builder<'a> {
             FieldData::U16 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
             FieldData::I8 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
             FieldData::I16 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
+            FieldData::I32 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
             FieldData::F32 { coding, .. } => float_attrs(
                 &mut attrs,
                 coding,

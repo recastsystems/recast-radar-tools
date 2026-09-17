@@ -1,11 +1,14 @@
 """Independent ODIM_H5 reference dump (h5py) in dump_radar.rs format.
 
-Historical: this replicates the conventions of the legacy (pre-FM301)
-decoder, which the FM301 migration (docs/design/fm301-model.md 5.2, 7.2,
-8.1) replaced. The native decoder keeps sweeps in file order, measured
-azimuths, verbatim field names and packed planes, so today's
-`dump_radar` output no longer diffs clean against this script. The legacy
-conventions were:
+Historical reference, run by no test: it reproduces the output of the
+legacy (pre-FM301) Rust decoder, which the FM301 migration
+(docs/design/fm301-model.md 5.2, 7.2, 8.1) replaced and the shim removal
+(b811f2d) deleted, together with its MomentType enum. The native decoder
+keeps sweeps in file order, measured azimuths, verbatim field names and
+packed planes, so today's `dump_radar` output does not diff clean against
+this script; tests/fm301_conformance.rs in recast-radar-core compares the
+native decoder with xradar and Py-ART instead. The legacy conventions this
+script reproduces were:
 - cuts sorted by elangle ascending,
 - ray center azimuth = (i + 0.5) * 360 / nrays,
 - physical = gain * raw + offset; nodata/undetect -> None,
@@ -27,7 +30,8 @@ CANON = {
     "PHIDP": "PHI", "PHIDPU": "PHI", "UPHIDP": "PHI",
     "KDP": "KDP", "KDPU": "KDP",
 }
-# BTreeMap order = legacy MomentType variant declaration order, Unknowns last by name.
+# The removed legacy MomentType enum's BTreeMap order (variant declaration
+# order, Unknowns last by name), reproduced for the historical output.
 VARIANT_ORDER = {"REF": 0, "VEL": 1, "SW": 2, "ZDR": 3, "RHO": 4, "PHI": 5, "KDP": 6}
 
 

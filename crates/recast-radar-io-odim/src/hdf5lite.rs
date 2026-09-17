@@ -25,7 +25,8 @@
 //! - Messages: dataspace (0x0001), datatype (0x0003), data layout (0x0008,
 //!   v3 compact/contiguous/chunked), filter pipeline (0x000B, deflate id 1
 //!   and shuffle id 2), attribute (0x000C, versions 1-3), header
-//!   continuation (0x0010), symbol table (0x0011).
+//!   continuation (0x0010), symbol table (0x0011), and attribute info
+//!   (0x0015) to detect dense attribute storage.
 //! - Datatypes: fixed-point, IEEE float (f32/f64), fixed-length strings, and
 //!   variable-length strings (global heap collections).
 //! - Chunk index: v1 B-trees; raw chunks pass through the inverse filter
@@ -33,7 +34,11 @@
 //!
 //! Everything else (fractal heaps, dense attributes, v2 B-trees, shared
 //! messages, fill values beyond zero, named datatypes, ...) is out of scope
-//! and produces an explicit error rather than silent misreads.
+//! and produces an explicit error rather than silent misreads. In particular
+//! [`H5File::open`] reads every attribute of every reachable object once and
+//! fails when one has a datatype outside the list above or when an object
+//! keeps its attributes in dense storage, so [`H5File::attr`] and
+//! [`H5File::attrs`] never skip an attribute silently.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
@@ -194,7 +199,61 @@ impl<'a> H5File<'a> {
         file.objects.insert("/".to_owned(), root_header);
         let mut visited_groups = BTreeSet::from([root_header]);
         file.walk_group("", &header, &mut visited_groups, 0)?;
+        file.validate_attributes()?;
         Ok(file)
+    }
+
+    /// Every attribute of every reachable object decodes, and no object keeps
+    /// its attributes in dense storage (fractal heap plus v2 B-tree), so the
+    /// attribute readers see all of them.
+    fn validate_attributes(&self) -> Result<()> {
+        for (path, address) in &self.objects {
+            let header = self.parse_object_header(*address)?;
+            for message in &header.messages {
+                match message.kind {
+                    0x000C => {
+                        self.parse_attribute(&message.body, None)
+                            .map_err(|err| match err {
+                                OdimError::LimitExceeded(_) => err,
+                                err => invalid(
+                                    *address as usize,
+                                    format!(
+                                        "an attribute of HDF5 object '{path}' cannot be read: {err}"
+                                    ),
+                                ),
+                            })?;
+                    }
+                    0x0015 if self.dense_attribute_heap(&message.body)? => {
+                        return Err(invalid(
+                            *address as usize,
+                            format!(
+                                "HDF5 object '{path}' stores its attributes densely \
+                                 (fractal heap and v2 B-tree), which is unsupported"
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `true` when an attribute info message (0x0015; HDF5 spec IV.A.2.v)
+    /// points at a fractal heap, i.e. the object uses dense attribute
+    /// storage.
+    fn dense_attribute_heap(&self, body: &[u8]) -> Result<bool> {
+        let version = read_u8(body, 0)?;
+        if version != 0 {
+            return Err(invalid(
+                0,
+                format!("attribute info message version {version} unsupported"),
+            ));
+        }
+        let flags = read_u8(body, 1)?;
+        // Bit 0: a 2-byte maximum creation index precedes the addresses.
+        let heap_at = if flags & 0x01 != 0 { 4 } else { 2 };
+        Ok(read_offset(body, heap_at, self.offset_size)? != UNDEFINED_ADDR)
     }
 
     /// Names of the direct children of `path` (groups and datasets).
@@ -231,9 +290,9 @@ impl<'a> H5File<'a> {
         None
     }
 
-    /// Every attribute of the object at `path` that decodes, in header order
-    /// (compact attribute messages, as [`Self::attr`] reads them). Empty when
-    /// the object does not exist.
+    /// Every attribute of the object at `path`, in header order. Empty when
+    /// the object does not exist. [`Self::open`] checked that each one
+    /// decodes and that none is in dense storage.
     pub fn attrs(&self, path: &str) -> Vec<(String, H5Attr)> {
         let Some(header) = self
             .objects
@@ -1769,6 +1828,59 @@ mod tests {
         assert!(!looks_like_hdf5_bytes(&corpus(
             "l2-ktlx-20240315-000217-trim"
         )));
+    }
+
+    /// `open` reads every attribute once: a real attribute whose datatype is
+    /// turned into an unsupported class (6, compound), or an attribute
+    /// message turned into an attribute info message that points at a
+    /// fractal heap (dense storage), fails to open instead of being skipped
+    /// by `attr` and `attrs`.
+    #[test]
+    fn open_rejects_unreadable_and_dense_attributes() {
+        let original = corpus(BEJAB);
+        let file = H5File::open(&original).expect("real file opens");
+        assert!(!file.attrs("/what").is_empty());
+        let header = file.parse_object_header(file.objects["/what"]).unwrap();
+        let body = header
+            .messages
+            .iter()
+            .find(|message| message.kind == 0x000C)
+            .expect("an attribute of /what")
+            .body
+            .clone();
+        assert_eq!(body[0], 1, "version-1 attribute message");
+        assert!(body.len() >= 18);
+        let at = original
+            .windows(body.len())
+            .position(|window| window == body.as_slice())
+            .expect("the message body is in the file");
+        // Version 1: an 8-byte header, then the name padded to 8 bytes.
+        let name_size = usize::from(u16::from_le_bytes([body[2], body[3]]));
+        let datatype_at = at + 8 + name_size.div_ceil(8) * 8;
+
+        let mut unreadable = original.clone();
+        unreadable[datatype_at] = (unreadable[datatype_at] & 0xF0) | 6;
+        let Err(err) = H5File::open(&unreadable) else {
+            panic!("an unsupported attribute datatype must fail");
+        };
+        let text = err.to_string();
+        assert!(
+            text.contains("'/what'") && text.contains("class 6"),
+            "{text}"
+        );
+
+        // A version-1 message header is type (u16), size (u16), flags and
+        // three reserved bytes; the body follows.
+        let mut dense = original.clone();
+        dense[at - 8..at - 6].copy_from_slice(&0x0015u16.to_le_bytes());
+        dense[at] = 0;
+        dense[at + 1] = 0;
+        dense[at + 2..at + 10].copy_from_slice(&ROOT_HEADER.to_le_bytes());
+        dense[at + 10..at + 18].copy_from_slice(&UNDEFINED_ADDR.to_le_bytes());
+        let Err(err) = H5File::open(&dense) else {
+            panic!("dense attribute storage must fail");
+        };
+        assert!(err.to_string().contains("densely"), "{err}");
     }
 
     /// Root group object header: address 96 (h5py), 3 messages in 2 chunks;

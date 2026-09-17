@@ -546,6 +546,7 @@ fn cf_packed_fields_scale_every_gate() {
                 let raw: Vec<f64> = match &field.data {
                     FieldData::I8 { values, .. } => values.iter().map(|&v| f64::from(v)).collect(),
                     FieldData::I16 { values, .. } => values.iter().map(|&v| f64::from(v)).collect(),
+                    FieldData::I32 { values, .. } => values.iter().map(|&v| f64::from(v)).collect(),
                     FieldData::U8 { values, .. } => values.iter().map(|&v| f64::from(v)).collect(),
                     FieldData::U16 { values, .. } => values.iter().map(|&v| f64::from(v)).collect(),
                     _ => continue,

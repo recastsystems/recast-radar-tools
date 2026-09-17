@@ -316,6 +316,7 @@ fn volume_field_capacity_bytes(volume: &Volume) -> usize {
                 FieldData::I8 { values, .. } => values.capacity(),
                 FieldData::U16 { values, .. } => values.capacity().saturating_mul(2),
                 FieldData::I16 { values, .. } => values.capacity().saturating_mul(2),
+                FieldData::I32 { values, .. } => values.capacity().saturating_mul(4),
                 FieldData::F32 { values, .. } => values.capacity().saturating_mul(4),
                 FieldData::F64 { values, .. } => values.capacity().saturating_mul(8),
             };
@@ -1095,7 +1096,14 @@ impl SweepParse {
                 ),
             ));
         }
-        let sweep_start = self.start_time;
+        // The reference is at or before every ray: the SSWB start, or the
+        // earliest ray when rays run backwards past it (NOXP 2009-05-01
+        // stores its rays from 19:02:44 back to 19:02:42).
+        let earliest_ray = self.rays.iter().filter_map(|(ray, _)| ray.time).min();
+        let sweep_start = match (self.start_time, earliest_ray) {
+            (Some(start), Some(ray)) => Some(start.min(ray)),
+            (start, ray) => start.or(ray),
+        };
         if let Some(start) = sweep_start {
             builder.rebase(floor_to_second(start));
         }
@@ -1723,9 +1731,11 @@ mod tests {
             -100.336_24,
             1e-5
         ));
+        // SSWB start 20:32:11Z; the rays run back to 20:32:07Z, the earliest
+        // of the two and so the time reference (no ray time is negative).
         assert_eq!(
             volume.time_reference,
-            Utc.with_ymd_and_hms(2009, 5, 25, 20, 32, 11).unwrap()
+            Utc.with_ymd_and_hms(2009, 5, 25, 20, 32, 7).unwrap()
         );
         let sweep = &volume.sweeps[0];
         assert_eq!(sweep.sweep_mode, SweepMode::Sector);
@@ -1747,7 +1757,10 @@ mod tests {
             f64::from(360.0 - 62.168_884f32),
             1e-3
         ));
-        assert_eq!(time_offset_ms(sweep, 98), -4000);
+        // Rays run backwards from the SSWB start: ray 0 is 4 s after the
+        // reference (the earliest ray) and ray 98 sits on it.
+        assert_eq!(time_offset_ms(sweep, 0), 4000);
+        assert_eq!(time_offset_ms(sweep, 98), 0);
         assert!(close(nyquist(sweep, 0), 7.576_25, 1e-4));
 
         let reflectivity = field(sweep, "DZ");

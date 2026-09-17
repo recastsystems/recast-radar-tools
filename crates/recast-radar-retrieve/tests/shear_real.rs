@@ -9,7 +9,7 @@ mod common;
 
 use common::{
     array, as_f64, as_i64, as_str, as_usize, assert_close, assert_grid_matches, cell, find_case,
-    golden, jma, level2, lowest_cut_with, map_values, moment,
+    golden, jma, level2, lowest_cut_with, map_values, moment, tilt,
 };
 use recast_radar_core::{Field, FieldData, FieldName};
 use recast_radar_retrieve::{
@@ -59,7 +59,7 @@ fn moore_couplet_azimuthal_shear_matches_the_llsd_reference() {
     );
     let cut = &volume.sweeps[as_usize(&case["sweep"])];
     assert_close(
-        f64::from(cut.fixed_angle_deg),
+        f64::from(tilt(&volume, as_usize(&case["sweep"]))),
         as_f64(&case["elevation_deg"]),
         1e-3,
         "sweep elevation",

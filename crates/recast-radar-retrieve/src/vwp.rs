@@ -233,12 +233,7 @@ pub fn compute_vwp(
         let target_height = config.min_height_m_agl + level_index as f32 * config.height_step_m;
         let mut accepted = Vec::new();
         let mut rejected = Vec::new();
-        for (sweep_index, (sweep, field)) in volume
-            .sweeps
-            .iter()
-            .zip(dealiased_velocity.iter())
-            .enumerate()
-        {
+        for (sweep_index, field) in dealiased_velocity.iter().enumerate() {
             let Some(field) = *field else {
                 continue;
             };
@@ -246,8 +241,8 @@ pub fn compute_vwp(
                 continue;
             }
             let Some(candidate) = candidate_for_height(
+                volume,
                 sweep_index,
-                sweep,
                 field,
                 target_height,
                 radar_elevation_m,
@@ -354,13 +349,14 @@ enum CandidateOutcome {
 }
 
 fn candidate_for_height(
+    volume: &Volume,
     sweep_index: usize,
-    sweep: &Sweep,
     field: &Field,
     target_height_m_agl: f32,
     radar_elevation_m: Option<f32>,
     config: VwpConfig,
 ) -> Option<CandidateOutcome> {
+    let sweep = volume.sweeps.get(sweep_index)?;
     let (first_gate_m, spacing_m) = field.native_geometry(&sweep.range)?;
     if field.nrays == 0 || field.ngates == 0 || spacing_m <= 0.0 {
         return None;
@@ -370,7 +366,8 @@ fn candidate_for_height(
         spacing_m: spacing_m as f32,
         gates: field.ngates as usize,
     };
-    let elevation_deg = representative_elevation(sweep, field)?;
+    let elevation_deg =
+        representative_elevation(sweep, field, volume.tilt_elevation_deg(sweep_index)?)?;
     if !(-1.0..89.0).contains(&elevation_deg) {
         return None;
     }
@@ -564,7 +561,9 @@ impl FieldGeometry {
     }
 }
 
-fn representative_elevation(sweep: &Sweep, field: &Field) -> Option<f32> {
+/// Median of the field's finite ray elevations, else `tilt_elevation_deg`
+/// ([`Sweep::tilt_elevation_deg`]) when it is finite.
+fn representative_elevation(sweep: &Sweep, field: &Field, tilt_elevation_deg: f32) -> Option<f32> {
     let elevations: Vec<f32> = sweep
         .rays
         .elevation_deg
@@ -573,12 +572,7 @@ fn representative_elevation(sweep: &Sweep, field: &Field) -> Option<f32> {
         .copied()
         .filter(|elevation| elevation.is_finite())
         .collect();
-    median(elevations).or_else(|| {
-        sweep
-            .fixed_angle_deg
-            .is_finite()
-            .then_some(sweep.fixed_angle_deg)
-    })
+    median(elevations).or_else(|| tilt_elevation_deg.is_finite().then_some(tilt_elevation_deg))
 }
 
 /// Reduce an annulus to at most one observation per integer azimuth degree.

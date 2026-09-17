@@ -116,6 +116,7 @@ fn dump(volume: &Volume) {
                 FieldData::U16 { .. } => "u16",
                 FieldData::I8 { .. } => "i8",
                 FieldData::I16 { .. } => "i16",
+                FieldData::I32 { .. } => "i32",
                 FieldData::F32 { .. } => "f32",
                 FieldData::F64 { .. } => "f64",
             };

@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::{array, as_f64, as_opt_f64, as_usize, assert_close, cell, golden, level2};
+use common::{array, as_f64, as_opt_f64, as_usize, assert_close, cell, golden, level2, tilt};
 use recast_radar_core::FieldName;
 use recast_radar_retrieve::{column_max, echo_base, echo_depth, echo_top_height};
 use recast_radar_testdata::require_file;
@@ -32,7 +32,7 @@ fn column_maximum_and_echo_depth_match_the_column_walk_reference() {
     // The output geometry is the lowest reflectivity tilt's.
     let base_cut = &volume.sweeps[as_usize(&golden["base_sweep"])];
     assert_close(
-        f64::from(base_cut.fixed_angle_deg),
+        f64::from(tilt(&volume, as_usize(&golden["base_sweep"]))),
         as_f64(&golden["base_elevation_deg"]),
         1e-3,
         "base tilt elevation",

@@ -11,21 +11,32 @@
 //!
 //! - names and dimensions must match;
 //! - an array of the same dtype must hash equal (SHA-256 over little-endian
-//!   elements with NaN canonicalized, the golden's convention); a `time`
-//!   coordinate is hashed as int64 nanoseconds; an array whose dtype differs
-//!   only in float width is hashed after widening and, failing that, its
-//!   count, min, max, mean, first and last values must agree within
+//!   elements with NaN canonicalized, the golden's convention); an array whose
+//!   dtype differs only in float width is hashed after widening and, failing
+//!   that, its count, min, max, mean, first and last values must agree within
 //!   [`TOLERANCE`] relative;
+//! - a `time` coordinate is decoded with the view's own `units` attribute
+//!   (`seconds since <reference>`, which must name a whole second) and hashed
+//!   as int64 nanoseconds; xradar's datetime64 values carry float noise (up
+//!   to tens of microseconds), so a time that does not hash equal must agree
+//!   in count, min, max, mean, first and last within [`TIME_TOLERANCE_S`];
+//! - a field on a sweep whose xradar range is coarser than ours (6.2) is
+//!   taken from the view's materialized variable at its native gates, padded
+//!   as xradar pads it;
 //! - scalars and numeric attributes agree within [`TOLERANCE`]; text and
-//!   boolean attributes are equal.
+//!   boolean attributes are equal; CfRadial coordinate and instrument
+//!   variables compare `units` by meaning and `positive` as text.
 //!
 //! The Py-ART side compares the volume with `Radar`: sweep table, per-sweep
-//! coordinates, fixed angles, sweep modes, location, instrument parameters,
-//! and every field placed on Py-ART's volume range the way
-//! `read_nexrad_archive(linear_interp=False)` lays it out (each native gate
-//! repeated over the gates it covers, design note 6.5): the physical float32
-//! values hash equal to Py-ART's per-sweep arrays, or, where the two readers
-//! evaluate in different precision, agree in count, min, max and mean.
+//! coordinates, fixed angles, sweep modes, location, time reference,
+//! instrument parameters, and every field read through the FM301 view (the
+//! materialized variable, with its ray order, padding and gate repetition)
+//! and placed on Py-ART's volume range the way
+//! `read_nexrad_archive(linear_interp=False)` lays it out (each range gate of
+//! the sweep repeated over the Py-ART gates it covers, design note 6.5): the
+//! physical float32 values must hash equal to Py-ART's per-sweep arrays. Only
+//! a case whose range Py-ART misreads (listed) compares count, min, max and
+//! mean instead.
 //!
 //! Differences the readers are known to have are listed in [`EXPECTED`], each
 //! with a key and the design-note section that decides it. The code that
@@ -47,16 +58,22 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use recast_radar_core::fm301::{
-    self, ExtraAttrs, FirstDim, Flavor, Group, Passthrough, Values, ViewOptions, VolumeView,
+    self, ExtraAttrs, FirstDim, Flavor, Group, Passthrough, RowOrder, Values, Variable,
+    ViewOptions, VolumeView,
 };
 use recast_radar_core::model::{
-    ArrayBuf, AttrValue, Field, PyartNames, Scalar, SourceFormat, Sweep, Volume,
+    ArrayBuf, AttrValue, Coding, GateMapping, PyartNames, Scalar, SourceFormat, Sweep, Volume,
 };
 use serde_json::Value;
 
 /// Relative tolerance for values the two sides compute in different
 /// precision (design note section 15, open question 5).
 const TOLERANCE: f64 = 1e-4;
+
+/// Absolute tolerance for absolute times (seconds). xradar's `datetime64`
+/// values carry float noise up to 28.6 us (iesha); a wrong time reference is
+/// off by whole seconds.
+const TIME_TOLERANCE_S: f64 = 1e-3;
 
 /// The reader differences this test expects: a key, used by the code that
 /// applies the rule, and the difference with the section of
@@ -170,6 +187,18 @@ const EXPECTED: &[(&str, &str)] = &[
     (
         "pyart-padded-fields",
         "Py-ART gives every sweep every field, masked where the sweep has none (6.3); ours has no such field",
+    ),
+    (
+        "pyart-odim-time-reference",
+        "Py-ART's ODIM reader counts time from the first dataset's start (iesha 01:15:04); ours from the root what/date and what/time, the nominal volume time before it (01:15:00, section 11)",
+    ),
+    (
+        "units-spelling",
+        "xradar keeps a CfRadial file's unit spellings (`db`, `meters per second`, `degrees per second`, `unitless`, `count`); ours writes xradar's own spellings and UDUNITS symbols (section 12.4), so these units compare by meaning",
+    ),
+    (
+        "cfradial-prt-ratio-units",
+        "Radx writes `units = seconds` on the dimensionless `prt_ratio` (IRENE, DOW8); ours writes a ratio's empty unit (section 12.4)",
     ),
 ];
 
@@ -365,6 +394,17 @@ fn summarize(values: impl Iterator<Item = f64> + Clone) -> Summary {
     }
 }
 
+/// How [`compare_summary`] compares values.
+#[derive(Clone, Copy)]
+enum Tolerance {
+    /// [`TOLERANCE`] relative; with a nonzero margin, also within that margin,
+    /// and then `first` and `last` are not compared.
+    Relative(f64),
+    /// Within an absolute margin only, `first` and `last` included (absolute
+    /// times).
+    Absolute(f64),
+}
+
 fn close(actual: f64, expected: f64) -> bool {
     if actual.is_nan() && expected.is_nan() {
         return true;
@@ -396,6 +436,8 @@ struct OurVar {
     scalar: Option<Scalar>,
     text: Option<String>,
     attrs: BTreeMap<String, AttrValue>,
+    /// A mapped field: its native gate count, gate mapping and fill.
+    mapping: Option<(usize, GateMapping, Scalar)>,
 }
 
 struct OurGroup {
@@ -415,6 +457,15 @@ fn flatten(view: &VolumeView<'_>) -> BTreeMap<String, OurGroup> {
                     Values::Text(t) => (None, None, Some(t.to_string())),
                     other => (Some(other.materialize().unwrap()), None, None),
                 };
+                let mapping = match &var.values {
+                    Values::Mapped {
+                        native_gates,
+                        mapping,
+                        fill,
+                        ..
+                    } => Some((*native_gates, *mapping, *fill)),
+                    _ => None,
+                };
                 (
                     var.name.to_string(),
                     OurVar {
@@ -427,6 +478,7 @@ fn flatten(view: &VolumeView<'_>) -> BTreeMap<String, OurGroup> {
                             .iter()
                             .map(|(k, v)| (k.to_string(), v.clone()))
                             .collect(),
+                        mapping,
                     },
                 )
             })
@@ -476,6 +528,8 @@ struct Report {
     known: usize,
     /// [`EXPECTED`] keys applied.
     used: BTreeSet<&'static str>,
+    /// Hashes of fields the view repeats over several range gates (stride > 1).
+    strided: usize,
 }
 
 impl Report {
@@ -641,7 +695,6 @@ struct Context<'a> {
     case: &'a Case,
     view: &'a str,
     source: SourceFormat,
-    time_reference: DateTime<Utc>,
     /// The golden's root `number_elevation_cuts` (NEXRAD): 0 when xradar
     /// read a zero-filled Message 5.
     zero_vcp: bool,
@@ -742,8 +795,23 @@ fn compare_group_attrs(
     }
 }
 
-/// Our `time` coordinate (seconds since the volume reference) as int64
-/// nanoseconds since the epoch, the golden's `datetime64[ns]` hash input.
+/// The reference of a `units` attribute of the form `seconds since
+/// YYYY-MM-DDThh:mm:ssZ` (FM301 Table 301-6b: whole seconds, UTC).
+fn seconds_since(units: Option<&AttrValue>) -> Option<DateTime<Utc>> {
+    let text = attr_text(units?)?;
+    let stamp = text.strip_prefix("seconds since ")?;
+    let valid = stamp.len() == 20
+        && stamp.ends_with('Z')
+        && stamp.as_bytes()[10] == b'T'
+        && !stamp.contains('.');
+    if !valid {
+        return None;
+    }
+    stamp.parse::<DateTime<Utc>>().ok()
+}
+
+/// Our `time` coordinate (seconds since `reference`) as int64 nanoseconds
+/// since the epoch, the golden's `datetime64[ns]` hash input.
 fn time_ns(reference: DateTime<Utc>, seconds: &[f64]) -> Vec<i64> {
     let base = reference.timestamp_nanos_opt().unwrap();
     seconds
@@ -810,7 +878,8 @@ fn compare_array(
             report.hashed += 1;
             return;
         }
-        // Fall back to the epoch-second summaries.
+        // xradar's float noise: the epoch-second summaries within
+        // TIME_TOLERANCE_S, never relative.
         let seconds: Vec<f64> = our_f64s(ours)
             .iter()
             .map(|s| {
@@ -822,7 +891,7 @@ fn compare_array(
             what,
             golden_values,
             &summarize(seconds.iter().copied()),
-            0.0,
+            Tolerance::Absolute(TIME_TOLERANCE_S),
         );
         return;
     }
@@ -861,16 +930,26 @@ fn compare_array(
         what,
         golden_values,
         &summarize(our_f64s(ours).into_iter()),
-        0.0,
+        Tolerance::Relative(0.0),
     );
 }
 
 /// Count, min, max, mean, first and last of a golden summary against ours.
-/// `absolute` widens the tolerance to an absolute margin (0 for the plain
-/// relative rule).
-fn compare_summary(report: &mut Report, what: &str, golden: &Value, ours: &Summary, absolute: f64) {
+fn compare_summary(
+    report: &mut Report,
+    what: &str,
+    golden: &Value,
+    ours: &Summary,
+    tolerance: Tolerance,
+) {
     report.summarized += 1;
-    let near = |mine: f64, theirs: f64| close(mine, theirs) || (mine - theirs).abs() <= absolute;
+    let near = |mine: f64, theirs: f64| match tolerance {
+        Tolerance::Relative(margin) => close(mine, theirs) || (mine - theirs).abs() <= margin,
+        Tolerance::Absolute(margin) => {
+            (mine.is_nan() && theirs.is_nan()) || (mine - theirs).abs() <= margin
+        }
+    };
+    let whole = matches!(tolerance, Tolerance::Relative(0.0) | Tolerance::Absolute(_));
     for (key, mine) in [("min", ours.min), ("max", ours.max), ("mean", ours.mean)] {
         if golden.get(key).is_none() {
             continue; // integer summaries carry no mean
@@ -881,11 +960,11 @@ fn compare_summary(report: &mut Report, what: &str, golden: &Value, ours: &Summa
             (theirs, mine) => report.error(format!("{what}: {key} {mine:?}, golden {theirs:?}")),
         }
     }
-    if absolute == 0.0 {
+    if whole {
         if let Some(first) = golden["first"].as_array() {
             for (i, item) in first.iter().enumerate() {
                 match (json_f64(item), ours.first.get(i)) {
-                    (Some(theirs), Some(mine)) if close(*mine, theirs) => {}
+                    (Some(theirs), Some(mine)) if near(*mine, theirs) => {}
                     (theirs, mine) => {
                         report.error(format!("{what}: first[{i}] {mine:?}, golden {theirs:?}"));
                     }
@@ -893,7 +972,7 @@ fn compare_summary(report: &mut Report, what: &str, golden: &Value, ours: &Summa
             }
         }
         if let (Some(theirs), Some(mine)) = (json_f64(&golden["last"]), ours.last)
-            && !close(mine, theirs)
+            && !near(mine, theirs)
         {
             report.error(format!("{what}: last {mine}, golden {theirs}"));
         }
@@ -941,42 +1020,50 @@ fn coarse_xradar_range(ctx: &Context<'_>, golden_group: &Value, ours: &OurGroup)
     }
 }
 
-/// A field's native rows padded with its fill to `gates` gates per row (what
-/// xradar stores for the coarse-range sweeps).
-fn native_rows_padded(field: &Field, gates: usize) -> ArrayBuf {
-    let (rows, native) = field.shape();
-    macro_rules! pad {
+/// What xradar stores for a field of a coarse-range sweep: the field's native
+/// gates, padded with its fill to `gates` gates per row. Taken from the view's
+/// materialized variable (`values`, `row_len` range gates per row, in the
+/// view's ray order): native gate `g` of a row is range gate
+/// `start + g * stride`.
+fn native_from_view(
+    values: &ArrayBuf,
+    row_len: usize,
+    (native_gates, mapping, fill): (usize, GateMapping, Scalar),
+    gates: usize,
+) -> Option<ArrayBuf> {
+    let stride = mapping.stride.max(1) as usize;
+    let start = mapping.start as usize;
+    let take = native_gates.min(gates);
+    if row_len == 0 || !values.len().is_multiple_of(row_len) {
+        return None;
+    }
+    if take > 0 && start + (take - 1) * stride >= row_len {
+        return None;
+    }
+    let rows = values.len() / row_len;
+    macro_rules! native {
         ($values:expr, $fill:expr, $variant:ident) => {{
             let mut out = Vec::with_capacity(rows * gates);
             for row in 0..rows {
-                let start = row * native;
-                let take = native.min(gates);
-                out.extend_from_slice(&$values[start..start + take]);
+                let base = row * row_len;
+                for g in 0..take {
+                    out.push($values[base + start + g * stride]);
+                }
                 out.extend(std::iter::repeat_n($fill, gates - take));
             }
             ArrayBuf::$variant(out)
         }};
     }
-    match &field.data {
-        recast_radar_core::model::FieldData::U8 { values, coding } => {
-            pad!(values, coding.fill_code(), U8)
-        }
-        recast_radar_core::model::FieldData::U16 { values, coding } => {
-            pad!(values, coding.fill_code(), U16)
-        }
-        recast_radar_core::model::FieldData::I8 { values, coding } => {
-            pad!(values, coding.fill_code(), I8)
-        }
-        recast_radar_core::model::FieldData::I16 { values, coding } => {
-            pad!(values, coding.fill_code(), I16)
-        }
-        recast_radar_core::model::FieldData::F32 { values, coding } => {
-            pad!(values, coding.fill_code(), F32)
-        }
-        recast_radar_core::model::FieldData::F64 { values, coding } => {
-            pad!(values, coding.fill_code(), F64)
-        }
-    }
+    Some(match (values, fill) {
+        (ArrayBuf::U8(v), Scalar::U8(f)) => native!(v, f, U8),
+        (ArrayBuf::U16(v), Scalar::U16(f)) => native!(v, f, U16),
+        (ArrayBuf::I8(v), Scalar::I8(f)) => native!(v, f, I8),
+        (ArrayBuf::I16(v), Scalar::I16(f)) => native!(v, f, I16),
+        (ArrayBuf::I32(v), Scalar::I32(f)) => native!(v, f, I32),
+        (ArrayBuf::F32(v), Scalar::F32(f)) => native!(v, f, F32),
+        (ArrayBuf::F64(v), Scalar::F64(f)) => native!(v, f, F64),
+        _ => return None,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1039,7 +1126,7 @@ fn compare_variable(
             &what,
             values,
             &summarize(our_f64s(array).into_iter()),
-            0.0,
+            Tolerance::Relative(0.0),
         );
         return;
     }
@@ -1053,14 +1140,24 @@ fn compare_variable(
     // Attributes: every golden attribute, and the golden encoding's
     // `coordinates`, must be in ours. Ours may add the FM301 attributes.
     // CfRadial coordinate and instrument variables carry the file's own
-    // attributes in xradar and the model's typed slots in ours, so only the
-    // dataset variables (two dimensions) compare attributes there.
+    // attributes in xradar and the model's typed slots in ours: there `units`
+    // compare by meaning and `positive` as text, and only the dataset
+    // variables (two dimensions) compare every attribute.
     let is_field = golden_dims.len() == 2;
     let compare_attrs = !ctx.cfradial() || is_field;
     if let Some(attrs) = golden["attrs"].as_object() {
         if !compare_attrs {
-            for _ in attrs {
-                report.skip("cfradial-verbatim-attrs");
+            for (key, value) in attrs {
+                match key.as_str() {
+                    "units" => compare_units(report, &what, name, value, ours.attrs.get("units")),
+                    "positive" => match ours.attrs.get("positive") {
+                        Some(mine) => compare_attr(report, &what, key, value, mine),
+                        None => {
+                            report.error(format!("{what}: attribute positive = {value} missing"))
+                        }
+                    },
+                    _ => report.skip("cfradial-verbatim-attrs"),
+                }
             }
         } else {
             for (key, value) in attrs {
@@ -1075,6 +1172,10 @@ fn compare_variable(
             }
             for key in ours.attrs.keys() {
                 if attrs.contains_key(key) {
+                    continue;
+                }
+                if key == "units" && name == "time" {
+                    // Compared through the decoded values below.
                     continue;
                 }
                 match ours_only(OURS_ONLY_VAR_ATTRS, key) {
@@ -1136,14 +1237,21 @@ fn compare_variable(
         report.note("calib-squeeze");
         if name == "time" {
             // xradar keeps the calibration time as text; ours is seconds
-            // since the volume reference.
+            // since the reference its `units` names.
+            let Some(reference) = seconds_since(ours.attrs.get("units")) else {
+                report.error(format!(
+                    "{what}: units {:?} is not `seconds since <whole second>`",
+                    ours.attrs.get("units")
+                ));
+                return;
+            };
+            report.attrs += 1;
             let mine = array
                 .get_f64(0)
                 .and_then(|s| {
-                    ctx.time_reference
-                        .checked_add_signed(chrono::Duration::milliseconds(
-                            (s * 1000.0).round() as i64
-                        ))
+                    reference.checked_add_signed(chrono::Duration::milliseconds(
+                        (s * 1000.0).round() as i64,
+                    ))
                 })
                 .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string());
             let theirs = values["value"].as_str().map(str::to_owned);
@@ -1200,8 +1308,81 @@ fn compare_variable(
         compare_array(report, &what, values, golden_dtype, native, None);
         return;
     }
-    let time = (name == "time").then_some(ctx.time_reference);
+    // A time coordinate decodes with its own units: the reference the view
+    // writes is part of what is compared.
+    let time = if golden_dtype == "datetime64[ns]" {
+        match seconds_since(ours.attrs.get("units")) {
+            Some(reference) => {
+                report.attrs += 1;
+                Some(reference)
+            }
+            None => {
+                report.error(format!(
+                    "{what}: units {:?} is not `seconds since <whole second>`",
+                    ours.attrs.get("units")
+                ));
+                return;
+            }
+        }
+    } else {
+        None
+    };
     compare_array(report, &what, values, golden_dtype, array, time);
+}
+
+/// Unit spellings with one meaning, keyed by the lowercase spelling.
+fn canonical_unit(units: &str) -> String {
+    let lower = units.trim().to_ascii_lowercase();
+    let canonical = match lower.as_str() {
+        "" | "1" | "unitless" | "count" | "none" | "-" => "1",
+        "s" | "sec" | "second" | "seconds" => "s",
+        "db" => "dB",
+        "dbm" => "dBm",
+        "dbz" => "dBZ",
+        "deg" | "degree" | "degrees" => "degree",
+        "m" | "meter" | "meters" | "metre" | "metres" => "m",
+        "m s-1" | "m/s" | "meters per second" | "meters_per_second" | "meters per seconds" => {
+            "m s-1"
+        }
+        "degrees/s" | "deg/s" | "degree s-1" | "degrees per second" | "degrees_per_second" => {
+            "degree s-1"
+        }
+        "s-1" | "hz" => "s-1",
+        _ => return units.trim().to_owned(),
+    };
+    canonical.to_owned()
+}
+
+/// A golden `units` attribute of a CfRadial coordinate or instrument
+/// variable against ours, by meaning: an empty or dimensionless golden unit
+/// also matches no attribute.
+fn compare_units(
+    report: &mut Report,
+    what: &str,
+    name: &str,
+    golden: &Value,
+    ours: Option<&AttrValue>,
+) {
+    let Some(theirs) = golden.as_str() else {
+        report.error(format!("{what}: golden units {golden} is not text"));
+        return;
+    };
+    report.attrs += 1;
+    let mine = ours.and_then(attr_text);
+    let (theirs_canonical, mine_canonical) =
+        (canonical_unit(theirs), mine.as_deref().map(canonical_unit));
+    match mine_canonical {
+        None if theirs_canonical == "1" => {}
+        Some(m) if m == theirs_canonical => {
+            if mine.as_deref() != Some(theirs) {
+                report.note("units-spelling");
+            }
+        }
+        Some(m) if name == "prt_ratio" && theirs_canonical == "s" && m == "1" => {
+            report.note("cfradial-prt-ratio-units");
+        }
+        _ => report.error(format!("{what}: units {mine:?}, golden {theirs:?}")),
+    }
 }
 
 /// The root platform-track variable of a moving platform: the sweeps'
@@ -1267,9 +1448,6 @@ fn compare_xradar_view(
             }
             continue;
         };
-        let sweep_index = path
-            .strip_prefix("/sweep_")
-            .and_then(|n| n.parse::<usize>().ok());
         let coarse_range = coarse_xradar_range(ctx, golden_group, mine);
         // Dimensions.
         if let Some(dims) = golden_group["dims"].as_object() {
@@ -1384,22 +1562,30 @@ fn compare_xradar_view(
                 report.error(format!("{what}/{name}: variable missing"));
                 continue;
             };
-            // Native rows of a field on a coarse-range sweep, padded like xradar.
-            let native = match (coarse_range, sweep_index, golden_gates) {
-                (true, Some(sweep), Some(gates)) if golden_dims.len() == 2 => volume
-                    .sweeps
-                    .get(sweep)
-                    .and_then(|s| s.fields.iter().find(|f| f.name.as_str() == name))
-                    .map(|field| {
-                        let padded = native_rows_padded(field, gates);
-                        match &my_var.array {
-                            // The auto view reorders rows; apply the same order.
-                            Some(_) if ctx.view == "auto" => {
-                                reorder_rows(&padded, gates, volume, sweep)
-                            }
-                            _ => padded,
-                        }
-                    }),
+            // Native gates of a field on a coarse-range sweep, padded like
+            // xradar, from the view's materialized variable (its ray order,
+            // gate offset and stride).
+            let native = match (coarse_range, golden_gates, &my_var.array) {
+                (true, Some(gates), Some(array)) if golden_dims.len() == 2 => {
+                    let row_len = mine.dims.get("range").copied().unwrap_or(0);
+                    // A borrowed variable is its own native gates.
+                    let mapping = my_var.mapping.or_else(|| {
+                        let fill = match my_var.attrs.get("_FillValue") {
+                            Some(AttrValue::Scalar(fill)) => *fill,
+                            _ => return None,
+                        };
+                        Some((row_len, GateMapping::IDENTITY, fill))
+                    });
+                    let native = mapping
+                        .and_then(|mapping| native_from_view(array, row_len, mapping, gates));
+                    if native.is_none() {
+                        report.error(format!(
+                            "{what}/{name}: the view's variable does not hold its native gates"
+                        ));
+                        continue;
+                    }
+                    native
+                }
                 _ => None,
             };
             compare_variable(
@@ -1461,32 +1647,6 @@ fn compare_xradar_view(
     }
 }
 
-/// `padded` (rows of `gates`) in the ray order of the auto view: rays sorted
-/// by azimuth (stable), the order `fm301::volume_view` applies.
-fn reorder_rows(padded: &ArrayBuf, gates: usize, volume: &Volume, sweep: usize) -> ArrayBuf {
-    let angles = &volume.sweeps[sweep].rays.azimuth_deg;
-    let mut order: Vec<usize> = (0..angles.len()).collect();
-    order.sort_by(|a, b| angles[*a].total_cmp(&angles[*b]));
-    macro_rules! reorder {
-        ($values:expr, $variant:ident) => {{
-            let mut out = Vec::with_capacity($values.len());
-            for row in &order {
-                out.extend_from_slice(&$values[row * gates..(row + 1) * gates]);
-            }
-            ArrayBuf::$variant(out)
-        }};
-    }
-    match padded {
-        ArrayBuf::U8(v) => reorder!(v, U8),
-        ArrayBuf::U16(v) => reorder!(v, U16),
-        ArrayBuf::I8(v) => reorder!(v, I8),
-        ArrayBuf::I16(v) => reorder!(v, I16),
-        ArrayBuf::F32(v) => reorder!(v, F32),
-        ArrayBuf::F64(v) => reorder!(v, F64),
-        other => other.clone(),
-    }
-}
-
 fn check_xradar(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
     let mut report = Report::default();
     let time_view = &golden["views"]["time"];
@@ -1511,7 +1671,6 @@ fn check_xradar(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
             case,
             view: view_name,
             source: decoded.volume.provenance.source_format,
-            time_reference: decoded.volume.time_reference,
             zero_vcp,
             message_1,
             time_view,
@@ -1546,39 +1705,108 @@ fn pyart_range(radar: &Value) -> (f64, f64, usize) {
     (r0, dr, radar["ngates"].as_u64().unwrap() as usize)
 }
 
-/// A field's physical values laid out on Py-ART's volume range: each native
-/// gate repeated `width / dr` times from the gate its leading edge falls in
-/// (`tools/fm301_golden.py`, `verify_nexrad`). `None` when the field's
-/// geometry does not sit on that range.
-fn pyart_layout(sweep: &Sweep, field: &Field, r0: f64, dr: f64, ngates: usize) -> Option<Vec<f32>> {
-    let (first, width) = field.native_geometry(&sweep.range)?;
-    if dr <= 0.0 {
+/// Physical value of element `index` of an encoded array under `coding`,
+/// NaN for every sentinel; `None` when the types disagree.
+fn decode_value(values: &ArrayBuf, index: usize, coding: Coding) -> Option<f32> {
+    let gate = match (values, coding) {
+        (ArrayBuf::U8(v), Coding::U8(c)) => c.resolve(*v.get(index)?),
+        (ArrayBuf::U16(v), Coding::U16(c)) => c.resolve(*v.get(index)?),
+        (ArrayBuf::I8(v), Coding::I8(c)) => c.resolve(*v.get(index)?),
+        (ArrayBuf::I16(v), Coding::I16(c)) => c.resolve(*v.get(index)?),
+        (ArrayBuf::I32(v), Coding::I32(c)) => c.resolve(*v.get(index)?),
+        (ArrayBuf::F32(v), Coding::F32(c)) => c.resolve(*v.get(index)?),
+        (ArrayBuf::F64(v), Coding::F64(c)) => c.resolve(*v.get(index)?),
+        _ => return None,
+    };
+    Some(gate.value().unwrap_or(f32::NAN))
+}
+
+/// A dataset variable of the view, materialized (ray order, padding and gate
+/// repetition applied by the view), decoded with the field's `coding`, and put
+/// back in storage ray order, which is Py-ART's: `(values, range gates per
+/// ray)`.
+fn view_field_physical(
+    variable: &Variable<'_>,
+    coding: Coding,
+    nrays: usize,
+) -> Option<(Vec<f32>, usize)> {
+    let encoded = variable.values.materialize()?;
+    if nrays == 0 || encoded.len() % nrays != 0 {
         return None;
     }
-    let k = (width / dr).round();
-    let m = ((first - width / 2.0) - (r0 - dr / 2.0)) / dr;
-    if k < 1.0 || (k * dr - width).abs() > 1e-3 * dr || (m - m.round()).abs() > 1e-3 {
+    let gates = encoded.len() / nrays;
+    let order = match &variable.values {
+        Values::Mapped { rows, .. } => rows.clone(),
+        Values::Borrowed(_) => RowOrder::Identity,
+        _ => return None,
+    };
+    let mut out = vec![f32::NAN; encoded.len()];
+    let mut seen = vec![false; nrays];
+    for position in 0..nrays {
+        let row = order.source_row(position)?;
+        if row >= nrays || std::mem::replace(&mut seen[row], true) {
+            return None;
+        }
+        for gate in 0..gates {
+            out[row * gates + gate] = decode_value(&encoded, position * gates + gate, coding)?;
+        }
+    }
+    Some((out, gates))
+}
+
+/// First centre and spacing of a view sweep's `range` coordinate, from its
+/// attributes (or its first two values when the spacing is not constant).
+fn view_range(group: &Group<'_>) -> Option<(f64, f64)> {
+    let range = group.variable("range")?;
+    let attr = |name: &str| match range.attr(name) {
+        Some(AttrValue::Scalar(value)) => Some(value.as_f64()),
+        _ => None,
+    };
+    let centres = range.values.materialize()?;
+    let first = attr("meters_to_center_of_first_gate").or_else(|| centres.get_f64(0))?;
+    let spacing = attr("meters_between_gates")
+        .or_else(|| Some(centres.get_f64(1)? - centres.get_f64(0)?))
+        .unwrap_or(0.0);
+    Some((first, spacing))
+}
+
+/// A view sweep's values (`gates` range gates per ray, centres
+/// `first + j * spacing`) laid out on Py-ART's volume range (`r0`, `dr`,
+/// `ngates`): each range gate repeated `spacing / dr` times from the Py-ART
+/// gate its leading edge falls in, NaN outside (`tools/fm301_golden.py`,
+/// `verify_nexrad`). `None` when the sweep range does not sit on Py-ART's.
+fn pyart_layout(
+    values: &[f32],
+    gates: usize,
+    (first, spacing): (f64, f64),
+    (r0, dr, ngates): (f64, f64, usize),
+) -> Option<Vec<f32>> {
+    if dr <= 0.0 || gates == 0 {
+        return None;
+    }
+    let k = (spacing / dr).round();
+    let m = ((first - spacing / 2.0) - (r0 - dr / 2.0)) / dr;
+    if k < 1.0 || (k * dr - spacing).abs() > 1e-3 * dr || (m - m.round()).abs() > 1e-3 {
         return None;
     }
     let (k, m) = (k as usize, m.round() as i64);
-    let (rows, native) = field.shape();
-    // Py-ART gate `index` shows native gate `(index - m) / k`; gates before
-    // the field's first gate or past its last are NaN.
-    let value = |row: usize, index: usize| -> f32 {
-        let offset = index as i64 - m;
-        if offset < 0 {
-            return f32::NAN;
-        }
-        let gate = offset as usize / k;
-        if gate < native {
-            field.value(row, gate).unwrap_or(f32::NAN)
-        } else {
-            f32::NAN
-        }
-    };
+    let rows = values.len() / gates;
     Some(
         (0..rows)
-            .flat_map(|row| (0..ngates).map(move |index| value(row, index)))
+            .flat_map(|row| {
+                (0..ngates).map(move |index| {
+                    let offset = index as i64 - m;
+                    if offset < 0 {
+                        return f32::NAN;
+                    }
+                    let gate = offset as usize / k;
+                    if gate < gates {
+                        values[row * gates + gate]
+                    } else {
+                        f32::NAN
+                    }
+                })
+            })
             .collect(),
     )
 }
@@ -1605,6 +1833,15 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
     let radar = &golden["radar"];
     let id = &case.id;
     let sweeps = radar["sweeps"].as_array().unwrap();
+    // Fields and the time reference are read through the FM301 view, in
+    // acquisition order (NEXRAD and CfRadial storage order; ODIM rows go back
+    // to storage order, which is Py-ART's).
+    let options = ViewOptions {
+        flavor: Flavor::Xradar012,
+        first_dim: FirstDim::Time,
+        passthrough: Passthrough::Flavor,
+    };
+    let view = fm301::volume_view(volume, options, None).unwrap();
     if sweeps.len() != volume.sweeps.len() {
         report.error(format!(
             "{id} pyart: {} sweeps, golden {}",
@@ -1700,12 +1937,46 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    let time_reference = radar["variables"]["time"]["meta"]["units"]
-        .as_str()
-        .and_then(|u| u.strip_prefix("seconds since "))
-        .and_then(|t| t.parse::<DateTime<Utc>>().ok())
+    // Py-ART's reference is the first ray's time floored to the second (the
+    // file's for CfRadial, the first dataset's start for ODIM), which is what
+    // the view's `time.units` must name.
+    let pyart_units = radar["variables"]["time"]["meta"]["units"].as_str();
+    let view_units = view
+        .group("sweep_0")
+        .and_then(|group| group.variable("time"))
+        .and_then(|time| time.attr("units"))
+        .and_then(attr_text);
+    report.attrs += 1;
+    let time_reference = pyart_units
+        .and_then(|units| seconds_since(Some(&AttrValue::Text(units.into()))))
         .unwrap_or(volume.time_reference);
-    let shift = (volume.time_reference - time_reference).num_milliseconds() as f64 / 1000.0;
+    let view_reference = view
+        .group("sweep_0")
+        .and_then(|group| group.variable("time"))
+        .and_then(|time| seconds_since(time.attr("units")))
+        .unwrap_or(volume.time_reference);
+    if pyart_units.is_none() || view_units.as_deref() != pyart_units {
+        if odim && view_reference < time_reference {
+            report.note("pyart-odim-time-reference");
+        } else {
+            report.error(format!(
+                "{id} pyart: time units {view_units:?}, golden {pyart_units:?}"
+            ));
+        }
+    }
+    // Whatever the convention, the reference is at or before every ray.
+    let earliest = volume
+        .sweeps
+        .iter()
+        .flat_map(|sweep| sweep.rays.time_s.iter().copied())
+        .filter(|time| time.is_finite())
+        .fold(f64::INFINITY, f64::min);
+    if earliest < 0.0 {
+        report.error(format!(
+            "{id}: a ray is {earliest} s before the time reference {view_reference}"
+        ));
+    }
+    let shift = (view_reference - time_reference).num_milliseconds() as f64 / 1000.0;
     for (index, (entry, sweep)) in sweeps.iter().zip(&volume.sweeps).enumerate() {
         let what = format!("{id} pyart sweep {index}");
         let rays = entry["rays"].as_u64().unwrap() as usize;
@@ -1763,7 +2034,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
                     &format!("{what}/azimuth"),
                     golden,
                     &summarize(values.iter().copied()),
-                    1e-2,
+                    Tolerance::Relative(1e-2),
                 );
             } else {
                 let dtype = golden["dtype"].as_str().unwrap_or("float64");
@@ -1794,7 +2065,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
                     &format!("{what}/elevation"),
                     golden,
                     &summarize(values.iter().copied()),
-                    0.05,
+                    Tolerance::Relative(0.05),
                 );
             } else {
                 let dtype = golden["dtype"].as_str().unwrap_or("float32");
@@ -1825,7 +2096,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
                 &format!("{what}/time"),
                 golden,
                 &summarize(seconds.iter().copied()),
-                absolute,
+                Tolerance::Relative(absolute),
             );
         }
         if let Some(parameters) = radar["instrument_parameters"].as_object() {
@@ -1859,7 +2130,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
                     &format!("{what}/{name}"),
                     golden,
                     &summarize(mine.iter().map(|v| f64::from(*v))),
-                    0.0,
+                    Tolerance::Relative(0.0),
                 );
             }
         }
@@ -1892,28 +2163,48 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
                 ));
                 continue;
             };
-            let physical = if range_matches {
-                pyart_layout(sweep, field, r0, dr, ngates)
-            } else {
-                None
+            let group = view.group(&format!("sweep_{index}"));
+            let variable = group.and_then(|group| group.variable(field.name.as_str()));
+            let (Some(group), Some(variable)) = (group, variable) else {
+                report.error(format!("{what}: no view variable {}", field.name));
+                continue;
             };
+            let Some((physical, gates)) =
+                view_field_physical(variable, field.data.coding(), sweep.nrays())
+            else {
+                report.error(format!("{what}: the view's variable does not materialize"));
+                continue;
+            };
+            let unmasked = golden["count_unmasked"].as_u64().unwrap_or(0) as usize;
             let hash = golden["sha256"].as_str();
-            if let Some(values) = &physical
-                && Some(sha256_f32(values).as_str()) == hash
-            {
-                report.hashed += 1;
+            if range_matches {
+                let laid_out = view_range(group)
+                    .and_then(|range| pyart_layout(&physical, gates, range, (r0, dr, ngates)));
+                match laid_out {
+                    Some(values) if Some(sha256_f32(&values).as_str()) == hash => {
+                        report.hashed += 1;
+                        if field.gates.stride > 1 {
+                            report.strided += 1;
+                        }
+                    }
+                    Some(values) => report.error(format!(
+                        "{what}: sha256 {} != golden {} ({} valid gates, golden {unmasked})",
+                        sha256_f32(&values),
+                        hash.unwrap_or("?"),
+                        values.iter().filter(|v| v.is_finite()).count()
+                    )),
+                    None => report.error(format!(
+                        "{what}: the view's range {:?} does not sit on Py-ART's ({r0}, {dr})",
+                        view_range(group)
+                    )),
+                }
                 continue;
             }
-            // Statistics over the native gates (the layout only repeats and
-            // pads, which leaves min, max and mean unchanged).
-            let values = field.to_physical();
-            let summary = summarize(values.iter().map(|v| f64::from(*v)));
+            // Py-ART misread the range (espdg, listed): the values only.
+            report.note("pyart-odim-rstart");
+            let summary = summarize(physical.iter().map(|v| f64::from(*v)));
             report.summarized += 1;
-            let unmasked = golden["count_unmasked"].as_u64().unwrap_or(0) as usize;
-            let laid_out = physical
-                .as_ref()
-                .map(|laid| laid.iter().filter(|v| v.is_finite()).count());
-            if laid_out != Some(unmasked) && summary.finite != unmasked {
+            if summary.finite != unmasked {
                 report.error(format!(
                     "{what}: {} valid gates, golden {unmasked}",
                     summary.finite
@@ -1948,6 +2239,7 @@ fn every_golden_case_matches_xradar_and_pyart() {
     let mut failures = String::new();
     let mut skipped = Vec::new();
     let mut used = BTreeSet::new();
+    let mut strided = 0usize;
     for case in &cases {
         // `None` only when the file is not committed, not cached, and cannot
         // be downloaded.
@@ -1964,15 +2256,17 @@ fn every_golden_case_matches_xradar_and_pyart() {
         }
         for (side, report) in reports {
             eprintln!(
-                "{} {side}: {} hashes, {} summaries, {} scalars, {} attributes compared; {} known differences; {} errors",
+                "{} {side}: {} hashes ({} of repeated gates), {} summaries, {} scalars, {} attributes compared; {} known differences; {} errors",
                 case.id,
                 report.hashed,
+                report.strided,
                 report.summarized,
                 report.scalars,
                 report.attrs,
                 report.known,
                 report.errors.len()
             );
+            strided += report.strided;
             used.extend(report.used.iter().copied());
             assert!(
                 report.hashed + report.summarized + report.scalars > 0,
@@ -2014,6 +2308,9 @@ fn every_golden_case_matches_xradar_and_pyart() {
         unused.is_empty(),
         "EXPECTED differences no case applies: {unused:?}"
     );
+    // The Message 1 and legacy-resolution cases repeat 1 km reflectivity over
+    // 250 m gates: the view's gate repetition is compared with Py-ART.
+    assert!(strided > 0, "no Py-ART hash went through a repeated field");
 }
 
 /// `RECAST_RADAR_TESTDATA_OFFLINE` is set (as `recast-radar-testdata` reads

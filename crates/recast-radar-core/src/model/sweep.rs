@@ -10,6 +10,7 @@ use thiserror::Error;
 use super::field::{Field, FieldError, GateMapping};
 use super::names::{FieldName, Polarization, Quantity};
 use super::values::{AttrValue, ExtraVariable};
+use super::volume::SourceFormat;
 
 /// One FM301 sweep group: one physical elevation cut, numbered in acquisition
 /// order.
@@ -493,6 +494,32 @@ impl Sweep {
     /// Number of rays.
     pub fn nrays(&self) -> usize {
         self.rays.len()
+    }
+
+    /// The sweep's elevation as one angle, the way the products take it:
+    /// beam height and ground range of the column products, the lowest-tilt
+    /// choice of the trackers and the bench, and the dealiasers' tilt
+    /// geometry.
+    ///
+    /// For NEXRAD Level II (`source` is [`SourceFormat::NexradLevel2`]) this
+    /// is the elevation of the first ray in storage order. The legacy model
+    /// stored that value as the cut elevation, and the BowEcho app and `main`
+    /// still use it. It differs from [`Sweep::fixed_angle_deg`], the
+    /// Message 5 cut angle that xradar and Py-ART report, while the antenna
+    /// settles onto the cut: KTLX 2024-03-15 sweeps 0, 1, 4 and 9 read 0.582,
+    /// 0.483, 0.409 and 0.478 deg on 0.4834 deg cuts. For every other source,
+    /// and for a Level II sweep without rays, it is `fixed_angle_deg`
+    /// (design note `docs/design/fm301-model.md` section 5.2).
+    pub fn tilt_elevation_deg(&self, source: SourceFormat) -> f32 {
+        match source {
+            SourceFormat::NexradLevel2 => self
+                .rays
+                .elevation_deg
+                .first()
+                .copied()
+                .unwrap_or(self.fixed_angle_deg),
+            _ => self.fixed_angle_deg,
+        }
     }
 
     pub fn reserve_rays(&mut self, rays: usize) {

@@ -106,15 +106,21 @@ impl EnvironmentalWindProfile {
     }
 }
 
-/// Predicted radial velocity for one velocity field of `sweep`, on the
-/// field's lattice (`values[row * ngates + gate]`, native gates; NaN where
-/// the profile gives no wind).  Used by the eval harness for the
-/// reference-RMS metric; the engine itself projects internally.
+/// Predicted radial velocity for one velocity field of sweep `sweep_index`
+/// of `volume`, on the field's lattice (`values[row * ngates + gate]`, native
+/// gates; NaN where the profile gives no wind), at the sweep's tilt elevation
+/// ([`recast_radar_core::Sweep::tilt_elevation_deg`]). Used by the eval
+/// harness for the reference-RMS metric; the engine itself projects
+/// internally. Empty when the sweep does not exist.
 pub fn project_environmental_winds_onto(
     profile: &EnvironmentalWindProfile,
-    sweep: &recast_radar_core::Sweep,
+    volume: &recast_radar_core::Volume,
+    sweep_index: usize,
     field: &recast_radar_core::Field,
 ) -> Vec<f32> {
+    let Some(sweep) = volume.sweeps.get(sweep_index) else {
+        return Vec::new();
+    };
     let azimuths = crate::radial_azimuths(sweep, field);
     let gates = field.ngates as usize;
     let Some((first_gate_m, gate_spacing_m)) = field.native_geometry(&sweep.range) else {
@@ -122,7 +128,7 @@ pub fn project_environmental_winds_onto(
     };
     project_profile_to_tilt(
         profile,
-        sweep.fixed_angle_deg,
+        sweep.tilt_elevation_deg(volume.provenance.source_format),
         &azimuths,
         first_gate_m,
         gate_spacing_m,

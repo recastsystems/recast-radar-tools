@@ -40,7 +40,7 @@ recast-radar-bench <path-to-level2-file> [--iters N] [--json] [--sweeps R,V]
   the human table.
 - `--sweeps R,V` — render sweep index `R` for reflectivity and `V` for
   velocity instead of the lowest sweeps. Use it to compare the render
-  pipeline of two builds that pick different sweeps (see below).
+  pipeline on other sweeps, or of two builds that pick different sweeps.
 
 Per iteration the harness:
 
@@ -48,9 +48,10 @@ Per iteration the harness:
 2. rasters the lowest reflectivity sweep (DBZH) and the lowest velocity
    sweep (VRADH dealiased, the app's DVEL display) at 1280x720, 1920x1080,
    and 2560x1440 — 0.25 km/px, radar slightly off-center, 20 mrad rotation.
-   "Lowest" is the smallest `Sweep::fixed_angle_deg`, then the smallest
-   sweep index. For Level II the fixed angle is the VCP cut angle, so a
-   split cut and its SAILS / MRLE repeats tie and the first one wins.
+   "Lowest" is the smallest `Sweep::tilt_elevation_deg`, then the smallest
+   sweep index, as in the BowEcho app. For Level II the tilt elevation is
+   the first ray's elevation (the legacy cut elevation), not the VCP cut
+   angle in `Sweep::fixed_angle_deg`.
 
 It reports mean/min/max milliseconds per stage plus the per-iteration
 total, and an FNV-1a checksum over all rendered pixels (hashed outside
@@ -63,12 +64,9 @@ decodes straight into the FM301 `Volume`. The process exits nonzero if the
 checksum varies across iterations, so scripted A/B runs fail loudly instead of
 quietly comparing nondeterministic output.
 
-The baseline checksums are in `docs/baselines/import-checksums.txt`. The
-legacy model (and the BowEcho app) picked a Level II cut by its first
-radial's elevation, so the import baselines render other sweeps for the two
-KTLX files. `--sweeps` reproduces that selection: `--sweeps 4,9` for
-KTLX20240315_000217_V06 and `--sweeps 1,1` for KTLX20130520_201643_V06 print
-the import checksums.
+The baseline checksums are in `docs/baselines/import-checksums.txt`, with
+the sweeps each file renders (KTLX20240315_000217_V06: 4 and 9;
+KILX20260418_013553_V06: 0 and 1; KTLX20130520_201643_V06.gz: 1 and 1).
 
 ## Getting a canonical volume
 
@@ -103,8 +101,8 @@ cargo run --release -p recast-radar-bench -- KTLX20130520_201643_V06 --iters 20
 # Machine-readable line for scripts
 cargo run --release -p recast-radar-bench -- KTLX20130520_201643_V06 --json
 
-# The sweeps the import baseline rendered
-cargo run --release -p recast-radar-bench -- KTLX20130520_201643_V06 --iters 1 --sweeps 1,1
+# Render chosen sweeps (here the surveillance and Doppler cuts of the lowest tilt)
+cargo run --release -p recast-radar-bench -- KTLX20130520_201643_V06 --iters 1 --sweeps 0,1
 
 # Smoke test of the stage plumbing against a real file
 BOWECHO_BENCH_FILE=KTLX20130520_201643_V06 \

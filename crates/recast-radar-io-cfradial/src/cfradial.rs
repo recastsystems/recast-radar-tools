@@ -25,8 +25,8 @@
 //! `docs/design/fm301-model.md` sections 7.3, 9 and 11) the way xradar's
 //! `open_cfradial1_datatree` and Py-ART's `read_cfradial` read the same
 //! file: one sweep per `sweep` index in file order, field variables under
-//! their names verbatim in file order, packed `byte`/`short` fields kept as
-//! `i8`/`i16` with the file's `scale_factor`, `add_offset` and `_FillValue`
+//! their names verbatim in file order, packed `byte`/`short`/`int` fields kept
+//! as `i8`/`i16`/`i32` with the file's `scale_factor`, `add_offset` and `_FillValue`
 //! (attribute width preserved), float fields verbatim with their fill, the
 //! `range` coordinate as the file's gate centres, `time(time)` as seconds
 //! since the `time.units` reference (else `time_coverage_start`), and every
@@ -635,14 +635,9 @@ pub(crate) fn decode(bytes: &[u8], mut budget: DecodeBudget) -> Result<Volume> {
                     values: values[rows].to_vec(),
                     coding: coding.int(),
                 },
-                // No 32-bit integer field storage in the model: expand to the
-                // physical float32 values (NaN for the fill).
-                NcArray::I32(values) => FieldData::F32 {
-                    values: values[rows]
-                        .iter()
-                        .map(|value| coding.physical(f64::from(*value)))
-                        .collect(),
-                    coding: FloatCoding::default(),
+                NcArray::I32(values) => FieldData::I32 {
+                    values: values[rows].to_vec(),
+                    coding: coding.int(),
                 },
                 NcArray::F32(values) => FieldData::F32 {
                     values: values[rows].to_vec(),
@@ -766,16 +761,6 @@ impl FieldCoding {
             undetect: None,
             range_folded: None,
             valid_range: None,
-        }
-    }
-
-    /// Physical value of one raw sample, NaN for the fill (32-bit integer
-    /// fields).
-    fn physical(&self, raw: f64) -> f32 {
-        if Some(raw) == self.fill || !raw.is_finite() {
-            f32::NAN
-        } else {
-            (raw * self.scale + self.offset) as f32
         }
     }
 }

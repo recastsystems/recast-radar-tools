@@ -478,7 +478,7 @@ mod tests {
                     let width = match &field.data {
                         FieldData::U8 { .. } | FieldData::I8 { .. } => 1,
                         FieldData::U16 { .. } | FieldData::I16 { .. } => 2,
-                        FieldData::F32 { .. } => 4,
+                        FieldData::I32 { .. } | FieldData::F32 { .. } => 4,
                         FieldData::F64 { .. } => 8,
                     };
                     bytes += field.data.len() * width;

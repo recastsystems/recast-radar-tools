@@ -23,8 +23,8 @@ use std::borrow::Cow;
 
 use rayon::prelude::*;
 use recast_radar_core::{
-    Field, FieldAttrs, FieldData, FieldName, FloatCoding, Polarization, Quantity, Sweep, Volume,
-    beam_ground_range_m, beam_height_above_radar_m,
+    Field, FieldAttrs, FieldData, FieldName, FloatCoding, Polarization, Quantity, SourceFormat,
+    Sweep, Volume, beam_ground_range_m, beam_height_above_radar_m,
 };
 use recast_radar_correct::dealias_velocity;
 pub use recast_radar_filters::InterpPolicy;
@@ -45,7 +45,9 @@ struct CutColumn<'a> {
 }
 
 impl<'a> CutColumn<'a> {
-    fn new(sweep: &'a Sweep, field: &'a Field) -> Option<Self> {
+    /// `source` is the volume's source format, which decides the tilt
+    /// elevation ([`Sweep::tilt_elevation_deg`]).
+    fn new(source: SourceFormat, sweep: &'a Sweep, field: &'a Field) -> Option<Self> {
         let gates = field.ngates as usize;
         if gates == 0 {
             return None;
@@ -62,7 +64,7 @@ impl<'a> CutColumn<'a> {
         }
         az_rows.sort_by(|a, b| a.0.total_cmp(&b.0));
 
-        let elevation_deg = sweep.fixed_angle_deg;
+        let elevation_deg = sweep.tilt_elevation_deg(source);
         let (ground_range_m, height_m) = (0..gates)
             .map(|g| {
                 let r = first_m + g as f64 * spacing_m;
@@ -167,13 +169,19 @@ fn ang_dist(a: f32, b: f32) -> f32 {
     d.min(360.0 - d)
 }
 
-/// Lowest-elevation sweep that carries reflectivity, and its field.
+/// Lowest sweep ([`Sweep::tilt_elevation_deg`], the first on ties) that
+/// carries reflectivity, and its field.
 fn base_reflectivity_sweep(volume: &Volume) -> Option<(&Sweep, &Field)> {
+    let source = volume.provenance.source_format;
     volume
         .sweeps
         .iter()
-        .filter_map(|s| s.find(Quantity::Reflectivity).map(|f| (s, f)))
-        .min_by(|a, b| a.0.fixed_angle_deg.total_cmp(&b.0.fixed_angle_deg))
+        .filter_map(|s| {
+            s.find(Quantity::Reflectivity)
+                .map(|f| (s, s.tilt_elevation_deg(source), f))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(s, _, f)| (s, f))
 }
 
 /// All reflectivity-bearing sweeps as column samplers, sorted by elevation.
@@ -181,7 +189,13 @@ fn reflectivity_columns(volume: &Volume) -> Vec<CutColumn<'_>> {
     let mut cols: Vec<CutColumn<'_>> = volume
         .sweeps
         .iter()
-        .filter_map(|s| CutColumn::new(s, s.find(Quantity::Reflectivity)?))
+        .filter_map(|s| {
+            CutColumn::new(
+                volume.provenance.source_format,
+                s,
+                s.find(Quantity::Reflectivity)?,
+            )
+        })
         .collect();
     cols.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
     cols
@@ -191,7 +205,7 @@ fn field_columns<'a>(volume: &'a Volume, name: &FieldName) -> Vec<CutColumn<'a>>
     let mut cols: Vec<CutColumn<'_>> = volume
         .sweeps
         .iter()
-        .filter_map(|s| CutColumn::new(s, s.field(name)?))
+        .filter_map(|s| CutColumn::new(volume.provenance.source_format, s, s.field(name)?))
         .collect();
     cols.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
     cols
@@ -339,7 +353,7 @@ fn column_profile(cols: &[CutColumn<'_>], az: f32, s: f64) -> Vec<(f64, f32)> {
 /// geometry.
 pub fn composite_reflectivity(volume: &Volume) -> Option<Field> {
     let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
-    let base = CutColumn::new(base_sweep, base_field)?;
+    let base = CutColumn::new(volume.provenance.source_format, base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
     let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
@@ -378,7 +392,7 @@ pub fn composite_reflectivity(volume: &Volume) -> Option<Field> {
 /// Z ≥ threshold.
 pub fn echo_top(volume: &Volume, threshold_dbz: f32) -> Option<Field> {
     let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
-    let base = CutColumn::new(base_sweep, base_field)?;
+    let base = CutColumn::new(volume.provenance.source_format, base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
     let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
@@ -417,7 +431,7 @@ fn dbz_to_z(dbz: f32) -> f64 {
 /// the 56 dBZ hail cap (Witt et al. 1998).
 pub fn vil(volume: &Volume) -> Option<Field> {
     let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
-    let base = CutColumn::new(base_sweep, base_field)?;
+    let base = CutColumn::new(volume.provenance.source_format, base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
     let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
@@ -525,7 +539,7 @@ pub fn hail(
     calibration: MeshCalibration,
 ) -> Option<HailFields> {
     let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
-    let base = CutColumn::new(base_sweep, base_field)?;
+    let base = CutColumn::new(volume.provenance.source_format, base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
     let (rows, gates) = base_field.shape();
     let mut shi_out = vec![f32::NAN; rows * gates];
@@ -658,7 +672,7 @@ pub fn poh(volume: &Volume, freezing_level_m: f32) -> Option<Field> {
 /// Witt-calibrated MESH (`MESH`, mm).
 pub fn mehs(volume: &Volume, freezing_level_m: f32, minus20c_level_m: f32) -> Option<Field> {
     let (base_sweep, base_field) = base_reflectivity_sweep(volume)?;
-    let base = CutColumn::new(base_sweep, base_field)?;
+    let base = CutColumn::new(volume.provenance.source_format, base_sweep, base_field)?;
     let cols = reflectivity_columns(volume);
     let (rows, gates) = base_field.shape();
     let mut out = vec![f32::NAN; rows * gates];
@@ -1043,7 +1057,9 @@ pub fn velocity_section_cached_with_smoothing(
     let mut cols: Vec<CutColumn<'_>> = cache
         .fields
         .iter()
-        .filter_map(|(i, f)| CutColumn::new(volume.sweeps.get(*i)?, f))
+        .filter_map(|(i, f)| {
+            CutColumn::new(volume.provenance.source_format, volume.sweeps.get(*i)?, f)
+        })
         .collect();
     cols.sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
     cross_section_from_columns(

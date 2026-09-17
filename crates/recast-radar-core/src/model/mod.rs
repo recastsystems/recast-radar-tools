@@ -6,7 +6,7 @@
 //!   `elevation`), one `range` coordinate, per-ray instrument variables and the
 //!   dataset variables ([`Field`]).
 //! - [`Field`] holds one variable's values row-major `[nrays × ngates]` in the
-//!   source's own encoding (`u8`, `u16`, `i8`, `i16`, `f32`, `f64`) with its CF
+//!   source's own encoding (`u8`, `u16`, `i8`, `i16`, `i32`, `f32`, `f64`) with its CF
 //!   packing. Physical values are computed on demand; decoders never expand raw
 //!   storage to floats.
 //!

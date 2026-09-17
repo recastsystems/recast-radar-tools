@@ -13,7 +13,9 @@ use common::{
     cell, dorade, golden, level2, moment,
 };
 use recast_radar_core::model::PackedInt;
-use recast_radar_core::{FieldData, FieldName, GateMapping, IntCoding, LinearTransform, Sweep};
+use recast_radar_core::{
+    FieldData, FieldName, GateMapping, IntCoding, LinearTransform, SourceFormat, Sweep,
+};
 use recast_radar_retrieve::{
     DerivationConfig, DerivedSweepProduct, RadarBand, derive_product, derive_sweep_in_place,
 };
@@ -56,8 +58,10 @@ fn moore_core_kdp_and_filtered_phase_match_the_reference() {
     };
     let golden = golden("retrieve/sweep.json");
     let case = &golden["kdp"];
+    // The golden's elevation is the first radial's, the Level II tilt
+    // elevation.
     assert_close(
-        f64::from(cut.fixed_angle_deg),
+        f64::from(cut.tilt_elevation_deg(SourceFormat::NexradLevel2)),
         as_f64(&case["elevation_deg"]),
         1e-3,
         "elevation",

@@ -328,6 +328,16 @@ pub fn render_field_image(
             geometry,
             false,
         ),
+        FieldValues::I32(values, coding) => render_float_storage(
+            &mut pixels,
+            values,
+            coding,
+            view,
+            &row_lookup,
+            color_table,
+            geometry,
+            false,
+        ),
         FieldValues::F64(values, coding) => render_float_storage(
             &mut pixels,
             values,
@@ -667,6 +677,8 @@ enum FieldValues<'a> {
     I8(&'a [i8], IntCoding<i8>),
     U16(&'a [u16], IntCoding<u16>),
     I16(&'a [i16], IntCoding<i16>),
+    /// 32-bit codes have no palette; they render through the float path.
+    I32(&'a [i32], IntCoding<i32>),
     F32(&'a [f32], FloatCoding<f32>),
     F64(&'a [f64], FloatCoding<f64>),
 }
@@ -677,6 +689,7 @@ fn field_values(field: &Field) -> FieldValues<'_> {
         FieldData::I8 { values, coding } => FieldValues::I8(values, *coding),
         FieldData::U16 { values, coding } => FieldValues::U16(values, *coding),
         FieldData::I16 { values, coding } => FieldValues::I16(values, *coding),
+        FieldData::I32 { values, coding } => FieldValues::I32(values, *coding),
         FieldData::F32 { values, coding } => FieldValues::F32(values, *coding),
         FieldData::F64 { values, coding } => FieldValues::F64(values, *coding),
     }
@@ -770,13 +783,17 @@ fn code_value<T: PackedInt>(coding: &IntCoding<T>, raw: T) -> f32 {
     coding.transform.apply(raw.as_f64())
 }
 
-/// Float storage: a stored value's finite physical value, `None` for NaN, the
-/// coding's fill and undetect values, and non-finite results.
+/// Storage the float path renders: a stored value's finite physical value,
+/// `None` for NaN, the coding's fill and undetect values, and non-finite
+/// results.
 trait FloatCode: Copy + Sync + Send {
-    fn physical(self, coding: &FloatCoding<Self>) -> Option<f32>;
+    type Coding: Copy + Sync + Send;
+    fn physical(self, coding: &Self::Coding) -> Option<f32>;
 }
 
 impl FloatCode for f32 {
+    type Coding = FloatCoding<f32>;
+
     #[inline]
     fn physical(self, coding: &FloatCoding<f32>) -> Option<f32> {
         if !self.is_finite()
@@ -798,6 +815,8 @@ impl FloatCode for f32 {
 }
 
 impl FloatCode for f64 {
+    type Coding = FloatCoding<f64>;
+
     #[inline]
     fn physical(self, coding: &FloatCoding<f64>) -> Option<f32> {
         if !self.is_finite()
@@ -815,6 +834,20 @@ impl FloatCode for f64 {
             None => self as f32,
         };
         value.is_finite().then_some(value)
+    }
+}
+
+/// 32-bit integer codes (CfRadial `int` fields): every sentinel, including the
+/// range-folded flag, is blank.
+impl FloatCode for i32 {
+    type Coding = IntCoding<i32>;
+
+    #[inline]
+    fn physical(self, coding: &IntCoding<i32>) -> Option<f32> {
+        coding
+            .resolve(self)
+            .value()
+            .filter(|value| value.is_finite())
     }
 }
 
@@ -962,7 +995,9 @@ impl CachedColorLookup {
                 color_table,
                 dtype,
             },
-            FieldValues::F32(..) | FieldValues::F64(..) => Self::Float { color_table, dtype },
+            FieldValues::I32(..) | FieldValues::F32(..) | FieldValues::F64(..) => {
+                Self::Float { color_table, dtype }
+            }
         }
     }
 
@@ -1245,6 +1280,7 @@ impl ViewportFieldCache {
             FieldValues::U16(values, coding) => int_rows!(values, coding),
             FieldValues::I16(values, coding) => int_rows!(values, coding),
             FieldValues::F32(values, coding) => float_rows!(values, coding),
+            FieldValues::I32(values, coding) => float_rows!(values, coding),
             FieldValues::F64(values, coding) => float_rows!(values, coding),
         };
 
@@ -1314,6 +1350,7 @@ impl ViewportFieldCache {
             FieldValues::U16(values, coding) => int_rows!(values, coding),
             FieldValues::I16(values, coding) => int_rows!(values, coding),
             FieldValues::F32(values, coding) => float_rows!(values, coding),
+            FieldValues::I32(values, coding) => float_rows!(values, coding),
             FieldValues::F64(values, coding) => float_rows!(values, coding),
         };
 
@@ -1698,6 +1735,7 @@ fn render_field_viewport_into(
         FieldValues::U16(values, _) => codes!(values),
         FieldValues::I16(values, _) => codes!(values),
         FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::I32(values, coding) => floats!(values, coding),
         FieldValues::F64(values, coding) => floats!(values, coding),
     }
     Ok(())
@@ -1746,6 +1784,7 @@ fn render_field_sample_cache_into(
         FieldValues::U16(values, _) => codes!(values),
         FieldValues::I16(values, _) => codes!(values),
         FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::I32(values, coding) => floats!(values, coding),
         FieldValues::F64(values, coding) => floats!(values, coding),
     }
     Ok(())
@@ -1842,6 +1881,7 @@ pub fn render_storm_relative_velocity_image(
         FieldValues::U16(values, coding) => wide_codes!(values, coding),
         FieldValues::I16(values, coding) => wide_codes!(values, coding),
         FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::I32(values, coding) => floats!(values, coding),
         FieldValues::F64(values, coding) => floats!(values, coding),
     }
 
@@ -1984,6 +2024,7 @@ fn render_storm_relative_velocity_viewport_into(
         FieldValues::U16(values, coding) => wide_codes!(values, coding),
         FieldValues::I16(values, coding) => wide_codes!(values, coding),
         FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::I32(values, coding) => floats!(values, coding),
         FieldValues::F64(values, coding) => floats!(values, coding),
     }
 }
@@ -2058,6 +2099,7 @@ fn render_storm_relative_velocity_sample_cache_into(
         FieldValues::U16(values, coding) => wide_codes!(values, coding),
         FieldValues::I16(values, coding) => wide_codes!(values, coding),
         FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::I32(values, coding) => floats!(values, coding),
         FieldValues::F64(values, coding) => floats!(values, coding),
     }
 }
@@ -2458,7 +2500,7 @@ fn render_compact_sample_cache_storage<T: RawCode>(
 fn render_float_storage<T: FloatCode, G: LookupGeometry>(
     pixels: &mut [u8],
     values: &[T],
-    coding: FloatCoding<T>,
+    coding: T::Coding,
     view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     color_table: &ColorTable,
@@ -2507,7 +2549,7 @@ fn render_float_storage<T: FloatCode, G: LookupGeometry>(
 fn render_float_viewport_storage<T: FloatCode>(
     pixels: &mut [u8],
     values: &[T],
-    coding: FloatCoding<T>,
+    coding: T::Coding,
     view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     color_table: &ColorTable,
@@ -2554,7 +2596,7 @@ fn render_float_viewport_storage<T: FloatCode>(
 fn render_float_sample_cache_storage<T: FloatCode>(
     pixels: &mut [u8],
     values: &[T],
-    coding: FloatCoding<T>,
+    coding: T::Coding,
     view: FieldView<'_>,
     color_table: &ColorTable,
     sample_cache: &ViewportSampleCache,
@@ -2947,7 +2989,7 @@ fn render_storm_relative_sample_cache_storage<T: RawCode>(
 fn render_storm_relative_float_storage<T: FloatCode, G: LookupGeometry>(
     pixels: &mut [u8],
     values: &[T],
-    coding: FloatCoding<T>,
+    coding: T::Coding,
     view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     value_lookup: StormRelativeValueLookup<'_>,
@@ -3003,7 +3045,7 @@ fn render_storm_relative_float_storage<T: FloatCode, G: LookupGeometry>(
 fn render_storm_relative_float_viewport_storage<T: FloatCode>(
     pixels: &mut [u8],
     values: &[T],
-    coding: FloatCoding<T>,
+    coding: T::Coding,
     view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     value_lookup: StormRelativeValueLookup<'_>,
@@ -3058,7 +3100,7 @@ fn render_storm_relative_float_viewport_storage<T: FloatCode>(
 fn render_storm_relative_float_sample_cache_storage<T: FloatCode>(
     pixels: &mut [u8],
     values: &[T],
-    coding: FloatCoding<T>,
+    coding: T::Coding,
     view: FieldView<'_>,
     row_motion: &[f32],
     color_table: &ColorTable,
@@ -3347,7 +3389,7 @@ fn resolve_int_sample<T: RawCode>(
 /// First candidate row with a finite physical value at the sample's gate.
 fn resolve_float_sample<T: FloatCode>(
     values: &[T],
-    coding: &FloatCoding<T>,
+    coding: &T::Coding,
     gate_count: usize,
     row_lookup: &AzimuthLookup,
     sample: SampleLookup,
@@ -3720,7 +3762,7 @@ fn row_valid_extent(field: &Field, row: usize) -> usize {
         .map(|gate| gate + 1)
         .unwrap_or(0)
     }
-    fn float_extent<T: FloatCode>(row: Option<&[T]>, coding: FloatCoding<T>) -> usize {
+    fn float_extent<T: FloatCode>(row: Option<&[T]>, coding: T::Coding) -> usize {
         row.and_then(|row| {
             row.iter()
                 .rposition(|value| value.physical(&coding).is_some())
@@ -3734,6 +3776,7 @@ fn row_valid_extent(field: &Field, row: usize) -> usize {
         FieldValues::U16(values, coding) => int_extent(values.get(start..end), coding),
         FieldValues::I16(values, coding) => int_extent(values.get(start..end), coding),
         FieldValues::F32(values, coding) => float_extent(values.get(start..end), coding),
+        FieldValues::I32(values, coding) => float_extent(values.get(start..end), coding),
         FieldValues::F64(values, coding) => float_extent(values.get(start..end), coding),
     }
 }
@@ -5790,8 +5833,10 @@ color: 95 255 0 0",
             assert!(cached == direct_cached, "{dtype} sample cache");
         }
 
-        // Float storage has no range-folded code: those gates blank, so the
-        // float variants match the u8 field with range folding blanked too.
+        // Float storage has no range-folded code, and 32-bit integer codes
+        // render through the float path, which blanks every sentinel: those
+        // gates blank, so these variants match the u8 field with range folding
+        // blanked too.
         let mut blanked = volume.clone();
         {
             let sweep = &mut blanked.sweeps[sweep_index];
@@ -5808,6 +5853,29 @@ color: 95 255 0 0",
         let (_, _, expected_viewport) =
             render_field_viewport_rgba(&blanked, sweep_index, &FieldName::Dbzh, options).unwrap();
         let floats: Vec<FieldData> = vec![
+            // i32 half-dBZ steps with a CF transform (CfRadial `int`).
+            FieldData::I32 {
+                values: physical
+                    .iter()
+                    .zip(&range_folded)
+                    .map(|(value, folded)| match value {
+                        Some(value) => (*value * 2.0) as i32,
+                        None if *folded => -2_147_483_647,
+                        None => i32::MIN,
+                    })
+                    .collect(),
+                coding: IntCoding {
+                    transform: LinearTransform::CfScaleOffset {
+                        scale_factor: 0.5,
+                        add_offset: 0.0,
+                        attr_width: recast_radar_core::model::FloatWidth::F32,
+                    },
+                    fill_value: Some(i32::MIN),
+                    undetect: None,
+                    range_folded: Some(-2_147_483_647),
+                    valid_range: None,
+                },
+            },
             FieldData::F32 {
                 values: physical
                     .iter()
@@ -5846,6 +5914,12 @@ color: 95 255 0 0",
                 .render_field_rgba_into(&edited, options, &mut pixels)
                 .unwrap();
             assert!(pixels == expected_viewport, "{dtype} viewport raster");
+            let sample_cache = cache.build_sample_cache(&edited, options).unwrap();
+            let mut cached = vec![255; viewport_rgba_buffer_len(options)];
+            cache
+                .render_field_rgba_with_sample_cache(&edited, &sample_cache, &mut cached)
+                .unwrap();
+            assert!(has_visible_pixel(&cached), "{dtype} sample cache");
         }
     }
 
@@ -5955,17 +6029,26 @@ mod derived_product_tests {
         assert_eq!(first_max, as_f32(&lowest["max_dbz"]));
 
         // The derived fields lie on the reflectivity sweep with the lowest
-        // fixed angle (the first of the four 0.5 deg passes of this SAILS
-        // volume: sweep 0).
+        // tilt elevation. A Level II sweep's tilt elevation is its first
+        // ray's, so among the four 0.48 deg passes of this SAILS volume
+        // (sweeps 0, 1, 8 and 9 share the VCP cut angle; first rays at
+        // 0.678, 0.527, 0.637 and 0.483 deg) the lowest is sweep 9.
         let (base_index, base) = volume
             .sweeps
             .iter()
             .enumerate()
             .filter(|(_, sweep)| sweep.find(Quantity::Reflectivity).is_some())
-            .min_by(|a, b| a.1.fixed_angle_deg.total_cmp(&b.1.fixed_angle_deg))
+            .map(|(index, sweep)| (index, sweep, volume.tilt_elevation_deg(index).unwrap()))
+            .min_by(|a, b| a.2.total_cmp(&b.2))
+            .map(|(index, sweep, _)| (index, sweep))
             .expect("a reflectivity sweep");
-        assert_eq!(base_index, 0);
-        assert!(base.fixed_angle_deg < 1.0, "{} deg", base.fixed_angle_deg);
+        assert_eq!(base_index, 9);
+        assert_eq!(base.fixed_angle_deg, volume.sweeps[0].fixed_angle_deg);
+        let base_elevation = volume.tilt_elevation_deg(base_index).unwrap();
+        assert!(
+            base_elevation < volume.tilt_elevation_deg(1).unwrap(),
+            "{base_elevation} deg"
+        );
         let base_field = base.find(Quantity::Reflectivity).unwrap();
         let (_, gates) = base_field.shape();
         let composite = composite_reflectivity(&volume).expect("composite field");
