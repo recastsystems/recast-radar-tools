@@ -1,33 +1,45 @@
+// Render one field of one sweep of a Level II file to a PNG.
+//
+// usage: cargo run -p recast-radar-render --example render_reflectivity_png -- <level2-file> <out.png> [sweep-index] [field]
+//
+// `field` is an FM301 name (DBZH, VRADH, ZDR, ...) or a NEXRAD block name
+// (REF, VEL, SW, ...); the default is DBZH.
+
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
 use std::path::{Path, PathBuf};
 
-use recast_radar_core::MomentType;
-use recast_radar_render::{RasterOptions, render_moment_png};
+use recast_radar_core::FieldName;
+use recast_radar_render::{RasterOptions, render_field_png};
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 fn main() {
     let mut args = std::env::args_os().skip(1).map(PathBuf::from);
     let Some(input) = args.next() else {
         eprintln!(
-            "usage: cargo run -p recast-radar-render --example render_reflectivity_png -- <level2-file> <out.png> [cut-index]"
+            "usage: cargo run -p recast-radar-render --example render_reflectivity_png -- <level2-file> <out.png> [sweep-index] [field]"
         );
         std::process::exit(2);
     };
     let Some(output) = args.next() else {
         eprintln!(
-            "usage: cargo run -p recast-radar-render --example render_reflectivity_png -- <level2-file> <out.png> [cut-index] [moment]"
+            "usage: cargo run -p recast-radar-render --example render_reflectivity_png -- <level2-file> <out.png> [sweep-index] [field]"
         );
         std::process::exit(2);
     };
-    let cut_index = std::env::args()
+    let sweep_index = std::env::args()
         .nth(3)
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
-    let moment = std::env::args()
+    let field = std::env::args()
         .nth(4)
         .as_deref()
-        .map(parse_moment)
-        .unwrap_or(MomentType::Reflectivity);
+        .map(parse_field)
+        .unwrap_or(FieldName::Dbzh);
 
-    match run(&input, &output, cut_index, moment) {
+    match run(&input, &output, sweep_index, &field) {
         Ok(()) => println!("wrote {}", output.display()),
         Err(err) => {
             eprintln!("render failed: {err}");
@@ -39,14 +51,20 @@ fn main() {
 fn run(
     input: &Path,
     output: &Path,
-    cut_index: usize,
-    moment: MomentType,
+    sweep_index: usize,
+    field: &FieldName,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let volume = recast_radar_io_nexrad::decode_volume_from_path(input)?;
-    render_moment_png(&volume, cut_index, moment, output, RasterOptions::default())?;
+    let volume = legacy_bridge::read_volume(input)?;
+    render_field_png(
+        &volume,
+        sweep_index,
+        field,
+        output,
+        RasterOptions::default(),
+    )?;
     Ok(())
 }
 
-fn parse_moment(value: &str) -> MomentType {
-    MomentType::from_nexrad_name(&value.to_ascii_uppercase())
+fn parse_field(value: &str) -> FieldName {
+    FieldName::from_nexrad_block(value.to_ascii_uppercase().as_bytes())
 }

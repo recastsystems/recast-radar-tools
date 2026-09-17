@@ -1,5 +1,6 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Reproduction harness for velocity dealias spokes + color-table edge cases.
 // Renders raw velocity and dealiased velocity (current algorithm) to PNGs so
@@ -10,9 +11,11 @@
 use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
-use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_correct::dealias_velocity_grid;
-use recast_radar_render::{RasterOptions, render_moment_image};
+use recast_radar_core::{FieldName, Quantity};
+use recast_radar_render::{RasterOptions, dealiased_velocity_field, render_field_image};
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 /// Composite an RGBA image over a dark background (radar displays are black)
 /// and save, so near-white strong velocities are visible.
@@ -55,37 +58,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "velrepro".to_string());
 
-    let mut volume: RadarVolume = recast_radar_io_nexrad::decode_volume_from_path(&input)?;
+    let mut volume = legacy_bridge::read_volume(&input)?;
 
-    // Lowest-elevation cut that actually carries velocity.
-    let mut chosen: Option<(usize, f32)> = None;
-    for (idx, cut) in volume.cuts.iter().enumerate() {
-        if cut.moments.contains_key(&MomentType::Velocity) {
-            match chosen {
-                Some((_, e)) if cut.elevation_deg >= e => {}
-                _ => chosen = Some((idx, cut.elevation_deg)),
-            }
-        }
-    }
-    let (cut_index, elev) = chosen.ok_or("no velocity moment in volume")?;
-
-    let cut = &volume.cuts[cut_index];
-    let grid = cut.moments.get(&MomentType::Velocity).unwrap();
-    let mut nyqs: Vec<f32> = grid
-        .radial_indices
+    // Lowest-elevation sweep that actually carries velocity.
+    let sweep_index = legacy_bridge::lowest_sweep_with(&volume, Quantity::RadialVelocity)
+        .ok_or("no velocity field in volume")?;
+    let sweep = &volume.sweeps[sweep_index];
+    let elev = sweep.fixed_angle_deg;
+    let field = sweep.find(Quantity::RadialVelocity).unwrap();
+    let name = field.name.clone();
+    let mut nyqs: Vec<f32> = sweep
+        .ray_vars
+        .nyquist_velocity_mps
         .iter()
-        .filter_map(|ri| cut.radials.get(*ri)?.nyquist_velocity_mps)
+        .flatten()
+        .copied()
         .filter(|v| v.is_finite() && *v > 0.0)
         .collect();
     nyqs.sort_by(f32::total_cmp);
     let nyq = nyqs.get(nyqs.len() / 2).copied().unwrap_or(f32::NAN);
 
     println!(
-        "site={} time={} cut=#{cut_index} elev={elev:.2} rows={} gates={} nyquist={nyq:.2} m/s",
-        volume.site.id,
-        volume.volume_time,
-        grid.radial_count(),
-        grid.gate_range.gate_count,
+        "site={} time={} sweep=#{sweep_index} elev={elev:.2} rows={} gates={} nyquist={nyq:.2} m/s",
+        volume.attrs.instrument_name, volume.time_reference, field.nrays, field.ngates,
     );
 
     let range_fraction = std::env::args()
@@ -100,21 +95,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1) Raw (aliased) velocity.
     let raw_path = format!("{prefix}_raw.png");
-    let raw_img = render_moment_image(&volume, cut_index, MomentType::Velocity, opts)?;
+    let raw_img = render_field_image(&volume, sweep_index, &name, opts)?;
     save_on_black(&raw_img, &raw_path)?;
     println!("wrote {raw_path}");
 
-    // 2) Dealiased velocity via current production algorithm.
-    let dealiased = {
-        let cut = &volume.cuts[cut_index];
-        let grid = cut.moments.get(&MomentType::Velocity).unwrap();
-        dealias_velocity_grid(cut, grid)
-    };
-    volume.cuts[cut_index]
-        .moments
-        .insert(MomentType::Velocity, dealiased);
+    // 2) Dealiased velocity via the current production algorithm, added to
+    //    the sweep as VRADDH.
+    let dealiased = dealiased_velocity_field(&volume, sweep_index, &name)?;
+    let sweep = &mut volume.sweeps[sweep_index];
+    sweep.add_field(dealiased)?;
+    sweep.seal()?;
     let deal_path = format!("{prefix}_dealiased.png");
-    let deal_img = render_moment_image(&volume, cut_index, MomentType::Velocity, opts)?;
+    let deal_img = render_field_image(&volume, sweep_index, &FieldName::Vraddh, opts)?;
     save_on_black(&deal_img, &deal_path)?;
     println!("wrote {deal_path}");
 

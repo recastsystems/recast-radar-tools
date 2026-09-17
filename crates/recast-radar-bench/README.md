@@ -42,13 +42,20 @@ recast-radar-bench <path-to-level2-file> [--iters N] [--json]
 Per iteration the harness:
 
 1. decodes the full volume from the in-memory file bytes;
-2. rasters the lowest reflectivity cut and the lowest velocity cut
-   (dealiased, the app's DVEL display) at 1280x720, 1920x1080, and
-   2560x1440 — 0.25 km/px, radar slightly off-center, 20 mrad rotation.
+2. rasters the lowest reflectivity sweep (DBZH) and the lowest velocity
+   sweep (VRADH dealiased, the app's DVEL display) at 1280x720, 1920x1080,
+   and 2560x1440 — 0.25 km/px, radar slightly off-center, 20 mrad rotation.
 
 It reports mean/min/max milliseconds per stage plus the per-iteration
 total, and an FNV-1a checksum over all rendered pixels (hashed outside
-the timed sections). The process exits nonzero if the checksum varies
+the timed sections). The JSON line names the sweeps it rendered
+(`sweeps`, `reflectivity_sweep`, `velocity_sweep`) and the volume's time
+reference (`volume_time`).
+
+Until `recast_radar_io` returns the FM301 model natively, the `decode`
+stage includes the shim conversion of the legacy volume into a `Volume`,
+which moves the decoded buffers and copies nothing (about 0.3 ms of a
+330 ms single-core KTLX decode). The process exits nonzero if the checksum varies
 across iterations, so scripted A/B runs fail loudly instead of quietly
 comparing nondeterministic output.
 

@@ -1,10 +1,15 @@
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use recast_radar_core::{MomentType, RadarVolume};
+use recast_radar_core::{Quantity, Volume};
 use recast_radar_render::{
-    ViewportMomentCache, ViewportRasterOptions, ViewportSampleCache, viewport_rgba_buffer_len,
+    ViewportFieldCache, ViewportRasterOptions, ViewportSampleCache, viewport_rgba_buffer_len,
 };
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 const DEFAULT_VIEWPORT_WIDTH: u32 = 1500;
 const DEFAULT_VIEWPORT_HEIGHT: u32 = 950;
@@ -26,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.groups
     );
     println!(
-        "site,file_mb,read_ms,decode_ms,cache_build_ms,render_ms,cut,radials,cache_mb,rgba_mb,working_set_mb,private_mb"
+        "site,file_mb,read_ms,decode_ms,cache_build_ms,render_ms,sweep,rays,cache_mb,rgba_mb,working_set_mb,private_mb"
     );
 
     let mut loaded = Vec::with_capacity(config.files.len());
@@ -39,29 +44,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let read = read_start.elapsed();
 
         let decode_start = Instant::now();
-        let volume = recast_radar_io_nexrad::decode_volume_from_bytes(&raw)?;
+        let volume = legacy_bridge::read_volume_bytes(&raw)?;
         let decode = decode_start.elapsed();
 
-        let cut = first_cut_with_moment(&volume, &MomentType::Reflectivity)
-            .or_else(|| first_cut_with_moment(&volume, &MomentType::Velocity))
-            .ok_or_else(|| format!("{} has no REF or VEL cut", file.display()))?;
+        let (cut, name) = first_sweep_with(&volume, Quantity::Reflectivity)
+            .or_else(|| first_sweep_with(&volume, Quantity::RadialVelocity))
+            .ok_or_else(|| format!("{} has no DBZH or VRADH sweep", file.display()))?;
 
         let cache_start = Instant::now();
-        let moment = if volume.cuts[cut]
-            .moments
-            .contains_key(&MomentType::Reflectivity)
-        {
-            MomentType::Reflectivity
-        } else {
-            MomentType::Velocity
-        };
-        let moment_cache = ViewportMomentCache::new(&volume, cut, moment)?;
+        let moment_cache = ViewportFieldCache::new(&volume, cut, &name)?;
         let sample_cache = moment_cache.build_sample_cache(&volume, config.viewport)?;
         let cache_build = cache_start.elapsed();
 
         let mut pixels = vec![0; viewport_rgba_buffer_len(config.viewport)];
         let render_start = Instant::now();
-        moment_cache.render_moment_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)?;
+        moment_cache.render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)?;
         let render = render_start.elapsed();
 
         let memory = process_memory();
@@ -75,14 +72,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!(
             "{},{:.2},{:.3},{:.3},{:.3},{:.3},{},{},{:.2},{:.2},{},{}",
-            volume.site.id,
+            volume.attrs.instrument_name,
             file_mb,
             elapsed_ms(read),
             elapsed_ms(decode),
             elapsed_ms(cache_build),
             elapsed_ms(render),
             cut,
-            volume.metadata.decoded_radial_count,
+            volume.provenance.decode.decoded_ray_count,
             cache_mb,
             rgba_mb,
             fmt_mb(memory.working_set_bytes),
@@ -116,8 +113,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let retained_probe = loaded
         .iter()
         .map(|site| {
-            site.volume.metadata.decoded_radial_count
-                + site.moment_cache.cut_index()
+            site.volume.provenance.decode.decoded_ray_count
+                + site.moment_cache.sweep_index()
                 + site.sample_cache.sample_count()
                 + site.pixels.len()
         })
@@ -134,8 +131,8 @@ struct Config {
 }
 
 struct LoadedSite {
-    volume: RadarVolume,
-    moment_cache: ViewportMomentCache,
+    volume: Volume,
+    moment_cache: ViewportFieldCache,
     sample_cache: ViewportSampleCache,
     pixels: Vec<u8>,
 }
@@ -154,11 +151,16 @@ struct ProcessMemory {
     private_bytes: Option<u64>,
 }
 
-fn first_cut_with_moment(volume: &RadarVolume, moment: &MomentType) -> Option<usize> {
-    volume
-        .cuts
-        .iter()
-        .position(|cut| cut.moments.contains_key(moment))
+/// The first sweep with a field of `quantity`, and that field's name.
+fn first_sweep_with(
+    volume: &Volume,
+    quantity: Quantity,
+) -> Option<(usize, recast_radar_core::FieldName)> {
+    volume.sweeps.iter().enumerate().find_map(|(index, sweep)| {
+        sweep
+            .find(quantity)
+            .map(|field| (index, field.name.clone()))
+    })
 }
 
 fn parse_args() -> Result<Config, String> {

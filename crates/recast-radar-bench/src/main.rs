@@ -1,30 +1,32 @@
 //! BowEcho headless benchmark harness.
 //!
 //! Decodes one Level-II archive volume and rasterizes its lowest
-//! reflectivity and velocity cuts through the exact `recast_radar_io` /
+//! reflectivity and velocity sweeps through the exact `recast_radar_io` /
 //! `recast_radar_render` paths the app uses, with wall-clock timing and a pixel
 //! checksum. See README.md for the three purposes this serves (LTO A/B
 //! referee, x86-64-v3 validation, PGO training workload).
 
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-mod dealias_eval;
+mod legacy_bridge;
 
-use recast_radar_core::{MomentType, RadarVolume};
+use legacy_bridge::dealias_eval;
+use recast_radar_core::{FieldName, Quantity, Volume};
 use recast_radar_render::{
-    ColorTableSet, ViewportMomentCache, ViewportRasterOptions, color_family_for_moment,
+    ColorTableSet, ViewportFieldCache, ViewportRasterOptions, color_family_for_name,
     viewport_rgba_buffer_len,
 };
 
 const USAGE: &str = "usage: recast-radar-bench <path-to-level2-file> [--iters N] [--json]
 
-Decode the volume and raster its lowest reflectivity + velocity cuts at
+Decode the volume and raster its lowest reflectivity + velocity sweeps at
 three viewport shapes, once as warmup and then N timed iterations
 (default 10). --json emits one machine-readable summary line instead of
 the human table. Exits nonzero if the rendered pixels are not identical
@@ -32,7 +34,7 @@ across iterations.";
 
 const DEFAULT_ITERS: usize = 10;
 
-/// The three representative viewport shapes rendered per moment per
+/// The three representative viewport shapes rendered per field per
 /// iteration: 720p / 1080p / 1440p at a fixed storm-scale zoom.
 const BENCH_VIEWPORT_SHAPES: [(u32, u32); 3] = [(1280, 720), (1920, 1080), (2560, 1440)];
 
@@ -140,13 +142,14 @@ struct BenchReport {
     file: String,
     iters: usize,
     site: String,
-    /// Real data time of the decoded volume (RFC 3339), never a wall
-    /// clock: the bench reports what the file says.
+    /// Real data time of the decoded volume (RFC 3339; the volume's time
+    /// reference, a whole second), never a wall clock: the bench reports
+    /// what the file says.
     volume_time: String,
-    cuts: usize,
-    reflectivity_cut: usize,
+    sweeps: usize,
+    reflectivity_sweep: usize,
     reflectivity_elevation_deg: f32,
-    velocity_cut: usize,
+    velocity_sweep: usize,
     velocity_elevation_deg: f32,
     stages: Vec<StageSeries>,
     /// Per-iteration sum of all stage times.
@@ -162,10 +165,10 @@ struct IterationSample {
     checksum: u64,
     site: String,
     volume_time: String,
-    cuts: usize,
-    reflectivity_cut: usize,
+    sweeps: usize,
+    reflectivity_sweep: usize,
     reflectivity_elevation_deg: f32,
-    velocity_cut: usize,
+    velocity_sweep: usize,
     velocity_elevation_deg: f32,
 }
 
@@ -206,10 +209,10 @@ fn run_bench(args: &BenchArgs) -> Result<BenchReport, String> {
         iters: args.iters,
         site: warmup.site,
         volume_time: warmup.volume_time,
-        cuts: warmup.cuts,
-        reflectivity_cut: warmup.reflectivity_cut,
+        sweeps: warmup.sweeps,
+        reflectivity_sweep: warmup.reflectivity_sweep,
         reflectivity_elevation_deg: warmup.reflectivity_elevation_deg,
-        velocity_cut: warmup.velocity_cut,
+        velocity_sweep: warmup.velocity_sweep,
         velocity_elevation_deg: warmup.velocity_elevation_deg,
         stages,
         totals_ms,
@@ -228,20 +231,21 @@ fn run_iteration(
     // provider downloads); a Level-II buffer falls through to
     // decode_volume_from_bytes, the same entry the archive path uses.
     // No site hint is needed: Archive II embeds the ICAO in the header.
-    let volume =
-        recast_radar_io::decode_supported_volume_bytes(raw).map_err(|err| err.to_string())?;
+    // Until the router returns the FM301 model, the stage also includes the
+    // shim conversion, which moves the decoded buffers and copies nothing.
+    let volume = legacy_bridge::read_volume_bytes(raw)?;
     let decode_ms = elapsed_ms(started);
 
-    let reflectivity_cut = lowest_cut_with_moment(&volume, &MomentType::Reflectivity)
-        .ok_or_else(|| "volume has no reflectivity cut to benchmark".to_owned())?;
-    let velocity_cut = lowest_cut_with_moment(&volume, &MomentType::Velocity)
-        .ok_or_else(|| "volume has no velocity cut to benchmark".to_owned())?;
+    let (reflectivity_sweep, reflectivity) = lowest_sweep_with(&volume, Quantity::Reflectivity)
+        .ok_or_else(|| "volume has no reflectivity sweep to benchmark".to_owned())?;
+    let (velocity_sweep, velocity) = lowest_sweep_with(&volume, Quantity::RadialVelocity)
+        .ok_or_else(|| "volume has no velocity sweep to benchmark".to_owned())?;
 
     let started = Instant::now();
-    render_moment_viewports(
+    render_field_viewports(
         &volume,
-        reflectivity_cut,
-        &MomentType::Reflectivity,
+        reflectivity_sweep,
+        &reflectivity,
         false,
         color_tables,
         buffers,
@@ -255,10 +259,10 @@ fn run_iteration(
     }
 
     let started = Instant::now();
-    render_moment_viewports(
+    render_field_viewports(
         &volume,
-        velocity_cut,
-        &MomentType::Velocity,
+        velocity_sweep,
+        &velocity,
         true,
         color_tables,
         buffers,
@@ -273,69 +277,72 @@ fn run_iteration(
         reflectivity_ms,
         velocity_ms,
         checksum,
-        site: volume.site.id.clone(),
-        volume_time: volume.volume_time.to_rfc3339(),
-        cuts: volume.cuts.len(),
-        reflectivity_cut,
-        reflectivity_elevation_deg: volume.cuts[reflectivity_cut].elevation_deg,
-        velocity_cut,
-        velocity_elevation_deg: volume.cuts[velocity_cut].elevation_deg,
+        site: volume.attrs.instrument_name.clone(),
+        volume_time: volume.time_reference.to_rfc3339(),
+        sweeps: volume.sweeps.len(),
+        reflectivity_sweep,
+        reflectivity_elevation_deg: volume.sweeps[reflectivity_sweep].fixed_angle_deg,
+        velocity_sweep,
+        velocity_elevation_deg: volume.sweeps[velocity_sweep].fixed_angle_deg,
     })
 }
 
-/// Lowest-elevation cut carrying a decoded grid for `moment` — same
-/// semantics as the app's lowest-displayable-cut selection (min by
-/// elevation, then cut index).
-fn lowest_cut_with_moment(volume: &RadarVolume, moment: &MomentType) -> Option<usize> {
+/// Lowest-elevation sweep carrying rows of a `quantity` field, and that
+/// field's name — same semantics as the app's lowest-displayable-sweep
+/// selection (min by fixed angle, then sweep index).
+fn lowest_sweep_with(volume: &Volume, quantity: Quantity) -> Option<(usize, FieldName)> {
     volume
-        .cuts
+        .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, cut)| {
-            cut.moments
-                .get(moment)
-                .is_some_and(|grid| !grid.radial_indices.is_empty())
+        .filter_map(|(index, sweep)| {
+            sweep
+                .find(quantity)
+                .filter(|field| field.nrays as usize > field.absent_rows.len())
+                .map(|field| (index, sweep.fixed_angle_deg, &field.name))
         })
-        .min_by(|(left_index, left_cut), (right_index, right_cut)| {
-            left_cut
-                .elevation_deg
-                .total_cmp(&right_cut.elevation_deg)
-                .then_with(|| left_index.cmp(right_index))
-        })
-        .map(|(index, _)| index)
+        .min_by(
+            |(left_index, left_angle, _), (right_index, right_angle, _)| {
+                left_angle
+                    .total_cmp(right_angle)
+                    .then_with(|| left_index.cmp(right_index))
+            },
+        )
+        .map(|(index, _, name)| (index, name.clone()))
 }
 
-/// Mirror the app's render-worker moment path: build one
-/// `ViewportMomentCache` per moment (the dealiased constructor for
+/// Mirror the app's render-worker field path: build one
+/// `ViewportFieldCache` per field (the dealiased constructor for
 /// velocity — DVEL is the app's flagship velocity display), then render
 /// it at each bench viewport like a pan/zoom burst reusing the cache.
-fn render_moment_viewports(
-    volume: &RadarVolume,
-    cut_index: usize,
-    moment: &MomentType,
+fn render_field_viewports(
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     dealiased_velocity: bool,
     color_tables: &ColorTableSet,
     buffers: &mut [Vec<u8>],
 ) -> Result<(), String> {
     let cache = if dealiased_velocity {
-        ViewportMomentCache::new_dealiased_velocity_with_color_tables(
+        ViewportFieldCache::new_dealiased_velocity_with_color_tables(
             volume,
-            cut_index,
+            sweep_index,
+            field,
             color_tables,
         )
     } else {
-        ViewportMomentCache::new_with_color_tables_for_family(
+        ViewportFieldCache::new_with_color_tables_for_family(
             volume,
-            cut_index,
-            moment.clone(),
+            sweep_index,
+            field,
             color_tables,
-            Some(color_family_for_moment(moment)),
+            Some(color_family_for_name(field)),
         )
     }
     .map_err(|err| err.to_string())?;
     for (&(width, height), pixels) in BENCH_VIEWPORT_SHAPES.iter().zip(buffers.iter_mut()) {
         cache
-            .render_moment_rgba_into(volume, bench_viewport_options(width, height), pixels)
+            .render_field_rgba_into(volume, bench_viewport_options(width, height), pixels)
             .map_err(|err| err.to_string())?;
     }
     Ok(())
@@ -384,14 +391,14 @@ fn render_human(report: &BenchReport) -> String {
     let mut out = String::new();
     out.push_str(&format!("file   {}\n", report.file));
     out.push_str(&format!(
-        "site   {}  volume {}  {} cuts\n",
-        report.site, report.volume_time, report.cuts
+        "site   {}  volume {}  {} sweeps\n",
+        report.site, report.volume_time, report.sweeps
     ));
     out.push_str(&format!(
-        "cuts   reflectivity {} ({:.2} deg)  velocity {} ({:.2} deg)\n",
-        report.reflectivity_cut,
+        "sweeps reflectivity {} ({:.2} deg)  velocity {} ({:.2} deg)\n",
+        report.reflectivity_sweep,
         report.reflectivity_elevation_deg,
-        report.velocity_cut,
+        report.velocity_sweep,
         report.velocity_elevation_deg
     ));
     out.push_str(&format!(
@@ -441,10 +448,10 @@ fn render_json(report: &BenchReport) -> String {
         "\"volume_time\":\"{}\",",
         json_escape(&report.volume_time)
     ));
-    out.push_str(&format!("\"cuts\":{},", report.cuts));
+    out.push_str(&format!("\"sweeps\":{},", report.sweeps));
     out.push_str(&format!(
-        "\"reflectivity_cut\":{},\"velocity_cut\":{},",
-        report.reflectivity_cut, report.velocity_cut
+        "\"reflectivity_sweep\":{},\"velocity_sweep\":{},",
+        report.reflectivity_sweep, report.velocity_sweep
     ));
     out.push_str(&format!("\"iters\":{},", report.iters));
     out.push_str(&format!(
@@ -670,10 +677,10 @@ mod tests {
             iters: 2,
             site: "KTLX".to_owned(),
             volume_time: "2013-05-20T20:16:43+00:00".to_owned(),
-            cuts: 18,
-            reflectivity_cut: 0,
+            sweeps: 18,
+            reflectivity_sweep: 0,
             reflectivity_elevation_deg: 0.48,
-            velocity_cut: 1,
+            velocity_sweep: 1,
             velocity_elevation_deg: 0.48,
             stages: vec![
                 StageSeries {

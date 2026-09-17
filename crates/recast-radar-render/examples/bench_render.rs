@@ -1,14 +1,19 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use recast_radar_core::MomentType;
+use recast_radar_core::FieldName;
 use recast_radar_render::{
-    RasterOptions, StormMotion, ViewportMomentCache, ViewportRasterOptions, render_moment_image,
+    RasterOptions, StormMotion, ViewportFieldCache, ViewportRasterOptions, render_field_image,
     render_storm_relative_velocity_image, viewport_rgba_buffer_len,
 };
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
+use legacy_bridge::stages;
 
 const DECODE_RUNS: usize = 5;
 
@@ -24,20 +29,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut volume = None;
     for _ in 0..DECODE_RUNS {
         let decode_start = Instant::now();
-        let decoded = recast_radar_io_nexrad::decode_volume_from_path(&input)?;
+        let decoded = legacy_bridge::read_volume(&input)?;
         decode_timings.push(decode_start.elapsed());
         volume = Some(decoded);
     }
     decode_timings.sort();
     let volume = volume.expect("decode runs produced a volume");
     println!(
-        "decode_ms={:.3} decode_best_ms={:.3} decode_runs={} site={} cuts={} radials={}",
+        "decode_ms={:.3} decode_best_ms={:.3} decode_runs={} site={} sweeps={} rays={}",
         elapsed_ms(decode_timings[decode_timings.len() / 2]),
         elapsed_ms(decode_timings[0]),
         decode_timings.len(),
-        volume.site.id,
-        volume.cuts.len(),
-        volume.metadata.decoded_radial_count
+        volume.attrs.instrument_name,
+        volume.sweeps.len(),
+        volume.provenance.decode.decoded_ray_count
     );
 
     let mut read_timings = Vec::new();
@@ -54,17 +59,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         raw_len = raw.len();
 
         let normalize_start = Instant::now();
-        let (normalized, archive_compression) =
-            recast_radar_io_nexrad::normalize_archive_bytes(&raw)?;
+        let (normalized, archive_compression) = stages::normalize(&raw)?;
         normalize_timings.push(normalize_start.elapsed());
         normalized_len = normalized.len();
         compression = Some(archive_compression);
 
         let parse_start = Instant::now();
-        let decoded = recast_radar_io_nexrad::decode_normalized_volume_bytes(
-            &normalized,
-            archive_compression,
-        )?;
+        let decoded = stages::parse_normalized(&normalized, archive_compression)?;
         parse_timings.push(parse_start.elapsed());
         parsed = Some(decoded);
     }
@@ -74,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let compression = compression.expect("breakdown runs produced compression");
     let parsed = parsed.expect("breakdown runs produced a parsed volume");
     println!(
-        "decode_breakdown read_ms={:.3} read_best_ms={:.3} normalize_ms={:.3} normalize_best_ms={:.3} parse_ms={:.3} parse_best_ms={:.3} raw_bytes={} normalized_bytes={} compression={:?} site={} cuts={} radials={}",
+        "decode_breakdown read_ms={:.3} read_best_ms={:.3} normalize_ms={:.3} normalize_best_ms={:.3} parse_ms={:.3} parse_best_ms={:.3} raw_bytes={} normalized_bytes={} compression={:?} site={} sweeps={} rays={}",
         elapsed_ms(read_timings[read_timings.len() / 2]),
         elapsed_ms(read_timings[0]),
         elapsed_ms(normalize_timings[normalize_timings.len() / 2]),
@@ -84,47 +85,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         raw_len,
         normalized_len,
         compression,
-        parsed.site.id,
-        parsed.cuts.len(),
-        parsed.metadata.decoded_radial_count
+        parsed.attrs.instrument_name,
+        parsed.sweeps.len(),
+        parsed.provenance.decode.decoded_ray_count
     );
 
-    if compression == recast_radar_io_nexrad::ArchiveCompression::Gzip {
+    if compression == stages::ArchiveCompression::Gzip {
         let mut stream_timings = Vec::new();
         let mut streamed = None;
         for _ in 0..DECODE_RUNS {
             let file = std::fs::File::open(&input)?;
             let stream_start = Instant::now();
-            let decoded = recast_radar_io_nexrad::decode_gzip_volume_from_reader(file)?;
+            let decoded = stages::read_gzip_stream(file)?;
             stream_timings.push(stream_start.elapsed());
             streamed = Some(decoded);
         }
         stream_timings.sort();
         let streamed = streamed.expect("streaming gzip decode produced a volume");
         println!(
-            "decode_gzip_stream_ms={:.3} decode_gzip_stream_best_ms={:.3} site={} cuts={} radials={}",
+            "decode_gzip_stream_ms={:.3} decode_gzip_stream_best_ms={:.3} site={} sweeps={} rays={}",
             elapsed_ms(stream_timings[stream_timings.len() / 2]),
             elapsed_ms(stream_timings[0]),
-            streamed.site.id,
-            streamed.cuts.len(),
-            streamed.metadata.decoded_radial_count
+            streamed.attrs.instrument_name,
+            streamed.sweeps.len(),
+            streamed.provenance.decode.decoded_ray_count
         );
     }
 
-    for (cut, moment) in [
-        (0, MomentType::Reflectivity),
-        (1, MomentType::Velocity),
-        (1, MomentType::SpectrumWidth),
-        (6, MomentType::Reflectivity),
-        (6, MomentType::Velocity),
+    for (cut, field) in [
+        (0, FieldName::Dbzh),
+        (1, FieldName::Vradh),
+        (1, FieldName::Wradh),
+        (6, FieldName::Dbzh),
+        (6, FieldName::Vradh),
     ] {
         let mut timings = Vec::new();
         for _ in 0..8 {
             let start = Instant::now();
-            let image = render_moment_image(
+            let image = render_field_image(
                 &volume,
                 cut,
-                moment.clone(),
+                &field,
                 RasterOptions {
                     width: 1024,
                     height: 1024,
@@ -136,8 +137,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         timings.sort();
         println!(
-            "render cut={cut} moment={} median_ms={:.3} best_ms={:.3}",
-            moment.short_name(),
+            "render cut={cut} field={} median_ms={:.3} best_ms={:.3}",
+            field.as_str(),
             elapsed_ms(timings[timings.len() / 2]),
             elapsed_ms(timings[0])
         );
@@ -154,6 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let image = render_storm_relative_velocity_image(
                 &volume,
                 cut,
+                &FieldName::Vradh,
                 storm_motion,
                 RasterOptions {
                     width: 1024,
@@ -166,7 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         timings.sort();
         println!(
-            "render cut={cut} moment=SRV median_ms={:.3} best_ms={:.3}",
+            "render cut={cut} field=SRV median_ms={:.3} best_ms={:.3}",
             elapsed_ms(timings[timings.len() / 2]),
             elapsed_ms(timings[0])
         );
@@ -181,20 +183,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         km_per_px_y: 0.16,
         rotation_rad: 0.0,
     };
-    for (cut, moment) in [(1, MomentType::Velocity), (6, MomentType::Reflectivity)] {
+    for (cut, field) in [(1, FieldName::Vradh), (6, FieldName::Dbzh)] {
         let mut timings = Vec::new();
         let mut pixels = vec![0; viewport_rgba_buffer_len(viewport)];
-        let cache = ViewportMomentCache::new(&volume, cut, moment.clone())?;
+        let cache = ViewportFieldCache::new(&volume, cut, &field)?;
         for _ in 0..8 {
             let start = Instant::now();
-            cache.render_moment_rgba_into(&volume, viewport, &mut pixels)?;
+            cache.render_field_rgba_into(&volume, viewport, &mut pixels)?;
             std::hint::black_box(&pixels);
             timings.push(start.elapsed());
         }
         timings.sort();
         println!(
-            "viewport cached cut={cut} moment={} size={}x{} median_ms={:.3} best_ms={:.3}",
-            moment.short_name(),
+            "viewport cached cut={cut} field={} size={}x{} median_ms={:.3} best_ms={:.3}",
+            field.as_str(),
             viewport.width,
             viewport.height,
             elapsed_ms(timings[timings.len() / 2]),
@@ -213,8 +215,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         build_timings.sort();
         let sample_cache = sample_cache.expect("sample cache was built");
         println!(
-            "viewport sample_cache_build cut={cut} moment={} size={}x{} samples={} storage_bytes={} median_ms={:.3} best_ms={:.3}",
-            moment.short_name(),
+            "viewport sample_cache_build cut={cut} field={} size={}x{} samples={} storage_bytes={} median_ms={:.3} best_ms={:.3}",
+            field.as_str(),
             sample_cache.width(),
             sample_cache.height(),
             sample_cache.sample_count(),
@@ -226,25 +228,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut sample_timings = Vec::new();
         for _ in 0..8 {
             let start = Instant::now();
-            cache.render_moment_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)?;
+            cache.render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)?;
             std::hint::black_box(&pixels);
             sample_timings.push(start.elapsed());
         }
         sample_timings.sort();
         println!(
-            "viewport sample_cache cut={cut} moment={} size={}x{} median_ms={:.3} best_ms={:.3}",
-            moment.short_name(),
+            "viewport sample_cache cut={cut} field={} size={}x{} median_ms={:.3} best_ms={:.3}",
+            field.as_str(),
             viewport.width,
             viewport.height,
             elapsed_ms(sample_timings[sample_timings.len() / 2]),
             elapsed_ms(sample_timings[0])
         );
 
-        cache.render_moment_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)?;
+        cache.render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)?;
         let mut reuse_timings = Vec::new();
         for _ in 0..8 {
             let start = Instant::now();
-            cache.render_moment_rgba_with_sample_cache_reusing_transparency(
+            cache.render_field_rgba_with_sample_cache_reusing_transparency(
                 &volume,
                 &sample_cache,
                 &mut pixels,
@@ -254,8 +256,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         reuse_timings.sort();
         println!(
-            "viewport sample_cache_reuse cut={cut} moment={} size={}x{} median_ms={:.3} best_ms={:.3}",
-            moment.short_name(),
+            "viewport sample_cache_reuse cut={cut} field={} size={}x{} median_ms={:.3} best_ms={:.3}",
+            field.as_str(),
             viewport.width,
             viewport.height,
             elapsed_ms(reuse_timings[reuse_timings.len() / 2]),
@@ -265,11 +267,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut timings = Vec::new();
     let mut pixels = vec![0; viewport_rgba_buffer_len(viewport)];
-    let velocity_cache = ViewportMomentCache::new(&volume, 1, MomentType::Velocity)?;
+    let velocity_cache = ViewportFieldCache::new(&volume, 1, &FieldName::Vradh)?;
     let velocity_sample_cache = velocity_cache.build_sample_cache(&volume, viewport)?;
     let velocity_palette_cache = velocity_cache
         .build_storm_relative_velocity_palette_cache(&volume, storm_motion)?
-        .expect("benchmark velocity grid uses u8 palette cache");
+        .expect("benchmark velocity field uses u8 palette cache");
     for _ in 0..8 {
         let start = Instant::now();
         velocity_cache.render_storm_relative_velocity_rgba_into(
@@ -283,7 +285,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     timings.sort();
     println!(
-        "viewport cached cut=1 moment=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
+        "viewport cached cut=1 field=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
         viewport.width,
         viewport.height,
         elapsed_ms(timings[timings.len() / 2]),
@@ -305,7 +307,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     timings.sort();
     println!(
-        "viewport cached_palette cut=1 moment=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
+        "viewport cached_palette cut=1 field=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
         viewport.width,
         viewport.height,
         elapsed_ms(timings[timings.len() / 2]),
@@ -326,7 +328,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     timings.sort();
     println!(
-        "viewport sample_cache cut=1 moment=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
+        "viewport sample_cache cut=1 field=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
         viewport.width,
         viewport.height,
         elapsed_ms(timings[timings.len() / 2]),
@@ -348,7 +350,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     timings.sort();
     println!(
-        "viewport sample_cache_palette cut=1 moment=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
+        "viewport sample_cache_palette cut=1 field=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
         viewport.width,
         viewport.height,
         elapsed_ms(timings[timings.len() / 2]),
@@ -375,7 +377,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     timings.sort();
     println!(
-        "viewport sample_cache_reuse cut=1 moment=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
+        "viewport sample_cache_reuse cut=1 field=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
         viewport.width,
         viewport.height,
         elapsed_ms(timings[timings.len() / 2]),
@@ -405,7 +407,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     timings.sort();
     println!(
-        "viewport sample_cache_reuse_palette cut=1 moment=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
+        "viewport sample_cache_reuse_palette cut=1 field=SRV size={}x{} median_ms={:.3} best_ms={:.3}",
         viewport.width,
         viewport.height,
         elapsed_ms(timings[timings.len() / 2]),

@@ -1,40 +1,44 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use image::{ImageBuffer, Rgba};
-use recast_radar_core::{MomentType, RadarVolume};
+use recast_radar_core::{FieldName, Quantity, Volume};
 use recast_radar_render::{
-    ColorTableSet, ViewportMomentCache, ViewportRasterOptions, viewport_rgba_buffer_len,
+    ColorTableSet, ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len,
 };
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 const DEFAULT_KM_PER_PX: f32 = 0.16;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = parse_args().map_err(|err| format!("{err}\n\n{}", usage()))?;
     let decode_start = Instant::now();
-    let volume = recast_radar_io_nexrad::decode_volume_from_path(&config.input)?;
+    let volume = legacy_bridge::read_volume(&config.input)?;
     let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
     println!(
-        "visual_probe file={} site={} cuts={} radials={} decode_ms={decode_ms:.3}",
+        "visual_probe file={} site={} sweeps={} rays={} decode_ms={decode_ms:.3}",
         config.input.display(),
-        volume.site.id,
-        volume.cuts.len(),
-        volume.metadata.decoded_radial_count
+        volume.attrs.instrument_name,
+        volume.sweeps.len(),
+        volume.provenance.decode.decoded_ray_count
     );
 
     probe_product(
         &volume,
-        Product::Moment(MomentType::Reflectivity),
+        Product::Field(Quantity::Reflectivity),
         config.viewport,
         config.out_dir.as_deref(),
         config.strict,
     )?;
     probe_product(
         &volume,
-        Product::Moment(MomentType::Velocity),
+        Product::Field(Quantity::RadialVelocity),
         config.viewport,
         config.out_dir.as_deref(),
         config.strict,
@@ -51,36 +55,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn probe_product(
-    volume: &RadarVolume,
+    volume: &Volume,
     product: Product,
     viewport: ViewportRasterOptions,
     out_dir: Option<&Path>,
     strict: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(cut) = first_cut_with_moment(volume, &product.base_moment()) else {
+    let Some((cut, name)) = first_sweep_with(volume, product.base_quantity()) else {
         return Ok(());
     };
     let color_tables = ColorTableSet::default();
     let cache = match product {
-        Product::Moment(ref moment) => {
-            ViewportMomentCache::new_with_color_tables(volume, cut, moment.clone(), &color_tables)?
+        Product::Field(_) => {
+            ViewportFieldCache::new_with_color_tables(volume, cut, &name, &color_tables)?
         }
-        Product::DealiasedVelocity => {
-            ViewportMomentCache::new_dealiased_velocity_with_color_tables(
-                volume,
-                cut,
-                &color_tables,
-            )?
-        }
+        Product::DealiasedVelocity => ViewportFieldCache::new_dealiased_velocity_with_color_tables(
+            volume,
+            cut,
+            &name,
+            &color_tables,
+        )?,
     };
     let mut pixels = vec![0; viewport_rgba_buffer_len(viewport)];
     let render_start = Instant::now();
-    cache.render_moment_rgba_into(volume, viewport, &mut pixels)?;
+    cache.render_field_rgba_into(volume, viewport, &mut pixels)?;
     let render_ms = render_start.elapsed().as_secs_f64() * 1000.0;
     let stats = PixelStats::from_rgba(&pixels);
     let label = product.label();
     println!(
-        "visual product={label} cut={cut} viewport={}x{} render_ms={render_ms:.3} visible={} orange_yellow={} purple_like={} rf_purple_like={}",
+        "visual product={label} sweep={cut} viewport={}x{} render_ms={render_ms:.3} visible={} orange_yellow={} purple_like={} rf_purple_like={}",
         viewport.width,
         viewport.height,
         stats.visible,
@@ -96,8 +99,8 @@ fn probe_product(
     if let Some(out_dir) = out_dir {
         std::fs::create_dir_all(out_dir)?;
         let path = out_dir.join(format!(
-            "{}_{}_cut{cut}.png",
-            volume.site.id.to_ascii_lowercase(),
+            "{}_{}_sweep{cut}.png",
+            volume.attrs.instrument_name.to_ascii_lowercase(),
             label.to_ascii_lowercase()
         ));
         save_rgba(&path, viewport.width, viewport.height, pixels)?;
@@ -166,7 +169,7 @@ impl PixelStats {
             )
             .into());
         }
-        if matches!(product, Product::Moment(MomentType::Reflectivity)) && self.rf_purple_like > 0 {
+        if matches!(product, Product::Field(Quantity::Reflectivity)) && self.rf_purple_like > 0 {
             return Err(format!(
                 "REF has RF-purple-like pixels after RF transparency fix: {}",
                 self.rf_purple_like
@@ -177,42 +180,44 @@ impl PixelStats {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Product {
-    Moment(MomentType),
+    Field(Quantity),
     DealiasedVelocity,
 }
 
 impl Product {
-    fn base_moment(&self) -> MomentType {
+    fn base_quantity(self) -> Quantity {
         match self {
-            Self::Moment(moment) => moment.clone(),
-            Self::DealiasedVelocity => MomentType::Velocity,
+            Self::Field(quantity) => quantity,
+            Self::DealiasedVelocity => Quantity::RadialVelocity,
         }
     }
 
-    fn label(&self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Moment(MomentType::Reflectivity) => "REF",
-            Self::Moment(MomentType::Velocity) => "VEL",
-            Self::Moment(_) => "MOMENT",
+            Self::Field(Quantity::Reflectivity) => "REF",
+            Self::Field(Quantity::RadialVelocity) => "VEL",
+            Self::Field(_) => "FIELD",
             Self::DealiasedVelocity => "DVEL",
         }
     }
 
-    fn is_velocity(&self) -> bool {
+    fn is_velocity(self) -> bool {
         matches!(
             self,
-            Self::Moment(MomentType::Velocity) | Self::DealiasedVelocity
+            Self::Field(Quantity::RadialVelocity) | Self::DealiasedVelocity
         )
     }
 }
 
-fn first_cut_with_moment(volume: &RadarVolume, moment: &MomentType) -> Option<usize> {
-    volume
-        .cuts
-        .iter()
-        .position(|cut| cut.moments.contains_key(moment))
+/// The first sweep with a field of `quantity`, and that field's name.
+fn first_sweep_with(volume: &Volume, quantity: Quantity) -> Option<(usize, FieldName)> {
+    volume.sweeps.iter().enumerate().find_map(|(index, sweep)| {
+        sweep
+            .find(quantity)
+            .map(|field| (index, field.name.clone()))
+    })
 }
 
 #[derive(Debug)]

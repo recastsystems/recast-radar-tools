@@ -1048,6 +1048,7 @@ dependencies = [
  "recast-radar-io-nexrad",
  "recast-radar-map",
  "recast-radar-retrieve",
+ "recast-radar-testdata",
  "recast-radar-track",
  "thiserror",
 ]

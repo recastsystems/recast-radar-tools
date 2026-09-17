@@ -1,5 +1,6 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 // Verify azimuthal shear on a real scan: compute LLSD az-shear on the lowest
 // velocity tilt and render it (velocity diverging palette) so rotational
@@ -8,9 +9,11 @@
 use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgba};
-use recast_radar_core::{MomentType, RadarVolume};
-use recast_radar_render::{RasterOptions, render_moment_image};
-use recast_radar_retrieve::azimuthal_shear_grid;
+use recast_radar_core::Quantity;
+use recast_radar_render::{RasterOptions, render_field_image};
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 fn save_on_black(img: &ImageBuffer<Rgba<u8>, Vec<u8>>, path: &str) {
     let (w, h) = img.dimensions();
@@ -46,40 +49,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "shear.png".into());
-    let mut volume: RadarVolume = recast_radar_io_nexrad::decode_volume_from_path(&input)?;
+    let mut decoded = legacy_bridge::Decoded::from_path(&input)?;
 
-    let idx = volume
-        .cuts
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| c.moments.contains_key(&MomentType::Velocity))
-        .min_by(|a, b| a.1.elevation_deg.total_cmp(&b.1.elevation_deg))
-        .map(|(i, _)| i)
+    let idx = decoded
+        .lowest_sweep_with(Quantity::RadialVelocity)
         .ok_or("no velocity")?;
-
-    let shear = {
-        let cut = &volume.cuts[idx];
-        azimuthal_shear_grid(cut, cut.moments.get(&MomentType::Velocity).unwrap())
-    };
+    let mut shear = decoded.azimuthal_shear(idx).ok_or("no velocity")?;
     let (mut n, mut maxabs) = (0u64, 0.0f32);
-    for r in 0..shear.radial_count() {
-        for g in 0..shear.gate_range.gate_count {
-            if let Some(v) = shear.scaled_value(r, g).filter(|v| v.is_finite()) {
+    let (rows, gates) = shear.field.shape();
+    for r in 0..rows {
+        for g in 0..gates {
+            if let Some(v) = shear.field.value(r, g) {
                 n += 1;
                 maxabs = maxabs.max(v.abs());
             }
         }
     }
-    println!("az-shear cut #{idx}: n={n} max|shear|={maxabs:.1} x10^-3 s^-1");
+    println!("az-shear sweep #{idx}: n={n} max|shear|={maxabs:.1} x10^-3 s^-1");
 
-    // Render via the velocity diverging palette (insert shear as Velocity).
-    volume.cuts[idx].moments.insert(MomentType::Velocity, shear);
+    // Render via the velocity diverging palette: the shear field joins the
+    // sweep (its gates lie on the sweep's range) classed as a radial
+    // velocity, which is the palette the PNG raster picks for it.
+    shear.field.quantity = Quantity::RadialVelocity;
+    let name = shear.add_to(&mut decoded.volume.sweeps[idx])?;
     let opts = RasterOptions {
         width: 1400,
         height: 1400,
         range_fraction: 60,
     };
-    let img = render_moment_image(&volume, idx, MomentType::Velocity, opts)?;
+    let img = render_field_image(&decoded.volume, idx, &name, opts)?;
     save_on_black(&img, &out);
     println!("wrote {out}");
     Ok(())

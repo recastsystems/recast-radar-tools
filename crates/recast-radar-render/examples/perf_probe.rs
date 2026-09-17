@@ -1,13 +1,17 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use recast_radar_core::{MomentType, RadarVolume};
+use recast_radar_core::{FieldName, Quantity, Volume};
 use recast_radar_render::{
-    StormMotion, ViewportMomentCache, ViewportRasterOptions, viewport_rgba_buffer_len,
+    StormMotion, ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len,
 };
+
+#[path = "legacy_bridge/mod.rs"]
+mod legacy_bridge;
 
 const DEFAULT_RUNS: usize = 8;
 const DEFAULT_DECODE_RUNS: usize = 5;
@@ -32,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut volume = None;
     for _ in 0..config.decode_runs {
         let start = Instant::now();
-        let decoded = recast_radar_io_nexrad::decode_volume_from_bytes(&raw)?;
+        let decoded = legacy_bridge::read_volume_bytes(&raw)?;
         decode_timings.push(start.elapsed());
         volume = Some(decoded);
     }
@@ -49,28 +53,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..config.decode_runs {
         let start = Instant::now();
         let mut first_preview = None;
-        let decoded = if raw.starts_with(&[0x1f, 0x8b]) {
-            recast_radar_io_nexrad::decode_gzip_volume_from_bytes_with_preview(
+        let decoded = if raw.starts_with(&[0x1f, 0x8b])
+            || should_preview_block_bzip_loads_for_threads(rayon::current_num_threads())
+        {
+            legacy_bridge::read_volume_bytes_with_preview(
                 &raw,
                 MIN_DISPLAYABLE_RADIALS,
-                |preview| {
-                    std::hint::black_box(preview.metadata.decoded_radial_count);
-                    first_preview.get_or_insert_with(|| start.elapsed());
-                },
-            )?
-        } else if should_preview_block_bzip_loads_for_threads(rayon::current_num_threads()) {
-            recast_radar_io_nexrad::decode_volume_from_bytes_with_bzip_preview(
-                &raw,
-                MIN_DISPLAYABLE_RADIALS,
-                |preview| {
-                    std::hint::black_box(preview.metadata.decoded_radial_count);
+                |preview_rays| {
+                    std::hint::black_box(preview_rays);
                     first_preview.get_or_insert_with(|| start.elapsed());
                 },
             )?
         } else {
-            recast_radar_io_nexrad::decode_volume_from_bytes(&raw)?
+            legacy_bridge::read_volume_bytes(&raw)?
         };
-        std::hint::black_box(decoded.metadata.decoded_radial_count);
+        std::hint::black_box(decoded.provenance.decode.decoded_ray_count);
         if let Some(first_preview) = first_preview {
             preview_first_timings.push(first_preview);
         }
@@ -92,18 +89,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     println!(
-        "volume site={} cuts={} radials={}",
-        volume.site.id,
-        volume.cuts.len(),
-        volume.metadata.decoded_radial_count
+        "volume site={} sweeps={} rays={}",
+        volume.attrs.instrument_name,
+        volume.sweeps.len(),
+        volume.provenance.decode.decoded_ray_count
     );
 
     for viewport in &config.viewports {
-        probe_moment(&volume, MomentType::Velocity, *viewport, config.runs, "VEL")?;
-        probe_dealiased_velocity(&volume, *viewport, config.runs)?;
-        probe_moment(
+        probe_field(
             &volume,
-            MomentType::Reflectivity,
+            Quantity::RadialVelocity,
+            *viewport,
+            config.runs,
+            "VEL",
+        )?;
+        probe_dealiased_velocity(&volume, *viewport, config.runs)?;
+        probe_field(
+            &volume,
+            Quantity::Reflectivity,
             *viewport,
             config.runs,
             "REF",
@@ -123,11 +126,11 @@ fn should_preview_block_bzip_loads_for_threads(_threads: usize) -> bool {
 }
 
 fn probe_dealiased_velocity(
-    volume: &RadarVolume,
+    volume: &Volume,
     viewport: ViewportRasterOptions,
     runs: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(cut) = first_cut_with_moment(volume, &MomentType::Velocity) else {
+    let Some((cut, name)) = first_sweep_with(volume, Quantity::RadialVelocity) else {
         return Ok(());
     };
     let mut pixels = vec![0; viewport_rgba_buffer_len(viewport)];
@@ -135,21 +138,21 @@ fn probe_dealiased_velocity(
     let mut last_cache = None;
 
     let build = time_runs(runs, || {
-        let cache = ViewportMomentCache::new_dealiased_velocity(volume, cut)?;
-        std::hint::black_box(cache.cut_index());
+        let cache = ViewportFieldCache::new_dealiased_velocity(volume, cut, &name)?;
+        std::hint::black_box(cache.sweep_index());
         last_cache = Some(cache);
         Ok(())
     })?;
     let cache = last_cache.expect("DVEL cache build run produced a cache");
     print_stats(
-        "moment_cache_build",
+        "field_cache_build",
         &format!(" product=DVEL cut={cut} viewport={viewport_label}"),
         runs,
         TimingStats::from(build),
     );
 
     let direct = time_runs(runs, || {
-        cache.render_moment_rgba_into(volume, viewport, &mut pixels)?;
+        cache.render_field_rgba_into(volume, viewport, &mut pixels)?;
         std::hint::black_box(&pixels);
         Ok(())
     })?;
@@ -180,7 +183,7 @@ fn probe_dealiased_velocity(
     );
 
     let cached = time_runs(runs, || {
-        cache.render_moment_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
+        cache.render_field_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
         std::hint::black_box(&pixels);
         Ok(())
     })?;
@@ -191,9 +194,9 @@ fn probe_dealiased_velocity(
         TimingStats::from(cached),
     );
 
-    cache.render_moment_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
+    cache.render_field_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
     let reuse = time_runs(runs, || {
-        cache.render_moment_rgba_with_sample_cache_reusing_transparency(
+        cache.render_field_rgba_with_sample_cache_reusing_transparency(
             volume,
             &sample_cache,
             &mut pixels,
@@ -272,22 +275,22 @@ fn probe_dealiased_velocity(
     Ok(())
 }
 
-fn probe_moment(
-    volume: &RadarVolume,
-    moment: MomentType,
+fn probe_field(
+    volume: &Volume,
+    quantity: Quantity,
     viewport: ViewportRasterOptions,
     runs: usize,
     label: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(cut) = first_cut_with_moment(volume, &moment) else {
+    let Some((cut, name)) = first_sweep_with(volume, quantity) else {
         return Ok(());
     };
-    let cache = ViewportMomentCache::new(volume, cut, moment)?;
+    let cache = ViewportFieldCache::new(volume, cut, &name)?;
     let mut pixels = vec![0; viewport_rgba_buffer_len(viewport)];
     let viewport_label = viewport_name(viewport);
 
     let direct = time_runs(runs, || {
-        cache.render_moment_rgba_into(volume, viewport, &mut pixels)?;
+        cache.render_field_rgba_into(volume, viewport, &mut pixels)?;
         std::hint::black_box(&pixels);
         Ok(())
     })?;
@@ -357,7 +360,7 @@ fn probe_moment(
     );
 
     let cached = time_runs(runs, || {
-        cache.render_moment_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
+        cache.render_field_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
         std::hint::black_box(&pixels);
         Ok(())
     })?;
@@ -368,9 +371,9 @@ fn probe_moment(
         TimingStats::from(cached),
     );
 
-    cache.render_moment_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
+    cache.render_field_rgba_with_sample_cache(volume, &sample_cache, &mut pixels)?;
     let reuse = time_runs(runs, || {
-        cache.render_moment_rgba_with_sample_cache_reusing_transparency(
+        cache.render_field_rgba_with_sample_cache_reusing_transparency(
             volume,
             &sample_cache,
             &mut pixels,
@@ -389,19 +392,18 @@ fn probe_moment(
 }
 
 fn probe_storm_relative_velocity(
-    volume: &RadarVolume,
+    volume: &Volume,
     viewport: ViewportRasterOptions,
     runs: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let moment = MomentType::Velocity;
-    let Some(cut) = first_cut_with_moment(volume, &moment) else {
+    let Some((cut, name)) = first_sweep_with(volume, Quantity::RadialVelocity) else {
         return Ok(());
     };
     let storm_motion = StormMotion {
         direction_deg: 45.0,
         speed_mps: 35.0 * KNOT_TO_MPS,
     };
-    let cache = ViewportMomentCache::new(volume, cut, moment)?;
+    let cache = ViewportFieldCache::new(volume, cut, &name)?;
     let sample_cache = cache.build_sample_cache(volume, viewport)?;
     let palette_cache = cache.build_storm_relative_velocity_palette_cache(volume, storm_motion)?;
     let Some(palette_cache) = palette_cache else {
@@ -488,11 +490,13 @@ where
     Ok(timings)
 }
 
-fn first_cut_with_moment(volume: &RadarVolume, moment: &MomentType) -> Option<usize> {
-    volume
-        .cuts
-        .iter()
-        .position(|cut| cut.moments.contains_key(moment))
+/// The first sweep with a field of `quantity`, and that field's name.
+fn first_sweep_with(volume: &Volume, quantity: Quantity) -> Option<(usize, FieldName)> {
+    volume.sweeps.iter().enumerate().find_map(|(index, sweep)| {
+        sweep
+            .find(quantity)
+            .map(|field| (index, field.name.clone()))
+    })
 }
 
 #[derive(Clone, Copy, Debug)]
