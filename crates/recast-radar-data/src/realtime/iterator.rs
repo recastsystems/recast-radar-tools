@@ -40,6 +40,8 @@
 //! 4. After the End chunk, list the next id (999 -> 1) at once. Chunks under
 //!    that id that are not newer than the finished volume (leftovers of the
 //!    id's previous cycle, or a bogus volume time) are ignored.
+//!    Abandoning a volume after a failed download (below) continues the same
+//!    way.
 //! 5. When [`ChunkIteratorConfig::stall_polls`] polls in a row bring nothing,
 //!    probe the next [`ChunkIteratorConfig::probe_ahead`] ids for a newer
 //!    volume; every [`ChunkIteratorConfig::rediscover_every`] failed probe
@@ -50,8 +52,22 @@
 //! Failed requests are retried under [`ChunkIteratorConfig::retry`]: the
 //! planner emits [`ChunkEvent::Retry`] with the delay and repeats the request
 //! on the next step. When the budget is spent (or the failure is not
-//! retryable) it emits the error followed by [`ChunkEvent::Idle`], and the
-//! step after that starts the same request over with a fresh budget.
+//! retryable) it emits the error followed by [`ChunkEvent::Idle`]. A failed
+//! listing then starts over with a fresh budget. A failed chunk download is
+//! not simply repeated: the planner goes back to the failed chunk and lists
+//! the volume again from there, which refreshes a stale listing and shows
+//! whether the chunk still exists. The volume is abandoned, and the planner
+//! continues with the next volume id as after an End chunk, when:
+//!
+//! - the relisting no longer shows the failed chunk (purged or deleted),
+//! - the chunk's body exceeded [`ChunkIteratorConfig::max_chunk_bytes`]
+//!   (repeating cannot help), or
+//! - downloads of the same chunk have failed
+//!   [`ChunkIteratorConfig::max_chunk_failures`] times in a row.
+//!
+//! If some of its chunks were delivered, abandoning emits
+//! [`ChunkEvent::VolumeAbandoned`]. A chunk that cannot be downloaded
+//! therefore never holds the iterator on one volume.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -235,8 +251,14 @@ pub struct ChunkIteratorConfig {
     pub jitter_seed: Option<u64>,
     /// Largest accepted listing body.
     pub max_listing_bytes: usize,
-    /// Largest accepted chunk body.
+    /// Largest accepted chunk body. A chunk whose body exceeds it can never
+    /// be taken, so its volume is abandoned.
     pub max_chunk_bytes: usize,
+    /// Failed download rounds for one chunk before its volume is abandoned.
+    /// A round ends when a download of the chunk fails for good (retry
+    /// budget spent, or a failure that is not retryable) and is followed by
+    /// a relisting that still shows the chunk. `0` is treated as `1`.
+    pub max_chunk_failures: u32,
 }
 
 impl Default for ChunkIteratorConfig {
@@ -253,6 +275,7 @@ impl Default for ChunkIteratorConfig {
             jitter_seed: None,
             max_listing_bytes: 8 * 1024 * 1024,
             max_chunk_bytes: 32 * 1024 * 1024,
+            max_chunk_failures: 3,
         }
     }
 }
@@ -294,8 +317,10 @@ pub enum ChunkEvent {
         /// The failure.
         error: TransportError,
     },
-    /// A newer volume appeared before the current one's End chunk; the
-    /// iterator moved on to it.
+    /// The iterator left a volume before its End chunk after delivering some
+    /// of its chunks: a newer volume appeared, or one of its chunks could
+    /// not be downloaded (the download error comes first; see the module
+    /// documentation).
     VolumeAbandoned {
         /// Site.
         site: String,
@@ -303,7 +328,7 @@ pub enum ChunkEvent {
         volume_id: u16,
         /// The abandoned volume's start time.
         volume_time: DateTime<Utc>,
-        /// Last chunk number taken from the abandoned volume.
+        /// Last chunk number delivered from the abandoned volume.
         last_chunk_id: u16,
         /// The volume id the iterator continues with.
         next_volume_id: u16,
@@ -399,9 +424,15 @@ struct Cursor {
     after_time: Option<DateTime<Utc>>,
     next_chunk_id: u16,
     last_key: Option<String>,
+    /// Number and key of the last chunk handed to the caller.
+    delivered: Option<(u16, String)>,
     deliver: bool,
     empty_polls: u32,
     failed_probes: u32,
+    /// Failed download rounds of the chunk at `next_chunk_id`; reset when a
+    /// chunk is delivered. While nonzero, a poll that does not advance means
+    /// the failed chunk is gone.
+    chunk_failures: u32,
 }
 
 impl Cursor {
@@ -412,9 +443,11 @@ impl Cursor {
             after_time,
             next_chunk_id: 1,
             last_key: None,
+            delivered: None,
             deliver,
             empty_polls: 0,
             failed_probes: 0,
+            chunk_failures: 0,
         }
     }
 
@@ -644,15 +677,68 @@ impl ChunkPlanner {
                 self.pending = Some(request);
             }
             _ => {
+                let kind = request.kind;
+                let too_large = error.kind == TransportErrorKind::TooLarge;
                 self.events.push_back(Err(ChunkIterError::Transport {
-                    kind: request.kind,
+                    kind,
                     url: request.url,
                     attempts,
                     error,
                 }));
+                if kind == FetchKind::Chunk {
+                    self.chunk_download_failed(too_large);
+                }
                 self.push_idle();
             }
         }
+    }
+
+    /// A chunk download failed for good. Go back to the failed chunk so the
+    /// next poll lists the volume again from there, or abandon the volume
+    /// when the chunk can never be taken.
+    fn chunk_download_failed(&mut self, too_large: bool) {
+        let Some(failed_chunk_id) = self.ready.front().map(|chunk| chunk.chunk_id) else {
+            return;
+        };
+        let max_failures = self.config.max_chunk_failures.max(1);
+        let Some(cursor) = self.cursor.as_mut() else {
+            return;
+        };
+        cursor.next_chunk_id = failed_chunk_id;
+        cursor.last_key = cursor.delivered.as_ref().map(|(_, key)| key.clone());
+        cursor.chunk_failures = cursor.chunk_failures.saturating_add(1);
+        let give_up = too_large || cursor.chunk_failures >= max_failures;
+        self.ready.clear();
+        self.caught_up = false;
+        self.phase = Phase::Poll;
+        if give_up {
+            self.abandon_volume();
+        }
+    }
+
+    /// Give up on the cursor's volume and continue with the next volume id,
+    /// taking only volumes newer than the abandoned one.
+    fn abandon_volume(&mut self) {
+        let Some(old) = self.cursor.take() else {
+            return;
+        };
+        let next_id = next_volume_id(old.volume_id);
+        if old.deliver
+            && let (Some(volume_time), Some((last_chunk_id, _))) = (old.volume_time, &old.delivered)
+        {
+            self.stats.volumes_abandoned += 1;
+            self.events.push_back(Ok(ChunkEvent::VolumeAbandoned {
+                site: self.site.clone(),
+                volume_id: old.volume_id,
+                volume_time,
+                last_chunk_id: *last_chunk_id,
+                next_volume_id: next_id,
+            }));
+        }
+        self.ready.clear();
+        self.caught_up = false;
+        self.cursor = Some(Cursor::new(next_id, old.reference_time(), true));
+        self.phase = Phase::Poll;
     }
 
     fn push_idle(&mut self) {
@@ -839,6 +925,13 @@ impl ChunkPlanner {
             self.push_idle();
             return;
         };
+        if cursor.chunk_failures > 0 {
+            // The relisting after a failed download no longer shows the
+            // failed chunk: it was purged or deleted, so the volume cannot be
+            // completed in order.
+            self.abandon_volume();
+            return;
+        }
         cursor.empty_polls += 1;
         if cursor.empty_polls < stall_polls {
             self.push_idle();
@@ -1015,6 +1108,10 @@ impl ChunkPlanner {
             };
         };
         self.stats.chunks += 1;
+        if let Some(cursor) = self.cursor.as_mut() {
+            cursor.delivered = Some((info.chunk_id, info.object.key.clone()));
+            cursor.chunk_failures = 0;
+        }
         if info.chunk_type == RealtimeChunkType::End && self.ready.is_empty() {
             self.stats.volumes_completed += 1;
             self.roll_over();

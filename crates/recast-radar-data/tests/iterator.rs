@@ -122,6 +122,7 @@ fn config_json(config: &ChunkIteratorConfig) -> Value {
         "jitter_seed": config.jitter_seed,
         "max_listing_bytes": config.max_listing_bytes,
         "max_chunk_bytes": config.max_chunk_bytes,
+        "max_chunk_failures": config.max_chunk_failures,
     })
 }
 
@@ -157,6 +158,12 @@ fn config_from_json(value: &Value) -> ChunkIteratorConfig {
         jitter_seed: value["jitter_seed"].as_u64(),
         max_listing_bytes: u64_at("max_listing_bytes") as usize,
         max_chunk_bytes: u64_at("max_chunk_bytes") as usize,
+        // Cassettes recorded before the field existed ran with the default.
+        max_chunk_failures: value["max_chunk_failures"]
+            .as_u64()
+            .map_or(ChunkIteratorConfig::default().max_chunk_failures, |n| {
+                n as u32
+            }),
     }
 }
 
@@ -435,6 +442,62 @@ impl<F: FnMut(Vec<u8>) -> Vec<u8>> ChunkTransport for Mutating<F> {
     }
 }
 
+/// What [`Scripted`] does instead of replaying the next recorded response.
+#[derive(Clone, Debug)]
+enum Injection {
+    /// Fail the fetch.
+    Fail(TransportError),
+    /// Serve the recorded response of request `recorded`. With `same_url`
+    /// the fetch must ask for that request's URL.
+    Serve { recorded: usize, same_url: bool },
+}
+
+/// Injections on top of a replay: the `n`-th fetch (0-based, counting
+/// injected ones) gets the injection instead of the next recorded response,
+/// which stays unconsumed.
+struct Scripted {
+    inner: Replay,
+    fetches: usize,
+    script: VecDeque<(usize, Injection)>,
+    injected: Vec<FetchRequest>,
+}
+
+impl Scripted {
+    fn new(cassette: &Cassette, script: Vec<(usize, Injection)>) -> Self {
+        Self {
+            inner: cassette.replay(),
+            fetches: 0,
+            script: script.into(),
+            injected: Vec::new(),
+        }
+    }
+}
+
+impl ChunkTransport for Scripted {
+    fn fetch(&mut self, request: &FetchRequest) -> Result<Vec<u8>, TransportError> {
+        let index = self.fetches;
+        self.fetches += 1;
+        if self.script.front().is_some_and(|(at, _)| *at == index)
+            && let Some((_, injection)) = self.script.pop_front()
+        {
+            self.injected.push(request.clone());
+            return match injection {
+                Injection::Fail(error) => Err(error),
+                Injection::Serve { recorded, same_url } => {
+                    let cassette = &self.inner.cassette;
+                    let recorded = &cassette.requests[recorded];
+                    if same_url {
+                        assert_eq!(request.url, recorded.url, "fetch {index}");
+                    }
+                    assert_eq!(request.kind, recorded.kind, "fetch {index}");
+                    Ok(cassette.body(recorded.response.as_ref().expect("recorded ok")))
+                }
+            };
+        }
+        self.inner.fetch(request)
+    }
+}
+
 fn take_events<T: ChunkTransport>(iter: &mut ChunkIterator<T>, count: usize) -> Vec<Event> {
     (0..count)
         .map(|_| iter.next().expect("the chunk iterator never ends"))
@@ -499,6 +562,8 @@ const CASSETTES: &[&str] = &[
     "phkm-live-join",
     "kmxx-offline",
     "tlas-next-volume-bytes",
+    "pabc-rollover-leftover",
+    "tlas-chunk-too-large",
 ];
 
 // ---------------------------------------------------------------------------
@@ -831,6 +896,185 @@ fn next_volume_join_downloads_real_chunk_bytes() {
     );
 }
 
+/// Volume times under one id in a listing, parsed independently of the
+/// crate: `YYYYMMDD-HHMMSS` from each key, sorted and deduplicated.
+fn listed_volume_times(xml: &str) -> Vec<String> {
+    let mut times: Vec<String> = listed_keys(xml)
+        .iter()
+        .map(|key| key.rsplit('/').next().expect("key name")[..15].to_owned())
+        .collect();
+    times.sort();
+    times.dedup();
+    times
+}
+
+/// PABC (Air Force WSR-88D, Bethel) restarts its volume numbering every few
+/// hours, so ids keep volumes from earlier cycles. Live `Volume(42)` follow:
+/// - id 42 held three volumes (2026-09-15, 2026-09-16 and the one in
+///   progress); the newest is followed;
+/// - after its End chunk, id 43 held only a complete two-day-old volume, which
+///   is skipped (it is not newer than volume 42);
+/// - the radar's new volume 43 then appears next to the leftover and is
+///   followed from its Start chunk.
+#[test]
+fn skips_an_older_cycle_left_under_the_next_volume_id() {
+    let (cassette, iter, events) = replay_blocking("pabc-rollover-leftover");
+    let requests = &cassette.requests;
+    let times_42 = listed_volume_times(cassette.listing_text(0));
+    assert_eq!(times_42.len(), 3, "{times_42:?}");
+    let newest_42 = times_42.last().expect("volume times");
+    let delivered = chunks(&events);
+    let first = delivered.first().expect("chunks");
+    assert!(
+        first
+            .info
+            .object
+            .key
+            .starts_with(&format!("PABC/42/{newest_42}-001-S"))
+    );
+
+    let end = delivered
+        .iter()
+        .position(|c| c.info.chunk_type == RealtimeChunkType::End)
+        .expect("End of volume 42");
+    for (index, chunk) in delivered[..=end].iter().enumerate() {
+        assert_eq!(usize::from(chunk.info.chunk_id), index + 1);
+        assert!(
+            chunk
+                .info
+                .object
+                .key
+                .starts_with(&format!("PABC/42/{newest_42}-"))
+        );
+    }
+
+    // The first listing of 43 right after the End chunk: one volume, older
+    // than volume 42, complete from Start to End.
+    let first_43 = requests
+        .iter()
+        .position(|r| r.url.ends_with("prefix=PABC%2F43%2F"))
+        .expect("listing of 43");
+    let leftover = listed_volume_times(cassette.listing_text(first_43));
+    assert_eq!(leftover.len(), 1);
+    assert!(leftover[0].as_str() < newest_42.as_str());
+    let leftover_keys = listed_keys(cassette.listing_text(first_43));
+    assert!(leftover_keys[0].ends_with("-001-S"));
+    assert!(leftover_keys.last().expect("keys").ends_with("-E"));
+
+    // The listing where the new volume 43 shows up next to the leftover.
+    let with_new = (first_43..requests.len())
+        .find(|index| listed_volume_times(cassette.listing_text(*index)).len() == 2)
+        .expect("new volume 43 listed");
+    let new_43 = listed_volume_times(cassette.listing_text(with_new))[1].clone();
+    assert!(new_43.as_str() > newest_42.as_str());
+    // Until then only Idle events: nothing of the leftover was delivered.
+    let after_end = &delivered[end + 1..];
+    assert_eq!(after_end.len(), 3);
+    for (index, chunk) in after_end.iter().enumerate() {
+        assert_eq!(chunk.info.volume_id, 43);
+        assert_eq!(usize::from(chunk.info.chunk_id), index + 1);
+        assert!(
+            chunk
+                .info
+                .object
+                .key
+                .starts_with(&format!("PABC/43/{new_43}-"))
+        );
+    }
+    assert!(
+        delivered
+            .iter()
+            .all(|c| !c.info.object.key.contains(&leftover[0]))
+    );
+    assert!(
+        with_new > first_43,
+        "at least one poll saw only the leftover"
+    );
+    assert_eq!(iter.stats().volumes_completed, 1);
+    assert_eq!(iter.stats().volumes_abandoned, 0);
+}
+
+/// Historical TLAS walk from volume 998 with `max_chunk_bytes` (4096) below
+/// the size of every Intermediate chunk (recorded live: the HTTPS transport
+/// refused each body from its Content-Length). Each volume delivers its
+/// Start chunk, then the first Intermediate chunk fails once, without retry,
+/// and the volume is abandoned for the next id (998 -> 999 -> 1).
+#[test]
+fn chunk_larger_than_the_limit_abandons_its_volume() {
+    let (cassette, iter, events) = replay_blocking("tlas-chunk-too-large");
+    let config = cassette.config();
+    let summaries: Vec<Value> = events.iter().map(summarize).collect();
+    let kinds: Vec<&str> = summaries
+        .iter()
+        .map(|s| s["event"].as_str().expect("event"))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "chunk",
+            "error",
+            "abandoned",
+            "idle",
+            "chunk",
+            "error",
+            "abandoned"
+        ]
+    );
+    for (volume_id, next_volume_id, listing) in [(998, 999, 0), (999, 1, 3)] {
+        let keys = listed_keys(cassette.listing_text(listing));
+        assert!(keys[0].ends_with("-001-S") && keys[1].ends_with("-002-I"));
+        // Sizes from the recorded XML: the Start chunk fits, chunk 2 does not.
+        let xml = cassette.listing_text(listing);
+        let sizes: Vec<usize> = xml
+            .split("<Size>")
+            .skip(1)
+            .map(|rest| {
+                rest.split("</Size>")
+                    .next()
+                    .expect("Size")
+                    .parse()
+                    .expect("size")
+            })
+            .collect();
+        assert!(sizes[0] <= config.max_chunk_bytes && sizes[1] > config.max_chunk_bytes);
+        let abandoned = summaries
+            .iter()
+            .find(|s| s["event"] == "abandoned" && s["volume_id"] == volume_id)
+            .expect("abandoned");
+        assert_eq!(abandoned["last_chunk_id"], 1);
+        assert_eq!(abandoned["next_volume_id"], next_volume_id);
+    }
+    let errors: Vec<(u32, TransportErrorKind, &str)> = events
+        .iter()
+        .filter_map(|e| match e {
+            Err(ChunkIterError::Transport {
+                attempts,
+                error,
+                url,
+                kind: FetchKind::Chunk,
+            }) => Some((*attempts, error.kind, url.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().all(|(attempts, kind, url)| *attempts == 1
+        && *kind == TransportErrorKind::TooLarge
+        && url.ends_with("-002-I")));
+    // One GET per chunk: nothing repeated.
+    let chunk_urls: Vec<&str> = cassette
+        .requests
+        .iter()
+        .filter(|r| r.kind == FetchKind::Chunk)
+        .map(|r| r.url.as_str())
+        .collect();
+    let mut unique = chunk_urls.clone();
+    unique.dedup();
+    assert_eq!(chunk_urls, unique);
+    assert_eq!(iter.stats().volumes_abandoned, 2);
+    let position = iter.planner().position().expect("position");
+    assert_eq!((position.volume_id, position.next_chunk_id), (1, 1));
+}
+
 // ---------------------------------------------------------------------------
 // Retries and failures on top of real responses
 // ---------------------------------------------------------------------------
@@ -964,37 +1208,222 @@ fn exhausted_retries_report_an_error_then_start_over() {
     assert_eq!(iter.stats().retries, 2);
 }
 
+/// Request indices in `tlas-next-volume-bytes`: 17 lists volume 3 (Start
+/// chunk only), 18 downloads the Start chunk, 19 lists after it (chunks 2-4),
+/// 20 and 21 download chunks 2 and 3.
+const TLAS_LIST_3_START: usize = 17;
+const TLAS_LIST_3_AFTER_START: usize = 19;
+const TLAS_GET_CHUNK_2: usize = 20;
+/// Request 16 listed volume 3 before it started: S3's real answer to the
+/// same prefix with no keys.
+const TLAS_LIST_3_EMPTY: usize = 16;
+
+/// A chunk download that fails for good (a 404, or 503s past the retry
+/// budget) is not repeated blindly: the planner lists the volume again from
+/// the failed chunk (the recorded answer to that URL still shows it) and
+/// then downloads it.
 #[test]
-fn not_found_is_not_retried() {
+fn failed_chunk_download_relists_the_volume_then_fetches_again() {
     let not_found = TransportError::new(TransportErrorKind::Status(404), "injected NoSuchKey");
-    let (cassette, _, events) = replay_with_faults("tlas-next-volume-bytes", 4, vec![], 0);
-    let chunk_fetch = cassette
-        .requests
-        .iter()
-        .position(|r| r.kind == FetchKind::Chunk)
-        .expect("a chunk request");
-    let (cassette, iter, faulted) = replay_with_faults(
-        "tlas-next-volume-bytes",
-        4,
-        vec![(chunk_fetch, not_found)],
-        2,
-    );
-    assert!(
-        faulted
+    let slow_down = TransportError::new(TransportErrorKind::Status(503), "injected SlowDown");
+    for (max_attempts, failures) in [
+        (4, vec![not_found]),
+        (2, vec![slow_down.clone(), slow_down]),
+    ] {
+        let cassette = Cassette::load("tlas-next-volume-bytes");
+        assert_eq!(
+            cassette.requests[TLAS_GET_CHUNK_2].url,
+            "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/TLAS/3/20260917-015242-002-I"
+        );
+        let status = failures[0].kind;
+        let mut script: Vec<(usize, Injection)> = failures
             .iter()
-            .all(|e| !matches!(e, Ok(ChunkEvent::Retry { .. })))
+            .enumerate()
+            .map(|(offset, error)| (TLAS_GET_CHUNK_2 + offset, Injection::Fail(error.clone())))
+            .collect();
+        script.push((
+            TLAS_GET_CHUNK_2 + failures.len(),
+            Injection::Serve {
+                recorded: TLAS_LIST_3_AFTER_START,
+                same_url: true,
+            },
+        ));
+        let transport = Scripted::new(&cassette, script);
+        let mut iter = ChunkIterator::new(
+            cassette.site(),
+            fault_config(&cassette, max_attempts),
+            transport,
+        );
+        let extra = failures.len() + 1; // Retry events, the error and its Idle
+        let events = take_events(&mut iter, cassette.events.len() + extra);
+        let retries = events
+            .iter()
+            .filter(|e| matches!(e, Ok(ChunkEvent::Retry { .. })))
+            .count();
+        assert_eq!(retries, failures.len() - 1, "{status:?}");
+        let error = events
+            .iter()
+            .find_map(|e| match e {
+                Err(ChunkIterError::Transport {
+                    attempts,
+                    kind,
+                    error,
+                    ..
+                }) => Some((*attempts, *kind, error.kind)),
+                _ => None,
+            })
+            .expect("error");
+        assert_eq!(error, (failures.len() as u32, FetchKind::Chunk, status));
+        assert_eq!(without_fault_events(&events), cassette.events, "{status:?}");
+        let transport = iter.transport();
+        let relist = transport.injected.last().expect("relisting");
+        assert_eq!(relist.kind, FetchKind::ChunkListing);
+        assert!(
+            relist
+                .url
+                .ends_with("&start-after=TLAS%2F3%2F20260917-015242-001-S")
+        );
+        assert!(transport.inner.exhausted());
+        let stats = iter.stats();
+        assert_eq!(
+            stats.requests,
+            cassette.requests.len() as u64 + extra as u64
+        );
+        assert_eq!(stats.volumes_abandoned, 0);
+    }
+}
+
+/// Drive a planner until it asks for a request `stop` accepts, answering
+/// the others with `answer`. Returns the events and the stopping request.
+fn drive_until(
+    planner: &mut ChunkPlanner,
+    mut answer: impl FnMut(&FetchRequest) -> Option<Result<Vec<u8>, TransportError>>,
+    max_steps: usize,
+) -> (Vec<Event>, Vec<FetchRequest>, Option<FetchRequest>) {
+    let mut events = Vec::new();
+    let mut fetched = Vec::new();
+    for _ in 0..max_steps {
+        match planner.next_step() {
+            PlannerStep::Event(event) => events.push(event),
+            PlannerStep::Fetch(request) => match answer(&request) {
+                Some(result) => {
+                    fetched.push(request);
+                    planner.complete(result);
+                }
+                None => return (events, fetched, Some(request)),
+            },
+        }
+    }
+    (events, fetched, None)
+}
+
+/// The chunk is gone when the volume is listed again (the relisting gets
+/// S3's real empty answer for volume 3's prefix): the volume is abandoned
+/// right away and the next request lists volume 4.
+#[test]
+fn purged_chunk_abandons_the_volume() {
+    let cassette = Cassette::load("tlas-next-volume-bytes");
+    let not_found = TransportError::new(TransportErrorKind::Status(404), "injected NoSuchKey");
+    let mut transport = Scripted::new(
+        &cassette,
+        vec![
+            (TLAS_GET_CHUNK_2, Injection::Fail(not_found)),
+            (
+                TLAS_GET_CHUNK_2 + 1,
+                Injection::Serve {
+                    recorded: TLAS_LIST_3_EMPTY,
+                    same_url: false,
+                },
+            ),
+        ],
     );
-    let error = faulted
+    let mut planner = ChunkPlanner::new(cassette.site(), fault_config(&cassette, 4));
+    let (events, _, stop) = drive_until(
+        &mut planner,
+        |request| (!request.url.contains("prefix=TLAS%2F4%2F")).then(|| transport.fetch(request)),
+        500,
+    );
+    let stop = stop.expect("listing of volume 4");
+    assert_eq!(
+        stop.url,
+        "https://unidata-nexrad-level2-chunks.s3.amazonaws.com/?list-type=2&prefix=TLAS%2F4%2F"
+    );
+    let summaries: Vec<Value> = events.iter().map(summarize).collect();
+    // Start chunk, the pause before polling for chunk 2, the 404 and its
+    // pause, then the abandonment right after the relisting.
+    let tail: Vec<&str> = summaries[summaries.len() - 5..]
         .iter()
-        .find_map(|e| match e {
-            Err(ChunkIterError::Transport { attempts, kind, .. }) => Some((*attempts, *kind)),
-            _ => None,
-        })
-        .expect("error");
-    assert_eq!(error, (1, FetchKind::Chunk));
-    assert_eq!(without_fault_events(&faulted), cassette.events);
-    assert_eq!(chunks(&faulted), chunks(&events));
-    assert!(iter.transport().inner.exhausted());
+        .map(|s| s["event"].as_str().expect("event"))
+        .collect();
+    assert_eq!(tail, ["chunk", "idle", "error", "idle", "abandoned"]);
+    let abandoned = summaries.last().expect("abandoned");
+    assert_eq!(abandoned["volume_id"], 3);
+    assert_eq!(abandoned["volume_time"], "2026-09-17T01:52:42+00:00");
+    assert_eq!(abandoned["last_chunk_id"], 1);
+    assert_eq!(abandoned["next_volume_id"], 4);
+    // The relisting started after the delivered Start chunk.
+    assert!(
+        transport.injected[1]
+            .url
+            .ends_with("&start-after=TLAS%2F3%2F20260917-015242-001-S")
+    );
+    assert_eq!(planner.stats().volumes_abandoned, 1);
+    let position = planner.position().expect("position");
+    assert_eq!((position.volume_id, position.next_chunk_id), (4, 1));
+}
+
+/// The verifier's reproduction of a stuck iterator: `Volume(3)` with
+/// downloads, every listing of volume 3 answered with its real recorded
+/// listing (Start chunk listed), every chunk GET failing with 404. The
+/// planner gives up after `max_chunk_failures` rounds and moves to volume 4.
+#[test]
+fn chunk_that_keeps_failing_is_given_up_after_max_chunk_failures() {
+    let cassette = Cassette::load("tlas-next-volume-bytes");
+    let listing_3 = cassette.requests[TLAS_LIST_3_START].url.clone();
+    let body_3 = cassette.listing_text(TLAS_LIST_3_START).as_bytes().to_vec();
+    for max_chunk_failures in [0, 1, 3] {
+        let config = ChunkIteratorConfig {
+            join: JoinMode::Volume(3),
+            download: true,
+            stall_polls: 1,
+            max_chunk_failures,
+            ..fault_config(&cassette, 4)
+        };
+        let mut planner = ChunkPlanner::new("TLAS", config);
+        let (events, fetched, stop) = drive_until(
+            &mut planner,
+            |request| {
+                if request.url == listing_3 {
+                    Some(Ok(body_3.clone()))
+                } else if request.kind == FetchKind::Chunk {
+                    Some(Err(TransportError::new(
+                        TransportErrorKind::Status(404),
+                        "injected NoSuchKey",
+                    )))
+                } else {
+                    None
+                }
+            },
+            2000,
+        );
+        let rounds = max_chunk_failures.max(1) as usize;
+        let stop = stop.expect("the planner moved on");
+        assert!(stop.url.ends_with("prefix=TLAS%2F4%2F"), "{}", stop.url);
+        let gets = fetched
+            .iter()
+            .filter(|r| r.kind == FetchKind::Chunk)
+            .count();
+        let listings = fetched.len() - gets;
+        assert_eq!((gets, listings), (rounds, rounds), "{max_chunk_failures}");
+        let errors = events.iter().filter(|e| e.is_err()).count();
+        assert_eq!(errors, rounds);
+        // Nothing was delivered, so there is no VolumeAbandoned event.
+        assert!(events.iter().all(|e| !matches!(
+            e,
+            Ok(ChunkEvent::VolumeAbandoned { .. } | ChunkEvent::Chunk(_))
+        )));
+        assert_eq!(planner.position().map(|p| p.volume_id), Some(4));
+    }
 }
 
 #[test]
@@ -1314,6 +1743,16 @@ fn capture_cassette() {
         probe_ahead: parse("RECAST_CAPTURE_PROBE_AHEAD", "2") as u16,
         rediscover_every: parse("RECAST_CAPTURE_REDISCOVER_EVERY", "5") as u32,
         jitter_seed: Some(parse("RECAST_CAPTURE_SEED", "1")),
+        max_chunk_bytes: parse(
+            "RECAST_CAPTURE_MAX_CHUNK_BYTES",
+            &ChunkIteratorConfig::default().max_chunk_bytes.to_string(),
+        ) as usize,
+        max_chunk_failures: parse(
+            "RECAST_CAPTURE_MAX_CHUNK_FAILURES",
+            &ChunkIteratorConfig::default()
+                .max_chunk_failures
+                .to_string(),
+        ) as u32,
         ..ChunkIteratorConfig::default()
     };
     let stop = env_or("RECAST_CAPTURE_STOP", "events=20");
@@ -1345,6 +1784,7 @@ fn capture_cassette() {
     let mut iter = ChunkIterator::new(&site, config, recorder);
     let (mut events, mut chunk_count, mut completed, mut idles, mut after_rollover) =
         (0, 0, 0, 0, 0);
+    let (mut abandoned, mut errors) = (0, 0);
     let mut first_volume = None;
     let reason = loop {
         let event = iter.next().expect("never ends");
@@ -1372,6 +1812,8 @@ fn capture_cassette() {
                 std::thread::sleep(*poll_after);
             }
             Ok(ChunkEvent::Retry { after, .. }) => std::thread::sleep(*after),
+            Ok(ChunkEvent::VolumeAbandoned { .. }) => abandoned += 1,
+            Err(_) => errors += 1,
             _ => {}
         }
         let reached = stop.iter().find(|(key, limit)| {
@@ -1381,6 +1823,8 @@ fn capture_cassette() {
                 "completed" => completed,
                 "idles" => idles,
                 "chunks_after_rollover" => after_rollover,
+                "abandoned" => abandoned,
+                "errors" => errors,
                 other => panic!("unknown stop condition {other}"),
             };
             value >= *limit

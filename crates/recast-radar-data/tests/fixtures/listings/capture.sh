@@ -10,7 +10,9 @@
 #   - one line per event the iterator produced (with wall-clock time),
 #   - an end line with the counters.
 # The capture sleeps for real on Idle/Retry, so live scenarios take minutes.
-# A capture refuses to write more than 3 chunk files.
+# A capture refuses to write more than 3 chunk files. Stop conditions
+# (RECAST_CAPTURE_STOP, comma-separated key=value): events, chunks, completed,
+# idles, chunks_after_rollover, abandoned, errors.
 #
 # Real-time volume ids cycle 1..=999 and volumes are purged after about two
 # days, so the historical scenarios (volume:N joins) only work while those
@@ -74,6 +76,19 @@ scenario() {
             RECAST_CAPTURE_STOP=chunks=3 RECAST_CAPTURE_MINUTES=15 \
             RECAST_CAPTURE_NOTE="live NextVolume join downloading three chunks"
         ;;
+    # Live Volume(N) follow at PABC (Bethel, Alaska), which restarts its volume
+    # numbering every few hours: N and N+1 still hold volumes of earlier
+    # cycles. Pick N as the volume in progress whose successor id holds only
+    # an older volume (captured 2026-09-17 02:44Z with N = 42).
+    pabc-rollover-leftover)
+        capture "$1" RECAST_CAPTURE_SITE=PABC RECAST_CAPTURE_JOIN=volume:42             RECAST_CAPTURE_DOWNLOAD=0 RECAST_CAPTURE_POLL_MS=5000             RECAST_CAPTURE_STOP=chunks_after_rollover=3 RECAST_CAPTURE_MINUTES=15             RECAST_CAPTURE_NOTE="live follow into a volume id that still holds an older cycle's volume"
+        ;;
+    # Historical TLAS walk with downloads and max_chunk_bytes below every
+    # Intermediate chunk: each volume delivers its Start chunk and is then
+    # abandoned (captured 2026-09-17 02:49Z; historical).
+    tlas-chunk-too-large)
+        capture "$1" RECAST_CAPTURE_SITE=TLAS RECAST_CAPTURE_JOIN=volume:998             RECAST_CAPTURE_DOWNLOAD=1 RECAST_CAPTURE_MAX_CHUNK_BYTES=4096             RECAST_CAPTURE_STOP=abandoned=2 RECAST_CAPTURE_MINUTES=5             RECAST_CAPTURE_NOTE="historical walk with max_chunk_bytes below the Intermediate chunk size: each volume is abandoned after its Start chunk"
+        ;;
     *)
         echo "unknown scenario $1" >&2
         exit 2
@@ -82,7 +97,7 @@ scenario() {
 }
 
 if [ $# -eq 0 ]; then
-    set -- tlas-999-wrap tmco-710-abandoned phkm-live-join kmxx-offline tlas-next-volume-bytes
+    set -- tlas-999-wrap tmco-710-abandoned phkm-live-join kmxx-offline tlas-next-volume-bytes         pabc-rollover-leftover tlas-chunk-too-large
 fi
 for name in "$@"; do
     scenario "$name"
