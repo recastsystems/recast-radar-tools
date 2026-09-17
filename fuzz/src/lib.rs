@@ -19,6 +19,12 @@ use recast_radar_io_jma as jma_io;
 use recast_radar_io_nexrad as nexrad;
 use recast_radar_io_odim as odim_io;
 
+/// Output cap for the `bzip2` harness: above the 16 MiB per-record limit the
+/// Level II decoder uses, so a legitimate record always decodes fully, and
+/// far below what a hostile stream of run-only blocks (about 46 MB per block)
+/// could claim.
+const BZIP2_MAX_OUTPUT: usize = 64 << 20;
+
 /// A fuzz harness: decode `data`; `true` when any entry point returned `Ok`.
 pub type Harness = fn(&[u8]) -> bool;
 
@@ -30,6 +36,7 @@ pub const TARGETS: &[(&str, Harness)] = &[
     ("cfradial", cfradial),
     ("dorade", dorade),
     ("jma", jma),
+    ("bzip2", bzip2),
 ];
 
 /// Look up a harness by target name.
@@ -57,6 +64,21 @@ pub fn level2_volume(data: &[u8]) -> bool {
             matches!(gzip, Ok(Some(_))) || matches!(bzip, Ok(Some(_)))
         }
     }
+}
+
+/// The bzip2 stream decoder (`recast-radar-bzip2`): the input through
+/// `decode_stream_into`, then the input paired with its own first half
+/// through `decode_two_into`, so the paired path sees every input next to a
+/// truncated stream. The output limit keeps memory bounded for any input.
+pub fn bzip2(data: &[u8]) -> bool {
+    let mut decoder = recast_radar_bzip2::Decoder::new();
+    decoder.set_max_output(BZIP2_MAX_OUTPUT);
+    let mut out = Vec::new();
+    let single = decoder.decode_stream_into(data, &mut out).is_ok();
+    let (mut out_a, mut out_b) = (Vec::new(), Vec::new());
+    let (paired, truncated) =
+        decoder.decode_two_into(data, &mut out_a, &data[..data.len() / 2], &mut out_b);
+    single || paired.is_ok() || truncated.is_ok()
 }
 
 /// The format router (`recast-radar-io`): zip/gzip unwrapping, magic-byte

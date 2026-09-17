@@ -44,12 +44,10 @@ pub mod vcp;
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::io::{Cursor, Read};
+use std::io::Read;
 
-use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, Utc};
-use flate2::read::GzDecoder;
-use recast_radar_core::bounded_read::MAX_DECODED_RADAR_BYTES;
+use recast_radar_core::bounded_read::{self, MAX_DECODED_RADAR_BYTES};
 
 use crate::{
     CONTROL_WORD_LEN, MESSAGE_HEADER_LEN, MessageHeader, NexradError, RECORD_BYTES, Result,
@@ -608,12 +606,8 @@ pub fn volume_header_len(bytes: &[u8]) -> usize {
 /// volume header), and uncompressed records. Output is bounded by
 /// [`MAX_DECODED_RADAR_BYTES`].
 pub fn record_bytes(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
-    let unwrapped = match whole_file_decoder(raw) {
-        Some(decoder) => Cow::Owned(crate::read_to_end_limited(
-            decoder,
-            MAX_DECODED_RADAR_BYTES,
-            "whole-file compressed Level II payload",
-        )?),
+    let unwrapped = match expand_whole_file(raw, WHOLE_FILE_PAYLOAD)? {
+        Some(expanded) => Cow::Owned(expanded),
         None => Cow::Borrowed(raw),
     };
     let records = &unwrapped[volume_header_len(&unwrapped)..];
@@ -627,8 +621,9 @@ pub fn record_bytes(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
         });
     };
     let mut output = Vec::new();
+    let mut decoded = Vec::new();
     for block in blocks {
-        let decoded = crate::decompress_bzip_block(block)?;
+        crate::decompress_bzip_block_into(block, &mut decoded)?;
         if output.len() + decoded.len() > MAX_DECODED_RADAR_BYTES {
             return Err(NexradError::Compression(format!(
                 "LDM records expand beyond the {MAX_DECODED_RADAR_BYTES}-byte limit"
@@ -650,28 +645,23 @@ pub fn record_bytes(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
 /// inputs of raw records are only expanded as far as the metadata record.
 pub fn metadata_record(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
     let metadata_len = METADATA_RECORD_FRAMES * RECORD_BYTES;
-    if let Some(decoder) = whole_file_decoder(raw) {
-        let prefix_len = VOLUME_HEADER_LEN + metadata_len;
-        let mut prefix = crate::read_to_end_limited(
-            decoder.take(prefix_len as u64),
-            prefix_len,
-            "whole-file compressed Level II metadata record",
-        )?;
-        let header_len = volume_header_len(&prefix);
-        if !starts_with_ldm_record(&prefix[header_len..]) {
-            prefix.drain(..header_len);
-            prefix.truncate(metadata_len);
-            return Ok(Cow::Owned(prefix));
+    if let Some(prefix) = expand_whole_file_prefix(raw, VOLUME_HEADER_LEN + metadata_len)? {
+        let mut expanded = prefix.bytes;
+        let header_len = volume_header_len(&expanded);
+        if !starts_with_ldm_record(&expanded[header_len..]) {
+            expanded.drain(..header_len);
+            expanded.truncate(metadata_len);
+            return Ok(Cow::Owned(expanded));
         }
         // LDM records inside a whole-file wrapper: the first record may end
         // past the prefix, so expand the wrapper.
-        let unwrapped = crate::read_to_end_limited(
-            whole_file_decoder(raw).ok_or_else(|| {
+        let unwrapped = if prefix.complete {
+            expanded
+        } else {
+            expand_whole_file(raw, WHOLE_FILE_PAYLOAD)?.ok_or_else(|| {
                 NexradError::Compression("whole-file wrapper disappeared".to_owned())
-            })?,
-            MAX_DECODED_RADAR_BYTES,
-            "whole-file compressed Level II payload",
-        )?;
+            })?
+        };
         let records = &unwrapped[volume_header_len(&unwrapped)..];
         return Ok(Cow::Owned(first_ldm_record(records)?));
     }
@@ -685,19 +675,59 @@ pub fn metadata_record(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
 
 /// Decompress the first of the LDM records in `records`.
 fn first_ldm_record(records: &[u8]) -> Result<Vec<u8>> {
-    match ldm_blocks(records)?.as_deref() {
-        Some([first, ..]) => crate::decompress_bzip_block(first),
-        _ => Ok(Vec::new()),
+    let mut decoded = Vec::new();
+    if let Some([first, ..]) = ldm_blocks(records)?.as_deref() {
+        crate::decompress_bzip_block_into(first, &mut decoded)?;
+    }
+    Ok(decoded)
+}
+
+const WHOLE_FILE_PAYLOAD: &str = "whole-file compressed Level II payload";
+const WHOLE_FILE_METADATA: &str = "whole-file compressed Level II metadata record";
+
+/// Expand a whole-file gzip (every member) or bzip2 wrapper around `raw`,
+/// bounded by [`MAX_DECODED_RADAR_BYTES`]; `None` when `raw` has neither.
+fn expand_whole_file(raw: &[u8], context: &'static str) -> Result<Option<Vec<u8>>> {
+    if raw.starts_with(&[0x1f, 0x8b]) {
+        crate::gzip::inflate_gzip_members_limited(raw, MAX_DECODED_RADAR_BYTES, context)
+            .map(Some)
+            .map_err(NexradError::Compression)
+    } else if raw.starts_with(b"BZh") {
+        let mut expanded = Vec::new();
+        crate::decompress_bzip2_stream_into(raw, &mut expanded, MAX_DECODED_RADAR_BYTES, context)?;
+        Ok(Some(expanded))
+    } else {
+        Ok(None)
     }
 }
 
-fn whole_file_decoder(raw: &[u8]) -> Option<Box<dyn Read + '_>> {
+/// The start of a whole-file wrapper's expansion.
+struct WholeFilePrefix {
+    bytes: Vec<u8>,
+    /// `bytes` is the complete expansion, not just the requested prefix.
+    complete: bool,
+}
+
+/// The first `prefix_len` bytes of a whole-file wrapper's expansion, or
+/// `None` when `raw` has no wrapper. gzip is inflated only that far; bzip2
+/// has no streaming decoder here, so the whole stream is expanded (bounded
+/// by [`MAX_DECODED_RADAR_BYTES`]) and returned as `complete`.
+fn expand_whole_file_prefix(raw: &[u8], prefix_len: usize) -> Result<Option<WholeFilePrefix>> {
     if raw.starts_with(&[0x1f, 0x8b]) {
-        Some(Box::new(GzDecoder::new(raw)))
-    } else if raw.starts_with(b"BZh") {
-        Some(Box::new(BzDecoder::new(Cursor::new(raw))))
+        let reader = crate::gzip::MultiGzReader::new(raw).take(prefix_len as u64);
+        let bytes = bounded_read::read_to_end_limited(reader, prefix_len, WHOLE_FILE_METADATA)
+            .map_err(NexradError::Compression)?;
+        Ok(Some(WholeFilePrefix {
+            bytes,
+            complete: false,
+        }))
     } else {
-        None
+        Ok(
+            expand_whole_file(raw, WHOLE_FILE_METADATA)?.map(|bytes| WholeFilePrefix {
+                bytes,
+                complete: true,
+            }),
+        )
     }
 }
 

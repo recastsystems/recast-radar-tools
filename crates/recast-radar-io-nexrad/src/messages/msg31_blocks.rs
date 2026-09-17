@@ -41,11 +41,10 @@
 
 use std::borrow::Cow;
 use std::fmt;
-use std::io::Cursor;
 
-use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, Utc};
 use flate2::read::ZlibDecoder;
+use recast_radar_core::bounded_read;
 use recast_radar_core::{MomentType, RadialStatus};
 
 use super::MessageBody;
@@ -203,16 +202,22 @@ fn inflate_radial(body: &[u8], header: &DataHeaderBlock) -> Result<Vec<u8>> {
     let compressed = &body[header_len..];
     let limit = radial_len - header_len;
     let inflated = match header.compression {
-        CompressionIndicator::Bzip2 => crate::read_to_end_limited(
-            BzDecoder::new(Cursor::new(compressed)),
-            limit,
-            "BZIP2-compressed message 31 radial",
-        )?,
-        _ => crate::read_to_end_limited(
+        CompressionIndicator::Bzip2 => {
+            let mut inflated = Vec::new();
+            crate::decompress_bzip2_stream_into(
+                compressed,
+                &mut inflated,
+                limit,
+                "BZIP2-compressed message 31 radial",
+            )?;
+            inflated
+        }
+        _ => bounded_read::read_to_end_limited(
             ZlibDecoder::new(compressed),
             limit,
             "zlib-compressed message 31 radial",
-        )?,
+        )
+        .map_err(NexradError::Compression)?,
     };
     let mut radial = Vec::with_capacity(header_len + inflated.len());
     radial.extend_from_slice(&body[..header_len]);
