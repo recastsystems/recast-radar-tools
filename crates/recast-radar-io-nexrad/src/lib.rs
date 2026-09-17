@@ -8,9 +8,11 @@
 //! `-io-cfradial`, `-io-dorade`, `-io-jma`); `recast-radar-io` routes byte
 //! buffers of unknown format to the right decoder. [`level3_vwp`] holds the
 //! Level III VAD Wind Profile decoder until the full Level III crate
-//! subsumes it.
+//! subsumes it. [`messages`] walks the Level II message stream and decodes
+//! the non-radial messages.
 
 pub mod level3_vwp;
+pub mod messages;
 
 use std::cell::UnsafeCell;
 use std::collections::btree_map::Entry;
