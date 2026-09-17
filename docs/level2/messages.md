@@ -7,6 +7,36 @@ Operations Center.
 A decoder is **verified** only when tests check it against real files. A decoder written from the ICD with
 no real sample in the corpus is marked **no real sample** and is not claimed as verified.
 
+## Summary
+
+"Verified against" names the independent source each test compares with: **MetPy** (1.7.1 `Level2File`) and
+**Py-ART** (2.2.5 `NEXRADLevel2File`) golden files written by `tools/level2_golden.py`, or **hex**: values
+read from the file bytes at documented offsets, quoted in the tests or read with a separate Python script.
+The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crates/recast-radar-io-nexrad/tests/`.
+
+| Type | Module | Struct (`MessageBody` variant) | Verified against |
+|---|---|---|---|
+| 1 | `lib.rs` (volume decoder) | radials of `RadarVolume`; walker: `Unparsed` | Py-ART: rays per elevation in 4 files, 1991-2005 (`volume_metadata.rs`) |
+| 2 | `rda_status.rs` | `RdaStatus` (`Orda`/`Legacy`) (`RdaStatus`) | MetPy, 27 files (`messages_status.rs`); hex for halfwords 26 and 59 |
+| 3 | `performance.rs` | `PerformanceMaintenance` (`Performance`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 21 Build 24.0 halfwords MetPy lacks. Legacy layout: not decoded |
+| 4, 10 | `console.rs` | `ConsoleMessage` (`Console`) | **no real sample** |
+| 5 | `vcp.rs` | `VolumeCoveragePattern` (`Vcp`) | MetPy, 22 metadata records (`messages_vcp.rs`); Py-ART pattern and cut angles, 22 sources (`volume_metadata.rs`) |
+| 6 | `control.rs` | `RdaControlCommands` (`ControlCommands`) | **no real sample** |
+| 7 | `vcp.rs` | `VolumeCoveragePattern` (`Vcp`) | **no real sample** (a relabelled message 5 checks the dispatch only) |
+| 8 | `clutter_censor.rs` | `ClutterCensorZones` (`ClutterCensorZones`) | **no real sample** |
+| 9 | `request.rs` | `RequestForData` (`RequestForData`) | **no real sample** |
+| 11, 12 | `loopback.rs` | `LoopbackTest` (`Loopback`) | **no real sample** |
+| 13 | `bypass_map.rs` | `ClutterFilterBypassMap` (`BypassMap`) | MetPy, 9 files (time, counts, radial 0); hex for other radials (`messages_clutter.rs`) |
+| 15 | `clutter_filter_map.rs` | `ClutterFilterMap` (`ClutterFilterMap`) | MetPy, 20 files, every range zone (`messages_clutter.rs`) |
+| 18 | `adaptation.rs` | `RdaAdaptationData` (`Adaptation`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 49 Build 24.0 offsets MetPy lacks. Legacy layout: not decoded |
+| 29 | none | `Unparsed` | framing only, against `tools/level2_message_scan.py` |
+| 31 | `msg31_blocks.rs` | `DigitalRadarDataGeneric` (`DigitalRadarDataGeneric`) | MetPy, 13 volumes and the KIWA chunks (`messages_msg31.rs`); hex (one radial); Py-ART VOL/ELV/RAD of each elevation's first ray, 22 sources (`volume_metadata.rs`). Compressed radials: **no real sample** |
+| 32 | `prf.rs` | `RdaPrfData` (`Prf`) | hex, 3 volumes; PRFs checked against MetPy's message 31 unambiguous ranges (no reader decodes message 32) |
+| 33 | `rda_log.rs` | `RdaLogData` (`RdaLog`) | **no real sample** |
+
+`decode_volume_with_metadata` (below) collects messages 2, 3, 5/7, 8, 13, 15, 18 and 32 and the per-sweep
+message 31 constant blocks into `NexradMetadata`.
+
 ## Framing and reassembly
 
 `messages::RawMessages` walks decompressed record bytes; `messages::MessageWalker` also decodes the bodies.
@@ -39,10 +69,70 @@ Quirks found in the real corpus:
 - **KTLX 2003-05-08.** The first record has message type 202, which the ICD does not define. It is yielded
   unparsed.
 
+## Volume with metadata: `decode_volume_with_metadata`
+
+`decode_volume_with_metadata(bytes) -> Result<NexradVolume>` (`src/metadata.rs`) returns
+`NexradVolume { volume, metadata }`. `volume` is the `RadarVolume` that `decode_volume_from_bytes` returns for the
+same bytes, with the same errors. `metadata` is a `NexradMetadata`:
+
+| Field | Type | Source |
+|---|---|---|
+| `rda_status` | `Option<RdaStatus>` | message 2 |
+| `performance` | `Option<Box<PerformanceMaintenance>>` | message 3 |
+| `vcp` | `Option<VolumeCoveragePattern>` | message 5 (or 7) |
+| `adaptation` | `Option<Box<RdaAdaptationData>>` | message 18 |
+| `clutter_filter_map` | `Option<ClutterFilterMap>` | message 15 |
+| `bypass_map` | `Option<ClutterFilterBypassMap>` | message 13 |
+| `clutter_censor_zones` | `Option<ClutterCensorZones>` | message 8 |
+| `prf` | `Option<RdaPrfData>` | message 32 |
+| `per_sweep_elevation_data` | `Option<Vec<SweepElevationData>>` | message 31 VOL, ELV and RAD blocks of each cut's first radial |
+| `build` | `Option<RdaBuild>` | `RdaStatus::rda_build` of the message 2 above (`None` for the legacy RDA) |
+| `errors` | `Vec<String>` | problems met while reading the metadata |
+
+- Metadata messages come from the metadata record only (`messages::metadata_record`), never from the data
+  records. For each field, the first message of that type that decodes is kept. A message that cannot be framed
+  or decoded leaves its field `None` and is listed in `errors`; it does not fail the call.
+  `NexradMetadata::from_metadata_record(bytes)` reads these fields without decoding the volume, for example for a
+  real-time start chunk or a status-only stub.
+- `per_sweep_elevation_data` has one `SweepElevationData { cut_index, elevation_number, elevation_angle_deg,
+  elevation, volume, radial }` per cut, in `volume.cuts` order. It is `None` when no radial is a message 31
+  (message 1 volumes). The blocks come from each cut's first radial. The ELV block is constant within a cut; VOL
+  and RAD are sent with every radial, so the stored values are those at the start of the cut.
+- One decode pass. The volume decoders call an internal observer after each message 31 radial. When the radial
+  opens a cut (the decoder appends a cut only for the radial that opens it), the observer decodes that radial's
+  constant blocks with `DigitalRadarDataGeneric::decode`. `decode_volume_from_bytes` passes a no-op observer
+  that compiles away: its release binary differs from the one before the change in 66 bytes of 1.79 MB,
+  and the bench checksums are unchanged. Only the metadata record (the first LDM record) is decompressed a
+  second time. On KTLX 2024-03-15 with one thread, that costs about 1 ms of a 310-370 ms decode
+  (`NexradMetadata::from_metadata_record` alone: 0.8-0.9 ms).
+- Verified (`tests/volume_metadata.rs`):
+  - The Py-ART goldens cover 27 sources. 26 of them decode: 22 message 31 volumes and chunk sets from 2008 to
+    2026, and 4 message 1 files from 1991 to 2005. The 27th is KVWX 2008 (see the known limitation below). For
+    each of the 26, `volume` equals `decode_volume_from_bytes`, every metadata field equals the first message of
+    its type the walker decodes, and the rays per elevation number equal Py-ART's. For message 31 sources, these
+    also equal Py-ART's raw values: the VCP number, the message 5 target angles, and, for each elevation, the
+    first ray's time, azimuth and elevation and every VOL, ELV and RAD field.
+  - For the 27 files with MetPy status goldens: message 2 layout, build and VCP; presence of messages 3 and 18;
+    message 5 pattern and cut count; message 32 in the three volumes that have it and in no volume before
+    Build 23; message 15 and 13 generation times and segment counts.
+  - For the 13 MetPy message 31 goldens that decode (KVWX 2008 does not): one entry per MetPy sweep, with the
+    same radial count, first radial time and elevation, and VOL, ELV and RAD values.
+  - Mutations of the committed KIWA chunks (they run offline): a message 15 with 9 elevation segments is reported
+    in `errors` and leaves `clutter_filter_map` `None`, while the volume and every other field are unchanged. A
+    second message 2 inserted before the real one is the one kept. When elevation 3's first chunk is decoded
+    before the rest of elevation 1, the late elevation 1 radials go back to cut 0 and the per-sweep data stays
+    with the radials that opened each cut.
+  - KLIX 2005 lists its zero-filled messages 5 and 15 and the message 13 orphan run in `errors`; KDMX 2008 lists
+    its stale frames and decodes every metadata message.
+- Known limitation: `decode_volume_from_bytes` rejects KVWX 2008-04-15 ("empty message 31 id", because every
+  radial's identifier is four spaces), so `decode_volume_with_metadata` returns the same error. The test asserts
+  that error; `from_metadata_record` still reads the file's message 2.
+
 ## Message 1: Digital Radar Data (Table III)
 
 Status: decoded by the volume decoder (`decode_volume_from_bytes`). The walker yields the body unparsed.
-Real samples: ARCHIVE2 files 1991-2003 and KLIX 2005.
+Real samples: ARCHIVE2 files 1991-2003 and KLIX 2005. `tests/volume_metadata.rs` checks the rays per elevation
+number of KTLX 1991, 1999 and 2003 and KLIX 2005 against Py-ART.
 
 ## Message 2: RDA Status Data (Table IV)
 
@@ -199,6 +289,9 @@ Real samples: every WSR-88D metadata record from 2005 on (not TDWR). Segment cou
   Map" (2620002B Table XIV: 256 azimuths, 16 range zones, byte fields). It is not decoded because the corpus
   has no populated sample. The 32 772-byte KVWX message has that layout's length, but all its bytes are
   zero.
+- Trimmed fixtures (`derived_from` in the manifest) keep their source's non-radial messages. For all 16, the
+  message 13 and 15 maps the walker finds equal the source file's; 11 of them carry clutter filter maps
+  (`trimmed_fixtures_keep_the_source_clutter_messages`).
 
 ## Message 18: RDA Adaptation Data (Table XV)
 
@@ -274,6 +367,9 @@ Verification (`tests/messages_msg31.rs`):
 - **Mutations of that radial.** Renamed blocks and a changed block type exercise unknown-block handling. Changed
   LRTUP sizes exercise layout selection. Re-encoding the real blocks with zlib and BZIP2 exercises compression.
   Pointer, count, word-size and truncation errors are also covered.
+- **Py-ART.** `tests/volume_metadata.rs` compares every VOL, ELV and RAD field of each elevation's first radial,
+  as `decode_volume_with_metadata` stores it, with Py-ART 2.2.5's raw values on 22 sources. That includes the
+  RAD radial flags, which MetPy skips. Py-ART reads a 44-byte VOL block, so the ZDR bias estimate is not compared.
 
 Quirks found in the real corpus:
 
@@ -288,8 +384,8 @@ first block pointer, where the Data Header Block ends in every uncompressed radi
 limited by the radial length. The mutation test checks only that the decoder reads its own re-encoding; no real
 file confirms this layout.
 
-RDA build (`rda_status::RdaBuild`, re-exported as `msg31_blocks::RdaBuild`; message 2 halfword 10, note 6): the value divided by 100 when that is
-greater than 2, otherwise the value divided by 10. `rda_build_from_metadata_records` checks the raw value and
+RDA build (`rda_status::RdaBuild`, re-exported as `msg31_blocks::RdaBuild`; message 2 halfword 10, note 6): the
+value divided by 100 when that is greater than 2, otherwise the value divided by 10. `rda_build_from_metadata_records` checks the raw value and
 build of the 26 corpus files whose metadata record has a message 2, and compares the build with the manifest
 `build:` tags. KVWX 2008 records 1996 ("19.96", a build that did not exist in 2008). TDWR records 20
 ("2.0"). Files from 1991 and 2005 record 0. The golden tests compare the build with MetPy's `rda_build`.

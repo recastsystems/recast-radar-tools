@@ -271,14 +271,20 @@ fn bypass_maps_match_metpy_radial_0() {
 
 /// Level II volumes with no golden file: the 1991-2003 ARCHIVE2 files (no
 /// metadata record), the 2021 model-data file and the TDWR files. MetPy
-/// finds no clutter messages in them, and neither does the walker.
+/// finds no clutter messages in them, and neither does the walker. Trimmed
+/// fixtures (`derived_from`) are checked against their source files in
+/// `trimmed_fixtures_keep_the_source_clutter_messages`.
 #[test]
 fn files_without_golden_have_no_clutter_messages() {
     let golden_ids: Vec<String> = goldens().into_iter().map(|(id, _)| id).collect();
     let without: Vec<&str> = recast_radar_testdata::manifest()
         .files
         .iter()
-        .filter(|entry| entry.format == Format::NexradLevel2 && !golden_ids.contains(&entry.id))
+        .filter(|entry| {
+            entry.format == Format::NexradLevel2
+                && entry.derived_from.is_none()
+                && !golden_ids.contains(&entry.id)
+        })
         .map(|entry| entry.id.as_str())
         .collect();
     assert_eq!(
@@ -301,6 +307,36 @@ fn files_without_golden_have_no_clutter_messages() {
         assert!(found.censor_zones.is_empty(), "{id}");
         assert!(found.errors.is_empty(), "{id}: {:?}", found.errors);
     }
+}
+
+/// Trimmed fixtures keep their source file's non-radial messages byte for
+/// byte, so the walker finds the same clutter filter and bypass maps in the
+/// trimmed file's first record as in the source's metadata record.
+#[test]
+fn trimmed_fixtures_keep_the_source_clutter_messages() {
+    let trimmed: Vec<_> = recast_radar_testdata::manifest()
+        .files
+        .iter()
+        .filter(|entry| entry.format == Format::NexradLevel2)
+        .filter_map(|entry| Some((entry.id.as_str(), entry.derived_from.as_deref()?)))
+        .collect();
+    assert!(!trimmed.is_empty());
+    let mut with_maps = 0;
+    for (id, source) in trimmed {
+        let Some(trim) = load(id) else { continue };
+        let Some(original) = load(source) else {
+            continue;
+        };
+        let found = clutter(&messages::metadata_record(&trim).unwrap());
+        let expected = clutter(&messages::metadata_record(&original).unwrap());
+        assert_eq!(found.filter_maps, expected.filter_maps, "{id}");
+        assert_eq!(found.bypass_maps, expected.bypass_maps, "{id}");
+        assert_eq!(found.censor_zones, expected.censor_zones, "{id}");
+        if !expected.filter_maps.is_empty() {
+            with_maps += 1;
+        }
+    }
+    eprintln!("{with_maps} trimmed fixtures carry clutter filter maps");
 }
 
 /// Table XIV and IX ranges and structure on every decoded map.

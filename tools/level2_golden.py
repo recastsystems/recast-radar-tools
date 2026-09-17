@@ -1,10 +1,11 @@
-"""Golden values for the Level II message decoders, read with MetPy.
+"""Golden values for the Level II message decoders, read with MetPy and Py-ART.
 
 Writes JSON files under testdata/level2/golden/<group>/, one per source. The
 Rust tests in crates/recast-radar-io-nexrad/tests/ compare their decoded values
 against these files.
 
-Needs MetPy (1.7.1 was used for the committed files). Test files are read from
+Needs MetPy (1.7.1 was used for the committed files) and, for the metadata
+group, Py-ART (arm_pyart 2.2.5). Test files are read from
 the shared download cache that recast-radar-testdata fills
 (%LOCALAPPDATA%\\recast-radar-tools\\testdata, or $RECAST_RADAR_TESTDATA).
 Run `cargo test -p recast-radar-io-nexrad` once to download them.
@@ -91,6 +92,20 @@ msg31  (tests/messages_msg31.rs)
     strings, None becomes ""). Files come from the committed path in the
     manifest or the download cache; a "+"-joined source is written as
     <first-id>..<last chunk number>.json.
+
+metadata  (tests/volume_metadata.rs)
+    What Py-ART's own Level II reader (`pyart.io.nexrad_level2.
+    NEXRADLevel2File`, used by `read_nexrad_archive`) reads for
+    `decode_volume_with_metadata`: the radial message type, the VCP number
+    from message 5, and per scan the ray count, the message 5 target
+    elevation angle code, and the first ray's Data Header Block fields and
+    VOL, ELV and RAD blocks. Py-ART groups rays into scans by elevation
+    number (scan i holds elevation number i + 1). Values are Py-ART's raw
+    unpacked fields before its scaling; the two-byte spare fields (VOL
+    processing status, RAD radial flags) are written as big-endian integers.
+    Files are read from the committed path in the manifest or the download
+    cache, decompressed as `read_nexrad_archive` does; sources joined with
+    "+" are concatenated and named as in msg31.
 """
 
 import bz2
@@ -822,6 +837,122 @@ def run_msg31(sources):
         print(f'msg31: {name}', flush=True)
 
 
+def joined_source_name(source):
+    """File name of a source: the id, or <first-id>..<last chunk number>."""
+    ids = source.split('+')
+    return ids[0] if len(ids) == 1 else ids[0] + '..' + ids[-1].rsplit('-', 2)[-2]
+
+
+# --- group: metadata ----------------------------------------------------------
+
+METADATA_SOURCES = [
+    'l2-ktlx-19910605-162126',
+    'l2-ktlx-19990504-002218',
+    'l2-ktlx-20030508-221041',
+    'l2-klix-20050829-130035',
+    'l2-kvwx-20080415-235337',
+    'l2-kpah-20080415-235014',
+    'l2-kdmx-20080525-205148',
+    'l2-kvnx-20110315-000203',
+    'l2-ktlx-20130520-201643',
+    'l2-kgwx-20130601-235640',
+    'l2-koax-20140616-205305',
+    'l2-kewx-20160413-022531',
+    'l2-kdvn-20200810-180401',
+    'l2-klix-20210829-180425',
+    'l2-kbox-20220129-150537',
+    'l2-tjua-20220918-190621',
+    'l2-kdgx-20230325-010651',
+    'l2-kmaf-20230331-230843',
+    'l2-tstl-20230331-230314',
+    'l2-pgua-20230524-030945',
+    'l2-kmtx-20240301-212827',
+    'l2-ktlx-20240315-000217',
+    'l2-ktlx-20240515-000014',
+    'l2-pahg-20250909-212549',
+    'l2-kilx-20260418-013553',
+    'l2-kiwa-20260917-003629',
+    'l2chunk-kiwa-307-20260917-003629-001-s'
+    '+l2chunk-kiwa-307-20260917-003629-002-i'
+    '+l2chunk-kiwa-307-20260917-003629-003-i',
+]
+
+# Data Header Block fields written per scan (Py-ART MSG_31 names).
+PYART_HEADER_KEYS = ('collect_ms', 'collect_date', 'azimuth_number', 'azimuth_angle',
+                     'radial_length', 'azimuth_resolution', 'radial_spacing',
+                     'elevation_number', 'cut_sector', 'elevation_angle', 'block_count')
+
+
+def pyart_block(block):
+    """A Py-ART VOL/ELV/RAD dict without type and name; spare bytes as an int."""
+    out = {}
+    for key, value in block.items():
+        if key in ('block_type', 'data_name'):
+            continue
+        if isinstance(value, bytes):
+            value = int.from_bytes(value, 'big')
+        out[key] = value
+    return out
+
+
+def metadata_golden(source, entries):
+    import warnings
+
+    import pyart
+    from pyart.io.nexrad_level2 import NEXRADLevel2File
+
+    data = source_bytes(source, entries)
+    # read_nexrad_archive's prepare_for_read: whole-file gzip or bzip2.
+    if data[:2] == b'\x1f\x8b':
+        data = gzip.decompress(data)
+    elif data[:3] == b'BZh':
+        data = bz2.decompress(data)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        f = NEXRADLevel2File(io.BytesIO(data))
+    vcp = f.vcp
+    cuts = vcp['cut_parameters'] if vcp is not None else []
+    scans = []
+    for index, messages in enumerate(f.scan_msgs):
+        scan = {'elevation_number': index + 1, 'nrays': len(messages),
+                'target_angle_code': cuts[index]['elevation_angle'] if index < len(cuts) else None}
+        if len(messages):
+            ray = f.radial_records[messages[0]]
+            if f._msg_type == '31':
+                scan['header'] = {key: ray['msg_header'][key] for key in PYART_HEADER_KEYS}
+                for name in ('VOL', 'ELV', 'RAD'):
+                    scan[name] = pyart_block(ray[name]) if name in ray else None
+        scans.append(scan)
+    return {
+        'source': source.split('+'),
+        'generator': 'tools/level2_golden.py metadata',
+        'pyart': pyart.__version__,
+        'msg_type': int(f._msg_type),
+        'vcp_pattern': f.get_vcp_pattern(),
+        'scans': scans,
+    }
+
+
+def run_metadata(sources):
+    entries = all_manifest_entries()
+    for source in sources or METADATA_SOURCES:
+        doc = metadata_golden(source, entries)
+        lines = ['{']
+        items = list(doc.items())
+        for index, (key, value) in enumerate(items):
+            comma = ',' if index + 1 < len(items) else ''
+            if key == 'scans':
+                inner = ',\n'.join(f'    {json.dumps(scan)}' for scan in value)
+                lines.append(f'  "scans": [\n{inner}\n  ]{comma}')
+            else:
+                lines.append(f'  {json.dumps(key)}: {json.dumps(value)}{comma}')
+        lines.append('}')
+        name = joined_source_name(source)
+        with open(golden_path('metadata', name), 'w', encoding='utf-8', newline='\n') as out:
+            out.write('\n'.join(lines) + '\n')
+        print(f'metadata: {name}', flush=True)
+
+
 # --- dispatch -----------------------------------------------------------------
 
 GROUPS = {
@@ -829,6 +960,7 @@ GROUPS = {
     'vcp': run_vcp,
     'clutter': run_clutter,
     'msg31': run_msg31,
+    'metadata': run_metadata,
 }
 
 
