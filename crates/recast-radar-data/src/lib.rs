@@ -65,7 +65,6 @@ const HTTP_METADATA_TIMEOUT: StdDuration = StdDuration::from_secs(25);
 /// response body"). 180 s admits ~120 KB/s links; pathological hangs
 /// occupy only a background poll thread.
 const HTTP_DOWNLOAD_TIMEOUT: StdDuration = StdDuration::from_secs(180);
-const HTTP_VOLUME_RETRY_BACKOFF: StdDuration = StdDuration::from_secs(2);
 const HTTP_USER_AGENT: &str = "bowecho (GR2Analyst-compatible placefile client)";
 const MAX_METADATA_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_LISTING_TEXT_BYTES: usize = 32 * 1024 * 1024;
@@ -478,23 +477,56 @@ pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
     read_response_limited(response, MAX_SMALL_RESOURCE_BYTES, "resource")
 }
 
+/// The retry schedule of [`fetch_volume_bytes`]: two attempts, 2 s apart.
+pub const VOLUME_FETCH_RETRY: realtime::retry::RetryPolicy = realtime::retry::RetryPolicy {
+    max_attempts: 2,
+    initial_delay: StdDuration::from_secs(2),
+    max_delay: StdDuration::from_secs(2),
+    multiplier: 1.0,
+    jitter: realtime::retry::Jitter::None,
+};
+
 /// Fetch a radar volume from a polled feed. Volumes run 5–25 MB
 /// (compressed NEXRAD or uncompressed msg31 conversions; international
 /// ODIM PVOLs reach ~18 MB), so this uses the download client (long
 /// timeout) with a generous cap — unlike `fetch_bytes`, which is sized
 /// for sprite sheets on the metadata client and rejects anything over
 /// 4 MiB.
+///
+/// Retries under [`VOLUME_FETCH_RETRY`], sleeping on the calling thread;
+/// [`fetch_volume_bytes_with_retry`] takes the policy and the wait from the
+/// caller.
 #[cfg(feature = "net")]
 pub fn fetch_volume_bytes(url: &str) -> Result<Vec<u8>> {
+    fetch_volume_bytes_with_retry(url, &VOLUME_FETCH_RETRY, thread::sleep)
+}
+
+/// [`fetch_volume_bytes`] under an explicit retry policy.
+///
+/// Timeouts and body or decode failures are retried with the delays of
+/// `policy`; HTTP status errors and oversized bodies are final. The function
+/// does not sleep by itself: it calls `sleep` with each delay (pass
+/// `std::thread::sleep` to block, or a closure that records or shortens the
+/// wait). Independently of `policy`, a request that fails before any response
+/// (a stale pooled connection) is sent once more at once.
+#[cfg(feature = "net")]
+pub fn fetch_volume_bytes_with_retry(
+    url: &str,
+    policy: &realtime::retry::RetryPolicy,
+    mut sleep: impl FnMut(StdDuration),
+) -> Result<Vec<u8>> {
     let client = download_http_client();
-    let result = fetch_limited_bytes(&client, url, MAX_RADAR_VOLUME_BYTES, "volume");
-    match result {
-        Ok(bytes) => Ok(bytes),
-        Err(DataSourceError::Http(err)) if should_retry_volume_fetch(&err) => {
-            thread::sleep(HTTP_VOLUME_RETRY_BACKOFF);
-            fetch_limited_bytes(&client, url, MAX_RADAR_VOLUME_BYTES, "volume")
+    let mut backoff = policy.backoff(realtime::retry::random_seed());
+    loop {
+        match fetch_limited_bytes(&client, url, MAX_RADAR_VOLUME_BYTES, "volume") {
+            Err(DataSourceError::Http(err)) if should_retry_volume_fetch(&err) => {
+                match backoff.next_delay() {
+                    Some(delay) => sleep(delay),
+                    None => return Err(DataSourceError::Http(err)),
+                }
+            }
+            result => return result,
         }
-        Err(err) => Err(err),
     }
 }
 
