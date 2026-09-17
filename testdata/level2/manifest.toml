@@ -965,3 +965,183 @@ size = 112078
 ephemeral = true
 tags = ["era:2026", "site:kiwa", "radar:wsr-88d", "provider:aws", "bucket:unidata-nexrad-level2-chunks", "chunk-volume:kiwa-307", "chunk:end", "build:24.1", "vcp:215", "elev:15", "radial-status:4"]
 description = "KIWA real-time chunk volume 307, chunk 70/70 (End): one LDM bzip2 record, 120 Message 31 radials of elevation 15 (~8.0 deg), radial times 00:41:42.589-00:41:47.217Z, azimuth 310.5-69.5 deg, radial status [1, 4]. S3 LastModified 2026-09-17T00:41:50.000Z."
+
+# Trimmed fixtures (TD.3): committed files made by trim-level2 (crates/recast-radar-testdata/src/bin/trim-level2.rs)
+# from the entries tagged `trim` above. Each `derivation` starts with the trim-level2 options that reproduce the
+# file byte for byte from `derived_from` (tests/trim.rs); tools/validate_trimmed.py checks them with Py-ART and MetPy.
+
+[[file]]
+id = "l2-ktlx-19910605-162126-trim"
+format = "nexrad-level2"
+sha256 = "e80e3d72fc50f0c3f027efc37fb3f892de3153fa6c4bda46bdfd509e29d9451e"
+size = 141911
+committed = "files/level2/KTLX19910605_162126.trim.V06"
+derived_from = "l2-ktlx-19910605-162126"
+derivation = "trim-level2 --sweeps 2: volume header, the one message before the first radial, and all radials of sweeps 1 and 2 (366 + 366), which form the 0.43 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as a record of the leading non-radial messages plus records of at most 120 radials of one elevation (9 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; the whole split cut fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:1991", "site:ktlx", "radar:wsr-88d", "header:ARCHIVE2", "icao:blank", "compression:ldm-bzip2", "msg:1", "msg:2", "no-metadata-record", "vcp:21", "res:legacy", "regime:convective", "trimmed", "split-cut"]
+description = "KTLX 1991-06-05 16:21Z; trimmed fixture of l2-ktlx-19910605-162126 (ARCHIVE2.001 header with a blank ICAO, Message 1 radials, no metadata record (one Message 2 precedes the radials)). Header, 1 leading non-radial message and the 0.43 deg split cut: sweep 1 REF and sweep 2 VEL/SW, 366 and 366 radials, in 9 LDM bzip2 records. Whole 0.43 deg sweeps: thunderstorms to 59.4 dBZ at 22 km (2092 gates >= 50 dBZ)."
+
+[[file]]
+id = "l2-ktlx-19990504-002218-trim"
+format = "nexrad-level2"
+sha256 = "a2969ad05b8dd6e0137a770a9564625f21b4e29bc7ae25595be7a6a9395eda8c"
+size = 191887
+committed = "files/level2/KTLX19990504_002218.trim.V06"
+derived_from = "l2-ktlx-19990504-002218"
+derivation = "trim-level2 --sweeps 2: volume header, no leading non-radial messages, and all radials of sweeps 1 and 2 (367 + 367), which form the 0.45 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as records of at most 120 radials of one elevation (8 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; the whole split cut fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:1999", "site:ktlx", "radar:wsr-88d", "header:ARCHIVE2", "icao:nul", "compression:ldm-bzip2", "msg:1", "msg:2", "vcp:11", "res:legacy", "regime:tornado", "trimmed", "split-cut"]
+description = "KTLX 1999-05-04 00:22Z; trimmed fixture of l2-ktlx-19990504-002218 (ARCHIVE2.036 header with a NUL ICAO, Message 1 radials, VCP 11; the file starts with radials and one Message 2 sits inside sweep 2). Header, no leading non-radial messages and the 0.45 deg split cut: sweep 1 REF and sweep 2 VEL/SW, 367 and 367 radials, in 8 LDM bzip2 records. Whole 0.45 deg sweeps with the Bridge Creek-Moore F5 supercell: 68.0 dBZ at 23 km, azimuth 273 deg."
+
+[[file]]
+id = "l2-ktlx-20030508-221041-trim"
+format = "nexrad-level2"
+sha256 = "8725579f4893d5f02a92c667e3efb03fcffcc67a3b31c8c1714800d304306b26"
+size = 184958
+committed = "files/level2/KTLX20030508_221041.trim.V06"
+derived_from = "l2-ktlx-20030508-221041"
+derivation = "trim-level2 --sweeps 2: volume header, the one message before the first radial, and all radials of sweeps 1 and 2 (367 + 367), which form the 0.49 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as a record of the leading non-radial messages plus records of at most 120 radials of one elevation (9 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; the whole split cut fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2003", "site:ktlx", "radar:wsr-88d", "header:ARCHIVE2", "icao:nul", "compression:ldm-bzip2", "msg:1", "msg:2", "msg:202", "vcp:11", "res:legacy", "regime:tornado", "trimmed", "split-cut"]
+description = "KTLX 2003-05-08 22:10Z; trimmed fixture of l2-ktlx-20030508-221041 (ARCHIVE2.224 header with a NUL ICAO; the first message is type 202 (not an ICD message), then Message 1 radials). Header, 1 leading non-radial message and the 0.49 deg split cut: sweep 1 REF and sweep 2 VEL/SW, 367 and 367 radials, in 9 LDM bzip2 records. Whole 0.49 deg sweeps including the Moore F4 hook echo ~15 km W; 2843 gates >= 50 dBZ."
+
+[[file]]
+id = "l2-klix-20050829-130035-trim"
+format = "nexrad-level2"
+sha256 = "7fc873eaafb331dc23dba55f87d2ab1fed1f9d11adf914e9b8cf64576945bfc0"
+size = 241543
+committed = "files/level2/KLIX20050829_130035.trim.V06"
+derived_from = "l2-klix-20050829-130035"
+derivation = "trim-level2 --sweeps 2: volume header, the 117-message metadata record, and all radials of sweeps 1 and 2 (367 + 362), which form the 0.38 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as a record of the leading non-radial messages plus records of at most 120 radials of one elevation (9 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; the whole split cut fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2005", "site:klix", "radar:wsr-88d", "header:AR2V0001", "compression:ldm-bzip2", "msg:1", "msg:2", "msg:3", "msg:5", "msg:13", "msg:15", "msg:18", "segmented:15", "segmented:13", "vcp:121", "res:legacy", "regime:hurricane", "trimmed", "split-cut"]
+description = "KLIX 2005-08-29 13:00Z; trimmed fixture of l2-klix-20050829-130035 (AR2V0001.029 with a segmented metadata record (Message 15 x62, 13 x48, 18 x4, 3, 5, 2) and Message 1 radials; VCP 121 cuts 1-2). Header, the 117-message metadata record and the 0.38 deg split cut: sweep 1 REF and sweep 2 VEL/SW, 367 and 362 radials, in 9 LDM bzip2 records. Whole 0.4 deg sweeps with the Hurricane Katrina eyewall; 634 gates >= 50 dBZ, Doppler |V| up to 32 m/s."
+
+[[file]]
+id = "l2-kdmx-20080525-205148-trim"
+format = "nexrad-level2"
+sha256 = "cf5ad700d7877c483227d916e58240831172765d1038cb25b7095d50cf292be9"
+size = 788002
+committed = "files/level2/KDMX20080525_205148.trim.V06"
+derived_from = "l2-kdmx-20080525-205148"
+derivation = "trim-level2 --sweeps 2: volume header, the 134-message metadata record, and all radials of sweeps 1 and 2 (720 + 720), which form the 0.48 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as a record of the leading non-radial messages plus records of at most 120 radials of one elevation (13 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; the whole split cut fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2008", "site:kdmx", "radar:wsr-88d", "header:AR2V0003", "build:10.0", "compression:ldm-bzip2", "msg:31", "msg:13", "vol-block:44", "rad-block:20", "vcp:212", "res:super", "regime:convective", "trimmed", "split-cut"]
+description = "KDMX 2008-05-25 20:51Z; trimmed fixture of l2-kdmx-20080525-205148 (AR2V0003 Build 10.0 super-resolution Message 31, VOL 44 v1.0 / RAD 20, REF/VEL/SW only, 73 type-0 messages in the metadata). Header, the 134-message metadata record and the 0.48 deg split cut: sweep 1 REF and sweep 2 REF/VEL/SW, 720 and 720 radials, in 13 LDM bzip2 records. Whole 0.48 deg sweeps: storms to 68.0 dBZ at 123 km."
+
+[[file]]
+id = "l2-ktlx-20130520-201643-trim"
+format = "nexrad-level2"
+sha256 = "a93f593d658014d6b789de192e669b3b87a0b37a4e31c94f6df9406dda6bb50e"
+size = 793144
+committed = "files/level2/KTLX20130520_201643.trim.V06"
+derived_from = "l2-ktlx-20130520-201643"
+derivation = "trim-level2 --sweeps 2 --max-radials 480: volume header, the 134-message metadata record, and the first 480 of 720 radials of sweep 1 and 480 of 720 of sweep 2, which form the 0.51 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as a record of the leading non-radial messages plus records of at most 120 radials of one elevation (9 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2013", "site:ktlx", "radar:wsr-88d", "header:AR2V0006", "build:13.2", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:20", "vcp:12", "res:super", "regime:tornado", "trimmed", "split-cut", "partial-sweeps"]
+description = "KTLX 2013-05-20 20:16Z; trimmed fixture of l2-ktlx-20130520-201643 (AR2V0006 Build 13.2 dual-pol (ZDR 8-bit), VOL 44 v1.0 / RAD 20). Header, the 134-message metadata record and the 0.51 deg split cut: sweep 1 REF/ZDR/PHI/RHO (480/720 radials, azimuth 123.2-2.7 deg) and sweep 2 REF/VEL/SW (480/720 radials, azimuth 135.3-14.7 deg), in 9 LDM bzip2 records. The kept radials hold the Moore EF5 supercell: 69.5 dBZ at 23 km, azimuth 268 deg; 21 gates within 120 km have Z >= 60 dBZ, RHOHV < 0.93 and |ZDR| < 1 dB."
+
+[[file]]
+id = "l2-koax-20140616-205305-trim"
+format = "nexrad-level2"
+sha256 = "84a7f48cfb7a5096bcf5582ba59d15b376b3e1fc090488fe87d2ccb76c2bdc75"
+size = 826983
+committed = "files/level2/KOAX20140616_205305.trim.V06"
+derived_from = "l2-koax-20140616-205305"
+derivation = "trim-level2 --sweeps 2 --max-radials 360: volume header, the 134-message metadata record, and the first 360 of 720 radials of sweep 1 and 360 of 720 of sweep 2, which form the 0.48 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as a record of the leading non-radial messages plus records of at most 120 radials of one elevation (7 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2014", "site:koax", "radar:wsr-88d", "header:AR2V0006", "build:14.0", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "sails", "res:super", "regime:tornado", "trimmed", "split-cut", "partial-sweeps"]
+description = "KOAX 2014-06-16 20:53Z; trimmed fixture of l2-koax-20140616-205305 (AR2V0006 Build 14.0 with VOL 44 v2.0 and the 28-byte RAD block; VCP 212 with SAILS (Message 5 supplemental halfword 0)). Header, the 134-message metadata record and the 0.48 deg split cut: sweep 1 REF/ZDR/PHI/RHO (360/720 radials, azimuth 140.2-319.8 deg) and sweep 2 REF/VEL/SW (360/720 radials, azimuth 154.2-333.8 deg), in 7 LDM bzip2 records. The kept radials hold the Pilger supercell: Z >= 40 dBZ at 91-112 km, azimuth 314-319 deg (62.0 dBZ max)."
+
+[[file]]
+id = "l2-kewx-20160413-022531-trim"
+format = "nexrad-level2"
+sha256 = "1718a3d5b0afec160aac8f58a2a8de5fd08936aa47463f3fb0384b699bf8e58a"
+size = 856386
+committed = "files/level2/KEWX20160413_022531.trim.V06"
+derived_from = "l2-kewx-20160413-022531"
+derivation = "trim-level2 --sweeps 2 --max-radials 240: volume header, the 134-message metadata record, and the first 240 of 720 radials of sweep 1 and 240 of 720 of sweep 2, which form the 0.53 deg surveillance + Doppler split cut; the source is gzip of uncompressed messages, framed here as a record of the leading non-radial messages plus records of at most 120 radials of one elevation (5 records), each bzip2 level 9 (pure Rust), last control word negative; message bytes unchanged; --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2016", "site:kewx", "radar:wsr-88d", "header:AR2V0006", "build:16.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "sails", "res:super", "regime:convective", "trimmed", "split-cut", "partial-sweeps"]
+description = "KEWX 2016-04-13 02:25Z; trimmed fixture of l2-kewx-20160413-022531 (AR2V0006 Build 16.1 gzip archive object, dual-pol ZDR 8-bit, RAD 28, SAILS). Header, the 134-message metadata record and the 0.53 deg split cut: sweep 1 REF/ZDR/PHI/RHO (240/720 radials, azimuth 274.2-33.7 deg) and sweep 2 REF/VEL/SW (240/720 radials, azimuth 293.2-52.7 deg), in 5 LDM bzip2 records. The kept radials hold storms 53-136 km W-NW (65.0 dBZ max, 18049 gates >= 40 dBZ) but not the hail core: no gate within 120 km has Z >= 60 dBZ with RHOHV < 0.93 and |ZDR| < 1 dB."
+
+[[file]]
+id = "l2-kdvn-20200810-180401-trim"
+format = "nexrad-level2"
+sha256 = "879f98874a9b84ef7a2a124df7f1b5a030ec98bbd4e3c2e95634c8b7f30952e4"
+size = 629083
+committed = "files/level2/KDVN20200810_180401.trim.V06"
+derived_from = "l2-kdvn-20200810-180401"
+derivation = "trim-level2 --sweeps 2 --max-radials 120: volume header, the 134-message metadata record, and the first 120 of 720 radials of sweep 1 and 120 of 720 of sweep 2, which form the 0.44 deg surveillance + Doppler split cut; source LDM records 0, 1, 7 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2020", "site:kdvn", "radar:wsr-88d", "header:AR2V0006", "build:18.2", "compression:ldm-bzip2", "msg:31", "msg:13", "dualpol", "zdr:8bit", "vol-block:44", "rad-block:28", "vcp:212", "meso-sails:2", "res:super", "regime:derecho", "trimmed", "split-cut", "partial-sweeps"]
+description = "KDVN 2020-08-10 18:04Z; trimmed fixture of l2-kdvn-20200810-180401 (Build 18.2 LDM bzip2 records with Message 13 in the metadata, ZDR 8-bit, VOL 44 v2.0 / RAD 28, VCP 212 MESO-SAILS x2). Header, the 134-message metadata record and the 0.44 deg split cut: sweep 1 REF/ZDR/PHI/RHO (120/720 radials, azimuth 257.2-316.7 deg) and sweep 2 REF/VEL/SW (120/720 radials, azimuth 286.2-345.7 deg), in 3 LDM bzip2 records. The kept radials hold the derecho bow echo: Z >= 40 dBZ at 49-126 km, azimuth 266-312 deg (23414 gates, 66.0 dBZ max)."
+
+[[file]]
+id = "l2-klix-20210829-180425-trim"
+format = "nexrad-level2"
+sha256 = "41af8fedfd4dace64d643bf61991654a3af53617ffc55ef121bca550a32afcbb"
+size = 440556
+committed = "files/level2/KLIX20210829_180425.trim.V06"
+derived_from = "l2-klix-20210829-180425"
+derivation = "trim-level2 --sweeps 2 --max-radials 120: volume header, the 134-message metadata record, and the first 120 of 720 radials of sweep 1 and 120 of 720 of sweep 2, which form the 0.48 deg surveillance + Doppler split cut; source LDM records 0, 1, 7 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2021", "site:klix", "radar:wsr-88d", "header:AR2V0006", "build:19.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:44", "rad-block:28", "vcp:112", "mpda", "sails", "res:super", "trimmed", "split-cut", "partial-sweeps"]
+description = "KLIX 2021-08-29 18:04Z; trimmed fixture of l2-klix-20210829-180425 (Build 19.1 LDM records with the CFP moment, ZDR 16-bit, no Message 13, VCP 112 with MPDA and SAILS). Header, the 134-message metadata record and the 0.48 deg split cut: sweep 1 REF/ZDR/PHI/RHO/CFP (120/720 radials, azimuth 350.2-49.7 deg) and sweep 2 REF/VEL/SW (120/720 radials, azimuth 9.2-68.7 deg), in 3 LDM bzip2 records. The kept radials hold only the outer rain bands of Hurricane Ida 200-230 km N (53.0 dBZ max); the eyewall is not in the kept azimuths."
+
+[[file]]
+id = "l2-kbox-20220129-150537-trim"
+format = "nexrad-level2"
+sha256 = "a78c416bd7454b9bf3a721b766eaed4e27adfc0be1ec15a54c516042aa5f1181"
+size = 998852
+committed = "files/level2/KBOX20220129_150537.trim.V06"
+derived_from = "l2-kbox-20220129-150537"
+derivation = "trim-level2 --sweeps 2 --max-radials 240: volume header, the 134-message metadata record, and the first 240 of 720 radials of sweep 1 and 240 of 720 of sweep 2, which form the 0.48 deg surveillance + Doppler split cut; source LDM records 0, 1, 2, 7, 8 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2022", "site:kbox", "radar:wsr-88d", "header:AR2V0006", "build:20.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:215", "res:super", "regime:winter-storm", "trimmed", "split-cut", "partial-sweeps"]
+description = "KBOX 2022-01-29 15:05Z; trimmed fixture of l2-kbox-20220129-150537 (Build 20.1 with the 52-byte VOL block (v3.0), CFP, VCP 215). Header, the 134-message metadata record and the 0.48 deg split cut: sweep 1 REF/ZDR/PHI/RHO/CFP (240/720 radials, azimuth 284.2-43.7 deg) and sweep 2 REF/VEL/SW (240/720 radials, azimuth 299.2-58.7 deg), in 5 LDM bzip2 records. The kept radials hold blizzard snow: 137767 gates with Z > 15 dBZ and RHOHV > 0.97, median ZDR 0.12 dB."
+
+[[file]]
+id = "l2-tstl-20230331-230314-trim"
+format = "nexrad-level2"
+sha256 = "7193f5e32d22b0a92bf9691dbf6e44b14a0290ad1871ad346137d280aa609d33"
+size = 389446
+committed = "files/level2/TSTL20230331_230314.trim.V06"
+derived_from = "l2-tstl-20230331-230314"
+derivation = "trim-level2 --sweeps 2: volume header, the 134-message metadata record, and all radials of sweeps 1 and 2 (360 + 360), which form the 0.26 deg surveillance + Doppler split cut; source LDM records 0, 1, 2, 3, 4, 5, 6 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); the whole split cut fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2023", "site:tstl", "radar:tdwr", "header:AR2V0008", "compression:ldm-bzip2", "msg:31", "msg:2", "msg:5", "vol-block:44", "rad-block:20", "vcp:80", "res:legacy", "regime:convective", "trimmed", "split-cut"]
+description = "TSTL (TDWR, St. Louis) 2023-03-31 23:03Z; trimmed fixture of l2-tstl-20230331-230314 (TDWR AR2V0008: metadata only Message 2 and 5 plus padding, a REF-only 0.26 deg long-range cut (300 m gates) then the 150 m REF/VEL/SW cut, 1 deg radials). Header, the 134-message metadata record and the 0.26 deg split cut: sweep 1 REF and sweep 2 REF/VEL/SW, 360 and 360 radials, in 7 LDM bzip2 records. Whole sweeps: the supercell line ~85 km S (60.5 dBZ at azimuth 189 deg), Doppler |V| up to 43.5 m/s."
+
+[[file]]
+id = "l2-pgua-20230524-030945-trim"
+format = "nexrad-level2"
+sha256 = "2467ff04f1fb1d59ee26d301eba1fc40a68cfda75921151bc9112306b8b31824"
+size = 960321
+committed = "files/level2/PGUA20230524_030945.trim.V06"
+derived_from = "l2-pgua-20230524-030945"
+derivation = "trim-level2 --sweeps 2 --max-radials 240: volume header, the 134-message metadata record, and the first 240 of 720 radials of sweep 1 and 240 of 720 of sweep 2, which form the 0.50 deg surveillance + Doppler split cut; source LDM records 0, 1, 2, 7, 8 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2023", "site:pgua", "radar:wsr-88d", "header:AR2V0006", "build:21.1", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:212", "meso-sails:3", "res:super", "regime:non-conus", "trimmed", "split-cut", "partial-sweeps"]
+description = "PGUA 2023-05-24 03:09Z; trimmed fixture of l2-pgua-20230524-030945 (Build 21.1 outside CONUS (Guam), VOL 52 / RAD 28, CFP, VCP 212 MESO-SAILS x3). Header, the 134-message metadata record and the 0.50 deg split cut: sweep 1 REF/ZDR/PHI/RHO/CFP (240/720 radials, azimuth 44.2-163.7 deg) and sweep 2 REF/VEL/SW (240/720 radials, azimuth 67.2-186.7 deg), in 5 LDM bzip2 records. The kept radials hold Typhoon Mawar rain bands: Z >= 40 dBZ at 61-123 km, azimuth 112-150 deg (13466 gates)."
+
+[[file]]
+id = "l2-kmtx-20240301-212827-trim"
+format = "nexrad-level2"
+sha256 = "c701b64c760c2fbe20e656ae5d19f008953339d1cdfc14af6bb390a1c0738e24"
+size = 884380
+committed = "files/level2/KMTX20240301_212827.trim.V06"
+derived_from = "l2-kmtx-20240301-212827"
+derivation = "trim-level2 --sweeps 2 --max-radials 360: volume header, the 134-message metadata record, and the first 360 of 720 radials of sweep 1 and 360 of 720 of sweep 2, which form the 0.04 deg surveillance + Doppler split cut; source LDM records 0, 1, 2, 3, 7, 8, 9 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2024", "site:kmtx", "radar:wsr-88d", "header:AR2V0006", "build:22.0", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:215", "base-tilt:2", "res:super", "regime:complex-terrain", "regime:snow", "trimmed", "split-cut", "partial-sweeps"]
+description = "KMTX 2024-03-01 21:28Z; trimmed fixture of l2-kmtx-20240301-212827 (Build 22.0 mountain-top site with the base-tilt flag: the split cut commanded at 0.0 deg in Message 5 (radials at 0.03-0.06 deg), VOL 52, CFP). Header, the 134-message metadata record and the 0.04 deg split cut: sweep 1 REF/ZDR/PHI/RHO/CFP (360/720 radials, azimuth 255.2-74.7 deg) and sweep 2 REF/VEL/SW (360/720 radials, azimuth 268.2-87.7 deg), in 7 LDM bzip2 records. The kept radials (through N) hold the NW and NE snow bands: 23331 gates with Z > 15 dBZ and RHOHV > 0.97, median ZDR -0.09 dB."
+
+[[file]]
+id = "l2-ktlx-20240315-000217-trim"
+format = "nexrad-level2"
+sha256 = "e2dae3816284bc16399e017c2ae2bd14ac299d83981db8433c7a98675089df61"
+size = 741465
+committed = "files/level2/KTLX20240315_000217.trim.V06"
+derived_from = "l2-ktlx-20240315-000217"
+derivation = "trim-level2 --sweeps 2 --max-radials 480: volume header, the 134-message metadata record, and the first 480 of 720 radials of sweep 1 and 480 of 720 of sweep 2, which form the 0.48 deg surveillance + Doppler split cut; source LDM records 0, 1, 2, 3, 4, 7, 8, 9, 10 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2024", "site:ktlx", "radar:wsr-88d", "header:AR2V0006", "build:22.0", "compression:ldm-bzip2", "msg:31", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:212", "meso-sails:3", "avset", "res:super", "regime:convective", "trimmed", "split-cut", "partial-sweeps"]
+description = "KTLX 2024-03-15 00:02Z; trimmed fixture of l2-ktlx-20240315-000217 (Build 22.0 radrs/nexrad comparison volume: VOL 52 / RAD 28, CFP, ZDR 16-bit, VCP 212 MESO-SAILS x3 with AVSET). Header, the 134-message metadata record and the 0.48 deg split cut: sweep 1 REF/ZDR/PHI/RHO/CFP (480/720 radials, azimuth 167.3-46.7 deg) and sweep 2 REF/VEL/SW (480/720 radials, azimuth 193.2-72.7 deg), in 9 LDM bzip2 records. The kept radials (through W) hold supercells 225-243 km S (69.5 dBZ at 237 km)."
+
+[[file]]
+id = "l2-kilx-20260418-013553-trim"
+format = "nexrad-level2"
+sha256 = "0c581fb041e8f7bd140739c0b07854c4b5edd0f7d651d22617fad477da804b89"
+size = 823005
+committed = "files/level2/KILX20260418_013553.trim.V06"
+derived_from = "l2-kilx-20260418-013553"
+derivation = "trim-level2 --sweeps 2 --max-radials 240: volume header, the 134-message metadata record, and the first 240 of 720 radials of sweep 1 and 240 of 720 of sweep 2, which form the 0.52 deg surveillance + Doppler split cut; source LDM records 0, 1, 2, 7, 8 kept whole and re-encoded with pure-Rust bzip2 level 9; every payload is byte-identical to the source record and only the last control word is negated (end of volume); --max-radials is the largest record-aligned limit whose output fits --max-bytes 1000000. tools/validate_trimmed.py: Py-ART and MetPy radials and moment arrays equal the source volume."
+tags = ["era:2026", "site:kilx", "radar:wsr-88d", "header:AR2V0006", "build:23.1", "compression:ldm-bzip2", "msg:31", "msg:32", "dualpol", "zdr:16bit", "moment:CFP", "vol-block:52", "rad-block:28", "vcp:212", "mrle:3", "res:super", "regime:convective", "trimmed", "split-cut", "partial-sweeps"]
+description = "KILX 2026-04-18 01:35Z; trimmed fixture of l2-kilx-20260418-013553 (Build 23.1 with Message 32 in the metadata, VOL 52 / RAD 28, CFP, VCP 212 MRLE x3). Header, the 134-message metadata record and the 0.52 deg split cut: sweep 1 REF/ZDR/PHI/RHO/CFP (240/720 radials, azimuth 25.2-144.7 deg) and sweep 2 REF/VEL/SW (240/720 radials, azimuth 58.2-177.7 deg), in 5 LDM bzip2 records. The kept radials hold storms to 67.5 dBZ at 31 km (38 gates >= 50 dBZ)."
