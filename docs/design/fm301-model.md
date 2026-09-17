@@ -1,6 +1,7 @@
 # FM301 data model for `recast-radar-core` (wave 2, task F.1)
 
-Status: design note, awaiting independent review (plan F.1). Date: 2026-09-16.
+Status: design note, revised after independent review (plan F.1). Section 16 lists every review
+finding and its resolution. Date: 2026-09-16.
 Branch: `fm301` (main `79f3410` with branch `testdata` merged).
 
 Inputs:
@@ -36,7 +37,9 @@ F.1 items and where they are covered:
 | `sweep_mode` | 10 |
 | Global attributes | 11 |
 | Compatibility shim | 13 |
-| Rust type definitions | 2 (`Volume`), 3 (`Sweep`), 4 (`Field`, `FieldName`), 13.2 (shim) |
+| Rust type definitions | 2 (`Volume`), 3 (`Sweep`), 4 (`Field`, `FieldName`), 12 (view), 13.2 (shim) |
+| Binding strategy (no unsafe, no copy at decode) | 12.2, 12.3 |
+| Review findings and resolutions | 16 |
 
 ---
 
@@ -47,11 +50,15 @@ F.1 items and where they are covered:
    MESO-SAILS repeats are separate sweeps, as in xradar, Py-ART and the current decoder
    (A.2). Each `Field` is one dataset variable, and `FieldName` is its variable name.
 2. **Rays.** Ray coordinates are struct-of-arrays: `time_s: Vec<f64>`,
-   `azimuth_deg: Vec<f32>`, `elevation_deg: Vec<f32>`. Rays stay in the source's storage order,
-   which is acquisition order for NEXRAD, CfRadial and DORADE and azimuth-indexed order for
-   ODIM and JMA. Rust never sorts rays. The FM301 view uses `time` as the ray dimension.
-   Conformance tests sort both sides by azimuth (elevation for RHI), which is xradar's
-   default ordering.
+   `azimuth_deg: Vec<f32>`, `elevation_deg: Vec<f32>`. The model keeps rays in the source's
+   storage order, which is acquisition order for NEXRAD, CfRadial and DORADE and
+   azimuth-indexed order for ODIM and JMA. Decoders never reorder rows. The FM301 view orders
+   rays through a row permutation, never by moving data. `FirstDim::Time` (the WMO flavor, and
+   xradar's `first_dim="time"`) gives acquisition order under dimension `time`, so the `time`
+   coordinate is monotonic. `FirstDim::Auto` reproduces xradar's default `first_dim="auto"`:
+   rays sorted by angle under dimension `azimuth` or `elevation` (12.1). Each conformance
+   comparison uses the same `first_dim` on both sides.
+   `time_reference` is whole seconds, as FM301 `units` requires (section 2).
 3. **Gate geometry.** Each sweep has one sweep-level `range` coordinate. That is what FM301
    requires (Regulation 301.2.3, Table 301-6a), and xradar and Py-ART also produce one. Each
    field stores only its native gates, with no padding or resampling, plus a
@@ -63,19 +70,27 @@ F.1 items and where they are covered:
    this against xradar and Py-ART output on the same files.
 4. **Storage.** `FieldData` holds values row-major, `[nrays × ngates]`, in the source's
    encoding: `U8` or `U16` (NEXRAD, ODIM), `I8` or `I16` (CfRadial `byte`/`short` packing,
-   present in the real corpus), or `F32`. Each variant carries its coding: linear transform,
-   `_FillValue`, `_Undetect`, range-folded code and `valid_range`. Physical values are
-   computed on demand. The NEXRAD transform is still evaluated as `(raw - offset) / scale` in
-   f32, so render checksums stay identical. Py-ART evaluates the same float32 expression.
-5. **Sentinels.** For NEXRAD, raw 0 is `_FillValue`, per the spec; xarray then masks it, as
-   Py-ART does. Raw 1 is kept as `flag_values = 1`, `flag_meanings = "range_folded"` (Table
-   301-10). A vector `missing_value = [0, 1]` was tested and rejected: xarray warns when
-   decoding it and refuses to write it back (A.6).
+   present in the real corpus), `F32`, or `F64` (float64 ODIM planes and CfRadial `double`
+   fields, kept unnarrowed). Float values are stored verbatim, including a source fill such as
+   -9999, so decode never makes a rewrite pass. Each variant carries its coding: linear
+   transform, `_FillValue`, `_Undetect`, range-folded code and `valid_range`. Physical values
+   are computed on demand. The NEXRAD transform is still evaluated as `(raw - offset) / scale`
+   in f32, so render checksums stay identical. Py-ART evaluates the same float32 expression.
+5. **Sentinels.** For NEXRAD, raw 0 (below threshold) is FM301 `_Undetect`: radiated, but no
+   valid echo (Table 301-10). It is also the CF `_FillValue`, per the spec, so xarray masks it
+   as Py-ART does. The model tells the two meanings apart: `Field::gate` returns `Undetect`
+   for raw 0 in a row the source provided and `Missing` for rows it did not. The view pads
+   with `_FillValue`. Raw 1 is kept as `flag_values = 1`,
+   `flag_meanings = "range_folded"` (Table 301-10). A vector `missing_value = [0, 1]` was
+   tested and rejected: xarray warns when decoding it and refuses to write it back (A.6). A
+   binding that decodes moves packed-unit attributes (`valid_range`, `flag_*`, `_Undetect`)
+   into `.encoding` so they cannot be read as physical values (12.3).
 6. **Names.** NEXRAD names follow xradar's mapping: REF→DBZH, VEL→VRADH, SW→WRADH, ZDR→ZDR,
    PHI→PHIDP, RHO→RHOHV, CFP→CCORH. JMA gets FM301 names. ODIM, CfRadial and DORADE keep their
    source names verbatim, which is what xradar returns for ODIM and CfRadial (A.4, A.5). A
    separate `Quantity` class answers lookups such as "the reflectivity field" regardless of
-   spelling. Py-ART aliases follow the `pyart.config` defaults.
+   spelling. Py-ART aliases follow the `pyart.config` defaults, and `PyartNames::Reader` gives
+   the names each Py-ART reader produces (8.2).
 7. **Format metadata.** NEXRAD RDA status, VCP, clutter maps and similar data live in typed
    structs owned by the format crate. They sit beside `Volume`, as
    `NexradVolume { volume, metadata }` (plan A.4), not inside it, because `core` must not
@@ -83,12 +98,25 @@ F.1 items and where they are covered:
 8. **Shim.** `pub type` aliases cannot keep un-migrated code compiling, because that code uses
    legacy struct fields and struct literals: 1,561 field-access sites in 77 files and about 140
    struct literals (section 13.1). Instead:
-   - The legacy types move unchanged to `recast_radar_core::legacy` and are re-exported at
-     their old paths.
-   - Conversions in both directions move gate buffers rather than copy them.
+   - The legacy model types (not geometry, refractivity or `bounded_read`) move unchanged to
+     `recast_radar_core::legacy` and are re-exported at their old paths.
+   - Conversions in both directions move gate buffers rather than copy them. Values the new
+     model cannot hold exactly go into a `LegacyResidue` returned beside the `Volume`, not
+     stored inside it, so a legacy → new → legacy round trip is bit-identical.
    - Deprecation warnings are opt-in, behind `--cfg recast_legacy_deprecation`, so other
-     streams' `-D warnings` CI is unaffected.
+     streams' `-D warnings` CI is unaffected. Kept legacy wrappers live in
+     `#[allow(deprecated)] mod legacy_api`. A migrated crate declares
+     `#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]`, which makes the migration
+     gate fail only on that crate's own legacy uses (13.4, tested).
    - The legacy module is deleted at the end of F.3.
+9. **Bindings without unsafe.** rust-numpy can wrap borrowed Rust memory only through an
+   `unsafe fn`, and spec principle 2 forbids that. A binding therefore takes ownership: it
+   moves each field's `Vec` into NumPy (`PyArray::from_vec`, safe and zero-copy) after
+   recording the FM301 layout. `VolumeView` stays the Rust-side conformance surface (12.2).
+10. **Passthrough.** Global attributes, sweep attributes, per-ray variables, calibration
+    entries and root variables without a typed slot are kept verbatim with their source name
+    and numeric type (`ExtraVariable`, `AttrValue`), so CfRadial and DORADE sources reach a
+    DataTree or Py-ART `Radar` without losing metadata (sections 2, 3, 9, 11).
 
 ---
 
@@ -98,22 +126,26 @@ The FM301 view (section 12) builds these groups and variables from the in-memory
 
 | FM301 path | Rust | Notes |
 |---|---|---|
-| `/` attributes (Tables 301-1..3, WMO-CF-2) | `Volume::attrs: GlobalAttrs` | section 11 |
+| `/` attributes (Tables 301-1..3, WMO-CF-2) | `Volume::attrs: GlobalAttrs` | section 11; unmodelled source attributes in `GlobalAttrs::other` |
+| `/<name>` root variables without a slot (CfRadial `status_xml`, `grid_mapping`) | `Volume::extra_vars: Vec<ExtraVariable>` | verbatim name, dims, dtype and attributes |
 | `/volume_number`, `/time_coverage_start`, `/time_coverage_end` | `Volume::{volume_number, time_coverage}` | |
 | `/latitude`, `/longitude`, `/altitude`, `/altitude_agl` | `Volume::location` | xradar makes these root coordinates, inherited by sweeps |
 | `/platform_type`, `/instrument_type`, `/primary_axis`, `/status_str` | `Volume::{platform_type, instrument_type, primary_axis, status_str}` | |
 | `/sweep_group_name(sweep)`, `/sweep_fixed_angle(sweep)` | derived from `Volume::sweeps` | CfRadial 2 root variables. xradar emits them for ODIM and CfRadial 1 but not NEXRAD (A.2, A.4, A.5). The view always emits them |
-| `/radar_parameters/*` | `Volume::radar_parameters` | Table 301-12 |
-| `/radar_calibration/*` (dim `calib`) | `Volume::radar_calibration: Vec<RadarCalibration>` | Table 301-14 |
+| `/radar_parameters/*` | `Volume::radar_parameters` | Table 301-12; variable names differ per flavor (12.4) |
+| `/radar_calibration/*` (dim `calib`) | `Volume::radar_calibration: Vec<RadarCalibration>` | Table 301-14; non-FM301 CfRadial entries (`k_squared_water`, `i0_dbm_*`, ...) in `RadarCalibration::extra` |
 | `/georeferencing_correction/*` | `Volume::georeferencing_correction` | CfRadial only; FM301 covers fixed platforms only |
 | `/sweep_<n>` | `Volume::sweeps[n]: Sweep` | `sweep_number == n` |
-| `/sweep_<n>/time(time)`, `azimuth(time)`, `elevation(time)` | `Sweep::rays` | Tables 301-6a, 301-7a |
+| `/sweep_<n>/time(time)`, `azimuth(time)`, `elevation(time)` | `Sweep::rays` | Tables 301-6a, 301-7a; ray dimension name and order follow `ViewOptions::first_dim` (12.1) |
 | `/sweep_<n>/range(range)` | `Sweep::range: RangeCoord` | one per sweep (section 6) |
 | `/sweep_<n>/frequency(frequency)` | `Volume::radar_parameters.frequency_hz` | constant over the volume; written into every sweep |
 | `/sweep_<n>/sweep_number, sweep_mode, follow_mode, prt_mode, fixed_angle` | `Sweep` fields | Table 301-7a; xradar spells `fixed_angle` as `sweep_fixed_angle` |
 | `/sweep_<n>/{polarization_mode, rays_are_indexed, rays_angle_resolution, qc_procedures, target_scan_rate}` | `Sweep` fields | Table 301-8a (scalars) |
+| `/sweep_<n>/polarization_sequence(prt)` | `Sweep::polarization_sequence` | Table 301-8a |
 | `/sweep_<n>/{nyquist_velocity, unambiguous_range, prt, ...}(time)` | `Sweep::ray_vars: RayVariables` | Table 301-8a (per ray); section 9 |
-| `/sweep_<n>/monitoring/*` | `Sweep::monitoring` | Table 301-11 |
+| `/sweep_<n>/<name>` without a slot (CfRadial `ray_start_range`, `georef_time`, ...) | `Sweep::extra_vars: Vec<ExtraVariable>` | verbatim; section 9 |
+| `/sweep_<n>` attributes without a slot | `Sweep::other` | verbatim |
+| `/sweep_<n>/monitoring/*` | `Sweep::monitoring` | Table 301-11; a child group (`Group::children`, 12.1) |
 | `/sweep_<n>/<FIELD>(time, range)` | `Sweep::fields: Vec<Field>` | Tables 301-9, 301-10; source order kept |
 
 ---
@@ -134,8 +166,14 @@ pub struct Volume {
     /// `/volume_number`.
     pub volume_number: Option<i32>,
     /// Epoch for every "seconds since <reftime>" value in the volume
-    /// (`Rays::time_s`, `RadarCalibration::time_s`). NEXRAD: volume header
-    /// date/time, the same epoch Py-ART writes into `time.units`.
+    /// (`Rays::time_s`, `RadarCalibration::time_s`). Always whole seconds
+    /// (sub-second part zero): FM301 Table 301-6b writes it as
+    /// `YYYY-MM-DDThh:mm:ssZ`, and any fraction lives in `time_s`.
+    /// A source that states a reference (CfRadial `time.units`) keeps it, so `time_s` passes
+    /// through unchanged. Otherwise it is the earliest ray time floored to the second.
+    /// NEXRAD: the first radial's collection time floored, which is Py-ART's `get_times`
+    /// rule (KTLX 2024: 00:02:17, first `time_s` 0.182). When the volume header time differs
+    /// from the first radial, the header time stays in `NexradMetadata`.
     pub time_reference: DateTime<Utc>,
     /// `/time_coverage_start`, `/time_coverage_end`: first and last ray.
     pub time_coverage: Option<TimeCoverage>,
@@ -157,6 +195,9 @@ pub struct Volume {
     pub radar_calibration: Vec<RadarCalibration>,
     /// `/georeferencing_correction` (CfRadial 1/2; not part of FM301).
     pub georeferencing_correction: Option<Box<GeoreferencingCorrection>>,
+    /// Root variables with no slot above (CfRadial `status_xml`, `grid_mapping`), verbatim
+    /// and in file order. The Xradar flavor writes them; the WMO flavor drops non-FM301 names.
+    pub extra_vars: Vec<ExtraVariable>,
     /// Source format, container version, decode statistics. Not exported as variables.
     pub provenance: Provenance,
     /// Model / forward-operator provenance for simulated volumes.
@@ -190,6 +231,12 @@ pub struct GlobalAttrs {
     pub simulated: bool,
     /// `wmo__*` attributes (WMO-CF.6.10).
     pub wmo: WmoAttrs,
+    /// Source attributes with no slot above, verbatim, typed and in file order. For CfRadial:
+    /// `Sub_conventions`, `original_format`, `driver`, `created`, `start_datetime`,
+    /// `start_time`, `end_datetime`, `end_time`, `n_gates_vary` (DOW8, IRENE; A.5). Py-ART
+    /// keeps all of them in `Radar.metadata`; xradar 0.12 drops them (A.5), so the view
+    /// writes them only with `ViewOptions::passthrough = Passthrough::All` (12.1).
+    pub other: Vec<(Box<str>, AttrValue)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -251,21 +298,27 @@ pub struct ScanDefinition {
     pub source_figure: Option<String>,
     pub pulse_length: Option<String>,
     pub adaptations: Option<String>,
-    /// Non-numeric `scan_id` text the source wrote, when `ScanStrategy::id` cannot hold it.
+    /// `scan_id` text as the source wrote it, whenever it is not exactly
+    /// `ScanStrategy::id.to_string()`: non-numeric ids, and numeric ids with other spellings
+    /// ("00", "+5"). `None` when `id` reproduces the text.
     pub scan_id_text: Option<String>,
     /// One leg per sweep: the legacy `ScanLegMetadata` with unchanged fields.
     pub legs: Vec<ScanLeg>,
 }
 
+/// Variable names differ by flavor; 12.4 has the table. FM301-2022 Table 301-12a has no
+/// `radar_` prefix (`antenna_gain_h`, `receiver_bandwidth`); xradar 0.12 writes
+/// `radar_antenna_gain_h` and `radar_receiver_bandwidth`; CfRadial 1 files write
+/// `radar_antenna_gain_h` and `radar_rx_bandwidth` (DOW8, IRENE).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RadarParameters {
     /// Operating frequencies in Hz (`frequency` dimension). Legacy `radar_frequency_mhz` × 1e6.
     pub frequency_hz: Vec<f64>,
-    pub antenna_gain_h_db: Option<f32>,     // radar_antenna_gain_h
-    pub antenna_gain_v_db: Option<f32>,     // radar_antenna_gain_v
-    pub beam_width_h_deg: Option<f32>,      // radar_beam_width_h
-    pub beam_width_v_deg: Option<f32>,      // radar_beam_width_v
-    pub receiver_bandwidth_hz: Option<f32>, // radar_receiver_bandwidth
+    pub antenna_gain_h_db: Option<f32>,
+    pub antenna_gain_v_db: Option<f32>,
+    pub beam_width_h_deg: Option<f32>,
+    pub beam_width_v_deg: Option<f32>,
+    pub receiver_bandwidth_hz: Option<f32>,
     /// Volume-constant values that some sources declare instead of per-ray vectors
     /// (legacy `VolumeMetadata::{pulse_width_us, prt_s, unambiguous_range_km}`).
     /// For sweeps whose `RayVariables` lack them, the view broadcasts these into
@@ -278,7 +331,12 @@ pub struct RadarParameters {
 /// One `calib` entry. Field names are the Table 301-14a variable names plus a unit suffix.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RadarCalibration {
-    pub calib_index: Option<i16>,
+    /// Held as i32, the widest type a source uses (CfRadial 1 `r_calib_index` is int32 in DOW8
+    /// and IRENE). The view writes the flavor's type: WMO flavor `byte` for
+    /// `/radar_calibration/calib_index` (Table 301-14a) and `int` for the per-ray
+    /// `calib_index(time)` (Table 301-8a), returning `ViewError::OutOfRange` if a value does
+    /// not fit; Xradar flavor as xradar writes it (F.4 pins IRENE).
+    pub calib_index: Option<i32>,
     pub time_s: Option<f64>, // seconds since Volume::time_reference
     pub pulse_width_s: Option<f32>,
     pub antenna_gain_h_db: Option<f32>, pub antenna_gain_v_db: Option<f32>,
@@ -306,6 +364,11 @@ pub struct RadarCalibration {
     pub test_power_h_dbm: Option<f32>, pub test_power_v_dbm: Option<f32>,
     pub receiver_slope_hc: Option<f32>, pub receiver_slope_vc: Option<f32>,
     pub receiver_slope_hx: Option<f32>, pub receiver_slope_vx: Option<f32>,
+    /// Entries outside Table 301-14a, named as xradar names them (the CfRadial `r_calib_`
+    /// prefix removed): `k_squared_water`, `i0_dbm_hc/vc/hx/vx`,
+    /// `dynamic_range_db_hc/vc/hx/vx`, `dbz_correction` (DOW8; A.5). CfRadial
+    /// `r_calib_base_dbz_1km_*` fills `base_1km_*_dbz` above, the name xradar uses.
+    pub extra: Vec<(Box<str>, AttrValue)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -353,6 +416,46 @@ pub struct SimulationProvenance {
 pub struct GeoreferencingCorrection { /* ... */ }
 ```
 
+Typed values shared by the model and the view:
+
+```rust
+// crates/recast-radar-core/src/model/values.rs
+
+/// A numeric scalar that keeps its type. CF requires `_FillValue`, `valid_range` and
+/// `flag_values` in the packed variable's type, and xarray picks the decoded dtype from the
+/// type of `scale_factor` (float32 attributes on 8/16-bit data decode to float32; DOW8 A.5).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Scalar { I8(i8), U8(u8), I16(i16), U16(u16), I32(i32), U32(u32), I64(i64), U64(u64),
+                  F32(f32), F64(f64) }
+
+/// A typed 1-D buffer (row-major when the owner has more than one dimension).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ArrayBuf { I8(Vec<i8>), U8(Vec<u8>), I16(Vec<i16>), U16(Vec<u16>), I32(Vec<i32>),
+                    U32(Vec<u32>), I64(Vec<i64>), F32(Vec<f32>), F64(Vec<f64>),
+                    Text(Vec<Box<str>>) }
+
+/// An attribute value with its type. `Bool` exists because xradar 0.12 writes Python bools
+/// and ints for NEXRAD attributes (`mpda_vcp: False`, `number_elevation_cuts: 23`; A.2). The
+/// Xradar flavor emits `Bool` as a bool. netCDF has no bool type, so the WMO flavor and file
+/// writers emit "true"/"false" text, FM301's convention (xradar's own `to_cfradial2` raises
+/// `TypeError` on a bool attribute).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum AttrValue { Text(Box<str>), Bool(bool), Scalar(Scalar), Array(ArrayBuf) }
+
+/// A source variable without a typed slot, kept verbatim.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ExtraVariable {
+    /// Source name (CfRadial `georef_time`, `ray_start_range`, `status_xml`).
+    pub name: Box<str>,
+    /// Dimension names: `[]`, `["time"]`, `["time", "<source dim>"]`. A `"time"` dimension has
+    /// `nrays` entries and follows the view's ray order.
+    pub dims: Vec<Box<str>>,
+    pub shape: Vec<u32>,
+    pub values: ArrayBuf,
+    pub attrs: Vec<(Box<str>, AttrValue)>,
+}
+```
+
 `ScanLeg` is the legacy `ScanLegMetadata` with identical fields.
 
 **Format extensions are typed and live beside the volume, not inside it.**
@@ -390,6 +493,9 @@ pub struct Sweep {
     pub prt_mode: Option<PrtMode>,
     /// `polarization_mode`.
     pub polarization_mode: Option<PolarizationMode>,
+    /// `polarization_sequence(prt)` (Table 301-8a): "H" or "V" per PRT, for
+    /// `prt_mode = hybrid`.
+    pub polarization_sequence: Option<Vec<Box<str>>>,
     /// `fixed_angle` (xradar: `sweep_fixed_angle`). Target elevation; target azimuth for RHI.
     pub fixed_angle_deg: f32,
     /// `target_scan_rate`.
@@ -407,9 +513,14 @@ pub struct Sweep {
     pub ray_vars: RayVariables,
     /// `monitoring` subgroup (Table 301-11).
     pub monitoring: Option<Box<Monitoring>>,
-    /// Per-ray platform position for moving platforms (CfRadial 1 `latitude(time)`, ...).
-    /// Not FM301.
+    /// Per-ray platform position and attitude for moving platforms (CfRadial 1
+    /// `latitude(time)`, `heading(time)`, ...). Not FM301.
     pub platform_track: Option<Box<PlatformTrack>>,
+    /// Sweep variables with no slot above, verbatim and in file order (section 9).
+    pub extra_vars: Vec<ExtraVariable>,
+    /// Sweep group attributes with no slot above, verbatim. NEXRAD's xradar sweep attributes
+    /// come from `NexradMetadata` through `fm301::ExtraAttrs` instead.
+    pub other: Vec<(Box<str>, AttrValue)>,
     /// Dataset variables, in source order.
     pub fields: Vec<Field>,
     /// Source cut number (NEXRAD ICD elevation number, 1-based). Not an FM301 variable.
@@ -417,10 +528,6 @@ pub struct Sweep {
     /// `false` when rays stop before the end-of-elevation marker (truncated archive,
     /// real-time chunk). Same notion as xradar's `incomplete_sweep`.
     pub complete: bool,
-    /// Shim only (section 13): set by `TryFrom<RadarVolume>`; removed with the shim.
-    #[doc(hidden)]
-    #[serde(skip)]
-    pub legacy: Option<Box<crate::legacy::SweepResidue>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -452,14 +559,16 @@ pub enum SweepMode {
     Other(Box<str>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FollowMode { None, Sun, Vehicle, Aircraft, Target, Manual }
+// Each `Other` holds a source string outside Table 301-15 verbatim (Radx writes "not_set").
+// Parsing maps a table spelling to its variant, so `Other` never holds a table value.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FollowMode { None, Sun, Vehicle, Aircraft, Target, Manual, Other(Box<str>) }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PrtMode { Fixed, Staggered, Dual, Hybrid }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PrtMode { Fixed, Staggered, Dual, Hybrid, Other(Box<str>) }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PolarizationMode { Horizontal, Vertical, HvAlt, HvSim, Circular }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PolarizationMode { Horizontal, Vertical, HvAlt, HvSim, Circular, Other(Box<str>) }
 
 /// Table 301-11. Each variable is `(time)`; `None` means not provided.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -477,12 +586,23 @@ pub struct Monitoring {
     pub zdr_offset_db: Option<Vec<f32>>,
 }
 
-/// CfRadial 1 moving-platform position per ray. Not FM301.
+/// Moving-platform position and attitude per ray (CfRadial 1 georeference variables). Not
+/// FM301. The attitude vectors are the ones Py-ART's `Radar` has attributes for. Other
+/// georeference variables (`georefs_applied`, `georef_time`, `georef_unit_num`,
+/// `georef_unit_id`, platform velocities) stay in `Sweep::extra_vars` under their source
+/// names, which is where xradar 0.12 keeps them (DOW8; A.5).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlatformTrack {
     pub latitude_deg: Vec<f64>,
     pub longitude_deg: Vec<f64>,
     pub altitude_m: Vec<f64>,
+    pub altitude_agl_m: Option<Vec<f64>>,
+    pub heading_deg: Option<Vec<f32>>,
+    pub roll_deg: Option<Vec<f32>>,
+    pub pitch_deg: Option<Vec<f32>>,
+    pub drift_deg: Option<Vec<f32>>,
+    pub rotation_deg: Option<Vec<f32>>,
+    pub tilt_deg: Option<Vec<f32>>,
 }
 ```
 
@@ -492,6 +612,7 @@ Construction API used by decoders. Every call is O(1) or O(fields); none copies 
 impl Sweep {
     pub fn new(sweep_number: u32, sweep_mode: SweepMode, fixed_angle_deg: f32) -> Self;
     pub fn reserve_rays(&mut self, rays: usize);
+    /// Returns the new ray's index, which the decoder passes to `Field::push_row_*`.
     pub fn push_ray(&mut self, time_s: f64, azimuth_deg: f32, elevation_deg: f32) -> usize;
     /// Register a field's native geometry. Grows or refines `range` as needed and returns the
     /// field's mapping. Refining (a finer spacing arrives later) rewrites the existing fields'
@@ -502,19 +623,26 @@ impl Sweep {
     pub fn field_mut(&mut self, name: &FieldName) -> Option<&mut Field>;
     /// Preferred field for a quantity: H before unspecified before V.
     pub fn find(&self, quantity: Quantity) -> Option<&Field>;
-    /// Append fill rows for rays a field never received and check the invariants.
-    /// Decoders call it once per sweep.
+    /// Append absent rows for rays at the end that a field never received, then check the
+    /// invariants. Decoders call it once per sweep.
     pub fn seal(&mut self) -> Result<(), SweepError>;
 }
 ```
 
 Invariants after `seal`:
 
-- Every `Rays` vector has `nrays` entries.
-- Every field has `field.nrays == nrays`.
+- Every `Rays` vector has `nrays` entries, and every present `RayVariables`,
+  `PlatformTrack` or `"time"`-dimensioned `ExtraVariable` vector matches.
+- Every field has `field.nrays == nrays`, and row `r` of every field belongs to ray `r`.
+  `Field::push_row_*` takes the ray index and fills skipped rays with absent rows, so a
+  moment missing from interior radials cannot shift later rows (4).
 - Every field satisfies `field.gates.start + field.ngates * field.gates.stride <= range.ngates()`.
 - `stride > 1` occurs only with `RangeCoord::Uniform`.
-- Field names are unique within the sweep.
+- Field names are unique within the sweep, compared by `FieldName::as_str()`.
+
+All model structs have public fields, so a caller can move buffers out by destructuring
+(`let Field { data, .. } = field;`). `Field::into_parts` and `FieldData::into_array` (4) are
+the named forms that bindings use (12.2).
 
 ---
 
@@ -540,6 +668,10 @@ pub struct Field {
     pub gates: GateMapping,
     /// Row-major `[nrays × ngates]` values in the source encoding (section 7).
     pub data: FieldData,
+    /// Rows the source did not provide for this field, ascending. Each is filled with the
+    /// coding's fill code (NaN for floats without one). Empty in the common case, which costs
+    /// no allocation. Replaces legacy `MomentGrid::radial_indices`.
+    pub absent_rows: Vec<u32>,
 }
 
 /// Native gate i covers sweep-range gates `start + i*stride ..= start + i*stride + stride - 1`.
@@ -556,16 +688,21 @@ pub enum FieldData {
     U16 { values: Vec<u16>, coding: IntCoding<u16> },
     I8 { values: Vec<i8>, coding: IntCoding<i8> },
     I16 { values: Vec<i16>, coding: IntCoding<i16> },
-    /// Physical values (derived products, float sources). NaN always means missing.
-    F32 { values: Vec<f32>, coding: FloatCoding },
+    /// Physical values (derived products, float32 sources), stored verbatim.
+    F32 { values: Vec<f32>, coding: FloatCoding<f32> },
+    /// float64 sources (espdg ODIM planes, CfRadial `double` fields), stored verbatim.
+    /// xradar keeps these as float64, so raw hashes stay comparable (F.4).
+    F64 { values: Vec<f64>, coding: FloatCoding<f64> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct IntCoding<T> {
     pub transform: LinearTransform,
-    /// CF `_FillValue`: NEXRAD 0 (below threshold), ODIM `nodata`, CfRadial `_FillValue`.
+    /// CF `_FillValue`: the code for "no data" and the code the view pads with. NEXRAD 0,
+    /// ODIM `nodata`, CfRadial `_FillValue`.
     pub fill_value: Option<T>,
-    /// Table 301-10 `_Undetect`: ODIM `undetect`.
+    /// Table 301-10 `_Undetect`: radiated, but no valid echo. NEXRAD 0 (below threshold,
+    /// equal to `fill_value`), ODIM `undetect`.
     pub undetect: Option<T>,
     /// NEXRAD 1. Exported as `flag_values = [1]`, `flag_meanings = "range_folded"`.
     pub range_folded: Option<T>,
@@ -576,17 +713,32 @@ pub struct IntCoding<T> {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LinearTransform {
     /// physical = (raw - offset) / scale, evaluated in f32. NEXRAD ICD form; the current
-    /// decoder and Py-ART both evaluate exactly this expression.
+    /// decoder and Py-ART both evaluate exactly this expression. The view writes
+    /// `scale_factor = 1/scale` and `add_offset = -offset/scale` as float64, as xradar does.
     IcdScaleOffset { scale: f32, offset: f32 },
     /// physical = raw * scale_factor + add_offset. CF and ODIM gain-offset form.
-    CfScaleOffset { scale_factor: f64, add_offset: f64 },
+    /// `attr_width` is the type the source wrote the two attributes in. The view writes them
+    /// in that type, because xarray derives the decoded dtype from it (DOW8 `scale_factor` is
+    /// float32 and decodes to float32 in xradar and Py-ART).
+    CfScaleOffset { scale_factor: f64, add_offset: f64, attr_width: FloatWidth },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FloatWidth { F32, F64 }
+
+/// Float fields are stored as the source wrote them. NaN is always missing. A non-NaN
+/// source fill (for example -9999) stays in the data. `Field::gate` resolves it to `Missing`,
+/// and the view writes it as `_FillValue`, so xarray and Py-ART mask it exactly as they mask
+/// the source file. Derived fields use `FloatCoding::default()` and NaN; the view then
+/// writes `_FillValue = NaN`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct FloatCoding {
-    /// A non-NaN `_FillValue` the source used (for example -9999), if any.
-    pub fill_value: Option<f32>,
-    pub undetect: Option<f32>,
+pub struct FloatCoding<T> {
+    /// `None`: the values are physical. `Some`: an ODIM float plane whose `gain`/`offset`
+    /// is not 1/0, applied on read like an integer field's transform, so decode never makes a
+    /// scaling pass. espdg has gain 1 and offset 0 (`None`).
+    pub transform: Option<LinearTransform>,
+    pub fill_value: Option<T>,
+    pub undetect: Option<T>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -604,27 +756,40 @@ pub struct FieldAttrs {
     pub qualified_variables: Vec<FieldName>,
     pub ancillary_variables: Vec<FieldName>,
     pub thresholding_xml: Option<String>,
-    /// `flag_values` / `flag_meanings` of discrete fields (classification), besides the
-    /// range-folded flag.
-    pub flags: Vec<(i32, Box<str>)>,
-    /// Source attributes with no slot above, verbatim and in file order
+    /// `flag_values`, `flag_masks` and `flag_meanings` of discrete fields (classification),
+    /// besides the range-folded flag, which comes from the coding. Held as i64; the view
+    /// writes `flag_values` and `flag_masks` in the variable's packed type (CF, Table 301-10)
+    /// and returns `ViewError::OutOfRange` if one does not fit.
+    pub flag_values: Vec<i64>,
+    pub flag_masks: Vec<i64>,
+    pub flag_meanings: Vec<Box<str>>,
+    /// Source attributes with no slot above, verbatim, typed and in file order
     /// (for example CfRadial `grid_mapping`).
     pub other: Vec<(Box<str>, AttrValue)>,
 }
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum AttrValue { Text(String), I64(i64), F64(f64), F64s(Vec<f64>), I64s(Vec<i64>) }
 
 /// One gate's value with its sentinel resolved.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Gate { Value(f32), Missing, Undetect, RangeFolded }
 
-pub enum RowRef<'a> { U8(&'a [u8]), U16(&'a [u16]), I8(&'a [i8]), I16(&'a [i16]), F32(&'a [f32]) }
+pub enum RowRef<'a> { U8(&'a [u8]), U16(&'a [u16]), I8(&'a [i8]), I16(&'a [i16]),
+                      F32(&'a [f32]), F64(&'a [f64]) }
 
 impl Field {
     pub fn new(name: FieldName, gates: GateMapping, ngates: u32, data: FieldData) -> Self;
     pub fn shape(&self) -> (usize, usize); // (nrays, ngates)
     pub fn row(&self, ray: usize) -> Option<RowRef<'_>>;
+    /// Resolves a native gate, in this order:
+    /// 1. `ray` is in `absent_rows`: `Missing`.
+    /// 2. The raw value equals `undetect`: `Undetect`. This rule comes before the fill rule,
+    ///    so NEXRAD raw 0 (fill and undetect both 0) reads as `Undetect` in a provided row.
+    /// 3. It equals `fill_value` or is NaN: `Missing`.
+    /// 4. It equals `range_folded`: `RangeFolded`. This comes before the `valid_range` rule,
+    ///    because NEXRAD's `valid_range = [2, MAX]` excludes the range-folded code 1.
+    /// 5. It is outside `valid_range`: `Missing`.
+    /// 6. Otherwise: `Value(physical)`.
+    /// Gates past the native extent are not native gates (`None`). In the view they are
+    /// padding, written as `_FillValue`.
     pub fn gate(&self, ray: usize, gate: usize) -> Option<Gate>;
     /// Legacy `MomentGrid::scaled_value` semantics: `None` for every sentinel.
     pub fn value(&self, ray: usize, gate: usize) -> Option<f32>;
@@ -634,23 +799,44 @@ impl Field {
     pub fn to_physical(&self) -> Vec<f32>;
     /// Native geometry on the given range: (centre of native gate 0, native spacing).
     pub fn native_geometry(&self, range: &RangeCoord) -> Option<(f64, f64)>;
-    // Decode-time row pushes; padding and extension behave like the legacy push_* methods.
+    // Decode-time row pushes. `ray` is the index `Sweep::push_ray` returned. When
+    // `ray > rows`, rows `rows..ray` are appended as absent rows first; `ray < rows` is
+    // `FieldError::RowOrder`. Short rows are padded with the fill code, as the legacy
+    // push_* methods do.
     pub fn reserve_rows(&mut self, rows: usize);
-    pub fn push_row_u8(&mut self, row: &[u8]) -> Result<(), FieldError>;
-    pub fn push_row_u16_be(&mut self, row_be: &[u8]) -> Result<(), FieldError>;
-    pub fn push_row_i8(&mut self, row: &[i8]) -> Result<(), FieldError>;
-    pub fn push_row_i16_be(&mut self, row_be: &[u8]) -> Result<(), FieldError>;
-    pub fn push_row_f32(&mut self, row: &[f32]) -> Result<(), FieldError>;
-    pub fn push_fill_row(&mut self);
+    pub fn push_row_u8(&mut self, ray: usize, row: &[u8]) -> Result<(), FieldError>;
+    pub fn push_row_u16_be(&mut self, ray: usize, row_be: &[u8]) -> Result<(), FieldError>;
+    pub fn push_row_i8(&mut self, ray: usize, row: &[i8]) -> Result<(), FieldError>;
+    pub fn push_row_i16_be(&mut self, ray: usize, row_be: &[u8]) -> Result<(), FieldError>;
+    pub fn push_row_f32(&mut self, ray: usize, row: &[f32]) -> Result<(), FieldError>;
+    pub fn push_row_f64(&mut self, ray: usize, row: &[f64]) -> Result<(), FieldError>;
+    /// Move out: bindings hand `FieldData`'s `Vec` to NumPy without copying (12.2).
+    pub fn into_parts(self) -> FieldParts;
 }
+
+pub struct FieldParts {
+    pub name: FieldName, pub quantity: Quantity, pub polarization: Polarization,
+    pub attrs: FieldAttrs, pub nrays: u32, pub ngates: u32, pub gates: GateMapping,
+    pub data: FieldData, pub absent_rows: Vec<u32>,
+}
+
+impl FieldData {
+    /// The buffer, moved, with its coding. No copy.
+    pub fn into_array(self) -> (ArrayBuf, Coding);
+}
+pub enum Coding { U8(IntCoding<u8>), U16(IntCoding<u16>), I8(IntCoding<i8>),
+                  I16(IntCoding<i16>), F32(FloatCoding<f32>), F64(FloatCoding<f64>) }
 ```
 
 ```rust
 // crates/recast-radar-core/src/model/names.rs
 
 /// Dataset variable name. Known names are variants, so comparisons are cheap and each has
-/// one spelling. Any other name is `Other`, verbatim.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+/// one spelling. Any other name is `Other`, verbatim. `Other` never holds a known spelling:
+/// every constructor goes through `parse`.
+/// `Serialize` and `Deserialize` are implemented by hand through `as_str` and `parse`, so
+/// serialized names are the FM301 names ("DBZH", "VEL"), not Rust variant spellings.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum FieldName {
     // FM301-2022 Table 301-9
@@ -689,8 +875,22 @@ pub struct NameInfo {
     pub units: &'static str,
     /// Units verbatim from xradar 0.12 `sweep_vars_mapping` ("meters per seconds", "unitless").
     pub units_xradar: &'static str,
-    /// Default field name in `pyart.config`.
+    /// Default field name in `pyart.config` (`PyartNames::Config`).
     pub pyart: Option<&'static str>,
+    /// Name Py-ART's ODIM reader (`aux_io.read_odim_h5`) gives this quantity, if different
+    /// (`PyartNames::Reader`, 8.2 note 3).
+    pub pyart_odim: Option<&'static str>,
+}
+
+/// How a Py-ART export names fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyartNames {
+    /// `pyart.config` defaults for every source: the names Py-ART's algorithms expect.
+    Config,
+    /// The names Py-ART's reader for the volume's source format produces: config names for
+    /// NEXRAD (`read_nexrad_archive`), verbatim names for CfRadial (`read_cfradial`),
+    /// `aux_io` names for ODIM. Used for value and name conformance against those readers.
+    Reader,
 }
 
 impl FieldName {
@@ -700,14 +900,22 @@ impl FieldName {
     /// Message 31 or Message 1 data block name (space- or NUL-padded) -> xradar name.
     pub fn from_nexrad_block(name: &[u8]) -> FieldName;
     pub fn info(&self) -> Option<&'static NameInfo>;
-    /// Py-ART alias, or the name itself for `Other`.
-    pub fn pyart_name(&self) -> Cow<'_, str>;
+    /// Py-ART alias for the mode and source format, or the name itself when there is none.
+    pub fn pyart_name(&self, mode: PyartNames, source: SourceFormat) -> Cow<'_, str>;
 }
 
 impl Quantity {
-    /// Suffix-stripping classifier for verbatim names; replaces `canonical_moment`
-    /// (DBZHC_F -> DBZHC -> DBZ -> Reflectivity). Returns `Other` when nothing matches.
-    pub fn classify(name: &str) -> (Quantity, Polarization);
+    /// Classifier for verbatim names; replaces `canonical_moment`. Tries, in order:
+    /// 1. `standard_name`, against FM301 Table 301-9 and the CF standard names
+    ///    (`equivalent_reflectivity_factor`, `radial_velocity_of_scatterers_away_from_instrument`,
+    ///    ...). Py-ART-written CfRadial (xsapr `reflectivity_horizontal`) carries one. An
+    ///    unrecognised `standard_name` falls through: DOW8 writes the variable name (`DBZHC`).
+    /// 2. The exact name against the Py-ART config and ODIM-reader names
+    ///    (`reflectivity_horizontal` -> Reflectivity / H).
+    /// 3. Suffix stripping of FM301, ODIM and CfRadial stems (DBZHC_F -> DBZHC -> DBZ ->
+    ///    Reflectivity).
+    /// Returns `(Other, Unspecified)` when nothing matches.
+    pub fn classify(name: &str, standard_name: Option<&str>) -> (Quantity, Polarization);
 }
 ```
 
@@ -722,19 +930,19 @@ impl Quantity {
 | `site.id` | `attrs.instrument_name` | verbatim |
 | `site.name` | `attrs.site_name` | verbatim |
 | `site.latitude_deg` / `longitude_deg` / `elevation_m` (f32) | `location.latitude_deg` / `longitude_deg` / `altitude_m` (f64) | widened; f32 → f64 → f32 is exact |
-| `volume_time` | `time_reference` | verbatim |
-| `vcp: Option<VcpInfo { pattern }>` | `scan.vcp_pattern`; for NEXRAD also `scan.id = pattern` and `scan.name = "VCP-{pattern}"` | |
+| `volume_time` | `time_reference` = `volume_time` floored to the second | the full value goes to the residue (5.5) |
+| `vcp: Option<VcpInfo { pattern }>` | `scan.vcp_pattern` | The conversion does not set `scan.id` or `scan.name` from the pattern, because that would make legacy `scan_name: None` come back as `Some`. The native io-nexrad decoder sets them (`id = pattern`, `name = "VCP-{pattern}"`) |
 | `cuts` | `sweeps` | index i gives `sweep_number = i` |
 | `metadata.source_path`, `archive_version`, `compression` | `provenance.source_path`, `source_version`, `compression` | |
 | `metadata.message_count`, `decoded_radial_count`, `skipped_message_count` | `provenance.decode.*` | |
-| `metadata.scan_mode` | every `sweep.sweep_mode` | section 10 |
-| `metadata.radar_frequency_mhz` (u32) | `radar_parameters.frequency_hz = [mhz × 1e6]` | |
+| `metadata.scan_mode` (`Option`) | every `sweep.sweep_mode`; `None` gives `AzimuthSurveillance` | section 10; the `Option` goes to the residue |
+| `metadata.radar_frequency_mhz` (u32) | `radar_parameters.frequency_hz = [mhz × 1e6]` | exact both ways (u32 × 1e6 < 2^53) |
 | `metadata.beam_width_h_deg` / `beam_width_v_deg` | `radar_parameters.beam_width_h_deg` / `beam_width_v_deg` | |
-| `metadata.pulse_width_us` | `radar_parameters.pulse_width_s = us × 1e-6` | |
+| `metadata.pulse_width_us` | `radar_parameters.pulse_width_s = us × 1e-6` | inexact in f32; residue |
 | `metadata.prt_s` | `radar_parameters.prt_s` | |
-| `metadata.unambiguous_range_km` | `radar_parameters.unambiguous_range_m = km × 1000` | |
+| `metadata.unambiguous_range_km` | `radar_parameters.unambiguous_range_m = km × 1000` | inexact in f32; residue |
 | `metadata.scan_name` | `scan.name` | |
-| `metadata.scan_id` (String) | `scan.id` if it parses as i64; otherwise `scan.definition.scan_id_text` | |
+| `metadata.scan_id` (String) | `scan.id` if it parses as i64; `scan.definition.scan_id_text` whenever the text is not `id.to_string()` | exact |
 | `metadata.vcp_source_{document, revision, rda_build, figure}`, `vcp_pulse_length`, `vcp_adaptations`, `scan_legs` | `scan.definition.{source_document, source_revision, source_rda_build, source_figure, pulse_length, adaptations, legs}` | |
 | `metadata.polarization`, `calibration` | `provenance.polarization_note`, `calibration_note` | free text |
 | `metadata.forward_operator`, `forward_operator_config`, `source_model`, `microphysics_scheme`, `scattering_model` | `simulation.*`; `attrs.simulated = true` when any is set | |
@@ -747,15 +955,16 @@ impl Quantity {
 | `elevation_deg` | `fixed_angle_deg` | Verbatim. Today NEXRAD writes the first ray's elevation (KTLX 2024 cut 0: 0.582). Native F.3 decoding, using stream A's Message 5, writes the VCP angle (0.4834), as xradar and Py-ART do |
 | `elevation_number: Option<u8>` | `elevation_number: Option<u16>` | widened |
 | `radials[i].azimuth_deg`, `.elevation_deg` | `rays.azimuth_deg[i]`, `rays.elevation_deg[i]` | array-of-structs to struct-of-arrays |
-| `radials[i].time_offset_ms` | `rays.time_s[i]`, and the raw value kept in the residue | Meaning depends on the decoder (13.2). NEXRAD stores ms of day of collection: `time_s = (midnight of time_reference's date + ms) - time_reference`, plus one day when that is more than 12 h before the reference. CfRadial stores ms since volume start (truncated): `time_s = ms / 1000`. DORADE stores ms since sweep start. ODIM and JMA store 0, so `time_s = 0` until native decoding |
+| `radials[i].time_offset_ms` | `rays.time_s[i]`, and the raw value kept in the residue | Meaning depends on the decoder (13.2). NEXRAD stores ms of day of collection: `time_s = (midnight of volume_time's date + ms) - time_reference`, plus one day when that is more than 12 h before the reference. CfRadial stores ms since volume start (truncated): `time_s = ms / 1000 + (volume_time - time_reference)`. DORADE stores ms since sweep start. ODIM and JMA store 0, so `time_s = 0` until native decoding |
 | `radials[i].gate_range` | residue only | the field's `GateMapping` is authoritative |
-| `radials[i].nyquist_velocity_mps` | `ray_vars.nyquist_velocity_mps[i]`, NaN for `None`; the whole vector is `None` if every radial is `None` | |
+| `radials[i].nyquist_velocity_mps` | `ray_vars.nyquist_velocity_mps[i]`, NaN for `None`; the whole vector is `None` if every radial is `None` | a legacy `Some(NaN)` would come back as `None`; residue |
 | `radials[i].radial_status` | residue; io-nexrad also keeps it in `NexradMetadata` | not FM301 |
-| `ray_instrument_metadata[i].prt_s` | `ray_vars.prt_s[i]` | |
-| `.unambiguous_range_km` | `ray_vars.unambiguous_range_m[i] = km × 1000` | |
-| `.pulse_count` (u32) | `ray_vars.n_samples[i]` (i32; -9999 when missing) | |
-| `.independent_samples` | `ray_vars.independent_samples[i]` | |
-| `moments: BTreeMap<MomentType, MomentGrid>` | `fields: Vec<Field>` | BTreeMap order, the only order legacy kept. Native decoders use source order |
+| `ray_instrument_metadata` (empty, or one entry per radial) | `ray_vars` vectors | an all-`None` non-empty vector would come back empty; residue keeps its length |
+| `ray_instrument_metadata[i].prt_s` | `ray_vars.prt_s[i]`, NaN for `None` | as for Nyquist |
+| `.unambiguous_range_km` | `ray_vars.unambiguous_range_m[i] = km × 1000` | inexact in f32; residue |
+| `.pulse_count` (`Option<u32>`) | `ray_vars.n_samples[i]` (i32; -9999 when missing) | values above `i32::MAX` go to the residue, and the ray gets -9999 |
+| `.independent_samples` | `ray_vars.independent_samples[i]`, NaN for `None` | as for Nyquist |
+| `moments: BTreeMap<MomentType, MomentGrid>` | `fields: Vec<Field>` | BTreeMap order, the only order legacy kept. Native decoders use source order. The reverse inserts into a BTreeMap, so order is exact |
 | (none) | `range` | built from the grids with `attach_geometry`, after converting each legacy `gate_range` to gate centres using that decoder's convention (6.6) |
 | (none) | `complete` | `true` |
 
@@ -768,13 +977,13 @@ F.3 matches xradar, which F.4 verifies.
 
 | Legacy | New |
 |---|---|
-| `moment: MomentType` | `name = moment.to_field_name()`; `quantity` and `polarization` from `name.info()` |
+| `moment: MomentType` | `name` by 5.4; `quantity` and `polarization` from the legacy variant; the variant goes to the residue |
 | `gate_range` | `ngates = gate_count`; `gates = attach_geometry(centre(gate_range), spacing, count)` |
 | `scale`, `offset` | `IcdScaleOffset { scale, offset }`. Every legacy grid uses this form, including ODIM's inverted gain |
-| `nodata: Option<u16>` | `coding.fill_value` (narrowed to u8 for `U8` storage) |
-| `range_folded: Option<u16>` | `coding.range_folded` |
-| `radial_indices` | Removed: rows align 1:1 with rays. A non-identity mapping is scattered into fill rows, with the original indices kept in the residue. Every grid in the four NEXRAD probe volumes has rows == radials (A.2, A.3) |
-| `storage: U8(v)` / `U16(v)` / `F32(v)` | `FieldData::U8 { values: v, .. }` / `U16` / `F32`, moved |
+| `nodata: Option<u16>` | `coding.fill_value` (narrowed to u8 for `U8` storage; a value that does not fit goes to the residue). For NEXRAD sources `coding.undetect = Some(0)` as well (7.1) |
+| `range_folded: Option<u16>` | `coding.range_folded` (narrowed the same way) |
+| `radial_indices` | Removed: row `r` belongs to ray `r`. A non-identity mapping is scattered into rows, the rays without data become `absent_rows`, and the original indices go to the residue. No corpus grid has non-identity indices: the four NEXRAD probe volumes (A.2, A.3), and the reviewer's legacy probe over 22 decoded inputs (NEXRAD, ODIM, CfRadial, DORADE, JMA) |
+| `storage: U8(v)` / `U16(v)` / `F32(v)` | `FieldData::U8 { values: v, .. }` / `U16` / `F32`, moved. Legacy F32 grids hold physical values with NaN for every sentinel (the legacy ODIM decoder applied gain and offset and narrowed float64 planes; the legacy CfRadial decoder expanded packed data), so they become `F32` with `FloatCoding::default()` |
 
 `valid_range` is `None` for converted grids; native decoders set it.
 
@@ -789,10 +998,56 @@ F.3 matches xradar, which F.4 verifies.
 | `CorrelationCoefficient` | `Rhohv` | |
 | `DifferentialPhase` | `Phidp` | |
 | `SpecificDifferentialPhase` | `Kdp` | |
-| `Unknown("CFP")` | `Ccorh` | NEXRAD block name |
+| `Unknown("CFP")` from a NEXRAD source | `Ccorh` | NEXRAD block name. From any other source, `CFP` follows the next row |
 | `Unknown(s)` | `FieldName::parse(s)`: a known name or `Other(s)` | migrated crates rename derived ids (8.3); the conversion does not |
 
+Names within one cut are assigned in two passes, so they stay unique by `as_str()`:
+
+1. Every `Unknown(s)` gets its name first, because `s` is the source's own spelling.
+2. Each of the seven canonical variants then gets its default name from the table, unless that
+   name is taken. A taken name means legacy `canonical_moment` folded two source variables
+   onto one variant: for example a CfRadial file with `DBZ` and `DBZH` decodes to
+   `Reflectivity` (from DBZ) plus `Unknown("DBZH")`. The variant then becomes
+   `Other("<Variant>")` (`Other("Reflectivity")`, with `_2`, `_3` appended if that is taken
+   too). Its `quantity` and `polarization` come from the variant, so `Sweep::find` still finds
+   it. `Other` never holds a known spelling (4), so this cannot collide with a real FM301
+   name. The source's original spelling (`DBZ`) was already lost by the legacy decoder; only
+   native decoding restores it. No corpus file has this collision.
+
+The reverse (`legacy_from_volume`, 13.2) uses the `MomentType` recorded in the residue when
+there is one. Without a residue (natively decoded volumes), `FieldName::to_legacy_moment` is
+the exact inverse of the table for the seven canonical names and `Ccorh` → `Unknown("CFP")`
+(NEXRAD sources only), and `Unknown(name.as_str())` for every other name. A decoder's legacy
+wrapper applies that decoder's own legacy naming instead where it differs: io-cfradial,
+io-dorade and io-odim run `canonical_moment` with first-match-wins, as their legacy decoders
+do (13.3).
+
 `ProductId(String)` converts to `FieldName` through `parse`.
+
+### 5.5 Exactness: the legacy residue
+
+A legacy → new → legacy round trip must reproduce the legacy volume bit for bit (13.4). Every
+value the new model cannot hold exactly is therefore returned beside the `Volume` in a
+`LegacyResidue` (13.2), not stored inside the model:
+
+| Value | Why the new model cannot hold it exactly |
+|---|---|
+| `volume_time` | `time_reference` is whole seconds (KLIX 2005: 13:00:12.833) |
+| `metadata.scan_mode` | `Option`; the model's `sweep_mode` is mandatory, and the value is lost with zero cuts |
+| `metadata.pulse_width_us`, `metadata.unambiguous_range_km` | µs → s and km → m in f32 are inexact (the reviewer's sweep: 257 of 5,594 sampled µs values and 19 of 836 km values do not return) |
+| per ray `unambiguous_range_km` | same |
+| per ray `pulse_count` above `i32::MAX` | `n_samples` is i32 |
+| per ray `Some(NaN)` in Nyquist, PRT, independent samples | NaN encodes `None` |
+| `ray_instrument_metadata.len()` when every entry is `None` | an all-missing vector is dropped |
+| `Radial::time_offset_ms`, `Radial::gate_range`, `Radial::radial_status` | decoder-specific meanings (5.2, 6.6) |
+| `MomentGrid::moment`, `gate_range`, `nodata`, `range_folded`, non-identity `radial_indices` | naming collisions (5.4), rounding and start-vs-centre conventions (6.6), u16 codes that do not fit u8 |
+
+The reverse conversion uses a residue value only while the model still holds its forward
+image. For example, it uses residue `pulse_width_us` only if `radar_parameters.pulse_width_s`
+still equals `us × 1e-6` computed from it. A migrated algorithm that changed the model value
+therefore wins over the stale residue. No tolerance list is needed. Every other mapped value
+converts exactly in both directions (f32 → f64 → f32 widening, u8 → u16, `IcdScaleOffset`,
+moved buffers).
 
 ---
 
@@ -881,19 +1136,24 @@ covers the union of their extents. Each field keeps its native `[nrays × ngates
 - **Coarse fields** (`stride = 4`): the view repeats each value `stride` times, giving
   exactly Py-ART's `linear_interp=False` values. The model does no interpolation. The
   variable gets `comment = "native gate spacing 1000 m; values repeated on the 250 m range
-  coordinate"`.
+  coordinate"`. Py-ART's default is `linear_interp=True`, which interpolates (KLIX 2005 fine
+  gates 4..15 are 46.5, 46.5, 46.6875, ...; A.3). F.4 therefore calls `read_nexrad_archive`
+  with `linear_interp=False` for every volume with coarse reflectivity (Message 1 and
+  legacy-resolution Message 31). The option makes no difference for super-resolution volumes.
 - **Coordinates are correct where xradar's are wrong.** KLIX 2005 sweep 2 gets a range of
   -375 m + 250 m × 548. Because the range is per sweep, a REF-only surveillance sweep keeps
   its own 1 km range (sweep 0: 0 m + 1000 m × 460), which matches xradar for those sweeps.
 - **Decode cost is zero.** Rows are written once into native buffers, as `MomentGrid` does
   today. When a finer spacing arrives later in the same radial (REF at 1 km first, VEL at
   250 m next), `Sweep::attach_geometry` rewrites integer mappings; no data moves.
-- **Bindings.** A PyO3 layer hands `&[u8]` or `&[u16]` to NumPy without copying whenever
-  `start == 0 && stride == 1 && ngates == range.ngates`. In KTLX 2024 that holds for 76 of 104
-  fields: every field of the Doppler cuts and of sweeps 12, 13 and 16..19, and REF and CCORH
-  in every sweep. The other 28 fields go through a lazy backend array that pads on
-  `__getitem__`, which is xradar's own mechanism. Those 28 are the dual-pol moments in the
-  surveillance cuts plus VEL, SW and the dual-pol moments in sweeps 10 and 11.
+- **Bindings.** A PyO3 layer moves a field's `Vec<u8>` or `Vec<u16>` into NumPy without
+  copying (12.2). The result is already the FM301 variable whenever
+  `start == 0 && stride == 1 && ngates == range.ngates` and the view's ray order is the
+  storage order. In KTLX 2024 that holds for 76 of 104 fields: every field of the Doppler
+  cuts and of sweeps 12, 13 and 16..19, and REF and CCORH in every sweep. The other 28 fields
+  become the native array inside a lazy backend array that pads on `__getitem__`, which is
+  xradar's own mechanism. Those 28 are the dual-pol moments in the surveillance cuts plus
+  VEL, SW and the dual-pol moments in sweeps 10 and 11.
 - **Algorithms** keep working in native geometry through `Field::native_geometry`, as they do
   with `MomentGrid::gate_range` today.
 
@@ -964,24 +1224,58 @@ in KTLX 2024 (MetPy headers) and in legacy files, next to what xradar writes.
 | SW (Msg 1) | u8 | 2.0 | 129.0 | 0.5 | -64.5 | xradar's code uses offset 192; its output has no SW |
 
 The coding for these fields is `IntCoding { transform: IcdScaleOffset { scale, offset },
-fill_value: Some(0), undetect: None, range_folded: Some(1), valid_range: Some([2, MAX]) }`.
+fill_value: Some(0), undetect: Some(0), range_folded: Some(1), valid_range: Some([2, MAX]) }`.
 MAX is 255 for u8. For u16 it is 65535 until stream A confirms the ICD data masks that xradar
 applies (PHI `& 0x3FF`, ZDR `& 0x7FF`; section 15).
 
-The FM301 view writes the encoded integers (`uint8`, `uint16`) with `scale_factor`,
-`add_offset`, `_FillValue = 0`, `valid_range`, `flag_values = [1]` and
-`flag_meanings = "range_folded"`. Consequences (A.6, run with xarray 2026.7.0):
+**Raw 0 has two roles.** ICD "below threshold" means the bin was radiated but produced no
+valid echo, which is exactly FM301 Table 301-10 `_Undetect` ("an area (range bin) that has
+been radiated but has not produced a valid echo"). Recording it only as missing would make
+cross-format algorithms differ by source: rain accumulation, echo tops and VIL treat no echo
+as zero and missing as unknown, and ODIM already has a separate undetect code. So `undetect`
+is `Some(0)`, and `Field::gate` returns `Undetect` for raw 0 in a provided row and `Missing`
+for absent rows (4). Raw 0 is also `_FillValue`. That keeps spec 4.2's masking behaviour,
+matches Py-ART (which masks it), and is the only code free for padding: u8 has no unused
+value, since 0 is below threshold, 1 is range folded and 2..255 are data.
 
-- `xr.decode_cf` turns below-threshold gates into NaN, matching Py-ART.
+The FM301 view writes the encoded integers (`uint8`, `uint16`) with these attributes, each
+flag and range attribute in the variable's own type (CF, Table 301-10):
+
+| Attribute | Value | Meaning |
+|---|---|---|
+| `scale_factor`, `add_offset` | float64 | CF packing |
+| `_FillValue` | `0` | below threshold, and view padding beyond the native extent or absent rows; xarray masks it |
+| `_Undetect` | `0` | FM301: raw 0 inside the data means radiated without a valid echo |
+| `valid_range` | `[2, MAX]` | packed units |
+| `flag_values`, `flag_meanings` | `[1]`, `"range_folded"` | |
+
+In this encoded form, raw 0 cannot say whether a gate was padding or below threshold. The
+model can (native extent and `absent_rows`), and a binding that needs the distinction reads it
+from the model (12.2).
+
+Consequences (A.6, run with xarray 2026.7.0; the review re-ran them with `_Undetect`, and they
+were re-checked for this revision):
+
+- `xr.decode_cf` turns below-threshold gates and padding into NaN, matching Py-ART.
+- xarray moves `_FillValue`, `scale_factor` and `add_offset` into `.encoding` but leaves
+  `_Undetect`, `valid_range`, `flag_values` and `flag_meanings` in `.attrs` of the decoded
+  float64 variable, still in packed units. Read naively, that says "physical 1 dBZ is range
+  folded, and valid values are 2..255 dBZ". The binding's decoded form therefore moves them
+  into `.encoding` (12.3).
 - Range folded decodes to `add_offset + scale_factor` (-32.5 dBZ) unless the consumer applies
-  the flag. The binding's DataTree builder masks `flag_values` when
-  `mask_range_folded = true`. That is the default, to match Py-ART, which masks `raw <= 1`.
+  the flag. The binding masks it when `mask_range_folded = true`, the default, to match
+  Py-ART, which masks `raw <= 1`. With `range_folded_variable = true` it also keeps the
+  information as a lazy ancillary flag variable (12.3).
+- netCDF4-python auto-masking also masks values outside `valid_range`, so a file written from
+  the view reads range folded as masked in netCDF4-python (and Py-ART's `read_cfradial`) but
+  as -32.5 in plain `xr.open_dataset`. The binding default gives the netCDF4-python and Py-ART
+  result, and `valid_range` stays because WMO-CF.5.2.15 requires it.
 - `missing_value = [0, 1]` would mask both on decode, but xarray emits `SerializationWarning`
   ("multiple fill values"), and `to_netcdf` raises `ValueError` (conflicting `_FillValue` and
   `missing_value`, or an array truth-value error when `_FillValue` is absent). Rejected.
 - This deliberately differs from xradar 0.12, which writes no `_FillValue` for NEXRAD, so its
   below-threshold and padded gates decode to physical-looking numbers. Conformance tests
-  compare xradar's raw arrays (`mask_and_scale=False`) against ours.
+  compare xradar's raw arrays (`mask_and_scale=False`) against the view's encoded form.
 
 Evaluation stays in the source's own arithmetic:
 
@@ -999,9 +1293,11 @@ offset }`. `nodata` maps to `fill_value` and `undetect` to `undetect`, and the t
 distinct; today io-odim remaps undetect onto nodata. xradar puts `_FillValue = nodata`
 (255.0 for dkrom and iesha) in the encoding and `_Undetect = 0.0` in the attributes.
 
-Float planes (espdg `float64`) are narrowed to `F32`, with `nodata` and `undetect` held as
-`FloatCoding` values. Raw hashes are not comparable for those, so F.4 compares value
-summaries.
+Float planes are stored in their own width: espdg `float64` planes (gain 1, offset 0,
+`nodata` 95.5, `undetect` -32.0) become `F64`, with `nodata` and `undetect` held verbatim as
+`FloatCoding` values. xradar keeps them as float64 too, so F.4 can hash the raw arrays. Only
+the legacy shim narrows them, as the legacy decoder always did (it applied gain and offset and
+turned both sentinels into NaN).
 
 ### 7.3 CfRadial
 
@@ -1012,12 +1308,30 @@ Packed `byte` and `short` variables stay `I8` and `I16`, keeping the file's `sca
 - DOW8 `DBZHC`, `VEL` and `WIDTH`: int16, `_FillValue = -32768`.
 
 The file's bytes and attributes pass through unchanged; today the decoder expands them to
-f32. Float variables become `F32`.
+f32. `scale_factor` and `add_offset` keep their attribute type in
+`CfScaleOffset::attr_width` (DOW8: float32, so xarray decodes to float32).
+
+Float variables become `F32` or `F64`, keeping their `_FillValue` in the data and in
+`FloatCoding::fill_value`. xsapr `reflectivity_horizontal` is float32 with `_FillValue`
+-9999.0. It is stored verbatim, and the view writes `_FillValue = -9999.0`.
+
+**Ragged sweeps.** CfRadial `n_gates_vary = "true"` stores each field as 1-D `(n_points)` data
+with `ray_n_gates(time)` and `ray_start_index(time)`. The decoder has to lay those out into
+rows anyway, so it writes each row padded to the sweep's largest `ray_n_gates` with the fill
+code. That is the only pass, and there is no copy beyond the layout. Py-ART's `read_cfradial`
+gives the same shape, with the padding masked. The source's `ray_n_gates` stays in
+`Sweep::extra_vars`. A sweep whose `ray_start_range` or `ray_gate_spacing` varies from ray to
+ray cannot share one `range` coordinate. The decoder returns
+`CfRadialError::PerRayGeometry { sweep }`, a documented limitation. No corpus file exercises
+either path yet. IRENE and DOW8 have `n_gates_vary = "false"` and constant `ray_start_range`
+and `ray_gate_spacing` (checked for this revision), and the two xsapr files have neither
+attribute nor variables and no `ray_n_gates`. A test is added when a real file turns up
+(real-data rule).
 
 ### 7.4 Derived fields
 
-Algorithms write `F32` with `FloatCoding::default()`. Quantised outputs such as
-classifications may use `U8` with `flags`.
+Algorithms write `F32` with `FloatCoding::default()`, so NaN means missing. Quantised outputs
+such as classifications may use `U8` with `flag_values` and `flag_meanings`.
 
 ---
 
@@ -1105,10 +1419,15 @@ Notes:
    place the Xradar flavor's attributes knowingly differ from xradar (section 14).
 2. **CCORH and NEXRAD CFP.** CFP is the clutter power removed, in dB. xradar maps it to CCORH
    and labels it unitless. Py-ART names it `clutter_filter_power_removed`, in dB.
-3. **Py-ART's ODIM reader uses different names:** `reflectivity_horizontal`,
-   `total_power_horizontal`, `velocity_horizontal` for VRADH, `velocity` for VRAD. The alias
-   table follows `pyart.config` defaults, not the `aux_io` names. A
-   `to_pyart(..., field_names=...)` binding can accept a custom mapping.
+3. **Py-ART's readers do not all use the config names.** The ODIM reader (`aux_io`) uses
+   `reflectivity_horizontal` (DBZH), `total_power_horizontal` (TH), `velocity_horizontal`
+   (VRADH), `velocity` (VRAD), `spectrum_width` (WRAD), `differential_reflectivity`,
+   `cross_correlation_ratio`, `differential_phase` and `linear_polarization_ratio` (LDR)
+   (A.4). `read_cfradial` keeps variable names verbatim (A.5). The table's Py-ART column
+   holds the `pyart.config` defaults (`PyartNames::Config`), and `NameInfo::pyart_odim`
+   holds the ODIM reader's names. `PyartNames::Reader` gives, per source format, the names
+   that format's Py-ART reader produces, which is the mode F.4 uses to compare against those
+   readers. A `to_pyart(..., field_names=...)` binding can also accept a custom mapping.
 4. xradar's units are inconsistent: "meters per second" for VRADV and WRADV but "meters per
    seconds" for VRADH and WRADH. Only the Xradar flavor reproduces them verbatim.
 
@@ -1125,7 +1444,7 @@ rule works equally for DBZH and DBZ inputs. Suffixes are `_CLEAN` (as in xradar'
 | KDP | KDP | specific_differential_phase |
 | PHIF | PHIDP_CLEAN | corrected_differential_phase |
 | KDP_SD | KDP_SD | — |
-| AH, PIA, ADP, PIDA | unchanged | specific_attenuation, path_integrated_attenuation, specific_differential_attenuation, path_integrated_differential_attenuation |
+| AH, PIA, ADP, PIDA | unchanged | specific_attenuation, path_integrated_attenuation, specific_differential_attenuation, `path_integrateddifferential_attenuation` (PIDA: pyart 2.2.5's default name, typo included, so Py-ART algorithms find the field; checked with `pyart.config.get_field_name`) |
 | REFC | `<REF>_CORR`, for example DBZH_CORR | corrected_reflectivity |
 | ZDRC | ZDR_CORR | corrected_differential_reflectivity |
 | RATE (hybrid) | RR | radar_estimated_rain_rate |
@@ -1156,7 +1475,7 @@ pub struct RayVariables {
     pub pulse_width_s: Option<Vec<f32>>,          // pulse_width(time), s
     pub scan_rate_deg_per_s: Option<Vec<f32>>,    // scan_rate(time)
     pub antenna_transition: Option<Vec<u8>>,      // antenna_transition(time), 0/1
-    pub calib_index: Option<Vec<i16>>,            // calib_index(time)
+    pub calib_index: Option<Vec<i32>>,            // calib_index(time), FM301 int (301-8a)
     pub rx_range_resolution_m: Option<Vec<f32>>,  // rx_range_resolution(time)
     /// Not FM301: effective independent samples (legacy RayInstrumentMetadata).
     pub independent_samples: Option<Vec<f32>>,
@@ -1178,15 +1497,29 @@ no meaning may be inferred from absence). A vector that is present always has `n
 | pulse_width | Msg 5 short/long is a category, **not** a duration, so it stays in `NexradMetadata` | `how/pulsewidth` (µs → s) | variable (IRENE 5e-7 s) | CfRadial `(azimuth)` | `instrument_parameters.pulse_width` |
 | scan_rate | — | `how/rpm` → deg/s | variable | CfRadial `(azimuth)` | `scan_rate` |
 | antenna_transition | — | — | variable (int8) | CfRadial `(azimuth)` | `antenna_transition` |
-| calib_index | — | — | `r_calib_index` | CfRadial `r_calib_index (azimuth)` | — |
+| calib_index | — | — | `r_calib_index` (int32 in DOW8 and IRENE) | CfRadial `r_calib_index (azimuth)`, float64 after decoding | — |
 
 The existing rule still holds: PRF **codes** from VCP tables never become a physical PRT. The
 legacy `ScanLegMetadata` codes move to `ScanDefinition::legs`.
 
-CfRadial 1 carries some per-ray variables that are not FM301. `ray_start_range` and
-`ray_gate_spacing` are checked against `range`, and a mismatch is a decode error.
-`measured_transmit_power_h` and `measured_transmit_power_v` go to `Monitoring` as
-`radar_measured_transmit_power_h/v`.
+CfRadial 1 carries per-ray variables that are not FM301. None is dropped:
+
+- `ray_start_range` and `ray_gate_spacing` are checked against `range`. A ray-to-ray variation
+  is a decode error (7.3). Both are also kept verbatim in `Sweep::extra_vars`, because xradar
+  keeps them in the sweep group (DOW8, A.5).
+- `georefs_applied`, `georef_time`, `georef_unit_num`, `georef_unit_id` and any other variable
+  without a slot go to `Sweep::extra_vars` under their source names, as xradar keeps them.
+  Attitude variables (`heading`, `roll`, `pitch`, `drift`, `rotation`, `tilt`) and
+  `altitude_agl(time)` go to `PlatformTrack`, where the Py-ART export finds them for its
+  `Radar` attributes.
+- `measured_transmit_power_h` and `measured_transmit_power_v` go to `Monitoring`. The Xradar
+  flavor writes them in the sweep group under those CfRadial names, as xradar does. The WMO
+  flavor writes them as `monitoring/radar_measured_transmit_power_h/v` (Table 301-11).
+- `r_calib_index` fills `calib_index`. The Xradar flavor writes `r_calib_index`, and the WMO
+  flavor writes `calib_index` as `int`.
+
+`ExtraVariable`s with a `"time"` dimension follow the view's ray order, like every other
+`(time)` variable.
 
 ---
 
@@ -1213,6 +1546,8 @@ differ, which is today's `combined_scan_mode` rule.
   `dual`). Both flavors write `"not_set"` for `None` (open question, section 15).
 - **`polarization_mode`:** CfRadial `polarization_mode`; ODIM `how/polmode`; NEXRAD `HvSim`
   when dual-pol moments are present (simultaneous H/V transmit), else `Horizontal`.
+- A parsed string outside Table 301-15 (Radx writes `"not_set"`) becomes `Other(text)` in all
+  three enums, and both flavors write it back verbatim. `sweep_mode` already works this way.
 
 ---
 
@@ -1225,13 +1560,15 @@ differ, which is today's `combined_scan_mode` rule.
 | `title`, `institution`, `references`, `source`, `history`, `comment` | `attrs.*` | `source` = "NEXRAD Level II" | `what/source` goes to `source` | verbatim | "None" placeholders; comment "im/exported using xradar" | "" placeholders; NEXRAD `original_container` "NEXRAD Level II" |
 | `instrument_name` | `attrs.instrument_name` | ICAO from the volume header | NOD, else RAD, else WMO | verbatim | "KTLX"; ODIM "None" | "KTLX"; 1999 file "\x00\x00\x00\x00"; ODIM "" |
 | `site_name` | `attrs.site_name` | — | PLC | verbatim | CfRadial "CPOLRVP" | CfRadial present |
-| `scan_name`, `scan_id` | `scan.name`, `scan.id` | "VCP-212", 212 | `how/task` if present | verbatim ("IRENE_WINDS", "0") | NEXRAD "VCP-212"; 1999 and 2005 files "VCP-0" | `vcp_pattern` "212" |
+| `scan_name`, `scan_id` | `scan.name`, `scan.id` (+ `scan_id_text`) | "VCP-212", 212 | `how/task` if present | verbatim ("IRENE_WINDS", "0") | NEXRAD "VCP-212"; 1999 and 2005 files "VCP-0"; CfRadial `scan_id` as an int32 attribute (DOW8) | `vcp_pattern` "212" |
 | `platform_is_mobile` | `attrs.platform_is_mobile` | false | false | verbatim | CfRadial "false" | |
 | `ray_times_increase` | `attrs.ray_times_increase` | computed | computed | verbatim | CfRadial "true" | |
 | `simulated` | `attrs.simulated` | false | false | verbatim or BowEcho export | | |
 | `wmo__wsi`, `wmo__id` | `attrs.wmo` | — | WIGOS / WMO from `what/source` | verbatim | | |
 | `/volume_number` | `volume_number` | none (the view writes 0, as xradar does) | none | verbatim | 0; CfRadial 395 | |
-| `/time_coverage_start`, `/time_coverage_end` | `time_coverage` | first and last ray, "YYYY-MM-DDThh:mm:ssZ" | same | verbatim | strings floored to the second, "2024-03-15T00:02:17Z" / "…T00:08:18Z" | `time.units` "seconds since 2024-03-15T00:02:17Z" |
+| `/time_coverage_start`, `/time_coverage_end` | `time_coverage` (exact instants) | first and last ray; the view writes them floored to the second, "YYYY-MM-DDThh:mm:ssZ" | same | verbatim | strings floored to the second, "2024-03-15T00:02:17Z" / "…T00:08:18Z" | `time.units` "seconds since 2024-03-15T00:02:17Z" (the floored first radial, = `time_reference`) |
+| source attributes without a slot | `attrs.other` | — | — | `Sub_conventions`, `original_format`, `driver`, `created`, `start_datetime`, `start_time`, `end_datetime`, `end_time`, `n_gates_vary` | not written for CfRadial 1 (A.5) | all kept in `metadata` |
+| root variables without a slot | `extra_vars` | — | — | `status_xml`, `grid_mapping` | — | — |
 | `/latitude`, `/longitude`, `/altitude` | `location` | VOL block; Msg 1 has none (`None`, written as `_FillValue`) | `where/lat`, `lon`, `height` | verbatim | root coordinates, float64 (NEXRAD altitude int64 389); KLIX 2005 Msg 1 gives 0 | length-1 arrays; Msg 1 gives 0.0 |
 | `/platform_type`, `/instrument_type` | enums | fixed, radar | fixed, radar | verbatim | "fixed", "radar" | |
 | `/altitude_agl`, `/primary_axis`, `/status_str` | fields | — | — | verbatim | CfRadial present | CfRadial present |
@@ -1243,7 +1580,10 @@ xradar also writes NEXRAD-specific root attributes: `dynamic_scan_type`, `mpda_v
 `actual_elevation_cuts`. It also writes sweep attributes: `waveform_type`, `channel_config`,
 `super_resolution`, `sails_cut`, `sails_sequence_number`, `mrle_cut`, `mrle_sequence_number`,
 `mpda_cut` and `base_tilt_cut`. All of these come from `NexradMetadata` through
-`fm301::ExtraAttrs`, not from `Volume`.
+`fm301::ExtraAttrs`, not from `Volume`. They keep xradar's Python types (A.2): bools
+(`mpda_vcp`, `sails_cut`) as `AttrValue::Bool`, ints (`number_elevation_cuts`,
+`rda_build_number`, `super_resolution`) as `Scalar::I64`, and `doppler_velocity_resolution`
+as `Scalar::F64`. The WMO flavor writes the bools as "true"/"false".
 
 For Message 1 files the Rust model keeps the NEXRAD location as `None`. It does not write 0
 the way xradar and Py-ART do, because 0°N 0°E is a wrong position rather than a missing one.
@@ -1252,75 +1592,226 @@ belongs in `recast-radar-data`'s site catalog.
 
 ---
 
-## 12. FM301 view (binding and conformance boundary)
+## 12. FM301 view (conformance surface) and binding strategy
+
+### 12.1 The view
 
 ```rust
 // crates/recast-radar-core/src/fm301.rs
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Flavor {
-    /// Reproduces xradar 0.12 names and attribute strings (`sweep_fixed_angle`, "not_set",
-    /// "meters per seconds"), with `time` as the ray dimension. Used by F.4 conformance and
-    /// the DataTree binding.
+    /// Reproduces xradar 0.12 names, attribute strings and attribute types
+    /// (`sweep_fixed_angle`, "not_set", "meters per seconds", bool attributes). Used by F.4
+    /// conformance and the DataTree binding.
     Xradar012,
-    /// The FM301-2022 text: `fixed_angle`, `Conventions`, `wmo__cf_profile`, UDUNITS units.
-    /// Used by a future CfRadial 2 writer.
+    /// The FM301-2022 text: `fixed_angle`, `Conventions`, `wmo__cf_profile`, UDUNITS units,
+    /// Table 301-12a names. Used by a future CfRadial 2 writer.
     Wmo2022,
 }
 
+/// Ray dimension and ray order. Only a row permutation changes; no data moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FirstDim {
+    /// Dimension `time`; rays in acquisition order (stable sort by `time_s`). This is xradar's
+    /// `first_dim="time"` (iesha: rotated so the first ray is at azimuth 136.51, A.4), and the
+    /// only choice for `Wmo2022`, because a CF coordinate variable must be monotonic. For
+    /// NEXRAD, CfRadial and DORADE, storage order is already acquisition order, so the
+    /// permutation is the identity and nothing is reordered.
+    Time,
+    /// xradar's default `first_dim="auto"`: dimension `azimuth` or `elevation`, rays sorted by
+    /// that angle. The dimension choice follows xradar 0.12's rule as observed, including
+    /// `azimuth` for the DOW8 RHI (A.5). F.4 pins KTLX 2024, dkrom and DOW8.
+    Auto,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Passthrough {
+    /// Write what the flavor's reference writes. For Xradar012 that is xradar 0.12's set:
+    /// sweep `extra_vars` and calibration `extra` yes, root `attrs.other` no (A.5). For
+    /// Wmo2022 it is FM301 names only.
+    Flavor,
+    /// Also every `other`, `extra_vars` and `extra` item, verbatim, for lossless CfRadial 2
+    /// output.
+    All,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViewOptions { pub flavor: Flavor, pub first_dim: FirstDim, pub passthrough: Passthrough }
+
 pub struct VolumeView<'a> {
+    /// "/" with children `radar_parameters`, `radar_calibration`,
+    /// `georeferencing_correction` (when present) and `sweep_<n>`. A sweep group's child is
+    /// `monitoring` (Table 301-11).
     pub root: Group<'a>,
-    pub sweeps: Vec<Group<'a>>,
-    pub radar_parameters: Option<Group<'a>>,
-    pub radar_calibration: Option<Group<'a>>,
-    pub georeferencing_correction: Option<Group<'a>>,
+    pub warnings: Vec<ViewWarning>,
 }
 
 pub struct Group<'a> {
-    pub path: String,                     // "/", "/sweep_0", ...
-    pub dims: Vec<(&'static str, usize)>, // ("time", 720), ("range", 1832), ("frequency", 1)
+    pub name: Cow<'a, str>,                     // "", "sweep_0", "monitoring", ...
+    pub dims: Vec<(Cow<'a, str>, usize)>,       // ("time", 720), ("range", 1832), ("frequency", 1)
     pub variables: Vec<Variable<'a>>,
-    pub attrs: Vec<(Cow<'static, str>, AttrValue)>,
+    pub attrs: Vec<(Cow<'a, str>, AttrValue)>,
+    pub children: Vec<Group<'a>>,
 }
 
 pub struct Variable<'a> {
     pub name: Cow<'a, str>,
-    pub dims: Vec<&'static str>,
+    pub dims: Vec<Cow<'a, str>>,
     pub values: Values<'a>,
-    /// Includes the CF encoding attributes (`scale_factor`, `add_offset`, `_FillValue`, ...).
-    pub attrs: Vec<(Cow<'static, str>, AttrValue)>,
+    /// The encoded form's attributes, typed. Packing, fill and flag attributes are in the
+    /// variable's packed type (7.1).
+    pub attrs: Vec<(Cow<'a, str>, AttrValue)>,
 }
 
 pub enum Values<'a> {
-    /// Contiguous, same shape as the variable: zero-copy.
+    /// Contiguous, same shape and ray order as the variable: zero-copy.
     Borrowed(ArrayRef<'a>),
-    /// A field stored natively, read by padding with `fill` and repeating by `stride`.
-    Mapped { native: ArrayRef<'a>, nrays: usize, native_gates: usize,
-             mapping: GateMapping, out_gates: usize, fill: Scalar },
-    /// Small computed arrays (range centres, per-sweep scalars broadcast to rays).
+    /// A field read through its mapping: rows taken in `rows` order, native gates padded with
+    /// `fill` and repeated `stride` times.
+    Mapped { source: FieldSource, native: ArrayRef<'a>, native_gates: usize,
+             mapping: GateMapping, out_gates: usize, fill: Scalar, rows: RowOrder },
+    /// Small computed or reordered arrays (range centres, ray coordinates in sorted order,
+    /// per-sweep scalars broadcast to rays).
     Owned(ArrayBuf),
     Scalar(Scalar),
     Text(Cow<'a, str>),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RowOrder { Identity, Permutation(Arc<[u32]>) } // one Arc shared per sweep
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FieldSource { pub sweep: u32, pub field: u32 }
+
 pub enum ArrayRef<'a> { U8(&'a [u8]), U16(&'a [u16]), I8(&'a [i8]), I16(&'a [i16]),
                         I32(&'a [i32]), F32(&'a [f32]), F64(&'a [f64]) }
-pub enum ArrayBuf { I32(Vec<i32>), F32(Vec<f32>), F64(Vec<f64>), Text(Vec<String>) }
-pub enum Scalar { U8(u8), U16(u16), I8(i8), I16(i16), I32(i32), F32(f32), F64(f64) }
+// Scalar, ArrayBuf and AttrValue are the model types (section 2).
+
+pub enum ViewWarning {
+    /// Ray times are not strictly increasing even in acquisition order. The source has no
+    /// per-ray times (dkrom: equal ODIM start and end times, which xradar also warns about;
+    /// legacy-converted ODIM and JMA, where every ray time is 0). The `time` coordinate is
+    /// written anyway, as xradar writes it. A CF writer reports the warning.
+    NonMonotonicTime { sweep: u32 },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ViewError {
+    #[error("{path}: attribute {attr} value does not fit the variable's type")]
+    OutOfRange { path: String, attr: &'static str },
+}
 
 pub trait ExtraAttrs {
     fn root_attrs(&self, flavor: Flavor) -> Vec<(Cow<'static, str>, AttrValue)>;
     fn sweep_attrs(&self, sweep: usize, flavor: Flavor) -> Vec<(Cow<'static, str>, AttrValue)>;
 }
 
-pub fn volume_view<'a>(volume: &'a Volume, flavor: Flavor, extra: Option<&'a dyn ExtraAttrs>)
-    -> VolumeView<'a>;
+pub fn volume_view<'a>(volume: &'a Volume, options: ViewOptions,
+                       extra: Option<&'a dyn ExtraAttrs>) -> Result<VolumeView<'a>, ViewError>;
+
+impl VolumeView<'_> {
+    /// The same tree with no borrows: every field variable's `Values` is replaced by
+    /// `DataRef::Field { source, native_gates, mapping, out_gates, fill, rows }`, and other
+    /// values are copied (they are small). Bindings use this (12.2).
+    pub fn layout(&self) -> VolumeLayout;
+}
 ```
 
-Fields are always written encoded: integers plus CF attributes, or `float32` with
-`_FillValue = NaN` for `FieldData::F32`. xarray or the binding does the decoding, which is
-spec 4.3's "let xarray's CF decoding apply the packing". Rays are written in storage order,
-under dimension `time`.
+Fields are always written encoded: integers plus CF attributes, or floats with the source's
+`_FillValue` (NaN for derived fields). xarray or the binding does the decoding, which is spec
+4.3's "let xarray's CF decoding apply the packing". Building the view is O(rays + fields) per
+sweep. The only per-sweep work is checking whether `time_s` is already sorted, plus one
+`O(n log n)` sort over ray indices (a few hundred entries) when it is not.
+
+### 12.2 Binding strategy: ownership moves to NumPy
+
+rust-numpy 0.23 can wrap memory that Rust keeps owning only through
+`PyArray::borrow_from_array`, which is `pub unsafe fn` (`numpy-0.23.0/src/array.rs` line 340).
+Spec principle 2 forbids `unsafe` in our code, with no exception for bindings. The safe,
+zero-copy constructors take ownership: `PyArray::from_vec` (line 612) and
+`PyArray::from_owned_array` (line 446), which keep the Rust allocation alive inside a
+`PySliceContainer`. A `VolumeView<'a>` borrows `&'a Volume`, so it cannot outlive a Python
+call. The binding therefore does not expose the view's borrows. It works as follows, with no
+`unsafe` and no gate copy:
+
+1. Decode to an owned `Volume` (plus the format metadata).
+2. `let layout = fm301::volume_view(&volume, options, extra)?.layout();` records names, dims,
+   attributes, small arrays and one `DataRef` per field variable. The view is then dropped.
+3. Consume the volume: `for sweep in volume.sweeps { for field in sweep.fields { ... } }` with
+   `Field::into_parts` and `FieldData::into_array` (4). Each `Vec<u8>` / `Vec<u16>` /
+   `Vec<i8>` / `Vec<i16>` / `Vec<f32>` / `Vec<f64>` goes to `PyArray::from_vec`, then
+   `reshape([nrays, ngates])`. For a contiguous array, `reshape` returns a view and copies
+   nothing. From then on NumPy owns the memory.
+4. When the field's `DataRef` has `RowOrder::Identity`, `start == 0`, `stride == 1` and
+   `native_gates == out_gates`, the reshaped array is the variable (KTLX 2024: 76 of 104
+   fields, 6.5). Otherwise the variable is an xarray `BackendArray` (wrapped in
+   `LazilyIndexedArray`) that holds the native array and applies row order, padding and
+   repetition in `__getitem__`, as xradar's own NEXRAD backend array does.
+5. The DataTree is built from the layout's encoded attributes and decoded as 12.3 describes.
+
+Consequences, stated so a binding author does not rediscover them:
+
+- The zero-copy path runs one way, from Rust to NumPy. To keep a Rust `Volume` alive (for
+  example to run Rust algorithms on it later), a binding either copies arrays when Python
+  reads them, or passes NumPy arrays back into Rust through `PyReadonlyArray::as_slice()`,
+  which is a safe borrowed slice. An algorithm that needs an owned `Field` then costs one
+  copy per input field.
+- The model information that the encoded form cannot carry (padding vs below threshold, 7.1)
+  is read by the binding from the model before step 3 moves the buffers.
+- Rejected alternative: reference-counted buffers kept by Rust and lent to NumPy. That needs
+  `borrow_from_array` or a hand-written buffer protocol (also `unsafe` in PyO3), so it would
+  need a spec exception.
+
+### 12.3 Decoded form in the binding
+
+The layout is the encoded form. The binding's DataTree builder takes these options:
+
+| Option | Default | Effect |
+|---|---|---|
+| `decode` | `true` | CF decoding, as `xr.decode_cf` / `mask_and_scale=True` |
+| `mask_range_folded` | `true` | gates equal to the range-folded code become NaN (lazily), as Py-ART masks `raw <= 1` |
+| `range_folded_variable` | `false` | adds, per field with a range-folded code, a lazy `uint8` variable `<FIELD>_flags(time, range)` with `flag_values = [1]` and `flag_meanings = "range_folded"`, and sets the field's `ancillary_variables = "<FIELD>_flags"` (Table 301-10). Range-folded information then survives masking. Off by default because xradar has no such variable |
+| `packed_attrs` | `Encoding` | where packed-unit attributes go after decoding (next list) |
+| `first_dim` | `Auto` | `FirstDim` (12.1), mirroring xradar's `first_dim` option, so the output can replace `open_*_datatree()` output |
+
+When `decode` is true, xarray moves `_FillValue`, `scale_factor` and `add_offset` into
+`.encoding` but leaves every other attribute in `.attrs`. That includes `_Undetect`,
+`valid_range`, `valid_min`, `valid_max`, `flag_values`, `flag_masks` and `flag_meanings`, all
+still in packed units on a float variable (verified: A.6). With the default
+`packed_attrs = Encoding`, the binding moves those into `.encoding` as well, so no packed
+number in `.attrs` can be read as a physical value (for example, by cf_xarray's `.cf.flags`).
+Two trade-offs, both verified with xarray 2026.7.0:
+
+- xarray's netCDF writers (`netcdf4` and `h5netcdf` engines) drop unknown `.encoding` keys, so
+  a plain `to_netcdf` of the decoded tree loses `valid_range` and the flags. The binding's own
+  CfRadial 2 writer writes them from the layout.
+- `packed_attrs = Attrs` leaves the attributes where xarray and xradar 0.12 put them (ODIM
+  `_Undetect` stays in `.attrs`, A.4). That gives drop-in parity and a correct file on
+  `to_netcdf`, at the price of packed-unit numbers in `.attrs`.
+
+Converting `valid_range` to physical `valid_min`/`valid_max` was considered and rejected. CF
+requires those in the packed type on packed variables, so writing the tree back would produce
+a non-conforming file, and netCDF4-python would compare packed data against physical bounds.
+
+F.4 compares the encoded form only (`mask_and_scale=False` on the xradar side, `decode=false`
+on ours), so these options do not affect conformance.
+
+### 12.4 Names that differ by flavor
+
+| Model | `Wmo2022` (FM301-2022 text) | `Xradar012` | CfRadial 1 file (decoder input) |
+|---|---|---|---|
+| `RadarParameters::antenna_gain_h_db` / `_v_db` | `radar_parameters/antenna_gain_h` / `_v` (Table 301-12a) | `radar_parameters/radar_antenna_gain_h` / `_v` | `radar_antenna_gain_h` / `_v` |
+| `RadarParameters::beam_width_h_deg` / `_v_deg` | `radar_parameters/beam_width_h` / `_v` | `radar_parameters/radar_beam_width_h` / `_v` | `radar_beam_width_h` / `_v` |
+| `RadarParameters::receiver_bandwidth_hz` | `radar_parameters/receiver_bandwidth` | `radar_parameters/radar_receiver_bandwidth` | `radar_rx_bandwidth` |
+| `Sweep::fixed_angle_deg` | `fixed_angle` | `sweep_fixed_angle` | `fixed_angle(sweep)` |
+| `Sweep::rays_angle_resolution_deg` | `rays_angle_resolution` | `rays_angle_resolution` | `ray_angle_res(sweep)` |
+| `RadarCalibration::<name>` | `radar_calibration/<name>` | `radar_calibration/<name>` | `r_calib_<name>` |
+| `RadarCalibration::base_1km_hc_dbz` | `radar_calibration/base_1km_hc` | `radar_calibration/base_1km_hc` | `r_calib_base_dbz_1km_hc` |
+| `RadarCalibration::calib_index` | `radar_calibration/calib_index`, byte | as xradar writes it | — |
+| `RayVariables::calib_index` | `calib_index(time)`, int | `r_calib_index` | `r_calib_index(time)` |
+| `Monitoring::radar_measured_transmit_power_h_dbm` | `monitoring/radar_measured_transmit_power_h` | `measured_transmit_power_h` in the sweep group | `measured_transmit_power_h(time)` |
+
+Section 14 lists the remaining flavor differences (standard names, units, `coordinates`).
 
 ---
 
@@ -1338,7 +1829,7 @@ un-migrated code relies on exactly those. Counts on `fm301` at `f73ce2a`:
   `.ray_instrument_metadata`. That includes 132 in `recast-radar-core`'s own `lib.rs`.
 - **Struct literals outside core:** `GateRange {` 46, `MomentGrid {` 45, `Radial {` 38,
   `RadarVolume {` 5, `RadarSite {` 4, others 3.
-- **Exhaustive matches:** on `MomentStorage`, which has 3 variants against `FieldData`'s 5
+- **Exhaustive matches:** on `MomentStorage`, which has 3 variants against `FieldData`'s 6
   variants with payloads; and on `MomentType` and `ScanMode` variants whose names differ
   (`Reflectivity` vs `Dbzh`, `Ppi` vs `AzimuthSurveillance`).
 
@@ -1347,35 +1838,105 @@ aliases. The old names remain the **old types**.
 
 ### 13.2 Structure
 
+Only the model types move. `lib.rs` keeps everything that is not the model: the module
+declarations, `bounded_read` (used by io-nexrad, io and io-dorade as
+`recast_radar_core::bounded_read`), the refractivity re-exports, `EARTH_RADIUS_M`,
+`EFFECTIVE_EARTH_RADIUS_M`, `beam_height_above_radar_m`, `beam_ground_range_m`, and their two
+tests. `refractivity.rs` imports `crate::EARTH_RADIUS_M` and `crate::beam_height_above_radar_m`,
+so those have to stay at the crate root. The module declarations stay in `lib.rs` because
+`mod field_names;` written inside `legacy.rs` would resolve to `src/legacy/field_names.rs`.
+
+```rust
+// crates/recast-radar-core/src/lib.rs during F.2 and F.3
+pub mod bounded_read;            // unchanged
+mod field_names;                 // unchanged path; `canonical_moment` gains the cfg_attr below
+mod refractivity;                // unchanged
+pub mod legacy;                  // src/legacy.rs
+pub mod model;
+pub mod fm301;
+
+#[allow(deprecated)]
+pub use legacy::*;               // every old name at its old path; un-migrated `use` lines compile
+#[allow(deprecated)]
+pub use field_names::canonical_moment;
+pub use refractivity::{ /* unchanged */ };
+pub use model::{Volume, Sweep, Field, FieldName, FieldData, Quantity, Polarization, GateMapping,
+                RangeCoord, Rays, RayVariables, SweepMode, /* ... */};
+
+pub const EARTH_RADIUS_M: f64 = 6_371_000.0;                        // unchanged, stays here
+pub const EFFECTIVE_EARTH_RADIUS_M: f64 = EARTH_RADIUS_M * 4.0 / 3.0; // unchanged
+pub fn beam_height_above_radar_m(/* unchanged */) -> f64;
+pub fn beam_ground_range_m(/* unchanged */) -> f64;
+```
+
 ```rust
 // crates/recast-radar-core/src/legacy.rs
-//! Pre-FM301 model, moved verbatim from lib.rs @ 1989a03. Deleted at the end of F.3.
+//! Pre-FM301 model types, moved from lib.rs @ 1989a03. Deleted at the end of F.3.
+#![allow(deprecated)] // the module's own impls, `merge_radar_volumes`, conversions and tests
+                      // use the deprecated items; rustc lints uses inside the defining crate
 
-// Every public item keeps its definition and impls unchanged and gains:
+// Every model item keeps its definition and impls unchanged and gains one attribute:
 #[cfg_attr(recast_legacy_deprecation, deprecated(note = "FM301 migration: see docs/design/fm301-model.md section 5"))]
 pub struct RadarVolume { /* unchanged */ }
 // Likewise: RadarSite, ElevationCut, Radial, GateRange, RadialStatus, MomentType, MomentGrid,
 // MomentStorage, MomentRow, MomentGridError, VcpInfo, ScanLegMetadata, ScanMode,
 // VolumeMetadata, RayInstrumentMetadata, RayInstrumentMetadataAlignmentError, ProductId,
-// MergeReport, merge_radar_volumes, canonical_moment, CUT_ELEVATION_MATCH_TOLERANCE_DEG.
+// MergeReport, merge_radar_volumes, CUT_ELEVATION_MATCH_TOLERANCE_DEG.
+// The lib.rs tests that exercise these items move here too.
+// field_names.rs: `canonical_moment` gains the same attribute, and the file gains
+// `#![allow(deprecated)]` because it names `crate::MomentType`.
+```
 
-/// Legacy values whose meaning depends on the decoder that wrote them. Only
-/// `TryFrom<RadarVolume> for Volume` fills this; it is what makes the reverse conversion exact.
+Deprecating a struct also lints every access to its fields, including on values whose type
+the caller never names (`let v = decode(..); v.cuts.len()` warns "use of deprecated field").
+The fields therefore need no attributes of their own (tested, 13.4).
+
+The residue lives outside the model, so `Sweep`'s derived `PartialEq`, serde and struct
+literals are unaffected, and nothing breaks when the shim is removed:
+
+```rust
+/// Everything `volume_from_legacy` could not represent exactly (5.5).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LegacyResidue {
+    pub volume_time: DateTime<Utc>,
+    pub scan_mode: Option<ScanMode>,
+    pub pulse_width_us: Option<f32>,
+    pub unambiguous_range_km: Option<f32>,
+    /// One per sweep, in sweep order.
+    pub sweeps: Vec<SweepResidue>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SweepResidue {
     /// `Radial::time_offset_ms` as written: ms of day (NEXRAD), ms since volume start
     /// (CfRadial), ms since sweep start (DORADE), 0 (ODIM, JMA).
     pub time_offset_ms: Vec<i32>,
-    /// `Radial::gate_range`, per radial.
     pub radial_gate_ranges: Vec<GateRange>,
     pub radial_status: Vec<Option<RadialStatus>>,
-    /// `MomentGrid::gate_range` per field, in `Sweep::fields` order. Preserves each decoder's
-    /// start-vs-centre convention and metre rounding (6.6).
-    pub grid_gate_ranges: Vec<GateRange>,
-    /// `MomentGrid::radial_indices` of grids whose rows were not the identity
-    /// (the conversion scattered them into fill rows).
-    pub sparse_rows: Vec<(usize, Vec<usize>)>,
+    pub nyquist_velocity_mps: Vec<Option<f32>>,
+    /// Verbatim, 16 bytes per ray (covers km values, `Some(NaN)`, pulse counts above
+    /// `i32::MAX`, and all-`None` vectors).
+    pub ray_instrument_metadata: Vec<RayInstrumentMetadata>,
+    /// One per field, in `Sweep::fields` order.
+    pub fields: Vec<FieldResidue>,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldResidue {
+    /// The legacy key, so the reverse is exact even after a naming collision (5.4).
+    pub moment: MomentType,
+    /// Preserves each decoder's start-vs-centre convention and metre rounding (6.6).
+    pub gate_range: GateRange,
+    pub nodata: Option<u16>,
+    pub range_folded: Option<u16>,
+    /// `radial_indices` when they were not the identity (the rows were scattered, 5.3).
+    pub radial_indices: Option<Vec<usize>>,
+}
+
+/// Legacy conventions of the decoder that produced a volume: gate-range meaning (6.6),
+/// `time_offset_ms` meaning (5.2), naming (5.4). Derived from `Provenance::source_format`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegacyConvention { Nexrad, Odim, CfRadial, Dorade, Jma, Generic }
 
 #[derive(Debug, thiserror::Error)]
 pub enum LegacyConversionError {
@@ -1387,33 +1948,36 @@ pub enum LegacyConversionError {
     Shape { sweep: usize, detail: String },
 }
 
-// Whole-volume conversions move every U8/U16/F32 buffer; no gate data is copied.
-impl TryFrom<RadarVolume> for Volume { type Error = LegacyConversionError; /* ... */ }
-// I8/I16 fields expand to legacy F32. That is the only copy, and today's CfRadial decoder
-// already expands.
-impl TryFrom<Volume> for RadarVolume { type Error = LegacyConversionError; /* ... */ }
+/// Moves every U8/U16/F32 buffer; no gate data is copied.
+pub fn volume_from_legacy(v: RadarVolume) -> Result<(Volume, LegacyResidue), LegacyConversionError>;
+/// With a residue: exact inverse (5.5). Without one (natively decoded volumes): derives the
+/// legacy values from `convention` (13.3). I8/I16/F64 fields expand or narrow to legacy F32;
+/// that is the only copy, and today's CfRadial and ODIM decoders already do it.
+pub fn legacy_from_volume(v: Volume, residue: Option<&LegacyResidue>,
+                          convention: LegacyConvention) -> Result<RadarVolume, LegacyConversionError>;
+
+impl TryFrom<RadarVolume> for Volume { /* volume_from_legacy, residue dropped */ }
+impl TryFrom<Volume> for RadarVolume { /* legacy_from_volume(v, None, source_format.into()) */ }
 
 // Borrowed conversions for the legacy-signature wrappers in migrated crates. These clone.
 pub fn sweep_from_cut(cut: &ElevationCut, meta: &VolumeMetadata, number: u32)
-    -> Result<Sweep, LegacyConversionError>;
-pub fn cut_from_sweep(sweep: &Sweep, format: SourceFormat)
+    -> Result<(Sweep, SweepResidue), LegacyConversionError>;
+pub fn cut_from_sweep(sweep: &Sweep, residue: Option<&SweepResidue>, convention: LegacyConvention)
     -> Result<ElevationCut, LegacyConversionError>;
-pub fn field_from_grid(grid: &MomentGrid, range: &RangeCoord, format: SourceFormat)
-    -> Result<Field, LegacyConversionError>;
-pub fn grid_from_field(field: &Field, range: &RangeCoord, format: SourceFormat) -> MomentGrid;
+/// Adds the grid as a field of `sweep` (attaching its geometry) and returns its index.
+pub fn field_from_grid(grid: &MomentGrid, sweep: &mut Sweep)
+    -> Result<(usize, FieldResidue), LegacyConversionError>;
+pub fn grid_from_field(field: &Field, range: &RangeCoord, residue: Option<&FieldResidue>,
+                       convention: LegacyConvention) -> MomentGrid;
 
-impl MomentType { pub fn to_field_name(&self) -> FieldName; }     // Reflectivity -> Dbzh; Unknown("CFP") -> Ccorh
-impl FieldName  { pub fn to_legacy_moment(&self) -> MomentType; } // via Quantity; Other(s) -> Unknown(s)
-```
+impl MomentType { pub fn to_field_name(&self, convention: LegacyConvention) -> FieldName; } // 5.4 table
+impl FieldName  { pub fn to_legacy_moment(&self, convention: LegacyConvention) -> MomentType; } // 5.4 reverse
 
-```rust
-// crates/recast-radar-core/src/lib.rs during F.2 and F.3
-pub mod legacy;
-pub mod model;
-pub mod fm301;
-pub use legacy::*; // every old name at its old path, so un-migrated `use` lines compile unchanged
-pub use model::{Volume, Sweep, Field, FieldName, FieldData, Quantity, Polarization, GateMapping,
-                RangeCoord, Rays, RayVariables, SweepMode, /* ... */};
+/// Structural equality with every f32/f64 compared by `to_bits`, NaN payloads included.
+/// `Err` names the first difference (`cuts[3].moments[Velocity].storage[1042]`).
+/// `PartialEq` cannot serve here: NaN != NaN (13.4).
+#[doc(hidden)]
+pub fn bit_identical(a: &RadarVolume, b: &RadarVolume) -> Result<(), String>;
 ```
 
 An additive edit to the root `Cargo.toml` stops the opt-in cfg from triggering warnings:
@@ -1424,68 +1988,155 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(recast_legacy_deprecation)"] }
 ```
 
+The workspace table applies only to crates that declare `[lints] workspace = true`. Today
+`recast-radar-io-nexrad` and `recast-radar-render` do not (they still contain `unsafe`), and
+those are exactly where F.3 adds `cfg_attr(recast_legacy_deprecation, ..)`. Stream D's D.1
+adds `[lints] workspace = true` to both; the `safety` branch already has it. Whichever lands
+first decides what F.3 does:
+
+- If D.1 has reached `main` when F.3 touches those crates, nothing more is needed.
+- Otherwise the crate gets its own table,
+  `[lints.rust] unexpected_cfgs = { level = "warn", check-cfg = ["cfg(recast_legacy_deprecation)"] }`.
+  That table is removed at the sync that brings D.1 in, because Cargo rejects the combination
+  ("cannot override `workspace.lints` in `lints`"; tested, 13.4).
+
 Deprecation is opt-in because an unconditional `#[deprecated]` would put roughly 1,500
 warnings into crates owned by streams A, D, E and G. That would break the "do not add new
-warnings" rule and G.2's planned `clippy -D warnings`. A migrator runs
-`RUSTFLAGS="--cfg recast_legacy_deprecation" cargo check -p <crate>` to list the legacy uses
-left in that crate.
+warnings" rule and G.2's planned `clippy -D warnings`. Without the cfg, nothing is deprecated
+and nothing warns.
 
-### 13.3 Deprecated accessors in migrated crates
+### 13.3 Legacy wrappers in migrated crates
 
-When a crate's public function migrates, its old signature stays during F.3 as a thin
-wrapper:
+When a crate's public function migrates, its old signature stays during F.3 as a thin wrapper.
+All wrappers live in one module that allows deprecation, so the crate's own gate ignores them:
 
 ```rust
-// Example: recast-radar-correct after fm301-algo migrates
+// Example: recast-radar-correct after fm301-algo migrates (lib.rs)
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))] // this crate is migrated
+
 pub fn dealias_sweep(sweep: &Sweep, opts: &DealiasOptions) -> Result<Field, DealiasError>;
 
-#[cfg_attr(recast_legacy_deprecation, deprecated(note = "use dealias_sweep"))]
-pub fn dealias_cut(cut: &ElevationCut, meta: &VolumeMetadata, opts: &DealiasOptions)
-    -> Result<MomentGrid, DealiasError> {
-    let sweep = legacy::sweep_from_cut(cut, meta, 0)?;
-    let field = dealias_sweep(&sweep, opts)?;
-    Ok(legacy::grid_from_field(&field, &sweep.range, SourceFormat::Unknown))
+/// Legacy signatures, kept until shim removal. Only this module names legacy items.
+#[allow(deprecated)]
+pub mod legacy_api {
+    use super::*;
+    use recast_radar_core::{legacy, ElevationCut, MomentGrid, VolumeMetadata};
+
+    #[cfg_attr(recast_legacy_deprecation, deprecated(note = "use dealias_sweep"))]
+    pub fn dealias_cut(cut: &ElevationCut, meta: &VolumeMetadata, opts: &DealiasOptions)
+        -> Result<MomentGrid, DealiasError> {
+        let (sweep, _residue) = legacy::sweep_from_cut(cut, meta, 0)?;
+        let field = dealias_sweep(&sweep, opts)?;
+        Ok(legacy::grid_from_field(&field, &sweep.range, None, legacy::LegacyConvention::Generic))
+    }
 }
+#[allow(deprecated)]
+pub use legacy_api::*; // old paths keep resolving; callers still get the deprecation warning
 ```
+
+A migrated crate that still has to call an un-migrated dependency's legacy API (render
+calling `recast_radar_correct::dealias_velocity_grid` before fm301-algo lands) makes those
+calls from a private `#[allow(deprecated)] mod legacy_bridge`. The bridge goes when the
+dependency migrates.
 
 Decoders follow the same pattern:
 
 - `read_volume(..) -> Volume` is the native decoder.
-- `decode_volume_from_bytes(..) -> RadarVolume` stays, implemented as
-  `RadarVolume::try_from(read_volume(..)?)`.
-- A natively decoded volume has no residue, so `TryFrom<Volume>` derives the legacy values
-  from each decoder's legacy convention: the 6.6 table for gate ranges; NEXRAD
-  `time_offset_ms` = ms of day of the collection time; `Radial::gate_range` = the first
-  field's native geometry; `radial_status` from `NexradMetadata`'s per-ray status, which
-  io-nexrad keeps for the duration of the shim.
+- `decode_volume_from_bytes(..) -> RadarVolume` stays in `legacy_api`, implemented as
+  `legacy::legacy_from_volume(read_volume(..)?, None, LegacyConvention::Nexrad)`.
+- A natively decoded volume has no residue, so the reverse derives the legacy values from the
+  decoder's legacy convention:
+  - gate ranges: the 6.6 table;
+  - NEXRAD `time_offset_ms`: ms of day of the collection time;
+  - `volume_time`: the NEXRAD volume header time from `NexradMetadata`;
+  - `Radial::gate_range`: the first field's native geometry;
+  - `radial_status`: `NexradMetadata`'s per-ray status, which io-nexrad keeps for the
+    duration of the shim;
+  - names: 5.4;
+  - `scan_name` and `scan_id`: `None` for NEXRAD, as the legacy decoder left them;
+  - ODIM: undetect codes remapped onto nodata in place (the legacy decoder did this; the
+    buffer is moved and modified, not copied).
 
 Each io crate's existing real-file tests keep passing through these wrappers, which shows the
-native decoders reproduce legacy output.
+native decoders reproduce legacy output. A wrapper that changes values is caught there.
+Natively decoded ODIM and CfRadial gate positions intentionally differ by half a gate (6.6);
+those tests change in F.3 with that justification recorded.
+
+**F.3 order.** The gate does not depend on migration order (13.4). API availability does:
+
+| Sub-worktree | Order |
+|---|---|
+| fm301-io | io-nexrad, io-odim, io-cfradial, io-dorade, io-jma (independent); then io (router); then data |
+| fm301-algo | filters and correct (depend only on core); then retrieve and map (use correct; map also uses filters); then track (uses correct, map, retrieve) |
+| fm301-render | render once fm301-algo's `correct` migration is merged into `fm301` and synced, or earlier through `legacy_bridge`; bench (uses io, correct, render) last, after fm301-io and fm301-algo merge back |
 
 ### 13.4 Acceptance and removal
 
 **F.2**
 
-- `legacy.rs` holds the old code byte-identical, as a `git diff -M` rename.
-- For every real corpus file that `recast-radar-io` can decode,
-  `RadarVolume::try_from(Volume::try_from(v)) == v` under `PartialEq`, except that
-  `unambiguous_range_km` is compared to 1e-6 relative because it goes km → m → km.
+- `legacy.rs` holds exactly the model items listed in 13.2. Their definitions and impls are
+  unchanged apart from the added `cfg_attr` lines and the module header. This is checked by a
+  script that strips those lines and compares each item's text against
+  `git show 1989a03:crates/recast-radar-core/src/lib.rs`. A `git diff -M` rename cannot be
+  the test, because `lib.rs` keeps the geometry, refractivity and module declarations.
+- `RUSTFLAGS="--cfg recast_legacy_deprecation" cargo check -p recast-radar-core --all-targets`
+  reports no deprecation warning from core itself.
+- Round trip: for every real corpus file that `recast-radar-io` decodes,
+  `let (vol, res) = volume_from_legacy(v.clone())?;` followed by
+  `bit_identical(&legacy_from_volume(vol, Some(&res), conv)?, &v)` returns `Ok`. There are no
+  tolerances (5.5). `PartialEq` is not used: NaN != NaN, so `v == v.clone()` is already false
+  for NaN-bearing files. Review evidence: IRENE CfRadial (50,697 NaN gates), DOW8 (141,702)
+  and espdg ODIM (360,203) fail `v == v.clone()`, while JMA N5 and dkrom pass.
 - All crates compile unchanged, `cargo test --workspace` passes, and checksums are identical,
   since nothing uses the new path yet.
 
 **F.3**
 
-- Migrated crates use only `model::*`:
-  `RUSTFLAGS="--cfg recast_legacy_deprecation -D deprecated" cargo check -p <crate>` passes.
-  The legacy wrappers stay.
+- A migrated crate has `#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]` at its
+  root, and so does each integration-test, bench and example target it migrates (each of those
+  is its own crate). The gate is
+  `CARGO_TARGET_DIR=target/legacy-gate RUSTFLAGS="--cfg recast_legacy_deprecation" cargo check -p <crate> --all-targets`,
+  which must succeed. The separate target directory keeps the RUSTFLAGS change from
+  invalidating the normal build cache. The deny applies only inside crates that declare it.
+  Un-migrated dependencies still compile and only warn, so the gate works in any sub-worktree
+  regardless of what the others have migrated.
+- A companion grep, `grep -rn "RadarVolume\|ElevationCut\|MomentGrid\|MomentType\|legacy::" crates/<crate>`,
+  shows matches only inside `legacy_api` and `legacy_bridge`.
 - Checksums stay identical after fm301-render and bench move to `Volume`.
 - Single-core decode time is measured on the native `read_volume`, before and after.
 
+The gate design was tested in a standalone workspace, committed as
+`tools/fm301_probe/shim_gate` (reproduce with `bash tools/fm301_probe/shim_gate/run.sh`). It
+has four crates:
+
+- `core_t`: `#[allow(deprecated)] mod legacy` with cfg-gated deprecations on structs and
+  functions, and none on fields.
+- `algo_t`: migrated, with the deny and a `legacy_api` module.
+- `render_t`: un-migrated, using legacy types, algo's wrappers and field accesses.
+- `bench_t`: migrated, depending on `render_t`.
+
+The workspace also has the check-cfg entry. With the cfg:
+
+- `cargo check --workspace` finishes. `render_t` gets 7 warnings, including field accesses on
+  values whose type it never names.
+- `-p algo_t` and `-p bench_t` pass.
+- After adding one legacy use to `algo_t` outside `legacy_api`, `-p algo_t` fails
+  ("error: use of deprecated struct `core_t::MomentGrid`") and so does `-p bench_t`, which
+  depends on `algo_t`. That is correct, since `algo_t` claims to be migrated.
+- The reviewer's alternative,
+  `cargo rustc -p algo_t --lib -- --cfg recast_legacy_deprecation -D deprecated`, passes even
+  with that stray use: `core_t` is compiled without the cfg and so has no deprecation
+  attributes. It is not used.
+- A manifest with both `[lints] workspace = true` and `[lints.rust]` fails to parse.
+
 **Removal (the last F.3 step)**
 
-- Delete `legacy.rs`, `Sweep::legacy`, the wrappers and the `unexpected_cfgs` entry.
+- Delete `legacy.rs`, `canonical_moment` (replaced by `Quantity::classify`), every
+  `legacy_api` and `legacy_bridge` module, the `deny(deprecated)` crate attributes, and every
+  `unexpected_cfgs` check-cfg entry (workspace and per-crate).
 - Rename `read_volume*` to the final names.
-- `grep -rn "legacy::\|RadarVolume\|MomentGrid\|ElevationCut" crates` finds nothing.
+- `grep -rn "legacy::\|legacy_api\|RadarVolume\|MomentGrid\|ElevationCut\|recast_legacy_deprecation" crates Cargo.toml`
+  finds nothing.
 
 ---
 
@@ -1493,12 +2144,15 @@ native decoders reproduce legacy output.
 
 | Topic | FM301-2022 text | xradar 0.12 | Py-ART 2.2.5 | Model / view |
 |---|---|---|---|---|
-| Ray dimension | `time` is primary | `azimuth` (PPI) or `elevation` (RHI), rays sorted; `time` with `first_dim="time"` | a 1-D ray index across the volume | `time`, storage order, in both flavors |
+| Ray dimension | `time` is primary (a CF coordinate, so monotonic) | `azimuth` (PPI) or `elevation` (RHI), rays sorted; `time` in acquisition order with `first_dim="time"` | a 1-D ray index across the volume | `FirstDim::Time`: `time`, acquisition order (a row permutation; identity for NEXRAD, CfRadial, DORADE). `FirstDim::Auto` (Xradar flavor): xradar's default. Model storage order never changes (12.1) |
+| Time reference | `seconds since YYYY-MM-DDThh:mm:ssZ`, whole seconds (Table 301-6b) | `time` as datetime64 | first radial's time floored to the second | `time_reference` whole seconds; fraction in `time_s` (section 2) |
+| Attribute types | `_Undetect`, `flag_values`, `flag_masks` "same as field data" (Table 301-10) | NEXRAD attributes as Python bool/int/float; `to_cfradial2` cannot write the bools | NEXRAD `vcp_pattern` as text | typed `AttrValue`; flag and range attributes in the packed type; bools as text in the WMO flavor |
 | Fixed angle variable | `fixed_angle` | `sweep_fixed_angle` | `fixed_angle` (volume array) | Xradar flavor: `sweep_fixed_angle`; WMO flavor: `fixed_angle` |
 | `range` units and meaning | "metres"; the attribute is named `meters_to_center_of_first_gate` but described as "range to start of first gate" | "meters", centre (ODIM 750 = rstart 500 + 250) | "meters", centre in the data; the ODIM reader's attribute says 0.0 while the data starts at 250 | centres; "meters" in the Xradar flavor, "metres" in the WMO flavor |
 | azimuth / elevation `standard_name` | `sensor_to_target_azimuth_angle` / `sensor_to_target_elevation_angle` | `ray_azimuth_angle` / `ray_elevation_angle` | `beam_azimuth_angle` / `beam_elevation_angle` | per flavor |
-| Unknown `follow_mode` / `prt_mode` | no "unknown" value | "not_set" | CfRadial passthrough | "not_set" when `None` |
-| NEXRAD sentinels | `_FillValue` and `valid_range` mandatory (WMO-CF.5.2.14, 5.2.15) | no `_FillValue` | masks raw <= 1 | `_FillValue = 0`, range-folded flag, `valid_range` |
+| Unknown `follow_mode` / `prt_mode` | no "unknown" value | "not_set" | CfRadial passthrough | "not_set" when `None`; other source strings verbatim (`Other`) |
+| NEXRAD sentinels | `_FillValue` and `valid_range` mandatory (WMO-CF.5.2.14, 5.2.15); `_Undetect` for radiated bins without a valid echo (Table 301-10) | no `_FillValue`, no `_Undetect` | masks raw <= 1 | `_FillValue = 0` and `_Undetect = 0`, range-folded flag, `valid_range`; the model tells undetect from missing (7.1) |
+| Undetect after decoding | — | ODIM `_Undetect` left in `.attrs` of the decoded variable, in packed units | masked | binding moves it to `.encoding` by default (12.3) |
 | Field `coordinates` attribute | "elevation azimuth range" | "elevation azimuth range latitude longitude altitude time" | "elevation azimuth range" (NEXRAD); "time range" (CfRadial) | per flavor |
 | Different gate geometry within a sweep | one `range` | first moment's start and spacing, maximum count; misplaces moments | resampled to one volume range | section 6 |
 | Different range lengths across sweeps | per-sweep `range` allowed | per sweep | one volume range | per sweep; a Py-ART export pads to the volume maximum |
@@ -1507,7 +2161,7 @@ native decoders reproduce legacy output.
 
 ---
 
-## 15. Deviations from spec and plan; open questions for the reviewer
+## 15. Deviations from spec and plan; open questions
 
 **Deviations** (each justified in the section cited):
 
@@ -1516,16 +2170,28 @@ native decoders reproduce legacy output.
    (section 2), so that `core` does not depend on `io-*` crates (spec 4.1 dependency rule).
    This is consistent with plan A.4.
 2. **Storage types.** Spec 4.2 lists `u8`, `u16` or `f32`. `I8` and `I16` are added so that
-   CfRadial `byte`/`short` packed data is not expanded (IRENE, DOW8; 7.3).
+   CfRadial `byte`/`short` packed data is not expanded (IRENE, DOW8; 7.3). `F64` is added so
+   float64 sources are not narrowed (espdg; 7.2), which keeps raw hashes comparable with
+   xradar and avoids a narrowing pass at decode.
 3. **Canonical names.** Spec 4.2's "canonical names are the FM301/xradar short names" is read
    as "whatever xradar names it", which means verbatim names for ODIM, CfRadial and DORADE
    (8.1).
 4. **Type aliases.** Plan F.1 asks for them; there are none, because aliases cannot keep
    legacy field syntax compiling (13.1). Deprecation is gated behind a `cfg`.
 5. **Range folded.** Spec 4.2's "raw 1 is the range-folded flag" becomes CF `flag_values`,
-   which CF decoding does not mask. The binding masks it by default (7.1).
+   which CF decoding does not mask. The binding masks it by default and can keep it as an
+   ancillary flag variable (7.1, 12.3).
+6. **Raw 0.** Spec 4.2 says "raw 0 is `_FillValue` (below threshold)". It stays `_FillValue`,
+   and is also FM301 `_Undetect`, because below threshold means radiated without a valid echo
+   (Table 301-10). The model separates undetect from missing (7.1). The CF masking the spec
+   asks for is unchanged.
+7. **"Without copying" in spec 4.3.** Spec 4.3 says the model exposes `&[u8]`/`&[u16]`/`&[f32]`
+   "so a future PyO3 layer can hand NumPy arrays over without copying". Borrowed slices do
+   exist (`Field::row`, `ArrayRef`). But lending them to NumPy needs an `unsafe fn` in
+   rust-numpy, which spec principle 2 forbids. The no-copy handover therefore moves ownership
+   (12.2). Borrowed slices remain the Rust API and the conformance surface.
 
-**Open questions**
+**Open questions** (not settled by the review, which raised no finding on them)
 
 1. **`prt_mode` when unknown.** Table 301-15 has no "unknown" value. Should the view write
    "not_set" (as xradar does) or omit the mandatory variable?
@@ -1547,6 +2213,52 @@ native decoders reproduce legacy output.
 
 ---
 
+## 16. Review resolutions
+
+An independent review of the first version (commit `fd2b7b1`) returned `approve: false`, with
+0 blockers, 6 major and 10 minor findings. Every finding is resolved in this revision. None is
+rejected outright.
+
+- Two of the reviewer's suggested alternatives were tested and not adopted: finding 1's
+  `cargo rustc` scoping, and finding 11's forward naming rule.
+- One factual claim in finding 5 was corrected: xradar 0.12 drops CfRadial root attributes
+  that Py-ART keeps.
+- Where the review offered options, the chosen one is named below.
+
+"Checked" marks evidence re-run for this revision. The rest is the reviewer's own evidence,
+which this revision relies on without re-running.
+
+None of the resolutions adds work at decode:
+
+- `undetect` and `attr_width` are metadata.
+- `absent_rows` is an empty `Vec` in the common case.
+- `push_row_*(ray, ..)` adds one integer comparison per row.
+- `F64` and verbatim float fills remove a narrowing or rewrite pass.
+- Native ODIM decoding stops remapping undetect onto nodata, removing a pass.
+- Ray reordering happens in the view.
+- The residue exists only in the shim.
+
+| # | Severity | Finding | Resolution | Sections |
+|---|---|---|---|---|
+| 1 | major | The F.3 `-D deprecated` gate cannot pass: rustc lints uses inside core; the kept wrappers name legacy types; `RUSTFLAGS` reaches path dependencies in other sub-worktrees | **Accepted, with a different gate.** `legacy.rs` has `#![allow(deprecated)]`. Wrappers live in `#[allow(deprecated)] pub mod legacy_api` with an allowed re-export. Calls into un-migrated dependencies go through `legacy_bridge`. A migrated crate declares `#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]`, and the gate sets only the cfg through `RUSTFLAGS`, with no `-D`, so un-migrated dependencies warn and do not fail. Checked with `tools/fm301_probe/shim_gate/run.sh`: migrated crates pass; a stray use outside `legacy_api` fails in its own crate and in dependents; a migrated crate over an un-migrated dependency passes; deprecating a struct also flags field accesses. **Rejected alternative:** `cargo rustc -p <crate> -- --cfg recast_legacy_deprecation -D deprecated` passes vacuously even with a stray use, because core is compiled without the cfg (script step 7). The dependency order was adopted for API availability only; the gate does not depend on order | 0 item 8; 13.2; 13.3 (F.3 order); 13.4 |
+| 2 | major | The F.2 round trip under `PartialEq` fails on NaN-bearing files (IRENE, DOW8, espdg) | **Accepted.** `legacy::bit_identical` compares every float by `to_bits` and names the first difference. Exactness comes from the residue (5.5), so there is no tolerance list | 5.5; 13.2; 13.4 |
+| 3 | major | NEXRAD raw 0 is FM301 `_Undetect`, but was coded only as missing | **Accepted.** `undetect: Some(0)` alongside `fill_value: Some(0)`. The `Field::gate` resolution order is specified, with undetect before fill. `Field::absent_rows` marks rows the source did not provide (`Missing`). The view writes `_FillValue = 0` and `_Undetect = 0`, pads with `_FillValue`, and documents that the encoded form cannot separate the two. Recorded as deviation 15.6. Checked: FM301 Table 301-10 text; xarray keeps `_Undetect` as an attribute after `decode_cf` (`review_checks.py` part 3). One refinement: padding is not a native gate, so `Field::gate` returns `None` beyond the native extent, and the view's `_FillValue` is what marks it | 0 item 5; 4; 7.1; 14; 15 |
+| 4 | major | After xarray decoding, `flag_values` and `valid_range` stay in `.attrs` in packed units | **Accepted, with an explicit decoded form.** `packed_attrs = Encoding` (default) moves `_Undetect`, `valid_range`, `valid_min/max` and `flag_*` into `.encoding`; `Attrs` keeps xradar's placement. `range_folded_variable = true` adds a lazy `<FIELD>_flags` ancillary variable. The netCDF4-python vs xarray reading difference is documented. F.4 compares the encoded form. Checked: xarray leaves those attributes in `.attrs`, and, a new finding, drops unknown `.encoding` keys on `to_netcdf` with both the `netcdf4` and `h5netcdf` engines. That trade-off is documented in 12.3. **Not adopted:** converting `valid_range` to physical `valid_min/valid_max`, because CF requires the packed type and a write-back would be non-conforming | 7.1; 12.3; A.6 |
+| 5 | major | No passthrough for unmodelled metadata, so CfRadial and DORADE conversion is lossy | **Accepted.** Added `GlobalAttrs::other`, `Volume::extra_vars`, `Sweep::extra_vars`, `Sweep::other`, `RadarCalibration::extra` (named as xradar names them), and `PlatformTrack` attitude vectors (heading, roll, pitch, drift, rotation, tilt, `altitude_agl`); `georef*` go to `extra_vars`. `ViewOptions::passthrough`. **Correction to the finding (checked):** xradar 0.12 does not keep `Sub_conventions`, `original_format`, `driver`, `created`, `start_*`, `end_*` or `n_gates_vary` for CfRadial 1 (DOW8 root has 14 attributes). Only Py-ART keeps them, so the Xradar flavor writes root `other` only with `Passthrough::All`. xradar does keep the per-ray `ray_start_range`, `ray_gate_spacing` and `georef*` variables and the non-FM301 calibration entries (checked) | 0 item 10; 1; 2; 3; 9; 11; 12.1; A.5 |
+| 6 | major | Zero-copy NumPy exposure conflicts with the no-unsafe rule | **Accepted: option (a), ownership moves.** Added `Field::into_parts`, `FieldData::into_array` and `VolumeView::layout()`. The binding moves each `Vec` with `PyArray::from_vec` and reshapes; non-trivial mappings use a lazy backend array. `VolumeView` stays the Rust conformance surface. Checked in `numpy-0.23.0`: `array.rs` line 340 `pub unsafe fn borrow_from_array`, line 446 `pub fn from_owned_array`, line 612 `pub fn from_vec`, and `borrow/mod.rs` line 267 safe `as_slice`. **Not adopted:** option (b), shared buffers plus one audited unsafe site, which would need a spec exception. Recorded as deviation 15.7 | 0 item 9; 4; 6.5; 12.2; 15 |
+| 7 | minor | `unexpected_cfgs` check-cfg misses io-nexrad and render | **Accepted.** Checked: `grep -L '^\[lints\]'` lists exactly those two, and the `safety` branch (D.1) already adds `[lints] workspace = true` to both. A per-crate `[lints.rust]` table is added only if D.1 has not landed, and removed at that sync, because Cargo rejects both tables together (script step 8). No `build.rs` | 13.2 |
+| 8 | minor | The time reference has sub-second precision, but FM301 and Py-ART use whole seconds | **Accepted.** `time_reference` is whole seconds, with the fraction in `time_s`. Sources that state a reference (CfRadial `time.units`) keep it; NEXRAD uses the first radial floored; a differing header time stays in `NexradMetadata`; legacy `volume_time` goes to the residue. Checked: Py-ART `get_times` uses `seconds=int(secs[0])`, units "seconds since 2024-03-15T00:02:17Z", first values 0.182, 0.204 | 0 item 2; 2; 5.1; 5.2; 5.5; 11 |
+| 9 | minor | The `time` coordinate is non-monotonic for ODIM and JMA storage order; xradar parity needs `first_dim` | **Accepted: the view reorders through a row permutation.** `FirstDim::Time` gives acquisition order (the only choice in the WMO flavor); `FirstDim::Auto` gives xradar's default. The model's storage order is unchanged, so decode cost is unchanged. `ViewWarning::NonMonotonicTime` covers sources without per-ray times. The binding exposes `first_dim`. **Not adopted:** a non-coordinate ray dimension with `time` as an auxiliary coordinate, which would not match xradar's `first_dim="time"` layout (dimension `time`, A.2) | 0 item 2; 12.1; 12.3; 14 |
+| 10 | minor | Unit conversions are inexact beyond the one listed tolerance | **Accepted, using the reviewer's residue option instead of a tolerance list.** Every non-invertible value is kept (5.5) and used only while the model still holds its forward image. The audit found four more cases, now covered: legacy `vcp` → `scan.name/id` (moved to native decoding), `scan_mode: None`, `Some(NaN)` in per-ray options, and all-`None` `ray_instrument_metadata` | 5.1; 5.2; 5.5 |
+| 11 | minor | The reverse name mapping ("via Quantity", CFP) collides or loses names | **Accepted, with a different collision rule.** The residue records each field's `MomentType`. `to_legacy_moment` is the exact inverse for the seven variants and `Ccorh` → `CFP` (NEXRAD only), and `Unknown(as_str())` otherwise. **Suggested forward rule not adopted:** mapping `Unknown("DBZH")` to `Other("DBZH")` would still give two variables named `DBZH` by `as_str()`, and `Other` must never hold a known spelling. Instead, `Unknown` names are assigned first, and a colliding canonical variant becomes `Other("<Variant>")` with its quantity kept | 4; 5.4; 13.2 |
+| 12 | minor | `AttrValue` and `LinearTransform` lose types that CF and xradar depend on | **Accepted.** Typed `Scalar`, `ArrayBuf` and `AttrValue { Text, Bool, Scalar, Array }`. Flag, range and fill attributes are written in the packed type; `CfScaleOffset::attr_width` added. Checked: xradar NEXRAD attribute types (`review_checks.py` part 2); appendix A.2 corrected | 2; 4; 7.3; 11; A.2 |
+| 13 | minor | FM301 naming and structure gaps (radar_parameters names, `polarization_sequence`, `flag_masks`, `calib_index` type, monitoring group, enum `Other`) | **Accepted.** 12.4 per-flavor name table; `Sweep::polarization_sequence`; `FieldAttrs::flag_masks`; `Group::children`; `Other(Box<str>)` on `FollowMode`, `PrtMode` and `PolarizationMode`; `calib_index` held as i32 and written as byte (301-14a) or int (301-8a) in the WMO flavor. Checked: WMO-No. 306 Tables 301-8a, 301-10, 301-12a and 301-14a; CfRadial `r_calib_index` is int32 in DOW8 and IRENE; xradar writes `radar_receiver_bandwidth` from the file's `radar_rx_bandwidth` | 1; 2; 3; 4; 10; 12.1; 12.4 |
+| 14 | minor | Py-ART alias table, classification and Py-ART conformance details | **Accepted.** PIDA alias is `path_integrateddifferential_attenuation` (checked). `PyartNames::{Config, Reader}` and `NameInfo::pyart_odim`. `Quantity::classify(name, standard_name)` tries standard name, then Py-ART names, then suffixes (xsapr `standard_name` checked; DOW8's name-as-standard-name falls through). F.4 uses `linear_interp=False` for coarse-reflectivity volumes. `FieldName` serde goes through `as_str`/`parse` | 4; 6.5; 8.2; 8.3 |
+| 15 | minor | `legacy.rs` and `SweepResidue` mechanics are underspecified or contradictory | **Accepted.** Only the model types move. `lib.rs` keeps `bounded_read`, refractivity, geometry and the module declarations (checked: `refractivity.rs` imports `crate::EARTH_RADIUS_M` and `crate::beam_height_above_radar_m`, and `field_names.rs` imports `crate::MomentType`). The acceptance compares item text instead of a `git diff -M` rename. The residue moved out of `Sweep` into `LegacyResidue`, returned beside the `Volume`, and `Sweep::legacy` is gone | 0 item 8; 3; 13.2; 13.4 |
+| 16 | minor | Float and ragged-source handling is ambiguous | **Accepted.** One rule for floats: stored verbatim, with the source fill as `_FillValue` and no rewrite pass. `FieldData::F64` added (espdg float64 checked, gain 1, offset 0); `FloatCoding::transform` covers ODIM float planes with other gain or offset. `push_row_*(ray, ..)` fills gaps as `absent_rows`. `n_gates_vary = "true"` is padded at decode; ray-to-ray geometry changes return `CfRadialError::PerRayGeometry` (a documented limitation). Checked: no corpus file uses either path | 0 item 4; 3; 4; 7.2; 7.3 |
+
+---
+
 ## Appendix A. Observed structure on real files
 
 ### A.1 Environment and files
@@ -1558,6 +2270,10 @@ native decoders reproduce legacy output.
   - `probe_xradar.py <nexrad|odim|cfradial1> <file> [detail_sweeps]`
   - `probe_pyart.py <nexrad|odim|cfradial1> <file>`
   - `metpy_gates.py <level2 file>`
+  - `review_checks.py <KTLX 2024 file> <testdata/files/other> <scratch dir>` (added for
+    section 16)
+  - `shim_gate/run.sh`, a standalone Cargo workspace for the deprecation gate (13.4; added for
+    section 16)
 
 | Label | File | Corpus id |
 |---|---|---|
@@ -1605,12 +2321,15 @@ Root:
   - Conventions "None"; version, title, institution, references, source and history "None";
     comment "im/exported using xradar".
   - instrument_name "KTLX", scan_name "VCP-212", dynamic_scan_type "SAILS x 3".
-  - mpda_vcp "False", base_tilt_vcp "False", num_base_tilts "0", vcp_truncated "False",
-    vcp_sequence_active "False".
-  - number_elevation_cuts "23", actual_elevation_cuts "20", doppler_velocity_resolution
-    "0.5", vcp_pulse_width "short".
-  - avset_enabled "True", ebc_enabled "True", super_res_status "2", rda_build_number "2200",
-    operational_mode "4".
+  - Python bools: mpda_vcp False, base_tilt_vcp False, vcp_truncated False,
+    vcp_sequence_active False, avset_enabled True, ebc_enabled True.
+  - Python ints: num_base_tilts 0, number_elevation_cuts 23, actual_elevation_cuts 20,
+    super_res_status 2, rda_build_number 2200, operational_mode 4.
+  - Python float: doppler_velocity_resolution 0.5. Strings: vcp_pulse_width "short" and the
+    ones above.
+  - (The first version of this note printed these as strings. The types were re-checked for
+    this revision with `type(v)` on `dt["/"].attrs`. `xd.io.to_cfradial2` on this tree raises
+    `TypeError: illegal data type for attribute b'mpda_vcp'` (review evidence).)
 
 Sweep group:
 
@@ -1629,9 +2348,9 @@ Sweep group:
   `prt_mode` "not_set", `follow_mode` "not_set", and `sweep_fixed_angle` (float64, from
   Message 5). No `nyquist_velocity` and no `unambiguous_range`.
 - Attributes, sweep_0 / sweep_1: waveform_type "contiguous_surveillance" /
-  "contiguous_doppler", channel_config "sz2_phase_coding", super_resolution "11" / "7",
-  sails_cut "False", sails_sequence_number "0", mrle_cut "False", mrle_sequence_number "0",
-  mpda_cut "False", base_tilt_cut "False".
+  "contiguous_doppler", channel_config "sz2_phase_coding" (strings); super_resolution 11 / 7,
+  sails_sequence_number 0, mrle_sequence_number 0 (ints); sails_cut, mrle_cut, mpda_cut,
+  base_tilt_cut False (bools).
 
 Fields:
 
@@ -1937,6 +2656,44 @@ xradar:
 
 Py-ART: scan_type "rhi", nrays 148, ngates 950, field names verbatim.
 
+**Added for the review resolutions** (`tools/fm301_probe/review_checks.py` part 4, netCDF4
+1.7.4 and xradar 0.12.0):
+
+- File contents (netCDF4), DOW8 and IRENE alike:
+  - Global attributes, in order: `Conventions`, `Sub_conventions`, `version`, `title`,
+    `institution`, `references`, `source`, `history`, `comment`, `original_format`,
+    `driver`, `created`, `start_datetime`, `time_coverage_start`, `start_time`,
+    `end_datetime`, `time_coverage_end`, `end_time`, `instrument_name`, `site_name`,
+    `scan_name`, `scan_id`, `platform_is_mobile`, `n_gates_vary` ("false"),
+    `ray_times_increase`.
+  - Root variables include `status_xml`, `grid_mapping` (int32) and `radar_rx_bandwidth`,
+    and `r_calib_*(r_calib)` including `r_calib_k_squared_water`, `r_calib_i0_dbm_*`,
+    `r_calib_dynamic_range_db_*`, `r_calib_base_dbz_1km_*` and `r_calib_dbz_correction`.
+    `r_calib_time` is a string.
+  - Per-ray variables include `ray_start_range`, `ray_gate_spacing` (constant in both files),
+    `georefs_applied` (int8), `n_samples` and `r_calib_index` (int32), `georef_time`,
+    `georef_unit_num`, `georef_unit_id`, and (DOW8) `latitude/longitude/altitude/altitude_agl(time)`.
+- xradar `open_cfradial1_datatree(DOW8, optional_groups=True)`:
+  - Root attributes are only `Conventions` ("CF-1.7"), `version`, `title`, `institution`,
+    `references`, `source`, `history`, `comment`, `instrument_name`, `site_name`,
+    `scan_name`, `scan_id` (**int32**), `platform_is_mobile` and `ray_times_increase`.
+    `Sub_conventions`, `original_format`, `driver`, `created`, `start_*`, `end_*` and
+    `n_gates_vary` are **dropped** (Py-ART keeps them).
+  - `sweep_0` keeps `ray_start_range`, `ray_gate_spacing`, `georefs_applied`, `georef_time`,
+    `georef_unit_num`, `georef_unit_id`, `altitude_agl`, `r_calib_index`,
+    `measured_transmit_power_h/v`. After CF decoding, `n_samples` and `r_calib_index` are
+    float64.
+  - `/radar_calibration` names drop the `r_calib_` prefix and keep the non-FM301 entries
+    (`k_squared_water`, `i0_dbm_*`, `dynamic_range_db_*`, `dbz_correction`), with
+    `base_dbz_1km_hc` renamed to `base_1km_hc`.
+  - `/radar_parameters` holds `radar_beam_width_h/v`, `radar_antenna_gain_h/v` and
+    `radar_receiver_bandwidth` (from the file's `radar_rx_bandwidth`).
+- xsapr (`cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc`): `reflectivity_horizontal` is float32
+  with `standard_name = "equivalent_reflectivity_factor"` and `_FillValue` -9999.0. The file
+  has no `n_gates_vary` attribute and no `ray_start_range`.
+- `time.units`: IRENE "seconds since 2011-08-27T12:04:20Z" with first values 0.76, 0.76;
+  xsapr "seconds since 2011-05-20T10:54:08Z".
+
 ### A.6 xarray CF decoding of NEXRAD sentinels (xarray 2026.7.0, h5netcdf)
 
 Input: uint8 `[0, 1, 2, 66, 200, 255]` with scale_factor 0.5 and add_offset -33.0.
@@ -1947,6 +2704,19 @@ Input: uint8 `[0, 1, 2, 66, 200, 255]` with scale_factor 0.5 and add_offset -33.
 | `_FillValue=0`, `missing_value=[0,1]` | NaN, NaN, -32.0, ... | SerializationWarning "multiple fill values ... decoding all values to NaN" (twice) | **ValueError**: conflicting `_FillValue` and `missing_value` |
 | `missing_value=[0,1]` | NaN, NaN, -32.0, ... | same warning | **ValueError**: truth value of an array is ambiguous |
 | `_FillValue=0`, `_Undetect=0`, `flag_values=[1]`, `flag_meanings="range_folded"` | NaN, -32.5, ... (flags kept as attributes) | none | OK |
+
+Re-checked for the review resolutions (`tools/fm301_probe/review_checks.py` part 3, xarray
+2026.7.0):
+
+- `decode_cf` of the same array, with `_FillValue=0u8`, `_Undetect=0u8`,
+  `valid_range=[2,255]u8`, `flag_values=[1]u8` and `flag_meanings="range_folded"`, gives
+  float64 `[nan, -32.5, -32, 0, 67, 94.5]`.
+- `.encoding` is then `{_FillValue: 0, scale_factor: 0.5, add_offset: -33.0, dtype: uint8}`.
+- `.attrs` is then `{_Undetect: 0u8, valid_range: [2, 255]u8, flag_values: [1]u8,
+  flag_meanings: "range_folded"}`, all still in packed units.
+- After moving those four attributes into `.encoding`, `to_netcdf` with both the `netcdf4`
+  and `h5netcdf` engines writes only `_FillValue`, `add_offset` and `scale_factor`. Unknown
+  encoding keys are dropped (12.3).
 
 ### A.7 Py-ART's DataTree adapter
 
@@ -1972,4 +2742,7 @@ $PY tools/fm301_probe/probe_xradar.py odim testdata/files/other/odim/dkrom.pvol.
 $PY tools/fm301_probe/probe_pyart.py  cfradial1 testdata/files/other/cfradial/cfrad.20211011_223602_DOW8_RHI.trim3.nc
 cargo build --release -p recast-radar-io --example dump_radar
 target/release/examples/dump_radar KTLX20240315_000217_V06
+# review resolutions (section 16)
+$PY tools/fm301_probe/review_checks.py KTLX20240315_000217_V06 testdata/files/other <scratch dir>
+bash tools/fm301_probe/shim_gate/run.sh
 ```
