@@ -18,8 +18,12 @@
 //! numeric coordinate array it widens to f64, each field's transient f32
 //! plane, the radial and per-ray metadata tables, and every moment grid to a
 //! `DecodeBudget` of `MAX_DECODED_VOLUME_BYTES` (1 GiB) before allocating
-//! (constants in [`recast_radar_core::bounded_read`]). Overlapping sweep ray
-//! ranges therefore cannot multiply the output past the budget.
+//! (constants in [`recast_radar_core::bounded_read`]). Sweeps must not share
+//! rays: overlapping `sweep_start_ray_index`/`sweep_end_ray_index` ranges are
+//! a [`CfRadialError::InvalidMessage`] error, so each ray's gates are copied
+//! into at most one sweep and a moment's grids never outgrow its field. A
+//! sweep whose ray index is not a non-negative integer (a fill value, for
+//! example) is skipped.
 //!
 //! Every limit violation is a [`CfRadialError::LimitExceeded`] error. An
 //! optional variable that is missing or malformed is ignored, but one that

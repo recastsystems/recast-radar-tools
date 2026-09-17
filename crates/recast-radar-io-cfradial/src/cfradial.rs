@@ -209,20 +209,24 @@ fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Res
         return Err(invalid("CfRadial volume has no (time, range) fields"));
     }
 
+    // Validate every sweep's ray range before building anything. Sweeps that
+    // share rays would each copy the same field rows, so a header claiming
+    // many overlapping sweeps multiplied the decoded size (fuzz regression
+    // `fuzz-cfradial-overlapping-sweep-ray-ranges`).
+    let ray_ranges: Vec<Option<(usize, usize)>> = (0..sweep_count)
+        .map(|sweep| sweep_ray_range(&sweep_starts, &sweep_ends, sweep, n_rays))
+        .collect();
+    check_disjoint_sweeps(&ray_ranges)?;
+
     // Build sweep geometry first, then read each full (time, range) field
     // once and distribute its rows across every sweep. The former
     // sweep-outer loop reread and reconverted each full field once per sweep.
     let mut sweeps = Vec::with_capacity(sweep_count);
-    for sweep in 0..sweep_count {
-        let start_ray = sweep_starts.get(sweep).map(|v| *v as usize).unwrap_or(0);
-        let end_ray = sweep_ends
-            .get(sweep)
-            .map(|v| (*v as usize).min(n_rays.saturating_sub(1)))
-            .unwrap_or(n_rays.saturating_sub(1));
-        if start_ray > end_ray || end_ray >= n_rays {
+    for (sweep, ray_range) in ray_ranges.into_iter().enumerate() {
+        let Some((start_ray, end_ray)) = ray_range else {
             volume.metadata.skipped_message_count += 1;
             continue;
-        }
+        };
         let fixed = fixed_angles.get(sweep).copied().unwrap_or_else(|| {
             fallback_fixed_angle(
                 sweep_modes.get(sweep).copied().flatten(),
@@ -366,6 +370,57 @@ struct DecodedSweep {
     end_ray: usize,
     cut: ElevationCut,
     scan_leg: ScanLegMetadata,
+}
+
+/// The rays `start..=end` of `sweep` from `sweep_start_ray_index` and
+/// `sweep_end_ray_index`; a missing value means the first or last ray.
+/// `None` (the sweep is skipped) when an index is not a non-negative integer
+/// (fill values, garbage) or the sweep starts after it ends. An end past the
+/// last ray is clamped to it, which keeps the rays a truncated `time`
+/// dimension still holds.
+fn sweep_ray_range(
+    starts: &[f64],
+    ends: &[f64],
+    sweep: usize,
+    n_rays: usize,
+) -> Option<(usize, usize)> {
+    let last_ray = n_rays.checked_sub(1)?;
+    let index = |values: &[f64], missing: usize| match values.get(sweep) {
+        None => Some(missing),
+        // `as` saturates, and a start past the last ray fails `start <= end`.
+        Some(value) => {
+            (value.is_finite() && *value >= 0.0 && value.fract() == 0.0).then_some(*value as usize)
+        }
+    };
+    let start = index(starts, 0)?;
+    let end = index(ends, last_ray)?.min(last_ray);
+    (start <= end).then_some((start, end))
+}
+
+/// CfRadial sweeps partition the rays: reject two sweeps whose ray ranges
+/// overlap instead of duplicating the shared rows into both.
+fn check_disjoint_sweeps(ray_ranges: &[Option<(usize, usize)>]) -> Result<()> {
+    let mut by_start: Vec<(usize, usize, usize)> = ray_ranges
+        .iter()
+        .enumerate()
+        .filter_map(|(sweep, range)| range.map(|(start, end)| (start, end, sweep)))
+        .collect();
+    by_start.sort_unstable();
+    // Sorted by start, any overlap shows up between neighbours.
+    for pair in by_start.windows(2) {
+        if let [(_, previous_end, previous), (start, end, sweep)] = pair
+            && start <= previous_end
+        {
+            return Err(invalid(format!(
+                "CfRadial sweeps {} and {} overlap: sweep_start_ray_index/sweep_end_ray_index \
+                 put rays {start}..={} in both",
+                previous.min(sweep),
+                previous.max(sweep),
+                end.min(previous_end)
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn numeric_at(values: &Option<Vec<f64>>, index: usize) -> Option<f64> {

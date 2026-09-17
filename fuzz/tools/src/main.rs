@@ -4,7 +4,7 @@
 //! ```text
 //! fuzz-tools seeds [OUT_DIR]          write seeds/<target>/ from the testdata manifest
 //! fuzz-tools replay <target> <path>.. run inputs (files or directories) through a harness
-//! fuzz-tools regressions              replay every regressions/<target>/ directory
+//! fuzz-tools regressions              replay the testdata entries tagged fuzz-regression
 //! ```
 //!
 //! Seeds are real test files resolved by manifest id through
@@ -504,17 +504,47 @@ fn replay_files(target: &str, harness: Harness, files: &[PathBuf]) -> io::Result
     Ok(clean)
 }
 
+/// Tag on every fuzz regression input in the testdata manifest
+/// (`testdata/fuzz/manifest.toml`).
+const REGRESSION_TAG: &str = "fuzz-regression";
+/// Tag prefix naming the harness that found a regression input.
+const TARGET_TAG_PREFIX: &str = "fuzz-target:";
+
+/// Replay every testdata entry tagged `fuzz-regression` through the harness
+/// named by its `fuzz-target:` tag, then through `io_router`, which routes
+/// every format.
 fn replay_regressions() -> io::Result<bool> {
-    let root = fuzz_dir().join("regressions");
+    let ids = recast_radar_testdata::ids_with_tag(REGRESSION_TAG);
+    if ids.is_empty() {
+        return Err(other_error(format!(
+            "no testdata entries tagged `{REGRESSION_TAG}`"
+        )));
+    }
     let mut clean = true;
-    for (target, harness) in TARGETS {
-        let dir = root.join(target);
-        if !dir.is_dir() {
-            continue;
+    for id in ids {
+        let entry = recast_radar_testdata::entry(id)
+            .ok_or_else(|| other_error(format!("testdata `{id}`: no manifest entry")))?;
+        let mut targets: Vec<&str> = entry
+            .tags
+            .iter()
+            .filter_map(|tag| tag.strip_prefix(TARGET_TAG_PREFIX))
+            .collect();
+        if targets.is_empty() {
+            return Err(other_error(format!(
+                "testdata `{id}`: no `{TARGET_TAG_PREFIX}<target>` tag"
+            )));
         }
-        let mut files = Vec::new();
-        collect_files(&dir, &mut files)?;
-        clean &= replay_files(target, *harness, &files)?;
+        if !targets.contains(&"io_router") {
+            targets.push("io_router");
+        }
+        let path = recast_radar_testdata::path(id)
+            .map_err(|err| other_error(format!("testdata `{id}`: {err}")))?;
+        for target in targets {
+            let harness = harness(target).ok_or_else(|| {
+                other_error(format!("testdata `{id}`: unknown target `{target}`"))
+            })?;
+            clean &= replay_files(target, harness, std::slice::from_ref(&path))?;
+        }
     }
     Ok(clean)
 }

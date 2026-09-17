@@ -1,2 +1,0 @@
-# Fuzz inputs are raw bytes: never normalize line endings.
-regressions/** binary

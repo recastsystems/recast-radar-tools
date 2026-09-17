@@ -31,7 +31,6 @@ archive and directory readers, which take paths instead of bytes.
 |---|---|---|
 | `src/lib.rs`, `fuzz_targets/` | yes | harnesses and libFuzzer wrappers |
 | `tools/` | yes | `fuzz-tools`: builds seed corpora and replays inputs on stable Rust |
-| `regressions/<target>/` | yes | minimized inputs that crashed a target; must replay cleanly |
 | `run.sh` | yes | runs targets in parallel for a time budget |
 | `seeds/<target>/` | no | seed corpora written by `fuzz-tools seeds` |
 | `corpus/<target>/` | no | corpus that libFuzzer grows during runs |
@@ -112,10 +111,14 @@ zlib-rs, zip), build with the default `-s address` instead. `run.sh` also:
 
 ```bash
 cargo run --release --manifest-path fuzz/tools/Cargo.toml -- seeds     # on the host
-tar -cf - --exclude=target Cargo.toml Cargo.lock crates fuzz \
+tar -cf - --exclude=target Cargo.toml Cargo.lock crates fuzz testdata \
   | MSYS_NO_PATHCONV=1 docker exec -i nexbench bash -c 'mkdir -p /build/fuzz && tar -xf - -C /build/fuzz'
 MSYS_NO_PATHCONV=1 docker exec nexbench bash -c 'source /root/.cargo/env; /build/fuzz/fuzz/run.sh 600'
 ```
+
+`testdata/` carries the manifests and the committed regression inputs. The
+container shares its CPUs with other work: `run.sh` starts one CPU-heavy
+process per target, so pass fewer targets when cores are scarce.
 
 ## Crashes and regressions
 
@@ -127,19 +130,39 @@ MSYS_NO_PATHCONV=1 docker exec nexbench bash -c 'source /root/.cargo/env; /build
    inputs with a limit well below their peak (for example
    `-rss_limit_mb=512`). Byte-deletion minimization barely shrinks netCDF and
    HDF5 inputs, because their data sections sit at absolute offsets.
-3. Commit the minimized input as `regressions/<target>/<kind>-<short description>`.
-   Record where it fails and why in the commit message.
-4. Fix the decoder. Then this must print no `PANIC` and exit 0:
+3. Commit the minimized input as real test data: the file under
+   `testdata/files/fuzz/<target>/<kind>-<short description>`, and an entry in
+   `testdata/fuzz/manifest.toml` with `derived_from` set to the seed id it
+   mutates, a `derivation` naming the artifact and what went wrong, and the
+   tags `fuzz-regression`, `fuzz-target:<target>` and
+   `fuzz-finding:<crash|oom|timeout>`. Regenerate the corpus index with
+   `RECAST_RADAR_TESTDATA_BLESS=1 cargo test -p recast-radar-testdata --test corpus_doc`.
+   To find the seed, compare the artifact with the seeds of its target; most
+   mutations keep the seed's bytes at their offsets.
+4. Fix the decoder, and add a regression test in the affected crate
+   (`tests/fuzz_regressions.rs`) that feeds the input by manifest id and
+   checks the error. Then this must print no `PANIC` and exit 0:
 
    ```bash
    cargo run --release --manifest-path fuzz/tools/Cargo.toml -- regressions
    ```
 
-   The workspace release profile turns on `debug-assertions` and
-   `overflow-checks`, so the stable replay panics wherever the fuzz build
-   did. `cargo +nightly fuzz run -s none <target> regressions/<target> -- -runs=0`
-   replays the same inputs under libFuzzer, which also catches aborts, OOMs
-   and timeouts that the stable replay cannot.
+   It replays every manifest entry tagged `fuzz-regression` through its
+   target and through `io_router`. The fuzz release profile turns on
+   `debug-assertions` and `overflow-checks`, so the stable replay panics
+   wherever the fuzz build did. Under libFuzzer, which also catches aborts,
+   OOMs and timeouts that the stable replay cannot:
+
+   ```bash
+   cd fuzz && cargo +nightly fuzz run -s none <target> ../testdata/files/fuzz/<target> -- -runs=0 -rss_limit_mb=512 -timeout=10
+   ```
+
+## Regression inputs
+
+| Manifest id | Target | Finding | Fixed in |
+|---|---|---|---|
+| `fuzz-odim-hdf5-local-heap-name-offset-overflow` | `odim` | panic: u64 overflow adding a local heap's data address and a link-name offset (`hdf5lite` `heap_string`) | D.2: checked add, error "HDF5 local heap name offset overflow" |
+| `fuzz-cfradial-overlapping-sweep-ray-ranges` | `cfradial` | OOM (2.44 GB peak from 868 KB): a header claiming 6,146 sweeps read garbage ray indices, and every overlapping sweep copied the whole field | D.2: sweep cap (1,024) and decode budget; D.4 fix: overlapping sweep ray ranges are an error, and ray indices that are not non-negative integers skip the sweep |
 
 Regression inputs are libFuzzer mutations of the real seeds for their target,
 so they count as real-file-derived.
