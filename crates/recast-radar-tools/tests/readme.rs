@@ -34,10 +34,9 @@ type TestResult = Result<(), Box<dyn Error>>;
 /// Facade features that do not enable the feature of a member crate that
 /// their crate depends on: (feature, feature it does not enable). The README's
 /// Features section and `src/lib.rs` describe each one.
-const NOT_IMPLIED: &[(&str, &str)] = &[
-    // recast-radar-data uses recast-radar-io-jma only internally.
-    ("net", "jma"),
-];
+/// Empty since recast-radar-data dropped its recast-radar-io-jma dependency
+/// (stream E.1), which was the one case.
+const NOT_IMPLIED: &[(&str, &str)] = &[];
 
 /// Facade features that enable a feature whose crate their crate does not
 /// depend on: (feature, feature it also enables). Described in the same places.

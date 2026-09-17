@@ -35,17 +35,17 @@ Default: `io`, `correct`, `filters`, `retrieve`, `map` (spec 4.1).
 
 Rule: a feature enables the facade features of the member crates its crate
 normally depends on, so any type a module's API mentions can be named through
-the facade. One exception is `net`, which does not enable `jma`:
-`recast-radar-data` uses `recast-radar-io-jma` only internally (station
-headers) and stream E.1 removes that dependency. Apart from `io`, features
-never add compile cost beyond the crate itself, since the implied crates are
-its dependencies anyway. `io` is the other exception in the opposite
-direction: it also enables `level3`, whose crate `recast-radar-io` does not
-depend on, because spec 4.1 defines `io` as all formats and the router does
-not read Level III products (they are not radar volumes). `tests/readme.rs`
-checks the rule against the member manifests. The exceptions are its
-`NOT_IMPLIED` and `ALSO_IMPLIED` lists, and the test fails once an exception
-no longer applies.
+the facade. (`net` used to be an exception that did not enable `jma`, while
+`recast-radar-data` used `recast-radar-io-jma` internally for station headers;
+stream E.1 removed that dependency.) Apart from `io`, features never add
+compile cost beyond the crate itself, since the implied crates are its
+dependencies anyway. `io` is the one exception, in the opposite direction: it
+also enables `level3`, whose crate `recast-radar-io` does not depend on,
+because spec 4.1 defines `io` as all formats and the router does not read
+Level III products (they are not radar volumes). `tests/readme.rs` checks the
+rule against the member manifests. The exceptions are its `NOT_IMPLIED` (now
+empty) and `ALSO_IMPLIED` lists, and the test fails once an exception no
+longer applies.
 
 Module names are the crate names without the `recast-radar-` and `io-`
 prefixes; `recast-radar-data` is `data` (its feature is `net`, per the spec).

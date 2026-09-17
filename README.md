@@ -270,10 +270,8 @@ keywords, categories and a readme.
   "via `io`" means `io` turns it on.
 - A feature also enables the features of the member crates its crate depends
   on, so the types a module's API uses can be named through the facade. There
-  are two exceptions. `recast-radar-data` depends on `recast-radar-io-jma` but
-  uses it only internally, so `net` does not enable `jma`. `io` enables
-  `level3` although the router does not depend on it, so that `io` turns on
-  every format decoder.
+  is one exception: `io` enables `level3` although the router does not depend
+  on it, so that `io` turns on every format decoder.
 - `nexrad` alone gives the Level II decoder without the other formats or the
   router.
 - `net` (also part of `full`) is the only feature that makes HTTPS requests

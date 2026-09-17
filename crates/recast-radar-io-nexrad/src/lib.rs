@@ -9,6 +9,11 @@
 //! buffers of unknown format to the right decoder, and
 //! `recast-radar-io-level3` decodes Level III products (including the VAD Wind
 //! Profile, `recast_radar_io_level3::vwp`).
+//! [`messages`] walks the Level II message stream and decodes the message
+//! bodies (message 1 radials are left to the volume decoder).
+//! [`decode_volume_with_metadata`] ([`metadata`]) returns the decoded volume
+//! together with its metadata messages and per-sweep message 31 constant
+//! blocks.
 //!
 //! # Limits
 //!
@@ -37,6 +42,11 @@
 //! whole file first; callers choose which files to open.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+pub mod messages;
+pub mod metadata;
+
+pub use metadata::{NexradMetadata, NexradVolume, SweepElevationData, decode_volume_with_metadata};
 
 use std::collections::btree_map::Entry;
 use std::fs;
@@ -140,6 +150,25 @@ pub fn decode_volume_from_path(path: &Path) -> Result<RadarVolume> {
 
 /// Decode a byte slice. This is public to support fixtures and embedded tests.
 pub fn decode_volume_from_bytes(bytes: &[u8]) -> Result<RadarVolume> {
+    decode_volume_observed(bytes, &mut ())
+}
+
+/// Receives each message 31 body the volume decoders turn into a radial,
+/// right after the radial is added, with the volume as it then stands.
+/// [`metadata::decode_volume_with_metadata`] uses it to read the constant
+/// blocks of each sweep's first radial during the single decode pass; the
+/// plain decoders pass `()`, whose empty implementation compiles away.
+trait RadialObserver {
+    fn message_31(&mut self, body: &[u8], volume: &RadarVolume);
+}
+
+impl RadialObserver for () {
+    #[inline(always)]
+    fn message_31(&mut self, _body: &[u8], _volume: &RadarVolume) {}
+}
+
+/// [`decode_volume_from_bytes`] with a [`RadialObserver`].
+fn decode_volume_observed(bytes: &[u8], observer: &mut impl RadialObserver) -> Result<RadarVolume> {
     if bytes.len() < VOLUME_HEADER_LEN {
         return Err(NexradError::ShortVolumeHeader {
             actual: bytes.len(),
@@ -149,12 +178,12 @@ pub fn decode_volume_from_bytes(bytes: &[u8]) -> Result<RadarVolume> {
         && !bytes.starts_with(b"BZh")
         && let Some(blocks) = collect_bzip_block_slices(bytes)?
     {
-        return decode_bzip_blocks_pipelined(bytes, blocks, None, false, |_| {})
+        return decode_bzip_blocks_pipelined(bytes, blocks, None, false, |_| {}, observer)
             .map(|outcome| outcome.volume);
     }
 
     let (bytes, compression) = normalize_archive_bytes(bytes)?;
-    decode_normalized_volume_bytes(&bytes, compression)
+    decode_normalized_volume_bytes_observed(&bytes, compression, observer)
 }
 
 pub fn decode_gzip_volume_from_reader(reader: impl Read) -> Result<RadarVolume> {
@@ -234,8 +263,14 @@ pub fn decode_bzip_block_preview_from_bytes(
         return Ok(None);
     };
 
-    let outcome =
-        decode_bzip_blocks_pipelined(raw, blocks, Some(min_displayable_radials), true, |_| {})?;
+    let outcome = decode_bzip_blocks_pipelined(
+        raw,
+        blocks,
+        Some(min_displayable_radials),
+        true,
+        |_| {},
+        &mut (),
+    )?;
     Ok(outcome.stopped_at_preview.then_some(outcome.volume))
 }
 
@@ -269,6 +304,7 @@ where
         |preview| {
             on_preview(preview.clone());
         },
+        &mut (),
     )?;
     Ok(outcome.volume)
 }
@@ -457,14 +493,45 @@ pub fn decode_normalized_volume_bytes(
     bytes: &[u8],
     compression: ArchiveCompression,
 ) -> Result<RadarVolume> {
-    decode_normalized_volume_bytes_within(bytes, compression, DecodeBudget::volume())
+    decode_normalized_volume_bytes_within_observed(
+        bytes,
+        compression,
+        DecodeBudget::volume(),
+        &mut (),
+    )
 }
 
 /// [`decode_normalized_volume_bytes`] with an explicit output budget.
+#[cfg(test)]
 fn decode_normalized_volume_bytes_within(
     bytes: &[u8],
     compression: ArchiveCompression,
+    budget: DecodeBudget,
+) -> Result<RadarVolume> {
+    decode_normalized_volume_bytes_within_observed(bytes, compression, budget, &mut ())
+}
+
+/// [`decode_normalized_volume_bytes`] with a [`RadialObserver`].
+fn decode_normalized_volume_bytes_observed(
+    bytes: &[u8],
+    compression: ArchiveCompression,
+    observer: &mut impl RadialObserver,
+) -> Result<RadarVolume> {
+    decode_normalized_volume_bytes_within_observed(
+        bytes,
+        compression,
+        DecodeBudget::volume(),
+        observer,
+    )
+}
+
+/// [`decode_normalized_volume_bytes`] with an explicit output budget and a
+/// [`RadialObserver`].
+fn decode_normalized_volume_bytes_within_observed(
+    bytes: &[u8],
+    compression: ArchiveCompression,
     mut budget: DecodeBudget,
+    observer: &mut impl RadialObserver,
 ) -> Result<RadarVolume> {
     let volume_header = parse_volume_header(bytes)?;
     let mut volume = RadarVolume::new(
@@ -538,6 +605,7 @@ fn decode_normalized_volume_bytes_within(
                 }
                 let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
                 parse_message_31(body, &header, &mut volume, &mut budget)?;
+                observer.message_31(body, &volume);
             }
             5 => {
                 let body_offset = header_offset + MESSAGE_HEADER_LEN;
@@ -1094,6 +1162,7 @@ fn decode_bzip_blocks_pipelined(
     min_displayable_radials: Option<usize>,
     stop_at_preview: bool,
     on_preview: impl FnMut(&RadarVolume),
+    observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
     let slots = BlockSlots::new(blocks);
     rayon::in_place_scope(|scope| {
@@ -1112,6 +1181,7 @@ fn decode_bzip_blocks_pipelined(
             min_displayable_radials,
             stop_at_preview,
             on_preview,
+            observer,
         );
         // Stop idle claims if the parse returned early (preview-only or error).
         slots.cancel();
@@ -1125,6 +1195,7 @@ fn parse_bzip_block_volume(
     min_displayable_radials: Option<usize>,
     stop_at_preview: bool,
     mut on_preview: impl FnMut(&RadarVolume),
+    observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
     let mut preview_pending = min_displayable_radials;
     let mut cursor_reader = BzipBlockCursor::new(volume_header, blocks);
@@ -1248,6 +1319,7 @@ fn parse_bzip_block_volume(
                     }
                 };
                 parse_message_31(body, &header, &mut volume, &mut budget)?;
+                observer.message_31(body, &volume);
                 if let Some(min_radials) = preview_pending
                     && has_complete_displayable_cut(&volume, min_radials)
                 {

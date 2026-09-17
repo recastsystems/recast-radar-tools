@@ -1,0 +1,25 @@
+{
+  "source": ["l2-ktlx-20030508-221041"],
+  "generator": "tools/level2_golden.py metadata",
+  "pyart": "2.2.5",
+  "msg_type": 1,
+  "vcp_pattern": null,
+  "scans": [
+    {"elevation_number": 1, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 2, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 3, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 4, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 5, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 6, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 7, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 8, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 9, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 10, "nrays": 367, "target_angle_code": null},
+    {"elevation_number": 11, "nrays": 366, "target_angle_code": null},
+    {"elevation_number": 12, "nrays": 366, "target_angle_code": null},
+    {"elevation_number": 13, "nrays": 365, "target_angle_code": null},
+    {"elevation_number": 14, "nrays": 364, "target_angle_code": null},
+    {"elevation_number": 15, "nrays": 363, "target_angle_code": null},
+    {"elevation_number": 16, "nrays": 362, "target_angle_code": null}
+  ]
+}
