@@ -11,16 +11,21 @@
 //! split cut (1 km reflectivity, 250 m Doppler starting at -375 m) and a
 //! legacy-resolution Message 31 volume whose sweeps carry 1 km reflectivity
 //! and 250 m Doppler moments side by side.
+//!
+//! The goldens were produced by the pre-FM301 renderer, so their labels use
+//! the legacy moment names (`REF`, `VEL`, `CFP`, ...); [`legacy_label`] maps
+//! each FM301 field name back. The pixels must be identical.
 
 // Test code: a panic is the failure report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
-use recast_radar_core::{MomentGrid, MomentStorage, MomentType, RadarVolume};
+use recast_radar_core::{Field, FieldData, FieldName, FloatCoding, Quantity, Volume};
 use recast_radar_render::{
-    ColorTableFamily, ColorTableSet, RasterOptions, StormMotion, ViewportMomentCache,
-    ViewportRasterOptions, render_moment_image, render_storm_relative_velocity_image,
+    ColorTableFamily, ColorTableSet, RasterOptions, StormMotion, ViewportFieldCache,
+    ViewportRasterOptions, render_field_image, render_storm_relative_velocity_image,
     render_storm_relative_velocity_viewport_rgba, viewport_rgba_buffer_len,
-    viewport_sample_cache_storage_upper_bound_for_grid,
+    viewport_sample_cache_storage_upper_bound_for_field,
 };
 
 const GOLDENS: &str = include_str!("goldens/render_fingerprints.txt");
@@ -82,6 +87,21 @@ fn storm() -> StormMotion {
     }
 }
 
+/// The pre-FM301 moment name the goldens were written with.
+fn legacy_label(name: &FieldName) -> &str {
+    match name {
+        FieldName::Dbzh => "REF",
+        FieldName::Vradh => "VEL",
+        FieldName::Wradh => "SW",
+        FieldName::Zdr => "ZDR",
+        FieldName::Rhohv => "RHO",
+        FieldName::Phidp => "PHI",
+        FieldName::Kdp => "KDP",
+        FieldName::Ccorh => "CFP",
+        other => other.as_str(),
+    }
+}
+
 #[derive(Default)]
 struct Fingerprints(Vec<(String, u64)>);
 
@@ -100,21 +120,16 @@ fn filled(options: ViewportRasterOptions) -> Vec<u8> {
 }
 
 /// Direct, sample-cache and geometry-cache viewport paths for one cache.
-fn cache_paths(
-    fp: &mut Fingerprints,
-    label: &str,
-    volume: &RadarVolume,
-    cache: &ViewportMomentCache,
-) {
+fn cache_paths(fp: &mut Fingerprints, label: &str, volume: &Volume, cache: &ViewportFieldCache) {
     let options = viewport();
     let mut direct = filled(options);
     cache
-        .render_moment_rgba_into(volume, options, &mut direct)
+        .render_field_rgba_into(volume, options, &mut direct)
         .unwrap();
     fp.pixels(format!("{label}/viewport"), &direct);
     let mut close = filled(zoom());
     cache
-        .render_moment_rgba_into(volume, zoom(), &mut close)
+        .render_field_rgba_into(volume, zoom(), &mut close)
         .unwrap();
     fp.pixels(format!("{label}/zoom"), &close);
 
@@ -129,11 +144,11 @@ fn cache_paths(
     );
     let mut cached = filled(options);
     cache
-        .render_moment_rgba_with_sample_cache(volume, &sample_cache, &mut cached)
+        .render_field_rgba_with_sample_cache(volume, &sample_cache, &mut cached)
         .unwrap();
     fp.pixels(format!("{label}/sample_cache"), &cached);
     cache
-        .render_moment_rgba_with_sample_cache_reusing_transparency(
+        .render_field_rgba_with_sample_cache_reusing_transparency(
             volume,
             &sample_cache,
             &mut cached,
@@ -155,7 +170,7 @@ fn cache_paths(
     );
     let mut from_geometry = filled(zoom());
     cache
-        .render_moment_rgba_with_sample_cache(volume, &resolved, &mut from_geometry)
+        .render_field_rgba_with_sample_cache(volume, &resolved, &mut from_geometry)
         .unwrap();
     fp.pixels(format!("{label}/geometry_cache"), &from_geometry);
     fp.push(
@@ -170,8 +185,8 @@ fn cache_paths(
 fn storm_relative_paths(
     fp: &mut Fingerprints,
     label: &str,
-    volume: &RadarVolume,
-    cache: &ViewportMomentCache,
+    volume: &Volume,
+    cache: &ViewportFieldCache,
 ) {
     let options = viewport();
     let mut direct = filled(options);
@@ -251,93 +266,97 @@ fn storm_relative_paths(
     }
 }
 
-fn lowest_cut_with(volume: &RadarVolume, moment: &MomentType) -> Option<usize> {
+fn has_rows(field: &Field) -> bool {
+    field.nrays as usize > field.absent_rows.len()
+}
+
+/// Lowest sweep (by fixed angle, then index) with rows of a `quantity` field.
+fn lowest_sweep_with(volume: &Volume, quantity: Quantity) -> Option<usize> {
     volume
-        .cuts
+        .sweeps
         .iter()
         .enumerate()
-        .filter(|(_, cut)| {
-            cut.moments
-                .get(moment)
-                .is_some_and(|grid| !grid.radial_indices.is_empty())
-        })
-        .min_by(|(li, lc), (ri, rc)| {
-            lc.elevation_deg
-                .total_cmp(&rc.elevation_deg)
+        .filter(|(_, sweep)| sweep.find(quantity).is_some_and(has_rows))
+        .min_by(|(li, ls), (ri, rs)| {
+            ls.fixed_angle_deg
+                .total_cmp(&rs.fixed_angle_deg)
                 .then_with(|| li.cmp(ri))
         })
         .map(|(index, _)| index)
 }
 
-/// Physical `f32` copy of a grid (NaN for every sentinel).
-fn physical_copy(grid: &MomentGrid) -> MomentGrid {
-    let rows = grid.radial_count();
-    let gates = grid.gate_range.gate_count;
-    let mut values = vec![f32::NAN; rows * gates];
-    for row in 0..rows {
-        for gate in 0..gates {
-            if let Some(value) = grid.scaled_value(row, gate) {
-                values[row * gates + gate] = value;
-            }
-        }
-    }
-    MomentGrid {
-        moment: grid.moment.clone(),
-        gate_range: grid.gate_range.clone(),
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices: grid.radial_indices.clone(),
-        storage: MomentStorage::F32(values),
-    }
+/// Physical `f32` copy of a field (NaN for every sentinel), same name.
+fn physical_copy(field: &Field) -> Field {
+    let mut copy = Field::new(
+        field.name.clone(),
+        field.gates,
+        field.ngates,
+        FieldData::F32 {
+            values: field.to_physical(),
+            coding: FloatCoding::default(),
+        },
+    );
+    copy.absent_rows = field.absent_rows.clone();
+    copy
 }
 
-fn fingerprint_volume(volume: &RadarVolume) -> Fingerprints {
+fn fingerprint_volume(volume: &Volume, legacy: &legacy_bridge::LegacyVolume) -> Fingerprints {
     let mut fp = Fingerprints::default();
     let tables = ColorTableSet::default();
 
-    // Every moment of every cut: PNG raster plus the viewport cache paths.
-    for (cut_index, cut) in volume.cuts.iter().enumerate() {
-        for (moment, grid) in &cut.moments {
-            if grid.radial_indices.is_empty() {
+    // Every field of every sweep: PNG raster plus the viewport cache paths.
+    for (sweep_index, sweep) in volume.sweeps.iter().enumerate() {
+        for field in &sweep.fields {
+            if !has_rows(field) {
                 continue;
             }
-            let label = format!("cut{cut_index}/{moment}");
-            let image = render_moment_image(volume, cut_index, moment.clone(), raster()).unwrap();
+            let label = format!("cut{sweep_index}/{}", legacy_label(&field.name));
+            let image = render_field_image(volume, sweep_index, &field.name, raster()).unwrap();
             fp.pixels(format!("{label}/image"), image.as_raw());
             fp.push(
                 format!("{label}/grid_upper_bound"),
-                viewport_sample_cache_storage_upper_bound_for_grid(grid, zoom()) as u64,
+                viewport_sample_cache_storage_upper_bound_for_field(field, &sweep.range, zoom())
+                    as u64,
             );
-            let cache = ViewportMomentCache::new(volume, cut_index, moment.clone()).unwrap();
+            let cache = ViewportFieldCache::new(volume, sweep_index, &field.name).unwrap();
             cache_paths(&mut fp, &label, volume, &cache);
         }
     }
 
-    if let Some(cut) = lowest_cut_with(volume, &MomentType::Velocity) {
-        let label = format!("cut{cut}/VEL");
-        let image = render_storm_relative_velocity_image(volume, cut, storm(), raster()).unwrap();
+    if let Some(sweep) = lowest_sweep_with(volume, Quantity::RadialVelocity) {
+        let velocity = volume.sweeps[sweep].find(Quantity::RadialVelocity).unwrap();
+        let label = format!("cut{sweep}/VEL");
+        let image =
+            render_storm_relative_velocity_image(volume, sweep, &velocity.name, storm(), raster())
+                .unwrap();
         fp.pixels(format!("{label}/srv_image"), image.as_raw());
-        let (_, _, pixels) =
-            render_storm_relative_velocity_viewport_rgba(volume, cut, storm(), viewport()).unwrap();
+        let (_, _, pixels) = render_storm_relative_velocity_viewport_rgba(
+            volume,
+            sweep,
+            &velocity.name,
+            storm(),
+            viewport(),
+        )
+        .unwrap();
         fp.pixels(format!("{label}/srv_free_viewport"), &pixels);
-        let cache = ViewportMomentCache::new(volume, cut, MomentType::Velocity).unwrap();
+        let cache = ViewportFieldCache::new(volume, sweep, &velocity.name).unwrap();
         storm_relative_paths(&mut fp, &label, volume, &cache);
 
         // Dealiased velocity (u16 storage).
-        let label = format!("cut{cut}/DVEL");
-        let dealiased = ViewportMomentCache::new_dealiased_velocity(volume, cut).unwrap();
+        let label = format!("cut{sweep}/DVEL");
+        let dealiased =
+            ViewportFieldCache::new_dealiased_velocity(volume, sweep, &velocity.name).unwrap();
+        assert_eq!(dealiased.field_name(), &FieldName::Vraddh);
         cache_paths(&mut fp, &label, volume, &dealiased);
         storm_relative_paths(&mut fp, &label, volume, &dealiased);
 
         // Physical f32 velocity drawn as a derived field.
-        let label = format!("cut{cut}/VEL_F32");
-        let grid = physical_copy(&volume.cuts[cut].moments[&MomentType::Velocity]);
-        let derived = ViewportMomentCache::new_derived(
+        let label = format!("cut{sweep}/VEL_F32");
+        let derived = ViewportFieldCache::new_derived(
             volume,
-            cut,
-            grid,
+            sweep,
+            physical_copy(velocity),
+            &volume.sweeps[sweep].range,
             ColorTableFamily::Velocity,
             &tables,
         )
@@ -346,40 +365,41 @@ fn fingerprint_volume(volume: &RadarVolume) -> Fingerprints {
         storm_relative_paths(&mut fp, &label, volume, &derived);
     }
 
-    if let Some(cut) = lowest_cut_with(volume, &MomentType::Reflectivity) {
-        let reflectivity = &volume.cuts[cut].moments[&MomentType::Reflectivity];
-        if let Some(composite) = recast_radar_map::composite_reflectivity_grid(volume) {
-            let label = format!("cut{cut}/CREF");
-            let derived = ViewportMomentCache::new_derived(
+    if let Some(sweep) = lowest_sweep_with(volume, Quantity::Reflectivity) {
+        if let Some((composite, range)) = legacy.composite_reflectivity(volume, sweep) {
+            let label = format!("cut{sweep}/CREF");
+            let derived = ViewportFieldCache::new_derived(
                 volume,
-                cut,
+                sweep,
                 composite,
+                &range,
                 ColorTableFamily::Reflectivity,
                 &tables,
             )
             .unwrap();
             cache_paths(&mut fp, &label, volume, &derived);
         }
-        let smoothed = recast_radar_filters::smooth_moment_grid(reflectivity);
-        let label = format!("cut{cut}/REF_SMOOTH");
-        let derived = ViewportMomentCache::new_derived(
+        let label = format!("cut{sweep}/REF_SMOOTH");
+        let (smoothed, range) = legacy.smoothed_reflectivity(volume, sweep);
+        let derived = ViewportFieldCache::new_derived(
             volume,
-            cut,
+            sweep,
             smoothed,
+            &range,
             ColorTableFamily::Reflectivity,
             &tables,
         )
         .unwrap();
         cache_paths(&mut fp, &label, volume, &derived);
-        if let Some(up) =
-            recast_radar_filters::upsample_moment_grid(&volume.cuts[cut], reflectivity)
+        if let Some((field, range, row_azimuths_deg)) = legacy.upsampled_reflectivity(volume, sweep)
         {
-            let label = format!("cut{cut}/REF_UPSAMPLED");
-            let resampled = ViewportMomentCache::new_resampled(
+            let label = format!("cut{sweep}/REF_UPSAMPLED");
+            let resampled = ViewportFieldCache::new_resampled(
                 volume,
-                cut,
-                up.grid,
-                &up.row_azimuths_deg,
+                sweep,
+                field,
+                &range,
+                &row_azimuths_deg,
                 ColorTableFamily::Reflectivity,
                 &tables,
             )
@@ -390,7 +410,7 @@ fn fingerprint_volume(volume: &RadarVolume) -> Fingerprints {
     fp
 }
 
-fn decode(id: &str) -> Option<RadarVolume> {
+fn decode(id: &str) -> Option<(Volume, legacy_bridge::LegacyVolume)> {
     let path = match recast_radar_testdata::path(id) {
         Ok(path) => path,
         Err(err) if err.is_offline() => {
@@ -399,7 +419,7 @@ fn decode(id: &str) -> Option<RadarVolume> {
         }
         Err(err) => panic!("{err}"),
     };
-    Some(recast_radar_io_nexrad::decode_volume_from_path(&path).unwrap())
+    Some(legacy_bridge::read_volume(&path))
 }
 
 /// Golden lines `<case id> <label> 0x<hash>` for one case.
@@ -414,8 +434,10 @@ fn golden_lines(id: &str) -> Vec<&'static str> {
 fn raster_paths_match_pinned_fingerprints() {
     let mut failures = String::new();
     for id in CASES {
-        let Some(volume) = decode(id) else { continue };
-        let actual: Vec<String> = fingerprint_volume(&volume)
+        let Some((volume, legacy)) = decode(id) else {
+            continue;
+        };
+        let actual: Vec<String> = fingerprint_volume(&volume, &legacy)
             .0
             .iter()
             .map(|(label, value)| format!("{id} {label} 0x{value:016x}"))
@@ -435,4 +457,124 @@ fn raster_paths_match_pinned_fingerprints() {
         }
     }
     assert!(failures.is_empty(), "{failures}");
+}
+
+/// Decoding and the derived products still come from the pre-FM301 APIs of
+/// `recast-radar-io-nexrad`, `recast-radar-map` and `recast-radar-filters`
+/// (docs/design/fm301-model.md section 13.3). Goes when those crates migrate.
+#[allow(deprecated)]
+mod legacy_bridge {
+    use std::path::Path;
+
+    use recast_radar_core::legacy::{self, LegacyConvention};
+    use recast_radar_core::{
+        Field, FieldData, FloatCoding, IntCoding, LinearTransform, MomentGrid, MomentStorage,
+        MomentType, RadarVolume, RangeCoord, Volume,
+    };
+
+    /// The legacy decode of a volume, kept beside its FM301 form for the
+    /// legacy algorithm calls.
+    pub struct LegacyVolume(RadarVolume);
+
+    pub fn read_volume(path: &Path) -> (Volume, LegacyVolume) {
+        let legacy = recast_radar_io_nexrad::decode_volume_from_path(path).unwrap();
+        let volume = Volume::try_from(legacy.clone()).unwrap();
+        (volume, LegacyVolume(legacy))
+    }
+
+    /// A legacy grid as a field on `sweep`'s rays, with the range its gate
+    /// mapping refers to: the sweep's range, refined or lengthened when the
+    /// grid's gates are finer or reach further (a composite over 250 m
+    /// Doppler sweeps drawn on a 1 km surveillance sweep).
+    fn field_on(volume: &Volume, sweep: usize, grid: &MomentGrid) -> (Field, RangeCoord) {
+        let mut scratch = volume.sweeps[sweep].clone();
+        scratch.fields.clear();
+        let (index, _) =
+            legacy::field_from_grid(grid, &mut scratch, LegacyConvention::Nexrad).unwrap();
+        (scratch.fields.swap_remove(index), scratch.range)
+    }
+
+    /// A legacy grid whose rows are NOT the sweep's rays (the display-upsampled
+    /// grid: `radial_indices` name each synthetic row's nearest source radial)
+    /// as a field of `grid.radial_indices.len()` rows, with its range.
+    fn field_rows_on(volume: &Volume, sweep: usize, grid: &MomentGrid) -> (Field, RangeCoord) {
+        let mut scratch = volume.sweeps[sweep].clone();
+        scratch.fields.clear();
+        let gates = scratch
+            .attach_geometry(
+                f64::from(grid.gate_range.first_gate_m),
+                f64::from(grid.gate_range.gate_spacing_m),
+                grid.gate_range.gate_count as u32,
+            )
+            .unwrap();
+        let transform = LinearTransform::IcdScaleOffset {
+            scale: grid.scale,
+            offset: grid.offset,
+        };
+        let data = match &grid.storage {
+            MomentStorage::U8(values) => FieldData::U8 {
+                values: values.clone(),
+                coding: IntCoding {
+                    transform,
+                    fill_value: grid.nodata.and_then(|code| u8::try_from(code).ok()),
+                    undetect: None,
+                    range_folded: grid.range_folded.and_then(|code| u8::try_from(code).ok()),
+                    valid_range: None,
+                },
+            },
+            MomentStorage::U16(values) => FieldData::U16 {
+                values: values.clone(),
+                coding: IntCoding {
+                    transform,
+                    fill_value: grid.nodata,
+                    undetect: None,
+                    range_folded: grid.range_folded,
+                    valid_range: None,
+                },
+            },
+            MomentStorage::F32(values) => FieldData::F32 {
+                values: values.clone(),
+                coding: FloatCoding::default(),
+            },
+        };
+        let name = grid.moment.to_field_name(LegacyConvention::Nexrad);
+        let field = Field::new(name, gates, grid.gate_range.gate_count as u32, data);
+        assert_eq!(field.nrays as usize, grid.radial_indices.len());
+        (field, scratch.range)
+    }
+
+    impl LegacyVolume {
+        fn reflectivity(&self, sweep: usize) -> &MomentGrid {
+            &self.0.cuts[sweep].moments[&MomentType::Reflectivity]
+        }
+
+        pub fn composite_reflectivity(
+            &self,
+            volume: &Volume,
+            sweep: usize,
+        ) -> Option<(Field, RangeCoord)> {
+            recast_radar_map::composite_reflectivity_grid(&self.0)
+                .map(|grid| field_on(volume, sweep, &grid))
+        }
+
+        pub fn smoothed_reflectivity(&self, volume: &Volume, sweep: usize) -> (Field, RangeCoord) {
+            let grid = recast_radar_filters::smooth_moment_grid(self.reflectivity(sweep));
+            field_on(volume, sweep, &grid)
+        }
+
+        /// The display-upsampled reflectivity with its range and synthetic
+        /// row azimuths.
+        pub fn upsampled_reflectivity(
+            &self,
+            volume: &Volume,
+            sweep: usize,
+        ) -> Option<(Field, RangeCoord, Vec<f32>)> {
+            let up = recast_radar_filters::upsample_moment_grid(
+                &self.0.cuts[sweep],
+                self.reflectivity(sweep),
+            )?;
+            let (field, range) = field_rows_on(volume, sweep, &up.grid);
+            Some((field, range, up.row_azimuths_deg))
+        }
+    }
 }

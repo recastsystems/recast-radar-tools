@@ -2,8 +2,16 @@
 //!
 //! The long-term renderer will be GPU-backed, but this crate already provides a
 //! CPU raster path for smoke tests, screenshots, and early visual validation.
+//!
+//! Rendering reads the FM301 model ([`Volume`], [`Sweep`], [`Field`]). A field
+//! is addressed by sweep index and [`FieldName`] (`DBZH`, `VRADH`, a derived
+//! id), drawn straight from its packed storage through per-code palettes, and
+//! placed with its native gate geometry on the sweep's range coordinate
+//! ([`Field::native_geometry`]). Rows are the sweep's rays; rows the source did
+//! not provide ([`Field::absent_rows`]) are never drawn.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 use std::f32::consts::PI;
 use std::ops::Range;
@@ -14,10 +22,10 @@ pub mod color;
 pub use color::{ColorSampler, ColorTable, ColorTableFamily, ColorTableSet};
 use image::{ImageBuffer, ImageError, Rgba};
 use rayon::prelude::*;
+use recast_radar_core::model::PackedInt;
 use recast_radar_core::{
-    ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType, ProductId, RadarVolume,
+    Field, FieldData, FieldName, FloatCoding, IntCoding, Quantity, RangeCoord, Sweep, Volume,
 };
-use recast_radar_correct::dealias_velocity_grid;
 use thiserror::Error;
 
 const AZIMUTH_BINS: usize = 3600;
@@ -27,16 +35,15 @@ const MAX_AZIMUTH_CANDIDATES: usize = 8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenderLayer {
-    pub product: ProductId,
-    pub moment: Option<MomentType>,
+    /// The field drawn: a sweep variable name or a derived field id.
+    pub field: FieldName,
     pub visible: bool,
 }
 
 impl RenderLayer {
-    pub fn base(moment: MomentType) -> Self {
+    pub fn base(field: FieldName) -> Self {
         Self {
-            product: ProductId::from(moment.clone()),
-            moment: Some(moment),
+            field,
             visible: true,
         }
     }
@@ -136,12 +143,28 @@ pub fn viewport_sample_cache_storage_upper_bound(options: ViewportRasterOptions)
         .saturating_add((height as usize).saturating_mul(std::mem::size_of::<CachedRowSpan>()))
 }
 
-pub fn viewport_sample_cache_storage_upper_bound_for_grid(
-    grid: &MomentGrid,
+/// Upper bound of a sample cache for `field` (whose gate mapping refers to
+/// `range`, normally its sweep's range): only viewport rows and columns inside
+/// the field's maximum range can hold samples.
+pub fn viewport_sample_cache_storage_upper_bound_for_field(
+    field: &Field,
+    range: &RangeCoord,
     options: ViewportRasterOptions,
 ) -> usize {
+    FieldGeometry::of(field, range).map_or_else(
+        || {
+            let (_, height) = viewport_dimensions(options);
+            (height as usize).saturating_mul(std::mem::size_of::<CachedRowSpan>())
+        },
+        |gates| sample_cache_storage_upper_bound(gates, options),
+    )
+}
+
+/// Sample-cache bytes for a field of geometry `gates`: one slot per viewport
+/// pixel inside the field's maximum range, plus one span per row.
+fn sample_cache_storage_upper_bound(gates: FieldGeometry, options: ViewportRasterOptions) -> usize {
     let (_, height) = viewport_dimensions(options);
-    let geometry = viewport_geometry(grid, options);
+    let geometry = viewport_geometry(gates, options);
     let sample_slots = (0..height)
         .filter_map(|y| geometry.x_range_for_row(y))
         .map(|range| range.len())
@@ -159,18 +182,25 @@ pub struct StormMotion {
 
 #[derive(Debug, Error)]
 pub enum RenderError {
-    #[error("cut index {index} is out of range for {cut_count} cuts")]
-    CutOutOfRange { index: usize, cut_count: usize },
-    #[error("moment {moment} is not available in cut {cut_index}")]
-    MissingMoment {
-        cut_index: usize,
-        moment: MomentType,
+    #[error("sweep index {index} is out of range for {sweep_count} sweeps")]
+    SweepOutOfRange { index: usize, sweep_count: usize },
+    #[error("field {field} is not available in sweep {sweep_index}")]
+    MissingField {
+        sweep_index: usize,
+        field: FieldName,
     },
-    #[error("moment {moment} in cut {cut_index} has no decoded rows")]
-    EmptyMoment {
-        cut_index: usize,
-        moment: MomentType,
+    #[error("field {field} in sweep {sweep_index} has no decoded rows")]
+    EmptyField {
+        sweep_index: usize,
+        field: FieldName,
     },
+    #[error("field {field} in sweep {sweep_index} has no gate geometry on the sweep range")]
+    NoGateGeometry {
+        sweep_index: usize,
+        field: FieldName,
+    },
+    #[error("field {field} is not a radial velocity")]
+    NotRadialVelocity { field: FieldName },
     #[error("RGBA buffer has {actual} bytes, expected {expected} for {width}x{height}")]
     BufferSizeMismatch {
         actual: usize,
@@ -180,17 +210,19 @@ pub enum RenderError {
     },
     #[error("viewport render cache belongs to a different radar volume")]
     CacheVolumeMismatch,
-    #[error("viewport render cache is for cut {actual}, expected cut {expected}")]
-    CacheCutMismatch { expected: usize, actual: usize },
+    #[error("viewport render cache is for sweep {actual}, expected sweep {expected}")]
+    CacheSweepMismatch { expected: usize, actual: usize },
     #[error("viewport render cache is for {actual}, expected {expected}")]
-    CacheMomentMismatch {
-        expected: MomentType,
-        actual: MomentType,
+    CacheFieldMismatch {
+        expected: FieldName,
+        actual: FieldName,
     },
-    #[error("viewport render cache storage no longer matches the moment storage")]
+    #[error("viewport render cache storage no longer matches the field storage")]
     CacheStorageMismatch,
-    #[error("viewport geometry cache does not match this moment grid")]
+    #[error("viewport geometry cache does not match this field's gate geometry")]
     GeometryCacheMismatch,
+    #[error("velocity dealiasing failed: {0}")]
+    Dealias(String),
     #[error("image write failed: {0}")]
     Image(#[from] ImageError),
 }
@@ -211,112 +243,102 @@ fn rgba_image(width: u32, height: u32, pixels: Vec<u8>) -> Result<ImageBuffer<Rg
     })
 }
 
-/// Render a decoded polar moment to a simple radar PNG.
-pub fn render_moment_png(
-    volume: &RadarVolume,
-    cut_index: usize,
-    moment: MomentType,
+/// Render one field of one sweep to a simple radar PNG.
+pub fn render_field_png(
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     out_path: &Path,
     options: RasterOptions,
 ) -> Result<()> {
-    let image = render_moment_image(volume, cut_index, moment, options)?;
+    let image = render_field_image(volume, sweep_index, field, options)?;
     image.save(out_path)?;
     Ok(())
 }
 
-pub fn render_moment_image(
-    volume: &RadarVolume,
-    cut_index: usize,
-    moment: MomentType,
+pub fn render_field_image(
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     options: RasterOptions,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
-    let cut = volume
-        .cuts
-        .get(cut_index)
-        .ok_or(RenderError::CutOutOfRange {
-            index: cut_index,
-            cut_count: volume.cuts.len(),
-        })?;
-    let grid = cut
-        .moments
-        .get(&moment)
-        .ok_or_else(|| RenderError::MissingMoment {
-            cut_index,
-            moment: moment.clone(),
-        })?;
+    let sweep = sweep_at(volume, sweep_index)?;
+    let view = drawable_field(sweep, sweep_index, field)?;
 
-    if grid.radial_indices.is_empty() {
-        return Err(RenderError::EmptyMoment { cut_index, moment });
-    }
-
-    let row_lookup = AzimuthLookup::new(cut, grid);
+    let row_lookup = AzimuthLookup::new(sweep, view);
     let width = options.width.max(64);
     let height = options.height.max(64);
     let center_x = (width as f32 - 1.0) / 2.0;
     let center_y = (height as f32 - 1.0) / 2.0;
     let radius_px = center_x.min(center_y) * (f32::from(options.range_fraction) / 100.0);
-    let max_range_m = max_range_m(grid).max(1.0);
+    let max_range_m = view.geometry.max_range_m().max(1.0);
 
     let mut pixels = vec![0; width as usize * height as usize * 4];
     let color_tables = ColorTableSet::default();
-    let validation_table = validation_color_table_for_moment(&grid.moment);
+    let validation_table = validation_color_table_for_field(&view.field.name);
     let color_table = validation_table
         .as_ref()
-        .unwrap_or_else(|| color_tables.for_family(color_family_for_moment(&grid.moment)));
+        .unwrap_or_else(|| color_tables.for_family(color_family_for_field(view.field)));
+    let geometry = RasterGeometry {
+        width,
+        center_x,
+        center_y,
+        radius_px,
+        radius_sq_px: radius_px * radius_px,
+        max_range_m,
+    };
 
-    match &grid.storage {
-        MomentStorage::U8(values) => {
-            let palette = build_u8_palette(grid, color_table);
+    macro_rules! byte_codes {
+        ($values:expr, $coding:expr) => {{
+            let palette = build_byte_palette(&$coding, color_table);
             render_compact_storage(
                 &mut pixels,
-                values,
+                $values,
                 &palette,
-                grid,
+                view,
                 &row_lookup,
-                RasterGeometry {
-                    width,
-                    center_x,
-                    center_y,
-                    radius_px,
-                    radius_sq_px: radius_px * radius_px,
-                    max_range_m,
-                },
+                geometry,
                 false,
             );
-        }
-        MomentStorage::U16(values) => {
-            let palette = build_u16_palette(grid, color_table);
+        }};
+    }
+    macro_rules! wide_codes {
+        ($values:expr, $coding:expr) => {{
+            let palette = build_wide_palette($values, &$coding, color_table);
             render_compact_storage(
                 &mut pixels,
-                values,
+                $values,
                 &palette,
-                grid,
+                view,
                 &row_lookup,
-                RasterGeometry {
-                    width,
-                    center_x,
-                    center_y,
-                    radius_px,
-                    radius_sq_px: radius_px * radius_px,
-                    max_range_m,
-                },
+                geometry,
                 false,
             );
-        }
-        MomentStorage::F32(values) => render_f32_storage(
+        }};
+    }
+    match field_values(view.field) {
+        FieldValues::U8(values, coding) => byte_codes!(values, coding),
+        FieldValues::I8(values, coding) => byte_codes!(values, coding),
+        FieldValues::U16(values, coding) => wide_codes!(values, coding),
+        FieldValues::I16(values, coding) => wide_codes!(values, coding),
+        FieldValues::F32(values, coding) => render_float_storage(
             &mut pixels,
             values,
-            grid,
+            coding,
+            view,
             &row_lookup,
             color_table,
-            RasterGeometry {
-                width,
-                center_x,
-                center_y,
-                radius_px,
-                radius_sq_px: radius_px * radius_px,
-                max_range_m,
-            },
+            geometry,
+            false,
+        ),
+        FieldValues::F64(values, coding) => render_float_storage(
+            &mut pixels,
+            values,
+            coding,
+            view,
+            &row_lookup,
+            color_table,
+            geometry,
             false,
         ),
     }
@@ -324,53 +346,87 @@ pub fn render_moment_image(
     rgba_image(width, height, pixels)
 }
 
-pub fn render_moment_viewport_image(
-    volume: &RadarVolume,
-    cut_index: usize,
-    moment: MomentType,
+/// Region-based dealiasing of the radial velocity field `source` of sweep
+/// `sweep_index`: `VRADDH` on the same rays, gates and gate mapping, with no
+/// rows the source lacks. This is the field a caller memoizes per volume and
+/// hands to [`ViewportFieldCache::new_dealiased_velocity_from_field_with_color_tables`],
+/// so a loop replay or product toggle does not dealias again.
+///
+/// Transitional: the dealiaser is `recast-radar-correct`'s pre-FM301
+/// `dealias_velocity_grid`, run through the legacy shim until that crate
+/// migrates; the result is identical.
+pub fn dealiased_velocity_field(
+    volume: &Volume,
+    sweep_index: usize,
+    source: &FieldName,
+) -> Result<Field> {
+    let sweep = sweep_at(volume, sweep_index)?;
+    let view = drawable_field(sweep, sweep_index, source)?;
+    if !is_radial_velocity(view.field.quantity) {
+        return Err(RenderError::NotRadialVelocity {
+            field: source.clone(),
+        });
+    }
+    legacy_bridge::dealias_velocity(volume, sweep_index, view.field).map_err(RenderError::Dealias)
+}
+
+pub fn render_field_viewport_image(
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     options: ViewportRasterOptions,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
-    let (width, height, pixels) = render_moment_viewport_rgba(volume, cut_index, moment, options)?;
+    let (width, height, pixels) = render_field_viewport_rgba(volume, sweep_index, field, options)?;
     rgba_image(width, height, pixels)
 }
 
-pub fn render_moment_viewport_rgba(
-    volume: &RadarVolume,
-    cut_index: usize,
-    moment: MomentType,
+pub fn render_field_viewport_rgba(
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     options: ViewportRasterOptions,
 ) -> Result<(u32, u32, Vec<u8>)> {
     let (width, height) = viewport_dimensions(options);
     let mut pixels = vec![0; rgba_len(width, height)];
-    render_moment_viewport_rgba_into(volume, cut_index, moment, options, &mut pixels)?;
+    render_field_viewport_rgba_into(volume, sweep_index, field, options, &mut pixels)?;
     Ok((width, height, pixels))
 }
 
-pub fn render_moment_viewport_rgba_into(
-    volume: &RadarVolume,
-    cut_index: usize,
-    moment: MomentType,
+pub fn render_field_viewport_rgba_into(
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     options: ViewportRasterOptions,
     pixels: &mut [u8],
 ) -> Result<(u32, u32)> {
-    let cache = ViewportMomentCache::new(volume, cut_index, moment)?;
-    cache.render_moment_rgba_into(volume, options, pixels)
+    let cache = ViewportFieldCache::new(volume, sweep_index, field)?;
+    cache.render_field_rgba_into(volume, options, pixels)
 }
 
-pub struct ViewportMomentCache {
+pub struct ViewportFieldCache {
     volume_ptr: usize,
-    cut_index: usize,
-    moment: MomentType,
+    sweep_index: usize,
+    /// Name of the drawn field: a sweep field, or the owned field below.
+    field: FieldName,
+    /// The drawn field is a radial velocity (storm-relative rendering allowed).
+    velocity: bool,
     row_lookup: AzimuthLookup,
     color_lookup: CachedColorLookup,
     storm_motion_basis: Option<StormMotionBasis>,
-    dealiased_grid: Option<MomentGrid>,
+    /// A field drawn in place of a sweep field: dealiased, derived or
+    /// display-resampled, with its gate geometry.
+    owned: Option<OwnedField>,
+}
+
+struct OwnedField {
+    field: Field,
+    geometry: FieldGeometry,
 }
 
 pub struct ViewportSampleCache {
     volume_ptr: usize,
-    cut_index: usize,
-    moment: MomentType,
+    sweep_index: usize,
+    field: FieldName,
     width: u32,
     height: u32,
     sample_count: usize,
@@ -381,7 +437,7 @@ pub struct ViewportSampleCache {
 pub struct ViewportGeometryCache {
     width: u32,
     height: u32,
-    gate_range: GateRange,
+    geometry: FieldGeometry,
     sample_count: usize,
     row_spans: Vec<CachedRowSpan>,
     samples: Vec<CachedSample>,
@@ -389,7 +445,7 @@ pub struct ViewportGeometryCache {
 
 pub struct StormRelativePaletteCache {
     volume_ptr: usize,
-    cut_index: usize,
+    sweep_index: usize,
     row_palettes: Vec<[[u8; 4]; 256]>,
 }
 
@@ -553,20 +609,289 @@ const _: () = {
     assert!(recast_radar_filters::INTERP_MAX_AZIMUTH_HALF_WIDTH_DEG == MAX_AZIMUTH_HALF_WIDTH_DEG);
 };
 
+// ---------------------------------------------------------------------------
+// Fields as the raster loops read them
+// ---------------------------------------------------------------------------
+
+/// A field's gate geometry: centre of native gate 0, native spacing and gate
+/// count, in metres ([`Field::native_geometry`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FieldGeometry {
+    first_center_m: f64,
+    spacing_m: f64,
+    gate_count: usize,
+}
+
+impl FieldGeometry {
+    fn of(field: &Field, range: &RangeCoord) -> Option<Self> {
+        let (first_center_m, spacing_m) = field.native_geometry(range)?;
+        Some(Self {
+            first_center_m,
+            spacing_m,
+            gate_count: field.ngates as usize,
+        })
+    }
+
+    /// Centre of gate 0, where gate `g` is found at `first + g * spacing`.
+    #[inline]
+    fn first_gate_m(self) -> f32 {
+        self.first_center_m as f32
+    }
+
+    /// Spacing for range-to-gate lookups (never below 1 m).
+    #[inline]
+    fn lookup_spacing_m(self) -> f32 {
+        (self.spacing_m as f32).max(1.0)
+    }
+
+    fn max_range_m(self) -> f32 {
+        self.first_center_m as f32 + self.spacing_m as f32 * self.gate_count as f32
+    }
+}
+
+/// A field with its gate geometry.
+#[derive(Clone, Copy)]
+struct FieldView<'a> {
+    field: &'a Field,
+    geometry: FieldGeometry,
+}
+
+impl FieldView<'_> {
+    /// Stored gates per row (row-major index stride).
+    #[inline]
+    fn gate_count(self) -> usize {
+        self.field.ngates as usize
+    }
+}
+
+/// A field's storage borrowed with its coding.
+#[derive(Clone, Copy)]
+enum FieldValues<'a> {
+    U8(&'a [u8], IntCoding<u8>),
+    I8(&'a [i8], IntCoding<i8>),
+    U16(&'a [u16], IntCoding<u16>),
+    I16(&'a [i16], IntCoding<i16>),
+    F32(&'a [f32], FloatCoding<f32>),
+    F64(&'a [f64], FloatCoding<f64>),
+}
+
+fn field_values(field: &Field) -> FieldValues<'_> {
+    match &field.data {
+        FieldData::U8 { values, coding } => FieldValues::U8(values, *coding),
+        FieldData::I8 { values, coding } => FieldValues::I8(values, *coding),
+        FieldData::U16 { values, coding } => FieldValues::U16(values, *coding),
+        FieldData::I16 { values, coding } => FieldValues::I16(values, *coding),
+        FieldData::F32 { values, coding } => FieldValues::F32(values, *coding),
+        FieldData::F64 { values, coding } => FieldValues::F64(values, *coding),
+    }
+}
+
+/// Integer codes the raster loops index palettes with.
+trait RawCode: PackedInt + Sync + Send {
+    /// Palette slot of this code (the code's bit pattern read as unsigned).
+    fn palette_index(self) -> usize;
+    /// The code at a palette slot.
+    fn from_palette_index(index: usize) -> Self;
+}
+
+impl RawCode for u8 {
+    #[inline]
+    fn palette_index(self) -> usize {
+        usize::from(self)
+    }
+
+    #[inline]
+    fn from_palette_index(index: usize) -> Self {
+        index as u8
+    }
+}
+
+impl RawCode for i8 {
+    #[inline]
+    fn palette_index(self) -> usize {
+        usize::from(self as u8)
+    }
+
+    #[inline]
+    fn from_palette_index(index: usize) -> Self {
+        index as u8 as i8
+    }
+}
+
+impl RawCode for u16 {
+    #[inline]
+    fn palette_index(self) -> usize {
+        usize::from(self)
+    }
+
+    #[inline]
+    fn from_palette_index(index: usize) -> Self {
+        index as u16
+    }
+}
+
+impl RawCode for i16 {
+    #[inline]
+    fn palette_index(self) -> usize {
+        usize::from(self as u16)
+    }
+
+    #[inline]
+    fn from_palette_index(index: usize) -> Self {
+        index as u16 as i16
+    }
+}
+
+/// How the renderer treats a packed code.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CodeClass {
+    /// Undetect, fill, or outside `valid_range`: transparent, and a sample
+    /// that falls through to the next candidate row.
+    Blank,
+    /// The range-folded flag: drawn in the table's range-folded color.
+    RangeFolded,
+    /// A physical value (`coding.transform`).
+    Value,
+}
+
+/// Classify a code in the order of `IntCoding::resolve` (undetect, fill,
+/// range folded, `valid_range`), without computing the physical value.
+#[inline]
+fn code_class<T: PackedInt>(coding: &IntCoding<T>, raw: T) -> CodeClass {
+    if coding.undetect == Some(raw) || coding.fill_value == Some(raw) {
+        CodeClass::Blank
+    } else if coding.range_folded == Some(raw) {
+        CodeClass::RangeFolded
+    } else if matches!(coding.valid_range, Some([lo, hi]) if raw < lo || raw > hi) {
+        CodeClass::Blank
+    } else {
+        CodeClass::Value
+    }
+}
+
+#[inline]
+fn code_value<T: PackedInt>(coding: &IntCoding<T>, raw: T) -> f32 {
+    coding.transform.apply(raw.as_f64())
+}
+
+/// Float storage: a stored value's finite physical value, `None` for NaN, the
+/// coding's fill and undetect values, and non-finite results.
+trait FloatCode: Copy + Sync + Send {
+    fn physical(self, coding: &FloatCoding<Self>) -> Option<f32>;
+}
+
+impl FloatCode for f32 {
+    #[inline]
+    fn physical(self, coding: &FloatCoding<f32>) -> Option<f32> {
+        if !self.is_finite()
+            || coding
+                .fill_value
+                .is_some_and(|fill| fill.to_bits() == self.to_bits())
+            || coding
+                .undetect
+                .is_some_and(|undetect| undetect.to_bits() == self.to_bits())
+        {
+            return None;
+        }
+        let value = match coding.transform {
+            Some(transform) => transform.apply(f64::from(self)),
+            None => self,
+        };
+        value.is_finite().then_some(value)
+    }
+}
+
+impl FloatCode for f64 {
+    #[inline]
+    fn physical(self, coding: &FloatCoding<f64>) -> Option<f32> {
+        if !self.is_finite()
+            || coding
+                .fill_value
+                .is_some_and(|fill| fill.to_bits() == self.to_bits())
+            || coding
+                .undetect
+                .is_some_and(|undetect| undetect.to_bits() == self.to_bits())
+        {
+            return None;
+        }
+        let value = match coding.transform {
+            Some(transform) => transform.apply(self),
+            None => self as f32,
+        };
+        value.is_finite().then_some(value)
+    }
+}
+
+/// `true` for the radial-velocity quantities storm-relative rendering accepts.
+fn is_radial_velocity(quantity: Quantity) -> bool {
+    matches!(
+        quantity,
+        Quantity::RadialVelocity | Quantity::DealiasedRadialVelocity
+    )
+}
+
+/// `true` when the field has at least one row the source provided.
+fn has_rows(field: &Field) -> bool {
+    field.nrays as usize > field.absent_rows.len()
+}
+
+fn sweep_at(volume: &Volume, sweep_index: usize) -> Result<&Sweep> {
+    volume
+        .sweeps
+        .get(sweep_index)
+        .ok_or(RenderError::SweepOutOfRange {
+            index: sweep_index,
+            sweep_count: volume.sweeps.len(),
+        })
+}
+
+fn field_in<'a>(sweep: &'a Sweep, sweep_index: usize, name: &FieldName) -> Result<&'a Field> {
+    sweep.field(name).ok_or_else(|| RenderError::MissingField {
+        sweep_index,
+        field: name.clone(),
+    })
+}
+
+fn view_on<'a>(field: &'a Field, range: &RangeCoord, sweep_index: usize) -> Result<FieldView<'a>> {
+    let geometry = FieldGeometry::of(field, range).ok_or_else(|| RenderError::NoGateGeometry {
+        sweep_index,
+        field: field.name.clone(),
+    })?;
+    Ok(FieldView { field, geometry })
+}
+
+/// A sweep field with rows to draw, placed on the sweep's range.
+fn drawable_field<'a>(
+    sweep: &'a Sweep,
+    sweep_index: usize,
+    name: &FieldName,
+) -> Result<FieldView<'a>> {
+    let field = field_in(sweep, sweep_index, name)?;
+    if !has_rows(field) {
+        return Err(RenderError::EmptyField {
+            sweep_index,
+            field: name.clone(),
+        });
+    }
+    view_on(field, &sweep.range, sweep_index)
+}
+
 struct StormMotionBasis {
     beam_cos: Vec<f32>,
     beam_sin: Vec<f32>,
 }
 
 impl StormMotionBasis {
-    fn new(cut: &ElevationCut, grid: &MomentGrid) -> Self {
-        let mut beam_cos = Vec::with_capacity(grid.radial_indices.len());
-        let mut beam_sin = Vec::with_capacity(grid.radial_indices.len());
-        for radial_index in &grid.radial_indices {
-            let azimuth_rad = cut
-                .radials
-                .get(*radial_index)
-                .map(|radial| radial.azimuth_deg.to_radians())
+    fn new(sweep: &Sweep, field: &Field) -> Self {
+        let rows = field.nrays as usize;
+        let mut beam_cos = Vec::with_capacity(rows);
+        let mut beam_sin = Vec::with_capacity(rows);
+        for row in 0..rows {
+            let azimuth_rad = sweep
+                .rays
+                .azimuth_deg
+                .get(row)
+                .map(|azimuth| azimuth.to_radians())
                 .unwrap_or(0.0);
             beam_cos.push(azimuth_rad.cos());
             beam_sin.push(azimuth_rad.sin());
@@ -587,273 +912,302 @@ impl StormMotionBasis {
 }
 
 enum CachedColorLookup {
-    U8 {
+    /// `u8` / `i8` storage: one color per byte code.
+    Byte {
         palette: Box<[[u8; 4]; 256]>,
         color_table: ColorTable,
+        dtype: &'static str,
     },
-    U16 {
+    /// `u16` / `i16` storage: one color per code up to the largest code
+    /// present.
+    Wide {
         palette: Vec<[u8; 4]>,
         color_table: ColorTable,
+        dtype: &'static str,
     },
-    F32 {
+    /// Float storage: colors are sampled per value.
+    Float {
         color_table: ColorTable,
+        dtype: &'static str,
     },
 }
 
 impl CachedColorLookup {
-    fn new(grid: &MomentGrid, color_tables: &ColorTableSet) -> Self {
-        Self::new_for_family(grid, color_tables, color_family_for_moment(&grid.moment))
+    fn new(field: &Field, color_tables: &ColorTableSet) -> Self {
+        Self::new_for_family(field, color_tables, color_family_for_field(field))
     }
 
     fn new_for_family(
-        grid: &MomentGrid,
+        field: &Field,
         color_tables: &ColorTableSet,
         family: ColorTableFamily,
     ) -> Self {
-        let color_table = validation_color_table_for_moment(&grid.moment)
+        let color_table = validation_color_table_for_field(&field.name)
             .unwrap_or_else(|| color_tables.for_family(family).clone());
-        match &grid.storage {
-            MomentStorage::U8(_) => Self::U8 {
-                palette: Box::new(build_u8_palette(grid, &color_table)),
+        let dtype = field.data.dtype();
+        match field_values(field) {
+            FieldValues::U8(_, coding) => Self::Byte {
+                palette: Box::new(build_byte_palette(&coding, &color_table)),
                 color_table,
+                dtype,
             },
-            MomentStorage::U16(_) => Self::U16 {
-                palette: build_u16_palette(grid, &color_table),
+            FieldValues::I8(_, coding) => Self::Byte {
+                palette: Box::new(build_byte_palette(&coding, &color_table)),
                 color_table,
+                dtype,
             },
-            MomentStorage::F32(_) => Self::F32 { color_table },
+            FieldValues::U16(values, coding) => Self::Wide {
+                palette: build_wide_palette(values, &coding, &color_table),
+                color_table,
+                dtype,
+            },
+            FieldValues::I16(values, coding) => Self::Wide {
+                palette: build_wide_palette(values, &coding, &color_table),
+                color_table,
+                dtype,
+            },
+            FieldValues::F32(..) | FieldValues::F64(..) => Self::Float { color_table, dtype },
         }
     }
 
     fn color_table(&self) -> &ColorTable {
         match self {
-            Self::U8 { color_table, .. }
-            | Self::U16 { color_table, .. }
-            | Self::F32 { color_table } => color_table,
+            Self::Byte { color_table, .. }
+            | Self::Wide { color_table, .. }
+            | Self::Float { color_table, .. } => color_table,
+        }
+    }
+
+    fn dtype(&self) -> &'static str {
+        match self {
+            Self::Byte { dtype, .. } | Self::Wide { dtype, .. } | Self::Float { dtype, .. } => {
+                dtype
+            }
+        }
+    }
+
+    /// The code palette (empty for float storage).
+    fn palette(&self) -> &[[u8; 4]] {
+        match self {
+            Self::Byte { palette, .. } => palette.as_ref(),
+            Self::Wide { palette, .. } => palette,
+            Self::Float { .. } => &[],
         }
     }
 }
 
-impl ViewportMomentCache {
-    pub fn new(volume: &RadarVolume, cut_index: usize, moment: MomentType) -> Result<Self> {
-        Self::new_with_color_tables(volume, cut_index, moment, &ColorTableSet::default())
+impl ViewportFieldCache {
+    pub fn new(volume: &Volume, sweep_index: usize, field: &FieldName) -> Result<Self> {
+        Self::new_with_color_tables(volume, sweep_index, field, &ColorTableSet::default())
     }
 
     pub fn new_with_color_tables(
-        volume: &RadarVolume,
-        cut_index: usize,
-        moment: MomentType,
+        volume: &Volume,
+        sweep_index: usize,
+        field: &FieldName,
         color_tables: &ColorTableSet,
     ) -> Result<Self> {
-        Self::new_with_color_tables_for_family(volume, cut_index, moment, color_tables, None)
+        Self::new_with_color_tables_for_family(volume, sweep_index, field, color_tables, None)
     }
 
     pub fn new_with_color_tables_for_family(
-        volume: &RadarVolume,
-        cut_index: usize,
-        moment: MomentType,
+        volume: &Volume,
+        sweep_index: usize,
+        field: &FieldName,
         color_tables: &ColorTableSet,
         family: Option<ColorTableFamily>,
     ) -> Result<Self> {
-        let cut = volume
-            .cuts
-            .get(cut_index)
-            .ok_or(RenderError::CutOutOfRange {
-                index: cut_index,
-                cut_count: volume.cuts.len(),
-            })?;
-        let grid = cut
-            .moments
-            .get(&moment)
-            .ok_or_else(|| RenderError::MissingMoment {
-                cut_index,
-                moment: moment.clone(),
-            })?;
-
-        if grid.radial_indices.is_empty() {
-            return Err(RenderError::EmptyMoment { cut_index, moment });
-        }
+        let sweep = sweep_at(volume, sweep_index)?;
+        let view = drawable_field(sweep, sweep_index, field)?;
+        let velocity = is_radial_velocity(view.field.quantity);
 
         Ok(Self {
-            volume_ptr: volume as *const RadarVolume as usize,
-            cut_index,
-            storm_motion_basis: (moment == MomentType::Velocity)
-                .then(|| StormMotionBasis::new(cut, grid)),
-            moment,
-            row_lookup: AzimuthLookup::new(cut, grid),
+            volume_ptr: volume as *const Volume as usize,
+            sweep_index,
+            field: view.field.name.clone(),
+            velocity,
+            storm_motion_basis: velocity.then(|| StormMotionBasis::new(sweep, view.field)),
+            row_lookup: AzimuthLookup::new(sweep, view),
             color_lookup: CachedColorLookup::new_for_family(
-                grid,
+                view.field,
                 color_tables,
-                family.unwrap_or_else(|| color_family_for_moment(&grid.moment)),
+                family.unwrap_or_else(|| color_family_for_field(view.field)),
             ),
-            dealiased_grid: None,
+            owned: None,
         })
     }
 
-    pub fn new_dealiased_velocity(volume: &RadarVolume, cut_index: usize) -> Result<Self> {
-        Self::new_dealiased_velocity_with_color_tables(volume, cut_index, &ColorTableSet::default())
+    /// Dealias the radial velocity field `source` of the sweep and draw the
+    /// result (`VRADDH`).
+    pub fn new_dealiased_velocity(
+        volume: &Volume,
+        sweep_index: usize,
+        source: &FieldName,
+    ) -> Result<Self> {
+        Self::new_dealiased_velocity_with_color_tables(
+            volume,
+            sweep_index,
+            source,
+            &ColorTableSet::default(),
+        )
     }
 
     pub fn new_dealiased_velocity_with_color_tables(
-        volume: &RadarVolume,
-        cut_index: usize,
+        volume: &Volume,
+        sweep_index: usize,
+        source: &FieldName,
         color_tables: &ColorTableSet,
     ) -> Result<Self> {
-        let cut = volume
-            .cuts
-            .get(cut_index)
-            .ok_or(RenderError::CutOutOfRange {
-                index: cut_index,
-                cut_count: volume.cuts.len(),
-            })?;
-        let source_grid =
-            cut.moments
-                .get(&MomentType::Velocity)
-                .ok_or_else(|| RenderError::MissingMoment {
-                    cut_index,
-                    moment: MomentType::Velocity,
-                })?;
-
-        if source_grid.radial_indices.is_empty() {
-            return Err(RenderError::EmptyMoment {
-                cut_index,
-                moment: MomentType::Velocity,
-            });
-        }
-
-        let dealiased_grid = dealias_velocity_grid(cut, source_grid);
-        Self::new_dealiased_velocity_from_grid_with_color_tables(
+        let dealiased = dealiased_velocity_field(volume, sweep_index, source)?;
+        Self::new_dealiased_velocity_from_field_with_color_tables(
             volume,
-            cut_index,
-            dealiased_grid,
+            sweep_index,
+            dealiased,
             color_tables,
         )
     }
 
     /// Like [`Self::new_dealiased_velocity_with_color_tables`] but reuses a
-    /// velocity grid that was ALREADY dealiased (e.g. served from a per-volume
+    /// velocity field that was ALREADY dealiased (e.g. served from a per-volume
     /// memo) instead of running the region dealiaser again. Identical result;
     /// it just skips the ~100 ms dealias so loop replay / product toggles do
-    /// not recompute it per frame.
-    pub fn new_dealiased_velocity_from_grid_with_color_tables(
-        volume: &RadarVolume,
-        cut_index: usize,
-        dealiased_grid: MomentGrid,
+    /// not recompute it per frame. `dealiased` must lie on the sweep's rays and
+    /// range.
+    pub fn new_dealiased_velocity_from_field_with_color_tables(
+        volume: &Volume,
+        sweep_index: usize,
+        dealiased: Field,
         color_tables: &ColorTableSet,
     ) -> Result<Self> {
-        let cut = volume
-            .cuts
-            .get(cut_index)
-            .ok_or(RenderError::CutOutOfRange {
-                index: cut_index,
-                cut_count: volume.cuts.len(),
-            })?;
-        if dealiased_grid.radial_indices.is_empty() {
-            return Err(RenderError::EmptyMoment {
-                cut_index,
-                moment: MomentType::Velocity,
+        let sweep = sweep_at(volume, sweep_index)?;
+        if !has_rows(&dealiased) {
+            return Err(RenderError::EmptyField {
+                sweep_index,
+                field: dealiased.name,
             });
         }
+        let geometry = view_on(&dealiased, &sweep.range, sweep_index)?.geometry;
+        let view = FieldView {
+            field: &dealiased,
+            geometry,
+        };
         Ok(Self {
-            volume_ptr: volume as *const RadarVolume as usize,
-            cut_index,
-            moment: MomentType::Velocity,
-            row_lookup: AzimuthLookup::new(cut, &dealiased_grid),
-            color_lookup: CachedColorLookup::new(&dealiased_grid, color_tables),
-            storm_motion_basis: Some(StormMotionBasis::new(cut, &dealiased_grid)),
-            dealiased_grid: Some(dealiased_grid),
+            volume_ptr: volume as *const Volume as usize,
+            sweep_index,
+            field: dealiased.name.clone(),
+            velocity: true,
+            row_lookup: AzimuthLookup::new(sweep, view),
+            color_lookup: CachedColorLookup::new(&dealiased, color_tables),
+            storm_motion_basis: Some(StormMotionBasis::new(sweep, &dealiased)),
+            owned: Some(OwnedField {
+                field: dealiased,
+                geometry,
+            }),
         })
     }
 
-    /// Build a cache around a pre-computed derived grid (composite reflectivity,
-    /// echo tops, VIL, …) drawn on `cut_index`'s geometry. The grid overrides
-    /// the cut's moments via the same mechanism as the dealiased path.
+    /// Build a cache around a pre-computed derived field (composite
+    /// reflectivity, echo tops, VIL, …) drawn on `sweep_index`'s rays. Its gate
+    /// mapping refers to `range`: the sweep's own range, or the range a
+    /// volume product was computed on (a composite over 250 m Doppler sweeps
+    /// drawn on a 1 km surveillance sweep). The field is drawn in place of the
+    /// sweep's fields via the same mechanism as the dealiased path.
     pub fn new_derived(
-        volume: &RadarVolume,
-        cut_index: usize,
-        grid: MomentGrid,
+        volume: &Volume,
+        sweep_index: usize,
+        field: Field,
+        range: &RangeCoord,
         family: ColorTableFamily,
         color_tables: &ColorTableSet,
     ) -> Result<Self> {
-        let cut = volume
-            .cuts
-            .get(cut_index)
-            .ok_or(RenderError::CutOutOfRange {
-                index: cut_index,
-                cut_count: volume.cuts.len(),
-            })?;
-        if grid.radial_indices.is_empty() {
-            return Err(RenderError::EmptyMoment {
-                cut_index,
-                moment: grid.moment.clone(),
+        let sweep = sweep_at(volume, sweep_index)?;
+        if !has_rows(&field) {
+            return Err(RenderError::EmptyField {
+                sweep_index,
+                field: field.name,
             });
         }
+        let geometry = view_on(&field, range, sweep_index)?.geometry;
+        let view = FieldView {
+            field: &field,
+            geometry,
+        };
         Ok(Self {
-            volume_ptr: volume as *const RadarVolume as usize,
-            cut_index,
-            moment: grid.moment.clone(),
-            row_lookup: AzimuthLookup::new(cut, &grid),
-            color_lookup: CachedColorLookup::new_for_family(&grid, color_tables, family),
+            volume_ptr: volume as *const Volume as usize,
+            sweep_index,
+            field: field.name.clone(),
+            velocity: is_radial_velocity(field.quantity),
+            row_lookup: AzimuthLookup::new(sweep, view),
+            color_lookup: CachedColorLookup::new_for_family(&field, color_tables, family),
             storm_motion_basis: None,
-            dealiased_grid: Some(grid),
+            owned: Some(OwnedField { field, geometry }),
         })
     }
 
-    /// Build a cache around a display grid whose ROWS are synthetic — the
-    /// interpolated (bilinear-upsampled) grid from `upsample_moment_grid`.
-    /// Unlike `new_derived`, the azimuth lookup comes from the grid's own
-    /// per-row azimuths instead of the cut's radials (the grid has more
-    /// rows than the sweep). Renders through the same fast path.
+    /// Build a cache around a display field whose ROWS are synthetic — the
+    /// interpolated (bilinear-upsampled) field from display interpolation.
+    /// Unlike `new_derived`, the azimuth lookup comes from the field's own
+    /// per-row azimuths instead of the sweep's rays (the field has more rows
+    /// than the sweep), and its gate mapping refers to its own `range`.
+    /// Renders through the same fast path.
     pub fn new_resampled(
-        volume: &RadarVolume,
-        cut_index: usize,
-        grid: MomentGrid,
+        volume: &Volume,
+        sweep_index: usize,
+        field: Field,
+        range: &RangeCoord,
         row_azimuths_deg: &[f32],
         family: ColorTableFamily,
         color_tables: &ColorTableSet,
     ) -> Result<Self> {
-        if cut_index >= volume.cuts.len() {
-            return Err(RenderError::CutOutOfRange {
-                index: cut_index,
-                cut_count: volume.cuts.len(),
+        if sweep_index >= volume.sweeps.len() {
+            return Err(RenderError::SweepOutOfRange {
+                index: sweep_index,
+                sweep_count: volume.sweeps.len(),
             });
         }
-        if grid.radial_indices.is_empty() || row_azimuths_deg.len() != grid.radial_count() {
-            return Err(RenderError::EmptyMoment {
-                cut_index,
-                moment: grid.moment.clone(),
+        if !has_rows(&field) || row_azimuths_deg.len() != field.nrays as usize {
+            return Err(RenderError::EmptyField {
+                sweep_index,
+                field: field.name,
             });
         }
+        let geometry = view_on(&field, range, sweep_index)?.geometry;
+        let view = FieldView {
+            field: &field,
+            geometry,
+        };
         Ok(Self {
-            volume_ptr: volume as *const RadarVolume as usize,
-            cut_index,
-            moment: grid.moment.clone(),
-            row_lookup: AzimuthLookup::from_row_azimuths(row_azimuths_deg, &grid),
-            color_lookup: CachedColorLookup::new_for_family(&grid, color_tables, family),
+            volume_ptr: volume as *const Volume as usize,
+            sweep_index,
+            field: field.name.clone(),
+            velocity: is_radial_velocity(field.quantity),
+            row_lookup: AzimuthLookup::from_row_azimuths(row_azimuths_deg, view),
+            color_lookup: CachedColorLookup::new_for_family(&field, color_tables, family),
             storm_motion_basis: None,
-            dealiased_grid: Some(grid),
+            owned: Some(OwnedField { field, geometry }),
         })
     }
 
-    pub fn cut_index(&self) -> usize {
-        self.cut_index
+    pub fn sweep_index(&self) -> usize {
+        self.sweep_index
     }
 
-    pub fn moment(&self) -> &MomentType {
-        &self.moment
+    /// Name of the drawn field.
+    pub fn field_name(&self) -> &FieldName {
+        &self.field
     }
 
-    pub fn render_moment_rgba_into(
+    pub fn render_field_rgba_into(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         options: ViewportRasterOptions,
         pixels: &mut [u8],
     ) -> Result<(u32, u32)> {
-        let (_, grid) = self.cut_and_grid(volume)?;
+        let (_, view) = self.sweep_and_field(volume)?;
         let (width, height) = viewport_dimensions(options);
         ensure_rgba_buffer(pixels, width, height)?;
-        render_moment_viewport_grid_into(
-            grid,
+        render_field_viewport_into(
+            view,
             &self.row_lookup,
             &self.color_lookup,
             options,
@@ -865,36 +1219,43 @@ impl ViewportMomentCache {
 
     pub fn build_sample_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         options: ViewportRasterOptions,
     ) -> Result<ViewportSampleCache> {
-        let (_, grid) = self.cut_and_grid(volume)?;
+        let (_, view) = self.sweep_and_field(volume)?;
         let (width, height) = viewport_dimensions(options);
-        let geometry = viewport_geometry(grid, options);
-        let lookup_table = ViewportLookupTable::new(grid, geometry);
+        let geometry = viewport_geometry(view.geometry, options);
+        let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
+        let gate_count = view.gate_count();
+        let row_lookup = &self.row_lookup;
 
-        let row_builds = match &grid.storage {
-            MomentStorage::U8(values) => {
-                build_sample_cache_rows(height, &lookup_table, &self.row_lookup, |sample| {
-                    resolve_compact_sample(values, grid, &self.row_lookup, sample)
+        macro_rules! int_rows {
+            ($values:expr, $coding:expr) => {
+                build_sample_cache_rows(height, &lookup_table, row_lookup, |sample| {
+                    resolve_int_sample($values, &$coding, gate_count, row_lookup, sample)
                 })
-            }
-            MomentStorage::U16(values) => {
-                build_sample_cache_rows(height, &lookup_table, &self.row_lookup, |sample| {
-                    resolve_compact_sample(values, grid, &self.row_lookup, sample)
+            };
+        }
+        macro_rules! float_rows {
+            ($values:expr, $coding:expr) => {
+                build_sample_cache_rows(height, &lookup_table, row_lookup, |sample| {
+                    resolve_float_sample($values, &$coding, gate_count, row_lookup, sample)
                 })
-            }
-            MomentStorage::F32(values) => {
-                build_sample_cache_rows(height, &lookup_table, &self.row_lookup, |sample| {
-                    resolve_f32_sample(values, grid, &self.row_lookup, sample)
-                })
-            }
+            };
+        }
+        let row_builds = match field_values(view.field) {
+            FieldValues::U8(values, coding) => int_rows!(values, coding),
+            FieldValues::I8(values, coding) => int_rows!(values, coding),
+            FieldValues::U16(values, coding) => int_rows!(values, coding),
+            FieldValues::I16(values, coding) => int_rows!(values, coding),
+            FieldValues::F32(values, coding) => float_rows!(values, coding),
+            FieldValues::F64(values, coding) => float_rows!(values, coding),
         };
 
         Ok(viewport_sample_cache_from_rows(
             self.volume_ptr,
-            self.cut_index,
-            self.moment.clone(),
+            self.sweep_index,
+            self.field.clone(),
             width,
             height,
             row_builds,
@@ -903,20 +1264,20 @@ impl ViewportMomentCache {
 
     pub fn build_geometry_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         options: ViewportRasterOptions,
     ) -> Result<ViewportGeometryCache> {
-        let (_, grid) = self.cut_and_grid(volume)?;
+        let (_, view) = self.sweep_and_field(volume)?;
         let (width, height) = viewport_dimensions(options);
-        let geometry = viewport_geometry(grid, options);
-        let lookup_table = ViewportLookupTable::new(grid, geometry);
+        let geometry = viewport_geometry(view.geometry, options);
+        let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
         let row_builds = build_geometry_cache_rows(height, &lookup_table, &self.row_lookup);
         let (sample_count, row_spans, samples) = flatten_cached_rows(height, row_builds);
 
         Ok(ViewportGeometryCache {
             width,
             height,
-            gate_range: grid.gate_range.clone(),
+            geometry: view.geometry,
             sample_count,
             row_spans,
             samples,
@@ -925,36 +1286,45 @@ impl ViewportMomentCache {
 
     pub fn build_sample_cache_from_geometry_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         geometry_cache: &ViewportGeometryCache,
     ) -> Result<ViewportSampleCache> {
-        let (_, grid) = self.cut_and_grid(volume)?;
-        if grid.gate_range != geometry_cache.gate_range {
+        let (_, view) = self.sweep_and_field(volume)?;
+        if view.geometry != geometry_cache.geometry {
             return Err(RenderError::GeometryCacheMismatch);
         }
         let geometry = geometry_cache.geometry();
-        let row_builds = match &grid.storage {
-            MomentStorage::U8(values) => {
-                build_sample_cache_rows_from_geometry(geometry_cache.height, geometry, |sample| {
-                    resolve_compact_sample(values, grid, &self.row_lookup, sample)
+        let gate_count = view.gate_count();
+        let row_lookup = &self.row_lookup;
+        let height = geometry_cache.height;
+
+        macro_rules! int_rows {
+            ($values:expr, $coding:expr) => {
+                build_sample_cache_rows_from_geometry(height, geometry, |sample| {
+                    resolve_int_sample($values, &$coding, gate_count, row_lookup, sample)
                 })
-            }
-            MomentStorage::U16(values) => {
-                build_sample_cache_rows_from_geometry(geometry_cache.height, geometry, |sample| {
-                    resolve_compact_sample(values, grid, &self.row_lookup, sample)
+            };
+        }
+        macro_rules! float_rows {
+            ($values:expr, $coding:expr) => {
+                build_sample_cache_rows_from_geometry(height, geometry, |sample| {
+                    resolve_float_sample($values, &$coding, gate_count, row_lookup, sample)
                 })
-            }
-            MomentStorage::F32(values) => {
-                build_sample_cache_rows_from_geometry(geometry_cache.height, geometry, |sample| {
-                    resolve_f32_sample(values, grid, &self.row_lookup, sample)
-                })
-            }
+            };
+        }
+        let row_builds = match field_values(view.field) {
+            FieldValues::U8(values, coding) => int_rows!(values, coding),
+            FieldValues::I8(values, coding) => int_rows!(values, coding),
+            FieldValues::U16(values, coding) => int_rows!(values, coding),
+            FieldValues::I16(values, coding) => int_rows!(values, coding),
+            FieldValues::F32(values, coding) => float_rows!(values, coding),
+            FieldValues::F64(values, coding) => float_rows!(values, coding),
         };
 
         Ok(viewport_sample_cache_from_rows(
             self.volume_ptr,
-            self.cut_index,
-            self.moment.clone(),
+            self.sweep_index,
+            self.field.clone(),
             geometry_cache.width,
             geometry_cache.height,
             row_builds,
@@ -963,50 +1333,48 @@ impl ViewportMomentCache {
 
     pub fn sample_cache_storage_upper_bound(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         options: ViewportRasterOptions,
     ) -> Result<usize> {
-        let (_, grid) = self.cut_and_grid(volume)?;
-        Ok(viewport_sample_cache_storage_upper_bound_for_grid(
-            grid, options,
-        ))
+        let (_, view) = self.sweep_and_field(volume)?;
+        Ok(sample_cache_storage_upper_bound(view.geometry, options))
     }
 
-    pub fn render_moment_rgba_with_sample_cache(
+    pub fn render_field_rgba_with_sample_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         sample_cache: &ViewportSampleCache,
         pixels: &mut [u8],
     ) -> Result<(u32, u32)> {
-        self.render_moment_rgba_with_sample_cache_impl(volume, sample_cache, pixels, true)
+        self.render_field_rgba_with_sample_cache_impl(volume, sample_cache, pixels, true)
     }
 
     /// Renders over an existing RGBA buffer without clearing transparent pixels first.
     ///
     /// Callers must only use this when `pixels` was last rendered with the same
-    /// volume, cut, moment, and viewport sample footprint. The app worker tracks
+    /// volume, sweep, field, and viewport sample footprint. The app worker tracks
     /// that provenance before taking this path.
-    pub fn render_moment_rgba_with_sample_cache_reusing_transparency(
+    pub fn render_field_rgba_with_sample_cache_reusing_transparency(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         sample_cache: &ViewportSampleCache,
         pixels: &mut [u8],
     ) -> Result<(u32, u32)> {
-        self.render_moment_rgba_with_sample_cache_impl(volume, sample_cache, pixels, false)
+        self.render_field_rgba_with_sample_cache_impl(volume, sample_cache, pixels, false)
     }
 
-    fn render_moment_rgba_with_sample_cache_impl(
+    fn render_field_rgba_with_sample_cache_impl(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         sample_cache: &ViewportSampleCache,
         pixels: &mut [u8],
         clear_pixels: bool,
     ) -> Result<(u32, u32)> {
-        let (_, grid) = self.cut_and_grid(volume)?;
+        let (_, view) = self.sweep_and_field(volume)?;
         self.ensure_sample_cache(sample_cache)?;
         ensure_rgba_buffer(pixels, sample_cache.width, sample_cache.height)?;
-        render_moment_sample_cache_grid_into(
-            grid,
+        render_field_sample_cache_into(
+            view,
             &self.color_lookup,
             sample_cache,
             pixels,
@@ -1017,7 +1385,7 @@ impl ViewportMomentCache {
 
     pub fn render_storm_relative_velocity_rgba_into(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         options: ViewportRasterOptions,
         pixels: &mut [u8],
@@ -1033,39 +1401,41 @@ impl ViewportMomentCache {
 
     pub fn build_storm_relative_velocity_palette_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
     ) -> Result<Option<StormRelativePaletteCache>> {
-        if self.moment != MomentType::Velocity {
-            return Err(RenderError::CacheMomentMismatch {
-                expected: MomentType::Velocity,
-                actual: self.moment.clone(),
-            });
-        }
+        self.ensure_velocity()?;
 
-        let (cut, grid) = self.cut_and_grid(volume)?;
-        let MomentStorage::U8(_) = &grid.storage else {
-            return Ok(None);
+        let (sweep, view) = self.sweep_and_field(volume)?;
+        let row_motion = || {
+            self.storm_motion_basis
+                .as_ref()
+                .map(|basis| basis.row_motion_components(storm_motion))
+                .unwrap_or_else(|| row_motion_components(sweep, view.field, storm_motion))
         };
-        let row_motion = self
-            .storm_motion_basis
-            .as_ref()
-            .map(|basis| basis.row_motion_components(storm_motion))
-            .unwrap_or_else(|| row_motion_components(cut, grid, storm_motion));
-        Ok(Some(StormRelativePaletteCache {
-            volume_ptr: self.volume_ptr,
-            cut_index: self.cut_index,
-            row_palettes: build_storm_relative_u8_row_palettes(
-                grid,
-                &row_motion,
+        let row_palettes = match field_values(view.field) {
+            FieldValues::U8(_, coding) => build_storm_relative_row_palettes(
+                &coding,
+                &row_motion(),
                 self.color_lookup.color_table(),
             ),
+            FieldValues::I8(_, coding) => build_storm_relative_row_palettes(
+                &coding,
+                &row_motion(),
+                self.color_lookup.color_table(),
+            ),
+            _ => return Ok(None),
+        };
+        Ok(Some(StormRelativePaletteCache {
+            volume_ptr: self.volume_ptr,
+            sweep_index: self.sweep_index,
+            row_palettes,
         }))
     }
 
     pub fn render_storm_relative_velocity_rgba_into_with_palette_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         palette_cache: &StormRelativePaletteCache,
         options: ViewportRasterOptions,
@@ -1083,25 +1453,20 @@ impl ViewportMomentCache {
 
     fn render_storm_relative_velocity_rgba_into_cached(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         palette_cache: Option<&StormRelativePaletteCache>,
         options: ViewportRasterOptions,
         pixels: &mut [u8],
     ) -> Result<(u32, u32)> {
-        if self.moment != MomentType::Velocity {
-            return Err(RenderError::CacheMomentMismatch {
-                expected: MomentType::Velocity,
-                actual: self.moment.clone(),
-            });
-        }
+        self.ensure_velocity()?;
 
-        let (cut, grid) = self.cut_and_grid(volume)?;
+        let (sweep, view) = self.sweep_and_field(volume)?;
         let (width, height) = viewport_dimensions(options);
         ensure_rgba_buffer(pixels, width, height)?;
-        render_storm_relative_velocity_viewport_grid_into(
-            cut,
-            grid,
+        render_storm_relative_velocity_viewport_into(
+            sweep,
+            view,
             StormRelativeRenderCache {
                 row_lookup: &self.row_lookup,
                 storm_motion_basis: self.storm_motion_basis.as_ref(),
@@ -1118,7 +1483,7 @@ impl ViewportMomentCache {
 
     pub fn render_storm_relative_velocity_rgba_with_sample_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         sample_cache: &ViewportSampleCache,
         pixels: &mut [u8],
@@ -1140,7 +1505,7 @@ impl ViewportMomentCache {
     /// sample is overwritten during this render.
     pub fn render_storm_relative_velocity_rgba_with_sample_cache_reusing_transparency(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         sample_cache: &ViewportSampleCache,
         pixels: &mut [u8],
@@ -1157,7 +1522,7 @@ impl ViewportMomentCache {
 
     pub fn render_storm_relative_velocity_rgba_with_sample_cache_and_palette_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         palette_cache: &StormRelativePaletteCache,
         sample_cache: &ViewportSampleCache,
@@ -1176,7 +1541,7 @@ impl ViewportMomentCache {
 
     pub fn render_storm_relative_velocity_rgba_with_sample_cache_reusing_transparency_and_palette_cache(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         palette_cache: &StormRelativePaletteCache,
         sample_cache: &ViewportSampleCache,
@@ -1195,26 +1560,21 @@ impl ViewportMomentCache {
 
     fn render_storm_relative_velocity_rgba_with_sample_cache_impl(
         &self,
-        volume: &RadarVolume,
+        volume: &Volume,
         storm_motion: StormMotion,
         palette_cache: Option<&StormRelativePaletteCache>,
         sample_cache: &ViewportSampleCache,
         pixels: &mut [u8],
         clear_pixels: bool,
     ) -> Result<(u32, u32)> {
-        if self.moment != MomentType::Velocity {
-            return Err(RenderError::CacheMomentMismatch {
-                expected: MomentType::Velocity,
-                actual: self.moment.clone(),
-            });
-        }
+        self.ensure_velocity()?;
 
-        let (cut, grid) = self.cut_and_grid(volume)?;
+        let (sweep, view) = self.sweep_and_field(volume)?;
         self.ensure_sample_cache(sample_cache)?;
         ensure_rgba_buffer(pixels, sample_cache.width, sample_cache.height)?;
-        render_storm_relative_velocity_sample_cache_grid_into(
-            cut,
-            grid,
+        render_storm_relative_velocity_sample_cache_into(
+            sweep,
+            view,
             StormRelativeRenderCache {
                 row_lookup: &self.row_lookup,
                 storm_motion_basis: self.storm_motion_basis.as_ref(),
@@ -1229,20 +1589,30 @@ impl ViewportMomentCache {
         Ok(sample_cache.dimensions())
     }
 
+    fn ensure_velocity(&self) -> Result<()> {
+        if self.velocity {
+            Ok(())
+        } else {
+            Err(RenderError::NotRadialVelocity {
+                field: self.field.clone(),
+            })
+        }
+    }
+
     fn ensure_sample_cache(&self, sample_cache: &ViewportSampleCache) -> Result<()> {
         if self.volume_ptr != sample_cache.volume_ptr {
             return Err(RenderError::CacheVolumeMismatch);
         }
-        if self.cut_index != sample_cache.cut_index {
-            return Err(RenderError::CacheCutMismatch {
-                expected: self.cut_index,
-                actual: sample_cache.cut_index,
+        if self.sweep_index != sample_cache.sweep_index {
+            return Err(RenderError::CacheSweepMismatch {
+                expected: self.sweep_index,
+                actual: sample_cache.sweep_index,
             });
         }
-        if self.moment != sample_cache.moment {
-            return Err(RenderError::CacheMomentMismatch {
-                expected: self.moment.clone(),
-                actual: sample_cache.moment.clone(),
+        if self.field != sample_cache.field {
+            return Err(RenderError::CacheFieldMismatch {
+                expected: self.field.clone(),
+                actual: sample_cache.field.clone(),
             });
         }
         Ok(())
@@ -1255,173 +1625,161 @@ impl ViewportMomentCache {
         if self.volume_ptr != palette_cache.volume_ptr {
             return Err(RenderError::CacheVolumeMismatch);
         }
-        if self.cut_index != palette_cache.cut_index {
-            return Err(RenderError::CacheCutMismatch {
-                expected: self.cut_index,
-                actual: palette_cache.cut_index,
+        if self.sweep_index != palette_cache.sweep_index {
+            return Err(RenderError::CacheSweepMismatch {
+                expected: self.sweep_index,
+                actual: palette_cache.sweep_index,
             });
         }
         Ok(())
     }
 
-    fn cut_and_grid<'a>(
-        &'a self,
-        volume: &'a RadarVolume,
-    ) -> Result<(&'a ElevationCut, &'a MomentGrid)> {
-        if self.volume_ptr != volume as *const RadarVolume as usize {
+    fn sweep_and_field<'a>(&'a self, volume: &'a Volume) -> Result<(&'a Sweep, FieldView<'a>)> {
+        if self.volume_ptr != volume as *const Volume as usize {
             return Err(RenderError::CacheVolumeMismatch);
         }
 
-        let cut = volume
-            .cuts
-            .get(self.cut_index)
-            .ok_or(RenderError::CutOutOfRange {
-                index: self.cut_index,
-                cut_count: volume.cuts.len(),
-            })?;
-        if let Some(grid) = &self.dealiased_grid {
-            return Ok((cut, grid));
+        let sweep = sweep_at(volume, self.sweep_index)?;
+        if let Some(owned) = &self.owned {
+            return Ok((
+                sweep,
+                FieldView {
+                    field: &owned.field,
+                    geometry: owned.geometry,
+                },
+            ));
         }
-        let grid = cut
-            .moments
-            .get(&self.moment)
-            .ok_or_else(|| RenderError::MissingMoment {
-                cut_index: self.cut_index,
-                moment: self.moment.clone(),
-            })?;
-        Ok((cut, grid))
+        let field = field_in(sweep, self.sweep_index, &self.field)?;
+        Ok((sweep, view_on(field, &sweep.range, self.sweep_index)?))
     }
 }
 
-fn render_moment_viewport_grid_into(
-    grid: &MomentGrid,
+fn render_field_viewport_into(
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     color_lookup: &CachedColorLookup,
     options: ViewportRasterOptions,
     pixels: &mut [u8],
     clear_pixels: bool,
 ) -> Result<()> {
-    let geometry = viewport_geometry(grid, options);
-    let lookup_table = ViewportLookupTable::new(grid, geometry);
+    if color_lookup.dtype() != view.field.data.dtype() {
+        return Err(RenderError::CacheStorageMismatch);
+    }
+    let geometry = viewport_geometry(view.geometry, options);
+    let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
+    let palette = color_lookup.palette();
 
-    match (&grid.storage, color_lookup) {
-        (MomentStorage::U8(values), CachedColorLookup::U8 { palette, .. }) => {
+    macro_rules! codes {
+        ($values:expr) => {
             render_compact_viewport_storage(
                 pixels,
-                values,
-                palette.as_ref(),
-                grid,
-                row_lookup,
-                &lookup_table,
-                clear_pixels,
-            );
-        }
-        (MomentStorage::U16(values), CachedColorLookup::U16 { palette, .. }) => {
-            render_compact_viewport_storage(
-                pixels,
-                values,
+                $values,
                 palette,
-                grid,
+                view,
                 row_lookup,
                 &lookup_table,
                 clear_pixels,
-            );
-        }
-        (MomentStorage::F32(values), color_lookup) => {
-            render_f32_viewport_storage(
+            )
+        };
+    }
+    macro_rules! floats {
+        ($values:expr, $coding:expr) => {
+            render_float_viewport_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                $coding,
+                view,
                 row_lookup,
                 color_lookup.color_table(),
                 &lookup_table,
                 clear_pixels,
-            );
-        }
-        _ => return Err(RenderError::CacheStorageMismatch),
+            )
+        };
+    }
+    match field_values(view.field) {
+        FieldValues::U8(values, _) => codes!(values),
+        FieldValues::I8(values, _) => codes!(values),
+        FieldValues::U16(values, _) => codes!(values),
+        FieldValues::I16(values, _) => codes!(values),
+        FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::F64(values, coding) => floats!(values, coding),
     }
     Ok(())
 }
 
-fn render_moment_sample_cache_grid_into(
-    grid: &MomentGrid,
+fn render_field_sample_cache_into(
+    view: FieldView<'_>,
     color_lookup: &CachedColorLookup,
     sample_cache: &ViewportSampleCache,
     pixels: &mut [u8],
     clear_pixels: bool,
 ) -> Result<()> {
-    match (&grid.storage, color_lookup) {
-        (MomentStorage::U8(values), CachedColorLookup::U8 { palette, .. }) => {
+    if color_lookup.dtype() != view.field.data.dtype() {
+        return Err(RenderError::CacheStorageMismatch);
+    }
+    let palette = color_lookup.palette();
+
+    macro_rules! codes {
+        ($values:expr) => {
             render_compact_sample_cache_storage(
                 pixels,
-                values,
-                palette.as_ref(),
-                grid,
-                sample_cache,
-                clear_pixels,
-            );
-        }
-        (MomentStorage::U16(values), CachedColorLookup::U16 { palette, .. }) => {
-            render_compact_sample_cache_storage(
-                pixels,
-                values,
+                $values,
                 palette,
-                grid,
+                view,
                 sample_cache,
                 clear_pixels,
-            );
-        }
-        (MomentStorage::F32(values), color_lookup) => {
-            render_f32_sample_cache_storage(
+            )
+        };
+    }
+    macro_rules! floats {
+        ($values:expr, $coding:expr) => {
+            render_float_sample_cache_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                $coding,
+                view,
                 color_lookup.color_table(),
                 sample_cache,
                 clear_pixels,
-            );
-        }
-        _ => return Err(RenderError::CacheStorageMismatch),
+            )
+        };
+    }
+    match field_values(view.field) {
+        FieldValues::U8(values, _) => codes!(values),
+        FieldValues::I8(values, _) => codes!(values),
+        FieldValues::U16(values, _) => codes!(values),
+        FieldValues::I16(values, _) => codes!(values),
+        FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::F64(values, coding) => floats!(values, coding),
     }
     Ok(())
 }
 
+/// Storm-relative velocity of radial velocity field `field` of one sweep,
+/// rendered to a simple radar raster.
 pub fn render_storm_relative_velocity_image(
-    volume: &RadarVolume,
-    cut_index: usize,
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     storm_motion: StormMotion,
     options: RasterOptions,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
-    let cut = volume
-        .cuts
-        .get(cut_index)
-        .ok_or(RenderError::CutOutOfRange {
-            index: cut_index,
-            cut_count: volume.cuts.len(),
-        })?;
-    let grid =
-        cut.moments
-            .get(&MomentType::Velocity)
-            .ok_or_else(|| RenderError::MissingMoment {
-                cut_index,
-                moment: MomentType::Velocity,
-            })?;
-
-    if grid.radial_indices.is_empty() {
-        return Err(RenderError::EmptyMoment {
-            cut_index,
-            moment: MomentType::Velocity,
+    let sweep = sweep_at(volume, sweep_index)?;
+    let view = drawable_field(sweep, sweep_index, field)?;
+    if !is_radial_velocity(view.field.quantity) {
+        return Err(RenderError::NotRadialVelocity {
+            field: field.clone(),
         });
     }
 
-    let row_lookup = AzimuthLookup::new(cut, grid);
-    let row_motion = row_motion_components(cut, grid, storm_motion);
+    let row_lookup = AzimuthLookup::new(sweep, view);
+    let row_motion = row_motion_components(sweep, view.field, storm_motion);
     let width = options.width.max(64);
     let height = options.height.max(64);
     let center_x = (width as f32 - 1.0) / 2.0;
     let center_y = (height as f32 - 1.0) / 2.0;
     let radius_px = center_x.min(center_y) * (f32::from(options.range_fraction) / 100.0);
-    let max_range_m = max_range_m(grid).max(1.0);
+    let max_range_m = view.geometry.max_range_m().max(1.0);
 
     let mut pixels = vec![0; width as usize * height as usize * 4];
     let color_tables = ColorTableSet::default();
@@ -1434,65 +1792,87 @@ pub fn render_storm_relative_velocity_image(
         radius_sq_px: radius_px * radius_px,
         max_range_m,
     };
+    let value_lookup = StormRelativeValueLookup {
+        row_motion: &row_motion,
+        color_table,
+    };
 
-    match &grid.storage {
-        MomentStorage::U8(values) => {
-            let row_palettes = build_storm_relative_u8_row_palettes(grid, &row_motion, color_table);
-            render_storm_relative_u8_storage(
+    macro_rules! byte_codes {
+        ($values:expr, $coding:expr) => {{
+            let row_palettes =
+                build_storm_relative_row_palettes(&$coding, &row_motion, color_table);
+            render_storm_relative_byte_storage(
                 &mut pixels,
-                values,
-                grid,
+                $values,
+                view,
                 &row_lookup,
                 &row_palettes,
                 geometry,
                 false,
             );
-        }
-        MomentStorage::U16(values) => {
+        }};
+    }
+    macro_rules! wide_codes {
+        ($values:expr, $coding:expr) => {
             render_storm_relative_storage(
                 &mut pixels,
-                values,
-                grid,
+                $values,
+                $coding,
+                view,
                 &row_lookup,
-                StormRelativeValueLookup {
-                    row_motion: &row_motion,
-                    color_table,
-                },
+                value_lookup,
                 geometry,
                 false,
-            );
-        }
-        MomentStorage::F32(values) => render_storm_relative_f32_storage(
-            &mut pixels,
-            values,
-            grid,
-            &row_lookup,
-            StormRelativeValueLookup {
-                row_motion: &row_motion,
-                color_table,
-            },
-            geometry,
-            false,
-        ),
+            )
+        };
+    }
+    macro_rules! floats {
+        ($values:expr, $coding:expr) => {
+            render_storm_relative_float_storage(
+                &mut pixels,
+                $values,
+                $coding,
+                view,
+                &row_lookup,
+                value_lookup,
+                geometry,
+                false,
+            )
+        };
+    }
+    match field_values(view.field) {
+        FieldValues::U8(values, coding) => byte_codes!(values, coding),
+        FieldValues::I8(values, coding) => byte_codes!(values, coding),
+        FieldValues::U16(values, coding) => wide_codes!(values, coding),
+        FieldValues::I16(values, coding) => wide_codes!(values, coding),
+        FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::F64(values, coding) => floats!(values, coding),
     }
 
     rgba_image(width, height, pixels)
 }
 
 pub fn render_storm_relative_velocity_viewport_image(
-    volume: &RadarVolume,
-    cut_index: usize,
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     storm_motion: StormMotion,
     options: ViewportRasterOptions,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
-    let (width, height, pixels) =
-        render_storm_relative_velocity_viewport_rgba(volume, cut_index, storm_motion, options)?;
+    let (width, height, pixels) = render_storm_relative_velocity_viewport_rgba(
+        volume,
+        sweep_index,
+        field,
+        storm_motion,
+        options,
+    )?;
     rgba_image(width, height, pixels)
 }
 
 pub fn render_storm_relative_velocity_viewport_rgba(
-    volume: &RadarVolume,
-    cut_index: usize,
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     storm_motion: StormMotion,
     options: ViewportRasterOptions,
 ) -> Result<(u32, u32, Vec<u8>)> {
@@ -1500,7 +1880,8 @@ pub fn render_storm_relative_velocity_viewport_rgba(
     let mut pixels = vec![0; rgba_len(width, height)];
     render_storm_relative_velocity_viewport_rgba_into(
         volume,
-        cut_index,
+        sweep_index,
+        field,
         storm_motion,
         options,
         &mut pixels,
@@ -1509,64 +1890,70 @@ pub fn render_storm_relative_velocity_viewport_rgba(
 }
 
 pub fn render_storm_relative_velocity_viewport_rgba_into(
-    volume: &RadarVolume,
-    cut_index: usize,
+    volume: &Volume,
+    sweep_index: usize,
+    field: &FieldName,
     storm_motion: StormMotion,
     options: ViewportRasterOptions,
     pixels: &mut [u8],
 ) -> Result<(u32, u32)> {
-    let cache = ViewportMomentCache::new(volume, cut_index, MomentType::Velocity)?;
+    let cache = ViewportFieldCache::new(volume, sweep_index, field)?;
     cache.render_storm_relative_velocity_rgba_into(volume, storm_motion, options, pixels)
 }
 
-fn render_storm_relative_velocity_viewport_grid_into(
-    cut: &ElevationCut,
-    grid: &MomentGrid,
+impl StormRelativeRenderCache<'_> {
+    fn row_motion(&self, sweep: &Sweep, field: &Field, storm_motion: StormMotion) -> Vec<f32> {
+        self.storm_motion_basis
+            .map(|basis| basis.row_motion_components(storm_motion))
+            .unwrap_or_else(|| row_motion_components(sweep, field, storm_motion))
+    }
+}
+
+fn render_storm_relative_velocity_viewport_into(
+    sweep: &Sweep,
+    view: FieldView<'_>,
     render_cache: StormRelativeRenderCache<'_>,
     storm_motion: StormMotion,
     options: ViewportRasterOptions,
     pixels: &mut [u8],
     clear_pixels: bool,
 ) {
-    let geometry = viewport_geometry(grid, options);
-    let lookup_table = ViewportLookupTable::new(grid, geometry);
+    let geometry = viewport_geometry(view.geometry, options);
+    let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
 
-    match &grid.storage {
-        MomentStorage::U8(values) => {
+    macro_rules! byte_codes {
+        ($values:expr, $coding:expr) => {{
             let built_palettes;
             let row_palettes = if let Some(palette_cache) = render_cache.palette_cache {
                 &palette_cache.row_palettes
             } else {
-                let row_motion = render_cache
-                    .storm_motion_basis
-                    .map(|basis| basis.row_motion_components(storm_motion))
-                    .unwrap_or_else(|| row_motion_components(cut, grid, storm_motion));
-                built_palettes = build_storm_relative_u8_row_palettes(
-                    grid,
+                let row_motion = render_cache.row_motion(sweep, view.field, storm_motion);
+                built_palettes = build_storm_relative_row_palettes(
+                    &$coding,
                     &row_motion,
                     render_cache.color_table,
                 );
                 &built_palettes
             };
-            render_storm_relative_u8_viewport_storage(
+            render_storm_relative_byte_viewport_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                view,
                 render_cache.row_lookup,
                 row_palettes,
                 &lookup_table,
                 clear_pixels,
             );
-        }
-        MomentStorage::U16(values) => {
-            let row_motion = render_cache
-                .storm_motion_basis
-                .map(|basis| basis.row_motion_components(storm_motion))
-                .unwrap_or_else(|| row_motion_components(cut, grid, storm_motion));
+        }};
+    }
+    macro_rules! wide_codes {
+        ($values:expr, $coding:expr) => {{
+            let row_motion = render_cache.row_motion(sweep, view.field, storm_motion);
             render_storm_relative_viewport_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                $coding,
+                view,
                 render_cache.row_lookup,
                 StormRelativeValueLookup {
                     row_motion: &row_motion,
@@ -1575,16 +1962,16 @@ fn render_storm_relative_velocity_viewport_grid_into(
                 &lookup_table,
                 clear_pixels,
             );
-        }
-        MomentStorage::F32(values) => {
-            let row_motion = render_cache
-                .storm_motion_basis
-                .map(|basis| basis.row_motion_components(storm_motion))
-                .unwrap_or_else(|| row_motion_components(cut, grid, storm_motion));
-            render_storm_relative_f32_viewport_storage(
+        }};
+    }
+    macro_rules! floats {
+        ($values:expr, $coding:expr) => {{
+            let row_motion = render_cache.row_motion(sweep, view.field, storm_motion);
+            render_storm_relative_float_viewport_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                $coding,
+                view,
                 render_cache.row_lookup,
                 StormRelativeValueLookup {
                     row_motion: &row_motion,
@@ -1593,75 +1980,89 @@ fn render_storm_relative_velocity_viewport_grid_into(
                 &lookup_table,
                 clear_pixels,
             );
-        }
+        }};
+    }
+    match field_values(view.field) {
+        FieldValues::U8(values, coding) => byte_codes!(values, coding),
+        FieldValues::I8(values, coding) => byte_codes!(values, coding),
+        FieldValues::U16(values, coding) => wide_codes!(values, coding),
+        FieldValues::I16(values, coding) => wide_codes!(values, coding),
+        FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::F64(values, coding) => floats!(values, coding),
     }
 }
 
-fn render_storm_relative_velocity_sample_cache_grid_into(
-    cut: &ElevationCut,
-    grid: &MomentGrid,
+#[allow(clippy::too_many_arguments)]
+fn render_storm_relative_velocity_sample_cache_into(
+    sweep: &Sweep,
+    view: FieldView<'_>,
     render_cache: StormRelativeRenderCache<'_>,
     storm_motion: StormMotion,
     sample_cache: &ViewportSampleCache,
     pixels: &mut [u8],
     clear_pixels: bool,
 ) {
-    match &grid.storage {
-        MomentStorage::U8(values) => {
+    macro_rules! byte_codes {
+        ($values:expr, $coding:expr) => {{
             let built_palettes;
             let row_palettes = if let Some(palette_cache) = render_cache.palette_cache {
                 &palette_cache.row_palettes
             } else {
-                let row_motion = render_cache
-                    .storm_motion_basis
-                    .map(|basis| basis.row_motion_components(storm_motion))
-                    .unwrap_or_else(|| row_motion_components(cut, grid, storm_motion));
-                built_palettes = build_storm_relative_u8_row_palettes(
-                    grid,
+                let row_motion = render_cache.row_motion(sweep, view.field, storm_motion);
+                built_palettes = build_storm_relative_row_palettes(
+                    &$coding,
                     &row_motion,
                     render_cache.color_table,
                 );
                 &built_palettes
             };
-            render_storm_relative_u8_sample_cache_storage(
+            render_storm_relative_byte_sample_cache_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                view,
                 row_palettes,
                 sample_cache,
                 clear_pixels,
             );
-        }
-        MomentStorage::U16(values) => {
-            let row_motion = render_cache
-                .storm_motion_basis
-                .map(|basis| basis.row_motion_components(storm_motion))
-                .unwrap_or_else(|| row_motion_components(cut, grid, storm_motion));
+        }};
+    }
+    macro_rules! wide_codes {
+        ($values:expr, $coding:expr) => {{
+            let row_motion = render_cache.row_motion(sweep, view.field, storm_motion);
             render_storm_relative_sample_cache_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                $coding,
+                view,
                 &row_motion,
                 render_cache.color_table,
                 sample_cache,
                 clear_pixels,
             );
-        }
-        MomentStorage::F32(values) => {
-            let row_motion = render_cache
-                .storm_motion_basis
-                .map(|basis| basis.row_motion_components(storm_motion))
-                .unwrap_or_else(|| row_motion_components(cut, grid, storm_motion));
-            render_storm_relative_f32_sample_cache_storage(
+        }};
+    }
+    macro_rules! floats {
+        ($values:expr, $coding:expr) => {{
+            let row_motion = render_cache.row_motion(sweep, view.field, storm_motion);
+            render_storm_relative_float_sample_cache_storage(
                 pixels,
-                values,
-                grid,
+                $values,
+                $coding,
+                view,
                 &row_motion,
                 render_cache.color_table,
                 sample_cache,
                 clear_pixels,
             );
-        }
+        }};
+    }
+    match field_values(view.field) {
+        FieldValues::U8(values, coding) => byte_codes!(values, coding),
+        FieldValues::I8(values, coding) => byte_codes!(values, coding),
+        FieldValues::U16(values, coding) => wide_codes!(values, coding),
+        FieldValues::I16(values, coding) => wide_codes!(values, coding),
+        FieldValues::F32(values, coding) => floats!(values, coding),
+        FieldValues::F64(values, coding) => floats!(values, coding),
     }
 }
 
@@ -1704,9 +2105,9 @@ fn viewport_dimensions(options: ViewportRasterOptions) -> (u32, u32) {
     (options.width.max(1), options.height.max(1))
 }
 
-fn viewport_geometry(grid: &MomentGrid, options: ViewportRasterOptions) -> ViewportGeometry {
+fn viewport_geometry(gates: FieldGeometry, options: ViewportRasterOptions) -> ViewportGeometry {
     let (width, _) = viewport_dimensions(options);
-    let max_range_km = max_range_m(grid).max(1.0) / 1000.0;
+    let max_range_km = gates.max_range_m().max(1.0) / 1000.0;
     let (rot_sin, rot_cos) = options.rotation_rad.sin_cos();
     ViewportGeometry {
         width,
@@ -1745,7 +2146,7 @@ trait LookupGeometry: Copy + Sync {
         self,
         x: u32,
         y: u32,
-        grid: &MomentGrid,
+        gates: FieldGeometry,
         row_lookup: &AzimuthLookup,
     ) -> Option<SampleLookup>;
 }
@@ -1763,10 +2164,10 @@ impl LookupGeometry for RasterGeometry {
         self,
         x: u32,
         y: u32,
-        grid: &MomentGrid,
+        gates: FieldGeometry,
         row_lookup: &AzimuthLookup,
     ) -> Option<SampleLookup> {
-        raster_lookup(x, y, grid, row_lookup, self)
+        raster_lookup(x, y, gates, row_lookup, self)
     }
 }
 
@@ -1796,10 +2197,10 @@ impl LookupGeometry for ViewportGeometry {
         self,
         x: u32,
         y: u32,
-        grid: &MomentGrid,
+        gates: FieldGeometry,
         row_lookup: &AzimuthLookup,
     ) -> Option<SampleLookup> {
-        viewport_lookup(x, y, grid, row_lookup, self)
+        viewport_lookup(x, y, gates, row_lookup, self)
     }
 }
 
@@ -1812,12 +2213,12 @@ struct ViewportLookupTable {
 }
 
 impl ViewportLookupTable {
-    fn new(grid: &MomentGrid, geometry: ViewportGeometry) -> Self {
+    fn new(gates: FieldGeometry, geometry: ViewportGeometry) -> Self {
         Self {
             geometry,
-            first_gate_m: grid.gate_range.first_gate_m as f32,
-            gate_spacing_m: grid.gate_range.gate_spacing_m.max(1) as f32,
-            gate_count: grid.gate_range.gate_count,
+            first_gate_m: gates.first_gate_m(),
+            gate_spacing_m: gates.lookup_spacing_m(),
+            gate_count: gates.gate_count,
         }
     }
 
@@ -1929,32 +2330,17 @@ struct ResolvedSample {
     gate: usize,
 }
 
-trait RawMomentValue: Copy + Sync {
-    fn to_usize(self) -> usize;
-}
-
-impl RawMomentValue for u8 {
-    fn to_usize(self) -> usize {
-        usize::from(self)
-    }
-}
-
-impl RawMomentValue for u16 {
-    fn to_usize(self) -> usize {
-        usize::from(self)
-    }
-}
-
-fn render_compact_storage<T: RawMomentValue, G: LookupGeometry>(
+fn render_compact_storage<T: RawCode, G: LookupGeometry>(
     pixels: &mut [u8],
     values: &[T],
     palette: &[[u8; 4]],
-    grid: &MomentGrid,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     geometry: G,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
+    let gates = view.geometry;
     let width = geometry.width();
     let row_stride = width as usize * 4;
     pixels
@@ -1969,7 +2355,7 @@ fn render_compact_storage<T: RawMomentValue, G: LookupGeometry>(
                 return;
             };
             for x in x_range {
-                let Some(sample) = geometry.lookup(x, y, grid, row_lookup) else {
+                let Some(sample) = geometry.lookup(x, y, gates, row_lookup) else {
                     continue;
                 };
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
@@ -1977,7 +2363,7 @@ fn render_compact_storage<T: RawMomentValue, G: LookupGeometry>(
                     let Some(raw) = values.get(index).copied() else {
                         continue;
                     };
-                    let color = palette[raw.to_usize()];
+                    let color = palette[raw.palette_index()];
                     if color[3] == 0 {
                         continue;
                     }
@@ -1989,16 +2375,16 @@ fn render_compact_storage<T: RawMomentValue, G: LookupGeometry>(
         });
 }
 
-fn render_compact_viewport_storage<T: RawMomentValue>(
+fn render_compact_viewport_storage<T: RawCode>(
     pixels: &mut [u8],
     values: &[T],
     palette: &[[u8; 4]],
-    grid: &MomentGrid,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     lookup_table: &ViewportLookupTable,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let width = lookup_table.width();
     let row_stride = width as usize * 4;
     pixels
@@ -2021,7 +2407,7 @@ fn render_compact_viewport_storage<T: RawMomentValue>(
                     let Some(raw) = values.get(index).copied() else {
                         continue;
                     };
-                    let color = palette[raw.to_usize()];
+                    let color = palette[raw.palette_index()];
                     if color[3] == 0 {
                         continue;
                     }
@@ -2033,15 +2419,15 @@ fn render_compact_viewport_storage<T: RawMomentValue>(
         });
 }
 
-fn render_compact_sample_cache_storage<T: RawMomentValue>(
+fn render_compact_sample_cache_storage<T: RawCode>(
     pixels: &mut [u8],
     values: &[T],
     palette: &[[u8; 4]],
-    grid: &MomentGrid,
+    view: FieldView<'_>,
     sample_cache: &ViewportSampleCache,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let geometry = sample_cache.geometry();
     let width = sample_cache.width as usize;
     let row_stride = width * 4;
@@ -2063,7 +2449,7 @@ fn render_compact_sample_cache_storage<T: RawMomentValue>(
                 }
                 let index = cached_sample.row() * gate_count + cached_sample.gate();
                 debug_assert!(index < values.len());
-                let color = palette[values[index].to_usize()];
+                let color = palette[values[index].palette_index()];
                 if color[3] != 0 {
                     row_pixels[pixel..pixel + 4].copy_from_slice(&color);
                 }
@@ -2072,16 +2458,19 @@ fn render_compact_sample_cache_storage<T: RawMomentValue>(
         });
 }
 
-fn render_f32_storage<G: LookupGeometry>(
+#[allow(clippy::too_many_arguments)]
+fn render_float_storage<T: FloatCode, G: LookupGeometry>(
     pixels: &mut [u8],
-    values: &[f32],
-    grid: &MomentGrid,
+    values: &[T],
+    coding: FloatCoding<T>,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     color_table: &ColorTable,
     geometry: G,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
+    let gates = view.geometry;
     let width = geometry.width();
     let row_stride = width as usize * 4;
     let sampler = color_table.sampler();
@@ -2097,12 +2486,12 @@ fn render_f32_storage<G: LookupGeometry>(
                 return;
             };
             for x in x_range {
-                let Some(sample) = geometry.lookup(x, y, grid, row_lookup) else {
+                let Some(sample) = geometry.lookup(x, y, gates, row_lookup) else {
                     continue;
                 };
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
                     let index = candidate.row * gate_count + sample.gate;
-                    let Some(value) = values.get(index).copied().filter(|value| value.is_finite())
+                    let Some(value) = values.get(index).and_then(|value| value.physical(&coding))
                     else {
                         continue;
                     };
@@ -2118,16 +2507,18 @@ fn render_f32_storage<G: LookupGeometry>(
         });
 }
 
-fn render_f32_viewport_storage(
+#[allow(clippy::too_many_arguments)]
+fn render_float_viewport_storage<T: FloatCode>(
     pixels: &mut [u8],
-    values: &[f32],
-    grid: &MomentGrid,
+    values: &[T],
+    coding: FloatCoding<T>,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     color_table: &ColorTable,
     lookup_table: &ViewportLookupTable,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let width = lookup_table.width();
     let row_stride = width as usize * 4;
     let sampler = color_table.sampler();
@@ -2148,7 +2539,7 @@ fn render_f32_viewport_storage(
                 };
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
                     let index = candidate.row * gate_count + sample.gate;
-                    let Some(value) = values.get(index).copied().filter(|value| value.is_finite())
+                    let Some(value) = values.get(index).and_then(|value| value.physical(&coding))
                     else {
                         continue;
                     };
@@ -2164,15 +2555,16 @@ fn render_f32_viewport_storage(
         });
 }
 
-fn render_f32_sample_cache_storage(
+fn render_float_sample_cache_storage<T: FloatCode>(
     pixels: &mut [u8],
-    values: &[f32],
-    grid: &MomentGrid,
+    values: &[T],
+    coding: FloatCoding<T>,
+    view: FieldView<'_>,
     color_table: &ColorTable,
     sample_cache: &ViewportSampleCache,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let geometry = sample_cache.geometry();
     let width = sample_cache.width as usize;
     let row_stride = width * 4;
@@ -2195,8 +2587,7 @@ fn render_f32_sample_cache_storage(
                 }
                 let index = cached_sample.row() * gate_count + cached_sample.gate();
                 debug_assert!(index < values.len());
-                let value = values[index];
-                if value.is_finite() {
+                if let Some(value) = values[index].physical(&coding) {
                     let color = sampler.color_for_value(value);
                     if color[3] != 0 {
                         row_pixels[pixel..pixel + 4].copy_from_slice(&color);
@@ -2207,16 +2598,36 @@ fn render_f32_sample_cache_storage(
         });
 }
 
-fn render_storm_relative_storage<T: RawMomentValue, G: LookupGeometry>(
+/// Storm-relative color of a code: transparent when blank (the sample falls
+/// through to the next candidate), the range-folded color, or the value less
+/// the row's storm motion.
+#[inline]
+fn storm_relative_code_color<T: PackedInt>(
+    coding: &IntCoding<T>,
+    sampler: &ColorSampler,
+    raw: T,
+    row_motion: f32,
+) -> [u8; 4] {
+    match code_class(coding, raw) {
+        CodeClass::Blank => [0, 0, 0, 0],
+        CodeClass::RangeFolded => sampler.range_folded_color(),
+        CodeClass::Value => sampler.color_for_value(code_value(coding, raw) - row_motion),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_storm_relative_storage<T: RawCode, G: LookupGeometry>(
     pixels: &mut [u8],
     values: &[T],
-    grid: &MomentGrid,
+    coding: IntCoding<T>,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     value_lookup: StormRelativeValueLookup<'_>,
     geometry: G,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
+    let gates = view.geometry;
     let width = geometry.width();
     let row_stride = width as usize * 4;
     let sampler = value_lookup.color_table.sampler();
@@ -2232,28 +2643,25 @@ fn render_storm_relative_storage<T: RawMomentValue, G: LookupGeometry>(
                 return;
             };
             for x in x_range {
-                let Some(sample) = geometry.lookup(x, y, grid, row_lookup) else {
+                let Some(sample) = geometry.lookup(x, y, gates, row_lookup) else {
                     continue;
                 };
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
                     let index = candidate.row * gate_count + sample.gate;
-                    let Some(raw) = values.get(index).copied().map(RawMomentValue::to_usize) else {
+                    let Some(raw) = values.get(index).copied() else {
                         continue;
                     };
-                    if grid.nodata == Some(raw as u16) {
-                        continue;
-                    }
-                    let color = if grid.range_folded == Some(raw as u16) {
-                        sampler.range_folded_color()
-                    } else {
-                        let velocity = (raw as f32 - grid.offset) / grid.scale;
-                        let relative = velocity
-                            - value_lookup
-                                .row_motion
-                                .get(candidate.row)
-                                .copied()
-                                .unwrap_or(0.0);
-                        sampler.color_for_value(relative)
+                    let motion = value_lookup
+                        .row_motion
+                        .get(candidate.row)
+                        .copied()
+                        .unwrap_or(0.0);
+                    let color = match code_class(&coding, raw) {
+                        CodeClass::Blank => continue,
+                        CodeClass::RangeFolded => sampler.range_folded_color(),
+                        CodeClass::Value => {
+                            sampler.color_for_value(code_value(&coding, raw) - motion)
+                        }
                     };
                     if color[3] == 0 {
                         continue;
@@ -2266,16 +2674,18 @@ fn render_storm_relative_storage<T: RawMomentValue, G: LookupGeometry>(
         });
 }
 
-fn render_storm_relative_viewport_storage<T: RawMomentValue>(
+#[allow(clippy::too_many_arguments)]
+fn render_storm_relative_viewport_storage<T: RawCode>(
     pixels: &mut [u8],
     values: &[T],
-    grid: &MomentGrid,
+    coding: IntCoding<T>,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     value_lookup: StormRelativeValueLookup<'_>,
     lookup_table: &ViewportLookupTable,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let width = lookup_table.width();
     let row_stride = width as usize * 4;
     let sampler = value_lookup.color_table.sampler();
@@ -2296,23 +2706,20 @@ fn render_storm_relative_viewport_storage<T: RawMomentValue>(
                 };
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
                     let index = candidate.row * gate_count + sample.gate;
-                    let Some(raw) = values.get(index).copied().map(RawMomentValue::to_usize) else {
+                    let Some(raw) = values.get(index).copied() else {
                         continue;
                     };
-                    if grid.nodata == Some(raw as u16) {
-                        continue;
-                    }
-                    let color = if grid.range_folded == Some(raw as u16) {
-                        sampler.range_folded_color()
-                    } else {
-                        let velocity = (raw as f32 - grid.offset) / grid.scale;
-                        let relative = velocity
-                            - value_lookup
-                                .row_motion
-                                .get(candidate.row)
-                                .copied()
-                                .unwrap_or(0.0);
-                        sampler.color_for_value(relative)
+                    let motion = value_lookup
+                        .row_motion
+                        .get(candidate.row)
+                        .copied()
+                        .unwrap_or(0.0);
+                    let color = match code_class(&coding, raw) {
+                        CodeClass::Blank => continue,
+                        CodeClass::RangeFolded => sampler.range_folded_color(),
+                        CodeClass::Value => {
+                            sampler.color_for_value(code_value(&coding, raw) - motion)
+                        }
                     };
                     if color[3] == 0 {
                         continue;
@@ -2325,8 +2732,9 @@ fn render_storm_relative_viewport_storage<T: RawMomentValue>(
         });
 }
 
-fn build_storm_relative_u8_row_palettes(
-    grid: &MomentGrid,
+/// One 256-entry storm-relative palette per row of a byte-coded field.
+fn build_storm_relative_row_palettes<T: RawCode>(
+    coding: &IntCoding<T>,
     row_motion: &[f32],
     color_table: &ColorTable,
 ) -> Vec<[[u8; 4]; 256]> {
@@ -2335,42 +2743,30 @@ fn build_storm_relative_u8_row_palettes(
         .par_iter()
         .map(|motion| {
             let mut palette = [[0, 0, 0, 0]; 256];
-            for raw in 0..=u8::MAX {
-                palette[usize::from(raw)] =
-                    storm_relative_u8_color_for_raw(grid, &sampler, raw, *motion);
+            for (index, slot) in palette.iter_mut().enumerate() {
+                *slot = storm_relative_code_color(
+                    coding,
+                    &sampler,
+                    T::from_palette_index(index),
+                    *motion,
+                );
             }
             palette
         })
         .collect()
 }
 
-fn storm_relative_u8_color_for_raw(
-    grid: &MomentGrid,
-    sampler: &ColorSampler,
-    raw: u8,
-    row_motion: f32,
-) -> [u8; 4] {
-    let raw = u16::from(raw);
-    if grid.nodata == Some(raw) {
-        return [0, 0, 0, 0];
-    }
-    if grid.range_folded == Some(raw) {
-        return sampler.range_folded_color();
-    }
-    let velocity = (raw as f32 - grid.offset) / grid.scale;
-    sampler.color_for_value(velocity - row_motion)
-}
-
-fn render_storm_relative_u8_storage<G: LookupGeometry>(
+fn render_storm_relative_byte_storage<T: RawCode, G: LookupGeometry>(
     pixels: &mut [u8],
-    values: &[u8],
-    grid: &MomentGrid,
+    values: &[T],
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     row_palettes: &[[[u8; 4]; 256]],
     geometry: G,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
+    let gates = view.geometry;
     let width = geometry.width();
     let row_stride = width as usize * 4;
     pixels
@@ -2385,7 +2781,7 @@ fn render_storm_relative_u8_storage<G: LookupGeometry>(
                 return;
             };
             for x in x_range {
-                let Some(sample) = geometry.lookup(x, y, grid, row_lookup) else {
+                let Some(sample) = geometry.lookup(x, y, gates, row_lookup) else {
                     continue;
                 };
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
@@ -2396,7 +2792,7 @@ fn render_storm_relative_u8_storage<G: LookupGeometry>(
                     let Some(palette) = row_palettes.get(candidate.row) else {
                         continue;
                     };
-                    let color = palette[usize::from(raw)];
+                    let color = palette[raw.palette_index()];
                     if color[3] == 0 {
                         continue;
                     }
@@ -2408,16 +2804,16 @@ fn render_storm_relative_u8_storage<G: LookupGeometry>(
         });
 }
 
-fn render_storm_relative_u8_viewport_storage(
+fn render_storm_relative_byte_viewport_storage<T: RawCode>(
     pixels: &mut [u8],
-    values: &[u8],
-    grid: &MomentGrid,
+    values: &[T],
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     row_palettes: &[[[u8; 4]; 256]],
     lookup_table: &ViewportLookupTable,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let width = lookup_table.width();
     let row_stride = width as usize * 4;
     pixels
@@ -2443,7 +2839,7 @@ fn render_storm_relative_u8_viewport_storage(
                     let Some(palette) = row_palettes.get(candidate.row) else {
                         continue;
                     };
-                    let color = palette[usize::from(raw)];
+                    let color = palette[raw.palette_index()];
                     if color[3] == 0 {
                         continue;
                     }
@@ -2455,15 +2851,15 @@ fn render_storm_relative_u8_viewport_storage(
         });
 }
 
-fn render_storm_relative_u8_sample_cache_storage(
+fn render_storm_relative_byte_sample_cache_storage<T: RawCode>(
     pixels: &mut [u8],
-    values: &[u8],
-    grid: &MomentGrid,
+    values: &[T],
+    view: FieldView<'_>,
     row_palettes: &[[[u8; 4]; 256]],
     sample_cache: &ViewportSampleCache,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let geometry = sample_cache.geometry();
     let width = sample_cache.width as usize;
     let row_stride = width * 4;
@@ -2487,7 +2883,7 @@ fn render_storm_relative_u8_sample_cache_storage(
                 let index = row * gate_count + cached_sample.gate();
                 debug_assert!(index < values.len());
                 debug_assert!(row < row_palettes.len());
-                let color = row_palettes[row][usize::from(values[index])];
+                let color = row_palettes[row][values[index].palette_index()];
                 if color[3] != 0 {
                     row_pixels[pixel..pixel + 4].copy_from_slice(&color);
                 }
@@ -2496,16 +2892,18 @@ fn render_storm_relative_u8_sample_cache_storage(
         });
 }
 
-fn render_storm_relative_sample_cache_storage<T: RawMomentValue>(
+#[allow(clippy::too_many_arguments)]
+fn render_storm_relative_sample_cache_storage<T: RawCode>(
     pixels: &mut [u8],
     values: &[T],
-    grid: &MomentGrid,
+    coding: IntCoding<T>,
+    view: FieldView<'_>,
     row_motion: &[f32],
     color_table: &ColorTable,
     sample_cache: &ViewportSampleCache,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let geometry = sample_cache.geometry();
     let width = sample_cache.width as usize;
     let row_stride = width * 4;
@@ -2530,17 +2928,16 @@ fn render_storm_relative_sample_cache_storage<T: RawMomentValue>(
                 let index = row * gate_count + cached_sample.gate();
                 debug_assert!(index < values.len());
                 debug_assert!(row < row_motion.len());
-                let raw = values[index].to_usize();
-                if grid.nodata == Some(raw as u16) {
-                    pixel += 4;
-                    continue;
-                }
-                let color = if grid.range_folded == Some(raw as u16) {
-                    sampler.range_folded_color()
-                } else {
-                    let velocity = (raw as f32 - grid.offset) / grid.scale;
-                    let relative = velocity - row_motion[row];
-                    sampler.color_for_value(relative)
+                let raw = values[index];
+                let color = match code_class(&coding, raw) {
+                    CodeClass::Blank => {
+                        pixel += 4;
+                        continue;
+                    }
+                    CodeClass::RangeFolded => sampler.range_folded_color(),
+                    CodeClass::Value => {
+                        sampler.color_for_value(code_value(&coding, raw) - row_motion[row])
+                    }
                 };
                 if color[3] != 0 {
                     row_pixels[pixel..pixel + 4].copy_from_slice(&color);
@@ -2550,16 +2947,19 @@ fn render_storm_relative_sample_cache_storage<T: RawMomentValue>(
         });
 }
 
-fn render_storm_relative_f32_storage<G: LookupGeometry>(
+#[allow(clippy::too_many_arguments)]
+fn render_storm_relative_float_storage<T: FloatCode, G: LookupGeometry>(
     pixels: &mut [u8],
-    values: &[f32],
-    grid: &MomentGrid,
+    values: &[T],
+    coding: FloatCoding<T>,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     value_lookup: StormRelativeValueLookup<'_>,
     geometry: G,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
+    let gates = view.geometry;
     let width = geometry.width();
     let row_stride = width as usize * 4;
     let sampler = value_lookup.color_table.sampler();
@@ -2575,13 +2975,13 @@ fn render_storm_relative_f32_storage<G: LookupGeometry>(
                 return;
             };
             for x in x_range {
-                let Some(sample) = geometry.lookup(x, y, grid, row_lookup) else {
+                let Some(sample) = geometry.lookup(x, y, gates, row_lookup) else {
                     continue;
                 };
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
                     let index = candidate.row * gate_count + sample.gate;
                     let Some(velocity) =
-                        values.get(index).copied().filter(|value| value.is_finite())
+                        values.get(index).and_then(|value| value.physical(&coding))
                     else {
                         continue;
                     };
@@ -2603,16 +3003,18 @@ fn render_storm_relative_f32_storage<G: LookupGeometry>(
         });
 }
 
-fn render_storm_relative_f32_viewport_storage(
+#[allow(clippy::too_many_arguments)]
+fn render_storm_relative_float_viewport_storage<T: FloatCode>(
     pixels: &mut [u8],
-    values: &[f32],
-    grid: &MomentGrid,
+    values: &[T],
+    coding: FloatCoding<T>,
+    view: FieldView<'_>,
     row_lookup: &AzimuthLookup,
     value_lookup: StormRelativeValueLookup<'_>,
     lookup_table: &ViewportLookupTable,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let width = lookup_table.width();
     let row_stride = width as usize * 4;
     let sampler = value_lookup.color_table.sampler();
@@ -2634,7 +3036,7 @@ fn render_storm_relative_f32_viewport_storage(
                 for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
                     let index = candidate.row * gate_count + sample.gate;
                     let Some(velocity) =
-                        values.get(index).copied().filter(|value| value.is_finite())
+                        values.get(index).and_then(|value| value.physical(&coding))
                     else {
                         continue;
                     };
@@ -2656,16 +3058,18 @@ fn render_storm_relative_f32_viewport_storage(
         });
 }
 
-fn render_storm_relative_f32_sample_cache_storage(
+#[allow(clippy::too_many_arguments)]
+fn render_storm_relative_float_sample_cache_storage<T: FloatCode>(
     pixels: &mut [u8],
-    values: &[f32],
-    grid: &MomentGrid,
+    values: &[T],
+    coding: FloatCoding<T>,
+    view: FieldView<'_>,
     row_motion: &[f32],
     color_table: &ColorTable,
     sample_cache: &ViewportSampleCache,
     clear_pixels: bool,
 ) {
-    let gate_count = grid.gate_range.gate_count;
+    let gate_count = view.gate_count();
     let geometry = sample_cache.geometry();
     let width = sample_cache.width as usize;
     let row_stride = width * 4;
@@ -2690,8 +3094,7 @@ fn render_storm_relative_f32_sample_cache_storage(
                 let index = row * gate_count + cached_sample.gate();
                 debug_assert!(index < values.len());
                 debug_assert!(row < row_motion.len());
-                let velocity = values[index];
-                if velocity.is_finite() {
+                if let Some(velocity) = values[index].physical(&coding) {
                     let relative = velocity - row_motion[row];
                     let color = sampler.color_for_value(relative);
                     if color[3] != 0 {
@@ -2862,8 +3265,8 @@ where
 
 fn viewport_sample_cache_from_rows(
     volume_ptr: usize,
-    cut_index: usize,
-    moment: MomentType,
+    sweep_index: usize,
+    field: FieldName,
     width: u32,
     height: u32,
     row_builds: Vec<CachedRowBuild>,
@@ -2871,8 +3274,8 @@ fn viewport_sample_cache_from_rows(
     let (sample_count, row_spans, samples) = flatten_cached_rows(height, row_builds);
     ViewportSampleCache {
         volume_ptr,
-        cut_index,
-        moment,
+        sweep_index,
+        field,
         width,
         height,
         sample_count,
@@ -2921,20 +3324,20 @@ fn push_cached_sample_skip(samples: &mut Vec<CachedSample>, mut pixel_count: u32
     }
 }
 
-fn resolve_compact_sample<T: RawMomentValue>(
+/// First candidate row whose code at the sample's gate is not blank.
+fn resolve_int_sample<T: RawCode>(
     values: &[T],
-    grid: &MomentGrid,
+    coding: &IntCoding<T>,
+    gate_count: usize,
     row_lookup: &AzimuthLookup,
     sample: SampleLookup,
 ) -> Option<ResolvedSample> {
-    let gate_count = grid.gate_range.gate_count;
     for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
         let index = candidate.row * gate_count + sample.gate;
-        if index >= values.len() {
+        let Some(raw) = values.get(index).copied() else {
             continue;
-        }
-        let raw = values[index].to_usize() as u16;
-        if grid.nodata == Some(raw) {
+        };
+        if code_class(coding, raw) == CodeClass::Blank {
             continue;
         }
         return Some(ResolvedSample {
@@ -2945,16 +3348,20 @@ fn resolve_compact_sample<T: RawMomentValue>(
     None
 }
 
-fn resolve_f32_sample(
-    values: &[f32],
-    grid: &MomentGrid,
+/// First candidate row with a finite physical value at the sample's gate.
+fn resolve_float_sample<T: FloatCode>(
+    values: &[T],
+    coding: &FloatCoding<T>,
+    gate_count: usize,
     row_lookup: &AzimuthLookup,
     sample: SampleLookup,
 ) -> Option<ResolvedSample> {
-    let gate_count = grid.gate_range.gate_count;
     for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
         let index = candidate.row * gate_count + sample.gate;
-        if index < values.len() && values[index].is_finite() {
+        if values
+            .get(index)
+            .is_some_and(|value| value.physical(coding).is_some())
+        {
             return Some(ResolvedSample {
                 row: candidate.row,
                 gate: sample.gate,
@@ -2967,7 +3374,7 @@ fn resolve_f32_sample(
 fn raster_lookup(
     x: u32,
     y: u32,
-    grid: &MomentGrid,
+    gates: FieldGeometry,
     row_lookup: &AzimuthLookup,
     geometry: RasterGeometry,
 ) -> Option<SampleLookup> {
@@ -2980,10 +3387,8 @@ fn raster_lookup(
 
     let radius = radius_sq.sqrt();
     let range_m = radius / geometry.radius_px * geometry.max_range_m;
-    let gate = ((range_m - grid.gate_range.first_gate_m as f32)
-        / grid.gate_range.gate_spacing_m.max(1) as f32)
-        .round() as isize;
-    if gate < 0 || gate as usize >= grid.gate_range.gate_count {
+    let gate = ((range_m - gates.first_gate_m()) / gates.lookup_spacing_m()).round() as isize;
+    if gate < 0 || gate as usize >= gates.gate_count {
         return None;
     }
 
@@ -2998,7 +3403,7 @@ fn raster_lookup(
 fn viewport_lookup(
     x: u32,
     y: u32,
-    grid: &MomentGrid,
+    gates: FieldGeometry,
     row_lookup: &AzimuthLookup,
     geometry: ViewportGeometry,
 ) -> Option<SampleLookup> {
@@ -3010,10 +3415,8 @@ fn viewport_lookup(
     }
 
     let range_m = range_km_sq.sqrt() * 1000.0;
-    let gate = ((range_m - grid.gate_range.first_gate_m as f32)
-        / grid.gate_range.gate_spacing_m.max(1) as f32)
-        .round() as isize;
-    if gate < 0 || gate as usize >= grid.gate_range.gate_count {
+    let gate = ((range_m - gates.first_gate_m()) / gates.lookup_spacing_m()).round() as isize;
+    if gate < 0 || gate as usize >= gates.gate_count {
         return None;
     }
 
@@ -3067,41 +3470,42 @@ mod rotation_lookup_tests {
     }
 }
 
-fn build_u8_palette(grid: &MomentGrid, color_table: &ColorTable) -> [[u8; 4]; 256] {
+/// Palette of a byte-coded field: one color per code 0..=255.
+fn build_byte_palette<T: RawCode>(
+    coding: &IntCoding<T>,
+    color_table: &ColorTable,
+) -> [[u8; 4]; 256] {
     let sampler = color_table.sampler();
     let mut palette = [[0, 0, 0, 0]; 256];
-    for raw in 0..=u8::MAX {
-        palette[usize::from(raw)] = color_for_raw(grid, &sampler, u16::from(raw));
+    for (index, slot) in palette.iter_mut().enumerate() {
+        *slot = color_for_code(coding, &sampler, T::from_palette_index(index));
     }
     palette
 }
 
-fn build_u16_palette(grid: &MomentGrid, color_table: &ColorTable) -> Vec<[u8; 4]> {
+/// Palette of a 16-bit field, sized to the largest code present.
+fn build_wide_palette<T: RawCode>(
+    values: &[T],
+    coding: &IntCoding<T>,
+    color_table: &ColorTable,
+) -> Vec<[u8; 4]> {
     let sampler = color_table.sampler();
-    let max_raw = match &grid.storage {
-        MomentStorage::U16(values) => values.iter().copied().max().unwrap_or(0),
-        _ => u16::MAX,
-    };
-    let mut palette = vec![[0, 0, 0, 0]; usize::from(max_raw) + 1];
-    for raw in 0..=max_raw {
-        palette[usize::from(raw)] = color_for_raw(grid, &sampler, raw);
-    }
-    palette
+    let max_index = values
+        .iter()
+        .map(|raw| raw.palette_index())
+        .max()
+        .unwrap_or(0);
+    (0..=max_index)
+        .map(|index| color_for_code(coding, &sampler, T::from_palette_index(index)))
+        .collect()
 }
 
-fn color_for_raw(grid: &MomentGrid, sampler: &ColorSampler, raw: u16) -> [u8; 4] {
-    if grid.nodata == Some(raw) {
-        return [0, 0, 0, 0];
+fn color_for_code<T: PackedInt>(coding: &IntCoding<T>, sampler: &ColorSampler, raw: T) -> [u8; 4] {
+    match code_class(coding, raw) {
+        CodeClass::Blank => [0, 0, 0, 0],
+        CodeClass::RangeFolded => sampler.range_folded_color(),
+        CodeClass::Value => sampler.color_for_value(code_value(coding, raw)),
     }
-    if grid.range_folded == Some(raw) {
-        return sampler.range_folded_color();
-    }
-    sampler.color_for_value((raw as f32 - grid.offset) / grid.scale)
-}
-
-fn max_range_m(grid: &MomentGrid) -> f32 {
-    grid.gate_range.first_gate_m as f32
-        + grid.gate_range.gate_spacing_m as f32 * grid.gate_range.gate_count as f32
 }
 
 fn azimuth_from_xy(dx: f32, dy: f32) -> f32 {
@@ -3117,29 +3521,33 @@ struct AzimuthLookup {
 }
 
 impl AzimuthLookup {
-    fn new(cut: &ElevationCut, grid: &MomentGrid) -> Self {
+    /// Lookup over the rows of a field on `sweep`'s rays. Rows the source did
+    /// not provide take no azimuth slot.
+    fn new(sweep: &Sweep, view: FieldView<'_>) -> Self {
+        let field = view.field;
         Self::from_row_azimuths_iter(
-            grid,
-            grid.radial_indices
-                .iter()
-                .enumerate()
-                .filter_map(|(row, radial_index)| {
-                    cut.radials
-                        .get(*radial_index)
-                        .map(|radial| (row, radial.azimuth_deg))
+            field,
+            (0..field.nrays as usize)
+                .filter(|row| !field.is_absent(*row))
+                .filter_map(|row| {
+                    sweep
+                        .rays
+                        .azimuth_deg
+                        .get(row)
+                        .map(|azimuth_deg| (row, *azimuth_deg))
                 }),
         )
     }
 
-    /// Lookup for a grid whose rows do NOT correspond to cut radials —
-    /// the interpolated display grid carries its own synthetic per-row
-    /// azimuths (one entry per grid row).
-    fn from_row_azimuths(row_azimuths_deg: &[f32], grid: &MomentGrid) -> Self {
-        Self::from_row_azimuths_iter(grid, row_azimuths_deg.iter().copied().enumerate())
+    /// Lookup for a field whose rows do NOT correspond to sweep rays —
+    /// the interpolated display field carries its own synthetic per-row
+    /// azimuths (one entry per field row).
+    fn from_row_azimuths(row_azimuths_deg: &[f32], view: FieldView<'_>) -> Self {
+        Self::from_row_azimuths_iter(view.field, row_azimuths_deg.iter().copied().enumerate())
     }
 
     fn from_row_azimuths_iter(
-        grid: &MomentGrid,
+        field: &Field,
         row_azimuths: impl Iterator<Item = (usize, f32)>,
     ) -> Self {
         let mut groups = vec![None; AZIMUTH_BINS];
@@ -3152,7 +3560,7 @@ impl AzimuthLookup {
             });
             group.candidates.push(RowCandidate {
                 row,
-                valid_extent: row_valid_extent(grid, row),
+                valid_extent: row_valid_extent(field, row),
             });
         }
 
@@ -3301,33 +3709,36 @@ fn azimuth_bin(azimuth_deg: f32) -> usize {
     ((azimuth_deg.rem_euclid(360.0) / AZIMUTH_BIN_WIDTH_DEG).round() as usize) % AZIMUTH_BINS
 }
 
-fn row_valid_extent(grid: &MomentGrid, row: usize) -> usize {
-    let gate_count = grid.gate_range.gate_count;
+/// One past the last gate of `row` that is not blank (0 when none is).
+fn row_valid_extent(field: &Field, row: usize) -> usize {
+    let gate_count = field.ngates as usize;
     let start = row.saturating_mul(gate_count);
     let Some(end) = start.checked_add(gate_count) else {
         return 0;
     };
-    match &grid.storage {
-        MomentStorage::U8(values) => values
-            .get(start..end)
-            .and_then(|row| {
-                row.iter().rposition(|raw| {
-                    let raw = u16::from(*raw);
-                    grid.nodata != Some(raw)
-                })
-            })
-            .map(|gate| gate + 1)
-            .unwrap_or(0),
-        MomentStorage::U16(values) => values
-            .get(start..end)
-            .and_then(|row| row.iter().rposition(|raw| grid.nodata != Some(*raw)))
-            .map(|gate| gate + 1)
-            .unwrap_or(0),
-        MomentStorage::F32(values) => values
-            .get(start..end)
-            .and_then(|row| row.iter().rposition(|value| value.is_finite()))
-            .map(|gate| gate + 1)
-            .unwrap_or(0),
+    fn int_extent<T: RawCode>(row: Option<&[T]>, coding: IntCoding<T>) -> usize {
+        row.and_then(|row| {
+            row.iter()
+                .rposition(|raw| code_class(&coding, *raw) != CodeClass::Blank)
+        })
+        .map(|gate| gate + 1)
+        .unwrap_or(0)
+    }
+    fn float_extent<T: FloatCode>(row: Option<&[T]>, coding: FloatCoding<T>) -> usize {
+        row.and_then(|row| {
+            row.iter()
+                .rposition(|value| value.physical(&coding).is_some())
+        })
+        .map(|gate| gate + 1)
+        .unwrap_or(0)
+    }
+    match field_values(field) {
+        FieldValues::U8(values, coding) => int_extent(values.get(start..end), coding),
+        FieldValues::I8(values, coding) => int_extent(values.get(start..end), coding),
+        FieldValues::U16(values, coding) => int_extent(values.get(start..end), coding),
+        FieldValues::I16(values, coding) => int_extent(values.get(start..end), coding),
+        FieldValues::F32(values, coding) => float_extent(values.get(start..end), coding),
+        FieldValues::F64(values, coding) => float_extent(values.get(start..end), coding),
     }
 }
 
@@ -3346,17 +3757,15 @@ fn clockwise_delta_deg(from_deg: f32, to_deg: f32) -> f32 {
     (to_deg - from_deg).rem_euclid(360.0)
 }
 
-fn row_motion_components(
-    cut: &ElevationCut,
-    grid: &MomentGrid,
-    storm_motion: StormMotion,
-) -> Vec<f32> {
-    grid.radial_indices
-        .iter()
-        .map(|radial_index| {
-            cut.radials
-                .get(*radial_index)
-                .map(|radial| motion_component_away_mps(storm_motion, radial.azimuth_deg))
+/// Storm motion along the beam for every row of a field on `sweep`'s rays.
+fn row_motion_components(sweep: &Sweep, field: &Field, storm_motion: StormMotion) -> Vec<f32> {
+    (0..field.nrays as usize)
+        .map(|row| {
+            sweep
+                .rays
+                .azimuth_deg
+                .get(row)
+                .map(|azimuth_deg| motion_component_away_mps(storm_motion, *azimuth_deg))
                 .unwrap_or(0.0)
         })
         .collect()
@@ -3375,49 +3784,163 @@ fn motion_component_away_mps(storm_motion: StormMotion, beam_azimuth_deg: f32) -
     storm_motion.speed_mps * delta.cos()
 }
 
-pub fn color_family_for_moment(moment: &MomentType) -> ColorTableFamily {
-    match moment {
-        MomentType::Reflectivity => ColorTableFamily::Reflectivity,
-        MomentType::Velocity => ColorTableFamily::Velocity,
-        MomentType::SpectrumWidth => ColorTableFamily::SpectrumWidth,
-        MomentType::CorrelationCoefficient => ColorTableFamily::CorrelationCoefficient,
-        MomentType::DifferentialReflectivity => ColorTableFamily::DifferentialReflectivity,
-        MomentType::DifferentialPhase => ColorTableFamily::DifferentialPhase,
-        MomentType::SpecificDifferentialPhase => ColorTableFamily::SpecificDifferentialPhase,
-        MomentType::Unknown(name) if unknown_reflectivity_like(name) => {
-            ColorTableFamily::Reflectivity
-        }
+/// Color table family of a field, from its quantity (`Field::quantity`);
+/// unfiltered reflectivity ids without a known quantity use reflectivity
+/// colors.
+pub fn color_family_for_field(field: &Field) -> ColorTableFamily {
+    color_family(field.quantity, &field.name)
+}
+
+/// Color table family for a field name alone, classifying it with
+/// [`Quantity::classify`].
+pub fn color_family_for_name(name: &FieldName) -> ColorTableFamily {
+    color_family(Quantity::classify(name.as_str(), None).0, name)
+}
+
+fn color_family(quantity: Quantity, name: &FieldName) -> ColorTableFamily {
+    match quantity {
+        Quantity::Reflectivity => ColorTableFamily::Reflectivity,
+        Quantity::RadialVelocity | Quantity::DealiasedRadialVelocity => ColorTableFamily::Velocity,
+        Quantity::SpectrumWidth => ColorTableFamily::SpectrumWidth,
+        Quantity::CorrelationCoefficient => ColorTableFamily::CorrelationCoefficient,
+        Quantity::DifferentialReflectivity => ColorTableFamily::DifferentialReflectivity,
+        Quantity::DifferentialPhase => ColorTableFamily::DifferentialPhase,
+        Quantity::SpecificDifferentialPhase => ColorTableFamily::SpecificDifferentialPhase,
+        _ if unfiltered_reflectivity_name(name.as_str()) => ColorTableFamily::Reflectivity,
         _ => ColorTableFamily::Generic,
     }
 }
 
-/// A validation moment carries a physical display scale that is independent
+/// A validation field carries a physical display scale that is independent
 /// of the user's ordinary radar-family palette binding. Keeping this resolver
 /// at the render seam means every cache path (native, smoothed, interpolated,
 /// and direct PNG) sees the same true 0..1 quality ramp or centered residual
-/// ramp even when the caller supplied the Generic family for an Unknown id.
-pub fn validation_color_table_for_moment(moment: &MomentType) -> Option<ColorTable> {
-    let MomentType::Unknown(name) = moment else {
-        return None;
-    };
-    color::validation_table_for_moment_id(name)
+/// ramp even when the caller supplied the Generic family for a derived id.
+pub fn validation_color_table_for_field(name: &FieldName) -> Option<ColorTable> {
+    color::validation_table_for_moment_id(name.as_str())
 }
 
-fn unknown_reflectivity_like(name: &str) -> bool {
+fn unfiltered_reflectivity_name(name: &str) -> bool {
     matches!(
         name.trim().to_ascii_uppercase().as_str(),
         "DBUZ" | "UDBZ" | "UDBZH" | "DBZ_U" | "THU" | "TVU"
     )
 }
 
+/// Velocity dealiasing through `recast-radar-correct`'s pre-FM301 API, until
+/// that crate's FM301 migration lands. The only place this crate names legacy
+/// model types (docs/design/fm301-model.md section 13.3).
+#[allow(deprecated)]
+mod legacy_bridge {
+    use recast_radar_core::legacy::{self, LegacyConvention};
+    use recast_radar_core::{
+        Field, FieldData, FieldName, FloatCoding, IntCoding, LinearTransform, MomentGrid,
+        MomentStorage, Volume,
+    };
+
+    /// Region-based dealiasing (`recast_radar_correct::dealias_velocity_grid`)
+    /// of `velocity`, a field of sweep `sweep_index`. Returns `VRADDH` on the
+    /// same rays, gates and gate mapping.
+    pub(crate) fn dealias_velocity(
+        volume: &Volume,
+        sweep_index: usize,
+        velocity: &Field,
+    ) -> Result<Field, String> {
+        let sweep = volume
+            .sweeps
+            .get(sweep_index)
+            .ok_or_else(|| format!("no sweep {sweep_index}"))?;
+        // A one-sweep, one-field volume, so only the velocity buffer is copied.
+        let mut single =
+            recast_radar_core::Sweep::new(0, sweep.sweep_mode.clone(), sweep.fixed_angle_deg);
+        single.elevation_number = sweep.elevation_number;
+        single.rays = sweep.rays.clone();
+        single.range = sweep.range.clone();
+        single.ray_vars = sweep.ray_vars.clone();
+        single.fields.push(velocity.clone());
+        let mut scratch = Volume::new(volume.attrs.instrument_name.clone(), volume.time_reference);
+        scratch.provenance.source_format = volume.provenance.source_format;
+        scratch.sweeps.push(single);
+        let convention = LegacyConvention::from(volume.provenance.source_format);
+        let legacy_volume =
+            legacy::legacy_from_volume(scratch, None, convention).map_err(|err| err.to_string())?;
+        let cut = legacy_volume
+            .cuts
+            .first()
+            .ok_or("velocity sweep did not convert")?;
+        let grid = cut
+            .moments
+            .values()
+            .next()
+            .ok_or("velocity field did not convert")?;
+        let dealiased = recast_radar_correct::dealias_velocity_grid(cut, grid);
+        field_from_dealiased(dealiased, velocity)
+    }
+
+    fn field_from_dealiased(grid: MomentGrid, source: &Field) -> Result<Field, String> {
+        let MomentGrid {
+            gate_range,
+            scale,
+            offset,
+            nodata,
+            range_folded,
+            radial_indices,
+            storage,
+            ..
+        } = grid;
+        if gate_range.gate_count != source.ngates as usize
+            || radial_indices.len() != source.nrays as usize
+        {
+            return Err(format!(
+                "dealiased grid is {} x {}, source field is {} x {}",
+                radial_indices.len(),
+                gate_range.gate_count,
+                source.nrays,
+                source.ngates
+            ));
+        }
+        let transform = LinearTransform::IcdScaleOffset { scale, offset };
+        let data = match storage {
+            MomentStorage::U8(values) => FieldData::U8 {
+                values,
+                coding: IntCoding {
+                    transform,
+                    fill_value: nodata.and_then(|code| u8::try_from(code).ok()),
+                    undetect: None,
+                    range_folded: range_folded.and_then(|code| u8::try_from(code).ok()),
+                    valid_range: None,
+                },
+            },
+            MomentStorage::U16(values) => FieldData::U16 {
+                values,
+                coding: IntCoding {
+                    transform,
+                    fill_value: nodata,
+                    undetect: None,
+                    range_folded,
+                    valid_range: None,
+                },
+            },
+            MomentStorage::F32(values) => FieldData::F32 {
+                values,
+                coding: FloatCoding::default(),
+            },
+        };
+        let mut field = Field::new(FieldName::Vraddh, source.gates, source.ngates, data);
+        field.absent_rows = source.absent_rows.clone();
+        Ok(field)
+    }
+}
+
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use recast_radar_core::{GateRange, MomentRow, RadarSite, RadarVolume, Radial};
+    use recast_radar_core::{GateMapping, LinearTransform, SweepMode};
 
     #[test]
     fn base_layer_starts_visible() {
-        assert!(RenderLayer::base(MomentType::Reflectivity).visible);
+        assert!(RenderLayer::base(FieldName::Dbzh).visible);
     }
 
     fn sample_viewport_options() -> ViewportRasterOptions {
@@ -3500,26 +4023,39 @@ mod tests {
     #[test]
     fn unfiltered_reflectivity_codes_use_reflectivity_coloring() {
         assert_eq!(
-            color_family_for_moment(&MomentType::Unknown("dBuZ".to_owned())),
+            color_family_for_name(&FieldName::parse("dBuZ")),
             ColorTableFamily::Reflectivity
         );
         assert_eq!(
-            color_family_for_moment(&MomentType::Unknown("mystery".to_owned())),
+            color_family_for_name(&FieldName::parse("mystery")),
             ColorTableFamily::Generic
+        );
+        // Known names color by quantity, whatever the spelling.
+        assert_eq!(
+            color_family_for_name(&FieldName::Dbz),
+            ColorTableFamily::Reflectivity
+        );
+        assert_eq!(
+            color_family_for_name(&FieldName::Vraddh),
+            ColorTableFamily::Velocity
+        );
+        assert_eq!(
+            color_family_for_name(&FieldName::Rhohv),
+            ColorTableFamily::CorrelationCoefficient
         );
     }
 
     #[test]
-    fn synthetic_validation_moments_resolve_physical_palettes() {
-        let quality = validation_color_table_for_moment(&MomentType::Unknown("MCOV".to_owned()))
-            .expect("quality palette");
+    fn synthetic_validation_fields_resolve_physical_palettes() {
+        let quality =
+            validation_color_table_for_field(&FieldName::parse("MCOV")).expect("quality palette");
         assert_eq!(quality.stops().first().unwrap().value, 0.0);
         assert_eq!(quality.stops().last().unwrap().value, 1.0);
 
         for id in [
             "DIF_REF", "DIF_VEL", "DIF_ZDR", "DIF_RHO", "DIF_PHI", "DIF_KDP",
         ] {
-            let table = validation_color_table_for_moment(&MomentType::Unknown(id.to_owned()))
+            let table = validation_color_table_for_field(&FieldName::parse(id))
                 .expect("difference palette");
             assert_eq!(
                 table.stops().first().unwrap().value,
@@ -3527,9 +4063,8 @@ mod tests {
                 "{id}"
             );
         }
-        assert!(
-            validation_color_table_for_moment(&MomentType::Unknown("OTHER".to_owned())).is_none()
-        );
+        assert!(validation_color_table_for_field(&FieldName::parse("OTHER")).is_none());
+        assert!(validation_color_table_for_field(&FieldName::Dbzh).is_none());
     }
 
     #[test]
@@ -3564,70 +4099,124 @@ mod tests {
     #[test]
     fn velocity_range_folded_bins_render_table_rf_color() {
         let volume = test_volume();
-        let grid = volume.cuts[0]
-            .moments
-            .get(&MomentType::Velocity)
-            .expect("velocity grid");
+        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Vradh)) else {
+            panic!("u8 velocity");
+        };
         let tables = ColorTableSet::default();
         let table = tables.for_family(ColorTableFamily::Velocity);
 
         assert_eq!(
-            color_for_raw(grid, &table.sampler(), 1),
+            color_for_code(&coding, &table.sampler(), 1u8),
             table.range_folded_color()
         );
+        assert_eq!(color_for_code(&coding, &table.sampler(), 0u8), [0, 0, 0, 0]);
     }
 
     #[test]
     fn reflectivity_range_folded_bins_render_table_rf_color() {
         let volume = test_volume();
-        let grid = volume.cuts[0]
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("reflectivity grid");
+        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Dbzh)) else {
+            panic!("u8 reflectivity");
+        };
         let tables = ColorTableSet::default();
         let table = tables.for_family(ColorTableFamily::Reflectivity);
 
         assert_eq!(
-            color_for_raw(grid, &table.sampler(), 1),
+            color_for_code(&coding, &table.sampler(), 1u8),
             table.range_folded_color()
         );
     }
 
     #[test]
-    fn storm_relative_u8_row_palette_matches_direct_color_math() {
-        let volume = test_volume();
-        let cut = &volume.cuts[0];
-        let grid = cut
-            .moments
-            .get(&MomentType::Velocity)
-            .expect("velocity grid");
-        let tables = ColorTableSet::default();
-        let color_table = tables.for_family(ColorTableFamily::Velocity);
-        let row_motion = [3.25];
-        let palettes = build_storm_relative_u8_row_palettes(grid, &row_motion, color_table);
-
-        for raw in [0, 1, 119, 129, 139] {
-            assert_eq!(
-                palettes[0][usize::from(raw)],
-                storm_relative_u8_color_for_raw(grid, &color_table.sampler(), raw, row_motion[0])
-            );
-        }
+    fn nexrad_coding_blanks_undetect_and_out_of_range_codes() {
+        // A natively decoded NEXRAD field: raw 0 is undetect and fill, raw 1
+        // range folded, valid_range [2, 255].
+        let coding = IntCoding::<u8>::nexrad(2.0, 66.0);
+        assert_eq!(code_class(&coding, 0u8), CodeClass::Blank);
+        assert_eq!(code_class(&coding, 1u8), CodeClass::RangeFolded);
+        assert_eq!(code_class(&coding, 2u8), CodeClass::Value);
+        assert_eq!(code_value(&coding, 66u8), 0.0);
+        let mut narrow = coding;
+        narrow.valid_range = Some([2, 200]);
+        assert_eq!(code_class(&narrow, 201u8), CodeClass::Blank);
+        // A signed CfRadial packing: the fill is the only blank code.
+        let cf = IntCoding::<i8> {
+            transform: LinearTransform::CfScaleOffset {
+                scale_factor: 0.5,
+                add_offset: 32.0,
+                attr_width: recast_radar_core::model::FloatWidth::F32,
+            },
+            fill_value: Some(-128),
+            undetect: None,
+            range_folded: None,
+            valid_range: None,
+        };
+        assert_eq!(code_class(&cf, -128i8), CodeClass::Blank);
+        assert_eq!(code_class(&cf, -127i8), CodeClass::Value);
+        assert_eq!(code_value(&cf, 0i8), 32.0);
+        assert_eq!((-128i8).palette_index(), 128);
+        assert_eq!(<i8 as RawCode>::from_palette_index(128), -128);
     }
 
     #[test]
-    fn custom_color_table_feeds_precomputed_u8_palette() {
+    fn float_codes_skip_fill_undetect_and_apply_transforms() {
+        let plain = FloatCoding::<f32>::default();
+        assert_eq!(12.5f32.physical(&plain), Some(12.5));
+        assert_eq!(f32::NAN.physical(&plain), None);
+        let with_fill = FloatCoding::<f32> {
+            transform: None,
+            fill_value: Some(-9999.0),
+            undetect: Some(-32.0),
+        };
+        assert_eq!((-9999.0f32).physical(&with_fill), None);
+        assert_eq!((-32.0f32).physical(&with_fill), None);
+        assert_eq!(7.0f32.physical(&with_fill), Some(7.0));
+        let scaled = FloatCoding::<f64> {
+            transform: Some(LinearTransform::CfScaleOffset {
+                scale_factor: 0.5,
+                add_offset: -32.0,
+                attr_width: recast_radar_core::model::FloatWidth::F64,
+            }),
+            fill_value: None,
+            undetect: None,
+        };
+        assert_eq!(100.0f64.physical(&scaled), Some(18.0));
+    }
+
+    #[test]
+    fn storm_relative_byte_row_palette_matches_direct_color_math() {
         let volume = test_volume();
-        let grid = volume.cuts[0]
-            .moments
-            .get(&MomentType::Velocity)
-            .expect("velocity grid");
+        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Vradh)) else {
+            panic!("u8 velocity");
+        };
+        let tables = ColorTableSet::default();
+        let color_table = tables.for_family(ColorTableFamily::Velocity);
+        let row_motion = [3.25];
+        let palettes = build_storm_relative_row_palettes(&coding, &row_motion, color_table);
+
+        for raw in [0u8, 1, 119, 129, 139] {
+            assert_eq!(
+                palettes[0][usize::from(raw)],
+                storm_relative_code_color(&coding, &color_table.sampler(), raw, row_motion[0])
+            );
+        }
+        assert_eq!(palettes[0][0], [0, 0, 0, 0]);
+        assert_eq!(palettes[0][1], color_table.range_folded_color());
+    }
+
+    #[test]
+    fn custom_color_table_feeds_precomputed_byte_palette() {
+        let volume = test_volume();
+        let FieldValues::U8(_, coding) = field_values(field_of(&volume, &FieldName::Vradh)) else {
+            panic!("u8 velocity");
+        };
         let table = ColorTable::parse(
             "unit test velocity",
             "units: m/s\ncolor: -20 1 2 3\ncolor: 0 10 20 30\ncolor: 20 40 50 60",
         )
         .expect("custom color table");
 
-        let palette = build_u8_palette(grid, &table);
+        let palette = build_byte_palette(&coding, &table);
 
         assert_eq!(palette[64], [10, 20, 30, 255]);
         assert_eq!(palette[74], [25, 35, 45, 255]);
@@ -3657,22 +4246,26 @@ mod tests {
     #[test]
     fn storm_motion_basis_matches_direct_projection() {
         let volume = test_volume();
-        let cut = &volume.cuts[0];
-        let grid = cut
-            .moments
-            .get(&MomentType::Velocity)
-            .expect("velocity grid");
-        let basis = StormMotionBasis::new(cut, grid);
+        let sweep = &volume.sweeps[0];
+        let field = field_of(&volume, &FieldName::Vradh);
+        let basis = StormMotionBasis::new(sweep, field);
         let storm_motion = StormMotion {
             direction_deg: 225.0,
             speed_mps: 18.0,
         };
         let row_motion = basis.row_motion_components(storm_motion);
 
-        for (row, radial_index) in grid.radial_indices.iter().enumerate() {
-            let radial = &cut.radials[*radial_index];
-            let direct = motion_component_away_mps(storm_motion, radial.azimuth_deg);
+        assert_eq!(row_motion.len(), field.nrays as usize);
+        for (row, azimuth_deg) in sweep.rays.azimuth_deg.iter().enumerate() {
+            let direct = motion_component_away_mps(storm_motion, *azimuth_deg);
             assert!((row_motion[row] - direct).abs() < 0.000_01);
+        }
+        for (basis, direct) in
+            row_motion
+                .iter()
+                .zip(row_motion_components(sweep, field, storm_motion))
+        {
+            assert!((basis - direct).abs() < 0.000_01);
         }
     }
 
@@ -3719,12 +4312,10 @@ mod tests {
     }
 
     #[test]
-    fn grid_sample_cache_upper_bound_tracks_actual_radar_footprint() {
+    fn field_sample_cache_upper_bound_tracks_actual_radar_footprint() {
         let volume = test_volume();
-        let grid = volume.cuts[0]
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("reflectivity grid");
+        let sweep = &volume.sweeps[0];
+        let field = field_of(&volume, &FieldName::Dbzh);
         let options = ViewportRasterOptions {
             width: 1_920,
             height: 1_080,
@@ -3736,22 +4327,74 @@ mod tests {
         };
 
         let full_viewport = viewport_sample_cache_storage_upper_bound(options);
-        let radar_footprint = viewport_sample_cache_storage_upper_bound_for_grid(grid, options);
+        let radar_footprint =
+            viewport_sample_cache_storage_upper_bound_for_field(field, &sweep.range, options);
 
         assert!(radar_footprint < full_viewport);
         assert!(radar_footprint > 1_080 * std::mem::size_of::<CachedRowSpan>());
+        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).unwrap();
+        assert_eq!(
+            cache
+                .sample_cache_storage_upper_bound(&volume, options)
+                .unwrap(),
+            radar_footprint
+        );
+    }
+
+    #[test]
+    fn field_geometry_follows_the_gate_mapping_on_the_sweep_range() {
+        // KLIX 2005 sweep 2: 1 km reflectivity beside 250 m Doppler moments.
+        // The reflectivity keeps its native 1 km gates at their true centres.
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 1.5);
+        let reflectivity = sweep.attach_geometry(0.0, 1000.0, 137).unwrap();
+        sweep
+            .add_field(Field::new(
+                FieldName::Dbzh,
+                reflectivity,
+                137,
+                FieldData::U8 {
+                    values: vec![70; 137],
+                    coding: IntCoding::nexrad(2.0, 66.0),
+                },
+            ))
+            .unwrap();
+        let velocity = sweep.attach_geometry(-375.0, 250.0, 548).unwrap();
+        sweep
+            .add_field(Field::new(
+                FieldName::Vradh,
+                velocity,
+                548,
+                FieldData::U8 {
+                    values: vec![129; 548],
+                    coding: IntCoding::nexrad(2.0, 129.0),
+                },
+            ))
+            .unwrap();
+        let dbzh = FieldGeometry::of(&sweep.fields[0], &sweep.range).unwrap();
+        assert_eq!(dbzh.first_gate_m(), 0.0);
+        assert_eq!(dbzh.lookup_spacing_m(), 1000.0);
+        assert_eq!(dbzh.gate_count, 137);
+        assert_eq!(dbzh.max_range_m(), 137_000.0);
+        let vradh = FieldGeometry::of(&sweep.fields[1], &sweep.range).unwrap();
+        assert_eq!(vradh.first_gate_m(), -375.0);
+        assert_eq!(vradh.lookup_spacing_m(), 250.0);
+        assert_eq!(vradh.max_range_m(), -375.0 + 250.0 * 548.0);
+        assert_eq!(
+            sweep.fields[0].gates,
+            GateMapping {
+                start: 0,
+                stride: 4
+            }
+        );
     }
 
     #[test]
     fn viewport_lookup_matches_reference_hypot_formula() {
         let volume = test_volume();
-        let cut = &volume.cuts[0];
-        let grid = cut
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("reflectivity grid");
-        let row_lookup = AzimuthLookup::new(cut, grid);
-        let max_range_m = max_range_m(grid).max(1.0);
+        let sweep = &volume.sweeps[0];
+        let view = view_of(&volume, &FieldName::Dbzh);
+        let row_lookup = AzimuthLookup::new(sweep, view);
+        let max_range_m = view.geometry.max_range_m().max(1.0);
         let max_range_km = max_range_m / 1000.0;
         let geometry = ViewportGeometry {
             width: 333,
@@ -3766,8 +4409,8 @@ mod tests {
 
         for (x, y) in [(0, 0), (166, 108), (180, 110), (220, 70), (332, 216)] {
             assert_eq!(
-                viewport_lookup(x, y, grid, &row_lookup, geometry),
-                viewport_lookup_reference(x, y, grid, &row_lookup, geometry)
+                viewport_lookup(x, y, view.geometry, &row_lookup, geometry),
+                viewport_lookup_reference(x, y, view.geometry, &row_lookup, geometry)
             );
         }
     }
@@ -3775,14 +4418,11 @@ mod tests {
     #[test]
     fn viewport_lookup_table_matches_reference_hypot_formula() {
         let volume = test_volume();
-        let cut = &volume.cuts[0];
-        let grid = cut
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("reflectivity grid");
-        let row_lookup = AzimuthLookup::new(cut, grid);
+        let sweep = &volume.sweeps[0];
+        let view = view_of(&volume, &FieldName::Dbzh);
+        let row_lookup = AzimuthLookup::new(sweep, view);
         let geometry = viewport_geometry(
-            grid,
+            view.geometry,
             ViewportRasterOptions {
                 width: 333,
                 height: 217,
@@ -3793,7 +4433,7 @@ mod tests {
                 rotation_rad: 0.0,
             },
         );
-        let lookup_table = ViewportLookupTable::new(grid, geometry);
+        let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
 
         for y in [0, 10, 70, 108, 140, 216] {
             for x in [0, 20, 120, 166, 180, 260, 332] {
@@ -3805,7 +4445,7 @@ mod tests {
                 });
                 assert_eq!(
                     table_sample,
-                    viewport_lookup_reference(x, y, grid, &row_lookup, geometry),
+                    viewport_lookup_reference(x, y, view.geometry, &row_lookup, geometry),
                     "lookup mismatch at {x},{y}"
                 );
             }
@@ -3819,15 +4459,12 @@ mod tests {
     #[test]
     fn viewport_lookup_table_matches_rotated_viewport_lookup() {
         let volume = test_volume();
-        let cut = &volume.cuts[0];
-        let grid = cut
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("reflectivity grid");
-        let row_lookup = AzimuthLookup::new(cut, grid);
+        let sweep = &volume.sweeps[0];
+        let view = view_of(&volume, &FieldName::Dbzh);
+        let row_lookup = AzimuthLookup::new(sweep, view);
         for rotation_rad in [-0.21f32, 0.005, 0.35] {
             let geometry = viewport_geometry(
-                grid,
+                view.geometry,
                 ViewportRasterOptions {
                     width: 333,
                     height: 217,
@@ -3838,7 +4475,7 @@ mod tests {
                     rotation_rad,
                 },
             );
-            let lookup_table = ViewportLookupTable::new(grid, geometry);
+            let lookup_table = ViewportLookupTable::new(view.geometry, geometry);
             for y in 0..217 {
                 let row = lookup_table.row(y);
                 for x in 0..333 {
@@ -3850,7 +4487,7 @@ mod tests {
                     });
                     assert_eq!(
                         table_sample,
-                        viewport_lookup(x, y, grid, &row_lookup, geometry),
+                        viewport_lookup(x, y, view.geometry, &row_lookup, geometry),
                         "rotated lookup mismatch at {x},{y} (gamma {rotation_rad})"
                     );
                 }
@@ -3865,41 +4502,21 @@ mod tests {
     /// parity test above passed at rotation 0 while the screen skewed).
     #[test]
     fn baked_rotation_changes_table_azimuth_bins() {
-        // Full-circle 1°-radial cut: the 4-radial `test_volume` leaves
+        // Full-circle 1°-radial sweep: the 4-ray `test_volume` leaves
         // most azimuth bins unfilled, which would no-op this sweep.
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 100,
-            gate_count: 60,
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        let mut reflectivity = MomentGrid::new_u8(
-            MomentType::Reflectivity,
-            gate_range.clone(),
-            1.0,
-            0.0,
-            Some(0),
-            Some(1),
-        );
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        sweep.elevation_number = Some(1);
+        let mapping = sweep.attach_geometry(0.0, 100.0, 60).unwrap();
+        let mut reflectivity = u8_field(FieldName::Dbzh, mapping, 60, 1.0, 0.0);
         for i in 0..360 {
-            cut.radials.push(Radial {
-                azimuth_deg: i as f32,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(32.0),
-                radial_status: None,
-            });
-            reflectivity
-                .push_u8_row_slice(i, &[40u8; 60])
-                .expect("reflectivity row");
+            let ray = sweep.push_ray(0.0, i as f32, 0.5);
+            reflectivity.push_row_u8(ray, &[40u8; 60]).unwrap();
         }
-        cut.moments.insert(MomentType::Reflectivity, reflectivity);
-        let grid = cut
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("reflectivity grid");
-        let row_lookup = AzimuthLookup::new(&cut, grid);
+        sweep.ray_vars.nyquist_velocity_mps = Some(vec![32.0; 360]);
+        sweep.add_field(reflectivity).unwrap();
+        sweep.seal().unwrap();
+        let view = view_on(&sweep.fields[0], &sweep.range, 0).unwrap();
+        let row_lookup = AzimuthLookup::new(&sweep, view);
         let options = |rotation_rad| ViewportRasterOptions {
             width: 96,
             height: 96,
@@ -3909,8 +4526,14 @@ mod tests {
             km_per_px_y: 0.1,
             rotation_rad,
         };
-        let rotated = ViewportLookupTable::new(grid, viewport_geometry(grid, options(0.35)));
-        let straight = ViewportLookupTable::new(grid, viewport_geometry(grid, options(0.0)));
+        let rotated = ViewportLookupTable::new(
+            view.geometry,
+            viewport_geometry(view.geometry, options(0.35)),
+        );
+        let straight = ViewportLookupTable::new(
+            view.geometry,
+            viewport_geometry(view.geometry, options(0.0)),
+        );
         let sample_at = |table: &ViewportLookupTable, x: u32, y: u32| {
             table.row(y).and_then(|row| {
                 row.x_range
@@ -3946,13 +4569,10 @@ mod tests {
     #[test]
     fn viewport_row_span_covers_reference_samples() {
         let volume = test_volume();
-        let cut = &volume.cuts[0];
-        let grid = cut
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("reflectivity grid");
-        let row_lookup = AzimuthLookup::new(cut, grid);
-        let max_range_m = max_range_m(grid).max(1.0);
+        let sweep = &volume.sweeps[0];
+        let view = view_of(&volume, &FieldName::Dbzh);
+        let row_lookup = AzimuthLookup::new(sweep, view);
+        let max_range_m = view.geometry.max_range_m().max(1.0);
         let max_range_km = max_range_m / 1000.0;
         let geometry = ViewportGeometry {
             width: 96,
@@ -3968,7 +4588,7 @@ mod tests {
         for y in 0..96 {
             let span = geometry.x_range_for_row(y);
             for x in 0..96 {
-                if viewport_lookup_reference(x, y, grid, &row_lookup, geometry).is_some() {
+                if viewport_lookup_reference(x, y, view.geometry, &row_lookup, geometry).is_some() {
                     assert!(
                         span.as_ref().is_some_and(|range| range.contains(&x)),
                         "row span missed reference sample at ({x}, {y})"
@@ -3980,127 +4600,122 @@ mod tests {
 
     #[test]
     fn azimuth_lookup_fills_wider_native_radial_sectors() {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: 1,
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        let mut grid = MomentGrid::new_u8(
-            MomentType::Reflectivity,
-            gate_range.clone(),
-            1.0,
-            0.0,
-            Some(0),
-            Some(1),
-        );
-
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        sweep.elevation_number = Some(1);
+        let mapping = sweep.attach_geometry(0.0, 1_000.0, 1).unwrap();
+        let mut field = u8_field(FieldName::Dbzh, mapping, 1, 1.0, 0.0);
         for index in 0..180 {
-            cut.radials.push(Radial {
-                azimuth_deg: index as f32 * 2.0,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
-            grid.push_u8_row_slice(index, &[20]).expect("radial row");
+            let ray = sweep.push_ray(0.0, index as f32 * 2.0, 0.5);
+            field.push_row_u8(ray, &[20]).unwrap();
         }
+        sweep.add_field(field).unwrap();
+        sweep.seal().unwrap();
 
-        let lookup = AzimuthLookup::new(&cut, &grid);
+        let view = view_on(&sweep.fields[0], &sweep.range, 0).unwrap();
+        let lookup = AzimuthLookup::new(&sweep, view);
         assert!(lookup.row_for_azimuth(1.0).is_some());
         assert!(lookup.row_for_azimuth(181.0).is_some());
     }
 
     #[test]
     fn azimuth_lookup_prefers_duplicate_row_with_longer_valid_extent() {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: 4,
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        let mut grid = MomentGrid::new_u8(
-            MomentType::Reflectivity,
-            gate_range.clone(),
-            1.0,
-            0.0,
-            Some(0),
-            Some(1),
-        );
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        sweep.elevation_number = Some(1);
+        let mapping = sweep.attach_geometry(0.0, 1_000.0, 4).unwrap();
+        let mut field = u8_field(FieldName::Dbzh, mapping, 4, 1.0, 0.0);
         for azimuth_deg in [0.0, 0.0, 2.0, 4.0] {
-            cut.radials.push(Radial {
-                azimuth_deg,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
+            sweep.push_ray(0.0, azimuth_deg, 0.5);
         }
-        grid.push_u8_row_slice(0, &[20, 0, 0, 0])
+        field
+            .push_row_u8(0, &[20, 0, 0, 0])
             .expect("short duplicate row");
-        grid.push_u8_row_slice(1, &[20, 30, 40, 50])
+        field
+            .push_row_u8(1, &[20, 30, 40, 50])
             .expect("long duplicate row");
-        grid.push_u8_row_slice(2, &[20, 30, 40, 50])
+        field
+            .push_row_u8(2, &[20, 30, 40, 50])
             .expect("neighbor row");
-        grid.push_u8_row_slice(3, &[20, 30, 40, 50])
+        field
+            .push_row_u8(3, &[20, 30, 40, 50])
             .expect("neighbor row");
+        sweep.add_field(field).unwrap();
+        sweep.seal().unwrap();
+        let field = &sweep.fields[0];
 
-        let lookup = AzimuthLookup::new(&cut, &grid);
+        let view = view_on(field, &sweep.range, 0).unwrap();
+        let lookup = AzimuthLookup::new(&sweep, view);
         assert_eq!(lookup.row_for_azimuth(0.0), Some(1));
-        assert_eq!(row_valid_extent(&grid, 0), 1);
-        assert_eq!(row_valid_extent(&grid, 1), 4);
+        assert_eq!(row_valid_extent(field, 0), 1);
+        assert_eq!(row_valid_extent(field, 1), 4);
 
         let sample = SampleLookup {
             azimuth_bin: azimuth_bin(0.0),
             gate: 3,
         };
-        let MomentStorage::U8(values) = &grid.storage else {
-            panic!("test grid should use u8 storage");
+        let FieldValues::U8(values, coding) = field_values(field) else {
+            panic!("test field should use u8 storage");
         };
-        let resolved =
-            resolve_compact_sample(values, &grid, &lookup, sample).expect("sample should resolve");
+        let resolved = resolve_int_sample(values, &coding, view.gate_count(), &lookup, sample)
+            .expect("sample should resolve");
         assert_eq!(resolved.row, 1);
         assert_eq!(resolved.gate, 3);
     }
 
     #[test]
-    fn compact_sample_resolution_keeps_visible_range_folded_candidates() {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: 4,
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        let mut grid = MomentGrid::new_u8(
-            MomentType::Velocity,
-            gate_range.clone(),
-            1.0,
-            0.0,
-            Some(0),
-            Some(1),
-        );
-        cut.radials.push(Radial {
-            azimuth_deg: 0.0,
-            elevation_deg: 0.5,
-            time_offset_ms: 0,
-            gate_range: gate_range.clone(),
-            nyquist_velocity_mps: None,
-            radial_status: None,
-        });
-        grid.push_u8_row_slice(0, &[1, 1, 1, 1])
+    fn absent_rows_take_no_azimuth_slot_and_never_resolve() {
+        // Ray 1 never received a row: its azimuth must not draw, and the
+        // fill code the model stored there is not a sample.
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        let mapping = sweep.attach_geometry(0.0, 1_000.0, 2).unwrap();
+        let mut field = u8_field(FieldName::Dbzh, mapping, 2, 1.0, 0.0);
+        for azimuth_deg in [0.0, 90.0, 180.0] {
+            sweep.push_ray(0.0, azimuth_deg, 0.5);
+        }
+        field.push_row_u8(0, &[20, 30]).unwrap();
+        field.push_row_u8(2, &[20, 30]).unwrap();
+        sweep.add_field(field).unwrap();
+        sweep.seal().unwrap();
+        let field = &sweep.fields[0];
+        assert_eq!(field.absent_rows, vec![1]);
+        assert!(has_rows(field));
+
+        let view = view_on(field, &sweep.range, 0).unwrap();
+        let lookup = AzimuthLookup::new(&sweep, view);
+        assert_eq!(lookup.row_for_azimuth(0.0), Some(0));
+        assert_eq!(lookup.row_for_azimuth(180.0), Some(2));
+        assert_eq!(lookup.row_for_azimuth(90.0), None);
+
+        // A field whose rows are all absent is empty for rendering.
+        let mut empty = u8_field(FieldName::Vradh, mapping, 2, 1.0, 64.0);
+        empty.push_absent_rows_to(3).unwrap();
+        assert!(!has_rows(&empty));
+    }
+
+    #[test]
+    fn int_sample_resolution_keeps_visible_range_folded_candidates() {
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        sweep.elevation_number = Some(1);
+        let mapping = sweep.attach_geometry(0.0, 1_000.0, 4).unwrap();
+        let mut field = u8_field(FieldName::Vradh, mapping, 4, 1.0, 0.0);
+        sweep.push_ray(0.0, 0.0, 0.5);
+        field
+            .push_row_u8(0, &[1, 1, 1, 1])
             .expect("range-folded row");
+        sweep.add_field(field).unwrap();
+        sweep.seal().unwrap();
+        let field = &sweep.fields[0];
 
-        let lookup = AzimuthLookup::new(&cut, &grid);
-        assert_eq!(row_valid_extent(&grid, 0), 4);
+        let view = view_on(field, &sweep.range, 0).unwrap();
+        let lookup = AzimuthLookup::new(&sweep, view);
+        assert_eq!(row_valid_extent(field, 0), 4);
 
-        let MomentStorage::U8(values) = &grid.storage else {
-            panic!("test grid should use u8 storage");
+        let FieldValues::U8(values, coding) = field_values(field) else {
+            panic!("test field should use u8 storage");
         };
-        let resolved = resolve_compact_sample(
+        let resolved = resolve_int_sample(
             values,
-            &grid,
+            &coding,
+            view.gate_count(),
             &lookup,
             SampleLookup {
                 azimuth_bin: azimuth_bin(0.0),
@@ -4126,17 +4741,16 @@ mod tests {
             rotation_rad: 0.0,
         };
 
-        let reflectivity =
-            render_moment_viewport_image(&volume, 0, MomentType::Reflectivity, options)
-                .expect("viewport reflectivity");
+        let reflectivity = render_field_viewport_image(&volume, 0, &FieldName::Dbzh, options)
+            .expect("viewport reflectivity");
         assert_eq!(reflectivity.dimensions(), (333, 217));
         assert!(has_visible_pixel(reflectivity.as_raw()));
 
         let mut reusable_pixels = vec![255; viewport_rgba_buffer_len(options)];
-        let dimensions = render_moment_viewport_rgba_into(
+        let dimensions = render_field_viewport_rgba_into(
             &volume,
             0,
-            MomentType::Reflectivity,
+            &FieldName::Dbzh,
             options,
             &mut reusable_pixels,
         )
@@ -4145,11 +4759,13 @@ mod tests {
         assert!(has_visible_pixel(&reusable_pixels));
         assert!(has_transparent_pixel(&reusable_pixels));
 
-        let reflectivity_cache = ViewportMomentCache::new(&volume, 0, MomentType::Reflectivity)
+        let reflectivity_cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh)
             .expect("viewport reflectivity cache");
+        assert_eq!(reflectivity_cache.field_name(), &FieldName::Dbzh);
+        assert_eq!(reflectivity_cache.sweep_index(), 0);
         reusable_pixels.fill(255);
         let dimensions = reflectivity_cache
-            .render_moment_rgba_into(&volume, options, &mut reusable_pixels)
+            .render_field_rgba_into(&volume, options, &mut reusable_pixels)
             .expect("cached viewport reflectivity");
         assert_eq!(dimensions, (333, 217));
         assert!(has_visible_pixel(&reusable_pixels));
@@ -4158,6 +4774,7 @@ mod tests {
         let storm_relative = render_storm_relative_velocity_viewport_image(
             &volume,
             0,
+            &FieldName::Vradh,
             StormMotion {
                 direction_deg: 45.0,
                 speed_mps: 10.0,
@@ -4172,6 +4789,7 @@ mod tests {
         let dimensions = render_storm_relative_velocity_viewport_rgba_into(
             &volume,
             0,
+            &FieldName::Vradh,
             StormMotion {
                 direction_deg: 45.0,
                 speed_mps: 10.0,
@@ -4184,7 +4802,7 @@ mod tests {
         assert!(has_visible_pixel(&storm_relative_pixels));
         assert!(has_transparent_pixel(&storm_relative_pixels));
 
-        let velocity_cache = ViewportMomentCache::new(&volume, 0, MomentType::Velocity)
+        let velocity_cache = ViewportFieldCache::new(&volume, 0, &FieldName::Vradh)
             .expect("viewport velocity cache");
         storm_relative_pixels.fill(255);
         let dimensions = velocity_cache
@@ -4204,7 +4822,55 @@ mod tests {
     }
 
     #[test]
-    fn viewport_sample_cache_matches_direct_moment_render() {
+    fn storm_relative_rendering_needs_a_radial_velocity() {
+        let volume = test_volume();
+        let options = sample_viewport_options();
+        let err = render_storm_relative_velocity_viewport_image(
+            &volume,
+            0,
+            &FieldName::Dbzh,
+            StormMotion {
+                direction_deg: 45.0,
+                speed_mps: 10.0,
+            },
+            options,
+        )
+        .expect_err("reflectivity has no storm-relative form");
+        assert!(matches!(
+            err,
+            RenderError::NotRadialVelocity {
+                field: FieldName::Dbzh
+            }
+        ));
+        let Err(err) = ViewportFieldCache::new_dealiased_velocity(&volume, 0, &FieldName::Dbzh)
+        else {
+            panic!("dealiasing needs a radial velocity");
+        };
+        assert!(matches!(err, RenderError::NotRadialVelocity { .. }));
+        let Err(err) = ViewportFieldCache::new(&volume, 0, &FieldName::Wradh) else {
+            panic!("the test sweep has no spectrum width");
+        };
+        assert!(matches!(
+            err,
+            RenderError::MissingField {
+                sweep_index: 0,
+                field: FieldName::Wradh
+            }
+        ));
+        let Err(err) = ViewportFieldCache::new(&volume, 3, &FieldName::Dbzh) else {
+            panic!("the test volume has one sweep");
+        };
+        assert!(matches!(
+            err,
+            RenderError::SweepOutOfRange {
+                index: 3,
+                sweep_count: 1
+            }
+        ));
+    }
+
+    #[test]
+    fn viewport_sample_cache_matches_direct_field_render() {
         let volume = test_volume();
         let options = ViewportRasterOptions {
             width: 333,
@@ -4215,7 +4881,7 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.0,
         };
-        let cache = ViewportMomentCache::new(&volume, 0, MomentType::Reflectivity)
+        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh)
             .expect("viewport reflectivity cache");
         let sample_cache = cache
             .build_sample_cache(&volume, options)
@@ -4224,10 +4890,10 @@ mod tests {
         let mut sample_cache_pixels = vec![255; viewport_rgba_buffer_len(options)];
 
         cache
-            .render_moment_rgba_into(&volume, options, &mut direct_pixels)
+            .render_field_rgba_into(&volume, options, &mut direct_pixels)
             .expect("direct viewport render");
         let dimensions = cache
-            .render_moment_rgba_with_sample_cache(&volume, &sample_cache, &mut sample_cache_pixels)
+            .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut sample_cache_pixels)
             .expect("sample-cache viewport render");
 
         assert_eq!(dimensions, (333, 217));
@@ -4238,7 +4904,7 @@ mod tests {
 
         let mut reused_pixels = direct_pixels.clone();
         cache
-            .render_moment_rgba_with_sample_cache_reusing_transparency(
+            .render_field_rgba_with_sample_cache_reusing_transparency(
                 &volume,
                 &sample_cache,
                 &mut reused_pixels,
@@ -4259,10 +4925,10 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.0,
         };
-        let reflectivity_cache = ViewportMomentCache::new(&volume, 0, MomentType::Reflectivity)
-            .expect("reflectivity cache");
+        let reflectivity_cache =
+            ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).expect("reflectivity cache");
         let velocity_cache =
-            ViewportMomentCache::new(&volume, 0, MomentType::Velocity).expect("velocity cache");
+            ViewportFieldCache::new(&volume, 0, &FieldName::Vradh).expect("velocity cache");
         let geometry_cache = reflectivity_cache
             .build_geometry_cache(&volume, options)
             .expect("geometry cache");
@@ -4276,19 +4942,63 @@ mod tests {
         let mut direct_pixels = vec![255; viewport_rgba_buffer_len(options)];
 
         velocity_cache
-            .render_moment_rgba_with_sample_cache(
+            .render_field_rgba_with_sample_cache(
                 &volume,
                 &geometry_sample_cache,
                 &mut geometry_pixels,
             )
             .expect("geometry-derived sample render");
         velocity_cache
-            .render_moment_rgba_with_sample_cache(&volume, &direct_sample_cache, &mut direct_pixels)
+            .render_field_rgba_with_sample_cache(&volume, &direct_sample_cache, &mut direct_pixels)
             .expect("direct sample render");
 
         assert_eq!(geometry_cache.dimensions(), (333, 217));
         assert!(geometry_cache.sample_count() >= geometry_sample_cache.sample_count());
         assert_eq!(geometry_pixels, direct_pixels);
+    }
+
+    #[test]
+    fn viewport_geometry_cache_rejects_a_different_gate_geometry() {
+        // A field with other gates cannot reuse a geometry cache built for
+        // the sweep's 1 km reflectivity.
+        let mut volume = test_volume();
+        let sweep = &mut volume.sweeps[0];
+        // 500 m gates from a 250 m centre: their edges line up with the
+        // 1 km gates, so the range refines to 500 m.
+        let mapping = sweep.attach_geometry(250.0, 500.0, 12).unwrap();
+        assert_eq!(
+            mapping,
+            GateMapping {
+                start: 1,
+                stride: 1
+            }
+        );
+        assert_eq!(
+            sweep.fields[0].gates,
+            GateMapping {
+                start: 0,
+                stride: 2
+            }
+        );
+        let mut fine = u8_field(FieldName::Wradh, mapping, 12, 1.0, 0.0);
+        for ray in 0..4 {
+            fine.push_row_u8(ray, &[30; 12]).unwrap();
+        }
+        sweep.add_field(fine).unwrap();
+        sweep.seal().unwrap();
+        let options = sample_viewport_options();
+        let coarse = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).unwrap();
+        let fine = ViewportFieldCache::new(&volume, 0, &FieldName::Wradh).unwrap();
+        let geometry_cache = coarse.build_geometry_cache(&volume, options).unwrap();
+        assert!(matches!(
+            fine.build_sample_cache_from_geometry_cache(&volume, &geometry_cache),
+            Err(RenderError::GeometryCacheMismatch)
+        ));
+        assert!(
+            coarse
+                .build_sample_cache_from_geometry_cache(&volume, &geometry_cache)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -4307,8 +5017,7 @@ mod tests {
             direction_deg: 45.0,
             speed_mps: 10.0,
         };
-        let cache =
-            ViewportMomentCache::new(&volume, 0, MomentType::Velocity).expect("velocity cache");
+        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Vradh).expect("velocity cache");
         let sample_cache = cache
             .build_sample_cache(&volume, options)
             .expect("velocity sample cache");
@@ -4359,6 +5068,23 @@ mod tests {
             )
             .expect("reused next SRV viewport render");
         assert_eq!(reused_next_pixels, cleared_next_pixels);
+
+        // The byte palette cache draws the same pixels.
+        let palette_cache = cache
+            .build_storm_relative_velocity_palette_cache(&volume, storm_motion)
+            .expect("palette cache")
+            .expect("u8 velocity has a palette cache");
+        let mut palette_pixels = vec![255; viewport_rgba_buffer_len(options)];
+        cache
+            .render_storm_relative_velocity_rgba_into_with_palette_cache(
+                &volume,
+                storm_motion,
+                &palette_cache,
+                options,
+                &mut palette_pixels,
+            )
+            .expect("palette-cache SRV render");
+        assert_eq!(palette_pixels, direct_pixels);
     }
 
     #[test]
@@ -4373,24 +5099,24 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.0,
         };
-        let reflectivity_cache = ViewportMomentCache::new(&volume, 0, MomentType::Reflectivity)
-            .expect("reflectivity cache");
+        let reflectivity_cache =
+            ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).expect("reflectivity cache");
         let velocity_cache =
-            ViewportMomentCache::new(&volume, 0, MomentType::Velocity).expect("velocity cache");
+            ViewportFieldCache::new(&volume, 0, &FieldName::Vradh).expect("velocity cache");
         let sample_cache = reflectivity_cache
             .build_sample_cache(&volume, options)
             .expect("reflectivity sample cache");
         let mut pixels = vec![0; viewport_rgba_buffer_len(options)];
 
         let err = velocity_cache
-            .render_moment_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)
-            .expect_err("sample cache should be moment-bound");
+            .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut pixels)
+            .expect_err("sample cache should be field-bound");
 
         assert!(matches!(
             err,
-            RenderError::CacheMomentMismatch {
-                expected: MomentType::Velocity,
-                actual: MomentType::Reflectivity
+            RenderError::CacheFieldMismatch {
+                expected: FieldName::Vradh,
+                actual: FieldName::Dbzh
             }
         ));
     }
@@ -4409,14 +5135,9 @@ mod tests {
         };
 
         let mut pixels = vec![0; viewport_rgba_buffer_len(options) - 4];
-        let err = render_moment_viewport_rgba_into(
-            &volume,
-            0,
-            MomentType::Reflectivity,
-            options,
-            &mut pixels,
-        )
-        .expect_err("wrong buffer size should be rejected");
+        let err =
+            render_field_viewport_rgba_into(&volume, 0, &FieldName::Dbzh, options, &mut pixels)
+                .expect_err("wrong buffer size should be rejected");
 
         assert!(matches!(err, RenderError::BufferSizeMismatch { .. }));
     }
@@ -4434,19 +5155,19 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.0,
         };
-        let cache = ViewportMomentCache::new(&volume, 0, MomentType::Reflectivity)
+        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh)
             .expect("viewport reflectivity cache");
         let mut pixels = vec![0; viewport_rgba_buffer_len(options)];
 
         let err = cache
-            .render_moment_rgba_into(&other_volume, options, &mut pixels)
+            .render_field_rgba_into(&other_volume, options, &mut pixels)
             .expect_err("cache should be bound to its source volume");
 
         assert!(matches!(err, RenderError::CacheVolumeMismatch));
     }
 
     #[test]
-    fn viewport_cache_renders_u16_palette_moments() {
+    fn viewport_cache_renders_u16_palette_fields() {
         let volume = test_u16_volume();
         let options = ViewportRasterOptions {
             width: 96,
@@ -4457,17 +5178,218 @@ mod tests {
             km_per_px_y: 0.5,
             rotation_rad: 0.0,
         };
-        let cache = ViewportMomentCache::new(&volume, 0, MomentType::Reflectivity)
+        let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh)
             .expect("viewport u16 reflectivity cache");
         let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
 
         let dimensions = cache
-            .render_moment_rgba_into(&volume, options, &mut pixels)
+            .render_field_rgba_into(&volume, options, &mut pixels)
             .expect("cached u16 viewport reflectivity");
 
         assert_eq!(dimensions, (96, 96));
         assert!(has_visible_pixel(&pixels));
         assert!(has_transparent_pixel(&pixels));
+
+        // The wide palette covers exactly the codes present.
+        let FieldValues::U16(values, coding) = field_values(field_of(&volume, &FieldName::Dbzh))
+        else {
+            panic!("u16 storage");
+        };
+        let tables = ColorTableSet::default();
+        let palette = build_wide_palette(
+            values,
+            &coding,
+            tables.for_family(ColorTableFamily::Reflectivity),
+        );
+        assert_eq!(palette.len(), 181);
+    }
+
+    #[test]
+    fn every_storage_type_renders_the_same_physical_values() {
+        // The same 4 x 6 reflectivity plane in every `FieldData` encoding
+        // draws identical pixels through the PNG raster, the viewport
+        // raster and the sample cache.
+        let expected = render_field_image(&test_volume(), 0, &FieldName::Dbzh, raster()).unwrap();
+        assert!(has_visible_pixel(expected.as_raw()));
+        let options = sample_viewport_options();
+        let (_, _, expected_viewport) =
+            render_field_viewport_rgba(&test_volume(), 0, &FieldName::Dbzh, options).unwrap();
+        assert!(has_visible_pixel(&expected_viewport));
+
+        let rows: [[u8; 6]; 4] = [[20, 30, 40, 50, 60, 70]; 4];
+        let physical: Vec<f32> = rows.iter().flatten().map(|raw| f32::from(*raw)).collect();
+        let cf = |width| LinearTransform::CfScaleOffset {
+            scale_factor: 0.5,
+            add_offset: 0.0,
+            attr_width: width,
+        };
+        let variants: Vec<FieldData> = vec![
+            FieldData::I8 {
+                values: physical.iter().map(|value| *value as i8).collect(),
+                coding: IntCoding {
+                    transform: LinearTransform::CfScaleOffset {
+                        scale_factor: 1.0,
+                        add_offset: 0.0,
+                        attr_width: recast_radar_core::model::FloatWidth::F32,
+                    },
+                    fill_value: Some(-128),
+                    undetect: None,
+                    range_folded: None,
+                    valid_range: None,
+                },
+            },
+            FieldData::U16 {
+                values: physical.iter().map(|value| (*value * 2.0) as u16).collect(),
+                coding: IntCoding {
+                    transform: LinearTransform::IcdScaleOffset {
+                        scale: 2.0,
+                        offset: 0.0,
+                    },
+                    fill_value: Some(0),
+                    undetect: None,
+                    range_folded: Some(1),
+                    valid_range: None,
+                },
+            },
+            FieldData::I16 {
+                values: physical.iter().map(|value| (*value * 2.0) as i16).collect(),
+                coding: IntCoding {
+                    transform: cf(recast_radar_core::model::FloatWidth::F64),
+                    fill_value: Some(-32768),
+                    undetect: None,
+                    range_folded: None,
+                    valid_range: None,
+                },
+            },
+            FieldData::F32 {
+                values: physical.clone(),
+                coding: FloatCoding::default(),
+            },
+            FieldData::F64 {
+                values: physical.iter().map(|value| f64::from(*value)).collect(),
+                coding: FloatCoding {
+                    transform: None,
+                    fill_value: Some(-9999.0),
+                    undetect: None,
+                },
+            },
+        ];
+        for data in variants {
+            let dtype = data.dtype();
+            let mut volume = test_volume();
+            let sweep = &mut volume.sweeps[0];
+            let mapping = sweep.fields[0].gates;
+            sweep.fields.clear();
+            sweep
+                .add_field(Field::new(FieldName::Dbzh, mapping, 6, data))
+                .unwrap();
+            sweep.seal().unwrap();
+            let image = render_field_image(&volume, 0, &FieldName::Dbzh, raster()).unwrap();
+            assert_eq!(image.as_raw(), expected.as_raw(), "{dtype} PNG raster");
+            let cache = ViewportFieldCache::new(&volume, 0, &FieldName::Dbzh).unwrap();
+            let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
+            cache
+                .render_field_rgba_into(&volume, options, &mut pixels)
+                .unwrap();
+            assert_eq!(pixels, expected_viewport, "{dtype} viewport raster");
+            let sample_cache = cache.build_sample_cache(&volume, options).unwrap();
+            let mut cached = vec![255; viewport_rgba_buffer_len(options)];
+            cache
+                .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut cached)
+                .unwrap();
+            assert_eq!(cached, expected_viewport, "{dtype} sample cache");
+        }
+    }
+
+    #[test]
+    fn derived_and_resampled_fields_render_through_the_cache() {
+        let volume = test_volume();
+        let sweep = &volume.sweeps[0];
+        let tables = ColorTableSet::default();
+        let options = sample_viewport_options();
+
+        // A physical copy of the velocity drawn as a derived field.
+        let source = field_of(&volume, &FieldName::Vradh);
+        let derived = Field::new(
+            FieldName::parse("VEL_F32"),
+            source.gates,
+            source.ngates,
+            FieldData::F32 {
+                values: source.to_physical(),
+                coding: FloatCoding::default(),
+            },
+        );
+        let cache = ViewportFieldCache::new_derived(
+            &volume,
+            0,
+            derived,
+            &sweep.range,
+            ColorTableFamily::Velocity,
+            &tables,
+        )
+        .unwrap();
+        let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
+        cache
+            .render_field_rgba_into(&volume, options, &mut pixels)
+            .unwrap();
+        let mut native = vec![255; viewport_rgba_buffer_len(options)];
+        ViewportFieldCache::new(&volume, 0, &FieldName::Vradh)
+            .unwrap()
+            .render_field_rgba_into(&volume, options, &mut native)
+            .unwrap();
+        // Raw 0 and 1 are blank / range folded in the native field and NaN
+        // in the physical copy; the test rows hold neither, so the two agree.
+        assert_eq!(pixels, native);
+
+        // A display-resampled field: twice the rows on its own azimuths.
+        let mut resampled = Field::new(
+            FieldName::parse("DBZH_DISPLAY"),
+            GateMapping::IDENTITY,
+            6,
+            FieldData::U8 {
+                values: Vec::new(),
+                coding: IntCoding::new(LinearTransform::IcdScaleOffset {
+                    scale: 1.0,
+                    offset: 0.0,
+                }),
+            },
+        );
+        let row_azimuths: Vec<f32> = (0..8).map(|row| row as f32 * 45.0).collect();
+        for row in 0..8 {
+            resampled
+                .push_row_u8(row, &[20, 30, 40, 50, 60, 70])
+                .unwrap();
+        }
+        let cache = ViewportFieldCache::new_resampled(
+            &volume,
+            0,
+            resampled,
+            &sweep.range,
+            &row_azimuths,
+            ColorTableFamily::Reflectivity,
+            &tables,
+        )
+        .unwrap();
+        let mut pixels = vec![255; viewport_rgba_buffer_len(options)];
+        cache
+            .render_field_rgba_into(&volume, options, &mut pixels)
+            .unwrap();
+        assert!(has_visible_pixel(&pixels));
+        assert!(has_transparent_pixel(&pixels));
+        let sample_cache = cache.build_sample_cache(&volume, options).unwrap();
+        let mut cached = vec![255; viewport_rgba_buffer_len(options)];
+        cache
+            .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut cached)
+            .unwrap();
+        assert_eq!(cached, pixels);
+    }
+
+    fn raster() -> RasterOptions {
+        RasterOptions {
+            width: 96,
+            height: 96,
+            range_fraction: 94,
+        }
     }
 
     fn has_visible_pixel(pixels: &[u8]) -> bool {
@@ -4481,7 +5403,7 @@ mod tests {
     fn viewport_lookup_reference(
         x: u32,
         y: u32,
-        grid: &MomentGrid,
+        gates: FieldGeometry,
         row_lookup: &AzimuthLookup,
         geometry: ViewportGeometry,
     ) -> Option<SampleLookup> {
@@ -4493,10 +5415,8 @@ mod tests {
             return None;
         }
 
-        let gate = ((range_m - grid.gate_range.first_gate_m as f32)
-            / grid.gate_range.gate_spacing_m.max(1) as f32)
-            .round() as isize;
-        if gate < 0 || gate as usize >= grid.gate_range.gate_count {
+        let gate = ((range_m - gates.first_gate_m()) / gates.lookup_spacing_m()).round() as isize;
+        if gate < 0 || gate as usize >= gates.gate_count {
             return None;
         }
 
@@ -4508,104 +5428,123 @@ mod tests {
         })
     }
 
-    fn test_volume() -> RadarVolume {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: 6,
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
-        for azimuth_deg in [0.0, 90.0, 180.0, 270.0] {
-            cut.radials.push(Radial {
-                azimuth_deg,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: Some(32.0),
-                radial_status: None,
-            });
-        }
+    /// A `u8` field with the legacy unit-test coding: `(raw - offset) /
+    /// scale`, raw 0 blank, raw 1 range folded.
+    fn u8_field(
+        name: FieldName,
+        gates: GateMapping,
+        ngates: u32,
+        scale: f32,
+        offset: f32,
+    ) -> Field {
+        Field::new(
+            name,
+            gates,
+            ngates,
+            FieldData::U8 {
+                values: Vec::new(),
+                coding: IntCoding {
+                    transform: LinearTransform::IcdScaleOffset { scale, offset },
+                    fill_value: Some(0),
+                    undetect: None,
+                    range_folded: Some(1),
+                    valid_range: None,
+                },
+            },
+        )
+    }
 
-        let mut reflectivity = MomentGrid::new_u8(
-            MomentType::Reflectivity,
-            gate_range.clone(),
-            1.0,
-            0.0,
-            Some(0),
-            Some(1),
-        );
-        let mut velocity = MomentGrid::new_u8(
-            MomentType::Velocity,
-            gate_range,
-            1.0,
-            64.0,
-            Some(0),
-            Some(1),
-        );
-        for radial_index in 0..4 {
+    fn field_of<'a>(volume: &'a Volume, name: &FieldName) -> &'a Field {
+        volume.sweeps[0].field(name).expect("test field")
+    }
+
+    fn view_of<'a>(volume: &'a Volume, name: &FieldName) -> FieldView<'a> {
+        view_on(field_of(volume, name), &volume.sweeps[0].range, 0).expect("test field geometry")
+    }
+
+    /// One sweep at 0.5 deg with four rays (N, E, S, W), 6 gates of 1 km from
+    /// 0 m, `u8` reflectivity and velocity.
+    fn test_volume() -> Volume {
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        sweep.elevation_number = Some(1);
+        let mapping = sweep.attach_geometry(0.0, 1_000.0, 6).unwrap();
+        for azimuth_deg in [0.0, 90.0, 180.0, 270.0] {
+            sweep.push_ray(0.0, azimuth_deg, 0.5);
+        }
+        sweep.ray_vars.nyquist_velocity_mps = Some(vec![32.0; 4]);
+
+        let mut reflectivity = u8_field(FieldName::Dbzh, mapping, 6, 1.0, 0.0);
+        let mut velocity = u8_field(FieldName::Vradh, mapping, 6, 1.0, 64.0);
+        for ray in 0..4 {
             reflectivity
-                .push_u8_row_slice(radial_index, &[20, 30, 40, 50, 60, 70])
+                .push_row_u8(ray, &[20, 30, 40, 50, 60, 70])
                 .expect("reflectivity row");
             velocity
-                .push_u8_row_slice(radial_index, &[44, 54, 64, 74, 84, 94])
+                .push_row_u8(ray, &[44, 54, 64, 74, 84, 94])
                 .expect("velocity row");
         }
-        cut.moments.insert(MomentType::Reflectivity, reflectivity);
-        cut.moments.insert(MomentType::Velocity, velocity);
+        sweep.add_field(reflectivity).unwrap();
+        sweep.add_field(velocity).unwrap();
 
-        let mut volume = RadarVolume::new(RadarSite::new("TST"), chrono::Utc::now());
-        volume.cuts.push(cut);
+        let mut volume = Volume::new("TST", chrono::Utc::now());
+        volume.sweeps.push(sweep);
+        volume.seal().unwrap();
         volume
     }
 
-    fn test_u16_volume() -> RadarVolume {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 1_000,
-            gate_count: 6,
-        };
-        let mut cut = ElevationCut::new(0.5, Some(1));
+    fn test_u16_volume() -> Volume {
+        let mut sweep = Sweep::new(0, SweepMode::AzimuthSurveillance, 0.5);
+        sweep.elevation_number = Some(1);
+        let mapping = sweep.attach_geometry(0.0, 1_000.0, 6).unwrap();
         for azimuth_deg in [0.0, 90.0, 180.0, 270.0] {
-            cut.radials.push(Radial {
-                azimuth_deg,
-                elevation_deg: 0.5,
-                time_offset_ms: 0,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: None,
-                radial_status: None,
-            });
+            sweep.push_ray(0.0, azimuth_deg, 0.5);
         }
 
-        let mut reflectivity = MomentGrid::new_u16(
-            MomentType::Reflectivity,
-            gate_range,
-            2.0,
-            64.0,
-            Some(0),
-            Some(1),
+        let mut reflectivity = Field::new(
+            FieldName::Dbzh,
+            mapping,
+            6,
+            FieldData::U16 {
+                values: Vec::new(),
+                coding: IntCoding {
+                    transform: LinearTransform::IcdScaleOffset {
+                        scale: 2.0,
+                        offset: 64.0,
+                    },
+                    fill_value: Some(0),
+                    undetect: None,
+                    range_folded: Some(1),
+                    valid_range: None,
+                },
+            },
         );
-        for radial_index in 0..4 {
+        for ray in 0..4 {
+            let row: Vec<u8> = [80u16, 100, 120, 140, 160, 180]
+                .iter()
+                .flat_map(|value| value.to_be_bytes())
+                .collect();
             reflectivity
-                .push_row(
-                    radial_index,
-                    MomentRow::U16(vec![80, 100, 120, 140, 160, 180]),
-                )
+                .push_row_u16_be(ray, &row)
                 .expect("u16 reflectivity row");
         }
-        cut.moments.insert(MomentType::Reflectivity, reflectivity);
+        sweep.add_field(reflectivity).unwrap();
 
-        let mut volume = RadarVolume::new(RadarSite::new("U16"), chrono::Utc::now());
-        volume.cuts.push(cut);
+        let mut volume = Volume::new("U16", chrono::Utc::now());
+        volume.sweeps.push(sweep);
+        volume.seal().unwrap();
         volume
     }
 }
 
-/// Derived grids from `recast-radar-map` drawn through the viewport cache
-/// (moved here from the volumetric tests when the algorithms left this crate).
+/// Derived grids from `recast-radar-map` drawn through the viewport cache.
+/// `recast-radar-map` still produces legacy `MomentGrid`s, so this test
+/// bridges them into fields; it moves to the native API when `map` migrates.
 #[cfg(test)]
-mod derived_product_tests {
+#[allow(deprecated, clippy::unwrap_used, clippy::expect_used)]
+mod legacy_bridge_tests {
+    use recast_radar_core::legacy::{self, LegacyConvention};
     use recast_radar_core::{
-        ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType, RadarVolume, Radial,
+        ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType, RadarVolume, Radial, Volume,
     };
     use recast_radar_map::{
         ECHO_TOP_THRESHOLD_DBZ, composite_reflectivity_grid, echo_top_grid, vil_grid,
@@ -4652,16 +5591,28 @@ mod derived_product_tests {
     #[test]
     fn derived_products_render_through_viewport_cache() {
         // End-to-end: compute each derived grid and render it through the same
-        // ViewportMomentCache path the GUI worker uses, with its dedicated
+        // ViewportFieldCache path the GUI worker uses, with its dedicated
         // color family. Asserts the render produces opaque pixels (no panic,
         // correct plumbing).
         use crate::color::{ColorTableFamily, ColorTableSet};
-        use crate::{ViewportMomentCache, ViewportRasterOptions, viewport_rgba_buffer_len};
+        use crate::{ViewportFieldCache, ViewportRasterOptions, viewport_rgba_buffer_len};
 
-        let v = volume_with(vec![
+        let legacy_volume = volume_with(vec![
             cut_with_ref(0.5, 360, 120, 45.0),
             cut_with_ref(3.0, 360, 120, 50.0),
         ]);
+        let cases = [
+            (
+                composite_reflectivity_grid(&legacy_volume),
+                ColorTableFamily::Reflectivity,
+            ),
+            (
+                echo_top_grid(&legacy_volume, ECHO_TOP_THRESHOLD_DBZ),
+                ColorTableFamily::EchoTops,
+            ),
+            (vil_grid(&legacy_volume), ColorTableFamily::Vil),
+        ];
+        let v = Volume::try_from(legacy_volume).expect("FM301 volume");
         let tables = ColorTableSet::default();
         let opts = ViewportRasterOptions {
             width: 256,
@@ -4672,24 +5623,21 @@ mod derived_product_tests {
             km_per_px_y: 1.0,
             rotation_rad: 0.0,
         };
-        let cases = [
-            (
-                composite_reflectivity_grid(&v),
-                ColorTableFamily::Reflectivity,
-            ),
-            (
-                echo_top_grid(&v, ECHO_TOP_THRESHOLD_DBZ),
-                ColorTableFamily::EchoTops,
-            ),
-            (vil_grid(&v), ColorTableFamily::Vil),
-        ];
         for (grid, family) in cases {
             let grid = grid.expect("derived grid");
-            let cache = ViewportMomentCache::new_derived(&v, 0, grid, family, &tables)
-                .expect("derived cache");
+            // The derived field lies on sweep 0's rays and range.
+            let mut scratch = v.sweeps[0].clone();
+            scratch.fields.clear();
+            let (index, _) =
+                legacy::field_from_grid(&grid, &mut scratch, LegacyConvention::Generic)
+                    .expect("derived field");
+            let field = scratch.fields.swap_remove(index);
+            let cache =
+                ViewportFieldCache::new_derived(&v, 0, field, &scratch.range, family, &tables)
+                    .expect("derived cache");
             let mut pixels = vec![0u8; viewport_rgba_buffer_len(opts)];
             cache
-                .render_moment_rgba_into(&v, opts, &mut pixels)
+                .render_field_rgba_into(&v, opts, &mut pixels)
                 .expect("render");
             assert!(
                 pixels.chunks_exact(4).any(|p| p[3] > 0),
