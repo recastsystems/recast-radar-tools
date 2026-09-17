@@ -1095,8 +1095,14 @@ dependencies = [
  "rayon",
  "recast-radar-core",
  "recast-radar-correct",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-dorade",
+ "recast-radar-io-jma",
  "recast-radar-io-nexrad",
+ "recast-radar-io-odim",
  "recast-radar-map",
+ "recast-radar-testdata",
+ "serde_json",
  "thiserror",
 ]
 

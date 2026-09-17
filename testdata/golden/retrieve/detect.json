@@ -1,0 +1,137 @@
+{
+ "source": "tools/retrieve_golden.py detect; SPC 1950-2024_actual_tornadoes.csv, Py-ART 2.2.5 read_nexrad_archive, MetPy 1.7.1 Level2File",
+ "tornadoes": [
+  {
+   "id": "l2-kdgx-20230325-010651",
+   "radar": {
+    "latitude_deg": 32.279945373535156,
+    "longitude_deg": -89.98444366455078
+   },
+   "volume_time": "2023-03-25T01:06:51Z",
+   "doppler_sweep": 1,
+   "doppler_sweep_elevation_deg": 0.31,
+   "spc": {
+    "om": "622315",
+    "yr": "2023",
+    "mo": "03",
+    "dy": "24",
+    "date": "2023-03-24",
+    "time": "18:57:00",
+    "tz": "3",
+    "st": "MS",
+    "mag": "4",
+    "slat": "32.8400",
+    "slon": "-91.0000",
+    "elat": "33.2600",
+    "elon": "-90.1100",
+    "len": "59.2300",
+    "wid": "1320"
+   },
+   "assumed_duration_min": 71,
+   "ray_time": "2023-03-25T01:07:28Z",
+   "path_fraction": 0.1476,
+   "latitude_deg": 32.902,
+   "longitude_deg": -90.8686,
+   "east_km": -82.55,
+   "north_km": 69.51,
+   "azimuth_deg": 310.1,
+   "range_km": 107.92
+  },
+  {
+   "id": "l2-koax-20140616-205305",
+   "radar": {
+    "latitude_deg": 41.320369720458984,
+    "longitude_deg": -96.3668212890625
+   },
+   "volume_time": "2014-06-16T20:53:05Z",
+   "doppler_sweep": 1,
+   "doppler_sweep_elevation_deg": 0.47,
+   "spc": {
+    "om": "514013",
+    "yr": "2014",
+    "mo": "06",
+    "dy": "16",
+    "date": "2014-06-16",
+    "time": "14:42:00",
+    "tz": "3",
+    "st": "NE",
+    "mag": "4",
+    "slat": "41.893",
+    "slon": "-97.33",
+    "elat": "42.0441",
+    "elon": "-97.2105",
+    "len": "12.11",
+    "wid": "400"
+   },
+   "assumed_duration_min": 32,
+   "ray_time": "2014-06-16T20:53:33Z",
+   "path_fraction": 0.361,
+   "latitude_deg": 41.9476,
+   "longitude_deg": -97.2869,
+   "east_km": -76.09,
+   "north_km": 70.14,
+   "azimuth_deg": 312.67,
+   "range_km": 103.49
+  },
+  {
+   "id": "l2-ktlx-20130520-201643",
+   "radar": {
+    "latitude_deg": 35.33305740356445,
+    "longitude_deg": -97.27748107910156
+   },
+   "volume_time": "2013-05-20T20:16:43Z",
+   "doppler_sweep": 1,
+   "doppler_sweep_elevation_deg": 0.52,
+   "spc": {
+    "om": "451537",
+    "yr": "2013",
+    "mo": "05",
+    "dy": "20",
+    "date": "2013-05-20",
+    "time": "13:56:00",
+    "tz": "3",
+    "st": "OK",
+    "mag": "5",
+    "slat": "35.284",
+    "slon": "-97.628",
+    "elat": "35.341",
+    "elon": "-97.3999",
+    "len": "13.85",
+    "wid": "1900"
+   },
+   "assumed_duration_min": 39,
+   "ray_time": "2013-05-20T20:17:06Z",
+   "path_fraction": 0.5411,
+   "latitude_deg": 35.3148,
+   "longitude_deg": -97.5046,
+   "east_km": -20.61,
+   "north_km": -2.0,
+   "azimuth_deg": 264.45,
+   "range_km": 20.7
+  }
+ ],
+ "quiet": [
+  {
+   "id": "l2-ktlx-20240515-000014",
+   "vcp": 35,
+   "sweeps": 12,
+   "velocity_sweeps": 9,
+   "max_reflectivity_dbz": 41.5,
+   "gates_ge_20_dbz": 2152
+  },
+  {
+   "id": "l2-kmaf-20230331-230843",
+   "vcp": 31,
+   "sweeps": 8,
+   "velocity_sweeps": 5,
+   "max_reflectivity_dbz": 45.5,
+   "gates_ge_20_dbz": 7946
+  }
+ ],
+ "single_doppler_tilt": {
+  "id": "l2-ktlx-20130520-201643-trim",
+  "sweeps": 2,
+  "velocity_sweeps": 1,
+  "radials": [480,480]
+ }
+}

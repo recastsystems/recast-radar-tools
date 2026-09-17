@@ -1,0 +1,1377 @@
+{
+ "source": "tools/retrieve_golden.py vwp; Py-ART 2.2.5 read_nexrad_archive, dealias_region_based and vad_browning, MetPy 1.7.1 Level2File, numpy VAD (Browning and Wexler 1968) as documented in vwp.rs",
+ "cases": [
+  {
+   "id": "l2-kbox-20220129-150537",
+   "sweeps": 18,
+   "velocity_sweeps": [1,3,5,6,7,8,9,10,11,12,13,14,15,16,17],
+   "radar_altitude_m": 70.0,
+   "config": {
+    "min_slant_m": 5000.0,
+    "max_slant_m": 150000.0,
+    "annulus_m": 2000.0,
+    "max_mismatch_m": 300.0
+   },
+   "levels": [
+    {
+     "target_m": 500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 7,
+      "height_m_agl": 498.1889,
+      "slant_range_m": 11625.0,
+      "elevation_deg": 2.417,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0382,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.6487
+     },
+     "rejection": null,
+     "wind": {
+      "u": -6.8382,
+      "v": -28.8226,
+      "bias": 0.2335,
+      "std_error": 0.0687,
+      "quality": "Good",
+      "speed": 29.6226,
+      "direction": 13.3467
+     },
+     "pyart_vad_browning": {
+      "u": -8.1339,
+      "v": -27.882
+     }
+    },
+    {
+     "target_m": 1000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 13,
+      "height_m_agl": 1019.688,
+      "slant_range_m": 5875.0,
+      "elevation_deg": 9.9756,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.019,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.4112
+     },
+     "rejection": null,
+     "wind": {
+      "u": -20.7597,
+      "v": -26.1419,
+      "bias": -0.2708,
+      "std_error": 0.0442,
+      "quality": "Good",
+      "speed": 33.3821,
+      "direction": 38.4537
+     },
+     "pyart_vad_browning": {
+      "u": -17.7257,
+      "v": -26.289
+     }
+    },
+    {
+     "target_m": 1500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 1713.1215,
+      "slant_range_m": 5125.0,
+      "elevation_deg": 19.5117,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.4895
+     },
+     "rejection": null,
+     "wind": {
+      "u": -22.3701,
+      "v": -18.0597,
+      "bias": -0.4099,
+      "std_error": 0.055,
+      "quality": "Good",
+      "speed": 28.7502,
+      "direction": 51.0856
+     },
+     "pyart_vad_browning": {
+      "u": -22.1669,
+      "v": -19.7792
+     }
+    },
+    {
+     "target_m": 2000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 1964.0525,
+      "slant_range_m": 5875.0,
+      "elevation_deg": 19.5117,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.6519
+     },
+     "rejection": null,
+     "wind": {
+      "u": -22.4806,
+      "v": -16.6624,
+      "bias": -0.7376,
+      "std_error": 0.0732,
+      "quality": "Good",
+      "speed": 27.9824,
+      "direction": 53.4546
+     },
+     "pyart_vad_browning": {
+      "u": -22.2534,
+      "v": -17.2643
+     }
+    },
+    {
+     "target_m": 2500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 2466.0909,
+      "slant_range_m": 7375.0,
+      "elevation_deg": 19.5117,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.8845
+     },
+     "rejection": null,
+     "wind": {
+      "u": -22.9617,
+      "v": -14.228,
+      "bias": -0.6459,
+      "std_error": 0.0993,
+      "quality": "Good",
+      "speed": 27.0125,
+      "direction": 58.2159
+     },
+     "pyart_vad_browning": {
+      "u": -18.8234,
+      "v": -10.8378
+     }
+    },
+    {
+     "target_m": 3000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 7,
+      "height_m_agl": 2995.5637,
+      "slant_range_m": 65125.0,
+      "elevation_deg": 2.417,
+      "samples_total": 360,
+      "samples_used": 327,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 24.9939,
+      "outlier_fraction": 0.0917,
+      "rms_mps": 1.827
+     },
+     "rejection": null,
+     "wind": {
+      "u": -18.3653,
+      "v": -8.461,
+      "bias": -2.6808,
+      "std_error": 0.2048,
+      "quality": "Good",
+      "speed": 20.2206,
+      "direction": 65.2642
+     },
+     "pyart_vad_browning": {
+      "u": -17.5932,
+      "v": -3.3589
+     }
+    },
+    {
+     "target_m": 3500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 3470.8731,
+      "slant_range_m": 10375.0,
+      "elevation_deg": 19.5117,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 2.954
+     },
+     "rejection": null,
+     "wind": {
+      "u": -8.2249,
+      "v": 3.4425,
+      "bias": 0.6043,
+      "std_error": 0.3317,
+      "quality": "Good",
+      "speed": 8.9163,
+      "direction": 112.7117
+     },
+     "pyart_vad_browning": {
+      "u": -12.5253,
+      "v": 0.1707
+     }
+    },
+    {
+     "target_m": 4000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 7,
+      "height_m_agl": 4002.4193,
+      "slant_range_m": 84875.0,
+      "elevation_deg": 2.417,
+      "samples_total": 360,
+      "samples_used": 310,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 23.9914,
+      "outlier_fraction": 0.1389,
+      "rms_mps": 1.6219
+     },
+     "rejection": null,
+     "wind": {
+      "u": -15.1973,
+      "v": 8.4267,
+      "bias": -4.8545,
+      "std_error": 0.1886,
+      "quality": "Good",
+      "speed": 17.3772,
+      "direction": 119.0078
+     },
+     "pyart_vad_browning": {
+      "u": -13.7572,
+      "v": 5.2018
+     }
+    }
+   ]
+  },
+  {
+   "id": "l2-pahg-20250909-212549",
+   "sweeps": 18,
+   "velocity_sweeps": [1,3,5,6,7,8,9,10,11,12,13,14,15,16,17],
+   "radar_altitude_m": 108.0,
+   "config": {
+    "min_slant_m": 5000.0,
+    "max_slant_m": 150000.0,
+    "annulus_m": 2000.0,
+    "max_mismatch_m": 300.0
+   },
+   "levels": [
+    {
+     "target_m": 500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 10,
+      "height_m_agl": 505.9457,
+      "slant_range_m": 5625.0,
+      "elevation_deg": 5.1416,
+      "samples_total": 360,
+      "samples_used": 358,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 2.005,
+      "outlier_fraction": 0.0056,
+      "rms_mps": 1.0227
+     },
+     "rejection": null,
+     "wind": {
+      "u": -11.6424,
+      "v": -3.0296,
+      "bias": -0.6417,
+      "std_error": 0.109,
+      "quality": "Good",
+      "speed": 12.0301,
+      "direction": 75.4141
+     },
+     "pyart_vad_browning": {
+      "u": -11.3304,
+      "v": -2.7964
+     }
+    },
+    {
+     "target_m": 1000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 14,
+      "height_m_agl": 1062.9253,
+      "slant_range_m": 5125.0,
+      "elevation_deg": 11.9531,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.019,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.5936
+     },
+     "rejection": null,
+     "wind": {
+      "u": -12.7865,
+      "v": 5.4839,
+      "bias": -0.8736,
+      "std_error": 0.0642,
+      "quality": "Good",
+      "speed": 13.9129,
+      "direction": 113.2136
+     },
+     "pyart_vad_browning": {
+      "u": -12.2704,
+      "v": 4.7623
+     }
+    },
+    {
+     "target_m": 1500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 16,
+      "height_m_agl": 1470.309,
+      "slant_range_m": 5125.0,
+      "elevation_deg": 16.6553,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0245,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.7236
+     },
+     "rejection": null,
+     "wind": {
+      "u": -11.4105,
+      "v": 8.496,
+      "bias": -1.5783,
+      "std_error": 0.0799,
+      "quality": "Good",
+      "speed": 14.2261,
+      "direction": 126.6704
+     },
+     "pyart_vad_browning": {
+      "u": -11.874,
+      "v": 8.5113
+     }
+    },
+    {
+     "target_m": 2000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 1959.8056,
+      "slant_range_m": 5875.0,
+      "elevation_deg": 19.4678,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.7589
+     },
+     "rejection": null,
+     "wind": {
+      "u": -10.9979,
+      "v": 12.0264,
+      "bias": -0.7095,
+      "std_error": 0.0852,
+      "quality": "Good",
+      "speed": 16.2969,
+      "direction": 137.5577
+     },
+     "pyart_vad_browning": {
+      "u": -11.1856,
+      "v": 11.668
+     }
+    },
+    {
+     "target_m": 2500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 13,
+      "height_m_agl": 2501.9546,
+      "slant_range_m": 14375.0,
+      "elevation_deg": 9.9756,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.019,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.8219
+     },
+     "rejection": null,
+     "wind": {
+      "u": -11.793,
+      "v": 15.2757,
+      "bias": -0.1584,
+      "std_error": 0.0883,
+      "quality": "Good",
+      "speed": 19.2982,
+      "direction": 142.3313
+     },
+     "pyart_vad_browning": {
+      "u": -8.1273,
+      "v": 13.3569
+     }
+    },
+    {
+     "target_m": 3000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 11,
+      "height_m_agl": 2987.7398,
+      "slant_range_m": 26375.0,
+      "elevation_deg": 6.416,
+      "samples_total": 360,
+      "samples_used": 341,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 19.0009,
+      "outlier_fraction": 0.0528,
+      "rms_mps": 1.1588
+     },
+     "rejection": null,
+     "wind": {
+      "u": -6.8045,
+      "v": 16.3277,
+      "bias": 0.2779,
+      "std_error": 0.1272,
+      "quality": "Good",
+      "speed": 17.6888,
+      "direction": 157.3763
+     },
+     "pyart_vad_browning": {
+      "u": -5.8056,
+      "v": 14.0146
+     }
+    },
+    {
+     "target_m": 3500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 3463.3746,
+      "slant_range_m": 10375.0,
+      "elevation_deg": 19.4678,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.432
+     },
+     "rejection": null,
+     "wind": {
+      "u": -2.6978,
+      "v": 14.0687,
+      "bias": -0.6039,
+      "std_error": 0.0485,
+      "quality": "Good",
+      "speed": 14.325,
+      "direction": 169.1449
+     },
+     "pyart_vad_browning": {
+      "u": -4.2413,
+      "v": 14.3202
+     }
+    },
+    {
+     "target_m": 4000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 3965.0346,
+      "slant_range_m": 11875.0,
+      "elevation_deg": 19.4678,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.6435
+     },
+     "rejection": null,
+     "wind": {
+      "u": -0.5469,
+      "v": 13.5488,
+      "bias": -1.0858,
+      "std_error": 0.0722,
+      "quality": "Good",
+      "speed": 13.5599,
+      "direction": 177.6885
+     },
+     "pyart_vad_browning": {
+      "u": -2.7601,
+      "v": 15.0576
+     }
+    },
+    {
+     "target_m": 4500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 4466.9298,
+      "slant_range_m": 13375.0,
+      "elevation_deg": 19.4678,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.8749
+     },
+     "rejection": null,
+     "wind": {
+      "u": 1.2947,
+      "v": 14.0032,
+      "bias": -0.9233,
+      "std_error": 0.0982,
+      "quality": "Good",
+      "speed": 14.0629,
+      "direction": 185.2823
+     },
+     "pyart_vad_browning": {
+      "u": -1.8466,
+      "v": 15.6899
+     }
+    },
+    {
+     "target_m": 5000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 4969.06,
+      "slant_range_m": 14875.0,
+      "elevation_deg": 19.4678,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 1.181
+     },
+     "rejection": null,
+     "wind": {
+      "u": 2.0494,
+      "v": 15.6004,
+      "bias": -0.4497,
+      "std_error": 0.1326,
+      "quality": "Good",
+      "speed": 15.7344,
+      "direction": 187.4841
+     },
+     "pyart_vad_browning": {
+      "u": -1.371,
+      "v": 16.6411
+     }
+    },
+    {
+     "target_m": 5500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 5471.4253,
+      "slant_range_m": 16375.0,
+      "elevation_deg": 19.4678,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.9818
+     },
+     "rejection": null,
+     "wind": {
+      "u": 1.6948,
+      "v": 16.8232,
+      "bias": -0.0358,
+      "std_error": 0.1102,
+      "quality": "Good",
+      "speed": 16.9084,
+      "direction": 185.7526
+     },
+     "pyart_vad_browning": {
+      "u": -0.9673,
+      "v": 17.2624
+     }
+    },
+    {
+     "target_m": 6000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 5974.0255,
+      "slant_range_m": 17875.0,
+      "elevation_deg": 19.4678,
+      "samples_total": 360,
+      "samples_used": 360,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.0217,
+      "outlier_fraction": 0.0,
+      "rms_mps": 0.8156
+     },
+     "rejection": null,
+     "wind": {
+      "u": 1.2196,
+      "v": 17.4972,
+      "bias": -0.2635,
+      "std_error": 0.0916,
+      "quality": "Good",
+      "speed": 17.5397,
+      "direction": 183.9872
+     },
+     "pyart_vad_browning": {
+      "u": -0.114,
+      "v": 17.3329
+     }
+    }
+   ]
+  },
+  {
+   "id": "l2-kilx-20260418-013553",
+   "sweeps": 23,
+   "velocity_sweeps": [1,3,5,6,7,8,9,10,12,14,16,17,18,19,20,21,22],
+   "radar_altitude_m": 222.0,
+   "config": {
+    "min_slant_m": 5000.0,
+    "max_slant_m": 150000.0,
+    "annulus_m": 2000.0,
+    "max_mismatch_m": 300.0
+   },
+   "levels": [
+    {
+     "target_m": 500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 10,
+      "height_m_agl": 497.3517,
+      "slant_range_m": 5625.0,
+      "elevation_deg": 5.0537,
+      "samples_total": 360,
+      "samples_used": 359,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 1.9995,
+      "outlier_fraction": 0.0028,
+      "rms_mps": 1.4706
+     },
+     "rejection": null,
+     "wind": {
+      "u": 10.32,
+      "v": 25.0823,
+      "bias": -0.9253,
+      "std_error": 0.1565,
+      "quality": "Good",
+      "speed": 27.1224,
+      "direction": 202.3644
+     },
+     "pyart_vad_browning": {
+      "u": 11.0324,
+      "v": 23.4376
+     }
+    },
+    {
+     "target_m": 750.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 19,
+      "height_m_agl": 889.2957,
+      "slant_range_m": 5125.0,
+      "elevation_deg": 9.9756,
+      "samples_total": 360,
+      "samples_used": 347,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 11.011,
+      "outlier_fraction": 0.0361,
+      "rms_mps": 3.0091
+     },
+     "rejection": null,
+     "wind": {
+      "u": 16.6668,
+      "v": 21.6048,
+      "bias": -1.6184,
+      "std_error": 0.3299,
+      "quality": "Good",
+      "speed": 27.2864,
+      "direction": 217.648
+     },
+     "pyart_vad_browning": {
+      "u": 17.3498,
+      "v": 18.9915
+     }
+    },
+    {
+     "target_m": 1000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 20,
+      "height_m_agl": 1105.1832,
+      "slant_range_m": 5125.0,
+      "elevation_deg": 12.4365,
+      "samples_total": 360,
+      "samples_used": 346,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 4.9933,
+      "outlier_fraction": 0.0389,
+      "rms_mps": 2.0306
+     },
+     "rejection": null,
+     "wind": {
+      "u": 17.4262,
+      "v": 21.0794,
+      "bias": -0.8918,
+      "std_error": 0.2248,
+      "quality": "Good",
+      "speed": 27.3498,
+      "direction": 219.5804
+     },
+     "pyart_vad_browning": {
+      "u": 17.7774,
+      "v": 18.51
+     }
+    },
+    {
+     "target_m": 1250.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 1383.4835,
+      "slant_range_m": 5125.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 343,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 5.9903,
+      "outlier_fraction": 0.0472,
+      "rms_mps": 1.4979
+     },
+     "rejection": null,
+     "wind": {
+      "u": 17.4526,
+      "v": 20.2657,
+      "bias": -0.3314,
+      "std_error": 0.169,
+      "quality": "Good",
+      "speed": 26.745,
+      "direction": 220.7346
+     },
+     "pyart_vad_browning": {
+      "u": 17.8692,
+      "v": 18.2635
+     }
+    },
+    {
+     "target_m": 1500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 1518.611,
+      "slant_range_m": 5625.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 311,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 18.9871,
+      "outlier_fraction": 0.1361,
+      "rms_mps": 1.6801
+     },
+     "rejection": null,
+     "wind": {
+      "u": 18.5642,
+      "v": 19.2886,
+      "bias": -0.3241,
+      "std_error": 0.203,
+      "quality": "Good",
+      "speed": 26.7708,
+      "direction": 223.9037
+     },
+     "pyart_vad_browning": {
+      "u": 18.6406,
+      "v": 17.3527
+     }
+    },
+    {
+     "target_m": 1750.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 1721.3533,
+      "slant_range_m": 6375.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 282,
+      "azimuth_sectors": 11,
+      "max_azimuth_gap_deg": 35.9967,
+      "outlier_fraction": 0.2167,
+      "rms_mps": 1.7298
+     },
+     "rejection": null,
+     "wind": {
+      "u": 20.3825,
+      "v": 17.1274,
+      "bias": -0.6578,
+      "std_error": 0.2258,
+      "quality": "Good",
+      "speed": 26.6232,
+      "direction": 229.9597
+     },
+     "pyart_vad_browning": {
+      "u": 19.3686,
+      "v": 15.9259
+     }
+    },
+    {
+     "target_m": 2000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 1991.7718,
+      "slant_range_m": 7375.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 287,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 35.0024,
+      "outlier_fraction": 0.2028,
+      "rms_mps": 2.4856
+     },
+     "rejection": null,
+     "wind": {
+      "u": 21.4721,
+      "v": 15.3046,
+      "bias": -0.5849,
+      "std_error": 0.3185,
+      "quality": "Good",
+      "speed": 26.3682,
+      "direction": 234.5201
+     },
+     "pyart_vad_browning": {
+      "u": 19.7255,
+      "v": 14.5764
+     }
+    },
+    {
+     "target_m": 2250.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 2262.2995,
+      "slant_range_m": 8375.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 299,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 23.0026,
+      "outlier_fraction": 0.1694,
+      "rms_mps": 3.1763
+     },
+     "rejection": null,
+     "wind": {
+      "u": 23.1385,
+      "v": 12.6118,
+      "bias": -1.1418,
+      "std_error": 0.3906,
+      "quality": "Marginal",
+      "speed": 26.3524,
+      "direction": 241.4071
+     },
+     "pyart_vad_browning": {
+      "u": 19.7332,
+      "v": 13.8454
+     }
+    },
+    {
+     "target_m": 2500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 2532.9362,
+      "slant_range_m": 9375.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 302,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 24.0024,
+      "outlier_fraction": 0.1611,
+      "rms_mps": 3.4005
+     },
+     "rejection": null,
+     "wind": {
+      "u": 23.2113,
+      "v": 11.7221,
+      "bias": -0.4352,
+      "std_error": 0.4152,
+      "quality": "Marginal",
+      "speed": 26.0033,
+      "direction": 243.2055
+     },
+     "pyart_vad_browning": {
+      "u": 19.293,
+      "v": 13.7143
+     }
+    },
+    {
+     "target_m": 2750.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 2735.9853,
+      "slant_range_m": 10125.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 300,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 26.0129,
+      "outlier_fraction": 0.1667,
+      "rms_mps": 2.9477
+     },
+     "rejection": null,
+     "wind": {
+      "u": 23.1153,
+      "v": 11.5418,
+      "bias": -0.1404,
+      "std_error": 0.3611,
+      "quality": "Good",
+      "speed": 25.8366,
+      "direction": 243.4663
+     },
+     "pyart_vad_browning": {
+      "u": 18.923,
+      "v": 13.6854
+     }
+    },
+    {
+     "target_m": 3000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 3006.8129,
+      "slant_range_m": 11125.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 310,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 15.0128,
+      "outlier_fraction": 0.1389,
+      "rms_mps": 3.3671
+     },
+     "rejection": null,
+     "wind": {
+      "u": 21.9251,
+      "v": 11.822,
+      "bias": 0.6332,
+      "std_error": 0.4032,
+      "quality": "Marginal",
+      "speed": 24.9092,
+      "direction": 241.6665
+     },
+     "pyart_vad_browning": {
+      "u": 18.2779,
+      "v": 13.9577
+     }
+    },
+    {
+     "target_m": 3250.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 21,
+      "height_m_agl": 3277.7495,
+      "slant_range_m": 12125.0,
+      "elevation_deg": 15.6445,
+      "samples_total": 360,
+      "samples_used": 334,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 10.9973,
+      "outlier_fraction": 0.0722,
+      "rms_mps": 4.082
+     },
+     "rejection": null,
+     "wind": {
+      "u": 19.8635,
+      "v": 12.6602,
+      "bias": 1.7522,
+      "std_error": 0.4669,
+      "quality": "Marginal",
+      "speed": 23.555,
+      "direction": 237.4881
+     },
+     "pyart_vad_browning": {
+      "u": 17.7427,
+      "v": 14.2285
+     }
+    },
+    {
+     "target_m": 3500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 20,
+      "height_m_agl": 3487.2345,
+      "slant_range_m": 16125.0,
+      "elevation_deg": 12.4365,
+      "samples_total": 360,
+      "samples_used": 350,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 5.9958,
+      "outlier_fraction": 0.0278,
+      "rms_mps": 3.8064
+     },
+     "rejection": null,
+     "wind": {
+      "u": 18.3985,
+      "v": 11.6813,
+      "bias": 2.4382,
+      "std_error": 0.4186,
+      "quality": "Marginal",
+      "speed": 21.7935,
+      "direction": 237.5884
+     },
+     "pyart_vad_browning": {
+      "u": 18.548,
+      "v": 12.5527
+     }
+    },
+    {
+     "target_m": 3750.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 9,
+      "height_m_agl": 3755.4537,
+      "slant_range_m": 51875.0,
+      "elevation_deg": 3.9771,
+      "samples_total": 213,
+      "samples_used": 192,
+      "azimuth_sectors": 9,
+      "max_azimuth_gap_deg": 92.9828,
+      "outlier_fraction": 0.0986,
+      "rms_mps": 2.3143
+     },
+     "rejection": null,
+     "wind": {
+      "u": 14.2959,
+      "v": 15.9587,
+      "bias": 1.311,
+      "std_error": 0.471,
+      "quality": "Marginal",
+      "speed": 21.4255,
+      "direction": 221.8542
+     },
+     "pyart_vad_browning": {
+      "u": 14.5558,
+      "v": 15.0652
+     }
+    },
+    {
+     "target_m": 4000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 3998.7926,
+      "slant_range_m": 35375.0,
+      "elevation_deg": 6.3721,
+      "samples_total": 344,
+      "samples_used": 338,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 4.0045,
+      "outlier_fraction": 0.0174,
+      "rms_mps": 3.0834
+     },
+     "rejection": null,
+     "wind": {
+      "u": 16.5077,
+      "v": 13.5275,
+      "bias": 2.8847,
+      "std_error": 0.3391,
+      "quality": "Good",
+      "speed": 21.3424,
+      "direction": 230.6666
+     },
+     "pyart_vad_browning": {
+      "u": 14.711,
+      "v": 13.345
+     }
+    },
+    {
+     "target_m": 4250.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 10,
+      "height_m_agl": 4257.4637,
+      "slant_range_m": 46875.0,
+      "elevation_deg": 5.0537,
+      "samples_total": 328,
+      "samples_used": 310,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 16.9629,
+      "outlier_fraction": 0.0549,
+      "rms_mps": 2.5468
+     },
+     "rejection": null,
+     "wind": {
+      "u": 15.9268,
+      "v": 14.8987,
+      "bias": 2.624,
+      "std_error": 0.2939,
+      "quality": "Good",
+      "speed": 21.809,
+      "direction": 226.9103
+     },
+     "pyart_vad_browning": {
+      "u": 14.0473,
+      "v": 14.9103
+     }
+    },
+    {
+     "target_m": 4500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 9,
+      "height_m_agl": 4496.4601,
+      "slant_range_m": 61625.0,
+      "elevation_deg": 3.9771,
+      "samples_total": 297,
+      "samples_used": 283,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 32.0059,
+      "outlier_fraction": 0.0471,
+      "rms_mps": 2.2579
+     },
+     "rejection": null,
+     "wind": {
+      "u": 16.9672,
+      "v": 17.0749,
+      "bias": 2.2252,
+      "std_error": 0.2831,
+      "quality": "Good",
+      "speed": 24.0715,
+      "direction": 224.8188
+     },
+     "pyart_vad_browning": {
+      "u": 15.5357,
+      "v": 15.6799
+     }
+    },
+    {
+     "target_m": 4750.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 9,
+      "height_m_agl": 4745.9333,
+      "slant_range_m": 64875.0,
+      "elevation_deg": 3.9771,
+      "samples_total": 316,
+      "samples_used": 306,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 19.0118,
+      "outlier_fraction": 0.0316,
+      "rms_mps": 2.3233
+     },
+     "rejection": null,
+     "wind": {
+      "u": 17.7214,
+      "v": 16.6372,
+      "bias": 2.7442,
+      "std_error": 0.2728,
+      "quality": "Good",
+      "speed": 24.3073,
+      "direction": 226.8074
+     },
+     "pyart_vad_browning": {
+      "u": 15.8028,
+      "v": 15.5983
+     }
+    },
+    {
+     "target_m": 5000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 18,
+      "height_m_agl": 5003.0084,
+      "slant_range_m": 35625.0,
+      "elevation_deg": 7.9541,
+      "samples_total": 360,
+      "samples_used": 355,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 4.0073,
+      "outlier_fraction": 0.0139,
+      "rms_mps": 2.2757
+     },
+     "rejection": null,
+     "wind": {
+      "u": 16.4669,
+      "v": 15.2288,
+      "bias": 2.2277,
+      "std_error": 0.245,
+      "quality": "Good",
+      "speed": 22.4293,
+      "direction": 227.237
+     },
+     "pyart_vad_browning": {
+      "u": 16.7241,
+      "v": 13.0206
+     }
+    },
+    {
+     "target_m": 5250.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 5242.7684,
+      "slant_range_m": 46125.0,
+      "elevation_deg": 6.3721,
+      "samples_total": 360,
+      "samples_used": 339,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 5.9903,
+      "outlier_fraction": 0.0583,
+      "rms_mps": 2.047
+     },
+     "rejection": null,
+     "wind": {
+      "u": 17.363,
+      "v": 16.9552,
+      "bias": 3.15,
+      "std_error": 0.225,
+      "quality": "Good",
+      "speed": 24.2684,
+      "direction": 225.6808
+     },
+     "pyart_vad_browning": {
+      "u": 16.4826,
+      "v": 13.9405
+     }
+    },
+    {
+     "target_m": 5500.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 17,
+      "height_m_agl": 5504.8329,
+      "slant_range_m": 48375.0,
+      "elevation_deg": 6.3721,
+      "samples_total": 360,
+      "samples_used": 337,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 8.0035,
+      "outlier_fraction": 0.0639,
+      "rms_mps": 1.8446
+     },
+     "rejection": null,
+     "wind": {
+      "u": 18.4918,
+      "v": 16.8305,
+      "bias": 2.597,
+      "std_error": 0.2035,
+      "quality": "Good",
+      "speed": 25.0042,
+      "direction": 227.6927
+     },
+     "pyart_vad_browning": {
+      "u": 16.8603,
+      "v": 13.729
+     }
+    },
+    {
+     "target_m": 5750.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 18,
+      "height_m_agl": 5752.6674,
+      "slant_range_m": 40875.0,
+      "elevation_deg": 7.9541,
+      "samples_total": 360,
+      "samples_used": 308,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 15.0073,
+      "outlier_fraction": 0.1444,
+      "rms_mps": 1.1789
+     },
+     "rejection": null,
+     "wind": {
+      "u": 17.9625,
+      "v": 17.5316,
+      "bias": 2.4419,
+      "std_error": 0.1382,
+      "quality": "Good",
+      "speed": 25.1,
+      "direction": 225.6956
+     },
+     "pyart_vad_browning": {
+      "u": 17.6233,
+      "v": 12.6523
+     }
+    },
+    {
+     "target_m": 6000.0,
+     "outcome": "retrieved",
+     "diagnostics": {
+      "cut_index": 18,
+      "height_m_agl": 6003.2596,
+      "slant_range_m": 42625.0,
+      "elevation_deg": 7.9541,
+      "samples_total": 360,
+      "samples_used": 327,
+      "azimuth_sectors": 12,
+      "max_azimuth_gap_deg": 8.0063,
+      "outlier_fraction": 0.0917,
+      "rms_mps": 1.4699
+     },
+     "rejection": null,
+     "wind": {
+      "u": 18.0488,
+      "v": 17.3071,
+      "bias": 2.0919,
+      "std_error": 0.1656,
+      "quality": "Good",
+      "speed": 25.0058,
+      "direction": 226.2018
+     },
+     "pyart_vad_browning": {
+      "u": 17.9146,
+      "v": 12.4117
+     }
+    }
+   ]
+  }
+ ],
+ "single_tilt": {
+  "id": "l2-ktlx-20240315-000217-trim",
+  "doppler_sweep": 1,
+  "elevation_deg": 0.483,
+  "radials": 480,
+  "max_beam_height_m_at_150km": 2589.5,
+  "levels": [
+   {
+    "target_m": 1000.0,
+    "outcome": "rejected",
+    "diagnostics": {
+     "cut_index": 1,
+     "height_m_agl": 1000.7465,
+     "slant_range_m": 77125.0,
+     "elevation_deg": 0.4834,
+     "samples_total": 13,
+     "samples_used": 13,
+     "azimuth_sectors": 3,
+     "max_azimuth_gap_deg": 161.4908,
+     "outlier_fraction": 0.0,
+     "rms_mps": null
+    },
+    "rejection": "InsufficientSamples"
+   },
+   {
+    "target_m": 20000.0,
+    "outcome": "no_coverage"
+   }
+  ]
+ },
+ "sector": {
+  "id": "dorade-noxp-20090525-203211-sector",
+  "scan_mode": 1,
+  "rays": 100,
+  "azimuth_min_deg": -160.03,
+  "azimuth_max_deg": -60.4,
+  "elevation_deg": 0.461,
+  "first_cell_m": 75.0,
+  "cell_spacing_m": 150.0
+ }
+}
