@@ -16,18 +16,18 @@
 //!
 //! A poller drives a provider like this:
 //!
-//! 1. [`IntlProvider::list_sites`] populates the site picker.
-//! 2. On each poll tick, [`IntlProvider::latest`] returns a [`FramePlan`].
+//! 1. `IntlProvider::list_sites` populates the site picker.
+//! 2. On each poll tick, `IntlProvider::latest` returns a [`FramePlan`].
 //! 3. If [`FramePlan::identity`] equals the identity of the frame already
 //!    installed, the poller does nothing — no part is downloaded.
 //! 4. Otherwise every [`PlanPart::url`] is fetched with
-//!    [`crate::fetch_volume_bytes`] and decoded with
+//!    `crate::fetch_volume_bytes` and decoded with
 //!    `recast_radar_io::decode_supported_volume_bytes`; multi-part plans with
 //!    [`FramePlan::merge`] set are then assembled with
 //!    `recast_radar_core::merge_radar_volumes`.
 //!
 //! Providers therefore never download data themselves: `latest` does the
-//! (cheap) catalog probe — via [`crate::fetch_text`] or an equivalent
+//! (cheap) catalog probe — via `crate::fetch_text` or an equivalent
 //! listing helper — and describes the download; the shared poller owns
 //! bytes, retries, decode, and merge.
 //!
@@ -90,7 +90,7 @@ pub struct IntlSite {
     /// back to its provider.
     pub provider_id: &'static str,
     /// Provider-scoped site identifier, passed verbatim to
-    /// [`IntlProvider::latest`] (e.g. `"dkste"`, `"angelholm"`, `"skjav"`).
+    /// `IntlProvider::latest` (e.g. `"dkste"`, `"angelholm"`, `"skjav"`).
     pub site_id: String,
     /// Human-readable site name for the picker (e.g. `"Stevns"`).
     pub label: String,
@@ -105,7 +105,7 @@ pub struct IntlSite {
 /// One downloadable piece of a frame.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlanPart {
-    /// Absolute URL, fetched with [`crate::fetch_volume_bytes`] and decoded
+    /// Absolute URL, fetched with `crate::fetch_volume_bytes` and decoded
     /// with `recast_radar_io::decode_supported_volume_bytes`.
     pub url: String,
 }
@@ -148,7 +148,7 @@ pub struct FramePlan {
 /// Rolling multi-frame `recent` support, for providers whose upstream
 /// catalog exposes more than the newest frame. Implemented on the provider
 /// type and handed back through [`IntlProvider::recent_source`], which is
-/// what routes [`IntlProvider::recent`] here and drives the derived
+/// what routes `IntlProvider::recent` here and drives the derived
 /// [`IntlProvider::supports_recent`] capability.
 pub trait RecentFrames {
     /// Same contract as [`IntlProvider::recent`]: up to `count` frames,
@@ -290,7 +290,7 @@ pub trait ArchiveFrames {
 /// Implementations must be cheap to construct and safe to share across the
 /// UI and poller threads (`Send + Sync`, interior state behind sync
 /// primitives if any). Methods are called on poller threads: they may block
-/// on catalog HTTP (through [`crate::fetch_text`]-style helpers) but must
+/// on catalog HTTP (through `crate::fetch_text`-style helpers) but must
 /// never panic on malformed upstream data — return a descriptive `Err`
 /// instead, and never `unwrap()` network-derived values.
 pub trait IntlProvider: Send + Sync {
@@ -339,14 +339,14 @@ pub trait IntlProvider: Send + Sync {
     /// catalog exposes more than the newest frame. THE single override
     /// point for multi-frame Load Loop support: implement [`RecentFrames`]
     /// on the provider type and return `Some(self)` here. Both
-    /// [`Self::recent`] and the derived [`Self::supports_recent`]
+    /// `recent` and the derived [`Self::supports_recent`]
     /// capability route through this method, so a provider cannot gain a
     /// real loop without advertising it (nor advertise one it lacks).
     fn recent_source(&self) -> Option<&dyn RecentFrames> {
         None
     }
 
-    /// Whether [`Self::recent`] returns a real multi-frame window. Derived
+    /// Whether `recent` returns a real multi-frame window. Derived
     /// from [`Self::recent_source`] — never override.
     fn supports_recent(&self) -> bool {
         self.recent_source().is_some()
@@ -375,7 +375,7 @@ pub trait IntlProvider: Send + Sync {
     /// UI thread — this is what map markers draw from before any poll or
     /// catalog fetch has happened. May lag reality (a brand-new radar
     /// appears here only after a table refresh), so pickers wanting
-    /// freshness still call [`Self::list_sites`]. Contract: every returned
+    /// freshness still call `list_sites`. Contract: every returned
     /// site has `Some` finite latitude/longitude inside its country.
     fn static_sites(&self) -> Vec<IntlSite>;
 }
@@ -440,7 +440,7 @@ pub struct IntlProviderCapability {
     pub visible_sites: usize,
     pub live: bool,
     /// Derived from [`IntlProvider::supports_recent`] — `true` iff the
-    /// provider implements a real multi-frame [`IntlProvider::recent`]
+    /// provider implements a real multi-frame `IntlProvider::recent`
     /// (never hand-maintained, so it cannot go stale against the code).
     pub recent_loop: bool,
     /// Derived from [`IntlProvider::supports_archive`] — `true` iff the
@@ -724,7 +724,7 @@ const JMA_LOOKBACK_MINUTES: i64 = 40;
 /// network builds a [`JmaCatalogProvider`] from its own table instead:
 /// download the N5 tar named by a frame plan's first part and map
 /// `recast_radar_io_jma::jma_tar_station_headers` rows into [`JmaStation`]s.
-/// `latest` HEAD-probes backward over [`JMA_LOOKBACK_MINUTES`] of 5-minute
+/// `latest` HEAD-probes backward over `JMA_LOOKBACK_MINUTES` of 5-minute
 /// stamps for the newest tar that exists.
 ///
 /// Decode contract: the plan's first part is the N5 (reflectivity) tar

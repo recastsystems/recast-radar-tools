@@ -5,8 +5,8 @@
 //! - `net` (default): the blocking HTTPS client (reqwest + rustls) and
 //!   everything that performs requests: AWS Level II archive and real-time
 //!   chunk listing/download, the network methods of the international
-//!   provider traits ([`international::IntlProvider::list_sites`],
-//!   [`international::IntlProvider::latest`], ...), GDEX, grid-product and
+//!   provider traits (`list_sites`, `latest`, ... of
+//!   [`international::IntlProvider`]), GDEX, grid-product and
 //!   tropical feed fetches.
 //!
 //! Without `net` the crate is network-free and builds for
@@ -478,6 +478,7 @@ pub fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
 }
 
 /// The retry schedule of [`fetch_volume_bytes`]: two attempts, 2 s apart.
+#[cfg(feature = "net")]
 pub const VOLUME_FETCH_RETRY: realtime::retry::RetryPolicy = realtime::retry::RetryPolicy {
     max_attempts: 2,
     initial_delay: StdDuration::from_secs(2),

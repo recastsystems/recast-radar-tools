@@ -5,16 +5,16 @@
 //! `catalog.xml` twin. This module provides the tested, UI-free plumbing:
 //!
 //! 1. **Catalog crawl** — recursively fetch `catalog.xml`
-//!    ([`fetch_and_parse_catalog`] for one level; [`crawl_dataset`] for a full,
+//!    (`fetch_and_parse_catalog` for one level; `crawl_dataset` for a full,
 //!    disk-cached crawl). `<catalogRef xlink:href>` = subdir (resolved relative
 //!    and recursed), `<dataset urlPath>` = a leaf file (kept when the urlPath
 //!    ends with a data extension, dropping the stray scan `dump`).
-//! 2. **NCSS metadata + subset URL** — [`fetch_ncss_dataset`] parses the grid
+//! 2. **NCSS metadata + subset URL** — `fetch_ncss_dataset` parses the grid
 //!    `dataset.xml` (variables, lat/lon box, time span); [`ncss_subset_url`]
 //!    builds a subset request. NCSS grid rejects `accept=netcdf4` (HTTP 400) —
 //!    this module always requests `accept=netcdf` (classic NetCDF-3, which
 //!    `netcrust` reads).
-//! 3. **Resumable download** — [`download_to_path`] streams a URL to a
+//! 3. **Resumable download** — `download_to_path` streams a URL to a
 //!    `.download` temp with HTTP `Range` resume, verifies the final size, and
 //!    atomically renames. Local paths sanitize `:` -> `_` (the leaf filenames
 //!    carry `:` which is illegal on NTFS).
@@ -134,7 +134,7 @@ pub struct Leaf {
 
 /// One level of a crawl: the child catalogs to recurse into, plus the leaves
 /// found at this level. Stage 1b can drive lazy per-node tree expansion with
-/// this directly instead of a full up-front [`crawl_dataset`].
+/// this directly instead of a full up-front `crawl_dataset`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedCatalog {
     /// The catalog URL this was parsed from.
@@ -218,7 +218,7 @@ pub struct NcssSubset {
     pub time_end: Option<String>,
 }
 
-/// Result of a [`download_to_path`] call.
+/// Result of a `download_to_path` call.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DownloadOutcome {
     /// The final local path (temp renamed into place).

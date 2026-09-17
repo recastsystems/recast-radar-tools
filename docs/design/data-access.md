@@ -13,12 +13,14 @@ decoding is the caller's choice (spec 4.1 dependency rule).
 could download the newest N5 tar and read the station headers from it. That
 is now a caller-provided table:
 
-- `JmaProvider::new()` serves the embedded 20-station table, which was
-  decoded from real tar headers.
-- `JmaProvider::with_stations(rows)` serves a caller's table instead. A caller
-  that wants the live network downloads the N5 tar named by
-  `latest(..).parts[0].url`, maps `recast_radar_io_jma::jma_tar_station_headers`
-  rows into `JmaStation`s, and builds the provider from them.
+- `JmaProvider` (still a unit struct; `JmaProvider::new()` is the same value)
+  serves the embedded 20-station table, which was decoded from real tar
+  headers.
+- `JmaCatalogProvider::new(rows)` serves a caller's table instead, with the
+  same provider id and frame plans. A caller that wants the live network
+  downloads the N5 tar named by `latest(..).parts[0].url`, maps
+  `recast_radar_io_jma::jma_tar_station_headers` rows into `JmaStation`s, and
+  builds the provider from them.
 
 Moving the parser into this crate was the other option. It would have
 duplicated about 150 lines of ustar and GRIB2 section walking from `io-jma`.
@@ -32,7 +34,8 @@ ignored live probes.
 | Feature | Default | Contents |
 |---|---|---|
 | `net` | yes | The blocking HTTPS client (reqwest + rustls) and every function that sends a request |
-| `async` | no | E.3: a `futures::Stream` over the same request planning |
+| `async` | no | E.3: `ChunkStream`, a `futures_core::Stream` over the same request planning, generic over `AsyncChunkTransport` |
+| `async-client` | no | `async` plus `AsyncReqwestTransport`, reqwest's non-blocking client (Tokio on native targets, the browser's `fetch` on wasm32); does not enable `net` |
 
 Gating is at compile time. A function that would always fail without a
 client is not compiled at all. It does not return a "network disabled" error.
@@ -70,10 +73,19 @@ still lints them.
 
 - E.2 `src/realtime/{timing.rs, vcp_catalog.rs}`: pure and available without
   `net`. Tested from committed real S3 chunk listings, parsed with the same
-  `ListObjectsV2` XML types as the live client.
-- E.3 `RetryPolicy`: pure (returns delays, never sleeps). `ChunkIterator`:
-  `net`. The request planning and rollover logic behind it stay pure so the
-  `async` stream shares them.
+  `ListObjectsV2` XML types as the live client, on a fitted set and a
+  held-out set.
+- E.3 `src/realtime/retry.rs` (`RetryPolicy`): pure, returns delays and never
+  sleeps. `src/realtime/iterator.rs`: `ChunkPlanner` (sans-I/O request
+  planning, rollover and failure handling) and `ChunkIterator` (generic over
+  a blocking `ChunkTransport`) build without `net`, also for wasm32; only
+  `ReqwestTransport` and `ChunkIterator::{live, try_live}` need `net`.
+  `src/realtime/stream.rs`: `ChunkStream` under `async`,
+  `AsyncReqwestTransport` under `async-client`.
+- The older blocking helpers that retry (`fetch_volume_bytes`, the GDEX
+  requests) take their schedule from a `RetryPolicy` too: each has a
+  `*_with_retry` variant that hands every delay to a caller-supplied sleep,
+  and the plain function sleeps on the calling thread.
 - E.4 `examples/live_decode.rs`: `net`.
 
 ## Verification
@@ -81,5 +93,8 @@ still lints them.
 ```
 cargo test -p recast-radar-data
 cargo test -p recast-radar-data --no-default-features
+cargo test -p recast-radar-data --all-features
 cargo check -p recast-radar-data --no-default-features --target wasm32-unknown-unknown
+cargo check -p recast-radar-data --no-default-features --features async-client --target wasm32-unknown-unknown
+cargo doc -p recast-radar-data --no-deps --no-default-features
 ```
