@@ -924,6 +924,7 @@ dependencies = [
  "recast-radar-correct",
  "recast-radar-io",
  "recast-radar-render",
+ "recast-radar-testdata",
  "serde",
  "serde_json",
 ]
@@ -1074,7 +1075,6 @@ dependencies = [
 name = "recast-radar-render"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "image",
  "rayon",
  "recast-radar-core",
@@ -1083,7 +1083,9 @@ dependencies = [
  "recast-radar-io-nexrad",
  "recast-radar-map",
  "recast-radar-retrieve",
+ "recast-radar-testdata",
  "recast-radar-track",
+ "serde_json",
  "thiserror",
 ]
 

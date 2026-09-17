@@ -550,59 +550,66 @@ past/forecast positions, DBZM, forecast movement), the independent reference for
 
 ## render-bench
 
+**Converted in C.2** (branch `real-tests-render-bench`): all 32 entries are gone from the allowlist
+(the counts table above is the C.1 snapshot). The 27 synthetic tests and 5 helpers were replaced in
+place: the tests stay unit tests in `src/` because they reach private lookup, palette and metric
+functions, but they now decode corpus files with `recast-radar-io-nexrad` (render) or the bench's
+own byte router (bench) and compare against JSON goldens under `testdata/golden/render/` and
+`testdata/golden/bench/`, written by `tools/render_bench_golden.py`. The script reads the same files
+with Py-ART 2.2.5 (`NEXRADLevel2File` raw gate codes, azimuths, Nyquist velocities and data-block
+scale/offset; `read_nexrad_archive`; `dealias_region_based`; `storm_relative_velocity`) and MetPy
+1.7.1 (scaled values, cross-checked against the raw codes), and computes expected outputs with numpy
+reference implementations of the documented rules (float32 where the Rust code uses f32). Tests that
+never fed synthetic data (viewport option maths, colour-table checks, `CachedSample` packing) are
+unchanged.
+
+Two findings from the real data: the COW2 DORADE head trim has no duplicate azimuths (its 3
+transition rays are 0.5 deg apart), so the duplicate-row test became a neighbouring-radial test; and
+the reflectivity sample cache does not fall through hidden (transparent) palette entries the way the
+direct render does, which a four-radial synthetic volume could not show (see
+`viewport_sample_cache_matches_direct_moment_render`). The KLIX 2005 seam case proposed in C.1 needs
+the Message 1 Nyquist fix from `real-tests-io-nexrad` (the base branch reads it from the wrong
+halfword), so the seam test uses the full KDVN 2020 volume until the groups merge.
+
 ### `crates/recast-radar-bench/src/dealias_eval.rs`
 
-`field` builds a bench `Field` from hand-written velocity rows (2-fold ramp, alternating wrap seam, one speck).
+Fields come from `decode_field` on decoded cuts (the bench's own path); Py-ART's dealiased output is
+rebuilt as `raw + 2N·k` from run-length-encoded fold numbers in the golden file.
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::boundary_metric_counts_a_two_fold_ramp_exactly` | raw and Py-ART-dealiased velocity of `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) | boundary pairs recounted independently in numpy |
-| `tests::boundary_metric_counts_the_wrap_seam` | raw velocity of `l2-klix-20050829-130035-trim` sweep 2 (Katrina, 362 radials over the full circle, Nyquist 32.1 m/s; Py-ART region-based unfolds 53,164 of 153,501 gates) | numpy count including the last-to-first radial seam |
-| `tests::percent_modified_flags_whole_fold_moves_only` | raw vs Py-ART-dealiased `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, azimuth 286-346 deg, Nyquist 21.0 m/s; Py-ART region-based unfolds 38,656 of 84,964 gates) | numpy percentage of gates moved by more than Nyquist |
-| `tests::speck_count_finds_isolated_outliers_only` | raw velocity of `l2-pgua-20230524-030945-trim` sweep 2 | numpy isolated-speck count |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::field` | bench velocity field from values | `tests::boundary_metric_counts_a_two_fold_ramp_exactly`, `tests::boundary_metric_counts_the_wrap_seam`, `tests::percent_modified_flags_whole_fold_moves_only`, `tests::speck_count_finds_isolated_outliers_only` |
-
+| `tests::boundary_metric_counts_real_fold_boundaries_before_and_after_unfolding` | `l2-kdvn-20200810-180401-trim` sweep 2 (derecho, Nyquist 21.03 m/s, 84,964 finite gates) | numpy boundary pairs of the raw sweep (7,486) and of Py-ART's region-based output (409) |
+| `tests::boundary_metric_counts_the_wrap_seam` | `l2-kdvn-20200810-180401` sweep 2 (full circle, 720 radials; download) | numpy counts with and without the last-to-first radial seam (15,224 / 15,193) and speck counts with and without wrap |
+| `tests::percent_modified_counts_whole_fold_moves_only` | `l2-kdvn-20200810-180401-trim` sweep 2 | Py-ART unfolds 38,656 of 84,964 gates: 45.4969 %; raw vs raw is 0 |
+| `tests::speck_count_finds_isolated_outliers_only` | `l2-pgua-20230524-030945-trim` sweep 2 (Mawar, Nyquist 35.55 m/s) and the KDVN cut | numpy isolated-speck counts: 1,203 (PGUA), 1,212 raw and 164 after Py-ART unfolding (KDVN) |
 
 ### `crates/recast-radar-render/src/lib.rs`
 
-`test_volume`/`test_u16_volume` build small u8/u16 REF and VEL cuts row by row; lookup tests build cuts with hand-picked azimuths; `derived_product_tests` builds constant-reflectivity volumes.
-
 | test | real input | assertion source |
 |---|---|---|
-| `tests::velocity_range_folded_bins_render_table_rf_color` | range-folded velocity gates (raw code 1, located with MetPy raw data) in `l2-ktlx-20240315-000217-trim` sweep 2, else `l2-klix-20210829-180425-trim` | pixels at those gates carry the table's RF colour |
-| `tests::reflectivity_range_folded_bins_render_table_rf_color` | a real reflectivity grid with range-folded codes (locate with MetPy raw data in the corpus; corpus addition if none) | RF colour at those gates |
-| `tests::storm_relative_u8_row_palette_matches_direct_color_math` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | direct colour math on the same gates; Py-ART `pyart.retrieve.storm_relative_velocity` for the subtracted motion |
-| `tests::custom_color_table_feeds_precomputed_u8_palette` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | palette lookup equals direct table sampling on real codes |
-| `tests::storm_motion_basis_matches_direct_projection` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | basis equals direct projection per radial azimuth read from the file |
-| `tests::grid_sample_cache_upper_bound_tracks_actual_radar_footprint` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | bound from the file's gate count and spacing |
-| `tests::viewport_lookup_matches_reference_hypot_formula` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | the test's reference hypot lookup on the file's azimuths and gates |
-| `tests::viewport_lookup_table_matches_reference_hypot_formula` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | reference hypot lookup |
-| `tests::viewport_lookup_table_matches_rotated_viewport_lookup` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | rotated reference lookup |
-| `tests::baked_rotation_changes_table_azimuth_bins` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | azimuth bins from the file's azimuths under rotation |
-| `tests::viewport_row_span_covers_reference_samples` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | reference samples within the row span |
-| `tests::azimuth_lookup_fills_wider_native_radial_sectors` | `l2-ktlx-19990504-002218-trim` sweep 1 (Message 1: 1 deg radials, 1 km REF gates) | reference lookup on the file's azimuths |
-| `tests::azimuth_lookup_prefers_duplicate_row_with_longer_valid_extent` | a real sweep with duplicate azimuths: the transition rays of `dorade-cow2-20260521-225514-sur-head24` | row with the longer valid extent per the Python DORADE walker |
-| `tests::compact_sample_resolution_keeps_visible_range_folded_candidates` | range-folded gates as in the velocity RF test above | RF candidates kept |
-| `tests::viewport_render_uses_requested_screen_resolution` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | buffer dimensions |
-| `tests::viewport_sample_cache_matches_direct_moment_render` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | cached render equals direct render |
-| `tests::viewport_geometry_cache_resolves_across_compatible_products` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | REF and VEL share geometry |
-| `tests::viewport_sample_cache_matches_direct_storm_relative_render` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | cached equals direct storm-relative render |
-| `tests::viewport_sample_cache_rejects_mismatched_cache` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | moment mismatch error |
-| `tests::viewport_render_rejects_wrong_sized_reusable_buffer` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) | buffer size error |
-| `tests::viewport_cache_rejects_different_volume` | `l2-ktlx-20240315-000217-trim` (u8 REF and VEL) and `l2-ktlx-20130520-201643-trim` | different-volume error |
-| `tests::viewport_cache_renders_u16_palette_moments` | `l2-ktlx-20130520-201643-trim` (u16 PHI) | u16 palette render equals direct render |
-| `derived_product_tests::derived_products_render_through_viewport_cache` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | cached derived-product render equals direct render |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::test_volume` | small u8 REF/VEL volume | `tests::velocity_range_folded_bins_render_table_rf_color`, `tests::reflectivity_range_folded_bins_render_table_rf_color`, `tests::storm_relative_u8_row_palette_matches_direct_color_math`, `tests::custom_color_table_feeds_precomputed_u8_palette`, `tests::storm_motion_basis_matches_direct_projection`, `tests::grid_sample_cache_upper_bound_tracks_actual_radar_footprint`, `tests::viewport_lookup_matches_reference_hypot_formula`, `tests::viewport_lookup_table_matches_reference_hypot_formula`, `tests::viewport_lookup_table_matches_rotated_viewport_lookup`, `tests::viewport_row_span_covers_reference_samples`, `tests::viewport_render_uses_requested_screen_resolution`, `tests::viewport_sample_cache_matches_direct_moment_render`, `tests::viewport_geometry_cache_resolves_across_compatible_products`, `tests::viewport_sample_cache_matches_direct_storm_relative_render`, `tests::viewport_sample_cache_rejects_mismatched_cache`, `tests::viewport_render_rejects_wrong_sized_reusable_buffer`, `tests::viewport_cache_rejects_different_volume` |
-| `tests::test_u16_volume` | small u16 volume | `tests::viewport_cache_renders_u16_palette_moments` |
-| `derived_product_tests::cut_with_ref` | constant-reflectivity cut | `derived_product_tests::derived_products_render_through_viewport_cache` |
-| `derived_product_tests::volume_with` | volume from cuts | `derived_product_tests::derived_products_render_through_viewport_cache` |
-
+| `tests::velocity_range_folded_bins_render_table_rf_color` | `l2-ktlx-20240315-000217-trim` sweep 2 VEL | Py-ART raw codes: 342 range-folded gates at listed positions; RF palette colour; rendered pixels centred on interior RF gates carry it |
+| `tests::reflectivity_range_folded_bins_render_table_rf_color` | same sweep, REF (the Doppler cut's reflectivity carries the same 342 RF codes) | as above with the reflectivity table |
+| `tests::storm_relative_u8_row_palette_matches_pyart_storm_relative_velocity` | same sweep, VEL | `pyart.retrieve.storm_relative_velocity` (225 deg, 18 m/s) at 40 gates: value within 1e-3, palette colour within one channel step of the table colour; no-data and RF codes |
+| `tests::custom_color_table_feeds_precomputed_u8_palette` | same sweep, VEL (scale 2, offset 129 from the data-block header) | every code present in the sweep maps to the ramp colour of its physical velocity; exact stops at codes 129, 149, 169 |
+| `tests::storm_motion_basis_matches_direct_projection` | same sweep, VEL | `speed · cos(direction − azimuth)` on the file's azimuths |
+| `tests::grid_sample_cache_upper_bound_tracks_actual_radar_footprint` | sweep 1 REF (1832 x 250 m from 2125 m: 460.125 km) | pixel count inside the footprint circle, plus at most the row-span padding |
+| `tests::viewport_lookup_matches_reference_hypot_formula` | sweep 1 REF (radials 167.3 deg clockwise to 46.7 deg) | reference hypot lookup; 5 of 9 probe pixels resolve (west, south, north), the centre and east do not |
+| `tests::viewport_lookup_table_matches_reference_hypot_formula` | same | reference hypot lookup on a 42-pixel probe grid (at least 12 resolve) |
+| `tests::viewport_lookup_table_matches_rotated_viewport_lookup` | same | `viewport_lookup` at three rotations over the whole window; over a third of the window resolves |
+| `tests::baked_rotation_changes_table_azimuth_bins` | same | 0.35 rad rotation against 0.5 deg radials moves most resolved pixels to another bin |
+| `tests::viewport_row_span_covers_reference_samples` | same, 96 px at 10 km/px | reference samples inside the row spans; rows beyond 460 km have none |
+| `tests::azimuth_lookup_fills_wider_native_radial_sectors` | `l2-ktlx-19990504-002218-trim` sweep 1 (Message 1, 367 radials at 0.97 deg) | every 0.1 deg bin served; 60 query azimuths resolve to the nearest radial (numpy angular distance) |
+| `tests::azimuth_lookup_prefers_neighbour_row_with_longer_valid_extent` | `l2-ktlx-20240315-000217-trim` sweep 1 REF | per-row valid extents from Py-ART raw codes; at the bin between two neighbouring radials the longer row ranks first and a gate only it fills resolves to it (24 pairs) |
+| `tests::compact_sample_resolution_keeps_visible_range_folded_candidates` | sweep 2 VEL | per-row valid extents (RF counts as valid); RF gates resolve to their own row |
+| `tests::viewport_render_uses_requested_screen_resolution` | sweep 2 (REF and VEL) | buffer dimensions; image, buffer and cache paths byte-identical |
+| `tests::viewport_sample_cache_matches_direct_moment_render` | sweep 2 REF | exact equality under an all-opaque ramp; under the default palette differences are only cache-transparent / direct-opaque fall-throughs |
+| `tests::viewport_geometry_cache_resolves_across_compatible_products` | sweep 2 REF and VEL (same gate geometry) | geometry-derived and direct sample caches render identically |
+| `tests::viewport_sample_cache_matches_direct_storm_relative_render` | sweep 2 VEL | cached equals direct; a different storm motion recolours the same opaque pixels |
+| `tests::viewport_sample_cache_rejects_mismatched_cache` | sweep 2 | moment mismatch error |
+| `tests::viewport_render_rejects_wrong_sized_reusable_buffer` | sweep 2 | buffer size error with the requested dimensions |
+| `tests::viewport_cache_rejects_different_volume` | KTLX 2024 and `l2-ktlx-20130520-201643-trim` | different-volume error; the source volume still renders |
+| `tests::viewport_cache_renders_u16_palette_moments` | `l2-ktlx-20130520-201643-trim` sweep 1 PHI (16-bit, codes to 1022, scale 2.8361, offset 2) | 24 MetPy values and Py-ART codes through the u16 palette; cached render equals direct |
+| `derived_product_tests::derived_products_render_through_viewport_cache` | `l2-kewx-20160413-022531` (19 sweeps; download) | Py-ART volume maximum 76.5 dBZ at 251.5 deg, 55.9 km (4.0 deg tilt; lowest tilt 70.5 dBZ): composite peak value and location, echo top above that beam, VIL positive, rendered pixel colour |
 
 ## core-data-scattering
 
