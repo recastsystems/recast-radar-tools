@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
-use recast_radar_core::MomentType;
+use recast_radar_core::model::FieldName;
 use recast_radar_io_nexrad::NexradError;
 use recast_radar_io_nexrad::messages::msg31_blocks::{
     AzimuthResolution, CompressionIndicator, ControlFlags, DataMomentName, DigitalRadarDataGeneric,
@@ -883,7 +883,7 @@ fn first_radial_of_committed_chunk_decodes_every_field() {
     assert_eq!(h.radial_status_code, 3);
     assert_eq!(
         h.radial_status(),
-        recast_radar_core::RadialStatus::StartVolume
+        recast_radar_io_nexrad::RadialStatus::StartVolume
     );
     assert!(!h.is_bad_data());
     assert_eq!(h.elevation_number, 1);
@@ -1009,8 +1009,8 @@ fn first_radial_of_committed_chunk_decodes_every_field() {
         radial
             .moment(DataMomentName::ClutterFilterPowerRemoved)
             .unwrap()
-            .moment_type(),
-        MomentType::Unknown("CFP".to_owned())
+            .field_name(),
+        FieldName::Ccorh
     );
     assert!(radial.moment(DataMomentName::Velocity).is_none());
     assert!(radial.unknown_blocks.is_empty());
@@ -1143,60 +1143,78 @@ fn zdr_bias_estimate_in_other_builds() {
 
 // The volume decoder agrees ----------------------------------------------------------------
 
-/// `decode_volume_from_bytes` reads the same header, VOL and RAD fields on its
+/// `read_volume_from_bytes` reads the same header, VOL and RAD fields on its
 /// fast path; both decoders agree radial by radial on KPAH 2008.
 #[test]
 fn volume_decoder_agrees_with_typed_radials() {
     let id = "l2-kpah-20080415-235014";
     let Some(raw) = load(id) else { return };
-    let volume = recast_radar_io_nexrad::decode_volume_from_bytes(&raw).unwrap();
+    let volume = recast_radar_io_nexrad::read_volume_from_bytes(&raw).unwrap();
     let records = messages::record_bytes(&raw).unwrap();
     let radials = radials(&records);
 
     let vol = radials[0].volume.unwrap();
-    assert_eq!(volume.site.latitude_deg, Some(vol.latitude_deg));
-    assert_eq!(volume.site.longitude_deg, Some(vol.longitude_deg));
     assert_eq!(
-        volume.site.elevation_m,
-        Some(f32::from(vol.site_height_m) + f32::from(vol.feedhorn_height_m))
+        volume.location.latitude_deg,
+        Some(f64::from(vol.latitude_deg))
     );
-    assert_eq!(volume.vcp.as_ref().map(|v| v.pattern), Some(vol.vcp_number));
+    assert_eq!(
+        volume.location.longitude_deg,
+        Some(f64::from(vol.longitude_deg))
+    );
+    assert_eq!(
+        volume.location.altitude_m,
+        Some(f64::from(
+            f32::from(vol.site_height_m) + f32::from(vol.feedhorn_height_m)
+        ))
+    );
+    assert_eq!(volume.scan.vcp_pattern, Some(vol.vcp_number));
 
-    let decoded: Vec<_> = volume
-        .cuts
+    let nrays: usize = volume.sweeps.iter().map(|sweep| sweep.nrays()).sum();
+    assert_eq!(nrays, radials.len());
+    let mut by_sweep = volume
+        .sweeps
         .iter()
-        .flat_map(|cut| cut.radials.iter())
-        .collect();
-    assert_eq!(decoded.len(), radials.len());
-    let mut by_cut = volume.cuts.iter().flat_map(|cut| {
-        cut.radials
-            .iter()
-            .map(move |radial| (cut.elevation_number, radial))
-    });
+        .flat_map(|sweep| (0..sweep.nrays()).map(move |ray| (sweep, ray)));
     for typed in &radials {
-        let (elevation_number, radial) = by_cut.next().unwrap();
-        assert_eq!(elevation_number, Some(typed.header.elevation_number));
-        assert_eq!(radial.azimuth_deg, typed.header.azimuth_angle_deg);
-        assert_eq!(radial.elevation_deg, typed.header.elevation_angle_deg);
+        let (sweep, ray) = by_sweep.next().unwrap();
         assert_eq!(
-            radial.time_offset_ms,
-            typed.header.collection_time_ms as i32
+            sweep.elevation_number,
+            Some(u16::from(typed.header.elevation_number))
+        );
+        assert_eq!(sweep.rays.azimuth_deg[ray], typed.header.azimuth_angle_deg);
+        assert_eq!(
+            sweep.rays.elevation_deg[ray],
+            typed.header.elevation_angle_deg
+        );
+        assert_eq!(
+            volume.ray_time(sweep.sweep_number as usize, ray).unwrap(),
+            typed.header.collection_time()
         );
         let rad = typed.radial.unwrap();
-        match radial.nyquist_velocity_mps {
+        match sweep
+            .ray_vars
+            .nyquist_velocity_mps
+            .as_ref()
+            .map(|values| values[ray])
+            .filter(|value| !value.is_nan())
+        {
             Some(nyquist) => assert!((nyquist - rad.nyquist_velocity_mps()).abs() < 1e-4),
             None => assert_eq!(rad.nyquist_velocity_raw, 0),
         }
-        let first = &typed.moments[0];
-        assert_eq!(radial.gate_range.gate_count, usize::from(first.gate_count));
-        assert_eq!(
-            radial.gate_range.first_gate_m,
-            i32::from(first.first_gate_range_m)
-        );
-        assert_eq!(
-            radial.gate_range.gate_spacing_m,
-            i32::from(first.gate_spacing_m)
-        );
+        // Every typed moment is a field of the sweep in the block's native
+        // geometry.
+        for moment in &typed.moments {
+            let field = sweep.field(&moment.field_name()).unwrap();
+            assert_eq!(field.ngates, u32::from(moment.gate_count));
+            assert_eq!(
+                field.native_geometry(&sweep.range),
+                Some((
+                    f64::from(moment.first_gate_range_m),
+                    f64::from(moment.gate_spacing_m)
+                ))
+            );
+        }
     }
 }
 
@@ -1270,7 +1288,7 @@ fn undefined_moment_name_is_kept_as_a_moment() {
         .expect("renamed moment");
     assert_eq!(moment.name.short_name(), "XYZ");
     assert_eq!(moment.name.units(), "");
-    assert_eq!(moment.moment_type(), MomentType::Unknown("XYZ".to_owned()));
+    assert_eq!(moment.field_name(), FieldName::Other("XYZ".into()));
     assert_eq!(moment.gate_count, 1192);
     assert!(radial.unknown_blocks.is_empty());
 }

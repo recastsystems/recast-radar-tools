@@ -996,10 +996,10 @@ fn adaptation_site_matches_volume() {
         let First::Decoded(_, a) = &meta.adaptation else {
             panic!("{id}: no message 18");
         };
-        let volume = recast_radar_io_nexrad::decode_volume_from_bytes(&raw).unwrap();
-        assert_eq!(a.site_name, volume.site.id, "{id}");
-        let latitude = f64::from(volume.site.latitude_deg.unwrap());
-        let longitude = f64::from(volume.site.longitude_deg.unwrap());
+        let volume = recast_radar_io_nexrad::read_volume_from_bytes(&raw).unwrap();
+        assert_eq!(a.site_name, volume.attrs.instrument_name, "{id}");
+        let latitude = volume.location.latitude_deg.unwrap();
+        let longitude = volume.location.longitude_deg.unwrap();
         assert!(
             (a.latitude() - latitude).abs() < 1e-3,
             "{id}: {} vs {latitude}",

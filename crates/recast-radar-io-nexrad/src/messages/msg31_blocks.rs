@@ -46,7 +46,9 @@ use std::io::Cursor;
 use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, Utc};
 use flate2::read::ZlibDecoder;
-use recast_radar_core::{MomentType, RadialStatus};
+use recast_radar_core::model::FieldName;
+
+use crate::RadialStatus;
 
 use super::MessageBody;
 use crate::{NexradError, Result};
@@ -971,18 +973,19 @@ impl<'a> MomentDataBlock<'a> {
         f32::from(self.snr_threshold_raw) * 0.125
     }
 
-    /// The moment as the volume decoder names it (CFP and other undefined
-    /// names become [`MomentType::Unknown`]).
-    pub fn moment_type(&self) -> MomentType {
+    /// The FM301 field name the volume decoder gives this moment (xradar's
+    /// NEXRAD mapping; undefined block names stay verbatim as
+    /// [`FieldName::Other`]).
+    pub fn field_name(&self) -> FieldName {
         match self.name {
-            DataMomentName::Reflectivity => MomentType::Reflectivity,
-            DataMomentName::Velocity => MomentType::Velocity,
-            DataMomentName::SpectrumWidth => MomentType::SpectrumWidth,
-            DataMomentName::DifferentialReflectivity => MomentType::DifferentialReflectivity,
-            DataMomentName::DifferentialPhase => MomentType::DifferentialPhase,
-            DataMomentName::CorrelationCoefficient => MomentType::CorrelationCoefficient,
-            DataMomentName::ClutterFilterPowerRemoved => MomentType::Unknown("CFP".to_owned()),
-            DataMomentName::Other(name) => MomentType::from_nexrad_bytes(&name),
+            DataMomentName::Reflectivity => FieldName::Dbzh,
+            DataMomentName::Velocity => FieldName::Vradh,
+            DataMomentName::SpectrumWidth => FieldName::Wradh,
+            DataMomentName::DifferentialReflectivity => FieldName::Zdr,
+            DataMomentName::DifferentialPhase => FieldName::Phidp,
+            DataMomentName::CorrelationCoefficient => FieldName::Rhohv,
+            DataMomentName::ClutterFilterPowerRemoved => FieldName::Ccorh,
+            DataMomentName::Other(name) => FieldName::from_nexrad_block(&name),
         }
     }
 

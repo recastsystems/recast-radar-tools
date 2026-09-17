@@ -364,9 +364,9 @@ fn check_whole_file(case: &WholeFileCase) {
         .map(|(_, count)| count)
         .sum::<usize>();
     if radial_messages > 0 && messages::volume_header_len(&raw) > 0 {
-        let volume = recast_radar_io_nexrad::decode_volume_from_bytes(&raw).unwrap();
+        let volume = recast_radar_io_nexrad::read_volume_from_bytes(&raw).unwrap();
         assert_eq!(
-            volume.metadata.decoded_radial_count, radial_messages,
+            volume.provenance.decode.decoded_ray_count, radial_messages,
             "{id}: radials decoded by the volume decoder"
         );
     }

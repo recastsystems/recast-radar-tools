@@ -1,4 +1,4 @@
-//! `decode_volume_with_metadata` on real files.
+//! `read_volume_with_metadata` on real files.
 //!
 //! Golden values:
 //!
@@ -17,9 +17,9 @@
 //!   radial's constant blocks.
 //!
 //! The field-by-field decoding of each message is verified by the
-//! `messages_*` tests; these tests verify that `decode_volume_with_metadata`
+//! `messages_*` tests; these tests verify that `read_volume_with_metadata`
 //! picks the right messages and radials, aligns the per-sweep data with the
-//! volume's cuts, returns the same volume as `decode_volume_from_bytes`, and
+//! volume's sweeps, returns the same volume as `read_volume_from_bytes`, and
 //! keeps decoding when a metadata message is broken.
 
 use std::io::{Read, Write};
@@ -28,8 +28,8 @@ use std::path::PathBuf;
 use recast_radar_io_nexrad::messages::rda_status::RdaStatus;
 use recast_radar_io_nexrad::messages::{self, MessageBody, MessageWalker};
 use recast_radar_io_nexrad::{
-    NexradMetadata, NexradVolume, SweepElevationData, decode_volume_from_bytes,
-    decode_volume_with_metadata,
+    NexradMetadata, NexradVolume, SweepElevationData, read_volume_from_bytes,
+    read_volume_with_metadata,
 };
 use serde_json::Value;
 
@@ -44,7 +44,7 @@ const CHUNKS: [&str; 3] = [
 /// `matches_metpy_metadata_messages`.
 ///
 /// KVWX 2008-04-15 writes four spaces as the radar identifier of every
-/// message 31 radial, which `decode_volume_from_bytes` treats as an empty
+/// message 31 radial, which `read_volume_from_bytes` treats as an empty
 /// message and rejects (MetPy and Py-ART read the file).
 const VOLUME_DECODER_REJECTS: [(&str, &str); 1] =
     [("l2-kvwx-20080415-235337", "empty message 31 id")];
@@ -55,8 +55,8 @@ fn rejected_by_volume_decoder(name: &str, bytes: &[u8]) -> bool {
     let Some((_, reason)) = VOLUME_DECODER_REJECTS.iter().find(|(id, _)| *id == name) else {
         return false;
     };
-    let plain = decode_volume_from_bytes(bytes).unwrap_err().to_string();
-    let with_metadata = decode_volume_with_metadata(bytes).unwrap_err().to_string();
+    let plain = read_volume_from_bytes(bytes).unwrap_err().to_string();
+    let with_metadata = read_volume_with_metadata(bytes).unwrap_err().to_string();
     assert!(plain.contains(reason), "{name}: {plain}");
     assert_eq!(with_metadata, plain, "{name}: same error");
     true
@@ -254,7 +254,7 @@ fn assert_matches_metadata_record(name: &str, bytes: &[u8], metadata: &NexradMet
     );
 }
 
-/// Per-sweep entries exist for every cut, in cut order.
+/// Per-sweep entries exist for every sweep, in sweep order.
 fn sweeps<'a>(name: &str, decoded: &'a NexradVolume) -> &'a [SweepElevationData] {
     let sweeps = decoded
         .metadata
@@ -263,14 +263,26 @@ fn sweeps<'a>(name: &str, decoded: &'a NexradVolume) -> &'a [SweepElevationData]
         .unwrap_or_else(|| panic!("{name}: message 31 volume without per-sweep data"));
     assert_eq!(
         sweeps.len(),
-        decoded.volume.cuts.len(),
-        "{name}: one per cut"
+        decoded.volume.sweeps.len(),
+        "{name}: one per sweep"
     );
-    for (index, (sweep, cut)) in sweeps.iter().zip(&decoded.volume.cuts).enumerate() {
-        assert_eq!(sweep.cut_index, index, "{name}");
-        assert_eq!(Some(sweep.elevation_number), cut.elevation_number, "{name}");
+    for (index, (data, sweep)) in sweeps.iter().zip(&decoded.volume.sweeps).enumerate() {
+        assert_eq!(data.sweep_index, index, "{name}");
+        assert_eq!(
+            Some(u16::from(data.elevation_number)),
+            sweep.elevation_number,
+            "{name}"
+        );
     }
     sweeps
+}
+
+/// Milliseconds of day of a ray's collection time (the Message 31 header
+/// value).
+fn collect_ms(volume: &recast_radar_core::Volume, sweep: usize, ray: usize) -> i64 {
+    let time = volume.ray_time(sweep, ray).unwrap();
+    let midnight = time.date_naive().and_time(chrono::NaiveTime::MIN).and_utc();
+    (time - midnight).num_milliseconds()
 }
 
 fn check_pyart_scan(name: &str, decoded: &NexradVolume, scan: &Value) {
@@ -278,13 +290,10 @@ fn check_pyart_scan(name: &str, decoded: &NexradVolume, scan: &Value) {
     let metadata = &decoded.metadata;
     let number = uint(&scan["elevation_number"], "elevation_number");
     let what = format!("{name} elevation {number}");
-    let cuts: Vec<usize> = (0..volume.cuts.len())
-        .filter(|&index| volume.cuts[index].elevation_number.map(u64::from) == Some(number))
+    let cuts: Vec<usize> = (0..volume.sweeps.len())
+        .filter(|&index| volume.sweeps[index].elevation_number.map(u64::from) == Some(number))
         .collect();
-    let rays: usize = cuts
-        .iter()
-        .map(|&index| volume.cuts[index].radials.len())
-        .sum();
+    let rays: usize = cuts.iter().map(|&index| volume.sweeps[index].nrays()).sum();
     assert_eq!(rays as u64, uint(&scan["nrays"], "nrays"), "{what}: rays");
     if let Some(code) = scan["target_angle_code"].as_u64() {
         let vcp = metadata.vcp.as_ref().unwrap();
@@ -299,16 +308,15 @@ fn check_pyart_scan(name: &str, decoded: &NexradVolume, scan: &Value) {
         return;
     };
     let sweep = &metadata.per_sweep_elevation_data.as_ref().unwrap()[cut_index];
-    let first_ray = &volume.cuts[cut_index].radials[0];
 
     let header = &scan["header"];
     assert_eq!(
-        i64::from(first_ray.time_offset_ms),
+        collect_ms(volume, cut_index, 0),
         int(&header["collect_ms"], "collect_ms"),
         "{what}: first ray"
     );
     assert_eq!(
-        first_ray.azimuth_deg,
+        volume.sweeps[cut_index].rays.azimuth_deg[0],
         real(&header["azimuth_angle"], "azimuth_angle"),
         "{what}"
     );
@@ -436,7 +444,11 @@ fn check_pyart_scan(name: &str, decoded: &NexradVolume, scan: &Value) {
             // same RAD block.
             if block.nyquist_velocity_raw > 0 {
                 assert_eq!(
-                    first_ray.nyquist_velocity_mps,
+                    volume.sweeps[cut_index]
+                        .ray_vars
+                        .nyquist_velocity_mps
+                        .as_ref()
+                        .map(|values| values[0]),
                     Some(f32::from(block.nyquist_velocity_raw as i16) / 100.0),
                     "{what}"
                 );
@@ -461,11 +473,11 @@ fn matches_pyart_and_the_volume_decoder() {
             continue;
         }
         let decoded =
-            decode_volume_with_metadata(&bytes).unwrap_or_else(|error| panic!("{name}: {error}"));
+            read_volume_with_metadata(&bytes).unwrap_or_else(|error| panic!("{name}: {error}"));
         assert_eq!(
             decoded.volume,
-            decode_volume_from_bytes(&bytes).unwrap(),
-            "{name}: same volume as decode_volume_from_bytes"
+            read_volume_from_bytes(&bytes).unwrap(),
+            "{name}: same volume as read_volume_from_bytes"
         );
         assert_matches_metadata_record(&name, &bytes, &decoded.metadata);
 
@@ -494,10 +506,10 @@ fn matches_pyart_and_the_volume_decoder() {
                     let number = uint(&scan["elevation_number"], "elevation_number");
                     let rays: usize = decoded
                         .volume
-                        .cuts
+                        .sweeps
                         .iter()
-                        .filter(|cut| cut.elevation_number.map(u64::from) == Some(number))
-                        .map(|cut| cut.radials.len())
+                        .filter(|sweep| sweep.elevation_number.map(u64::from) == Some(number))
+                        .map(|sweep| sweep.nrays())
                         .sum();
                     assert_eq!(
                         rays as u64,
@@ -512,9 +524,9 @@ fn matches_pyart_and_the_volume_decoder() {
                 let scans = golden["scans"].as_array().unwrap();
                 let numbered = decoded
                     .volume
-                    .cuts
+                    .sweeps
                     .iter()
-                    .filter_map(|cut| cut.elevation_number)
+                    .filter_map(|sweep| sweep.elevation_number)
                     .max()
                     .unwrap_or(0);
                 assert_eq!(scans.len(), usize::from(numbered), "{name}: elevations");
@@ -683,15 +695,15 @@ fn per_sweep_data_matches_metpy_sweeps() {
         if rejected_by_volume_decoder(&name, &bytes) {
             continue;
         }
-        let decoded = decode_volume_with_metadata(&bytes).unwrap();
+        let decoded = read_volume_with_metadata(&bytes).unwrap();
         let sweeps = sweeps(&name, &decoded);
         let metpy = golden["sweeps"].as_array().unwrap();
         assert_eq!(sweeps.len(), metpy.len(), "{name}: sweeps");
-        for ((sweep, cut), metpy) in sweeps.iter().zip(&decoded.volume.cuts).zip(metpy) {
-            let what = format!("{name} sweep {}", sweep.cut_index);
+        for ((sweep, cut), metpy) in sweeps.iter().zip(&decoded.volume.sweeps).zip(metpy) {
+            let what = format!("{name} sweep {}", sweep.sweep_index);
             let first = &metpy["first"];
             assert_eq!(
-                cut.radials.len() as u64,
+                cut.nrays() as u64,
                 uint(&metpy["radials"], "radials"),
                 "{what}"
             );
@@ -701,7 +713,7 @@ fn per_sweep_data_matches_metpy_sweeps() {
                 "{what}"
             );
             assert_eq!(
-                i64::from(cut.radials[0].time_offset_ms),
+                collect_ms(&decoded.volume, sweep.sweep_index, 0),
                 int(&first["header.time_ms"], "time_ms"),
                 "{what}"
             );
@@ -850,7 +862,7 @@ fn broken_metadata_message_is_reported_not_fatal() {
         return;
     };
     let original = [start.clone(), rest.clone()].concat();
-    let expected = decode_volume_with_metadata(&original).unwrap();
+    let expected = read_volume_with_metadata(&original).unwrap();
     assert!(expected.metadata.clutter_filter_map.is_some());
     assert!(
         expected.metadata.errors.is_empty(),
@@ -866,7 +878,7 @@ fn broken_metadata_message_is_reported_not_fatal() {
     let mut mutated = rebuild_start_chunk(&start, &record);
     mutated.extend_from_slice(&rest);
 
-    let decoded = decode_volume_with_metadata(&mutated).unwrap();
+    let decoded = read_volume_with_metadata(&mutated).unwrap();
     assert_eq!(decoded.volume, expected.volume);
     assert_eq!(decoded.metadata.clutter_filter_map, None);
     assert_eq!(
@@ -896,7 +908,7 @@ fn legacy_and_stale_metadata_records() {
     // per-sweep data), a zero-filled message 5 and message 15, and an orphan
     // run of message 13 segments.
     if let Some(bytes) = load("l2-klix-20050829-130035") {
-        let decoded = decode_volume_with_metadata(&bytes).unwrap();
+        let decoded = read_volume_with_metadata(&bytes).unwrap();
         let metadata = &decoded.metadata;
         assert!(matches!(metadata.rda_status, Some(RdaStatus::Legacy(_))));
         assert_eq!(metadata.build, None);
@@ -917,7 +929,7 @@ fn legacy_and_stale_metadata_records() {
     // KDMX 2008 (Build 10.0): stale frames after the metadata messages are
     // reported; every metadata message still decodes.
     if let Some(bytes) = load("l2-kdmx-20080525-205148") {
-        let decoded = decode_volume_with_metadata(&bytes).unwrap();
+        let decoded = read_volume_with_metadata(&bytes).unwrap();
         let metadata = &decoded.metadata;
         assert!(!metadata.errors.is_empty());
         assert_eq!(
@@ -926,7 +938,7 @@ fn legacy_and_stale_metadata_records() {
         );
         assert!(metadata.vcp.is_some() && metadata.adaptation.is_some());
         assert!(metadata.clutter_filter_map.is_some() && metadata.bypass_map.is_some());
-        assert_eq!(sweeps("KDMX", &decoded).len(), decoded.volume.cuts.len());
+        assert_eq!(sweeps("KDMX", &decoded).len(), decoded.volume.sweeps.len());
     }
 }
 
@@ -1000,14 +1012,14 @@ fn out_of_order_chunks_keep_per_sweep_alignment() {
     let Some(first_two) = load_all(&order[..2]) else {
         return;
     };
-    let decoded = decode_volume_with_metadata(&bytes).unwrap();
-    assert_eq!(decoded.volume, decode_volume_from_bytes(&bytes).unwrap());
+    let decoded = read_volume_with_metadata(&bytes).unwrap();
+    assert_eq!(decoded.volume, read_volume_from_bytes(&bytes).unwrap());
     let volume = &decoded.volume;
-    assert_eq!(volume.cuts.len(), 2);
-    assert_eq!(volume.cuts[0].elevation_number, Some(1));
-    assert_eq!(volume.cuts[1].elevation_number, Some(3));
-    assert_eq!(volume.cuts[0].radials.len(), 240, "chunks 002 and 003");
-    assert_eq!(volume.cuts[1].radials.len(), 120, "chunk 014");
+    assert_eq!(volume.sweeps.len(), 2);
+    assert_eq!(volume.sweeps[0].elevation_number, Some(1));
+    assert_eq!(volume.sweeps[1].elevation_number, Some(3));
+    assert_eq!(volume.sweeps[0].nrays(), 240, "chunks 002 and 003");
+    assert_eq!(volume.sweeps[1].nrays(), 120, "chunk 014");
     let per_sweep = sweeps("out of order", &decoded);
     assert!(
         decoded.metadata.errors.is_empty(),
@@ -1017,14 +1029,14 @@ fn out_of_order_chunks_keep_per_sweep_alignment() {
 
     // Cut 0 opened in chunk 002: the same per-sweep data as when chunks 001
     // and 002 are decoded alone.
-    let alone = decode_volume_with_metadata(&first_two).unwrap();
+    let alone = read_volume_with_metadata(&first_two).unwrap();
     let alone_sweeps = sweeps("chunks 001-002", &alone);
     assert_eq!(alone_sweeps.len(), 1);
     assert_same(&per_sweep[0], &alone_sweeps[0], "cut 0 per-sweep data");
     assert_eq!(per_sweep[1].elevation_number, 3);
-    assert_eq!(per_sweep[1].cut_index, 1);
+    assert_eq!(per_sweep[1].sweep_index, 1);
     assert_eq!(
         per_sweep[1].elevation_angle_deg,
-        volume.cuts[1].radials[0].elevation_deg
+        volume.sweeps[1].rays.elevation_deg[0]
     );
 }

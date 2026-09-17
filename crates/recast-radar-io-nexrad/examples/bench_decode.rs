@@ -22,47 +22,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let normalize_elapsed = normalize_start.elapsed();
 
     let preview_start = Instant::now();
-    let preview = recast_radar_io_nexrad::decode_bzip_block_preview_from_bytes(&raw, 180)?;
+    let preview = recast_radar_io_nexrad::read_bzip_block_preview_from_bytes(&raw, 180)?;
     let preview_elapsed = preview_start.elapsed();
 
     let gzip_preview_start = Instant::now();
-    let gzip_preview = recast_radar_io_nexrad::decode_gzip_preview_from_bytes(&raw, 180)?;
+    let gzip_preview = recast_radar_io_nexrad::read_gzip_preview_from_bytes(&raw, 180)?;
     let gzip_preview_elapsed = gzip_preview_start.elapsed();
 
     let app_preview_start = Instant::now();
     let mut app_preview = None;
     let app_preview_volume = if raw.starts_with(&[0x1f, 0x8b]) {
-        recast_radar_io_nexrad::decode_gzip_volume_from_bytes_with_preview(&raw, 180, |volume| {
+        recast_radar_io_nexrad::read_gzip_volume_from_bytes_with_preview(&raw, 180, |volume| {
             app_preview = Some((
                 app_preview_start.elapsed(),
-                volume.site.id,
-                volume.cuts.len(),
-                volume.metadata.decoded_radial_count,
+                volume.attrs.instrument_name.clone(),
+                volume.sweeps.len(),
+                volume.provenance.decode.decoded_ray_count,
             ));
         })?
     } else if should_preview_block_bzip_loads_for_threads(rayon::current_num_threads()) {
-        recast_radar_io_nexrad::decode_volume_from_bytes_with_bzip_preview(&raw, 180, |volume| {
+        recast_radar_io_nexrad::read_volume_from_bytes_with_bzip_preview(&raw, 180, |volume| {
             app_preview = Some((
                 app_preview_start.elapsed(),
-                volume.site.id,
-                volume.cuts.len(),
-                volume.metadata.decoded_radial_count,
+                volume.attrs.instrument_name.clone(),
+                volume.sweeps.len(),
+                volume.provenance.decode.decoded_ray_count,
             ));
         })?
     } else {
-        recast_radar_io_nexrad::decode_volume_from_bytes(&raw)?
+        recast_radar_io_nexrad::read_volume_from_bytes(&raw)?
     };
     let app_preview_elapsed = app_preview_start.elapsed();
 
     let preview_full_start = Instant::now();
     let mut preview_full_preview = None;
     let preview_full_volume =
-        recast_radar_io_nexrad::decode_volume_from_bytes_with_bzip_preview(&raw, 180, |volume| {
+        recast_radar_io_nexrad::read_volume_from_bytes_with_bzip_preview(&raw, 180, |volume| {
             preview_full_preview = Some((
                 preview_full_start.elapsed(),
-                volume.site.id,
-                volume.cuts.len(),
-                volume.metadata.decoded_radial_count,
+                volume.attrs.instrument_name.clone(),
+                volume.sweeps.len(),
+                volume.provenance.decode.decoded_ray_count,
             ));
         })?;
     let preview_full_elapsed = preview_full_start.elapsed();
@@ -72,12 +72,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..10 {
         let parse_start = Instant::now();
         let volume =
-            recast_radar_io_nexrad::decode_normalized_volume_bytes(&normalized, compression)?;
+            recast_radar_io_nexrad::read_normalized_volume_bytes(&normalized, compression)?;
         let parse_elapsed = parse_start.elapsed();
         summary = Some((
-            volume.site.id,
-            volume.cuts.len(),
-            volume.metadata.decoded_radial_count,
+            volume.attrs.instrument_name.clone(),
+            volume.sweeps.len(),
+            volume.provenance.decode.decoded_ray_count,
         ));
         std::hint::black_box(summary.as_ref());
         parse_timings.push(parse_elapsed);
@@ -87,8 +87,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut decode_timings = Vec::new();
     for _ in 0..5 {
         let decode_start = Instant::now();
-        let volume = recast_radar_io_nexrad::decode_volume_from_bytes(&raw)?;
-        std::hint::black_box(volume.metadata.decoded_radial_count);
+        let volume = recast_radar_io_nexrad::read_volume_from_bytes(&raw)?;
+        std::hint::black_box(volume.provenance.decode.decoded_ray_count);
         decode_timings.push(decode_start.elapsed());
     }
     decode_timings.sort();
@@ -110,9 +110,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(volume) => println!(
             "bzip_preview_ms={:.3} site={} cuts={} radials={}",
             elapsed_ms(preview_elapsed),
-            volume.site.id,
-            volume.cuts.len(),
-            volume.metadata.decoded_radial_count
+            volume.attrs.instrument_name.clone(),
+            volume.sweeps.len(),
+            volume.provenance.decode.decoded_ray_count
         ),
         None => println!(
             "bzip_preview_ms={:.3} unavailable",
@@ -127,23 +127,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             site,
             preview_cuts,
             preview_radials,
-            preview_full_volume.cuts.len(),
-            preview_full_volume.metadata.decoded_radial_count
+            preview_full_volume.sweeps.len(),
+            preview_full_volume.provenance.decode.decoded_ray_count
         ),
         None => println!(
             "decode_with_preview full_ms={:.3} preview_unavailable full_cuts={} full_radials={}",
             elapsed_ms(preview_full_elapsed),
-            preview_full_volume.cuts.len(),
-            preview_full_volume.metadata.decoded_radial_count
+            preview_full_volume.sweeps.len(),
+            preview_full_volume.provenance.decode.decoded_ray_count
         ),
     }
     match gzip_preview {
         Some(volume) => println!(
             "gzip_preview_ms={:.3} site={} cuts={} radials={}",
             elapsed_ms(gzip_preview_elapsed),
-            volume.site.id,
-            volume.cuts.len(),
-            volume.metadata.decoded_radial_count
+            volume.attrs.instrument_name.clone(),
+            volume.sweeps.len(),
+            volume.provenance.decode.decoded_ray_count
         ),
         None => println!(
             "gzip_preview_ms={:.3} unavailable",
@@ -158,14 +158,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             site,
             preview_cuts,
             preview_radials,
-            app_preview_volume.cuts.len(),
-            app_preview_volume.metadata.decoded_radial_count
+            app_preview_volume.sweeps.len(),
+            app_preview_volume.provenance.decode.decoded_ray_count
         ),
         None => println!(
             "app_preview full_ms={:.3} preview_unavailable full_cuts={} full_radials={}",
             elapsed_ms(app_preview_elapsed),
-            app_preview_volume.cuts.len(),
-            app_preview_volume.metadata.decoded_radial_count
+            app_preview_volume.sweeps.len(),
+            app_preview_volume.provenance.decode.decoded_ray_count
         ),
     }
     println!(

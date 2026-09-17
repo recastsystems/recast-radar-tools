@@ -5,8 +5,8 @@
 
 use recast_radar_core::bounded_read::{MAX_GATES_PER_RADIAL, MAX_SWEEPS_PER_VOLUME};
 use recast_radar_io_nexrad::{
-    ArchiveCompression, NexradError, decode_normalized_volume_bytes, decode_volume_from_bytes,
-    normalize_archive_bytes,
+    ArchiveCompression, NexradError, normalize_archive_bytes, read_normalized_volume_bytes,
+    read_volume_from_bytes,
 };
 
 const VOLUME_HEADER_LEN: usize = 24;
@@ -83,9 +83,9 @@ fn be_u32(bytes: &[u8], offset: usize) -> usize {
 fn committed_chunk_prefix_decodes_within_limits() {
     let bytes = kiwa_normalized();
     assert_eq!(message31_bodies(&bytes).len(), 240);
-    let volume = decode_normalized_volume_bytes(&bytes, ArchiveCompression::Bzip2Blocks)
+    let volume = read_normalized_volume_bytes(&bytes, ArchiveCompression::Bzip2Blocks)
         .expect("unmodified real chunks decode");
-    assert_eq!(volume.metadata.decoded_radial_count, 240);
+    assert_eq!(volume.provenance.decode.decoded_ray_count, 240);
 }
 
 #[test]
@@ -105,8 +105,8 @@ fn moment_block_claiming_more_gates_than_the_limit_is_rejected() {
 
     bytes[gate_count_at..gate_count_at + 2].copy_from_slice(&u16::MAX.to_be_bytes());
     for decoded in [
-        decode_normalized_volume_bytes(&bytes, ArchiveCompression::Bzip2Blocks),
-        decode_volume_from_bytes(&bytes),
+        read_normalized_volume_bytes(&bytes, ArchiveCompression::Bzip2Blocks),
+        read_volume_from_bytes(&bytes),
     ] {
         let error = decoded.expect_err("65,535 gates exceed the per-radial limit");
         assert!(
@@ -136,7 +136,7 @@ fn volume_with_more_cuts_than_the_sweep_limit_is_rejected() {
             }
         }
     }
-    let error = decode_normalized_volume_bytes(&bytes, ArchiveCompression::Bzip2Blocks)
+    let error = read_normalized_volume_bytes(&bytes, ArchiveCompression::Bzip2Blocks)
         .expect_err("11,520 cuts exceed the sweep limit");
     assert!(
         matches!(

@@ -1,9 +1,11 @@
 //! Level II volumes together with their NEXRAD metadata messages.
 //!
-//! [`decode_volume_with_metadata`] returns the same [`RadarVolume`] as
-//! [`crate::decode_volume_from_bytes`], plus a [`NexradMetadata`] holding the
+//! [`read_volume_with_metadata`] returns the same [`Volume`] as
+//! [`crate::read_volume_from_bytes`], plus a [`NexradMetadata`] holding the
 //! typed metadata messages ([`crate::messages`]) and per-sweep message 31
-//! constant blocks, which the shared radar model has no place for.
+//! constant blocks, which the FM301 model has no place for (design note
+//! `docs/design/fm301-model.md` section 2: format metadata sits beside the
+//! volume).
 //!
 //! Where each field comes from:
 //!
@@ -19,7 +21,7 @@
 //!   data is decompressed once. Only the metadata record is decompressed a
 //!   second time.
 
-use recast_radar_core::RadarVolume;
+use recast_radar_core::model::Volume;
 
 use crate::messages::adaptation::RdaAdaptationData;
 use crate::messages::bypass_map::ClutterFilterBypassMap;
@@ -38,9 +40,9 @@ use crate::{RadialObserver, Result};
 /// A decoded Level II volume and its NEXRAD metadata.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NexradVolume {
-    /// The volume, identical to what [`crate::decode_volume_from_bytes`]
+    /// The volume, identical to what [`crate::read_volume_from_bytes`]
     /// returns for the same bytes.
-    pub volume: RadarVolume,
+    pub volume: Volume,
     /// Metadata messages and per-sweep message 31 constant blocks.
     pub metadata: NexradMetadata,
 }
@@ -67,8 +69,8 @@ pub struct NexradMetadata {
     pub clutter_censor_zones: Option<ClutterCensorZones>,
     /// Message 32, RDA PRF Data (Table XVIII), sent from Build 23.
     pub prf: Option<RdaPrfData>,
-    /// Message 31 constant blocks of each cut's first radial, in the order of
-    /// [`RadarVolume::cuts`]: one entry per cut, except cuts opened by a
+    /// Message 31 constant blocks of each sweep's first radial, in the order
+    /// of [`Volume::sweeps`]: one entry per sweep, except sweeps opened by a
     /// message 1 radial or by a radial whose blocks do not decode (listed in
     /// [`Self::errors`]). `None` when no radial of the volume is a message 31
     /// (Message 1 volumes).
@@ -84,15 +86,16 @@ pub struct NexradMetadata {
     pub errors: Vec<String>,
 }
 
-/// Message 31 constant blocks of the first radial of one cut.
+/// Message 31 constant blocks of the first radial of one sweep.
 ///
-/// The ELV block is constant within a cut. VOL and RAD blocks are sent with
-/// every radial and can change within a cut (noise levels, and the Nyquist
-/// velocity of Doppler sectors), so these are the values at the cut's start.
+/// The ELV block is constant within a sweep. VOL and RAD blocks are sent with
+/// every radial and can change within a sweep (noise levels, and the Nyquist
+/// velocity of Doppler sectors), so these are the values at the sweep's
+/// start.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SweepElevationData {
-    /// Index of the cut in [`RadarVolume::cuts`].
-    pub cut_index: usize,
+    /// Index of the sweep in [`Volume::sweeps`].
+    pub sweep_index: usize,
     /// Data Header Block elevation number (1-based cut number in the VCP).
     pub elevation_number: u8,
     /// Data Header Block elevation angle of the first radial, degrees.
@@ -108,12 +111,14 @@ pub struct SweepElevationData {
 
 /// Decode a Level II volume and its NEXRAD metadata.
 ///
-/// Accepts the same inputs as [`crate::decode_volume_from_bytes`] and returns
+/// Accepts the same inputs as [`crate::read_volume_from_bytes`] and returns
 /// the same volume, with the same errors. Problems in the metadata alone do
 /// not fail the call; they are listed in [`NexradMetadata::errors`].
-pub fn decode_volume_with_metadata(bytes: &[u8]) -> Result<NexradVolume> {
+pub fn read_volume_with_metadata(bytes: &[u8]) -> Result<NexradVolume> {
     let mut sweeps = SweepCollector::default();
-    let volume = crate::decode_volume_observed(bytes, &mut sweeps)?;
+    let volume = crate::builder_observed(bytes, false, &mut sweeps)?
+        .finish()?
+        .0;
     let mut metadata = NexradMetadata::from_metadata_record(bytes);
     metadata.per_sweep_elevation_data = sweeps.saw_message_31.then_some(sweeps.sweeps);
     metadata.errors.extend(sweeps.errors);
@@ -168,39 +173,39 @@ fn set_first<T>(slot: &mut Option<T>, value: T) {
     }
 }
 
-/// Collects the constant blocks of each cut's first message 31 radial while
-/// the volume decoder runs.
+/// Collects the constant blocks of each sweep's first message 31 radial
+/// while the volume decoder runs.
 ///
-/// The decoder creates a cut only for the radial that opens it, and always
-/// appends it, so a message 31 that leaves the volume with more cuts than the
-/// previous one did is the first radial of the last cut. Later radials may go
-/// to earlier cuts (for example out-of-order real-time chunks), but never
-/// open one.
+/// The decoder creates a sweep only for the radial that opens it, and always
+/// appends it, so a message 31 that leaves the volume with more sweeps than
+/// the previous one did is the first radial of the last sweep. Later radials
+/// may go to earlier sweeps (for example out-of-order real-time chunks), but
+/// never open one.
 #[derive(Default)]
 struct SweepCollector {
-    /// Cuts in the volume after the previous message 31.
-    cuts_seen: usize,
+    /// Sweeps in the volume after the previous message 31.
+    sweeps_seen: usize,
     sweeps: Vec<SweepElevationData>,
     errors: Vec<String>,
     saw_message_31: bool,
 }
 
 impl RadialObserver for SweepCollector {
-    fn message_31(&mut self, body: &[u8], volume: &RadarVolume) {
+    fn message_31(&mut self, body: &[u8], volume: &Volume) {
         self.saw_message_31 = true;
-        if volume.cuts.len() == self.cuts_seen {
+        if volume.sweeps.len() == self.sweeps_seen {
             return;
         }
-        self.cuts_seen = volume.cuts.len();
-        let cut_index = volume.cuts.len() - 1;
-        // A cut with more radials was opened by message 1 radials (which the
-        // observer does not see) and this radial went to another cut.
-        if volume.cuts[cut_index].radials.len() != 1 {
+        self.sweeps_seen = volume.sweeps.len();
+        let sweep_index = volume.sweeps.len() - 1;
+        // A sweep with more rays was opened by message 1 radials (which the
+        // observer does not see) and this radial went to another sweep.
+        if volume.sweeps[sweep_index].nrays() != 1 {
             return;
         }
         match DigitalRadarDataGeneric::decode(body) {
             Ok(radial) => self.sweeps.push(SweepElevationData {
-                cut_index,
+                sweep_index,
                 elevation_number: radial.header.elevation_number,
                 elevation_angle_deg: radial.header.elevation_angle_deg,
                 elevation: radial.elevation,
@@ -209,7 +214,7 @@ impl RadialObserver for SweepCollector {
             }),
             Err(error) => self
                 .errors
-                .push(format!("cut {cut_index} first radial: {error}")),
+                .push(format!("sweep {sweep_index} first radial: {error}")),
         }
     }
 }
