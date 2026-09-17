@@ -1,11 +1,26 @@
 //! Native DORADE sweepfile (`swp.*`) decoder for mobile research radars
 //! (DOW6/DOW7/DOW8, COW, RaXPol, and other CSWR/OU sweepfile producers).
 //!
-//! Decodes directly into [`recast_radar_core::RadarVolume`] with no intermediate
-//! volume model: each sweepfile contributes one [`recast_radar_core::ElevationCut`]
-//! whose moments live in compact [`recast_radar_core::MomentGrid`] storage (16-bit
-//! DORADE integers stay 16-bit, shifted into unsigned space so the grid's
-//! `(raw - offset) / scale` matches DORADE's `(raw - bias) / scale`).
+//! Decodes directly into the FM301 model ([`Volume`]; design note
+//! `docs/design/fm301-model.md` sections 6.6, 8.1 and 10): each sweepfile
+//! contributes one [`Sweep`] whose fields keep the DORADE parameter names
+//! verbatim (`DBZHC_F`, `VEL_F`, `DZ`, ...) and the stored encoding: 8-bit
+//! and 16-bit integers stay `i8` / `i16` with the DORADE
+//! `(raw - bias) / scale` transform and `bad_data` as `_FillValue`; 32-bit
+//! integer and float parameters are expanded to physical `f32` (NaN for
+//! bad data), as no packed form of them fits the model. The `range`
+//! coordinate holds the CELV cell distances or the CSFD segments (uniform
+//! when the cells are evenly spaced, explicit centres otherwise) plus the
+//! CFAC range delay. The RADD scan mode maps to `sweep_mode` (SUR ->
+//! `azimuth_surveillance`, PPI -> `sector`, RHI -> `rhi`, VER ->
+//! `vertical_pointing`, COP -> `coplane`, IDL -> `idle`, TAR -> `pointing`,
+//! MAN -> `manual_ppi`, others verbatim); for RHI sweeps the fixed angle is
+//! the AZIMUTH. Sweeps of a multi-file volume stay in input order (scan
+//! time), the time reference is the earliest sweep start, and every ray's
+//! RYIB time is a `time(time)` value relative to it.
+//!
+//! The pre-FM301 `decode_*` functions (legacy `RadarVolume`) live in
+//! [`crate::legacy_api`] during the migration.
 //!
 //! Format references:
 //! - R. Oye and M. Case, "DORADE Data Format" (NCAR/ATD, 1995; revised
@@ -35,8 +50,8 @@
 //! - **CFAC corrections**: azimuth/elevation/range-delay/lat/lon correction
 //!   factors are applied when present (all-zero in the observed corpus, but
 //!   cheap and correct; Radx applies them unconditionally too).
-//! - **Per-ray times**: RYIB julian day + h/m/s/ms become
-//!   `Radial::time_offset_ms`; the reference dropped ray times.
+//! - **Per-ray times**: RYIB julian day + h/m/s/ms become the `time`
+//!   coordinate; the reference dropped ray times.
 //! - **Binary formats**: 8-bit int, 16-bit int, 32-bit int, and 32-bit float
 //!   PARM data are supported; the reference assumed 16-bit everywhere.
 //! - **Staggered-PRT Nyquist**: the extended unambiguous velocity falls back
@@ -46,28 +61,24 @@
 //!   `m·Va_short`, which is only correct for `n − m = 1` stagger ratios.
 //!
 //! Known limitations (documented, not silent):
-//! - Multi-segment CSFD range geometry is flattened to the first segment's
-//!   spacing because [`recast_radar_core::GateRange`] models uniform gates only.
 //! - Per-ray platform georeferencing (`ASIB`) is ignored: DOW/COW/RaXPol
 //!   deployments are parked, so the RADD site position applies to the whole
 //!   sweep. Airborne tail radars would need ASIB handling.
-//! - RHI sweeps decode as cuts ordered by their fixed angle (the AZIMUTH for
-//!   an RHI — `ElevationCut::elevation_deg` holds it); the RADD `scan_mode`
-//!   is surfaced as [`recast_radar_core::ScanMode`] in the volume metadata so
-//!   displays can render a range-height panel instead of a plan view.
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
-use recast_radar_core::bounded_read::{
-    DecodeBudget, check_gate_count, check_sweep_count, volume_moment_capacity_bytes,
-};
-use recast_radar_core::{
-    GateRange, MomentGrid, MomentRow, MomentType, RadarSite, RadarVolume, Radial, ScanMode,
-    canonical_moment,
+use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
+use recast_radar_core::model::{
+    Field, FieldData, FieldName, FloatCoding, FollowMode, GateMapping, IntCoding, LinearTransform,
+    RangeCoord, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
 };
 
+#[allow(deprecated)]
+pub use crate::legacy_api::{
+    append_dorade_sweep, decode_dorade_sweep_volume, decode_dorade_volume_from_paths,
+    decode_dorade_volume_from_slices, finalize_dorade_volume,
+};
 use crate::{DoradeError, Result};
 
 const BLOCK_HEADER_LEN: usize = 8;
@@ -79,7 +90,7 @@ const KM_TO_M: f64 = 1000.0;
 const MAX_DORADE_CELLS_PER_SWEEP: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Endian {
+pub(crate) enum Endian {
     Little,
     Big,
 }
@@ -173,89 +184,176 @@ pub fn peek_dorade_sweep(bytes: &[u8]) -> Result<DoradeSweepHeader> {
     })
 }
 
-/// Decode one sweepfile into a fresh single-cut volume.
-pub fn decode_dorade_sweep_volume(bytes: &[u8]) -> Result<RadarVolume> {
-    let mut volume = RadarVolume::default();
-    append_dorade_sweep(bytes, &mut volume)?;
-    finalize_dorade_volume(&mut volume);
-    Ok(volume)
+/// Decode one sweepfile into a fresh single-sweep volume.
+pub fn read_dorade_sweep_volume(bytes: &[u8]) -> Result<Volume> {
+    let mut builder = DoradeVolumeBuilder::new();
+    builder.append(bytes)?;
+    builder.finish()
 }
 
 /// Decode a set of sweepfiles forming one volume scan.
 ///
-/// Cuts are appended in input order and then sorted by elevation (ties keep
-/// input order, which the callers arrange to be scan time). The site
-/// position comes from the first sweep's RADD block — mobile radars move
-/// between deployments, so the coordinates always come from the file.
-pub fn decode_dorade_volume_from_slices<S: AsRef<[u8]>>(sweeps: &[S]) -> Result<RadarVolume> {
+/// Sweeps are appended in input order, which the callers arrange to be scan
+/// time. The site position comes from the first sweep's RADD block — mobile
+/// radars move between deployments, so the coordinates always come from the
+/// file.
+pub fn read_dorade_volume_from_slices<S: AsRef<[u8]>>(sweeps: &[S]) -> Result<Volume> {
     if sweeps.is_empty() {
         return Err(invalid(0, "no DORADE sweeps to decode"));
     }
-    let mut volume = RadarVolume::default();
+    let mut builder = DoradeVolumeBuilder::new();
     for sweep in sweeps {
-        append_dorade_sweep(sweep.as_ref(), &mut volume)?;
+        builder.append(sweep.as_ref())?;
     }
-    finalize_dorade_volume(&mut volume);
-    Ok(volume)
+    builder.finish()
 }
 
 /// Decode a set of sweepfile paths forming one volume scan.
-pub fn decode_dorade_volume_from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<RadarVolume> {
+pub fn read_dorade_volume_from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<Volume> {
     if paths.is_empty() {
         return Err(invalid(0, "no DORADE sweep paths to decode"));
     }
-    let mut volume = RadarVolume::default();
+    let mut builder = DoradeVolumeBuilder::new();
     for path in paths {
         let path = path.as_ref();
         let bytes = std::fs::read(path).map_err(|source| DoradeError::Io {
             path: path.display().to_string(),
             source,
         })?;
-        append_dorade_sweep(&bytes, &mut volume)?;
+        builder.append(&bytes)?;
     }
-    volume.metadata.source_path = Some(paths[0].as_ref().display().to_string());
-    finalize_dorade_volume(&mut volume);
+    let mut volume = builder.finish()?;
+    volume.provenance.source_path = Some(paths[0].as_ref().display().to_string());
     Ok(volume)
 }
 
-/// Decode one sweepfile and append it as a cut on `volume`.
+/// A DORADE volume assembled sweepfile by sweepfile.
 ///
-/// The first appended sweep populates the site, volume time, and metadata;
-/// later sweeps must come from the same instrument.
-pub fn append_dorade_sweep(bytes: &[u8], volume: &mut RadarVolume) -> Result<()> {
-    let mut parse = SweepParse::new(detect_endian(bytes)?);
-    parse.run(bytes, false)?;
-    check_sweep_count(volume.cuts.len() + 1, "DORADE volume")
-        .map_err(DoradeError::LimitExceeded)?;
-    // The volume budget covers every sweep appended so far.
-    let mut budget = DecodeBudget::volume();
-    let existing_radials: usize = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
-    budget
-        .charge(
-            volume_moment_capacity_bytes(volume),
-            1,
-            "DORADE volume grids",
-        )
-        .and_then(|()| {
-            budget.charge(
-                existing_radials,
-                size_of::<Radial>(),
-                "DORADE volume radials",
-            )
-        })
-        .map_err(DoradeError::LimitExceeded)?;
-    parse.finish_into(volume, &mut budget)
+/// The first appended sweep populates the site, time reference and
+/// provenance; later sweeps must come from the same instrument.
+#[derive(Debug)]
+pub struct DoradeVolumeBuilder {
+    volume: Volume,
+    /// SSWB/VOLD start time of each appended sweep.
+    sweep_starts: Vec<Option<DateTime<Utc>>>,
+    /// Gate count of each appended sweep's range as the descriptors state
+    /// it, before `seal` widens the range to the widest field row.
+    sweep_gate_counts: Vec<usize>,
 }
 
-/// Sort cuts by elevation and refresh volume-level bookkeeping. Called once
-/// after the last [`append_dorade_sweep`].
-pub fn finalize_dorade_volume(volume: &mut RadarVolume) {
-    // Stable sort: same-elevation cuts (single-tilt COW2 sequences) keep
-    // their scan-time order.
+impl Default for DoradeVolumeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DoradeVolumeBuilder {
+    pub fn new() -> Self {
+        Self {
+            volume: Volume::new("", DateTime::<Utc>::UNIX_EPOCH),
+            sweep_starts: Vec::new(),
+            sweep_gate_counts: Vec::new(),
+        }
+    }
+
+    /// Sweeps appended so far.
+    pub fn sweep_count(&self) -> usize {
+        self.volume.sweeps.len()
+    }
+
+    /// Start time (SSWB, else VOLD) of each appended sweep.
+    pub fn sweep_starts(&self) -> &[Option<DateTime<Utc>>] {
+        &self.sweep_starts
+    }
+
+    /// Decode one sweepfile and append it as a sweep.
+    pub fn append(&mut self, bytes: &[u8]) -> Result<()> {
+        let mut parse = SweepParse::new(detect_endian(bytes)?);
+        parse.run(bytes, false)?;
+        check_sweep_count(self.volume.sweeps.len() + 1, "DORADE volume")
+            .map_err(DoradeError::LimitExceeded)?;
+        // The volume budget covers every sweep appended so far.
+        let mut budget = DecodeBudget::volume();
+        let existing_rays: usize = self.volume.sweeps.iter().map(Sweep::nrays).sum();
+        budget
+            .charge(
+                volume_field_capacity_bytes(&self.volume),
+                1,
+                "DORADE volume fields",
+            )
+            .and_then(|()| budget.charge(existing_rays, RAY_BYTES, "DORADE volume rays"))
+            .map_err(DoradeError::LimitExceeded)?;
+        parse.finish_into(self, &mut budget)
+    }
+
+    /// Seal the volume: ray-time coverage and invariants.
+    pub fn finish(self) -> Result<Volume> {
+        let (volume, _) = self.finish_with_log()?;
+        Ok(volume)
+    }
+
+    /// [`Self::finish`] returning each sweep's start time and descriptor
+    /// gate count as well.
+    pub(crate) fn finish_with_log(self) -> Result<(Volume, Vec<SweepLog>)> {
+        let Self {
+            mut volume,
+            sweep_starts,
+            sweep_gate_counts,
+        } = self;
+        volume.provenance.decode.decoded_ray_count = volume.sweeps.iter().map(Sweep::nrays).sum();
+        volume.seal().map_err(|err| invalid(0, err.to_string()))?;
+        volume.time_coverage = volume.ray_time_extent();
+        let log = sweep_starts
+            .into_iter()
+            .zip(sweep_gate_counts)
+            .map(|(start, gate_count)| SweepLog { start, gate_count })
+            .collect();
+        Ok((volume, log))
+    }
+
+    /// Move the time reference earlier, rebasing every ray time.
+    fn rebase(&mut self, reference: DateTime<Utc>) {
+        if reference >= self.volume.time_reference && !self.volume.sweeps.is_empty() {
+            return;
+        }
+        let shift = (self.volume.time_reference - reference).num_milliseconds() as f64 / 1000.0;
+        for sweep in &mut self.volume.sweeps {
+            for time in &mut sweep.rays.time_s {
+                *time += shift;
+            }
+        }
+        self.volume.time_reference = reference;
+    }
+}
+
+/// Per-sweep values the legacy wrapper needs.
+pub(crate) struct SweepLog {
+    pub start: Option<DateTime<Utc>>,
+    /// The CELV / CSFD / PARM gate count (the legacy radial gate range).
+    pub gate_count: usize,
+}
+
+/// Bytes a ray occupies in the model (three coordinates plus a Nyquist and
+/// a PRT value).
+const RAY_BYTES: usize = 3 * size_of::<f64>() + 2 * size_of::<f32>();
+
+/// Allocated bytes of every field's value buffer in a volume.
+fn volume_field_capacity_bytes(volume: &Volume) -> usize {
     volume
-        .cuts
-        .sort_by(|left, right| left.elevation_deg.total_cmp(&right.elevation_deg));
-    volume.metadata.decoded_radial_count = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
+        .sweeps
+        .iter()
+        .flat_map(|sweep| sweep.fields.iter())
+        .fold(0usize, |total, field| {
+            let bytes = match &field.data {
+                FieldData::U8 { values, .. } => values.capacity(),
+                FieldData::I8 { values, .. } => values.capacity(),
+                FieldData::U16 { values, .. } => values.capacity().saturating_mul(2),
+                FieldData::I16 { values, .. } => values.capacity().saturating_mul(2),
+                FieldData::F32 { values, .. } => values.capacity().saturating_mul(4),
+                FieldData::F64 { values, .. } => values.capacity().saturating_mul(8),
+            };
+            total.saturating_add(bytes)
+        })
 }
 
 fn detect_endian(bytes: &[u8]) -> Result<Endian> {
@@ -281,7 +379,7 @@ fn detect_endian(bytes: &[u8]) -> Result<Endian> {
     }
 }
 
-/// One PARM descriptor plus the moment grid it feeds.
+/// One PARM descriptor plus the field it feeds.
 struct ParamState {
     name: String,
     scale: f32,
@@ -293,10 +391,27 @@ struct ParamState {
     number_cells: Option<usize>,
     first_cell_m: Option<f32>,
     cell_spacing_m: Option<f32>,
-    moment: MomentType,
-    grid: Option<MomentGrid>,
+    field: Option<Field>,
     /// Decoded row for the in-flight ray, if any.
-    pending_row: Option<MomentRow>,
+    pending_row: Option<ParamRow>,
+}
+
+/// One decoded RDAT row in its storage type.
+enum ParamRow {
+    I8(Vec<i8>),
+    I16(Vec<i16>),
+    /// Physical values (32-bit integer and float parameters).
+    F32(Vec<f32>),
+}
+
+impl ParamRow {
+    fn len(&self) -> usize {
+        match self {
+            Self::I8(row) => row.len(),
+            Self::I16(row) => row.len(),
+            Self::F32(row) => row.len(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -338,14 +453,13 @@ struct SweepParse {
     start_time: Option<DateTime<Utc>>,
     vold_date: Option<NaiveDate>,
     params: Vec<ParamState>,
-    /// CELV per-cell ranges or CSFD-derived uniform axis.
-    range_first_m: Option<f32>,
-    range_spacing_m: Option<f32>,
-    range_gate_count: Option<usize>,
-    rays: Vec<(PendingRay, Vec<(usize, MomentRow)>)>,
+    /// CELV per-cell ranges or CSFD-derived gate centres (metres, before the
+    /// CFAC range delay).
+    range_cells_m: Option<Vec<f32>>,
+    rays: Vec<(PendingRay, Vec<(usize, ParamRow)>)>,
     /// Antenna-transition rays, kept aside so an all-transition sweep (seen
     /// in the 2009 Goshen DOW7 corpus) can still decode instead of erroring.
-    transition_rays: Vec<(PendingRay, Vec<(usize, MomentRow)>)>,
+    transition_rays: Vec<(PendingRay, Vec<(usize, ParamRow)>)>,
     current_ray: Option<PendingRay>,
     skipped_field_blocks: usize,
     decoded_cells: usize,
@@ -373,9 +487,7 @@ impl SweepParse {
             start_time: None,
             vold_date: None,
             params: Vec::new(),
-            range_first_m: None,
-            range_spacing_m: None,
-            range_gate_count: None,
+            range_cells_m: None,
             rays: Vec::new(),
             transition_rays: Vec::new(),
             current_ray: None,
@@ -543,8 +655,7 @@ impl SweepParse {
             number_cells,
             first_cell_m,
             cell_spacing_m,
-            moment: MomentType::Unknown(String::new()),
-            grid: None,
+            field: None,
             pending_row: None,
         });
         Ok(())
@@ -559,17 +670,12 @@ impl SweepParse {
             return Ok(());
         }
         validate_gate_count(count, offset, "CELV")?;
-        let first = self.endian.f32(block, 12);
-        let spacing = if count >= 2 {
-            // CELV lists every cell range; recast_radar_core models uniform gates,
-            // so use the lead spacing (uniform in the observed corpus).
-            self.endian.f32(block, 16) - first
-        } else {
-            0.0
-        };
-        self.range_first_m = Some(first);
-        self.range_spacing_m = Some(spacing);
-        self.range_gate_count = Some(count);
+        // CELV lists every cell range (uniform in the observed corpus).
+        self.range_cells_m = Some(
+            (0..count)
+                .map(|cell| self.endian.f32(block, 12 + cell * 4))
+                .collect(),
+        );
         Ok(())
     }
 
@@ -582,7 +688,6 @@ impl SweepParse {
             return Ok(());
         }
         let first = self.endian.f32(block, 12);
-        let spacing = self.endian.f32(block, 16);
         let mut total_cells = 0usize;
         for segment in 0..segments {
             total_cells += self.endian.i16(block, 48 + segment * 2).max(0) as usize;
@@ -591,11 +696,19 @@ impl SweepParse {
             return Ok(());
         }
         validate_gate_count(total_cells, offset, "CSFD")?;
-        // Multi-segment geometry flattens to the first segment's spacing;
-        // see module docs.
-        self.range_first_m = Some(first);
-        self.range_spacing_m = Some(spacing);
-        self.range_gate_count = Some(total_cells);
+        // Cell centres segment by segment: each segment continues from the
+        // previous one at its own spacing.
+        let mut cells = Vec::with_capacity(total_cells);
+        let mut center = f64::from(first);
+        for segment in 0..segments {
+            let spacing = f64::from(self.endian.f32(block, 16 + segment * 4));
+            let count = self.endian.i16(block, 48 + segment * 2).max(0) as usize;
+            for _ in 0..count {
+                cells.push(center as f32);
+                center += spacing;
+            }
+        }
+        self.range_cells_m = Some(cells);
         Ok(())
     }
 
@@ -695,14 +808,7 @@ impl SweepParse {
             validate_gate_count(stored_gates, offset, "RDAT")?;
         }
         let row = match param.binary_format {
-            1 => {
-                // i8 → u8 storage; +128 keeps (raw − offset)/scale intact.
-                let row = payload
-                    .iter()
-                    .map(|byte| (*byte as i8 as i16 + 128) as u8)
-                    .collect();
-                MomentRow::U8(row)
-            }
+            1 => ParamRow::I8(payload.iter().map(|byte| *byte as i8).collect()),
             2 => {
                 let words: Vec<i16> = payload
                     .chunks_exact(2)
@@ -722,15 +828,9 @@ impl SweepParse {
                 } else {
                     words
                 };
-                // i16 → u16 storage; +32768 keeps (raw − offset)/scale intact.
-                MomentRow::U16(
-                    words
-                        .into_iter()
-                        .map(|word| (i32::from(word) + 32768) as u16)
-                        .collect(),
-                )
+                ParamRow::I16(words)
             }
-            3 => MomentRow::F32(
+            3 => ParamRow::F32(
                 payload
                     .chunks_exact(4)
                     .map(|quad| {
@@ -743,7 +843,7 @@ impl SweepParse {
                     })
                     .collect(),
             ),
-            4 => MomentRow::F32(
+            4 => ParamRow::F32(
                 payload
                     .chunks_exact(4)
                     .map(|quad| {
@@ -778,7 +878,9 @@ impl SweepParse {
     }
 
     fn gate_count_for_param(&self, param_index: usize) -> Option<usize> {
-        self.range_gate_count
+        self.range_cells_m
+            .as_ref()
+            .map(Vec::len)
             .or_else(|| self.params[param_index].number_cells)
     }
 
@@ -786,7 +888,7 @@ impl SweepParse {
         let Some(ray) = self.current_ray.take() else {
             return;
         };
-        let rows: Vec<(usize, MomentRow)> = self
+        let rows: Vec<(usize, ParamRow)> = self
             .params
             .iter_mut()
             .enumerate()
@@ -800,16 +902,38 @@ impl SweepParse {
         }
     }
 
-    fn gate_range(&self) -> Result<GateRange> {
-        if let (Some(first), Some(spacing), Some(count)) = (
-            self.range_first_m,
-            self.range_spacing_m,
-            self.range_gate_count,
-        ) {
-            return Ok(GateRange {
-                first_gate_m: (first + self.cfac.range_delay_m).round() as i32,
-                gate_spacing_m: spacing.round().max(1.0) as i32,
-                gate_count: count,
+    /// The sweep's `range` coordinate: CELV / CSFD cell centres plus the
+    /// CFAC range delay (uniform when evenly spaced within 1% of a gate: DOW6
+    /// CELV tables carry float32 accumulation of 0.3% of a gate),
+    /// else the extended PARM geometry.
+    fn range_coordinate(&self) -> Result<RangeCoord> {
+        let delay = f64::from(self.cfac.range_delay_m);
+        if let Some(cells) = &self.range_cells_m {
+            let centers: Vec<f64> = cells.iter().map(|cell| f64::from(*cell) + delay).collect();
+            let ngates = u32::try_from(centers.len()).map_err(|_| invalid(0, "gate overflow"))?;
+            if centers.len() >= 2 {
+                let first = centers[0];
+                let spacing = (centers[centers.len() - 1] - first) / (centers.len() - 1) as f64;
+                let uniform = spacing > 0.0
+                    && spacing.is_finite()
+                    && centers.iter().enumerate().all(|(gate, center)| {
+                        (center - (first + gate as f64 * spacing)).abs() <= 1e-2 * spacing
+                    });
+                if uniform {
+                    return Ok(RangeCoord::Uniform {
+                        first_center_m: first,
+                        spacing_m: spacing,
+                        ngates,
+                    });
+                }
+                return Ok(RangeCoord::Explicit {
+                    centers_m: centers.iter().map(|c| *c as f32).collect(),
+                });
+            }
+            return Ok(RangeCoord::Uniform {
+                first_center_m: centers.first().copied().unwrap_or(0.0),
+                spacing_m: 1.0,
+                ngates,
             });
         }
         let param = self
@@ -817,11 +941,17 @@ impl SweepParse {
             .iter()
             .find(|param| param.number_cells.unwrap_or(0) > 0)
             .ok_or_else(|| invalid(0, "DORADE sweep has no CELV/CSFD/PARM range metadata"))?;
-        Ok(GateRange {
-            first_gate_m: (param.first_cell_m.unwrap_or(0.0) + self.cfac.range_delay_m).round()
-                as i32,
-            gate_spacing_m: param.cell_spacing_m.unwrap_or(1000.0).round().max(1.0) as i32,
-            gate_count: param.number_cells.unwrap_or(0),
+        let ngates = u32::try_from(param.number_cells.unwrap_or(0))
+            .map_err(|_| invalid(0, "gate overflow"))?;
+        let spacing = f64::from(param.cell_spacing_m.unwrap_or(1000.0));
+        Ok(RangeCoord::Uniform {
+            first_center_m: f64::from(param.first_cell_m.unwrap_or(0.0)) + delay,
+            spacing_m: if spacing > 0.0 && spacing.is_finite() {
+                spacing
+            } else {
+                1.0
+            },
+            ngates,
         })
     }
 
@@ -857,7 +987,11 @@ impl SweepParse {
         }
     }
 
-    fn finish_into(mut self, volume: &mut RadarVolume, budget: &mut DecodeBudget) -> Result<()> {
+    fn finish_into(
+        mut self,
+        builder: &mut DoradeVolumeBuilder,
+        budget: &mut DecodeBudget,
+    ) -> Result<()> {
         let mut skipped_transition_rays = self.transition_rays.len();
         if self.rays.is_empty() {
             if self.transition_rays.is_empty() {
@@ -872,16 +1006,15 @@ impl SweepParse {
         if self.instrument.is_empty() {
             self.instrument = "DORADE".to_owned();
         }
-        if volume.site.id.is_empty() {
-            volume.site = RadarSite {
-                id: self.instrument.clone(),
-                name: Some(format!("{} (mobile)", self.instrument)),
-                latitude_deg: finite(self.site_latitude_deg()),
-                longitude_deg: finite(self.site_longitude_deg()),
-                elevation_m: finite(self.site_altitude_m()),
-            };
-            volume.metadata.archive_version = Some("DORADE".to_owned());
-            volume.metadata.compression = Some(
+        let volume = &mut builder.volume;
+        if volume.sweeps.is_empty() {
+            volume.attrs.instrument_name = self.instrument.clone();
+            volume.location.latitude_deg = finite(self.site_latitude_deg()).map(f64::from);
+            volume.location.longitude_deg = finite(self.site_longitude_deg()).map(f64::from);
+            volume.location.altitude_m = finite(self.site_altitude_m()).map(f64::from);
+            volume.provenance.source_format = SourceFormat::Dorade;
+            volume.provenance.source_version = Some("DORADE".to_owned());
+            volume.provenance.compression = Some(
                 if self.compression == 1 {
                     "dorade-hrd-rle"
                 } else {
@@ -889,29 +1022,34 @@ impl SweepParse {
                 }
                 .to_owned(),
             );
-            volume.metadata.scan_mode = Some(scan_mode_from_radd(self.scan_mode));
-            volume.metadata.radar_frequency_mhz = self
+            volume.radar_parameters.frequency_hz = self
                 .frequency_ghz
                 .filter(|frequency| frequency.is_finite() && *frequency > 0.0)
-                .map(|frequency| (frequency * 1000.0).round() as u32);
-        } else if volume.site.id != self.instrument {
+                .map(|frequency| vec![f64::from(frequency) * 1e9])
+                .unwrap_or_default();
+        } else if volume.attrs.instrument_name != self.instrument {
             return Err(invalid(
                 0,
                 format!(
                     "DORADE sweep instrument '{}' does not match volume '{}'",
-                    self.instrument, volume.site.id
+                    self.instrument, volume.attrs.instrument_name
                 ),
             ));
         }
         let sweep_start = self.start_time;
-        if let Some(start) = sweep_start
-            && (volume.cuts.is_empty() || start < volume.volume_time)
-        {
-            volume.volume_time = start;
+        if let Some(start) = sweep_start {
+            builder.rebase(floor_to_second(start));
         }
+        let volume = &mut builder.volume;
+        let reference = volume.time_reference;
 
-        let gate_range = self.gate_range()?;
+        let range = self.range_coordinate()?;
+        let ngates = range.ngates();
         let nyquist = self.nyquist_velocity_mps();
+        let prt_s = self
+            .prt1_ms
+            .filter(|prt| *prt > 0.0)
+            .map(|prt| prt / 1000.0);
         let fixed_angle = if self.fixed_angle_deg.is_finite() {
             self.fixed_angle_deg
         } else {
@@ -919,25 +1057,20 @@ impl SweepParse {
             sum / self.rays.len() as f32
         };
 
-        // Map params to canonical moments; first match per type wins, later
-        // duplicates (e.g. DOW corrected fields DCZ/VC next to DZ/VE) keep
-        // their DORADE name as MomentType::Unknown so nothing is dropped.
-        let mut taken: BTreeSet<MomentType> = BTreeSet::new();
-        for param in &mut self.params {
-            let canonical = canonical_moment(&param.name);
-            param.moment = match canonical {
-                Some(moment) if !taken.contains(&moment) => {
-                    taken.insert(moment.clone());
-                    moment
-                }
-                _ => MomentType::Unknown(param.name.clone()),
-            };
-            param.grid = Some(new_grid(param, gate_range.clone()));
-        }
+        let mut sweep = Sweep::new(
+            volume.sweeps.len() as u32,
+            sweep_mode_from_radd(self.scan_mode),
+            fixed_angle,
+        );
+        sweep.follow_mode = Some(FollowMode::None);
+        sweep.elevation_number =
+            u16::try_from(self.sweep_number.clamp(0, i32::from(u16::MAX))).ok();
+        sweep.range = range;
 
-        // Charge the finished grids before building them: every row is padded
-        // to the widest row of its field, so the retained size follows from
-        // the row counts and widths, not from the (possibly compressed) input.
+        // Charge the finished fields before building them: every row is
+        // padded to the widest row of its field, so the retained size follows
+        // from the row counts and widths, not from the (possibly compressed)
+        // input.
         let mut rows_per_param = vec![(0usize, 0usize); self.params.len()];
         for (_, rows) in &self.rays {
             for (param_index, row) in rows {
@@ -947,6 +1080,7 @@ impl SweepParse {
                 }
             }
         }
+        let nrays = self.rays.len();
         for (param, (rows, widest)) in self.params.iter_mut().zip(&rows_per_param) {
             if *rows == 0 {
                 continue;
@@ -956,118 +1090,112 @@ impl SweepParse {
                 2 => 2,
                 _ => 4,
             };
-            let row_bytes = gate_range
-                .gate_count
-                .max(*widest)
-                .checked_mul(word_bytes)
-                .and_then(|bytes| bytes.checked_add(size_of::<usize>()))
-                .ok_or_else(|| invalid(0, "DORADE grid size overflow"))?;
+            let gates = ngates.max(*widest);
             budget
-                .charge(*rows, row_bytes, "DORADE moment grid")
+                .charge(nrays, gates.saturating_mul(word_bytes), "DORADE field")
                 .map_err(DoradeError::LimitExceeded)?;
-            if let Some(grid) = param.grid.as_mut() {
-                reserve_grid(grid, *rows, gate_range.gate_count.max(*widest));
-            }
+            let mut field = new_field(param, u32::try_from(ngates).unwrap_or(u32::MAX));
+            field.reserve_rows(nrays);
+            param.field = Some(field);
         }
         budget
-            .charge(self.rays.len(), size_of::<Radial>(), "DORADE sweep radials")
+            .charge(nrays, RAY_BYTES, "DORADE sweep rays")
             .map_err(DoradeError::LimitExceeded)?;
 
-        let elevation_number = u8::try_from(self.sweep_number.clamp(0, 255)).ok();
-        let cut = volume.push_cut(fixed_angle, elevation_number);
-        cut.radials.reserve_exact(self.rays.len());
+        sweep.reserve_rays(nrays);
         let rays = std::mem::take(&mut self.rays);
         for (ray, rows) in rays {
-            let radial_index = cut.radials.len();
-            let time_offset_ms = match (ray.time, sweep_start) {
-                (Some(time), Some(start)) => (time - start)
-                    .num_milliseconds()
-                    .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
-                    as i32,
-                _ => 0,
-            };
-            cut.radials.push(Radial {
-                azimuth_deg: normalize_azimuth(ray.azimuth_deg),
-                elevation_deg: ray.elevation_deg,
-                time_offset_ms,
-                gate_range: gate_range.clone(),
-                nyquist_velocity_mps: nyquist,
-                radial_status: None,
+            let time_s = ray.time.map_or(f64::NAN, |time| {
+                (time - reference).num_milliseconds() as f64 / 1000.0
             });
+            let index = sweep.push_ray(
+                time_s,
+                normalize_azimuth(ray.azimuth_deg),
+                ray.elevation_deg,
+            );
             for (param_index, row) in rows {
                 let param = &mut self.params[param_index];
-                if let Some(grid) = param.grid.as_mut() {
-                    grid.push_row(radial_index, row)?;
-                }
+                let Some(field) = param.field.as_mut() else {
+                    continue;
+                };
+                let pushed = match row {
+                    ParamRow::I8(row) => field.push_row_i8(index, &row),
+                    ParamRow::I16(row) => field.push_row_i16(index, &row),
+                    ParamRow::F32(row) => field.push_row_f32(index, &row),
+                };
+                pushed.map_err(|err| invalid(0, format!("field {}: {err}", param.name)))?;
             }
         }
+        if let Some(nyquist) = nyquist {
+            sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyquist; nrays]);
+        }
+        if let Some(prt_s) = prt_s {
+            sweep.ray_vars.prt_s = Some(vec![prt_s; nrays]);
+        }
         for param in &mut self.params {
-            if let Some(grid) = param.grid.take()
-                && grid.radial_count() > 0
+            if let Some(field) = param.field.take()
+                && field.nrays > 0
+                && sweep.add_field(field).is_err()
             {
-                cut.moments.insert(grid.moment.clone(), grid);
+                // A second PARM with the same name: the first wins.
+                self.skipped_field_blocks += 1;
             }
         }
 
-        volume.metadata.message_count += 1;
-        volume.metadata.skipped_message_count +=
+        volume.provenance.decode.message_count += 1;
+        volume.provenance.decode.skipped_message_count +=
             skipped_transition_rays + self.skipped_field_blocks;
+        volume.sweeps.push(sweep);
+        builder.sweep_starts.push(sweep_start);
+        builder.sweep_gate_counts.push(ngates);
         Ok(())
     }
 }
 
-fn new_grid(param: &ParamState, gate_range: GateRange) -> MomentGrid {
-    match param.binary_format {
-        1 => MomentGrid::new_u8(
-            param.moment.clone(),
-            gate_range,
-            param.scale,
-            param.bias + 128.0,
-            i32_to_u8_sentinel(param.bad_data),
-            None,
-        ),
-        2 => MomentGrid::new_u16(
-            param.moment.clone(),
-            gate_range,
-            param.scale,
-            param.bias + 32768.0,
-            i32_to_u16_sentinel(param.bad_data),
-            None,
-        ),
-        _ => MomentGrid {
-            moment: param.moment.clone(),
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: Vec::new(),
-            storage: recast_radar_core::MomentStorage::F32(Vec::new()),
+/// An empty field for a PARM: `i8` / `i16` verbatim with the DORADE
+/// `(raw - bias) / scale` transform and `bad_data` as the fill; physical
+/// `f32` for 32-bit parameters.
+fn new_field(param: &ParamState, ngates: u32) -> Field {
+    let transform = LinearTransform::IcdScaleOffset {
+        scale: param.scale,
+        offset: param.bias,
+    };
+    let data = match param.binary_format {
+        1 => FieldData::I8 {
+            values: Vec::new(),
+            coding: IntCoding {
+                transform,
+                fill_value: i8::try_from(param.bad_data).ok(),
+                undetect: None,
+                range_folded: None,
+                valid_range: None,
+            },
         },
-    }
+        2 => FieldData::I16 {
+            values: Vec::new(),
+            coding: IntCoding {
+                transform,
+                fill_value: i16::try_from(param.bad_data).ok(),
+                undetect: None,
+                range_folded: None,
+                valid_range: None,
+            },
+        },
+        _ => FieldData::F32 {
+            values: Vec::new(),
+            coding: FloatCoding::default(),
+        },
+    };
+    Field::new(
+        FieldName::parse(&param.name),
+        GateMapping::IDENTITY,
+        ngates,
+        data,
+    )
 }
 
-/// Reserve exactly `rows` rows of `gates` values (the widest row, which the
-/// grid pads every row to), so pushing them never reallocates.
-fn reserve_grid(grid: &mut MomentGrid, rows: usize, gates: usize) {
-    grid.radial_indices.reserve_exact(rows);
-    let values = rows.saturating_mul(gates);
-    match &mut grid.storage {
-        recast_radar_core::MomentStorage::U8(storage) => storage.reserve_exact(values),
-        recast_radar_core::MomentStorage::U16(storage) => storage.reserve_exact(values),
-        recast_radar_core::MomentStorage::F32(storage) => storage.reserve_exact(values),
-    }
-}
-
-fn i32_to_u8_sentinel(bad_data: i32) -> Option<u8> {
-    u8::try_from(bad_data + 128).ok()
-}
-
-fn i32_to_u16_sentinel(bad_data: i32) -> Option<u16> {
-    u16::try_from(i64::from(bad_data) + 32768).ok()
-}
-
-/// Map the DORADE RADD `scan_mode` code onto the shared scan-mode enum.
+/// The DORADE RADD `scan_mode` code as an FM301 `sweep_mode` (design note
+/// section 10).
 ///
 /// Code values per the DORADE format document (R. Oye and M. Case, "DORADE
 /// Data Format", NCAR/ATD 1995; revised by W.-C. Lee, NCAR/EOL) and the
@@ -1075,12 +1203,20 @@ fn i32_to_u16_sentinel(bad_data: i32) -> Option<u16> {
 /// 1 = PPI (sector), 2 = COP (coplane), 3 = RHI, 4 = VER (vertical
 /// pointing), 5 = TAR (target/stationary), 6 = MAN (manual), 7 = IDL (idle),
 /// 8 = SUR (360° surveillance), 9 = AIR (airborne), 10 = HOR (horizontal).
-fn scan_mode_from_radd(code: i16) -> ScanMode {
+pub fn sweep_mode_from_radd(code: i16) -> SweepMode {
     match code {
-        1 | 8 => ScanMode::Ppi,
-        3 => ScanMode::Rhi,
-        4 => ScanMode::VerticalPointing,
-        _ => ScanMode::Other,
+        0 => SweepMode::Other("calibration".into()),
+        1 => SweepMode::Sector,
+        2 => SweepMode::Coplane,
+        3 => SweepMode::Rhi,
+        4 => SweepMode::VerticalPointing,
+        5 => SweepMode::Pointing,
+        6 => SweepMode::ManualPpi,
+        7 => SweepMode::Idle,
+        8 => SweepMode::AzimuthSurveillance,
+        9 => SweepMode::Other("airborne".into()),
+        10 => SweepMode::Other("horizontal".into()),
+        other => SweepMode::Other(format!("dorade_scan_mode_{other}").into()),
     }
 }
 
@@ -1160,7 +1296,7 @@ fn validate_gate_count(gates: usize, offset: usize, descriptor: &'static str) ->
         .map_err(DoradeError::LimitExceeded)
 }
 
-fn invalid(offset: usize, reason: impl Into<String>) -> DoradeError {
+pub(crate) fn invalid(offset: usize, reason: impl Into<String>) -> DoradeError {
     DoradeError::InvalidMessage {
         offset,
         reason: reason.into(),
@@ -1168,11 +1304,11 @@ fn invalid(offset: usize, reason: impl Into<String>) -> DoradeError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use recast_radar_core::MomentStorage;
+    use recast_radar_core::model::FieldName;
 
-    fn put_i16(block: &mut [u8], offset: usize, value: i16, endian: Endian) {
+    pub(crate) fn put_i16(block: &mut [u8], offset: usize, value: i16, endian: Endian) {
         let bytes = match endian {
             Endian::Little => value.to_le_bytes(),
             Endian::Big => value.to_be_bytes(),
@@ -1180,7 +1316,7 @@ mod tests {
         block[offset..offset + 2].copy_from_slice(&bytes);
     }
 
-    fn put_i32(block: &mut [u8], offset: usize, value: i32, endian: Endian) {
+    pub(crate) fn put_i32(block: &mut [u8], offset: usize, value: i32, endian: Endian) {
         let bytes = match endian {
             Endian::Little => value.to_le_bytes(),
             Endian::Big => value.to_be_bytes(),
@@ -1188,24 +1324,24 @@ mod tests {
         block[offset..offset + 4].copy_from_slice(&bytes);
     }
 
-    fn put_f32(block: &mut [u8], offset: usize, value: f32, endian: Endian) {
+    pub(crate) fn put_f32(block: &mut [u8], offset: usize, value: f32, endian: Endian) {
         put_i32(block, offset, value.to_bits() as i32, endian);
     }
 
-    fn base_block(id: &[u8; 4], len: usize, endian: Endian) -> Vec<u8> {
+    pub(crate) fn base_block(id: &[u8; 4], len: usize, endian: Endian) -> Vec<u8> {
         let mut block = vec![0u8; len];
         block[..4].copy_from_slice(id);
         put_i32(&mut block, 4, len as i32, endian);
         block
     }
 
-    struct Synth {
-        endian: Endian,
-        compressed: bool,
+    pub(crate) struct Synth {
+        pub endian: Endian,
+        pub compressed: bool,
     }
 
     impl Synth {
-        fn build(&self, rays: &[(f32, f32, i32, &[i16])]) -> Vec<u8> {
+        pub(crate) fn build(&self, rays: &[(f32, f32, i32, &[i16])]) -> Vec<u8> {
             let endian = self.endian;
             let mut bytes = Vec::new();
 
@@ -1295,12 +1431,19 @@ mod tests {
         }
     }
 
-    fn synth_rays() -> Vec<(f32, f32, i32, &'static [i16])> {
+    pub(crate) fn synth_rays() -> Vec<(f32, f32, i32, &'static [i16])> {
         vec![
             (45.0, 1.0, 0, &[1000, 2000, -32768, 500][..]),
             (46.0, 1.0, 0, &[1500, -32768, 700, 800][..]),
             (47.0, 9.5, 1, &[1, 2, 3, 4][..]), // transition ray
         ]
+    }
+
+    pub(crate) fn find_block(bytes: &[u8], id: &[u8; 4]) -> usize {
+        bytes
+            .windows(4)
+            .position(|window| window == id)
+            .expect("block present")
     }
 
     #[test]
@@ -1312,37 +1455,63 @@ mod tests {
         .build(&synth_rays());
         assert!(looks_like_dorade_bytes(&bytes));
 
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
-        assert_eq!(volume.site.id, "TST1");
-        // RADD scan mode 8 (SUR) maps to the shared PPI mode.
-        assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Ppi));
-        assert_eq!(volume.site.latitude_deg, Some(39.74));
-        assert_eq!(volume.site.longitude_deg, Some(-103.2927));
-        assert!((volume.site.elevation_m.unwrap() - 1519.0).abs() < 0.5);
+        let volume = read_dorade_sweep_volume(&bytes).expect("decode");
+        assert_eq!(volume.attrs.instrument_name, "TST1");
+        assert_eq!(volume.provenance.source_format, SourceFormat::Dorade);
+        assert_eq!(volume.location.latitude_deg, Some(f64::from(39.74f32)));
+        assert_eq!(volume.location.longitude_deg, Some(f64::from(-103.2927f32)));
+        assert!((volume.location.altitude_m.unwrap() - 1519.0).abs() < 0.5);
         assert_eq!(
-            volume.volume_time,
+            volume.radar_parameters.frequency_hz,
+            vec![f64::from(5.45f32) * 1e9]
+        );
+        assert_eq!(
+            volume.time_reference,
             Utc.with_ymd_and_hms(2026, 5, 21, 22, 55, 14).unwrap()
         );
-        assert_eq!(volume.cuts.len(), 1);
+        assert_eq!(volume.sweeps.len(), 1);
 
-        let cut = &volume.cuts[0];
-        assert_eq!(cut.elevation_deg, 1.0);
+        let sweep = &volume.sweeps[0];
+        // RADD scan mode 8 (SUR) is azimuth surveillance.
+        assert_eq!(sweep.sweep_mode, SweepMode::AzimuthSurveillance);
+        assert_eq!(sweep.fixed_angle_deg, 1.0);
+        assert_eq!(sweep.elevation_number, Some(6));
         // Transition ray dropped.
-        assert_eq!(cut.radials.len(), 2);
-        assert_eq!(cut.radials[0].azimuth_deg, 45.0);
-        assert_eq!(cut.radials[0].nyquist_velocity_mps, Some(68.76));
-        assert_eq!(cut.radials[0].gate_range.first_gate_m, 50);
-        assert_eq!(cut.radials[0].gate_range.gate_spacing_m, 100);
-        assert_eq!(cut.radials[0].gate_range.gate_count, 4);
-        // RYIB time 22:55:15.250 − SSWB start 22:55:14 = 1250 ms.
-        assert_eq!(cut.radials[0].time_offset_ms, 1250);
+        assert_eq!(sweep.nrays(), 2);
+        assert_eq!(sweep.rays.azimuth_deg[0], 45.0);
+        assert_eq!(
+            sweep.ray_vars.nyquist_velocity_mps.as_deref(),
+            Some(&[68.76, 68.76][..])
+        );
+        assert_eq!(
+            sweep.range,
+            RangeCoord::Uniform {
+                first_center_m: 50.0,
+                spacing_m: 100.0,
+                ngates: 4
+            }
+        );
+        // RYIB time 22:55:15.250 - SSWB start 22:55:14 = 1.25 s.
+        assert_eq!(sweep.rays.time_s[0], 1.25);
 
-        let grid = cut.moments.get(&MomentType::Reflectivity).expect("DBZ");
-        assert_eq!(grid.radial_count(), 2);
-        assert_eq!(grid.scaled_value(0, 0), Some(10.0));
-        assert_eq!(grid.scaled_value(0, 1), Some(20.0));
-        assert_eq!(grid.scaled_value(0, 2), None); // bad gate
-        assert_eq!(grid.scaled_value(1, 2), Some(7.0));
+        // DBZ stays int16 with the DORADE transform; bad data is the fill.
+        let field = sweep.field(&FieldName::Dbz).expect("DBZ");
+        let FieldData::I16 { values, coding } = &field.data else {
+            panic!("DBZ is int16");
+        };
+        assert_eq!(values, &[1000, 2000, -32768, 500, 1500, -32768, 700, 800]);
+        assert_eq!(coding.fill_value, Some(-32768));
+        assert_eq!(
+            coding.transform,
+            LinearTransform::IcdScaleOffset {
+                scale: 100.0,
+                offset: 0.0
+            }
+        );
+        assert_eq!(field.value(0, 0), Some(10.0));
+        assert_eq!(field.value(0, 1), Some(20.0));
+        assert_eq!(field.value(0, 2), None); // bad gate
+        assert_eq!(field.value(1, 2), Some(7.0));
     }
 
     #[test]
@@ -1354,12 +1523,11 @@ mod tests {
         .build(&synth_rays());
         assert!(looks_like_dorade_bytes(&bytes));
 
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
-        let cut = &volume.cuts[0];
-        let grid = cut.moments.get(&MomentType::Reflectivity).expect("DBZ");
-        assert_eq!(grid.scaled_value(0, 0), Some(10.0));
-        assert_eq!(grid.scaled_value(0, 3), Some(5.0));
-        assert_eq!(grid.scaled_value(1, 1), None);
+        let volume = read_dorade_sweep_volume(&bytes).expect("decode");
+        let field = volume.sweeps[0].field(&FieldName::Dbz).expect("DBZ");
+        assert_eq!(field.value(0, 0), Some(10.0));
+        assert_eq!(field.value(0, 3), Some(5.0));
+        assert_eq!(field.value(1, 1), None);
     }
 
     #[test]
@@ -1405,7 +1573,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_sweep_volume_sorts_cuts_by_elevation() {
+    fn multi_sweep_volume_keeps_input_order_and_rebases_times() {
         let synth = Synth {
             endian: Endian::Big,
             compressed: false,
@@ -1416,17 +1584,28 @@ mod tests {
                 ray.1 = 2.4;
             }
             let mut bytes = synth.build(&rays);
-            // Rewrite SWIB fixed angle (offset of SWIB block in the byte
-            // stream is stable for the synth builder).
             let swib_pos = find_block(&bytes, b"SWIB");
             put_f32(&mut bytes[swib_pos..], 32, 2.4, Endian::Big);
+            // Starts 10 s later than the low sweep.
+            let sswb_pos = find_block(&bytes, b"SSWB");
+            put_i32(&mut bytes[sswb_pos..], 12, 1_779_404_124, Endian::Big);
             bytes
         };
         let low = synth.build(&synth_rays());
-        let volume = decode_dorade_volume_from_slices(&[high, low]).expect("decode");
-        assert_eq!(volume.cuts.len(), 2);
-        assert!(volume.cuts[0].elevation_deg < volume.cuts[1].elevation_deg);
-        assert_eq!(volume.metadata.decoded_radial_count, 4);
+        let volume = read_dorade_volume_from_slices(&[high, low]).expect("decode");
+        assert_eq!(volume.sweeps.len(), 2);
+        // Input (scan) order, numbered in that order; the earliest sweep start
+        // is the time reference.
+        assert_eq!(volume.sweeps[0].fixed_angle_deg, 2.4);
+        assert_eq!(volume.sweeps[1].fixed_angle_deg, 1.0);
+        assert_eq!(volume.sweeps[1].sweep_number, 1);
+        assert_eq!(
+            volume.time_reference,
+            Utc.with_ymd_and_hms(2026, 5, 21, 22, 55, 14).unwrap()
+        );
+        assert_eq!(volume.sweeps[0].rays.time_s[0], 1.25);
+        assert_eq!(volume.sweeps[1].rays.time_s[0], 1.25);
+        assert_eq!(volume.provenance.decode.decoded_ray_count, 4);
     }
 
     #[test]
@@ -1439,7 +1618,7 @@ mod tests {
         let mut second = synth.build(&synth_rays());
         let radd_pos = find_block(&second, b"RADD");
         second[radd_pos + 8..radd_pos + 12].copy_from_slice(b"TST2");
-        let err = decode_dorade_volume_from_slices(&[first, second]).unwrap_err();
+        let err = read_dorade_volume_from_slices(&[first, second]).unwrap_err();
         assert!(err.to_string().contains("does not match"));
     }
 
@@ -1458,95 +1637,49 @@ mod tests {
         .build(&rays);
         let radd_pos = find_block(&bytes, b"RADD");
         put_i16(&mut bytes[radd_pos..], 50, 3, Endian::Big); // RHI per DORADE doc
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
-        assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Rhi));
-        // Per-radial elevations carry the sweep; azimuth is fixed.
-        let cut = &volume.cuts[0];
-        assert_eq!(cut.radials.len(), 3);
-        assert!(cut.radials.iter().all(|r| r.azimuth_deg == 271.0));
-        assert_eq!(cut.radials[0].elevation_deg, 0.5);
-        assert_eq!(cut.radials[2].elevation_deg, 2.5);
+        let volume = read_dorade_sweep_volume(&bytes).expect("decode");
+        let sweep = &volume.sweeps[0];
+        assert_eq!(sweep.sweep_mode, SweepMode::Rhi);
+        // Per-ray elevations carry the sweep; azimuth is fixed.
+        assert_eq!(sweep.nrays(), 3);
+        assert!(sweep.rays.azimuth_deg.iter().all(|az| *az == 271.0));
+        assert_eq!(sweep.rays.elevation_deg[0], 0.5);
+        assert_eq!(sweep.rays.elevation_deg[2], 2.5);
     }
 
     #[test]
-    fn radd_scan_mode_codes_map_to_shared_enum() {
+    fn radd_scan_mode_codes_map_to_sweep_modes() {
         // Codes per Oye & Case 1995 / lrose DoradeData.hh.
-        assert_eq!(scan_mode_from_radd(1), ScanMode::Ppi); // PPI sector
-        assert_eq!(scan_mode_from_radd(8), ScanMode::Ppi); // SUR
-        assert_eq!(scan_mode_from_radd(3), ScanMode::Rhi);
-        assert_eq!(scan_mode_from_radd(4), ScanMode::VerticalPointing);
-        for other in [0i16, 2, 5, 6, 7, 9, 10, 99] {
-            assert_eq!(scan_mode_from_radd(other), ScanMode::Other);
-        }
+        assert_eq!(sweep_mode_from_radd(1), SweepMode::Sector);
+        assert_eq!(sweep_mode_from_radd(8), SweepMode::AzimuthSurveillance);
+        assert_eq!(sweep_mode_from_radd(3), SweepMode::Rhi);
+        assert_eq!(sweep_mode_from_radd(4), SweepMode::VerticalPointing);
+        assert_eq!(sweep_mode_from_radd(2), SweepMode::Coplane);
+        assert_eq!(sweep_mode_from_radd(6), SweepMode::ManualPpi);
+        assert_eq!(sweep_mode_from_radd(0).as_str(), "calibration");
+        assert_eq!(sweep_mode_from_radd(99).as_str(), "dorade_scan_mode_99");
     }
 
     #[test]
-    fn canonical_moment_maps_observed_corpus_names() {
-        // COW2 (Radx _F names), RaXPol, DOW7 solo-era names.
-        assert_eq!(canonical_moment("DBZHC_F"), Some(MomentType::Reflectivity));
-        assert_eq!(canonical_moment("VEL_F"), Some(MomentType::Velocity));
+    fn csfd_segments_become_explicit_centres_when_spacings_differ() {
+        let mut block = base_block(b"CSFD", 64, Endian::Big);
+        put_i32(&mut block, 8, 2, Endian::Big); // two segments
+        put_f32(&mut block, 12, 100.0, Endian::Big); // first cell
+        put_f32(&mut block, 16, 100.0, Endian::Big); // segment 0 spacing
+        put_f32(&mut block, 20, 250.0, Endian::Big); // segment 1 spacing
+        put_i16(&mut block, 48, 3, Endian::Big);
+        put_i16(&mut block, 50, 2, Endian::Big);
+        let mut sweep = SweepParse::new(Endian::Big);
+        sweep.parse_csfd(&block, 0).unwrap();
         assert_eq!(
-            canonical_moment("ZDR_F"),
-            Some(MomentType::DifferentialReflectivity)
+            sweep.range_cells_m,
+            Some(vec![100.0, 200.0, 300.0, 400.0, 650.0])
         );
         assert_eq!(
-            canonical_moment("RHOHV_F"),
-            Some(MomentType::CorrelationCoefficient)
+            sweep.range_coordinate().unwrap(),
+            RangeCoord::Explicit {
+                centers_m: vec![100.0, 200.0, 300.0, 400.0, 650.0]
+            }
         );
-        assert_eq!(canonical_moment("DBZ"), Some(MomentType::Reflectivity));
-        assert_eq!(canonical_moment("WIDTH"), Some(MomentType::SpectrumWidth));
-        assert_eq!(canonical_moment("DZ"), Some(MomentType::Reflectivity));
-        assert_eq!(canonical_moment("VE"), Some(MomentType::Velocity));
-        assert_eq!(canonical_moment("SW"), Some(MomentType::SpectrumWidth));
-        assert_eq!(canonical_moment("NCP"), None);
-        assert_eq!(canonical_moment("DM"), None);
-    }
-
-    #[test]
-    fn duplicate_canonical_names_keep_original_field() {
-        // DOW7 carries DZ (raw) and DCZ/VC (corrected); first match wins and
-        // later candidates stay addressable under their DORADE names.
-        let mut taken = BTreeSet::new();
-        let mut resolved = Vec::new();
-        for name in ["DZ", "DCZ", "VE", "VC"] {
-            let canonical = canonical_moment(name);
-            let moment = match canonical {
-                Some(moment) if !taken.contains(&moment) => {
-                    taken.insert(moment.clone());
-                    moment
-                }
-                _ => MomentType::Unknown(name.to_owned()),
-            };
-            resolved.push(moment);
-        }
-        assert_eq!(resolved[0], MomentType::Reflectivity);
-        assert_eq!(resolved[1], MomentType::Unknown("DCZ".to_owned()));
-        assert_eq!(resolved[2], MomentType::Velocity);
-        assert_eq!(resolved[3], MomentType::Unknown("VC".to_owned()));
-    }
-
-    #[test]
-    fn u16_grids_preserve_dorade_scaling() {
-        let bytes = Synth {
-            endian: Endian::Big,
-            compressed: false,
-        }
-        .build(&synth_rays());
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
-        let grid = volume.cuts[0]
-            .moments
-            .get(&MomentType::Reflectivity)
-            .unwrap();
-        assert!(matches!(grid.storage, MomentStorage::U16(_)));
-        assert_eq!(grid.scale, 100.0);
-        assert_eq!(grid.offset, 32768.0);
-        assert_eq!(grid.nodata, Some(0));
-    }
-
-    fn find_block(bytes: &[u8], id: &[u8; 4]) -> usize {
-        bytes
-            .windows(4)
-            .position(|window| window == id)
-            .expect("block present")
     }
 }

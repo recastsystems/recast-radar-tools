@@ -9,49 +9,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(2);
     }
 
-    let volume = recast_radar_io_dorade::dorade::decode_dorade_volume_from_paths(&paths)?;
+    let volume = recast_radar_io_dorade::dorade::read_dorade_volume_from_paths(&paths)?;
     println!(
-        "site {} ({:?}) lat {:?} lon {:?} alt {:?} m",
-        volume.site.id,
-        volume.site.name,
-        volume.site.latitude_deg,
-        volume.site.longitude_deg,
-        volume.site.elevation_m
+        "site {} lat {:?} lon {:?} alt {:?} m",
+        volume.attrs.instrument_name,
+        volume.location.latitude_deg,
+        volume.location.longitude_deg,
+        volume.location.altitude_m
     );
     println!(
-        "volume time {} | {} cuts | compression {:?} | skipped {}",
-        volume.volume_time,
-        volume.cuts.len(),
-        volume.metadata.compression,
-        volume.metadata.skipped_message_count
+        "time reference {} | {} sweeps | compression {:?} | skipped {}",
+        volume.time_reference,
+        volume.sweeps.len(),
+        volume.provenance.compression,
+        volume.provenance.decode.skipped_message_count
     );
-    for (index, cut) in volume.cuts.iter().enumerate() {
+    for sweep in &volume.sweeps {
         println!(
-            "  cut {index}: elev {:.2} deg, {} radials, nyquist {:?}",
-            cut.elevation_deg,
-            cut.radials.len(),
-            cut.radials.first().and_then(|r| r.nyquist_velocity_mps),
+            "  sweep {}: {} fixed {:.2} deg, {} rays, nyquist {:?}",
+            sweep.sweep_number,
+            sweep.sweep_mode.as_str(),
+            sweep.fixed_angle_deg,
+            sweep.nrays(),
+            sweep
+                .ray_vars
+                .nyquist_velocity_mps
+                .as_ref()
+                .and_then(|values| values.first().copied()),
         );
-        for (moment, grid) in &cut.moments {
+        for field in &sweep.fields {
             let mut finite = 0usize;
             let mut min = f32::INFINITY;
             let mut max = f32::NEG_INFINITY;
-            let rows = grid.radial_count();
+            let (rows, gates) = field.shape();
             for row in 0..rows {
-                for gate in 0..grid.gate_range.gate_count {
-                    if let Some(value) = grid.scaled_value(row, gate) {
+                for gate in 0..gates {
+                    if let Some(value) = field.value(row, gate) {
                         finite += 1;
                         min = min.min(value);
                         max = max.max(value);
                     }
                 }
             }
+            let (first, spacing) = field.native_geometry(&sweep.range).unwrap_or_default();
             println!(
-                "    {moment}: {} rows x {} gates (first {} m, spacing {} m), {} finite, range [{min:.2}, {max:.2}]",
+                "    {}: {} rows x {} gates ({}, first centre {first:.1} m, spacing {spacing:.1} m), {} finite, range [{min:.2}, {max:.2}]",
+                field.name,
                 rows,
-                grid.gate_range.gate_count,
-                grid.gate_range.first_gate_m,
-                grid.gate_range.gate_spacing_m,
+                gates,
+                field.data.dtype(),
                 finite
             );
         }

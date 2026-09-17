@@ -28,19 +28,28 @@
 //! and cross-validated sweep-for-sweep and gate-for-gate against its decode
 //! of live NICT pulls.
 //!
-//! Multi-station handling: [`decode_jma_tar_volumes`] returns ONE
-//! [`RadarVolume`] per station and never silently drops stations; callers
-//! that want a single station pass `site_filter`. The shared byte router
-//! (`recast_radar_io::decode_supported_volume_bytes`) uses
-//! [`decode_jma_tar_first_station`] instead, which keeps only the first
-//! station in the archive.
+//! Multi-station handling: [`read_jma_tar_volumes`] returns ONE FM301
+//! [`Volume`] per station and never silently drops stations; callers that
+//! want a single station pass `site_filter`. The shared byte router
+//! (`recast_radar_io::read_supported_volume_bytes`) uses
+//! [`read_jma_tar_first_station`] instead, which keeps only the first
+//! station in the archive. The pre-FM301 `decode_*` signatures (legacy
+//! `RadarVolume`) live in [`legacy_api`] during the migration.
 //!
-//! Values are stored as physical `f32` planes (`MomentStorage::F32`, NaN =
-//! missing), exactly as the run-length level table dictates — the level
-//! table is a lookup, not an affine raw-to-physical mapping, so compact
-//! u8/u16 storage does not apply. Nyquist velocity is left `None`: the
-//! per-ray PRF tables suggest staggered-PRF operation and a wrong Nyquist
-//! would mislead downstream dealiasing.
+//! Each GRIB data section becomes one [`Sweep`], sorted lowest elevation
+//! first (members carry sweeps high-tilt-first) and numbered in that order,
+//! with FM301 field names (`DBZH` for Pze, `VRADH` for Pvr; other
+//! parameters keep a `JMA_<category>_<number>` name). Values are stored as
+//! physical `f32` planes (NaN = missing), exactly as the run-length level
+//! table dictates — the level table is a lookup, not an affine
+//! raw-to-physical mapping, so compact u8/u16 storage does not apply. The
+//! `range` coordinate treats the template 3.50120 range start as the centre
+//! of the first gate (the pre-FM301 convention; design note 17.9). Ray
+//! azimuths follow the grid's start azimuth and scan direction; the format
+//! has no per-ray times, so every ray of a sweep carries its GRIB reference
+//! time. Nyquist velocity is left unset: the per-ray PRF tables suggest
+//! staggered-PRF operation and a wrong Nyquist would mislead downstream
+//! dealiasing.
 //!
 //! # Limits
 //!
@@ -63,14 +72,22 @@
 //! fails the whole call.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
-use chrono::{TimeZone, Utc};
-use recast_radar_core::bounded_read::{MAX_DECODED_BATCH_BYTES, volume_moment_capacity_bytes};
-use recast_radar_core::{
-    ElevationCut, GateRange, MomentGrid, MomentStorage, MomentType, RadarSite, RadarVolume, Radial,
-    ScanMode,
+#[allow(deprecated)]
+pub mod legacy_api;
+
+use chrono::{DateTime, TimeZone, Utc};
+use recast_radar_core::bounded_read::MAX_DECODED_BATCH_BYTES;
+use recast_radar_core::model::{
+    Field, FieldData, FieldName, FloatCoding, FollowMode, GateMapping, RangeCoord, SourceFormat,
+    Sweep, SweepMode, Volume,
 };
 use thiserror::Error;
+
+#[allow(deprecated)]
+pub use legacy_api::{decode_jma_tar_first_station, decode_jma_tar_volumes};
 
 /// Errors from JMA radar GRIB2 tar decoding.
 #[derive(Debug, Error)]
@@ -204,7 +221,7 @@ fn station_headers(bytes: &[u8]) -> Result<Vec<JmaStationHeader>, String> {
     Ok(stations)
 }
 
-/// Decode a JMA radar GRIB2 tar into one [`RadarVolume`] per station, in
+/// Decode a JMA radar GRIB2 tar into one [`Volume`] per station, in
 /// archive order.
 ///
 /// `site_filter` selects a single station by JMA id (e.g. `"ITOK"`,
@@ -213,16 +230,40 @@ fn station_headers(bytes: &[u8]) -> Result<Vec<JmaStationHeader>, String> {
 /// data; one corrupt station must not take down the other nineteen) — the
 /// first member error is returned only when nothing decodes. Never panics
 /// on malformed input.
-pub fn decode_jma_tar_volumes(
+pub fn read_jma_tar_volumes(
     bytes: &[u8],
     site_filter: Option<&str>,
-) -> Result<Vec<RadarVolume>, JmaError> {
+) -> Result<Vec<Volume>, JmaError> {
     decode_tar_volumes(bytes, site_filter).map_err(jma_error)
 }
 
-fn decode_tar_volumes(bytes: &[u8], site_filter: Option<&str>) -> Result<Vec<RadarVolume>, String> {
+/// Bytes a ray occupies in the model (three coordinates).
+const RAY_BYTES: usize = 3 * size_of::<f64>();
+
+/// Allocated bytes of a volume's fields and ray tables.
+pub fn volume_retained_bytes(volume: &Volume) -> usize {
+    let rays: usize = volume.sweeps.iter().map(Sweep::nrays).sum();
+    volume
+        .sweeps
+        .iter()
+        .flat_map(|sweep| sweep.fields.iter())
+        .fold(0usize, |total, field| {
+            let bytes = match &field.data {
+                FieldData::U8 { values, .. } => values.capacity(),
+                FieldData::I8 { values, .. } => values.capacity(),
+                FieldData::U16 { values, .. } => values.capacity().saturating_mul(2),
+                FieldData::I16 { values, .. } => values.capacity().saturating_mul(2),
+                FieldData::F32 { values, .. } => values.capacity().saturating_mul(4),
+                FieldData::F64 { values, .. } => values.capacity().saturating_mul(8),
+            };
+            total.saturating_add(bytes)
+        })
+        .saturating_add(rays.saturating_mul(RAY_BYTES))
+}
+
+fn decode_tar_volumes(bytes: &[u8], site_filter: Option<&str>) -> Result<Vec<Volume>, String> {
     let members = ustar_members(bytes)?;
-    let mut volumes: Vec<RadarVolume> = Vec::new();
+    let mut volumes: Vec<Volume> = Vec::new();
     let mut first_error: Option<String> = None;
     let mut data_members = 0usize;
     let mut filter_matches = 0usize;
@@ -250,9 +291,7 @@ fn decode_tar_volumes(bytes: &[u8], site_filter: Option<&str>) -> Result<Vec<Rad
         filter_matches += 1;
         match decode_jma_grib2_volume(member.data, &member.name) {
             Ok(volume) => {
-                let radials: usize = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
-                let member_bytes = volume_moment_capacity_bytes(&volume)
-                    .saturating_add(radials.saturating_mul(size_of::<Radial>()));
+                let member_bytes = volume_retained_bytes(&volume);
                 decoded_bytes = decoded_bytes
                     .checked_add(member_bytes)
                     .filter(|total| *total <= MAX_DECODED_BATCH_BYTES)
@@ -284,7 +323,7 @@ fn decode_tar_volumes(bytes: &[u8], site_filter: Option<&str>) -> Result<Vec<Rad
             .unwrap_or_else(|| "no JMA GRIB2 member decoded into a radar volume".to_owned()));
     }
     for volume in &mut volumes {
-        sort_cuts_lowest_first(volume);
+        sort_sweeps_lowest_first(volume)?;
     }
     Ok(volumes)
 }
@@ -295,25 +334,33 @@ fn decode_tar_volumes(bytes: &[u8], site_filter: Option<&str>) -> Result<Vec<Rad
 /// its sweep numbering per member. Sort each station's ladder lowest
 /// beam first (stable: repeated elevations — the 10-minute file's two
 /// 5-minute repetitions — keep their scan order) and renumber, matching
-/// every other provider's cut order.
-fn sort_cuts_lowest_first(volume: &mut RadarVolume) {
+/// every other provider's sweep order.
+fn sort_sweeps_lowest_first(volume: &mut Volume) -> Result<(), String> {
     volume
-        .cuts
-        .sort_by(|a, b| a.elevation_deg.total_cmp(&b.elevation_deg));
-    for (index, cut) in volume.cuts.iter_mut().enumerate() {
-        cut.elevation_number = u8::try_from(index + 1).ok();
+        .sweeps
+        .sort_by(|a, b| a.fixed_angle_deg.total_cmp(&b.fixed_angle_deg));
+    for (index, sweep) in volume.sweeps.iter_mut().enumerate() {
+        sweep.sweep_number = index as u32;
+        sweep.elevation_number = u16::try_from(index + 1).ok();
     }
+    volume.provenance.decode.decoded_ray_count = volume.sweeps.iter().map(Sweep::nrays).sum();
+    volume.provenance.decode.message_count = volume.sweeps.len();
+    volume
+        .seal()
+        .map_err(|err| format!("JMA volume violates the model invariants: {err}"))?;
+    volume.time_coverage = volume.ray_time_extent();
+    Ok(())
 }
 
 /// Decode only the FIRST station of a JMA tar — the shared byte router's
 /// entry point, where the contract is one volume per buffer. Providers that
-/// need a specific station call [`decode_jma_tar_volumes`] with a
+/// need a specific station call [`read_jma_tar_volumes`] with a
 /// `site_filter` instead.
-pub fn decode_jma_tar_first_station(bytes: &[u8]) -> Result<RadarVolume, JmaError> {
+pub fn read_jma_tar_first_station(bytes: &[u8]) -> Result<Volume, JmaError> {
     decode_first_station(bytes).map_err(jma_error)
 }
 
-fn decode_first_station(bytes: &[u8]) -> Result<RadarVolume, String> {
+fn decode_first_station(bytes: &[u8]) -> Result<Volume, String> {
     let members = ustar_members(bytes)?;
     for member in &members {
         if !is_jma_data_member(&member.name) {
@@ -331,26 +378,29 @@ fn decode_first_station(bytes: &[u8]) -> Result<RadarVolume, String> {
 }
 
 /// Fold one decoded member into the per-station volume list: a repeated
-/// station id appends its cuts (scan order preserved) instead of producing
-/// a duplicate site entry.
-fn merge_station_volume(
-    volumes: &mut Vec<RadarVolume>,
-    mut volume: RadarVolume,
-) -> Result<(), String> {
+/// station id appends its sweeps (scan order preserved, ray times rebased
+/// onto the earlier reference) instead of producing a duplicate site entry.
+fn merge_station_volume(volumes: &mut Vec<Volume>, mut volume: Volume) -> Result<(), String> {
     if let Some(existing) = volumes
         .iter_mut()
-        .find(|existing| existing.site.id == volume.site.id)
+        .find(|existing| existing.attrs.instrument_name == volume.attrs.instrument_name)
     {
-        if volume.volume_time < existing.volume_time {
-            existing.volume_time = volume.volume_time;
+        if volume.time_reference < existing.time_reference {
+            let shift = (existing.time_reference - volume.time_reference).num_seconds() as f64;
+            for sweep in &mut existing.sweeps {
+                sweep.rays.time_s.iter_mut().for_each(|time| *time += shift);
+            }
+            existing.time_reference = volume.time_reference;
         }
-        existing.metadata.message_count += volume.metadata.message_count;
-        existing.metadata.decoded_radial_count += volume.metadata.decoded_radial_count;
+        let shift = (volume.time_reference - existing.time_reference).num_seconds() as f64;
+        for sweep in &mut volume.sweeps {
+            sweep.rays.time_s.iter_mut().for_each(|time| *time += shift);
+        }
         existing
-            .cuts
-            .try_reserve(volume.cuts.len())
-            .map_err(|err| format!("cannot grow JMA station cut table: {err}"))?;
-        existing.cuts.append(&mut volume.cuts);
+            .sweeps
+            .try_reserve(volume.sweeps.len())
+            .map_err(|err| format!("cannot grow JMA station sweep table: {err}"))?;
+        existing.sweeps.append(&mut volume.sweeps);
     } else {
         volumes
             .try_reserve(1)
@@ -512,13 +562,13 @@ impl PolarGrid {
 }
 
 struct SweepProduct {
-    moment: MomentType,
+    name: FieldName,
     station: JmaStationHeader,
     elevation_deg: Option<f32>,
     ray_elevation_deg: Vec<Option<f32>>,
 }
 
-fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<RadarVolume, String> {
+fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<Volume, String> {
     let msg = grib2_message(bytes, member)?;
     let sections = scan_sections(msg, member)?;
 
@@ -528,10 +578,10 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<RadarVolume, St
         .ok_or_else(|| format!("{member}: GRIB2 message has no identification section"))?;
     let volume_time = parse_reference_time(section_bytes(msg, *identification), member)?;
 
-    let mut volume = RadarVolume::new(RadarSite::new(""), volume_time);
-    volume.metadata.archive_version = Some("JMA GRIB2".to_owned());
-    volume.metadata.compression = Some("jma-grib2-tar".to_owned());
-    volume.metadata.scan_mode = Some(ScanMode::Ppi);
+    let mut volume = Volume::new("", volume_time);
+    volume.provenance.source_format = SourceFormat::JmaGrib2;
+    volume.provenance.source_version = Some("JMA GRIB2".to_owned());
+    volume.provenance.compression = Some("jma-grib2-tar".to_owned());
 
     let mut current_grid: Option<PolarGrid> = None;
     let mut pending_product: Option<SectionRef> = None;
@@ -593,7 +643,7 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<RadarVolume, St
                 if station.is_none() {
                     station = Some(product.station.clone());
                 }
-                push_sweep_cut(&mut volume, &grid, &product, values)?;
+                push_sweep(&mut volume, &grid, &product, values, volume_time)?;
             }
             8 => break,
             other => return Err(format!("{member}: unexpected GRIB2 section {other}")),
@@ -602,23 +652,23 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<RadarVolume, St
 
     let station =
         station.ok_or_else(|| format!("{member}: GRIB2 message contains no radar sweeps"))?;
-    volume.site = RadarSite {
-        id: station.id.clone(),
-        name: Some(format!("RS{}", station.number)),
-        latitude_deg: Some(station.latitude_deg as f32),
-        longitude_deg: Some(station.longitude_deg as f32),
-        elevation_m: station.elevation_m,
-    };
-    volume.metadata.message_count = volume.cuts.len();
-    volume.metadata.decoded_radial_count = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
+    volume.attrs.instrument_name = station.id.clone();
+    volume.attrs.site_name = Some(format!("RS{}", station.number));
+    volume.attrs.wmo.id = Some(station.number.to_string());
+    volume.location.latitude_deg = Some(station.latitude_deg);
+    volume.location.longitude_deg = Some(station.longitude_deg);
+    volume.location.altitude_m = station.elevation_m.map(f64::from);
+    volume.provenance.decode.message_count = volume.sweeps.len();
+    volume.provenance.decode.decoded_ray_count = volume.sweeps.iter().map(Sweep::nrays).sum();
     Ok(volume)
 }
 
-fn push_sweep_cut(
-    volume: &mut RadarVolume,
+fn push_sweep(
+    volume: &mut Volume,
     grid: &PolarGrid,
     product: &SweepProduct,
     values: Vec<f32>,
+    reference_time: DateTime<Utc>,
 ) -> Result<(), String> {
     let expected_points = grid
         .gate_count
@@ -631,59 +681,66 @@ fn push_sweep_cut(
         ));
     }
     let elevation_deg = product.elevation_deg.unwrap_or(0.0);
-    let elevation_number = u8::try_from(volume.cuts.len() + 1).ok();
-    let gate_range = GateRange {
-        first_gate_m: grid.range_start_m.round() as i32,
-        gate_spacing_m: (grid.gate_spacing_m.round() as i32).max(1),
-        gate_count: grid.gate_count,
-    };
+    let ngates =
+        u32::try_from(grid.gate_count).map_err(|_| "JMA gate count overflow".to_owned())?;
 
     // Repeated elevations with different gate layouts are real here (the
     // 10-minute file carries two 5-minute scan repetitions), so every sweep
-    // becomes its own cut in scan order — never elevation-merged.
-    let mut cut = ElevationCut::new(elevation_deg, elevation_number);
-    cut.radials
+    // becomes its own sweep in scan order — never elevation-merged.
+    let mut sweep = Sweep::new(
+        volume.sweeps.len() as u32,
+        SweepMode::AzimuthSurveillance,
+        elevation_deg,
+    );
+    sweep.follow_mode = Some(FollowMode::None);
+    sweep.range = RangeCoord::Uniform {
+        first_center_m: f64::from(grid.range_start_m),
+        spacing_m: if grid.gate_spacing_m > 0.0 && grid.gate_spacing_m.is_finite() {
+            f64::from(grid.gate_spacing_m)
+        } else {
+            1.0
+        },
+        ngates,
+    };
+    sweep
+        .rays
+        .azimuth_deg
         .try_reserve_exact(grid.radial_count)
-        .map_err(|err| format!("cannot reserve JMA radial table: {err}"))?;
+        .map_err(|err| format!("cannot reserve JMA ray table: {err}"))?;
+    sweep.reserve_rays(grid.radial_count);
+    let time_s = (reference_time - volume.time_reference).num_seconds() as f64;
     for ray in 0..grid.radial_count {
-        cut.radials.push(Radial {
-            azimuth_deg: grid.ray_azimuth_deg(ray),
-            elevation_deg: product
+        sweep.push_ray(
+            time_s,
+            grid.ray_azimuth_deg(ray),
+            product
                 .ray_elevation_deg
                 .get(ray)
                 .copied()
                 .flatten()
                 .unwrap_or(elevation_deg),
-            time_offset_ms: 0,
-            gate_range: gate_range.clone(),
-            nyquist_velocity_mps: None,
-            radial_status: None,
-        });
+        );
     }
 
-    let mut radial_indices = Vec::new();
-    radial_indices
-        .try_reserve_exact(grid.radial_count)
-        .map_err(|err| format!("cannot reserve JMA radial index table: {err}"))?;
-    radial_indices.extend(0..grid.radial_count);
-    let moment_grid = MomentGrid {
-        moment: product.moment.clone(),
-        gate_range,
-        scale: 1.0,
-        offset: 0.0,
-        nodata: None,
-        range_folded: None,
-        radial_indices,
-        // `values` is already radial-major. Move it into the final grid
-        // instead of cloning every row into a second full f32 plane.
-        storage: MomentStorage::F32(values),
-    };
-    cut.moments.insert(product.moment.clone(), moment_grid);
+    // `values` is already ray-major. Move it into the field instead of
+    // cloning every row into a second full f32 plane.
+    let field = Field::new(
+        product.name.clone(),
+        GateMapping::IDENTITY,
+        ngates,
+        FieldData::F32 {
+            values,
+            coding: FloatCoding::default(),
+        },
+    );
+    sweep
+        .add_field(field)
+        .map_err(|err| format!("JMA sweep field: {err}"))?;
     volume
-        .cuts
+        .sweeps
         .try_reserve(1)
-        .map_err(|err| format!("cannot grow JMA cut table: {err}"))?;
-    volume.cuts.push(cut);
+        .map_err(|err| format!("cannot grow JMA sweep table: {err}"))?;
+    volume.sweeps.push(sweep);
     Ok(())
 }
 
@@ -870,7 +927,7 @@ fn parse_product(section: &[u8], grid: &PolarGrid, member: &str) -> Result<Sweep
     }
 
     Ok(SweepProduct {
-        moment: moment_for_parameter(section[9], section[10]),
+        name: field_name_for_parameter(section[9], section[10]),
         station,
         elevation_deg,
         ray_elevation_deg,
@@ -878,13 +935,14 @@ fn parse_product(section: &[u8], grid: &PolarGrid, member: &str) -> Result<Sweep
 }
 
 /// WMO Code table 4.2, discipline 0 (meteorological), category 15 (radar):
-/// 1 = reflectivity (dBZ), 2 = radial velocity (m/s). Anything else is
-/// preserved as an unknown moment instead of being dropped.
-fn moment_for_parameter(category: u8, number: u8) -> MomentType {
+/// 1 = reflectivity (dBZ) -> `DBZH`, 2 = radial velocity (m/s) -> `VRADH`.
+/// Anything else is preserved under a `JMA_<category>_<number>` name instead
+/// of being dropped.
+fn field_name_for_parameter(category: u8, number: u8) -> FieldName {
     match (category, number) {
-        (15, 1) => MomentType::Reflectivity,
-        (15, 2) => MomentType::Velocity,
-        (category, number) => MomentType::Unknown(format!("JMA_{category}_{number}")),
+        (15, 1) => FieldName::Dbzh,
+        (15, 2) => FieldName::Vradh,
+        (category, number) => FieldName::parse(&format!("JMA_{category}_{number}")),
     }
 }
 
@@ -1508,83 +1566,85 @@ mod tests {
             (&member_name(47001, "zeh"), &high),
             (&member_name(47001, "zel"), &low),
         ]);
-        let volumes = decode_jma_tar_volumes(&tar, None).expect("decode");
+        let volumes = read_jma_tar_volumes(&tar, None).expect("decode");
         assert_eq!(volumes.len(), 1, "same station must merge");
-        let cuts = &volumes[0].cuts;
-        assert_eq!(cuts.len(), 2);
-        assert_eq!(cuts[0].elevation_deg, 0.5);
-        assert_eq!(cuts[1].elevation_deg, 25.0);
-        assert_eq!(cuts[0].elevation_number, Some(1));
-        assert_eq!(cuts[1].elevation_number, Some(2));
+        let sweeps = &volumes[0].sweeps;
+        assert_eq!(sweeps.len(), 2);
+        assert_eq!(sweeps[0].fixed_angle_deg, 0.5);
+        assert_eq!(sweeps[1].fixed_angle_deg, 25.0);
+        assert_eq!(sweeps[0].sweep_number, 0);
+        assert_eq!(sweeps[1].sweep_number, 1);
+        assert_eq!(sweeps[0].elevation_number, Some(1));
+        assert_eq!(sweeps[1].elevation_number, Some(2));
     }
 
     #[test]
     fn decodes_every_station_in_archive_order() {
         let tar = two_station_tar();
-        let volumes = decode_jma_tar_volumes(&tar, None).expect("two-station decode");
+        let volumes = read_jma_tar_volumes(&tar, None).expect("two-station decode");
         assert_eq!(volumes.len(), 2, "every station must come back");
-        assert_eq!(volumes[0].site.id, "ALFA");
-        assert_eq!(volumes[1].site.id, "BRVO");
+        assert_eq!(volumes[0].attrs.instrument_name, "ALFA");
+        assert_eq!(volumes[1].attrs.instrument_name, "BRVO");
         assert_eq!(
-            volumes[0].volume_time.to_rfc3339(),
+            volumes[0].time_reference.to_rfc3339(),
             "2026-06-12T06:40:00+00:00"
         );
 
         let alfa = &volumes[0];
-        assert_eq!(alfa.site.name.as_deref(), Some("RS47001"));
-        let lat = f64::from(alfa.site.latitude_deg.expect("site latitude"));
-        let lon = f64::from(alfa.site.longitude_deg.expect("site longitude"));
-        assert!((lat - 36.512345).abs() < 1e-5, "lat was {lat}");
-        assert!((lon - 136.987654).abs() < 1e-4, "lon was {lon}");
-        assert_eq!(alfa.site.elevation_m, Some(123.4));
-        assert_eq!(alfa.cuts.len(), 1);
-        assert_eq!(alfa.metadata.scan_mode, Some(ScanMode::Ppi));
+        assert_eq!(alfa.attrs.site_name.as_deref(), Some("RS47001"));
+        assert_eq!(alfa.attrs.wmo.id.as_deref(), Some("47001"));
+        assert_eq!(alfa.provenance.source_format, SourceFormat::JmaGrib2);
+        let lat = alfa.location.latitude_deg.expect("site latitude");
+        let lon = alfa.location.longitude_deg.expect("site longitude");
+        assert!((lat - 36.512345).abs() < 1e-9, "lat was {lat}");
+        assert!((lon - 136.987654).abs() < 1e-9, "lon was {lon}");
+        assert_eq!(alfa.location.altitude_m, Some(f64::from(123.4f32)));
+        assert_eq!(alfa.sweeps.len(), 1);
 
-        let cut = &alfa.cuts[0];
-        assert_eq!(cut.elevation_deg, 0.5);
-        assert_eq!(cut.elevation_number, Some(1));
-        assert_eq!(cut.radials.len(), 2);
-        assert_eq!(cut.radials[0].azimuth_deg, 45.0);
-        assert_eq!(cut.radials[1].azimuth_deg, 225.0);
-        assert_eq!(cut.radials[0].elevation_deg, 0.55); // per-ray table wins
-        assert_eq!(cut.radials[0].gate_range.gate_spacing_m, 500);
-        assert_eq!(cut.radials[0].gate_range.gate_count, 3);
+        let sweep = &alfa.sweeps[0];
+        assert_eq!(sweep.sweep_mode, SweepMode::AzimuthSurveillance);
+        assert_eq!(sweep.fixed_angle_deg, 0.5);
+        assert_eq!(sweep.elevation_number, Some(1));
+        assert_eq!(sweep.nrays(), 2);
+        assert_eq!(sweep.rays.azimuth_deg, vec![45.0, 225.0]);
+        assert_eq!(sweep.rays.elevation_deg[0], 0.55); // per-ray table wins
+        assert_eq!(sweep.rays.time_s, vec![0.0, 0.0]);
+        assert_eq!(sweep.range.spacing_m(), Some(500.0));
+        assert_eq!(sweep.range.ngates(), 3);
+        assert!(sweep.ray_vars.nyquist_velocity_mps.is_none());
 
-        let grid = cut
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("REF moment");
-        assert_eq!(grid.scaled_value(0, 0), Some(10.5));
-        assert_eq!(grid.scaled_value(0, 1), Some(20.5));
-        assert_eq!(grid.scaled_value(0, 2), Some(30.5));
-        assert_eq!(grid.scaled_value(1, 1), Some(20.5));
-        assert!(grid.scaled_value(1, 2).is_some_and(f32::is_nan)); // level 0
+        let field = sweep.field(&FieldName::Dbzh).expect("DBZH field");
+        assert!(matches!(field.data, FieldData::F32 { .. }));
+        assert_eq!(field.value(0, 0), Some(10.5));
+        assert_eq!(field.value(0, 1), Some(20.5));
+        assert_eq!(field.value(0, 2), Some(30.5));
+        assert_eq!(field.value(1, 1), Some(20.5));
+        assert_eq!(field.value(1, 2), None); // level 0 is missing (NaN)
 
-        // The velocity member mapped to the Velocity moment.
-        assert!(
-            volumes[1].cuts[0]
-                .moments
-                .contains_key(&MomentType::Velocity)
-        );
+        // The velocity member mapped to VRADH.
+        assert!(volumes[1].sweeps[0].field(&FieldName::Vradh).is_some());
     }
 
     #[test]
     fn site_filter_selects_one_station_by_id_or_number() {
         let tar = two_station_tar();
         for filter in ["BRVO", "brvo", "RS47002", "47002"] {
-            let volumes = decode_jma_tar_volumes(&tar, Some(filter)).expect("filtered decode");
+            let volumes = read_jma_tar_volumes(&tar, Some(filter)).expect("filtered decode");
             assert_eq!(volumes.len(), 1, "filter '{filter}'");
-            assert_eq!(volumes[0].site.id, "BRVO", "filter '{filter}'");
+            assert_eq!(
+                volumes[0].attrs.instrument_name, "BRVO",
+                "filter '{filter}'"
+            );
         }
-        let err = decode_jma_tar_volumes(&tar, Some("NOPE")).unwrap_err();
+        let err = read_jma_tar_volumes(&tar, Some("NOPE")).unwrap_err();
         assert!(err.to_string().contains("NOPE"), "unexpected error: {err}");
     }
 
     #[test]
     fn first_station_decode_takes_the_first_member_only() {
         let tar = two_station_tar();
-        let volume = decode_jma_tar_first_station(&tar).expect("first-station decode");
-        assert_eq!(volume.site.id, "ALFA");
+        let volume = read_jma_tar_first_station(&tar).expect("first-station decode");
+        assert_eq!(volume.attrs.instrument_name, "ALFA");
     }
 
     #[test]
@@ -1609,10 +1669,10 @@ mod tests {
             (&member_name(47001, "ze"), alfa.as_slice()),
             (&member_name(47001, "ze"), alfa.as_slice()),
         ]);
-        let volumes = decode_jma_tar_volumes(&tar, None).expect("merged decode");
+        let volumes = read_jma_tar_volumes(&tar, None).expect("merged decode");
         assert_eq!(volumes.len(), 1);
-        assert_eq!(volumes[0].cuts.len(), 2, "cuts append in arrival order");
-        assert_eq!(volumes[0].metadata.decoded_radial_count, 4);
+        assert_eq!(volumes[0].sweeps.len(), 2, "sweeps append in arrival order");
+        assert_eq!(volumes[0].provenance.decode.decoded_ray_count, 4);
     }
 
     #[test]
@@ -1623,16 +1683,16 @@ mod tests {
             (&member_name(47999, "ze"), garbage.as_slice()),
             (&member_name(47001, "ze"), alfa.as_slice()),
         ]);
-        let volumes = decode_jma_tar_volumes(&mixed, None).expect("good member survives");
+        let volumes = read_jma_tar_volumes(&mixed, None).expect("good member survives");
         assert_eq!(volumes.len(), 1);
-        assert_eq!(volumes[0].site.id, "ALFA");
+        assert_eq!(volumes[0].attrs.instrument_name, "ALFA");
 
         let only_garbage = tar_archive(&[(&member_name(47999, "ze"), garbage.as_slice())]);
-        let err = decode_jma_tar_volumes(&only_garbage, None).unwrap_err();
+        let err = read_jma_tar_volumes(&only_garbage, None).unwrap_err();
         assert!(err.to_string().contains("GRIB"), "unexpected error: {err}");
 
         let no_members = tar_archive(&[("notes.txt", b"hi".as_slice())]);
-        let err = decode_jma_tar_volumes(&no_members, None).unwrap_err();
+        let err = read_jma_tar_volumes(&no_members, None).unwrap_err();
         assert!(
             err.to_string().contains("no Z__C_RJTD"),
             "unexpected error: {err}"
@@ -1642,7 +1702,7 @@ mod tests {
     #[test]
     fn truncated_tar_member_is_an_error_not_a_panic() {
         let tar = two_station_tar();
-        let err = decode_jma_tar_volumes(&tar[..TAR_BLOCK_LEN + 17], None).unwrap_err();
+        let err = read_jma_tar_volumes(&tar[..TAR_BLOCK_LEN + 17], None).unwrap_err();
         assert!(
             err.to_string().contains("overruns"),
             "unexpected error: {err}"

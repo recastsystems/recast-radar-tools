@@ -3,8 +3,7 @@
 //! single-station Osaka/Takayasu (RS47773) N5 tar mutated to claim more data
 //! than the caps allow must fail with a limit error.
 
-use recast_radar_core::bounded_read::volume_moment_capacity_bytes;
-use recast_radar_io_jma::{JmaError, decode_jma_tar_volumes};
+use recast_radar_io_jma::{JmaError, read_jma_tar_volumes, volume_retained_bytes};
 
 const TAR_BLOCK: usize = 512;
 
@@ -46,7 +45,7 @@ fn set_grid(tar: &mut [u8], gates: u32, radials: u32) {
 }
 
 fn assert_limit_error(tar: &[u8], what: &str) {
-    match decode_jma_tar_volumes(tar, None) {
+    match read_jma_tar_volumes(tar, None) {
         Err(JmaError::LimitExceeded(reason)) => {
             assert!(reason.contains("limit"), "{what}: {reason}");
         }
@@ -59,9 +58,9 @@ fn assert_limit_error(tar: &[u8], what: &str) {
 fn full_national_reflectivity_tar_decodes_within_the_batch_limit() {
     let path = recast_radar_testdata::require_file!("jma-n5-20191012-090000");
     let tar = std::fs::read(&path).expect("read cached N5 tar");
-    let volumes = decode_jma_tar_volumes(&tar, None).expect("all 20 stations decode");
+    let volumes = read_jma_tar_volumes(&tar, None).expect("all 20 stations decode");
     assert_eq!(volumes.len(), 20);
-    let decoded: usize = volumes.iter().map(volume_moment_capacity_bytes).sum();
+    let decoded: usize = volumes.iter().map(volume_retained_bytes).sum();
     // 26 sweeps x 512 radials per station as f32 planes: well over the old
     // 64-million-point ceiling that rejected this real file.
     assert!(decoded > 64 * 1024 * 1024 * 4, "decoded {decoded} bytes");
@@ -77,9 +76,9 @@ fn unmodified_single_station_tar_decodes_within_limits() {
         be_u32(&tar, section + 18),
     );
     assert_eq!((gates * radials, radials), (points, 512));
-    let volumes = decode_jma_tar_volumes(&tar, None).expect("real RS47773 tar decodes");
+    let volumes = read_jma_tar_volumes(&tar, None).expect("real RS47773 tar decodes");
     assert_eq!(volumes.len(), 1);
-    assert_eq!(volumes[0].cuts.len(), 26);
+    assert_eq!(volumes[0].sweeps.len(), 26);
 }
 
 #[test]

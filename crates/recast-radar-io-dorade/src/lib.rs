@@ -1,7 +1,10 @@
 //! DORADE sweepfile decoding and mobile-radar deployment archive ingest
-//! (DOW/COW/RaXPol) into [`recast_radar_core::RadarVolume`].
+//! (DOW/COW/RaXPol) into the FM301 [`recast_radar_core::model::Volume`].
 //!
-//! - [`dorade`]: native DORADE `swp.*` sweepfile decoder.
+//! - [`dorade`]: native DORADE `swp.*` sweepfile decoder
+//!   ([`read_dorade_sweep_volume`], [`dorade::DoradeVolumeBuilder`]).
+//! - [`legacy_api`]: the pre-FM301 `decode_*` signatures (legacy
+//!   `RadarVolume`), kept during the migration.
 //! - [`mobile_archive`]: zip-archive and folder ingest that groups DORADE
 //!   sweeps into volume scans. Level II (`.msg31`/`AR2V`) members inside
 //!   those archives are decoded by a caller-supplied decoder, so this crate
@@ -16,10 +19,10 @@
 //!   (16,384); real sweeps reach 1,002.
 //! - **Cells per sweep**: at most 67,108,864 decoded cells are retained
 //!   while a sweep's rays are collected.
-//! - **Volume**: at most `MAX_SWEEPS_PER_VOLUME` (1,024) sweeps. The radial
-//!   tables and moment grids (rows padded to the widest row of their field)
-//!   of every appended sweep are charged to a `DecodeBudget` of
-//!   `MAX_DECODED_VOLUME_BYTES` (1 GiB) before the grids are built.
+//! - **Volume**: at most `MAX_SWEEPS_PER_VOLUME` (1,024) sweeps. The ray
+//!   tables and fields (rows padded to the widest row of their field) of
+//!   every appended sweep are charged to a `DecodeBudget` of
+//!   `MAX_DECODED_VOLUME_BYTES` (1 GiB) before the fields are built.
 //!
 //! Mobile-radar archives and folders:
 //!
@@ -35,19 +38,29 @@
 //! [`DoradeError::Compression`] errors.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
 
 pub mod dorade;
+#[allow(deprecated)]
+pub mod legacy_api;
 pub mod mobile_archive;
 
 use thiserror::Error;
 
 pub use dorade::{
-    decode_dorade_sweep_volume, decode_dorade_volume_from_paths, decode_dorade_volume_from_slices,
-    looks_like_dorade_bytes, peek_dorade_sweep,
+    DoradeVolumeBuilder, looks_like_dorade_bytes, peek_dorade_sweep, read_dorade_sweep_volume,
+    read_dorade_volume_from_paths, read_dorade_volume_from_slices,
+};
+#[allow(deprecated)]
+pub use legacy_api::{
+    MobileRadarVolume, decode_dorade_sweep_volume, decode_dorade_volume_for_path,
+    decode_dorade_volume_from_paths, decode_dorade_volume_from_slices,
+    decode_mobile_archive_from_path, decode_mobile_dir_from_path,
 };
 pub use mobile_archive::{
-    MobileVolume, decode_dorade_volume_for_path, decode_mobile_archive_from_path,
-    decode_mobile_dir_from_path, looks_like_zip_bytes,
+    MobileDecode, MobileVolume, looks_like_zip_bytes, read_dorade_volume_for_path,
+    read_mobile_archive_from_path, read_mobile_dir_from_path,
 };
 
 /// Result type for DORADE and mobile-archive decoding.
@@ -88,9 +101,6 @@ pub enum DoradeError {
         /// Human-readable description.
         reason: String,
     },
-    /// Decoded gates did not fit the moment grid.
-    #[error("moment grid error: {0}")]
-    MomentGrid(#[from] recast_radar_core::MomentGridError),
     /// The input declares more data than a documented resource limit allows
     /// (see the crate-level `# Limits` section).
     #[error("decode limit exceeded: {0}")]

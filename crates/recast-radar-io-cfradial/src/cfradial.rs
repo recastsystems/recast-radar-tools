@@ -870,7 +870,7 @@ impl FieldCoding {
 }
 
 /// The `range` coordinate: uniform when every centre sits on the line
-/// through the first and last centres within 0.1% of a gate (float32 files
+/// through the first and last centres within 1% of a gate (float32 files
 /// carry rounding of that order), else the explicit centres.
 fn range_coordinate(range: &[f64], ngates: u32) -> RangeCoord {
     let first = range[0];
@@ -878,7 +878,7 @@ fn range_coordinate(range: &[f64], ngates: u32) -> RangeCoord {
     let uniform = spacing > 0.0
         && spacing.is_finite()
         && range.iter().enumerate().all(|(gate, center)| {
-            (center - (first + gate as f64 * spacing)).abs() <= 1e-3 * spacing
+            (center - (first + gate as f64 * spacing)).abs() <= 1e-2 * spacing
         });
     if uniform {
         RangeCoord::Uniform {

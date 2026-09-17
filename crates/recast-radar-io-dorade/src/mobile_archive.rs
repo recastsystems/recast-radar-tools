@@ -5,7 +5,8 @@
 //! several radars in one archive (e.g. a Goodland deployment zip carries
 //! `DORADE/DOW7/...` next to `DORADE/COW2/...`). This module discovers radar
 //! members, groups DORADE sweeps into volume scans, and decodes everything
-//! into [`recast_radar_core::RadarVolume`]s.
+//! into FM301 [`recast_radar_core::model::Volume`]s (the pre-FM301
+//! signatures live in [`crate::legacy_api`] during the migration).
 //!
 //! Lift-and-improve of `gurt-rs/src/archive.rs`. Divergences:
 //! - **Volume grouping**: the reference treated every archive member as its
@@ -26,7 +27,7 @@
 //! - **Parallel decode**: members decode on the rayon pool.
 //! - **Level II members**: this crate does not decode Archive II itself;
 //!   callers pass the Level II decoder (normally
-//!   `recast_radar_io_nexrad::decode_volume_from_bytes`), and
+//!   `recast_radar_io_nexrad::read_volume_from_bytes`), and
 //!   `recast_radar_io` provides wrappers that do so.
 //!
 //! Sibling-directory grouping for loose (non-zip) sweepfiles lives here too:
@@ -42,15 +43,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
-use recast_radar_core::bounded_read::{
-    MAX_DECODED_BATCH_BYTES, read_to_end_limited, volume_moment_capacity_bytes,
-};
-use recast_radar_core::{RadarVolume, Radial};
+use recast_radar_core::bounded_read::{MAX_DECODED_BATCH_BYTES, read_to_end_limited};
+use recast_radar_core::model::{FieldData, Volume};
 use zip::ZipArchive;
 
 use crate::dorade::{
-    append_dorade_sweep, decode_dorade_sweep_volume, finalize_dorade_volume,
-    looks_like_dorade_bytes, looks_like_dorade_name, peek_dorade_sweep,
+    DoradeVolumeBuilder, looks_like_dorade_bytes, looks_like_dorade_name, peek_dorade_sweep,
+};
+#[allow(deprecated)]
+pub use crate::legacy_api::{
+    MobileRadarVolume, decode_dorade_volume_for_path, decode_mobile_archive_from_path,
+    decode_mobile_dir_from_path,
 };
 use crate::{DoradeError, Result};
 
@@ -80,12 +83,66 @@ pub fn looks_like_zip_path(path: &Path) -> bool {
 
 /// One decoded volume scan plus where it came from inside the archive.
 #[derive(Clone, Debug)]
-pub struct MobileVolume {
-    pub volume: RadarVolume,
+pub struct MobileVolume<V = Volume> {
+    pub volume: V,
     /// Display label: first member name of the group (`swp....` or `*.msg31`).
     pub member_label: String,
     /// Number of archive members merged into this volume.
     pub member_count: usize,
+}
+
+/// A volume type the archive ingest can build: the FM301 [`Volume`], or the
+/// legacy model through [`crate::legacy_api`].
+pub trait MobileDecode: Sized + Send {
+    /// Decode one DORADE volume run from its sweepfile bytes, in order.
+    fn decode_dorade_run(sweeps: &[&[u8]]) -> Result<Self>;
+    /// Bytes the decoded volume retains (fields and ray tables).
+    fn retained_bytes(&self) -> usize;
+    fn set_source_path(&mut self, path: String);
+    /// The scan time volumes sort by.
+    fn scan_time(&self) -> DateTime<Utc>;
+}
+
+impl MobileDecode for Volume {
+    fn decode_dorade_run(sweeps: &[&[u8]]) -> Result<Self> {
+        let mut builder = DoradeVolumeBuilder::new();
+        for sweep in sweeps {
+            builder.append(sweep)?;
+        }
+        builder.finish()
+    }
+
+    fn retained_bytes(&self) -> usize {
+        let rays: usize = self.sweeps.iter().map(|sweep| sweep.nrays()).sum();
+        self.sweeps
+            .iter()
+            .flat_map(|sweep| sweep.fields.iter())
+            .fold(0usize, |total, field| {
+                let bytes = match &field.data {
+                    FieldData::U8 { values, .. } => values.capacity(),
+                    FieldData::I8 { values, .. } => values.capacity(),
+                    FieldData::U16 { values, .. } => values.capacity().saturating_mul(2),
+                    FieldData::I16 { values, .. } => values.capacity().saturating_mul(2),
+                    FieldData::F32 { values, .. } => values.capacity().saturating_mul(4),
+                    FieldData::F64 { values, .. } => values.capacity().saturating_mul(8),
+                };
+                total.saturating_add(bytes)
+            })
+            .saturating_add(rays.saturating_mul(3 * size_of::<f64>()))
+    }
+
+    fn set_source_path(&mut self, path: String) {
+        self.provenance.source_path = Some(path);
+    }
+
+    fn scan_time(&self) -> DateTime<Utc> {
+        self.time_reference
+    }
+}
+
+/// Read one sweepfile of a volume run (bounded by the member size limit).
+pub(crate) fn read_member_file(path: &Path) -> Result<Vec<u8>> {
+    read_file_limited(path, MAX_MOBILE_MEMBER_BYTES)
 }
 
 /// Decode every radar volume in a zip archive, sorted by scan time.
@@ -95,12 +152,25 @@ pub struct MobileVolume {
 /// `decode_level2`. Non-radar members are ignored; corrupt members fail the
 /// whole load with a descriptive error (a deployment archive with
 /// undecodable scans should be visible, not silently thinner).
-pub fn decode_mobile_archive_from_path<F, E>(
+pub fn read_mobile_archive_from_path<F, E>(
     path: &Path,
     decode_level2: F,
 ) -> Result<Vec<MobileVolume>>
 where
-    F: Fn(&[u8]) -> std::result::Result<RadarVolume, E> + Sync,
+    F: Fn(&[u8]) -> std::result::Result<Volume, E> + Sync,
+    E: Display,
+{
+    decode_mobile_archive_as::<Volume, F, E>(path, decode_level2)
+}
+
+/// [`read_mobile_archive_from_path`] for any [`MobileDecode`] volume type.
+pub fn decode_mobile_archive_as<V, F, E>(
+    path: &Path,
+    decode_level2: F,
+) -> Result<Vec<MobileVolume<V>>>
+where
+    V: MobileDecode,
+    F: Fn(&[u8]) -> std::result::Result<V, E> + Sync,
     E: Display,
 {
     let members = read_radar_members(path)?;
@@ -121,9 +191,19 @@ where
 /// — one file per tilt — so the folder, not the file, is the natural
 /// open unit (field report). Same sniffing and volume grouping as zips;
 /// Level II members decode through `decode_level2`.
-pub fn decode_mobile_dir_from_path<F, E>(dir: &Path, decode_level2: F) -> Result<Vec<MobileVolume>>
+pub fn read_mobile_dir_from_path<F, E>(dir: &Path, decode_level2: F) -> Result<Vec<MobileVolume>>
 where
-    F: Fn(&[u8]) -> std::result::Result<RadarVolume, E> + Sync,
+    F: Fn(&[u8]) -> std::result::Result<Volume, E> + Sync,
+    E: Display,
+{
+    decode_mobile_dir_as::<Volume, F, E>(dir, decode_level2)
+}
+
+/// [`read_mobile_dir_from_path`] for any [`MobileDecode`] volume type.
+pub fn decode_mobile_dir_as<V, F, E>(dir: &Path, decode_level2: F) -> Result<Vec<MobileVolume<V>>>
+where
+    V: MobileDecode,
+    F: Fn(&[u8]) -> std::result::Result<V, E> + Sync,
     E: Display,
 {
     let mut members = Vec::new();
@@ -349,14 +429,15 @@ fn segment_volume_runs<T>(mut sweeps: Vec<GroupableSweep<T>>) -> Vec<Vec<Groupab
 /// Decode grouped members in parallel. The retained size of every decoded
 /// volume counts against `batch_limit` (normally [`MAX_DECODED_BATCH_BYTES`]);
 /// in-flight decodes on other threads may briefly hold more.
-fn decode_members<F, E>(
+fn decode_members<V, F, E>(
     archive_path: &Path,
     members: Vec<RadarMember>,
     decode_level2: &F,
     batch_limit: usize,
-) -> Result<Vec<MobileVolume>>
+) -> Result<Vec<MobileVolume<V>>>
 where
-    F: Fn(&[u8]) -> std::result::Result<RadarVolume, E> + Sync,
+    V: MobileDecode,
+    F: Fn(&[u8]) -> std::result::Result<V, E> + Sync,
     E: Display,
 {
     // Split DORADE sweeps from Level II members, peeking DORADE headers for
@@ -382,25 +463,28 @@ where
     }
 
     let archive_label = archive_path.display().to_string();
-    let mut volumes: Vec<MobileVolume> = Vec::new();
+    let mut volumes: Vec<MobileVolume<V>> = Vec::new();
     let decoded_bytes = AtomicUsize::new(0);
 
     let runs: Vec<Vec<GroupableSweep<RadarMember>>> = per_instrument
         .into_values()
         .flat_map(segment_volume_runs)
         .collect();
-    let dorade_volumes: Vec<MobileVolume> = runs
+    let dorade_volumes: Vec<MobileVolume<V>> = runs
         .into_par_iter()
         .map(|run| {
-            let mut volume = RadarVolume::default();
-            for sweep in &run {
-                append_dorade_sweep(&sweep.payload.bytes, &mut volume)
-                    .map_err(|err| with_member(&sweep.payload.name, err))?;
-            }
-            finalize_dorade_volume(&mut volume);
+            let sweeps: Vec<&[u8]> = run
+                .iter()
+                .map(|sweep| sweep.payload.bytes.as_slice())
+                .collect();
+            let mut volume = V::decode_dorade_run(&sweeps).map_err(|err| {
+                // Name the run's first member; a bad sweep names itself in
+                // the error text.
+                with_member(&run[0].payload.name, err)
+            })?;
             charge_batch(&decoded_bytes, &volume, batch_limit)?;
             let member_label = run[0].payload.name.clone();
-            volume.metadata.source_path = Some(format!("{archive_label}::{member_label}"));
+            volume.set_source_path(format!("{archive_label}::{member_label}"));
             Ok(MobileVolume {
                 volume,
                 member_label,
@@ -410,13 +494,13 @@ where
         .collect::<Result<Vec<_>>>()?;
     volumes.extend(dorade_volumes);
 
-    let level2_volumes: Vec<MobileVolume> = level2_members
+    let level2_volumes: Vec<MobileVolume<V>> = level2_members
         .into_par_iter()
         .map(|member| {
             let mut volume =
                 decode_level2(&member.bytes).map_err(|err| with_member(&member.name, err))?;
             charge_batch(&decoded_bytes, &volume, batch_limit)?;
-            volume.metadata.source_path = Some(format!("{archive_label}::{}", member.name));
+            volume.set_source_path(format!("{archive_label}::{}", member.name));
             Ok(MobileVolume {
                 volume,
                 member_label: member.name,
@@ -428,19 +512,17 @@ where
 
     volumes.sort_by(|left, right| {
         left.volume
-            .volume_time
-            .cmp(&right.volume.volume_time)
+            .scan_time()
+            .cmp(&right.volume.scan_time())
             .then_with(|| left.member_label.cmp(&right.member_label))
     });
     Ok(volumes)
 }
 
-/// Add a decoded volume's retained size (moment grids and radial tables) to
-/// the archive-wide total, failing once it would pass `limit`.
-fn charge_batch(total: &AtomicUsize, volume: &RadarVolume, limit: usize) -> Result<()> {
-    let radials: usize = volume.cuts.iter().map(|cut| cut.radials.len()).sum();
-    let bytes = volume_moment_capacity_bytes(volume)
-        .saturating_add(radials.saturating_mul(size_of::<Radial>()));
+/// Add a decoded volume's retained size (fields and ray tables) to the
+/// archive-wide total, failing once it would pass `limit`.
+fn charge_batch<V: MobileDecode>(total: &AtomicUsize, volume: &V, limit: usize) -> Result<()> {
+    let bytes = volume.retained_bytes();
     total
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
             used.checked_add(bytes).filter(|next| *next <= limit)
@@ -513,7 +595,12 @@ const PEEK_HEAD_BYTES: usize = 64 * 1024;
 /// docs), and decodes the run containing `path` as one volume. Sibling
 /// headers are peeked from the first [`PEEK_HEAD_BYTES`] only, so opening a
 /// file in a large deployment directory stays cheap.
-pub fn decode_dorade_volume_for_path(path: &Path) -> Result<RadarVolume> {
+pub fn read_dorade_volume_for_path(path: &Path) -> Result<Volume> {
+    decode_dorade_volume_for_path_as::<Volume>(path)
+}
+
+/// [`read_dorade_volume_for_path`] for any [`MobileDecode`] volume type.
+pub fn decode_dorade_volume_for_path_as<V: MobileDecode>(path: &Path) -> Result<V> {
     let bytes = read_file_limited(path, MAX_MOBILE_MEMBER_BYTES)?;
     let header = peek_dorade_sweep(&bytes)?;
 
@@ -562,23 +649,21 @@ pub fn decode_dorade_volume_for_path(path: &Path) -> Result<RadarVolume> {
             ))
         })?;
 
-    if run.len() == 1 {
-        let mut volume = decode_dorade_sweep_volume(&bytes)?;
-        volume.metadata.source_path = Some(path.display().to_string());
-        return Ok(volume);
-    }
-
-    let mut volume = RadarVolume::default();
+    // The opened file's bytes are already in hand; the run's other sweeps
+    // are read here, in scan order.
+    let mut all: Vec<Vec<u8>> = Vec::with_capacity(run.len());
+    let mut bytes = Some(bytes);
     for sweep in &run {
-        let data = if sweep.payload == *path {
-            bytes.clone()
+        all.push(if sweep.payload == *path {
+            bytes.take().unwrap_or_default()
         } else {
-            read_file_limited(&sweep.payload, MAX_MOBILE_MEMBER_BYTES)?
-        };
-        append_dorade_sweep(&data, &mut volume).map_err(|err| with_member(&sweep.label, err))?;
+            read_member_file(&sweep.payload)?
+        });
     }
-    finalize_dorade_volume(&mut volume);
-    volume.metadata.source_path = Some(path.display().to_string());
+    let sweeps: Vec<&[u8]> = all.iter().map(Vec::as_slice).collect();
+    let mut volume =
+        V::decode_dorade_run(&sweeps).map_err(|err| with_member(&run[0].label, err))?;
+    volume.set_source_path(path.display().to_string());
     Ok(volume)
 }
 
@@ -671,7 +756,7 @@ mod tests {
 
     /// These archives hold DORADE sweeps only; a Level II member would be a
     /// test bug.
-    fn no_level2_members(_bytes: &[u8]) -> std::result::Result<RadarVolume, String> {
+    fn no_level2_members(_bytes: &[u8]) -> std::result::Result<Volume, String> {
         Err("unexpected Level II member".to_owned())
     }
 
@@ -718,21 +803,27 @@ mod tests {
             ],
         );
 
-        let volumes = decode_mobile_archive_from_path(&zip_path, no_level2_members).unwrap();
+        let volumes = read_mobile_archive_from_path(&zip_path, no_level2_members).unwrap();
 
         assert_eq!(volumes.len(), 3);
         let two_cut = volumes
             .iter()
-            .find(|v| v.volume.site.id == "TST1" && v.member_count == 2)
-            .expect("two-cut TST1 volume");
-        assert_eq!(two_cut.volume.cuts.len(), 2);
-        assert!(two_cut.volume.cuts[0].elevation_deg < two_cut.volume.cuts[1].elevation_deg);
+            .find(|v| v.volume.attrs.instrument_name == "TST1" && v.member_count == 2)
+            .expect("two-sweep TST1 volume");
+        assert_eq!(two_cut.volume.sweeps.len(), 2);
+        assert!(
+            two_cut.volume.sweeps[0].fixed_angle_deg < two_cut.volume.sweeps[1].fixed_angle_deg
+        );
         assert!(
             volumes
                 .iter()
-                .any(|v| v.volume.site.id == "TST1" && v.member_count == 1)
+                .any(|v| v.volume.attrs.instrument_name == "TST1" && v.member_count == 1)
         );
-        assert!(volumes.iter().any(|v| v.volume.site.id == "TST2"));
+        assert!(
+            volumes
+                .iter()
+                .any(|v| v.volume.attrs.instrument_name == "TST2")
+        );
         std::fs::remove_file(&zip_path).ok();
     }
 
@@ -790,7 +881,7 @@ mod tests {
         let zip_path = dir.join("empty.zip");
         write_zip(&zip_path, &[("README.txt", b"nothing here".to_vec())]);
 
-        let err = decode_mobile_archive_from_path(&zip_path, no_level2_members).unwrap_err();
+        let err = read_mobile_archive_from_path(&zip_path, no_level2_members).unwrap_err();
         assert!(err.to_string().contains("no radar members"));
         std::fs::remove_file(&zip_path).ok();
     }
@@ -807,10 +898,14 @@ mod tests {
         std::fs::write(&high, synthetic_sweep(b"TST1", 6, 1.0)).unwrap();
         std::fs::write(&other, synthetic_sweep(b"TST1", 46, 0.5)).unwrap();
 
-        let volume = decode_dorade_volume_for_path(&low).unwrap();
+        let volume = read_dorade_volume_for_path(&low).unwrap();
 
-        assert_eq!(volume.site.id, "TST1");
-        assert_eq!(volume.cuts.len(), 2);
+        assert_eq!(volume.attrs.instrument_name, "TST1");
+        assert_eq!(volume.sweeps.len(), 2);
+        assert_eq!(
+            volume.provenance.source_path.as_deref(),
+            Some(low.display().to_string().as_str())
+        );
         for path in [&low, &high, &other] {
             std::fs::remove_file(path).ok();
         }
@@ -826,7 +921,7 @@ mod tests {
             .expect("read committed sweepfiles");
         assert_eq!(members.len(), 5);
         members.sort_by(|left, right| left.name.cmp(&right.name));
-        let volumes = decode_members(
+        let volumes = decode_members::<Volume, _, _>(
             &dir,
             members.iter().map(clone_member).collect(),
             &no_level2_members,
@@ -835,13 +930,10 @@ mod tests {
         .expect("real sweepfiles fit the default batch limit");
         let needed: usize = volumes
             .iter()
-            .map(|mobile| {
-                let radials: usize = mobile.volume.cuts.iter().map(|cut| cut.radials.len()).sum();
-                volume_moment_capacity_bytes(&mobile.volume) + radials * size_of::<Radial>()
-            })
+            .map(|mobile| mobile.volume.retained_bytes())
             .sum();
 
-        let error = decode_members(&dir, members, &no_level2_members, needed - 1)
+        let error = decode_members::<Volume, _, _>(&dir, members, &no_level2_members, needed - 1)
             .expect_err("one byte short of the decoded size must fail");
         assert!(
             matches!(&error, DoradeError::LimitExceeded(reason) if reason.contains("limit")),

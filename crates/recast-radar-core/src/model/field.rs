@@ -829,6 +829,10 @@ impl Field {
         /// padded with the fill code; a longer row widens every existing row.
         push_row_u8, U8, u8
     );
+    push_slice_row!(
+        /// Push a `u16` row; see [`Field::push_row_u8`].
+        push_row_u16, U16, u16
+    );
     push_be_row!(
         /// Push a big-endian `u16` row (NEXRAD 16-bit moments); see
         /// [`Field::push_row_u8`].
@@ -837,6 +841,11 @@ impl Field {
     push_slice_row!(
         /// Push an `i8` row; see [`Field::push_row_u8`].
         push_row_i8, I8, i8
+    );
+    push_slice_row!(
+        /// Push an `i16` row (DORADE 16-bit fields); see
+        /// [`Field::push_row_u8`].
+        push_row_i16, I16, i16
     );
     push_be_row!(
         /// Push a big-endian `i16` row; see [`Field::push_row_u8`].

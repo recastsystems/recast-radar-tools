@@ -1,11 +1,16 @@
 //! Format-sniffing router over the `recast-radar-io-*` decoders.
 //!
-//! [`decode_supported_volume_bytes`] takes a byte buffer of unknown
+//! [`read_supported_volume_bytes`] takes a byte buffer of unknown
 //! provenance, unwraps a single-member ZIP local record or a whole-file gzip
 //! wrapper, sniffs the container by magic bytes, and hands it to the
-//! matching decoder crate. [`decode_mobile_archive_from_path`] and
-//! [`decode_mobile_dir_from_path`] wire the NEXRAD Level II decoder into the
-//! DORADE crate's mobile-radar archive ingest.
+//! matching decoder crate, returning the FM301
+//! [`recast_radar_core::model::Volume`] with the format's typed metadata
+//! beside it ([`Decoded`], [`FormatMetadata`]; design note
+//! `docs/design/fm301-model.md` section 2). [`read_mobile_archive_from_path`]
+//! and [`read_mobile_dir_from_path`] wire the NEXRAD Level II decoder into
+//! the DORADE crate's mobile-radar archive ingest. The pre-FM301 `decode_*`
+//! signatures (legacy `RadarVolume`) live in [`legacy_api`] during the
+//! migration.
 //!
 //! # Limits
 //!
@@ -19,21 +24,31 @@
 //! limits.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+// Migrated to the FM301 model (F.3): only `legacy_api` names legacy items.
+#![cfg_attr(recast_legacy_deprecation, deny(deprecated))]
+
+#[allow(deprecated)]
+pub mod legacy_api;
 
 use std::path::Path;
 
 use flate2::read::{DeflateDecoder, GzDecoder};
-use recast_radar_core::RadarVolume;
 use recast_radar_core::bounded_read::{
     MAX_DECODED_RADAR_BYTES, copy_bytes_limited, read_to_end_limited,
 };
+use recast_radar_core::model::Volume;
 use recast_radar_io_cfradial::CfRadialError;
 use recast_radar_io_dorade::mobile_archive::{self, MobileVolume};
 use recast_radar_io_dorade::{DoradeError, dorade};
 use recast_radar_io_jma::JmaError;
-use recast_radar_io_nexrad::{ArchiveCompression, NexradError};
+use recast_radar_io_nexrad::{ArchiveCompression, NexradError, NexradMetadata};
 use recast_radar_io_odim::{OdimError, hdf5lite, odim};
 use thiserror::Error;
+
+#[allow(deprecated)]
+pub use legacy_api::{
+    decode_mobile_archive_from_path, decode_mobile_dir_from_path, decode_supported_volume_bytes,
+};
 
 const ZIP_LOCAL_FILE_HEADER_LEN: usize = 30;
 
@@ -115,6 +130,25 @@ pub fn sniff_supported_volume_format(head: &[u8]) -> SupportedVolumeFormat {
     }
 }
 
+/// Format-specific metadata decoded beside a [`Volume`]: typed structs the
+/// FM301 model has no slot for (design note section 2).
+#[derive(Clone, Debug, PartialEq, Default)]
+#[non_exhaustive]
+pub enum FormatMetadata {
+    /// The source format keeps nothing beside the volume.
+    #[default]
+    None,
+    /// NEXRAD Level II metadata messages and per-sweep constant blocks.
+    Nexrad(Box<NexradMetadata>),
+}
+
+/// A routed decode: the FM301 volume plus its format metadata.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Decoded {
+    pub volume: Volume,
+    pub metadata: FormatMetadata,
+}
+
 /// Decode any supported single-buffer radar container by magic bytes:
 /// DORADE → ODIM_H5 (HDF5) → CfRadial 1.x (classic netCDF) → JMA GRIB2 tar
 /// → NEXRAD Archive II fallback.
@@ -127,63 +161,117 @@ pub fn sniff_supported_volume_format(head: &[u8]) -> SupportedVolumeFormat {
 /// JMA tars are multi-station archives (one GRIB2 member per radar of the
 /// national network); this router decodes the FIRST station only, because
 /// its contract is one volume per buffer. Providers that need a specific
-/// station call [`recast_radar_io_jma::decode_jma_tar_volumes`] with a
+/// station call [`recast_radar_io_jma::read_jma_tar_volumes`] with a
 /// `site_filter` directly instead of going through the router.
-pub fn decode_supported_volume_bytes(raw: &[u8]) -> Result<RadarVolume, IoError> {
-    let decoded_zip = if mobile_archive::looks_like_zip_bytes(raw) {
+///
+/// Only the volume is decoded; [`read_supported_volume_with_metadata`] also
+/// reads the format's metadata.
+pub fn read_supported_volume_bytes(raw: &[u8]) -> Result<Volume, IoError> {
+    route(raw, false).map(|decoded| decoded.volume)
+}
+
+/// [`read_supported_volume_bytes`] plus the format's typed metadata (NEXRAD
+/// Level II metadata messages; nothing for the other formats yet).
+pub fn read_supported_volume_with_metadata(raw: &[u8]) -> Result<Decoded, IoError> {
+    route(raw, true)
+}
+
+/// The outer containers of a buffer, expanded: a single-member ZIP local
+/// record and a whole-file gzip wrapper.
+pub(crate) struct Unwrapped {
+    zip: Option<Vec<u8>>,
+    gzip: Option<Vec<u8>>,
+}
+
+impl Unwrapped {
+    /// The bytes after the ZIP record (the decoder input for Archive II,
+    /// whose own gzip handling stays intact).
+    pub(crate) fn raw<'a>(&'a self, original: &'a [u8]) -> &'a [u8] {
+        self.zip.as_deref().unwrap_or(original)
+    }
+
+    /// The bytes after the gzip wrapper too (what the format sniff sees).
+    pub(crate) fn sniff<'a>(&'a self, original: &'a [u8]) -> &'a [u8] {
+        self.gzip.as_deref().unwrap_or(self.raw(original))
+    }
+
+    pub(crate) fn gzip_expanded(&self) -> bool {
+        self.gzip.is_some()
+    }
+}
+
+pub(crate) fn unwrap_containers(raw: &[u8]) -> Result<Unwrapped, IoError> {
+    let zip = if mobile_archive::looks_like_zip_bytes(raw) {
         Some(decompress_zip_local_member_bytes(raw)?)
     } else {
         None
     };
-    let raw = decoded_zip.as_deref().unwrap_or(raw);
-    let decoded_gzip = if raw.starts_with(&[0x1f, 0x8b]) {
-        Some(decompress_gzip_bytes(raw)?)
+    let inner = zip.as_deref().unwrap_or(raw);
+    let gzip = if inner.starts_with(&[0x1f, 0x8b]) {
+        Some(decompress_gzip_bytes(inner)?)
     } else {
         None
     };
-    let sniff_bytes = decoded_gzip.as_deref().unwrap_or(raw);
-    match sniff_supported_volume_format(sniff_bytes) {
-        SupportedVolumeFormat::Dorade => Ok(dorade::decode_dorade_sweep_volume(sniff_bytes)?),
-        SupportedVolumeFormat::OdimH5 => Ok(odim::decode_odim_h5_volume(sniff_bytes)?),
-        SupportedVolumeFormat::CfRadial => Ok(recast_radar_io_cfradial::decode_cfradial1_volume(
-            sniff_bytes,
-        )?),
-        SupportedVolumeFormat::JmaGrib2Tar => Ok(
-            recast_radar_io_jma::decode_jma_tar_first_station(sniff_bytes)?,
-        ),
+    Ok(Unwrapped { zip, gzip })
+}
+
+fn route(original: &[u8], with_metadata: bool) -> Result<Decoded, IoError> {
+    let unwrapped = unwrap_containers(original)?;
+    let raw = unwrapped.raw(original);
+    let sniff_bytes = unwrapped.sniff(original);
+    let volume = match sniff_supported_volume_format(sniff_bytes) {
+        SupportedVolumeFormat::Dorade => dorade::read_dorade_sweep_volume(sniff_bytes)?,
+        SupportedVolumeFormat::OdimH5 => odim::read_odim_h5_volume(sniff_bytes)?,
+        SupportedVolumeFormat::CfRadial => {
+            recast_radar_io_cfradial::read_cfradial1_volume(sniff_bytes)?
+        }
+        SupportedVolumeFormat::JmaGrib2Tar => {
+            recast_radar_io_jma::read_jma_tar_first_station(sniff_bytes)?
+        }
         SupportedVolumeFormat::NexradLevel2 => {
-            if decoded_gzip.is_some() {
+            if with_metadata {
+                let decoded = recast_radar_io_nexrad::read_volume_with_metadata(raw)?;
+                return Ok(Decoded {
+                    volume: decoded.volume,
+                    metadata: FormatMetadata::Nexrad(Box::new(decoded.metadata)),
+                });
+            }
+            if unwrapped.gzip_expanded() {
                 // The router already expanded gzip to inspect its inner
                 // format. Parse those normalized bytes directly instead of
                 // retaining them while inflating the same payload again.
-                Ok(recast_radar_io_nexrad::decode_normalized_volume_bytes(
+                recast_radar_io_nexrad::read_normalized_volume_bytes(
                     sniff_bytes,
                     ArchiveCompression::Gzip,
-                )?)
+                )?
             } else {
-                Ok(recast_radar_io_nexrad::decode_volume_from_bytes(raw)?)
+                recast_radar_io_nexrad::read_volume_from_bytes(raw)?
             }
         }
-    }
+    };
+    Ok(Decoded {
+        volume,
+        metadata: FormatMetadata::None,
+    })
 }
 
 /// Decode every radar volume in a mobile-radar zip archive, with `.msg31`
 /// and `AR2V` members decoded by the NEXRAD Level II decoder. See
-/// [`recast_radar_io_dorade::mobile_archive::decode_mobile_archive_from_path`].
-pub fn decode_mobile_archive_from_path(path: &Path) -> Result<Vec<MobileVolume>, IoError> {
-    Ok(mobile_archive::decode_mobile_archive_from_path(
+/// [`recast_radar_io_dorade::mobile_archive::read_mobile_archive_from_path`].
+pub fn read_mobile_archive_from_path(path: &Path) -> Result<Vec<MobileVolume>, IoError> {
+    Ok(mobile_archive::read_mobile_archive_from_path(
         path,
-        recast_radar_io_nexrad::decode_volume_from_bytes,
+        recast_radar_io_nexrad::read_volume_from_bytes,
     )?)
 }
 
 /// Decode every radar volume under a mobile-radar deployment folder, with
 /// Level II members decoded by the NEXRAD Level II decoder. See
-/// [`recast_radar_io_dorade::mobile_archive::decode_mobile_dir_from_path`].
-pub fn decode_mobile_dir_from_path(dir: &Path) -> Result<Vec<MobileVolume>, IoError> {
-    Ok(mobile_archive::decode_mobile_dir_from_path(
+/// [`recast_radar_io_dorade::mobile_archive::read_mobile_dir_from_path`].
+pub fn read_mobile_dir_from_path(dir: &Path) -> Result<Vec<MobileVolume>, IoError> {
+    Ok(mobile_archive::read_mobile_dir_from_path(
         dir,
-        recast_radar_io_nexrad::decode_volume_from_bytes,
+        recast_radar_io_nexrad::read_volume_from_bytes,
     )?)
 }
 
@@ -336,10 +424,10 @@ mod tests {
     fn router_stringifies_level2_error_for_unrecognized_bytes() {
         // Short unrecognized bytes fail the Archive II volume-header check;
         // the router must surface that exact decoder message.
-        let direct_err = recast_radar_io_nexrad::decode_volume_from_bytes(b"not radar")
+        let direct_err = recast_radar_io_nexrad::read_volume_from_bytes(b"not radar")
             .expect_err("short garbage must not decode")
             .to_string();
-        let routed_err = decode_supported_volume_bytes(b"not radar")
+        let routed_err = read_supported_volume_bytes(b"not radar")
             .expect_err("short garbage must not decode")
             .to_string();
         assert_eq!(routed_err, direct_err);

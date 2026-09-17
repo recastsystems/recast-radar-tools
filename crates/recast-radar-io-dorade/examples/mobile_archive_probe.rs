@@ -11,9 +11,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let started = Instant::now();
-    let volumes = recast_radar_io_dorade::mobile_archive::decode_mobile_archive_from_path(
+    let volumes = recast_radar_io_dorade::mobile_archive::read_mobile_archive_from_path(
         path.as_ref(),
-        recast_radar_io_nexrad::decode_volume_from_bytes,
+        recast_radar_io_nexrad::read_volume_from_bytes,
     )?;
     let elapsed = started.elapsed();
     println!(
@@ -23,21 +23,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     for entry in &volumes {
         let volume = &entry.volume;
-        let moments: Vec<String> = volume
-            .cuts
+        let fields: Vec<String> = volume
+            .sweeps
             .first()
-            .map(|cut| cut.moments.keys().map(|m| m.to_string()).collect())
+            .map(|sweep| sweep.fields.iter().map(|f| f.name.to_string()).collect())
             .unwrap_or_default();
         println!(
-            "  {} t={} cuts={} radials={} members={} lat={:?} lon={:?} [{}] {}",
-            volume.site.id,
-            volume.volume_time.format("%Y-%m-%d %H:%M:%S"),
-            volume.cuts.len(),
-            volume.metadata.decoded_radial_count,
+            "  {} t={} sweeps={} rays={} members={} lat={:?} lon={:?} [{}] {}",
+            volume.attrs.instrument_name,
+            volume.time_reference.format("%Y-%m-%d %H:%M:%S"),
+            volume.sweeps.len(),
+            volume.provenance.decode.decoded_ray_count,
             entry.member_count,
-            volume.site.latitude_deg,
-            volume.site.longitude_deg,
-            moments.join(","),
+            volume.location.latitude_deg,
+            volume.location.longitude_deg,
+            fields.join(","),
             entry.member_label,
         );
     }

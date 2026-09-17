@@ -9,7 +9,7 @@
 //!
 //! Usage: cargo run -p recast-radar-io-jma --example jma_inspect -- <tar> [--samples]
 
-use recast_radar_core::{ElevationCut, MomentStorage, MomentType};
+use recast_radar_core::model::{FieldData, FieldName, Sweep};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -28,7 +28,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let volumes = match recast_radar_io_jma::decode_jma_tar_volumes(&bytes, None) {
+    let volumes = match recast_radar_io_jma::read_jma_tar_volumes(&bytes, None) {
         Ok(volumes) => volumes,
         Err(err) => {
             eprintln!("decode failed: {err}");
@@ -38,51 +38,52 @@ fn main() {
 
     for volume in &volumes {
         if samples {
-            for (index, cut) in volume.cuts.iter().enumerate() {
-                print_cut_samples(&volume.site.id, index, cut);
+            for sweep in &volume.sweeps {
+                print_sweep_samples(&volume.attrs.instrument_name, sweep);
             }
         } else {
             println!(
                 "{}  station={}  sweeps={}",
-                volume.volume_time.format("%Y-%m-%dT%H:%M:%SZ"),
-                volume.site.id,
-                volume.cuts.len()
+                volume.time_reference.format("%Y-%m-%dT%H:%M:%SZ"),
+                volume.attrs.instrument_name,
+                volume.sweeps.len()
             );
-            for (index, cut) in volume.cuts.iter().enumerate() {
-                print_cut_inspect_line(index, cut);
+            for sweep in &volume.sweeps {
+                print_sweep_inspect_line(sweep);
             }
         }
     }
 }
 
 /// Mirror of the bridge's per-sweep `inspect` line.
-fn print_cut_inspect_line(index: usize, cut: &ElevationCut) {
-    let Some((moment, grid)) = cut.moments.iter().next() else {
+fn print_sweep_inspect_line(sweep: &Sweep) {
+    let Some(field) = sweep.fields.first() else {
         return;
     };
-    let gates = grid.gate_range.gate_count;
-    let rays = cut.radials.len();
-    let max_range_m =
-        grid.gate_range.first_gate_m as f32 + gates as f32 * grid.gate_range.gate_spacing_m as f32;
-    let non_missing = match &grid.storage {
-        MomentStorage::F32(values) => values.iter().filter(|value| !value.is_nan()).count(),
+    let gates = field.ngates as usize;
+    let rays = sweep.nrays();
+    let (first, spacing) = field.native_geometry(&sweep.range).unwrap_or_default();
+    let max_range_m = first.round() + gates as f64 * spacing.round();
+    let non_missing = match &field.data {
+        FieldData::F32 { values, .. } => values.iter().filter(|value| !value.is_nan()).count(),
         other => other.len(),
     };
     println!(
-        "  sweep {index:02} {:>3} elev={:>5.2} deg gates={gates} rays={rays} range={:.1} km non-missing={non_missing}",
-        short3(moment),
-        cut.elevation_deg,
+        "  sweep {:02} {:>3} elev={:>5.2} deg gates={gates} rays={rays} range={:.1} km non-missing={non_missing}",
+        sweep.sweep_number,
+        short3(&field.name),
+        sweep.fixed_angle_deg,
         max_range_m / 1000.0,
     );
 }
 
 /// Fixed sample positions shared with the bridge-side harness.
-fn print_cut_samples(station: &str, index: usize, cut: &ElevationCut) {
-    let Some((_, grid)) = cut.moments.iter().next() else {
+fn print_sweep_samples(station: &str, sweep: &Sweep) {
+    let Some(field) = sweep.fields.first() else {
         return;
     };
-    let gates = grid.gate_range.gate_count;
-    let rays = cut.radials.len();
+    let gates = field.ngates as usize;
+    let rays = sweep.nrays();
     if gates == 0 || rays == 0 {
         return;
     }
@@ -93,19 +94,22 @@ fn print_cut_samples(station: &str, index: usize, cut: &ElevationCut) {
         (rays / 2, 10.min(gates - 1)),
         (rays - 1, gates - 1),
     ] {
-        let value = match grid.scaled_value(ray, gate) {
+        let value = match field.value(ray, gate) {
             Some(value) if value.is_nan() => "NaN".to_owned(),
             Some(value) => format!("{value:.4}"),
             None => "NaN".to_owned(),
         };
-        println!("{station} s{index:02} v[{ray},{gate}]={value}");
+        println!(
+            "{station} s{:02} v[{ray},{gate}]={value}",
+            sweep.sweep_number
+        );
     }
 }
 
-fn short3(moment: &MomentType) -> &'static str {
-    match moment {
-        MomentType::Reflectivity => "REF",
-        MomentType::Velocity => "VEL",
+fn short3(name: &FieldName) -> &'static str {
+    match name {
+        FieldName::Dbzh => "REF",
+        FieldName::Vradh => "VEL",
         _ => "UNK",
     }
 }
