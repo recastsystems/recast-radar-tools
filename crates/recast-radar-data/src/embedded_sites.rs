@@ -1,6 +1,6 @@
 ﻿//! Embedded radar-site table so site picking, right-click beam lookup,
 //! and map markers work with NO network (field report: bad internet ->
-//! "no radar near"). Generated from https://api.weather.gov/radar/stations
+//! "no radar near"). Generated from <https://api.weather.gov/radar/stations>
 //! (208 stations, fetched 2026-06-11); the live API enriches/overrides
 //! when reachable.
 

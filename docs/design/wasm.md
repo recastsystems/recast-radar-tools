@@ -24,7 +24,9 @@ comment gives the same rules as this section. It runs:
    recast-radar-tools --each-feature --exclude-features net,full`: the facade
    with no features, with the defaults, and with each feature alone.
 3. `cargo check --locked --target wasm32-unknown-unknown -p recast-radar-data
-   --no-default-features`, once `recast-radar-data` has a `net` feature
+   --no-default-features`, and the same with `--features async-client` (the
+   non-blocking HTTP client for the real-time chunk stream, which uses the
+   browser's `fetch` on wasm32), once `recast-radar-data` has a `net` feature
    (stream E.1). Until then the script prints a note and skips this step.
 
 Plain `cargo check` builds only lib and bin targets, so dev-dependencies (such

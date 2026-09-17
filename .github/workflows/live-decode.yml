@@ -1,0 +1,44 @@
+name: Live decode
+
+# Downloads the newest Level II volume of each site from the archive bucket and
+# the real-time chunk bucket, decodes them with recast-radar-io, and fails on
+# any error. Catches changes in live data (new RDA builds, VCPs, message
+# layouts) and in the AWS buckets that the committed test data cannot.
+# See crates/recast-radar-data/examples/live_decode.rs.
+
+on:
+  schedule:
+    # Mondays 06:17 UTC.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  live-decode:
+    name: live decode
+    runs-on: ubuntu-latest
+    # Release build (fat LTO), then the sites in parallel: each waits up to
+    # 20 minutes (the example's default) for its real-time volume to end.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked -p recast-radar-data --example live_decode
+      # KHDC (Hammond, LA) stands in for KLIX (Slidell, LA), the New Orleans
+      # radar it replaced: unidata-nexrad-level2 has no KLIX volume after
+      # 2023-11-27 and no KLIX real-time chunks, and has KHDC volumes from
+      # 2024-03-23 on.
+      - name: Download and decode the newest volumes
+        run: cargo run --release --locked -p recast-radar-data --example live_decode -- KTLX KMKX KHDC PAHG TJUA

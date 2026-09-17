@@ -16,18 +16,18 @@
 //!
 //! A poller drives a provider like this:
 //!
-//! 1. [`IntlProvider::list_sites`] populates the site picker.
-//! 2. On each poll tick, [`IntlProvider::latest`] returns a [`FramePlan`].
+//! 1. `IntlProvider::list_sites` populates the site picker.
+//! 2. On each poll tick, `IntlProvider::latest` returns a [`FramePlan`].
 //! 3. If [`FramePlan::identity`] equals the identity of the frame already
 //!    installed, the poller does nothing — no part is downloaded.
 //! 4. Otherwise every [`PlanPart::url`] is fetched with
-//!    [`crate::fetch_volume_bytes`] and decoded with
+//!    `crate::fetch_volume_bytes` and decoded with
 //!    `recast_radar_io::decode_supported_volume_bytes`; multi-part plans with
 //!    [`FramePlan::merge`] set are then assembled with
 //!    `recast_radar_core::merge_radar_volumes`.
 //!
 //! Providers therefore never download data themselves: `latest` does the
-//! (cheap) catalog probe — via [`crate::fetch_text`] or an equivalent
+//! (cheap) catalog probe — via `crate::fetch_text` or an equivalent
 //! listing helper — and describes the download; the shared poller owns
 //! bytes, retries, decode, and merge.
 //!
@@ -38,6 +38,7 @@
 //! `recast_radar_io_jma::decode_jma_tar_volumes` when the plan came from
 //! [`JmaProvider`] (see its docs).
 
+#[cfg(feature = "net")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -70,12 +71,17 @@ pub use lombardia::LombardiaProvider;
 pub use meteoromania::MeteoRomaniaProvider;
 pub use ord::{
     ORD_ARCHIVE_DAY_MAX_CATALOG_REQUESTS, ORD_ARCHIVE_DAY_PHASES, OrdArchivePlan, OrdProvider,
+};
+#[cfg(feature = "net")]
+pub use ord::{
     archive_plan_nearest, archive_plans_for_day, archive_plans_for_day_with_progress,
     archive_plans_for_hour,
 };
 pub use piemonte::PiemonteProvider;
 pub use shmu::ShmuProvider;
-pub use smhi::{SmhiProvider, smhi_archive_plans_for_day};
+pub use smhi::SmhiProvider;
+#[cfg(feature = "net")]
+pub use smhi::smhi_archive_plans_for_day;
 
 /// One selectable radar site offered by a provider.
 #[derive(Clone, Debug, PartialEq)]
@@ -84,7 +90,7 @@ pub struct IntlSite {
     /// back to its provider.
     pub provider_id: &'static str,
     /// Provider-scoped site identifier, passed verbatim to
-    /// [`IntlProvider::latest`] (e.g. `"dkste"`, `"angelholm"`, `"skjav"`).
+    /// `IntlProvider::latest` (e.g. `"dkste"`, `"angelholm"`, `"skjav"`).
     pub site_id: String,
     /// Human-readable site name for the picker (e.g. `"Stevns"`).
     pub label: String,
@@ -99,7 +105,7 @@ pub struct IntlSite {
 /// One downloadable piece of a frame.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlanPart {
-    /// Absolute URL, fetched with [`crate::fetch_volume_bytes`] and decoded
+    /// Absolute URL, fetched with `crate::fetch_volume_bytes` and decoded
     /// with `recast_radar_io::decode_supported_volume_bytes`.
     pub url: String,
 }
@@ -142,11 +148,12 @@ pub struct FramePlan {
 /// Rolling multi-frame `recent` support, for providers whose upstream
 /// catalog exposes more than the newest frame. Implemented on the provider
 /// type and handed back through [`IntlProvider::recent_source`], which is
-/// what routes [`IntlProvider::recent`] here and drives the derived
+/// what routes `IntlProvider::recent` here and drives the derived
 /// [`IntlProvider::supports_recent`] capability.
 pub trait RecentFrames {
     /// Same contract as [`IntlProvider::recent`]: up to `count` frames,
     /// OLDEST FIRST, catalog probes only — never volume downloads.
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String>;
 }
 
@@ -181,6 +188,7 @@ pub trait ArchiveFrames {
     /// `site_id`, OLDEST FIRST. Same cheapness contract as
     /// [`IntlProvider::recent`]: catalog probes only — never volume
     /// downloads.
+    #[cfg(feature = "net")]
     fn day_plans(&self, site_id: &str, date_utc: NaiveDate) -> Result<Vec<FramePlan>, String>;
 
     /// Cancellable/progress-reporting form of [`Self::day_plans`].
@@ -190,6 +198,7 @@ pub trait ArchiveFrames {
     /// snapshot after each bounded phase. The default treats the provider's
     /// existing daily lookup as one phase, preserving compatibility for
     /// one-manifest archives.
+    #[cfg(feature = "net")]
     fn day_plans_with_progress(
         &self,
         site_id: &str,
@@ -232,6 +241,7 @@ pub trait ArchiveFrames {
     /// hour-granular listers (ORD) override for tight windows. Days that
     /// error are skipped and the first error is reported only when the
     /// whole window yields nothing (a partial archive loop beats none).
+    #[cfg(feature = "net")]
     fn window_plans(
         &self,
         site_id: &str,
@@ -280,7 +290,7 @@ pub trait ArchiveFrames {
 /// Implementations must be cheap to construct and safe to share across the
 /// UI and poller threads (`Send + Sync`, interior state behind sync
 /// primitives if any). Methods are called on poller threads: they may block
-/// on catalog HTTP (through [`crate::fetch_text`]-style helpers) but must
+/// on catalog HTTP (through `crate::fetch_text`-style helpers) but must
 /// never panic on malformed upstream data — return a descriptive `Err`
 /// instead, and never `unwrap()` network-derived values.
 pub trait IntlProvider: Send + Sync {
@@ -297,6 +307,7 @@ pub trait IntlProvider: Send + Sync {
     /// Enumerate selectable sites. May hit the network; implementations
     /// should cache internally where the catalog is static. Every returned
     /// site's `provider_id` must equal [`Self::id`].
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String>;
 
     /// Describe the newest frame for `site_id` (a [`IntlSite::site_id`]
@@ -304,6 +315,7 @@ pub trait IntlProvider: Send + Sync {
     /// keep it cheap — list/inspect, don't download volume bytes. Returns
     /// `Err` with a descriptive message when the site is unknown or the
     /// upstream catalog is unreachable/malformed.
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String>;
 
     /// Describe up to `count` recent frames for `site_id`, OLDEST FIRST
@@ -315,6 +327,7 @@ pub trait IntlProvider: Send + Sync {
     /// with a rolling archive implement [`RecentFrames`] and hand it back
     /// from [`Self::recent_source`] so the app's Load Loop works on
     /// international feeds the way it does on US ones (field request).
+    #[cfg(feature = "net")]
     fn recent(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         match self.recent_source() {
             Some(source) => source.recent_frames(site_id, count),
@@ -326,14 +339,14 @@ pub trait IntlProvider: Send + Sync {
     /// catalog exposes more than the newest frame. THE single override
     /// point for multi-frame Load Loop support: implement [`RecentFrames`]
     /// on the provider type and return `Some(self)` here. Both
-    /// [`Self::recent`] and the derived [`Self::supports_recent`]
+    /// `recent` and the derived [`Self::supports_recent`]
     /// capability route through this method, so a provider cannot gain a
     /// real loop without advertising it (nor advertise one it lacks).
     fn recent_source(&self) -> Option<&dyn RecentFrames> {
         None
     }
 
-    /// Whether [`Self::recent`] returns a real multi-frame window. Derived
+    /// Whether `recent` returns a real multi-frame window. Derived
     /// from [`Self::recent_source`] — never override.
     fn supports_recent(&self) -> bool {
         self.recent_source().is_some()
@@ -362,7 +375,7 @@ pub trait IntlProvider: Send + Sync {
     /// UI thread — this is what map markers draw from before any poll or
     /// catalog fetch has happened. May lag reality (a brand-new radar
     /// appears here only after a table refresh), so pickers wanting
-    /// freshness still call [`Self::list_sites`]. Contract: every returned
+    /// freshness still call `list_sites`. Contract: every returned
     /// site has `Some` finite latitude/longitude inside its country.
     fn static_sites(&self) -> Vec<IntlSite>;
 }
@@ -427,7 +440,7 @@ pub struct IntlProviderCapability {
     pub visible_sites: usize,
     pub live: bool,
     /// Derived from [`IntlProvider::supports_recent`] — `true` iff the
-    /// provider implements a real multi-frame [`IntlProvider::recent`]
+    /// provider implements a real multi-frame `IntlProvider::recent`
     /// (never hand-maintained, so it cannot go stale against the code).
     pub recent_loop: bool,
     /// Derived from [`IntlProvider::supports_archive`] — `true` iff the
@@ -631,6 +644,7 @@ pub(crate) fn s3_style_listing_url(
 }
 
 /// Fetch and parse one S3-style listing page.
+#[cfg(feature = "net")]
 pub(crate) fn fetch_s3_style_listing(url: &str) -> std::result::Result<S3StyleListing, String> {
     let xml = crate::fetch_text(url).map_err(|err| format!("listing {url}: {err}"))?;
     parse_s3_style_listing(&xml).map_err(|err| format!("listing {url}: {err}"))
@@ -704,13 +718,14 @@ const JMA_LOOKBACK_MINUTES: i64 = 40;
 /// (`Z__C_RJTD_{stamp}_RDR_JMAGPV_{N5|N6}_grib2.tar`, JMA GRIB2 templates
 /// 3.50120/4.51022/5.200 per the JMA technical format documentation).
 ///
-/// Catalog model: one tar carries every station of the network, so
-/// [`IntlProvider::list_sites`] downloads the newest reflectivity tar once,
-/// decodes only the per-station GRIB2 headers
-/// (`recast_radar_io_jma::jma_tar_station_headers`), and caches the station list
-/// in-memory for the life of the process. [`IntlProvider::latest`] HEAD-
-/// probes backward over [`JMA_LOOKBACK_MINUTES`] of 5-minute stamps for the
-/// newest tar that exists.
+/// Catalog model: one tar carries every station of the network, and this
+/// crate does not parse GRIB2. `JmaProvider` serves the embedded station
+/// table (decoded from real tar headers). A caller that wants the live
+/// network builds a [`JmaCatalogProvider`] from its own table instead:
+/// download the N5 tar named by a frame plan's first part and map
+/// `recast_radar_io_jma::jma_tar_station_headers` rows into [`JmaStation`]s.
+/// `latest` HEAD-probes backward over `JMA_LOOKBACK_MINUTES` of 5-minute
+/// stamps for the newest tar that exists.
 ///
 /// Decode contract: the plan's first part is the N5 (reflectivity) tar
 /// containing ALL stations — the poll consumer must decode JMA parts with
@@ -719,7 +734,115 @@ const JMA_LOOKBACK_MINUTES: i64 = 40;
 /// first station regardless of the selection. When the `_N6_` sibling exists
 /// at the same stamp, the plan includes it and requests a per-elevation merge
 /// so Japan exposes Doppler velocity in the same live frame.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct JmaProvider;
+
+/// [`JmaProvider`] over a caller-provided station table.
+///
+/// Same provider id, frame plans and decode contract as [`JmaProvider`];
+/// only the catalog differs. `list_sites` serves the caller's stations
+/// (sorted by id, first row per id kept) and `latest` accepts those ids.
+/// `static_sites` stays the embedded table.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JmaCatalogProvider {
+    stations: Vec<JmaStation>,
+}
+
+/// One JMA radar station for a [`JmaCatalogProvider`] table.
+///
+/// Field for field the station identity that
+/// `recast_radar_io_jma::JmaStationHeader` reads from a tar member's GRIB2
+/// product section (JMA template 4.51022).
+#[derive(Clone, Debug, PartialEq)]
+pub struct JmaStation {
+    /// JMA station id (e.g. `"ITOK"`); becomes [`IntlSite::site_id`].
+    pub id: String,
+    /// JMA station number (e.g. `47937`, the `RS{number}` in member names).
+    pub number: u16,
+    /// Station latitude in degrees north.
+    pub latitude_deg: f64,
+    /// Station longitude in degrees east.
+    pub longitude_deg: f64,
+}
+
+impl JmaProvider {
+    /// The provider over the embedded station table (`JMA_STATIONS`, 20
+    /// stations decoded from a 2026-06-12 N5 tar). Same as the unit value
+    /// `JmaProvider`.
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl JmaCatalogProvider {
+    /// A provider whose `list_sites` serves `stations`.
+    pub fn new(stations: impl IntoIterator<Item = JmaStation>) -> Self {
+        Self {
+            stations: stations.into_iter().collect(),
+        }
+    }
+
+    /// The caller's table as sites: sorted by id, first row per id kept.
+    fn catalog_sites(&self) -> Vec<IntlSite> {
+        let mut sites: Vec<IntlSite> = self
+            .stations
+            .iter()
+            .map(|station| {
+                jma_site(
+                    &station.id,
+                    station.number,
+                    station.latitude_deg as f32,
+                    station.longitude_deg as f32,
+                )
+            })
+            .collect();
+        // Stable sort, so dedup keeps the caller's first row per id.
+        sites.sort_by(|left, right| left.site_id.cmp(&right.site_id));
+        sites.dedup_by(|later, first| later.site_id == first.site_id);
+        sites
+    }
+}
+
+const JMA_PROVIDER_ID: &str = "jma";
+const JMA_PROVIDER_LABEL: &str = "JMA Japan";
+const JMA_COUNTRY: &str = "Japan";
+
+/// One site row; the embedded and caller-provided catalogs share the label
+/// grammar.
+fn jma_site(id: &str, number: u16, latitude_deg: f32, longitude_deg: f32) -> IntlSite {
+    IntlSite {
+        provider_id: JMA_PROVIDER_ID,
+        site_id: id.to_owned(),
+        label: format!("{id} (RS{number})"),
+        country: JMA_COUNTRY,
+        latitude_deg: Some(latitude_deg),
+        longitude_deg: Some(longitude_deg),
+    }
+}
+
+/// The embedded station table as sites.
+fn jma_static_sites() -> Vec<IntlSite> {
+    JMA_STATIONS
+        .iter()
+        .map(|&(id, number, latitude_deg, longitude_deg)| {
+            jma_site(id, number, latitude_deg, longitude_deg)
+        })
+        .collect()
+}
+
+/// `latest` for either JMA provider, given its catalog.
+#[cfg(feature = "net")]
+fn jma_latest(sites: &[IntlSite], site_id: &str) -> Result<FramePlan, String> {
+    if !sites.iter().any(|site| site.site_id == site_id) {
+        return Err(format!("unknown JMA site '{site_id}'"));
+    }
+    let stamp = jma_newest_stamp()?;
+    Ok(jma_frame_plan(
+        stamp,
+        site_id,
+        jma_velocity_available(stamp),
+    ))
+}
 
 /// JMA operational radar stations: id, station number, latitude, longitude.
 ///
@@ -727,9 +850,9 @@ pub struct JmaProvider;
 /// `Z__C_RJTD_20260612083000_RDR_JMAGPV_N5_grib2.tar` (NICT mirror, fetched
 /// 2026-06-12) via `recast_radar_io_jma::jma_tar_station_headers` — the same
 /// per-station GRIB2 product-section headers (JMA GRIB2 template 4.51022
-/// per the JMA technical format documentation) that the live catalog path
-/// reads, so the static table and a live listing agree on ids and
-/// coordinates. Regenerate by running
+/// per the JMA technical format documentation) that a caller-provided
+/// [`JmaCatalogProvider`] table is built from, so the static table and a
+/// live catalog agree on ids and coordinates. Regenerate by running
 /// `cargo test -p recast-radar-data jma_regenerate_static_station_table -- --ignored --nocapture`
 /// and pasting the printed rows.
 const JMA_STATIONS: &[(&str, u16, f32, f32)] = &[
@@ -755,13 +878,6 @@ const JMA_STATIONS: &[(&str, u16, f32, f32)] = &[
     ("YAHI", 47572, 37.7186, 138.8161),
 ];
 
-/// Process-lifetime station-list cache: the JMA network is static within a
-/// session and rebuilding it costs a full tar download.
-fn jma_site_cache() -> &'static Mutex<Option<Vec<IntlSite>>> {
-    static CACHE: OnceLock<Mutex<Option<Vec<IntlSite>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(None))
-}
-
 fn jma_tar_url(product: &str, stamp: DateTime<Utc>) -> String {
     format!(
         "{JMA_BASE_URL}/{:04}/{:02}/{:02}/Z__C_RJTD_{}_RDR_JMAGPV_{product}_grib2.tar",
@@ -783,6 +899,7 @@ fn jma_candidate_stamps(now: DateTime<Utc>, lookback_minutes: i64) -> Vec<DateTi
 }
 
 /// Newest stamp whose reflectivity tar exists on the mirror, by HEAD probe.
+#[cfg(feature = "net")]
 fn jma_newest_stamp() -> Result<DateTime<Utc>, String> {
     let mut last_error: Option<String> = None;
     for stamp in jma_candidate_stamps(Utc::now(), JMA_LOOKBACK_MINUTES) {
@@ -803,6 +920,7 @@ fn jma_newest_stamp() -> Result<DateTime<Utc>, String> {
     })
 }
 
+#[cfg(feature = "net")]
 fn jma_velocity_available(stamp: DateTime<Utc>) -> bool {
     crate::url_exists(&jma_tar_url(JMA_VELOCITY_PRODUCT, stamp)).unwrap_or(false)
 }
@@ -827,92 +945,57 @@ fn jma_frame_plan(stamp: DateTime<Utc>, site_id: &str, include_velocity: bool) -
 
 impl IntlProvider for JmaProvider {
     fn id(&self) -> &'static str {
-        "jma"
+        JMA_PROVIDER_ID
     }
 
     fn label(&self) -> &'static str {
-        "JMA Japan"
+        JMA_PROVIDER_LABEL
     }
 
     fn country(&self) -> &'static str {
-        "Japan"
+        JMA_COUNTRY
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
-        if let Ok(cache) = jma_site_cache().lock()
-            && let Some(sites) = cache.as_ref()
-        {
-            return Ok(sites.clone());
-        }
-
-        let live = (|| -> Result<Vec<IntlSite>, String> {
-            let stamp = jma_newest_stamp()?;
-            let url = jma_tar_url(JMA_REFLECTIVITY_PRODUCT, stamp);
-            let bytes = crate::fetch_volume_bytes(&url)
-                .map_err(|err| format!("JMA station catalog download failed ({url}): {err}"))?;
-            let stations = recast_radar_io_jma::jma_tar_station_headers(&bytes)
-                .map_err(|err| format!("JMA station catalog decode failed ({url}): {err}"))?;
-
-            let mut sites: Vec<IntlSite> = stations
-                .into_iter()
-                .map(|station| IntlSite {
-                    provider_id: self.id(),
-                    site_id: station.id.clone(),
-                    label: format!("{} (RS{})", station.id, station.number),
-                    country: self.country(),
-                    latitude_deg: Some(station.latitude_deg as f32),
-                    longitude_deg: Some(station.longitude_deg as f32),
-                })
-                .collect();
-            sites.sort_by(|left, right| left.site_id.cmp(&right.site_id));
-            sites.dedup_by(|left, right| left.site_id == right.site_id);
-            Ok(sites)
-        })();
-
-        match live {
-            Ok(sites) => {
-                // Only a LIVE answer is cached: the static fallback below
-                // must not stop a later call from retrying the (fresher,
-                // authoritative) tar headers.
-                if let Ok(mut cache) = jma_site_cache().lock() {
-                    *cache = Some(sites.clone());
-                }
-                Ok(sites)
-            }
-            // Mirror unreachable: seed the picker from the embedded table
-            // so Japan stays selectable offline-of-NICT; site ids match
-            // the tar headers, so a selection made from this list polls
-            // identically once the mirror answers.
-            Err(_) => Ok(self.static_sites()),
-        }
+        Ok(jma_static_sites())
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
-        let sites = self.list_sites()?;
-        if !sites.iter().any(|site| site.site_id == site_id) {
-            return Err(format!("unknown JMA site '{site_id}'"));
-        }
-        let stamp = jma_newest_stamp()?;
-        Ok(jma_frame_plan(
-            stamp,
-            site_id,
-            jma_velocity_available(stamp),
-        ))
+        jma_latest(&jma_static_sites(), site_id)
     }
 
     fn static_sites(&self) -> Vec<IntlSite> {
-        JMA_STATIONS
-            .iter()
-            .map(|&(id, number, latitude_deg, longitude_deg)| IntlSite {
-                provider_id: self.id(),
-                site_id: id.to_owned(),
-                // Same label grammar as the live tar-derived catalog.
-                label: format!("{id} (RS{number})"),
-                country: self.country(),
-                latitude_deg: Some(latitude_deg),
-                longitude_deg: Some(longitude_deg),
-            })
-            .collect()
+        jma_static_sites()
+    }
+}
+
+impl IntlProvider for JmaCatalogProvider {
+    fn id(&self) -> &'static str {
+        JMA_PROVIDER_ID
+    }
+
+    fn label(&self) -> &'static str {
+        JMA_PROVIDER_LABEL
+    }
+
+    fn country(&self) -> &'static str {
+        JMA_COUNTRY
+    }
+
+    #[cfg(feature = "net")]
+    fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
+        Ok(self.catalog_sites())
+    }
+
+    #[cfg(feature = "net")]
+    fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
+        jma_latest(&self.catalog_sites(), site_id)
+    }
+
+    fn static_sites(&self) -> Vec<IntlSite> {
+        jma_static_sites()
     }
 }
 
@@ -929,6 +1012,17 @@ mod tests {
 
     struct FakeProvider;
 
+    fn fake_sites() -> Vec<IntlSite> {
+        vec![IntlSite {
+            provider_id: "fake",
+            site_id: "nwsit".to_owned(),
+            label: "Nowhere Site".to_owned(),
+            country: "Nowhere",
+            latitude_deg: Some(55.5),
+            longitude_deg: Some(12.0),
+        }]
+    }
+
     impl IntlProvider for FakeProvider {
         fn id(&self) -> &'static str {
             "fake"
@@ -942,17 +1036,12 @@ mod tests {
             "Nowhere"
         }
 
+        #[cfg(feature = "net")]
         fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
-            Ok(vec![IntlSite {
-                provider_id: self.id(),
-                site_id: "nwsit".to_owned(),
-                label: "Nowhere Site".to_owned(),
-                country: self.country(),
-                latitude_deg: Some(55.5),
-                longitude_deg: Some(12.0),
-            }])
+            Ok(fake_sites())
         }
 
+        #[cfg(feature = "net")]
         fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
             if site_id != "nwsit" {
                 return Err(format!("unknown site '{site_id}'"));
@@ -967,7 +1056,7 @@ mod tests {
         }
 
         fn static_sites(&self) -> Vec<IntlSite> {
-            self.list_sites().unwrap_or_default()
+            fake_sites()
         }
     }
 
@@ -977,6 +1066,7 @@ mod tests {
     struct FakeLoopProvider;
 
     impl RecentFrames for FakeLoopProvider {
+        #[cfg(feature = "net")]
         fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
             Ok((0..count)
                 .map(|index| FramePlan {
@@ -1003,10 +1093,12 @@ mod tests {
             "Nowhere"
         }
 
+        #[cfg(feature = "net")]
         fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
             FakeProvider.list_sites()
         }
 
+        #[cfg(feature = "net")]
         fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
             FakeProvider.latest(site_id)
         }
@@ -1016,7 +1108,7 @@ mod tests {
         }
 
         fn static_sites(&self) -> Vec<IntlSite> {
-            self.list_sites().unwrap_or_default()
+            fake_sites()
         }
     }
 
@@ -1026,6 +1118,7 @@ mod tests {
     struct FakeArchiveProvider;
 
     impl ArchiveFrames for FakeArchiveProvider {
+        #[cfg(feature = "net")]
         fn day_plans(&self, site_id: &str, date_utc: NaiveDate) -> Result<Vec<FramePlan>, String> {
             if site_id != "nwsit" {
                 return Err(format!("unknown site '{site_id}'"));
@@ -1058,10 +1151,12 @@ mod tests {
             "Nowhere"
         }
 
+        #[cfg(feature = "net")]
         fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
             FakeProvider.list_sites()
         }
 
+        #[cfg(feature = "net")]
         fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
             FakeProvider.latest(site_id)
         }
@@ -1071,7 +1166,7 @@ mod tests {
         }
 
         fn static_sites(&self) -> Vec<IntlSite> {
-            self.list_sites().unwrap_or_default()
+            fake_sites()
         }
     }
 
@@ -1225,6 +1320,7 @@ mod tests {
 
     /// Without a `recent_source`, `recent()` degrades to a one-frame loop
     /// (exactly `latest`) and the provider reports no loop support.
+    #[cfg(feature = "net")]
     #[test]
     fn default_recent_is_a_single_frame_and_reports_no_loop_support() {
         let provider = FakeProvider;
@@ -1236,6 +1332,7 @@ mod tests {
 
     /// With a `recent_source`, `recent()` routes to the rolling window and
     /// `supports_recent()` flips true — one override point, two effects.
+    #[cfg(feature = "net")]
     #[test]
     fn recent_source_routes_recent_and_flips_supports_recent_together() {
         let provider = FakeLoopProvider;
@@ -1258,6 +1355,7 @@ mod tests {
     /// With an `archive_source`, day lookups route to the dated archive
     /// and `supports_archive()` flips true — one override point, two
     /// effects (the [`RecentFrames`] pattern, mirrored).
+    #[cfg(feature = "net")]
     #[test]
     fn archive_source_routes_day_plans_and_flips_supports_archive_together() {
         let provider = FakeArchiveProvider;
@@ -1278,6 +1376,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "net")]
     #[test]
     fn default_archive_progress_is_object_safe_and_honors_precancel() {
         let provider = FakeArchiveProvider;
@@ -1325,6 +1424,7 @@ mod tests {
     /// The provided `window_plans` folds `day_plans` over every UTC date
     /// the window touches, stays oldest-first, and caps to the NEWEST
     /// `max` frames (the loop-ending-at-scan tail).
+    #[cfg(feature = "net")]
     #[test]
     fn default_window_plans_folds_days_oldest_first_and_caps_to_the_newest() {
         use chrono::TimeZone;
@@ -1511,6 +1611,7 @@ mod tests {
     /// `cargo test -p recast-radar-data jma_regenerate_static_station_table -- --ignored --nocapture`
     /// and paste the printed rows (and the printed tar URL into the table's
     /// doc comment) when the JMA network changes.
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live NICT endpoint probe — run manually with --ignored"]
     fn jma_regenerate_static_station_table() {
@@ -1533,6 +1634,7 @@ mod tests {
     /// The static table must agree with the live tar headers (same ids,
     /// numbers, and coordinates to table precision). Network test; run with
     /// `cargo test -p recast-radar-data jma_static_table -- --ignored --nocapture`
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live NICT endpoint probe — run manually with --ignored"]
     fn jma_static_table_matches_live_tar_headers() {
@@ -1551,6 +1653,96 @@ mod tests {
             assert!((f64::from(*latitude) - station.latitude_deg).abs() < 5e-4);
             assert!((f64::from(*longitude) - station.longitude_deg).abs() < 5e-4);
         }
+    }
+
+    /// The documented live-catalog path, offline: station headers read with
+    /// `recast_radar_io_jma` from a real N5 tar member (TAKA, Typhoon Hagibis
+    /// 2019-10-12 09:00Z) become a caller-provided table, which replaces the
+    /// embedded catalog (sorted, first row per id kept) and agrees with the
+    /// embedded TAKA row.
+    #[test]
+    fn jma_caller_station_table_from_real_tar_headers_replaces_embedded_catalog() {
+        let path = recast_radar_testdata::require_file!("jma-n5-20191012-090000-rs47773");
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(err) => panic!("read {}: {err}", path.display()),
+        };
+        let headers = match recast_radar_io_jma::jma_tar_station_headers(&bytes) {
+            Ok(headers) => headers,
+            Err(err) => panic!("JMA station headers: {err}"),
+        };
+        let from_tar: Vec<JmaStation> = headers
+            .into_iter()
+            .map(|header| JmaStation {
+                id: header.id,
+                number: header.number,
+                latitude_deg: header.latitude_deg,
+                longitude_deg: header.longitude_deg,
+            })
+            .collect();
+        assert_eq!(from_tar.len(), 1, "single-member tar");
+        let taka = &from_tar[0];
+        assert_eq!((taka.id.as_str(), taka.number), ("TAKA", 47773));
+
+        // The unit value and `new()` are the same embedded-table provider.
+        assert_eq!(
+            JmaProvider::new().static_sites(),
+            JmaProvider.static_sites()
+        );
+
+        // Tar row first, then every embedded row (TAKA again): the caller's
+        // first TAKA row wins and the catalog comes back sorted by id.
+        let embedded_rows = JMA_STATIONS
+            .iter()
+            .map(|&(id, number, latitude, longitude)| JmaStation {
+                id: id.to_owned(),
+                number,
+                latitude_deg: f64::from(latitude),
+                longitude_deg: f64::from(longitude),
+            });
+        let provider = JmaCatalogProvider::new(from_tar.iter().cloned().chain(embedded_rows));
+        assert_eq!(provider.id(), JmaProvider.id());
+        assert_eq!(provider.static_sites(), JmaProvider.static_sites());
+        let sites = provider.catalog_sites();
+        assert_eq!(sites.len(), JMA_STATIONS.len());
+        assert!(
+            sites
+                .windows(2)
+                .all(|pair| pair[0].site_id < pair[1].site_id)
+        );
+        let Some(site) = sites.iter().find(|site| site.site_id == "TAKA") else {
+            panic!("TAKA missing from the caller catalog");
+        };
+        assert_eq!(
+            site,
+            &IntlSite {
+                provider_id: "jma",
+                site_id: "TAKA".to_owned(),
+                label: "TAKA (RS47773)".to_owned(),
+                country: "Japan",
+                latitude_deg: Some(taka.latitude_deg as f32),
+                longitude_deg: Some(taka.longitude_deg as f32),
+            }
+        );
+        let Some(embedded) = provider
+            .static_sites()
+            .into_iter()
+            .find(|site| site.site_id == "TAKA")
+        else {
+            panic!("TAKA missing from JMA_STATIONS");
+        };
+        assert_eq!(site.label, embedded.label);
+        for (caller, table) in [
+            (site.latitude_deg, embedded.latitude_deg),
+            (site.longitude_deg, embedded.longitude_deg),
+        ] {
+            let (Some(caller), Some(table)) = (caller, table) else {
+                panic!("JMA sites carry coordinates");
+            };
+            assert!((caller - table).abs() < 5e-4, "{caller} vs {table}");
+        }
+        #[cfg(feature = "net")]
+        assert_eq!(provider.list_sites(), Ok(sites));
     }
 
     #[test]
@@ -1681,10 +1873,11 @@ mod tests {
     /// HEAD probes, tar download, and the documented site-filtered decode.
     /// Network test; run with:
     /// `cargo test -p recast-radar-data jma_live -- --ignored --nocapture`
+    #[cfg(feature = "net")]
     #[test]
     #[ignore = "live NICT endpoint probe — run manually with --ignored"]
     fn jma_live_roundtrip_lists_plans_downloads_and_decodes() {
-        let provider = JmaProvider;
+        let provider = JmaProvider::new();
         let sites = provider.list_sites().expect("live JMA site list");
         assert!(!sites.is_empty(), "JMA tar must list stations");
         println!("{} JMA sites, first={:?}", sites.len(), sites[0]);
@@ -1743,6 +1936,7 @@ mod tests {
         assert_eq!(jma_frame_plan(stamp, "ITOK", true), plan);
     }
 
+    #[cfg(feature = "net")]
     #[test]
     fn trait_contract_round_trips_through_a_boxed_provider() {
         let provider: Box<dyn IntlProvider> = Box::new(FakeProvider);

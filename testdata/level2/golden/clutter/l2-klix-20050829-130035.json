@@ -1,0 +1,15 @@
+{
+  "id": "l2-klix-20050829-130035",
+  "sha256": "af4f106ef886e17cc809802b1f753329744842bf62727cf9082a2a1469b80d14",
+  "generator": "tools/level2_golden.py",
+  "metpy": "1.7.1",
+  "input": "volume header + metadata record; messages 1 and 31 skipped",
+  "clutter_filter_bypass_map": {
+    "generation_time": null,
+    "elevation_segments": 2,
+    "radials_per_segment": [256,256],
+    "bins_per_radial": 512,
+    "radial_0_halfwords": [[0,1982,65535,65535,65535,65535,65535,65535,65535,65442,34816,184,3584,2013,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535],[6139,57335,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535]]
+  },
+  "metpy_log": ["Message 15 num_el is outside (0, 5]--likely legacy clutter filter notch width. Skipping...","Segment out of order (Got: 15 Count: 1) for message type 13.","Segment out of order (Got: 16 Count: 2) for message type 13.","Segment out of order (Got: 17 Count: 3) for message type 13.","Segment out of order (Got: 18 Count: 4) for message type 13.","Segment out of order (Got: 19 Count: 5) for message type 13.","Segment out of order (Got: 20 Count: 6) for message type 13.","Segment out of order (Got: 21 Count: 7) for message type 13.","Segment out of order (Got: 22 Count: 8) for message type 13.","Segment out of order (Got: 23 Count: 9) for message type 13.","Segment out of order (Got: 24 Count: 10) for message type 13.","Segment out of order (Got: 25 Count: 11) for message type 13.","Segment out of order (Got: 26 Count: 12) for message type 13.","Segment out of order (Got: 27 Count: 13) for message type 13.","Segment out of order (Got: 28 Count: 14) for message type 13.","Segment out of order (Got: 29 Count: 15) for message type 13.","Segment out of order (Got: 30 Count: 16) for message type 13.","Segment out of order (Got: 31 Count: 17) for message type 13.","Segment out of order (Got: 32 Count: 18) for message type 13.","Segment out of order (Got: 33 Count: 19) for message type 13.","Segment out of order (Got: 34 Count: 20) for message type 13.","Segment out of order (Got: 35 Count: 21) for message type 13.","Segment out of order (Got: 36 Count: 22) for message type 13.","Segment out of order (Got: 37 Count: 23) for message type 13.","Segment out of order (Got: 38 Count: 24) for message type 13.","Segment out of order (Got: 39 Count: 25) for message type 13.","Segment out of order (Got: 40 Count: 26) for message type 13.","Segment out of order (Got: 41 Count: 27) for message type 13.","Segment out of order (Got: 42 Count: 28) for message type 13.","Segment out of order (Got: 43 Count: 29) for message type 13.","Segment out of order (Got: 44 Count: 30) for message type 13.","Segment out of order (Got: 45 Count: 31) for message type 13.","Segment out of order (Got: 46 Count: 32) for message type 13.","Segment out of order (Got: 47 Count: 33) for message type 13.","Segment out of order (Got: 48 Count: 34) for message type 13.","Remaining buffered message segments for message type(s): 13 (34)"]
+}

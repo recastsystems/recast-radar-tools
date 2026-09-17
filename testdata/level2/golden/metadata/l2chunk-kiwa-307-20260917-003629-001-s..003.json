@@ -1,0 +1,10 @@
+{
+  "source": ["l2chunk-kiwa-307-20260917-003629-001-s", "l2chunk-kiwa-307-20260917-003629-002-i", "l2chunk-kiwa-307-20260917-003629-003-i"],
+  "generator": "tools/level2_golden.py metadata",
+  "pyart": "2.2.5",
+  "msg_type": 31,
+  "vcp_pattern": 215,
+  "scans": [
+    {"elevation_number": 1, "nrays": 240, "target_angle_code": 88, "header": {"collect_ms": 2189397, "collect_date": 20714, "azimuth_number": 1, "azimuth_angle": 155.2313232421875, "radial_length": 9928, "azimuth_resolution": 1, "radial_spacing": 3, "elevation_number": 1, "cut_sector": 1, "elevation_angle": 0.26641845703125, "block_count": 8}, "VOL": {"lrtup": 52, "version_major": 3, "version_minor": 0, "lat": 33.28923416137695, "lon": -111.66991424560547, "height": 415, "feedhorn_height": 19, "refl_calib": -45.05857849121094, "power_h": 220.44992065429688, "power_v": 226.16250610351562, "diff_refl_calib": -0.8201482892036438, "init_phase": 60.0, "vcp": 215, "spare": 3}, "ELV": {"lrtup": 12, "atmos": -12, "refl_calib": -43.125}, "RAD": {"lrtup": 28, "unambig_range": 4670, "noise_h": -81.41455078125, "noise_v": -80.8188705444336, "nyquist_vel": 869, "spare": 0}}
+  ]
+}

@@ -69,6 +69,7 @@ impl Default for SmhiProvider {
     }
 }
 
+#[cfg(feature = "net")]
 pub fn smhi_archive_plans_for_day(area: &str, date: NaiveDate) -> Result<Vec<FramePlan>, String> {
     validate_area_key(area)?;
     let url = format!(
@@ -95,6 +96,7 @@ impl IntlProvider for SmhiProvider {
         "Sweden"
     }
 
+    #[cfg(feature = "net")]
     fn list_sites(&self) -> Result<Vec<IntlSite>, String> {
         self.sites.get_or_fill(|| {
             let json = crate::fetch_text(API_BASE)
@@ -103,6 +105,7 @@ impl IntlProvider for SmhiProvider {
         })
     }
 
+    #[cfg(feature = "net")]
     fn latest(&self, site_id: &str) -> Result<FramePlan, String> {
         validate_area_key(site_id)?;
         let url = format!("{API_BASE}/area/{site_id}/product/qcvol");
@@ -135,6 +138,7 @@ impl IntlProvider for SmhiProvider {
 }
 
 impl RecentFrames for SmhiProvider {
+    #[cfg(feature = "net")]
     fn recent_frames(&self, site_id: &str, count: usize) -> Result<Vec<FramePlan>, String> {
         validate_area_key(site_id)?;
         let url = format!("{API_BASE}/area/{site_id}/product/qcvol");
@@ -148,6 +152,7 @@ impl ArchiveFrames for SmhiProvider {
     /// Verbatim wrap of [`smhi_archive_plans_for_day`]: one dated qcvol
     /// day-catalog probe, plans oldest-first. Window lookups use the
     /// trait's day-folding default — the dated tree is day-granular.
+    #[cfg(feature = "net")]
     fn day_plans(&self, site_id: &str, date_utc: NaiveDate) -> Result<Vec<FramePlan>, String> {
         smhi_archive_plans_for_day(site_id, date_utc)
     }
@@ -232,6 +237,7 @@ fn plans_from_qcvol_catalog(
 /// product endpoint can publish the newest `lastFiles` entry before today's
 /// day listing has caught up, so seed with `lastFiles` and use the tree only
 /// to backfill older frames.
+#[cfg(feature = "net")]
 fn recent_plans_from_qcvol_tree(
     area: &str,
     root_json: &str,

@@ -29,11 +29,9 @@
 //!
 //! A feature also enables the features of the member crates its crate
 //! depends on (for example `track` enables `correct`, `map` and `retrieve`),
-//! so every type a module's API names can be named through this crate. Two
-//! exceptions: `net` does not enable `jma`, because `recast-radar-data` uses
-//! `recast-radar-io-jma` only internally; and `io` also enables `level3`, so
-//! that `io` means every format decoder, although the router does not read
-//! Level III products.
+//! so every type a module's API names can be named through this crate. One
+//! exception: `io` also enables `level3`, so that `io` means every format
+//! decoder, although the router does not read Level III products.
 
 pub use recast_radar_core as core;
 
