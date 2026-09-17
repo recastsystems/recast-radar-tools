@@ -41,6 +41,10 @@ name = "intl_probe"
 required-features = ["net"]
 
 [[example]]
+name = "live_decode"
+required-features = ["net"]
+
+[[example]]
 name = "kmkx_fetch"
 required-features = ["net"]
 
