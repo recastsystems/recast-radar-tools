@@ -10,13 +10,12 @@
 //! `cols`) and, for products MetPy maps, a summary of `map_data` physical values.
 //! Packet header fields come from the independent ICD walker in the golden tool.
 //!
-//! Physical values: data-level to physical mapping belongs to `src/levels.rs`
-//! (radial family), which this branch does not have. [`physical_value`] is a
-//! test-side reading of the two encodings the raster products in the corpus use
-//! (`docs/level3/reference.md` section 5): **T16** (16 threshold halfwords
-//! 31-46, MetPy `LegacyMapper`) and **DPA** (product 81, MetPy
-//! `PrecipArrayMapper`). It checks decoded levels plus decoded halfwords against
-//! MetPy's physical summaries.
+//! Physical values come from the public API: [`DataLevels::for_packet`] and
+//! [`RasterGrid::values`] (`f32`, NaN without a value). Their finite/masked
+//! counts and min/max/mean equal MetPy's for every raster product MetPy maps
+//! ([`METPY_MAPPED_PRODUCTS`]: threshold-coded products and product 81's
+//! packet 17). Packet 18 levels have no mapping in the ICD; `for_packet`
+//! returns `None` for them and MetPy maps none either.
 //!
 //! Corpus coverage: 0xBA07 in 26 files, 17 in 4, 18 in 4. No real sample of
 //! 0xBA0F or 33 exists (reference section 7), so those codes are decoded by the
@@ -28,14 +27,19 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use common::{Entry, Json};
+use common::{Entry, Json, PhysicalSummary};
+use recast_radar_io_level3::levels::DataLevels;
 use recast_radar_io_level3::packets::raster::{RasterGrid, RasterHeader};
 use recast_radar_io_level3::{Level3Error, Level3Product, Packet, decode_product};
 
 /// Packet codes of the raster family.
 const FAMILY_CODES: [u16; 5] = [0xBA07, 0xBA0F, 17, 18, 33];
+
+/// Products whose raster packets MetPy maps to physical values, all compared:
+/// 16-level threshold products (0xBA07) and product 81 (packet 17).
+const METPY_MAPPED_PRODUCTS: [i16; 12] = [36, 37, 38, 41, 57, 65, 66, 67, 78, 80, 81, 90];
 
 /// Files MetPy cannot read that contain raster packets; each is checked by its
 /// own ICD-based test below.
@@ -64,6 +68,11 @@ struct Counts {
     grids_checked: usize,
     /// Packets whose physical summary was compared with MetPy's.
     physical_checked: usize,
+    /// Product codes of those packets.
+    physical_products: BTreeSet<i16>,
+    /// Packets MetPy maps no physical values for, where the decoder has no
+    /// mapping either (packet 18).
+    unmapped_checked: usize,
 }
 
 #[test]
@@ -102,6 +111,11 @@ fn raster_packets_match_golden() {
     // values for the 0xBA07 and 17 packets (MetPy maps no packet 18).
     assert_eq!(counts.grids_checked, 70);
     assert_eq!(counts.physical_checked, 30);
+    assert_eq!(counts.unmapped_checked, 40);
+    assert_eq!(
+        counts.physical_products,
+        BTreeSet::from(METPY_MAPPED_PRODUCTS)
+    );
 }
 
 /// Product 82 (Supplemental Precipitation Data) from KFWS 1995: MetPy 1.7.1
@@ -462,7 +476,6 @@ fn check_file(
         }
         return problems;
     }
-    let mapper = golden.get("metpy_detail").get("mapper").as_str();
     let symbology_family = product.symbology.as_ref().map_or(0, |s| {
         s.layers
             .iter()
@@ -494,16 +507,7 @@ fn check_file(
             continue;
         };
         let before = problems.len();
-        check_packet(
-            &product,
-            packet,
-            code,
-            item,
-            mapper,
-            &place,
-            counts,
-            &mut problems,
-        );
+        check_packet(&product, packet, code, item, &place, counts, &mut problems);
         if problems.len() == before {
             counts.grids_checked += 1;
         }
@@ -546,13 +550,11 @@ fn short(packet: &Packet) -> String {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn check_packet(
     product: &Level3Product,
     packet: &Packet,
     code: u16,
     item: &Json,
-    mapper: Option<&str>,
     place: &str,
     counts: &mut Counts,
     problems: &mut Vec<String>,
@@ -707,112 +709,74 @@ fn check_packet(
     );
 
     let physical = item.get("physical");
+    let levels = DataLevels::for_packet(&product.description, code);
+    let Some(levels) = levels else {
+        // Packet 18 levels have no mapping; MetPy maps none either.
+        if code == 18 && physical.is_null() {
+            counts.unmapped_checked += 1;
+        } else {
+            problems.push(format!(
+                "{place}: no data level mapping, MetPy physical {physical:?}"
+            ));
+        }
+        return;
+    };
     if physical.is_null() {
+        problems.push(format!(
+            "{place}: MetPy maps no physical values, decoder maps {:?}",
+            levels.encoding()
+        ));
         return;
     }
-    let encoding = match mapper {
-        Some("LegacyMapper") => Encoding::T16,
-        Some("PrecipArrayMapper") => Encoding::Dpa,
-        other => {
-            problems.push(format!(
-                "{place}: no test mapping for MetPy mapper {other:?}"
-            ));
-            return;
-        }
-    };
-    let halfwords = &product.description.halfwords;
-    let values: Vec<f64> = grid
-        .levels()
-        .iter()
-        .filter_map(|&level| physical_value(encoding, halfwords, level))
-        .collect();
-    let masked = grid.levels().len() - values.len();
-    check_eq!(
-        problems,
-        format!("{place}: physical.finite"),
-        values.len() as i64,
-        physical.get("finite").int("finite")
-    );
-    check_eq!(
-        problems,
-        format!("{place}: physical.masked"),
-        masked as i64,
-        physical.get("masked").int("masked")
-    );
-    let summary = (!values.is_empty()).then(|| {
-        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-        [min, max, mean]
-    });
-    let golden_summary = ["min", "max", "mean"].map(|k| physical.get(k).as_f64());
-    match summary {
-        None => check_eq!(
-            problems,
-            format!("{place}: physical min/max/mean"),
-            [None, None, None],
-            golden_summary
-        ),
-        Some(values) => {
-            for ((name, value), golden) in ["min", "max", "mean"]
-                .iter()
-                .zip(values)
-                .zip(golden_summary)
-            {
-                let close = golden.is_some_and(|g| {
-                    (value - g).abs() <= 1e-4 * value.abs().max(g.abs()).max(1e-9)
-                });
-                if !close {
-                    problems.push(format!(
-                        "{place}: physical.{name}: decoded {value}, golden {golden:?}"
-                    ));
-                }
-            }
-        }
+    let values = grid.values(&levels);
+    if let Err(e) = check_values_accessors(grid, &levels, &values) {
+        problems.push(format!("{place}: {e}"));
+    }
+    let decoded = PhysicalSummary::of_f32(&values);
+    for mismatch in decoded.mismatches(&PhysicalSummary::from_golden(physical)) {
+        problems.push(format!("{place}: physical {mismatch}"));
     }
     counts.physical_checked += 1;
+    counts
+        .physical_products
+        .insert(product.description.product_code);
 }
 
-#[derive(Clone, Copy)]
-enum Encoding {
-    /// Halfword `31 + N` describes level `N` (reference section 5, T16).
-    T16,
-    /// Product 81: level `1..=254` is `hw31 / 10 + (N - 1) * hw32 / 1000` dBA
-    /// (reference section 5, DPA); 0 and 255 have no value.
-    Dpa,
-}
-
-/// Physical value of `level`, or `None` when the level is a code (below
-/// threshold, no data, range folded, ...) rather than a value.
-fn physical_value(encoding: Encoding, halfwords: &[u16], level: u8) -> Option<f64> {
-    match encoding {
-        Encoding::T16 => {
-            let hw = *halfwords.get(30 + usize::from(level))?;
-            if hw & 0x8000 != 0 {
-                return None;
-            }
-            let mut value = f64::from(hw & 0xFF);
-            if hw & 0x4000 != 0 {
-                value /= 100.0;
-            } else if hw & 0x2000 != 0 {
-                value /= 20.0;
-            } else if hw & 0x1000 != 0 {
-                value /= 10.0;
-            }
-            if hw & 0x0100 != 0 {
-                value = -value;
-            }
-            Some(value)
+/// `values` (from [`RasterGrid::values`]) and [`RasterGrid::level_at`] agree
+/// with [`DataLevels::level`] for every cell.
+fn check_values_accessors(
+    grid: &RasterGrid,
+    levels: &DataLevels,
+    values: &[f32],
+) -> Result<(), String> {
+    if values.len() != grid.levels().len() {
+        return Err(format!(
+            "{} values for {} levels",
+            values.len(),
+            grid.levels().len()
+        ));
+    }
+    for (i, (&value, &level)) in values.iter().zip(grid.levels()).enumerate() {
+        let (row, column) = (i / grid.columns(), i % grid.columns());
+        let meaning = levels.level(u16::from(level));
+        let expected = meaning.value().map_or(f32::NAN, |v| v as f32);
+        if value.to_bits() != expected.to_bits() {
+            return Err(format!(
+                "value at {row}, {column} is {value}, level {level} means {meaning:?}"
+            ));
         }
-        Encoding::Dpa => {
-            if !(1..=254).contains(&level) {
-                return None;
-            }
-            let minimum = f64::from(halfwords[30] as i16) / 10.0;
-            let increment = f64::from(halfwords[31]) / 1000.0;
-            Some(minimum + f64::from(level - 1) * increment)
+        if grid.level_at(row, column, levels) != Some(meaning) {
+            return Err(format!(
+                "level_at({row}, {column}) differs from level {level}"
+            ));
         }
     }
+    if grid.level_at(grid.rows(), 0, levels).is_some()
+        || grid.level_at(0, grid.columns(), levels).is_some()
+    {
+        return Err("level_at outside the grid returned a level".into());
+    }
+    Ok(())
 }
 
 /// `rows`, `columns`, `levels`, `row`, `get` and `iter_rows` describe the same grid.

@@ -201,6 +201,98 @@ fn toml_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<S
     }
 }
 
+/// Relative tolerance of physical min/max/mean against MetPy (Task L3.3
+/// acceptance: within 1e-4 relative).
+pub const PHYSICAL_TOLERANCE: f64 = 1e-4;
+
+/// A summary of physical values in the form of a golden `data[].physical`
+/// object: `tools/level3_golden.py` summarizes MetPy's `map_data` output with
+/// NaN counted as masked.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct PhysicalSummary {
+    pub finite: u64,
+    pub masked: u64,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub mean: Option<f64>,
+}
+
+impl PhysicalSummary {
+    /// Summary of `values`; anything not finite is masked.
+    pub fn of(values: impl IntoIterator<Item = f64>) -> Self {
+        let (mut finite, mut masked) = (0u64, 0u64);
+        let (mut min, mut max, mut sum) = (f64::INFINITY, f64::NEG_INFINITY, 0.0);
+        for value in values {
+            if value.is_finite() {
+                finite += 1;
+                min = min.min(value);
+                max = max.max(value);
+                sum += value;
+            } else {
+                masked += 1;
+            }
+        }
+        let some = |v: f64| (finite > 0).then_some(v);
+        Self {
+            finite,
+            masked,
+            min: some(min),
+            max: some(max),
+            mean: some(sum / finite.max(1) as f64),
+        }
+    }
+
+    /// Summary of `f32` values with NaN for no value, as the decoder's
+    /// `values` methods return them.
+    pub fn of_f32(values: &[f32]) -> Self {
+        Self::of(values.iter().map(|&v| f64::from(v)))
+    }
+
+    /// The golden `physical` object.
+    pub fn from_golden(physical: &Json) -> Self {
+        let count = |key: &str| u64::try_from(physical.get(key).int(key)).unwrap();
+        Self {
+            finite: count("finite"),
+            masked: count("masked"),
+            min: physical.get("min").as_f64(),
+            max: physical.get("max").as_f64(),
+            mean: physical.get("mean").as_f64(),
+        }
+    }
+
+    /// How this summary differs from `golden`: counts must be equal and
+    /// min/max/mean within [`PHYSICAL_TOLERANCE`] relative (absent on both
+    /// sides when nothing is finite). Empty when they agree.
+    pub fn mismatches(&self, golden: &Self) -> Vec<String> {
+        let mut out = Vec::new();
+        for (name, decoded, expected) in [
+            ("finite", self.finite, golden.finite),
+            ("masked", self.masked, golden.masked),
+        ] {
+            if decoded != expected {
+                out.push(format!("{name}: decoded {decoded}, MetPy {expected}"));
+            }
+        }
+        for (name, decoded, expected) in [
+            ("min", self.min, golden.min),
+            ("max", self.max, golden.max),
+            ("mean", self.mean, golden.mean),
+        ] {
+            let agree = match (decoded, expected) {
+                (Some(a), Some(b)) => {
+                    (a - b).abs() <= PHYSICAL_TOLERANCE * a.abs().max(b.abs()) + 1e-12
+                }
+                (None, None) => true,
+                _ => false,
+            };
+            if !agree {
+                out.push(format!("{name}: decoded {decoded:?}, MetPy {expected:?}"));
+            }
+        }
+        out
+    }
+}
+
 /// A parsed JSON value. Objects keep key order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Json {

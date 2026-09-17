@@ -85,10 +85,12 @@ const DISPATCH: &[(u16, &str, Option<&str>)] = &[
 const KNOWN_GAPS: &[&str] = &[
     "**Core data model.** Spec section 4.5 asks for radial and raster products \
      in the core `Volume`/`Sweep` model (one sweep). That conversion does not \
-     exist yet: `recast-radar-core` is not on the `level3` branch. Products \
-     decode to the packet structs listed above, and \
-     `levels::DataLevels::from_description` maps their data levels to physical \
-     values.",
+     exist yet. Products decode to the packet structs listed above; \
+     `levels::DataLevels::for_packet` gives a data packet's level mapping, and \
+     `RadialPacket::values`, `RasterGrid::values` and \
+     `GenericRadialComponent::values` return its physical values as `f32` \
+     (NaN without a value), with `level_at` and `DataLevels::levels` giving each \
+     cell's `Level` (value, class, or flag such as missing or range folded).",
     "**Packets without a real sample.** 5 (vector arrow), 7 (unlinked vector, \
      no value), 9 (linked vector, uniform value), 26 (ETVS), 33 (digital \
      raster data array), 0xBA0F (raster data) and 0x3501 (unlinked contour \
@@ -106,7 +108,10 @@ const KNOWN_GAPS: &[&str] = &[
      bytes, but no corpus file has one.",
     "**Data levels.** TDWR product 184 has no data level mapping \
      (`DataLevels::from_description` returns `None`): 2620063E does not give \
-     its 256-level encoding. No corpus file has product 184.",
+     its 256-level encoding. No corpus file has product 184. Packet 18 \
+     (precipitation rate data array, products 81 and 82) has no mapping either \
+     (`DataLevels::for_packet` returns `None`): no halfword describes its 4-bit \
+     levels, and MetPy maps none.",
     "**Text-only messages.** Plain-text messages (WMO heading `NOUS..`, e.g. \
      the Free Text Message) return `Level3Error::TextOnly` without their text.",
     "**General Status Message** (message code 2) returns \
@@ -118,6 +123,29 @@ const KNOWN_GAPS: &[&str] = &[
      Alphanumeric Block pages decode as text packets 8 and vector packets 10 \
      in screen coordinates; they are not parsed into typed storm cell structs \
      (their layout differs by product and ICD build).",
+];
+
+/// Where decoded physical values follow the ICD and differ from MetPy 1.7.1
+/// `map_data`, as asserted in `tests/radial_generic.rs`. Rendered into the
+/// "Differences from MetPy" section of the document.
+const METPY_DIFFERENCES: &[&str] = &[
+    "**Product 138 (DSP).** ICD 2620001AD Figure 3-6 sheet 6 Note 1: data \
+     level 0 is no accumulation and levels 1-255 are accumulations in even \
+     increments, level 1 being the first non-zero one; halfword 31 is the \
+     minimum (0) and halfword 32 the increment in 0.01 in. The decoder gives \
+     level `N` the value `(hw31 + N * hw32) / 100` in (level 0 is 0 in). \
+     MetPy's `DigitalStormPrecipMapper` masks levels 0 and 1 and maps level \
+     `N >= 2` to `(N - 2) * hw32 / 100`, two increments lower. In the three \
+     corpus files halfword 47 (maximum accumulation: 4.38, 2.89 and 0 in) is \
+     within one increment of the decoded maximum (4.38, 2.90 and 0 in) and not \
+     of MetPy's (4.34 in, 2.86 in, and no value with every bin masked). The test \
+     `product_138_follows_the_icd_and_differs_from_metpy_as_documented` \
+     asserts MetPy's summary is exactly that shift of the decoded values.",
+    "**Categorical products** (34, 113, 165, 177). The decoder returns \
+     `Level::Class` for each class and NaN from `values`; MetPy returns \
+     numbers: the class index `N / 10` (165, 177), the level (113, read from \
+     threshold halfwords that hold it) or 0 (34, whose threshold halfwords are \
+     all zero). The tests reproduce MetPy's numbers from the decoded classes.",
 ];
 
 /// Decode outcome of one manifest file.
@@ -521,6 +549,14 @@ fn render(outcomes: &[FileOutcome]) -> String {
          MetPy cannot read against their own header fields per the ICD. Files \
          MetPy reads only with default product metadata or not at all are \
          marked in the Files column.",
+        "- **Physical values**: for every data packet MetPy maps (radial 16 and \
+         0xAF1F, raster 0xBA07, packet 17 and generic 28 radial components), \
+         the `f32` values from `DataLevels::for_packet` and the packets' \
+         `values` methods have MetPy's finite and masked counts and \
+         min/max/mean within 1e-4 relative, except where the ICD and MetPy \
+         differ (see Differences from MetPy), where the documented difference \
+         is asserted instead. MetPy maps no physical values for packet 18 and \
+         product 197.",
         "- **Data levels**: the encoding `levels::DataLevels::from_description` \
          selects for the product's files (— when the product has no data levels).",
     ] {
@@ -637,6 +673,13 @@ fn render(outcomes: &[FileOutcome]) -> String {
             )
             .unwrap();
         }
+    }
+    writeln!(w).unwrap();
+
+    writeln!(w, "## Differences from MetPy").unwrap();
+    writeln!(w).unwrap();
+    for difference in METPY_DIFFERENCES {
+        writeln!(w, "- {difference}").unwrap();
     }
     writeln!(w).unwrap();
 
