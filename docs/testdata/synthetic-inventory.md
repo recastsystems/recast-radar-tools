@@ -329,96 +329,69 @@ Hand-filled 8x8 and 16x8 velocity blocks joined by one contact or a long fold bo
 
 ## filters-map
 
-### `crates/recast-radar-filters/src/gate_filter.rs`
+**Converted in C.2** (branch `real-tests-filters-map`): all 36 entries are gone from the allowlist
+(the counts table above is the C.1 snapshot). The 28 synthetic tests and 8 helpers were deleted from
+`src/`; their replacements are integration tests that decode corpus files with the workspace readers
+and compare against JSON goldens under `testdata/golden/filters/` and `testdata/golden/map/`, written
+by `tools/filters_map_golden.py`. The script reads the same files with MetPy 1.7.1 (Level II),
+Py-ART 2.2.5 (gate filter, region-based dealiasing), netCDF4 1.7.4 (CfRadial) and its own DORADE
+block walker, and computes expected outputs with numpy reference implementations of the documented
+algorithms (float32 arithmetic where the Rust code uses f32). The pure-math unit tests that stayed in
+`src/` (`interpolate.rs` factor policy, `rhi.rs` beam-geometry round trip) were never findings.
 
-`cut_with` builds a 1-row REF/VEL cut from hand-written gate values.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::keeps_velocity_only_where_reflectivity_clears_the_threshold` | `l2-ktlx-20240315-000217-trim` sweep 2 (REF/VEL/SW on the same radials) | Py-ART `GateFilter.exclude_below('reflectivity', threshold)` applied to Py-ART velocity |
-| `tests::no_reflectivity_moment_blanks_everything` | `jma-n6-20191012-090000-rs47773` (velocity-only cut) | every velocity gate blanked |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::cut_with` | REF/VEL cut from hand-written gates | `tests::keeps_velocity_only_where_reflectivity_clears_the_threshold`, `tests::no_reflectivity_moment_blanks_everything` |
-
-
-### `crates/recast-radar-filters/src/interpolate.rs`
-
-`cut_and_grid` builds full-circle cuts with evenly spaced azimuths and uniform or hand-patterned gate data (edges, folds, CC steps, sector gaps).
+### `crates/recast-radar-filters/tests/gate_filter_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::geometry_subdivides_exactly` | `l2-ktlx-19990504-002218-trim` sweep 1 (Message 1: 1 deg radials, 1 km REF gates) | range and azimuth arrays from MetPy/Py-ART: 4x in both axes, annulus preserved, native rows at their azimuths |
-| `tests::azimuth_wraps_between_last_and_first_row` | `l2-ktlx-19990504-002218-trim` sweep 1 (Message 1: 1 deg radials, 1 km REF gates) | sub-row azimuths between the file's last and first radial |
-| `tests::uniform_field_is_unchanged_and_fine_grids_pass_through` | `l2-ktlx-19990504-002218-trim` sweep 1 (Message 1: 1 deg radials, 1 km REF gates) and `l2-ktlx-20240315-000217-trim` (0.5 deg x 250 m, passes through) | native rows equal Py-ART values; fine grid returned unchanged |
-| `tests::coverage_does_not_grow` | `l2-ktlx-19990504-002218-trim` sweep 1 (Message 1: 1 deg radials, 1 km REF gates) | no upsampled gate valid where Py-ART has no parent value |
-| `tests::echo_edges_use_nearest_parent_not_partial_blends` | `l2-ktlx-19990504-002218-trim` sweep 1 (Message 1: 1 deg radials, 1 km REF gates) | edge gates equal a native parent value from Py-ART |
-| `tests::velocity_fold_guard_uses_nearest_parent` | `l2-klix-20050829-130035-trim` sweep 2 (Katrina, legacy 1 deg, strongly aliased velocity) | no blend across adjacent gates differing by more than Nyquist (MetPy Nyquist) |
-| `tests::cc_guard_never_blends_through_the_melting_layer` | `l2-kgwx-20130601-235640` (dual-pol at 1 deg azimuth with 250 m gates, so azimuth is upsampled; storms to 60 dBZ): radials where RHOHV falls below the guard threshold next to high values | no blend across those RHOHV steps, located in Py-ART `cross_correlation_ratio` |
-| `tests::sector_scan_gap_stays_native` | `dorade-noxp-20090525-203211-sector` (100 rays over -160..-60 deg) | no sub-rows across the sector gap (azimuths from the DORADE walker) |
-| `tests::upsample_cost_smoke` | `l2-ktlx-19990504-002218` (full legacy volume) | completes; output dimensions from the factor policy |
+| `keeps_velocity_only_where_reflectivity_clears_the_threshold` | `l2-ktlx-20240315-000217-trim` sweep 2 (REF/VEL/SW, 88,294 velocity gates) at 0, 10 and 20 dBZ | Py-ART `GateFilter.exclude_below('reflectivity', t)` on Py-ART velocity: kept gates and velocity sum per ray |
+| `no_reflectivity_moment_blanks_everything` | `l2-ktlx-19990504-002218-trim` sweep 2 (Message 1 Doppler, VEL/SW only) and all 13 sweeps of `jma-n6-20191012-090000-rs47773` | MetPy valid velocity count (111,458); JMA non-missing count from the corpus walker (547,108); every output gate empty |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::radial` | radial with a given azimuth | `tests::cut_and_grid` |
-| `tests::cut_and_grid` | cut and grid from azimuths and data | `tests::geometry_subdivides_exactly`, `tests::azimuth_wraps_between_last_and_first_row`, `tests::uniform_field_is_unchanged_and_fine_grids_pass_through`, `tests::coverage_does_not_grow`, `tests::echo_edges_use_nearest_parent_not_partial_blends`, `tests::velocity_fold_guard_uses_nearest_parent`, `tests::cc_guard_never_blends_through_the_melting_layer`, `tests::sector_scan_gap_stays_native`, `tests::upsample_cost_smoke` |
-
-
-### `crates/recast-radar-filters/src/smooth.rs`
-
-`grid` builds an 8x8 reflectivity grid from uniform values, a half-filled field or a 0/40 dBZ step.
+### `crates/recast-radar-filters/tests/smooth_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::uniform_field_is_unchanged` | `l2-kdvn-20200810-180401-trim` sweep 1 reflectivity (66 dBZ core at azimuth 270 deg, 15 km) | gates whose 3x3 neighbourhood is constant (Py-ART values) are unchanged |
-| `tests::steps_soften_and_coverage_does_not_grow` | `l2-kdvn-20200810-180401-trim` sweep 1 reflectivity | empty gates stay empty; edge gates keep their Py-ART value |
-| `tests::interior_step_blends` | `l2-ktlx-20130520-201643-trim` sweep 1 (Moore core: 69.5 dBZ at azimuth 268 deg, 23 km) | smoothed values lie between the neighbouring Py-ART values across the steepest gradients |
+| `uniform_field_is_unchanged` | `l2-kdvn-20200810-180401-trim`, `l2-ktlx-20130520-201643-trim`, `l2-ktlx-19990504-002218-trim` sweep 1 REF | gates whose valid 3x3 neighbours equal the centre (MetPy values) keep it; per-row reference |
+| `steps_soften_and_coverage_does_not_grow` | `l2-kdvn-20200810-180401-trim` sweep 1 REF | per-row coverage equals MetPy's valid gates; the 50 steepest steps lie strictly inside their neighbourhood at the numpy reference value |
+| `interior_step_blends` | `l2-ktlx-20130520-201643-trim` and `l2-ktlx-19990504-002218-trim` (whole circle, azimuth wrap) | numpy binomial reference on MetPy reflectivity: steepest 50 gates and every row (count and sum) |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::grid` | 8x8 reflectivity grid | `tests::uniform_field_is_unchanged`, `tests::steps_soften_and_coverage_does_not_grow`, `tests::interior_step_blends` |
-
-
-### `crates/recast-radar-map/src/rhi.rs`
-
-`rhi_cut` builds a fan of beams at 271 deg with hand-set elevations and gates; PPI and north-wrap cuts are built by hand.
+### `crates/recast-radar-filters/tests/interpolate_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::rhi_section_samples_the_matching_beam` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (already used by tests/rhi_real.rs) and `dorade-dow6-20211230-222139-rhi-head41` | 4/3-earth beam height of the sampled beam/gate (netCDF4 elevation and range arrays) |
-| `tests::rhi_section_is_empty_above_the_top_beam` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (already used by tests/rhi_real.rs) | pixels above the top beam height are empty |
-| `tests::rhi_section_is_empty_beyond_gate_coverage` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (already used by tests/rhi_real.rs) | pixels beyond 950 x 125 m are empty |
-| `tests::rhi_heuristic_accepts_elevation_sweeps_and_rejects_ppi` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (already used by tests/rhi_real.rs), `dorade-dow6-20211230-222139-rhi-head41` (accepted) and `l2-ktlx-20240315-000217-trim` (rejected) | scan modes from the files |
-| `tests::rhi_coverage_extents_track_the_sweep` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (already used by tests/rhi_real.rs) | coverage top and range from the file's elevations and gate count |
-| `tests::azimuth_circular_mean_handles_north_wrap` | `l2-ktlx-20130520-201643-trim` sweep 1 (azimuths 123.2 through 2.7 deg, crossing north) | numpy circular mean of the file's azimuths |
+| `geometry_subdivides_exactly` | `l2-ktlx-19990504-002218-trim` sweep 1 REF (367 radials, 1 km gates) | MetPy azimuths and gate geometry: 4 x 4, annulus preserved, native rows at their azimuths, row azimuths and parent radials |
+| `azimuth_wraps_between_last_and_first_row` | same | sub-rows across north and between the last and first radial (MetPy azimuths) |
+| `uniform_field_is_unchanged_and_fine_grids_pass_through` | KTLX 1999 REF, `l2-klix-20050829-130035-trim` VEL, `dorade-noxp-20090525-203211-sector` DZ; `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (passes through) | cells with four equal parents keep the value; netCDF4 azimuths and 125 m gates give identity factors |
+| `coverage_does_not_grow` | KTLX 1999 REF, KLIX 2005 VEL, `l2-kgwx-20130601-235640` sweep 1 RHOHV, NOXP sector | numpy float32 reference: per-row coverage and sums; no cell without a valid nearest parent; blocked beam-boundary cells empty |
+| `echo_edges_use_nearest_parent_not_partial_blends` | same four | reference edge cells equal the nearest parent's file value |
+| `velocity_fold_guard_uses_nearest_parent` | KLIX 2005 sweep 2 VEL (Nyquist 32.1 m/s from MetPy) | guarded cells (parent spread > 30 m/s) equal the nearest parent; blended cells inside the parents' range |
+| `cc_guard_never_blends_through_the_melting_layer` | KGWX 2013 sweep 1 RHOHV | guarded cells (a parent below 0.97) equal the nearest parent; blends only between parents >= 0.97 |
+| `sector_scan_gap_stays_native` | NOXP sector (100 rays, 200-300 deg) | DORADE walker azimuths: 397 rows, none in the gap |
+| `upsample_cost_smoke` | `l2-ktlx-19990504-002218` (all 16 sweeps, REF/VEL/SW) | output dimensions from MetPy geometry and the factor policy |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::rhi_cut` | synthetic RHI fan | `tests::rhi_section_samples_the_matching_beam`, `tests::rhi_section_is_empty_above_the_top_beam`, `tests::rhi_section_is_empty_beyond_gate_coverage`, `tests::rhi_heuristic_accepts_elevation_sweeps_and_rejects_ppi`, `tests::rhi_coverage_extents_track_the_sweep` |
-
-
-### `crates/recast-radar-map/src/volumetric.rs`
-
-`cut_with_ref`/`cut_with_vel` build 360-radial cuts filled with one constant value; `volume_with` stacks them into a `RadarVolume`.
+### `crates/recast-radar-map/tests/rhi_real.rs`
 
 | test | real input | assertion source |
 |---|---|---|
-| `tests::composite_takes_column_max` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | Py-ART `pyart.retrieve.composite_reflectivity` / numpy column maximum on Py-ART fields |
-| `tests::echo_top_rises_with_higher_tilt` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | numpy echo top: highest beam height with reflectivity above threshold (4/3-earth) |
-| `tests::cross_section_reconstructs_a_reflectivity_column` | `l2-ktlx-20130520-201643` (full volume) | section values equal the Py-ART gate values at the sampled beams |
-| `tests::velocity_cross_section_reconstructs_velocity` | `l2-ktlx-20130520-201643` | section velocity equals the Py-ART gate values at the sampled beams |
-| `tests::derived_products_handle_degraded_inputs_without_panicking` | `l2-tbwi-20230601-175101-stub` (no radials), `l2-ktlx-19990503-230052` (68 radials, REF only), `jma-n6-20191012-090000-rs47773` (velocity only), `l2-ktlx-20240315-000217-trim` (two cuts) | no panic; empty or partial outputs |
-| `tests::vil_positive_for_deep_reflectivity` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | numpy VIL (Greene and Clark 1972) on Py-ART reflectivity columns |
-| `tests::mehs_flags_deep_intense_cores_only` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) and `l2-ktlx-20240515-000014` (clear air) | numpy SHI/MEHS (Witt et al. 1998) with the melting level used by the code; SPC hail reports near San Antonio 2016-04-13 |
-| `tests::vil_density_is_in_physical_range` | `l2-kewx-20160413-022531` (full volume; lowest-sweep maximum 70.5 dBZ at azimuth 254.7 deg, 57.6 km) | numpy VIL density (VIL / echo top) on Py-ART fields |
+| `rhi_section_samples_the_matching_beam` | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` (768 x 320 panel), `dorade-dow6-20211230-222139-rhi-head41` (400 x 200) | 4/3-Earth panel reference on netCDF4 / DORADE walker elevations and values: sampled pixels and per-row counts and sums |
+| `rhi_section_is_empty_above_the_top_beam` | DOW8, DOW6 | reference pixels with no beam within 1 degree are empty |
+| `rhi_section_is_empty_beyond_gate_coverage` | DOW8 (130 km panel) | reference pixels past the last gate are empty |
+| `rhi_heuristic_accepts_elevation_sweeps_and_rejects_ppi` | DOW8 (`sweep_mode` rhi), DOW6 (RADD scan mode 3); trimmed KTLX 2024, KTLX 2013, KEWX 2016 sweeps (Py-ART `scan_type` ppi); all radials of `l2-ktlx-20130520-201643` in one cut; DOW8 thinned to 8 and 7 rays | scan modes from the files; elevation span and azimuth spread from the file angles |
+| `rhi_coverage_extents_track_the_sweep` | DOW8, DOW6 | top height and ground range from the file elevations and gate geometry |
+| `azimuth_circular_mean_handles_north_wrap` | `l2-ktlx-20130520-201643-trim` and `l2-kewx-20160413-022531-trim`, both sweeps (azimuths cross north) | circular mean of the MetPy azimuths (differs from the arithmetic mean by 4.5 to 159 deg) |
+| `real_dow8_rhi_drives_the_rhi_panel_pipeline` (was already real) | DOW8 | now through `require_file!`; DBZHC[37, 316] from netCDF4 |
 
-| helper | builds | used by |
+### `crates/recast-radar-map/tests/volumetric_real.rs`
+
+| test | real input | assertion source |
 |---|---|---|
-| `tests::cut_with_ref` | constant-reflectivity cut | `tests::composite_takes_column_max`, `tests::echo_top_rises_with_higher_tilt`, `tests::cross_section_reconstructs_a_reflectivity_column`, `tests::derived_products_handle_degraded_inputs_without_panicking`, `tests::vil_positive_for_deep_reflectivity`, `tests::mehs_flags_deep_intense_cores_only`, `tests::vil_density_is_in_physical_range` |
-| `tests::volume_with` | volume from cuts | `tests::composite_takes_column_max`, `tests::echo_top_rises_with_higher_tilt`, `tests::cross_section_reconstructs_a_reflectivity_column`, `tests::velocity_cross_section_reconstructs_velocity`, `tests::derived_products_handle_degraded_inputs_without_panicking`, `tests::vil_positive_for_deep_reflectivity`, `tests::mehs_flags_deep_intense_cores_only`, `tests::vil_density_is_in_physical_range` |
-| `tests::cut_with_vel` | constant-velocity cut | `tests::velocity_cross_section_reconstructs_velocity`, `tests::derived_products_handle_degraded_inputs_without_panicking` |
-
+| `composite_takes_column_max` | `l2-kewx-20160413-022531` (19 tilts) | numpy column walk on MetPy reflectivity: per-row counts and sums, 76.5 dBZ maximum location; gates above the base tilt |
+| `echo_top_rises_with_higher_tilt` | same | reference echo tops (18.3 dBZ); gates whose top is above the base beam |
+| `cross_section_reconstructs_a_reflectivity_column` | `l2-ktlx-20130520-201643` (Moore supercell, and a path across the radar) | MRMS-style reference section, native and path-smoothed, pixel by pixel |
+| `velocity_cross_section_reconstructs_velocity` | same (mesocyclone path; a path Py-ART `dealias_region_based` leaves unchanged) | raw velocity reference with the 30 m/s guard; dealiased section equals it where Py-ART unfolds nothing |
+| `derived_products_handle_degraded_inputs_without_panicking` | `l2-tbwi-20230601-175101-stub` (no radials), `l2-ktlx-19990503-230052` (68 radials; also with every REF byte set to the no-data code), `jma-n6-20191012-090000-rs47773`, `l2-ktlx-20240315-000217-trim` | None for no data; reference products for the single tilt; empty grids after the mutation |
+| `vil_positive_for_deep_reflectivity` | KEWX 2016 | numpy VIL (Greene and Clark 1972, 56 dBZ cap): per-row reference, 57.2 kg/m2 maximum |
+| `mehs_flags_deep_intense_cores_only` | KEWX 2016; `l2-ktlx-20240515-000014` (clear air) | numpy SHI/MEHS (Witt et al. 1998, 3.2/6.4 km): 97 mm at the 76.5 dBZ core; no MEHS in clear air |
+| `vil_density_is_in_physical_range` | KEWX 2016 | reference VIL / echo top where the top is above 1.5 km; 5.9 g/m3 maximum |
 
 ## retrieve
 
