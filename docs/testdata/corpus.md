@@ -480,8 +480,9 @@ These entries are in `testdata/other/manifest.toml`, and their committed files a
 by copying raw bytes: trimming, taking a subset, changing the container, or extracting an archive member.
 Every derived file names its source and has a recipe on this page.
 
-There are 30 entries. 22 files are committed (15,181,236 bytes, each under 2 MB). 8 files are downloaded
-on first use (123,175,908 bytes).
+There are 35 entries. 27 files are committed (15,975,753 bytes, each under 2 MB). 8 files are downloaded
+on first use (123,175,908 bytes). Five of the committed entries (the NOXP 2009-06-10 head trims and their
+zip, and the NCI THREDDS zip response) were added by the io-formats test conversion (plan task C.2).
 
 Checked when the files were curated (2026-09-16):
 
@@ -503,6 +504,7 @@ Checked when the files were curated (2026-09-16):
 |---|---|
 | `files/other/odim/` | ODIM_H5 polar volumes (PVOL) |
 | `files/other/odim/imgw_polrad/` | ODIM_H5 Cartesian IMAGE products (IMGW CMAX) |
+| `files/other/odim/nci/` | NCI THREDDS responses for members of daily ODIM_H5 zips (zip local-file records) |
 | `files/other/cfradial/` | CfRadial 1.x in classic netCDF and netCDF-4 containers |
 | `files/other/dorade/` | DORADE sweep files |
 | `files/other/jma/` | JMA polar GRIB2 tars with one station each |
@@ -525,6 +527,7 @@ Derivation recipes section below.
 | `odim-imgw-ram-20260711-0015-{kdp,phidp,rhohv,zdr}-max` | C | 33775, 32534, 61984, 59793 | ODIM IMAGE (Cartesian MAX with side projections), `what` on `dataset1`, version string `H5rd 2.3`, source has only a WMO number | IMGW-PIB datastore (attribution required), URL expired |
 | `odim-iesha-20260305-0115-pvol` | C | 1667065 | **new** H5rad 2.3, 10 sweeps DBZH+TH+VRADH up to a 90 deg vertical sweep, widespread echo | OPERA ORD archive (CC BY 4.0) |
 | `odim-dkrom-20260820-1130-pvol` | C | 1695131 | **new** H5rad 2.0 dual-pol, 10 sweeps x 8 quantities (VRAD/WRAD names, LDR all nodata), elevations not whole degrees | OPERA ORD archive (CC BY 4.0) |
+| `odim-au24-20260610-000300-nci-zip-member` | C | 354749 | **new** unmodified NCI THREDDS response for a daily-zip member URL: a ZIP local-file record (deflate) holding an H5rad 2.4 PVOL (Bowen, 10 sweeps 0.8-32 deg) followed by the start of the next record, no central directory | NCI `rq0` Level 1 archive (Bureau of Meteorology, CC BY 4.0) |
 
 #### CfRadial
 
@@ -548,6 +551,8 @@ Derivation recipes section below.
 | `dorade-noxp-20090525-sweeps-tgz` | D | 5813887 | Zenodo archive holding the next entry | Zenodo 10.5281/zenodo.14194361 (CC BY 4.0) |
 | `dorade-noxp-20090525-203211-sector` | C, derived | 1634536 | **new** little-endian sector PPI with echo, 8 dual-pol fields | archive member, unmodified |
 | `dorade-dow6-20211230-222139-rhi-head41` | C, derived | 1471504 | **new** first real **DORADE RHI** (RADD scan mode 3): little-endian HRD RLE, CELV, 32 fields, rays 0-40 of 156 | Zenodo DOI 10.48514/JKJ0-TE44, FARM Marshall Fire (CC BY 4.0) |
+| `dorade-noxp-20090610-{003210,003222,003226}-ppi-head6` | C, derived | 131596 each | **new** three sweeps (0.5, 1.0, 2.0 deg) of one **multi-elevation** NOXP volume (NOX090610003210.RAWAL8D): little-endian, uncompressed, CSFD 1174 x 75 m, real site coordinates; first 6 rays each | head trims of members of Zenodo 10.5281/zenodo.14194361 `2009.NOX.sweep.0609.tar.gz` (CC BY 4.0) |
+| `dorade-noxp-20090610-003210-heads-zip` | C, derived | 44980 | **new** zip of that volume directory: the three head trims (stored 1.0, 0.5, 2.0 deg) and the directory's three text files, under their tar paths | container conversion (CC BY 4.0) |
 
 #### JMA GRIB2 tar
 
@@ -610,7 +615,7 @@ These files were not carried over:
 | ODIM **contiguous** (unchunked) data layout | **gap**: every real file checked uses chunked+gzip (bejab, bewid, norst, espdg, iesha, dkrom) |
 | ODIM nodata/undetect sentinel gates | all real PVOLs contain both |
 | CfRadial classic container | xsapr classic (converted), DOW8 trim3 (converted), **Irene, written natively by Radx** |
-| CfRadial **UNLIMITED `time`** (record-variable interleave) | **gap**: `time` is a fixed dimension in the Irene file and in both conversions. No real classic CfRadial file with an unlimited record dimension was found |
+| CfRadial **UNLIMITED `time`** (record-variable interleave) | xsapr classic: `convert_cfradial.py` keeps the Py-ART file's unlimited `time` (40 records), so its fields and per-ray `prt`/`unambiguous_range`/`nyquist_velocity` are record variables. **Gap**: no classic file *written natively* with an unlimited record dimension; Irene and DOW8 trim3 have a fixed `time` |
 | CfRadial packed short with scale/offset | Irene packs int8 with scale/offset. **Gap**: no real int16 packed field |
 | CfRadial float field with `_FillValue` | **gap** in classic files. The xsapr and DOW8 netCDF-4 originals have float fields |
 | Two PPI sweeps with per-ray PRT, unambiguous range and sample counts | Irene: 2 sweeps, per-ray `prt`, `prt_ratio`, `unambiguous_range`, `n_samples`, `nyquist_velocity` |
@@ -744,6 +749,40 @@ the same way for N6.
   `zipfile.ZipFile` over a seekable file-like object that issues `Range`
   requests is enough.
 - `dorade-cow2-20260521-225514-sur-head24`: carried over as is (see above).
+- `dorade-noxp-20090610-{003210,003222,003226}-ppi-head6`: `head -c 131596 <member>`
+  for members `swp.1090610003210.NOXPRVP.0.0.5_PPI_v1`,
+  `swp.1090610003222.NOXPRVP.0.1.0_PPI_v1` and `swp.1090610003226.NOXPRVP.0.2.0_PPI_v1`
+  of `2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/` in `2009.NOX.sweep.0609.tar.gz`
+  (157,788,051 bytes, md5 `af414f78b0bc77625747a9799a54200a` as Zenodo publishes; the directory is the
+  first one in the archive, so a streaming read can stop after it). In all three the descriptor blocks
+  (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB) end at 3,196, rays are 21,400 bytes, and the RYIB block
+  of ray 6 starts at 131,596. None of the kept rays is flagged in transition.
+
+#### `zip_noxp_heads.py`: the NOXP volume directory as a zip
+
+Run as `zip_noxp_heads.py <extracted RAWAL8D dir>/ <dir with the .head6 files>/ out.zip` with Python
+3.13 (zlib 1.3.1). Two runs give identical bytes (sha256 in the manifest).
+
+```python
+import sys, zipfile, time
+src_dir, heads_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
+prefix = "2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/"
+members = [  # tar member order, tar mtimes
+    ("corrections", src_dir + "corrections", 1328204976),
+    ("NOX090610003210.RAWAL8D.log", src_dir + "NOX090610003210.RAWAL8D.log", 1328205361),
+    ("swp.1090610003222.NOXPRVP.0.1.0_PPI_v1", heads_dir + "swp.1090610003222.NOXPRVP.0.1.0_PPI_v1.head6", 1328205360),
+    ("swp.1090610003210.NOXPRVP.0.0.5_PPI_v1", heads_dir + "swp.1090610003210.NOXPRVP.0.0.5_PPI_v1.head6", 1328205360),
+    ("swp.1090610003226.NOXPRVP.0.2.0_PPI_v1", heads_dir + "swp.1090610003226.NOXPRVP.0.2.0_PPI_v1.head6", 1328205360),
+    ("sigmet_dorade.out", src_dir + "sigmet_dorade.out", 1328205361),
+]
+with zipfile.ZipFile(out, "w") as z:
+    for name, path, mtime in members:
+        info = zipfile.ZipInfo(prefix + name, date_time=time.gmtime(mtime)[:6])
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.create_system = 3
+        info.external_attr = 0o100644 << 16
+        z.writestr(info, open(path, "rb").read(), compresslevel=9)
+```
 
 #### Archive members
 
@@ -781,6 +820,16 @@ hard links to the same files. For the Level III file, run
   2026/01/15. The mirror states no redistribution terms.
 - **NEXRAD Level III archive**: the Google Cloud public bucket
   `gcp-public-data-nexrad-l3` keeps NCEI day tars back to the 1990s.
+- **NCI THREDDS `rq0`** (Australian Unified Radar Archive Level 1, Bureau of Meteorology; license file
+  `rq0_level1_license-cc4.pdf` in the catalog): a member URL
+  `.../{site}/{yyyy}/vol/{site}_{yyyymmdd}.pvol.zip/{member}.pvol.h5` answers `200` with
+  `Content-Length` equal to the requested member's uncompressed size, but the body is the first
+  `Content-Length` bytes **of the zip file**, whatever member was named (checked 2026-09-17: the
+  response for `24_20260610_142000.pvol.h5`, 157,280 bytes, is a prefix of the response for the first
+  member `24_20260610_000300.pvol.h5`, and both start with the zip's own first bytes; 2024 zips start
+  with a `_file_list` member). Only the first member of a daily zip is therefore readable this way, and
+  only when its compressed record fits in its own uncompressed size. The committed response is the
+  first member of the site 24 zip, fetched twice with identical bytes.
 
 ### Licensing and attribution
 
@@ -830,18 +879,19 @@ hard links to the same files. For the Level III file, run
 
 ### Other formats
 
-1. **No real classic CfRadial file with an UNLIMITED `time` dimension.** The
-   record-interleaved read path has no real coverage. BowEcho searched and
-   found every public CfRadial sample to be netCDF-4. This search found only
-   the fixed-dimension Irene files.
+1. **No natively written classic CfRadial file with an UNLIMITED `time`
+   dimension.** The record-interleaved read path is covered only by the xsapr
+   classic conversion, which keeps the Py-ART file's unlimited `time`. BowEcho
+   searched and found every public CfRadial sample to be netCDF-4. This search
+   found only the fixed-dimension Irene files.
 2. **No real ODIM file with a contiguous (unchunked) data layout.** Every
    public PVOL checked uses chunked+gzip.
-3. **No multi-elevation DORADE volume under 2 MB per sweep.** NOXP 2009 June
-   volumes and FARM DOW6 volumes are real multi-sweep sets but their sweeps
-   are 3.7-68 MB. They are available only inside large tar.gz or zip
-   archives, and the testdata crate cannot fetch archive members. The
-   committed DORADE set is single-tilt: two consecutive NOXP volumes, one
-   NOXP sector sweep with echo, and trimmed COW2 and DOW6 sweeps.
+3. **Multi-elevation DORADE only as head trims.** NOXP 2009 June volumes and
+   FARM DOW6 volumes are real multi-sweep sets but their sweeps are 3.7-68 MB
+   inside large tar.gz or zip archives, which the testdata crate cannot fetch
+   member by member. The committed multi-elevation set is three 6-ray head
+   trims of one NOXP volume (0.5, 1.0, 2.0 deg) and a zip of them; the other
+   committed DORADE sweeps are single-tilt.
 4. **No full DORADE RHI sweep.** The DOW6 RHI is trimmed to rays 0-40 (30.0
    to 13.0 deg). The full 6.3 MB member can be read from the Zenodo zip with
    range requests.
@@ -855,6 +905,11 @@ hard links to the same files. For the Level III file, run
    entry use the `l3-` prefix. Branch `level3` (checked at d66e163, 216
    entries) has no id or sha256 in common with them. They may move to the
    Level III manifest when `level3` merges.
+9. **No real mobile-radar deployment zip.** The CSWR/FARM deployment zips
+   BowEcho was written against (`DORADE/<radar>/...` and `GR2 MSG31/...`
+   directories, several radars) are not public at a usable size. The zip in
+   the corpus is a container conversion of one NOXP archive directory, and
+   the several-radars case is tested with loose sweep files.
 
 ### Integration
 
@@ -927,7 +982,9 @@ Tags used in this manifest:
 - `derived` and `derivation:container-conversion|subset|head-trim|archive-member`
   mark derived files.
 - `archive` and `contains:*` mark source archives.
-- `sweepset:*` groups consecutive DORADE sweeps.
+- `sweepset:*` groups consecutive DORADE sweeps, or the sweeps of one volume.
+- Format `zip` is a zip archive; format `zip-local-member` is a single ZIP
+  local-file record without a central directory (`quirk:zip-local-member-stream`).
 
 ## Manifest index
 
@@ -943,14 +1000,14 @@ Everything below the marker is generated from the manifests by
 |---|---:|---:|---:|---:|---:|
 | `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 |
 | `testdata/level2/manifest.toml` | 115 | 19 | 10,394,101 | 96 | 247,881,182 |
-| `testdata/other/manifest.toml` | 30 | 22 | 15,181,236 | 8 | 123,175,908 |
-| **all** | **145** | **41** | **25,575,337** | **104** | **371,057,090** |
+| `testdata/other/manifest.toml` | 35 | 27 | 15,975,753 | 8 | 123,175,908 |
+| **all** | **150** | **46** | **26,369,854** | **104** | **371,057,090** |
 
 | format | committed | download |
 |---|---:|---:|
 | `cfradial1` | 4 | 2 |
 | `cfradial2` | 0 | 1 |
-| `dorade` | 5 | 0 |
+| `dorade` | 8 | 0 |
 | `jma-grib2-tar` | 2 | 2 |
 | `nexrad-level2` | 16 | 29 |
 | `nexrad-level2-chunk` | 3 | 67 |
@@ -958,6 +1015,8 @@ Everything below the marker is generated from the manifests by
 | `odim-h5` | 10 | 0 |
 | `tar-gz` | 0 | 2 |
 | `tar-z` | 0 | 1 |
+| `zip` | 1 | 0 |
+| `zip-local-member` | 1 | 0 |
 
 ### Entries
 
@@ -1099,6 +1158,7 @@ No entries.
 | `odim-imgw-ram-20260711-0015-zdr-max` | `odim-h5` | committed `files/other/odim/imgw_polrad/2026071100150601ZDR.max.h5` | 59,793 |  |
 | `odim-iesha-20260305-0115-pvol` | `odim-h5` | committed `files/other/odim/iesha.pvol.20260305T0115.dbzh_th_vradh.h5` | 1,667,065 |  |
 | `odim-dkrom-20260820-1130-pvol` | `odim-h5` | committed `files/other/odim/dkrom.pvol.20260820T1130.dualpol.h5` | 1,695,131 |  |
+| `odim-au24-20260610-000300-nci-zip-member` | `zip-local-member` | committed `files/other/odim/nci/24_20260610_000300.pvol.h5.nci-response` | 354,749 |  |
 | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` | `cfradial1` | committed `files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc` | 75,587 |  |
 | `cfrad1-xsapr-sgp-20110520-ppi-classic` | `cfradial1` | committed `files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.classic.nc` | 13,624 | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` |
 | `cfrad1-dow8-20211011-223602-rhi` | `cfradial1` | download | 1,682,730 |  |
@@ -1113,6 +1173,10 @@ No entries.
 | `dorade-noxp-20090501-190324-ppi` | `dorade` | committed `files/other/dorade/swp.1090501190324.NOXPRVP.0.0.5_PPI_v1` | 939,268 | `dorade-noxp-20090501-sweeps-tgz` |
 | `dorade-noxp-20090525-203211-sector` | `dorade` | committed `files/other/dorade/swp.1090525203211.NOXPRVP.0.0.5_PPI_v1` | 1,634,536 | `dorade-noxp-20090525-sweeps-tgz` |
 | `dorade-dow6-20211230-222139-rhi-head41` | `dorade` | committed `files/other/dorade/swp.1211230222139.DOW6low.648.144.0_RHI_v169.head41` | 1,471,504 |  |
+| `dorade-noxp-20090610-003210-ppi-head6` | `dorade` | committed `files/other/dorade/swp.1090610003210.NOXPRVP.0.0.5_PPI_v1.head6` | 131,596 |  |
+| `dorade-noxp-20090610-003222-ppi-head6` | `dorade` | committed `files/other/dorade/swp.1090610003222.NOXPRVP.0.1.0_PPI_v1.head6` | 131,596 |  |
+| `dorade-noxp-20090610-003226-ppi-head6` | `dorade` | committed `files/other/dorade/swp.1090610003226.NOXPRVP.0.2.0_PPI_v1.head6` | 131,596 |  |
+| `dorade-noxp-20090610-003210-heads-zip` | `zip` | committed `files/other/dorade/NOX090610003210.RAWAL8D.head6.zip` | 44,980 |  |
 | `jma-n5-20191012-090000` | `jma-grib2-tar` | download | 39,106,560 |  |
 | `jma-n6-20191012-090000` | `jma-grib2-tar` | download | 13,209,600 |  |
 | `jma-n5-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N5_grib2.RS47773.tar` | 1,761,280 | `jma-n5-20191012-090000` |
@@ -1126,10 +1190,10 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### Tags without a namespace
 
-- `archive` (3): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `l3-kbmx-19980416-archive-tarz`
+- `archive` (4): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090610-003210-heads-zip`, `l3-kbmx-19980416-archive-tarz`
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
-- `derived` (11): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
+- `derived` (15): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
 - `dualpol` (28): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-180401`, `l2-klix-20210829-180425`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `long-pulse` (1): `l2-kmaf-20230331-230843`
 - `mpda` (2): `l2-klix-20210829-180425`, `l2-klix-20210829-180425-trim`
@@ -1201,11 +1265,13 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `contains:`
 
-- `contains:dorade` (2): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`
+- `contains:dorade` (3): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090610-003210-heads-zip`
 - `contains:nexrad-level3` (1): `l3-kbmx-19980416-archive-tarz`
+- `contains:odim-h5` (1): `odim-au24-20260610-000300-nci-zip-member`
 
 #### `country:`
 
+- `country:AU` (1): `odim-au24-20260610-000300-nci-zip-member`
 - `country:BE` (2): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`
 - `country:DK` (1): `odim-dkrom-20260820-1130-pvol`
 - `country:ES` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
@@ -1217,16 +1283,16 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `derivation:`
 
 - `derivation:archive-member` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
-- `derivation:container-conversion` (2): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`
-- `derivation:head-trim` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
+- `derivation:container-conversion` (3): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-noxp-20090610-003210-heads-zip`
+- `derivation:head-trim` (5): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 - `derivation:subset` (1): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
 
 #### `dorade:`
 
 - `dorade:celv` (1): `dorade-dow6-20211230-222139-rhi-head41`
-- `dorade:csfd` (4): `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`
+- `dorade:csfd` (7): `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 - `dorade:rle` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
-- `dorade:uncompressed` (3): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`
+- `dorade:uncompressed` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 
 #### `dtype:`
 
@@ -1267,7 +1333,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `endian:`
 
 - `endian:big` (1): `dorade-cow2-20260521-225514-sur-head24`
-- `endian:little` (4): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
+- `endian:little` (7): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 
 #### `era:`
 
@@ -1277,7 +1343,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `era:2003` (2): `l2-ktlx-20030508-221041`, `l2-ktlx-20030508-221041-trim`
 - `era:2005` (2): `l2-klix-20050829-130035`, `l2-klix-20050829-130035-trim`
 - `era:2008` (6): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kdmx-20080525-205148-trim`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
-- `era:2009` (5): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`
+- `era:2009` (9): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
 - `era:2011` (4): `l2-kvnx-20110315-000203`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
 - `era:2013` (4): `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-ktlx-20130520-201643-trim`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`
 - `era:2014` (2): `l2-koax-20140616-205305`, `l2-koax-20140616-205305-trim`
@@ -1290,7 +1356,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `era:2023` (7): `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`
 - `era:2024` (5): `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`
 - `era:2025` (1): `l2-pahg-20250909-212549`
-- `era:2026` (81): `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2-kilx-20260418-013553-trim`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `dorade-cow2-20260521-225514-sur-head24`
+- `era:2026` (82): `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2-kilx-20260418-013553-trim`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-au24-20260610-000300-nci-zip-member`, `dorade-cow2-20260521-225514-sur-head24`
 
 #### `file:`
 
@@ -1326,7 +1392,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `license:`
 
 - `license:BSD-3-Clause` (2): `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`
-- `license:CC-BY-4.0` (10): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
+- `license:CC-BY-4.0` (15): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-au24-20260610-000300-nci-zip-member`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
 - `license:MIT` (7): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 - `license:imgw-attribution` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `license:public-domain` (2): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`
@@ -1379,7 +1445,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `object:`
 
 - `object:image` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
-- `object:pvol` (6): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
+- `object:pvol` (7): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-au24-20260610-000300-nci-zip-member`
 
 #### `odim:`
 
@@ -1387,11 +1453,11 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `odim:h5rad-2.1` (1): `odim-bewid-20130429-0430-pvol-dbzh-scan1`
 - `odim:h5rad-2.2` (1): `odim-norst-20170421-0908-pvol`
 - `odim:h5rad-2.3` (5): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`
-- `odim:h5rad-2.4` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
+- `odim:h5rad-2.4` (2): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-au24-20260610-000300-nci-zip-member`
 
 #### `platform:`
 
-- `platform:mobile` (8): `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
+- `platform:mobile` (11): `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 
 #### `product:`
 
@@ -1401,7 +1467,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `project:`
 
-- `project:vortex2` (5): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`
+- `project:vortex2` (9): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
 
 #### `provider:`
 
@@ -1409,12 +1475,13 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `provider:cswr` (1): `dorade-cow2-20260521-225514-sur-head24`
 - `provider:gcp-nexrad-l3` (2): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`
 - `provider:imgw-pib` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
+- `provider:nci-thredds` (1): `odim-au24-20260610-000300-nci-zip-member`
 - `provider:nict-jma` (4): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
 - `provider:open-radar-data` (5): `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 - `provider:opera-ord` (3): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`
 - `provider:pyart` (2): `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`
 - `provider:wradlib-data` (2): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`
-- `provider:zenodo` (7): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
+- `provider:zenodo` (11): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
 
 #### `quirk:`
 
@@ -1433,6 +1500,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `quirk:what-on-dataset` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `quirk:wmo-only-source` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `quirk:zero-site-coords` (2): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`
+- `quirk:zip-local-member-stream` (1): `odim-au24-20260610-000300-nci-zip-member`
 
 #### `rad-block:`
 
@@ -1482,7 +1550,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `scan:`
 
-- `scan:ppi` (13): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`
+- `scan:ppi` (16): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 - `scan:rhi` (3): `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-dow6-20211230-222139-rhi-head41`
 - `scan:sector` (1): `dorade-noxp-20090525-203211-sector`
 - `scan:sur` (1): `dorade-cow2-20260521-225514-sur-head24`
@@ -1494,6 +1562,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `site:`
 
+- `site:au24` (1): `odim-au24-20260610-000300-nci-zip-member`
 - `site:bejab` (1): `odim-bejab-20190606-0000-pvol`
 - `site:bewid` (1): `odim-bewid-20130429-0430-pvol-dbzh-scan1`
 - `site:cow2` (1): `dorade-cow2-20260521-225514-sur-head24`
@@ -1520,7 +1589,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `site:kvnx` (1): `l2-kvnx-20110315-000203`
 - `site:kvwx` (1): `l2-kvwx-20080415-235337`
 - `site:norst` (1): `odim-norst-20170421-0908-pvol`
-- `site:noxp` (5): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`
+- `site:noxp` (9): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
 - `site:pahg` (1): `l2-pahg-20250909-212549`
 - `site:pgua` (2): `l2-pgua-20230524-030945`, `l2-pgua-20230524-030945-trim`
 - `site:ram` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
@@ -1535,6 +1604,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `sweepset:`
 
 - `sweepset:noxp-20090501` (2): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`
+- `sweepset:noxp-20090610-003210` (4): `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
 
 #### `vcp:`
 
@@ -1558,7 +1628,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `writer:`
 
 - `writer:radx` (2): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`
-- `writer:sigmet_dorade` (3): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`
+- `writer:sigmet_dorade` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 
 #### `zdr:`
 

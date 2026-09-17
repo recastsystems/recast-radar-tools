@@ -1182,177 +1182,152 @@ fn be_u64(bytes: &[u8], offset: usize, member: &str) -> Result<u64, String> {
 mod tests {
     use super::*;
 
-    // -- synthetic JMA GRIB2 + ustar builders ------------------------------
+    // Real inputs: corpus entries `jma-n5-20191012-090000-rs47773` and
+    // `jma-n6-20191012-090000-rs47773` (committed single-member tars of the
+    // Osaka/Takayasu TAKA station, Typhoon Hagibis) and the full NICT tars
+    // `jma-n5-20191012-090000` / `jma-n6-20191012-090000` (downloads, 20
+    // stations each).
+    //
+    // Expected values: tools/golden_io_formats.py, section `jma` (ustar
+    // headers read with the POSIX layout; GRIB2 sections, templates 3.50120 /
+    // 4.51022 / 5.200 and the DRT 5.200 run-length stream decoded by an
+    // independent Python walker).
 
-    fn push_u16(out: &mut Vec<u8>, value: u16) {
-        out.extend_from_slice(&value.to_be_bytes());
+    const N5_TAKA: &str = "jma-n5-20191012-090000-rs47773";
+    const N6_TAKA: &str = "jma-n6-20191012-090000-rs47773";
+
+    fn corpus(id: &str) -> Vec<u8> {
+        recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
     }
 
-    fn push_u32(out: &mut Vec<u8>, value: u32) {
-        out.extend_from_slice(&value.to_be_bytes());
+    /// The member's header block plus its padded data blocks (no end-of-archive
+    /// zero blocks), cut from a real single-member tar.
+    fn member_blocks(tar: &[u8]) -> &[u8] {
+        let size = tar_octal(&tar[TAR_SIZE_OFFSET..TAR_SIZE_OFFSET + TAR_SIZE_LEN]).unwrap();
+        &tar[..TAR_BLOCK_LEN + size.div_ceil(TAR_BLOCK_LEN) * TAR_BLOCK_LEN]
     }
 
-    /// Section skeleton: 4-byte length placeholder + section number, body
-    /// appended by `fill`, length fixed afterwards.
-    fn section(number: u8, fill: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
-        let mut body = vec![0, 0, 0, 0, number];
-        fill(&mut body);
-        let len = body.len() as u32;
-        body[0..4].copy_from_slice(&len.to_be_bytes());
-        body
+    /// A tar holding the real N5 (reflectivity) member followed by the real N6
+    /// (velocity) member of TAKA, exactly as both appear in their NICT tars.
+    fn taka_n5_then_n6() -> Vec<u8> {
+        let n5 = corpus(N5_TAKA);
+        let n6 = corpus(N6_TAKA);
+        let mut tar = member_blocks(&n5).to_vec();
+        tar.extend_from_slice(&n6);
+        tar
     }
 
-    /// One-sweep JMA GRIB2 message: 2 radials x 3 gates, run-length levels
-    /// `[1, 2, 3, 1, 2, 0]` against the level table `[10.5, 20.5, 30.5]`
-    /// (decimal scale 1), category/number per `parameter`, 0.50 deg tilt.
-    fn synthetic_jma_grib2(station_id: &[u8; 4], station_number: u16, parameter: u8) -> Vec<u8> {
-        synthetic_jma_grib2_at_elevation(station_id, station_number, parameter, 50)
+    /// Stations of both full tars in `jma-n5-20191012-090000` member order
+    /// (station id, number, latitude, longitude, altitude m): ustar member
+    /// names and PDT 4.51022 octets.
+    const N5_STATIONS: [(&str, u16, f64, f64, f32); 20] = [
+        ("MURO", 47899, 33.252222, 134.177222, 198.9),
+        ("AKIT", 47582, 39.717778, 140.099444, 55.3),
+        ("KASH", 47695, 35.859722, 139.959722, 74.0),
+        ("HAIG", 47792, 34.270278, 132.593333, 746.9),
+        ("SAPP", 47415, 43.138889, 141.009722, 749.0),
+        ("ITOK", 47937, 26.153333, 127.764444, 208.2),
+        ("TANE", 47869, 30.639444, 130.978611, 290.5),
+        ("MISA", 47791, 35.541667, 133.103333, 553.0),
+        ("SEND", 47590, 38.262222, 140.896667, 98.2),
+        ("ISHI", 47920, 24.426667, 124.182222, 533.5),
+        ("KURU", 47611, 36.103056, 138.195833, 1937.1),
+        ("TAKA", 47773, 34.616389, 135.656389, 497.6),
+        ("FUNC", 47909, 28.394167, 129.551944, 318.8),
+        ("SEFU", 47806, 33.434722, 130.356944, 982.7),
+        ("KUSH", 47419, 42.960833, 144.5175, 121.5),
+        ("MAKI", 47659, 34.742778, 138.133611, 186.0),
+        ("TOJI", 47705, 36.2375, 136.142222, 107.0),
+        ("HAKO", 47432, 41.933611, 140.781389, 1141.7),
+        ("NAGO", 47636, 35.168333, 136.964722, 73.1),
+        ("YAHI", 47572, 37.718611, 138.816111, 645.0),
+    ];
+
+    /// Member order of `jma-n6-20191012-090000`.
+    const N6_ORDER: [&str; 20] = [
+        "AKIT", "MURO", "KASH", "ITOK", "SEND", "SAPP", "HAIG", "MISA", "KURU", "FUNC", "TANE",
+        "KUSH", "TAKA", "ISHI", "SEFU", "MAKI", "NAGO", "TOJI", "HAKO", "YAHI",
+    ];
+
+    /// TAKA N5 sweep elevations in scan order (26 sweeps, four descending
+    /// ladders) and their gate counts.
+    const N5_TAKA_SCAN_ORDER: [(f32, usize); 26] = [
+        (5.0, 300),
+        (2.5, 300),
+        (1.2, 300),
+        (0.3, 500),
+        (1.8, 800),
+        (1.2, 800),
+        (0.7, 800),
+        (0.3, 800),
+        (0.0, 800),
+        (25.0, 300),
+        (18.0, 300),
+        (13.0, 300),
+        (9.5, 300),
+        (6.9, 300),
+        (5.0, 300),
+        (2.5, 300),
+        (1.2, 300),
+        (0.3, 500),
+        (5.0, 800),
+        (3.6, 800),
+        (2.5, 800),
+        (1.8, 800),
+        (1.2, 800),
+        (0.7, 800),
+        (0.3, 800),
+        (0.0, 800),
+    ];
+    /// TAKA N6 sweep elevations in scan order (13 sweeps).
+    const N6_TAKA_SCAN_ORDER: [f32; 13] = [
+        5.0, 2.5, 1.2, 0.3, 25.0, 18.0, 13.0, 9.5, 6.9, 5.0, 2.5, 1.2, 0.3,
+    ];
+
+    fn assert_station(volume: &RadarVolume, id: &str) {
+        let (_, number, latitude, longitude, altitude) = *N5_STATIONS
+            .iter()
+            .find(|station| station.0 == id)
+            .expect("known station");
+        assert_eq!(volume.site.id, id);
+        let expected_name = format!("RS{number}");
+        assert_eq!(volume.site.name.as_deref(), Some(expected_name.as_str()));
+        assert!((f64::from(volume.site.latitude_deg.unwrap()) - latitude).abs() < 1e-5);
+        assert!((f64::from(volume.site.longitude_deg.unwrap()) - longitude).abs() < 1e-4);
+        assert_eq!(volume.site.elevation_m, Some(altitude), "{id} altitude");
+        assert_eq!(volume.volume_time.to_rfc3339(), "2019-10-12T09:00:00+00:00");
+        assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Ppi));
     }
 
-    /// [`synthetic_jma_grib2`] with the product elevation in centidegrees
-    /// (the per-ray table rides 0.05 deg above it, so "per-ray wins"
-    /// stays observable at any tilt).
-    fn synthetic_jma_grib2_at_elevation(
-        station_id: &[u8; 4],
-        station_number: u16,
-        parameter: u8,
-        elevation_centideg: u16,
-    ) -> Vec<u8> {
-        let radials = 2usize;
-        let gates = 3usize;
+    /// JMA level values are signed-magnitude integers scaled by 10^-2 in f32.
+    fn assert_level(actual: Option<f32>, expected: f32) {
+        let actual = actual.expect("gate value");
+        assert!((actual - expected).abs() < 1e-4, "{actual} != {expected}");
+    }
 
-        let sec1 = section(1, |body| {
-            push_u16(body, 34); // centre: Tokyo
-            push_u16(body, 0); // subcentre
-            body.extend_from_slice(&[2, 1, 0]); // tables, local tables, time sig
-            push_u16(body, 2026); // year
-            body.extend_from_slice(&[6, 12, 6, 40, 0]); // mo, dy, hr, mi, se
-            body.extend_from_slice(&[0, 0]); // production status, data type
-        });
-        let sec3 = section(3, |body| {
-            body.push(0); // source of grid definition
-            push_u32(body, (radials * gates) as u32); // total points
-            body.extend_from_slice(&[0, 0]); // optional list octets
-            push_u16(body, GRID_TEMPLATE_AZIMUTH_RANGE);
-            push_u32(body, gates as u32);
-            push_u32(body, radials as u32);
-            push_u32(body, 36_500_000); // grid centre lat (micro-deg)
-            push_u32(body, 136_500_000); // grid centre lon
-            push_u32(body, 500_000); // gate spacing (mm) -> 500 m
-            push_u32(body, 0); // range start
-            body.push(0); // scan mode: clockwise
-            push_u16(body, 4_500); // start azimuth 45.00 deg
-        });
-        let sec4 = section(4, |body| {
-            push_u16(body, 0); // coordinate values
-            push_u16(body, PRODUCT_TEMPLATE_RADAR_ELEVATION);
-            body.push(15); // parameter category: radar
-            body.push(parameter); // 1 = REF, 2 = VEL
-            body.extend_from_slice(&[0, 0, 0]); // pad to octet 15
-            push_u32(body, 36_512_345); // site lat 36.512345
-            push_u32(body, 136_987_654); // site lon 136.987654
-            push_u16(body, 1234); // altitude 123.4 m
-            body.extend_from_slice(station_id);
-            push_u16(body, station_number);
-            push_u16(body, 0); // magnetic declination
-            push_u32(body, 5_370_000); // tx frequency kHz
-            body.extend_from_slice(&[0, 0]); // polarization, operation mode
-            body.push(0); // pad to octet 40
-            body.extend_from_slice(&[0, 0]); // qc, clutter filter
-            push_u16(body, elevation_centideg); // product elevation
-            body.push(0); // pad to octet 44
-            push_u16(body, 1_000); // representative PRF 1
-            push_u16(body, 1_000); // representative PRF 2
-            push_u16(body, 1_000); // representative PRF 3
-            push_u16(body, 0); // obs start offset
-            push_u16(body, 0); // obs end offset
-            body.extend_from_slice(&[0; 6]); // pad to octet 60
-            for _ in 0..radials {
-                push_u16(body, elevation_centideg + 5); // per-ray elevation
-                push_u16(body, 1_000); // per-ray PRF
+    /// Cut-by-cut equality with F32 planes compared bitwise (NaN = missing).
+    fn assert_same_cuts(left: &RadarVolume, right: &RadarVolume) {
+        assert_eq!(left.cuts.len(), right.cuts.len());
+        for (a, b) in left.cuts.iter().zip(&right.cuts) {
+            assert_eq!(a.elevation_deg, b.elevation_deg);
+            assert_eq!(a.radials, b.radials);
+            assert_eq!(a.moments.len(), b.moments.len());
+            for (moment, grid) in &a.moments {
+                let (MomentStorage::F32(x), MomentStorage::F32(y)) =
+                    (&grid.storage, &b.moments[moment].storage)
+                else {
+                    panic!("JMA planes are F32");
+                };
+                assert!(
+                    x.iter()
+                        .map(|v| v.to_bits())
+                        .eq(y.iter().map(|v| v.to_bits()))
+                );
             }
-        });
-        let sec5 = section(5, |body| {
-            push_u32(body, (radials * gates) as u32);
-            push_u16(body, DATA_TEMPLATE_RUN_LENGTH);
-            body.push(8); // bits per packed value
-            push_u16(body, 250); // max level value used (V)
-            push_u16(body, 3); // level table size (M)
-            body.push(1); // decimal scale factor
-            push_u16(body, 105); // level 1 -> 10.5
-            push_u16(body, 205); // level 2 -> 20.5
-            push_u16(body, 305); // level 3 -> 30.5
-        });
-        let sec6 = section(6, |body| body.push(255));
-        let sec7 = section(7, |body| {
-            body.extend_from_slice(&[1, 2, 3, 1, 2, 0]); // literal levels
-        });
-
-        let mut msg = Vec::new();
-        msg.extend_from_slice(GRIB_MAGIC);
-        msg.extend_from_slice(&[0, 0]); // reserved
-        msg.push(0); // discipline
-        msg.push(2); // edition
-        msg.extend_from_slice(&[0; 8]); // total length placeholder
-        for sec in [sec1, sec3, sec4, sec5, sec6, sec7] {
-            msg.extend_from_slice(&sec);
         }
-        msg.extend_from_slice(GRIB_END_MAGIC);
-        let total = msg.len() as u64;
-        msg[8..16].copy_from_slice(&total.to_be_bytes());
-        msg
     }
 
-    fn tar_member_blocks(name: &str, data: &[u8]) -> Vec<u8> {
-        let mut header = vec![0u8; TAR_BLOCK_LEN];
-        header[..name.len()].copy_from_slice(name.as_bytes());
-        header[100..107].copy_from_slice(b"0000644"); // mode
-        header[108..115].copy_from_slice(b"0000000"); // uid
-        header[116..123].copy_from_slice(b"0000000"); // gid
-        let size = format!("{:011o}", data.len());
-        header[TAR_SIZE_OFFSET..TAR_SIZE_OFFSET + 11].copy_from_slice(size.as_bytes());
-        header[136..147].copy_from_slice(b"00000000000"); // mtime
-        header[TAR_TYPEFLAG_OFFSET] = b'0';
-        header[TAR_MAGIC_OFFSET..TAR_MAGIC_OFFSET + 6].copy_from_slice(b"ustar\0");
-        header[263..265].copy_from_slice(b"00"); // version
-        // Checksum: header bytes summed with the checksum field as spaces.
-        header[148..156].copy_from_slice(b"        ");
-        let sum: u32 = header.iter().map(|&byte| u32::from(byte)).sum();
-        let checksum = format!("{sum:06o}\0 ");
-        header[148..156].copy_from_slice(checksum.as_bytes());
-
-        let mut out = header;
-        out.extend_from_slice(data);
-        let padding = data.len().div_ceil(TAR_BLOCK_LEN) * TAR_BLOCK_LEN - data.len();
-        out.extend(std::iter::repeat_n(0u8, padding));
-        out
-    }
-
-    fn tar_archive(members: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut out = Vec::new();
-        for (name, data) in members {
-            out.extend_from_slice(&tar_member_blocks(name, data));
-        }
-        out.extend(std::iter::repeat_n(0u8, TAR_BLOCK_LEN * 2));
-        out
-    }
-
-    fn member_name(station_number: u16, product: &str) -> String {
-        format!(
-            "Z__C_RJTD_20260612064000_RDR_JMAGPV_RS{station_number}_Gar0p5km0p7deg_P{product}_ANAL_grib2.bin"
-        )
-    }
-
-    fn two_station_tar() -> Vec<u8> {
-        let alfa = synthetic_jma_grib2(b"ALFA", 47001, 1);
-        let brvo = synthetic_jma_grib2(b"BRVO", 47002, 2);
-        tar_archive(&[
-            (&member_name(47001, "ze"), &alfa),
-            (&member_name(47002, "vr"), &brvo),
-        ])
-    }
-
-    // -- tests ---------------------------------------------------------------
+    // -- pure run-length / signed-magnitude checks ------------------------
 
     #[test]
     fn decodes_signed_magnitude_fields() {
@@ -1415,21 +1390,27 @@ mod tests {
 
     #[test]
     fn grid_axis_limits_reject_pathological_radial_tables() {
-        let section = section(3, |body| {
-            body.push(0);
-            push_u32(body, (MAX_GRID_RADIALS + 1) as u32);
-            body.extend_from_slice(&[0, 0]);
-            push_u16(body, GRID_TEMPLATE_AZIMUTH_RANGE);
-            push_u32(body, 1);
-            push_u32(body, (MAX_GRID_RADIALS + 1) as u32);
-            push_u32(body, 36_500_000);
-            push_u32(body, 136_500_000);
-            push_u32(body, 500_000);
-            push_u32(body, 0);
-            body.push(0);
-            push_u16(body, 0);
-        });
-        let err = parse_grid(&section, "pathological-grid")
+        // First GRIB2 section 3 of the TAKA N5 member: member data at tar
+        // offset 512, section at message offset 37 (golden
+        // n5_rs47773.sweeps[0].grid.section3_offset).
+        let tar = corpus(N5_TAKA);
+        let start = TAR_BLOCK_LEN + 37;
+        let length = u32::from_be_bytes(tar[start..start + 4].try_into().unwrap()) as usize;
+        let mut section = tar[start..start + length].to_vec();
+        assert_eq!(section[4], 3);
+        let grid = parse_grid(&section, "RS47773").expect("real grid section");
+        // golden: 300 gates x 512 radials (153600 points), 500 m gates from
+        // 0 m, clockwise, start azimuth 11.25 deg.
+        assert_eq!((grid.gate_count, grid.radial_count), (300, 512));
+        assert_eq!((grid.gate_spacing_m, grid.range_start_m), (500.0, 0.0));
+        assert!(grid.scans_clockwise());
+        assert_eq!(grid.start_azimuth_deg, 11.25);
+
+        // Claim MAX_GRID_RADIALS + 1 radials (and a consistent point count).
+        let radials = (MAX_GRID_RADIALS + 1) as u32;
+        section[18..22].copy_from_slice(&radials.to_be_bytes());
+        section[6..10].copy_from_slice(&(300 * radials).to_be_bytes());
+        let err = parse_grid(&section, "RS47773")
             .err()
             .expect("pathological grid must be rejected");
         assert!(
@@ -1440,15 +1421,14 @@ mod tests {
 
     #[test]
     fn oversized_tar_member_is_rejected_from_its_header() {
-        let mut header = vec![0u8; TAR_BLOCK_LEN];
-        let name = member_name(47001, "ze");
-        header[..name.len()].copy_from_slice(name.as_bytes());
-        let size = format!("{:011o}", MAX_JMA_MEMBER_BYTES + 1);
-        header[TAR_SIZE_OFFSET..TAR_SIZE_OFFSET + 11].copy_from_slice(size.as_bytes());
-        header[TAR_TYPEFLAG_OFFSET] = b'0';
-        let err = ustar_members(&header)
-            .err()
-            .expect("oversized member error");
+        let mut tar = corpus(N5_TAKA);
+        // golden n5_rs47773.tar.members[0].size = 1752093.
+        let members = ustar_members(&tar).expect("real tar");
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].data.len(), 1_752_093);
+        let size = format!("{:011o}\0", MAX_JMA_MEMBER_BYTES + 1);
+        tar[TAR_SIZE_OFFSET..TAR_SIZE_OFFSET + TAR_SIZE_LEN].copy_from_slice(size.as_bytes());
+        let err = ustar_members(&tar).err().expect("oversized member error");
         assert!(
             err.contains("declares") && err.contains("limit"),
             "unexpected error: {err}"
@@ -1457,96 +1437,170 @@ mod tests {
 
     #[test]
     fn sniffs_jma_tar_bytes() {
-        let tar = two_station_tar();
-        assert!(looks_like_jma_tar_bytes(&tar));
+        // Manifest format jma-grib2-tar; ustar magic at byte 257 and a
+        // Z__C_RJTD_*_RDR_JMAGPV member name.
+        let n5 = corpus(N5_TAKA);
+        assert_eq!(&n5[TAR_MAGIC_OFFSET..TAR_MAGIC_OFFSET + 5], b"ustar");
+        assert!(looks_like_jma_tar_bytes(&n5));
+        assert!(looks_like_jma_tar_bytes(&corpus(N6_TAKA)));
         // Too short for one header block.
-        assert!(!looks_like_jma_tar_bytes(&tar[..TAR_BLOCK_LEN - 1]));
-        // ustar magic with a non-JMA member name.
-        let other = tar_archive(&[("plain.txt", b"hello".as_slice())]);
-        assert!(!looks_like_jma_tar_bytes(&other));
-        // Non-tar bytes.
-        assert!(!looks_like_jma_tar_bytes(&[0u8; 1024]));
+        assert!(!looks_like_jma_tar_bytes(&n5[..TAR_BLOCK_LEN - 1]));
+        // The same real ustar header naming a non-JMA member.
+        let mut renamed = n5.clone();
+        renamed[..10].copy_from_slice(b"notjma.bin");
+        assert!(!looks_like_jma_tar_bytes(&renamed));
+        // Non-tar real files.
+        assert!(!looks_like_jma_tar_bytes(&corpus(
+            "odim-bejab-20190606-0000-pvol"
+        )));
+        assert!(!looks_like_jma_tar_bytes(&corpus(
+            "l2-ktlx-20240315-000217-trim"
+        )));
     }
 
-    /// Field report: tilt #00 on JMA radars showed the ~25° cone — the
-    /// GRIB members carry sweeps high-tilt-first, and a station split
-    /// across tar members restarted its sweep numbering. The ladder must
-    /// come back lowest beam first with sequential numbering.
+    /// Field report: tilt #00 on JMA radars showed the ~25 deg cone because
+    /// members carry sweeps high-tilt-first, and a station split across tar
+    /// members restarted its numbering. The ladder must come back lowest beam
+    /// first with sequential numbering.
     #[test]
     fn cuts_sort_lowest_elevation_first_across_members() {
-        let high = synthetic_jma_grib2_at_elevation(b"ALFA", 47001, 1, 2500); // 25.0 deg
-        let low = synthetic_jma_grib2_at_elevation(b"ALFA", 47001, 1, 50); // 0.5 deg
-        let tar = tar_archive(&[
-            (&member_name(47001, "zeh"), &high),
-            (&member_name(47001, "zel"), &low),
-        ]);
-        let volumes = decode_jma_tar_volumes(&tar, None).expect("decode");
+        let volumes =
+            decode_jma_tar_volumes(&taka_n5_then_n6(), None).expect("decode TAKA N5 + N6");
         assert_eq!(volumes.len(), 1, "same station must merge");
         let cuts = &volumes[0].cuts;
-        assert_eq!(cuts.len(), 2);
-        assert_eq!(cuts[0].elevation_deg, 0.5);
-        assert_eq!(cuts[1].elevation_deg, 25.0);
-        assert_eq!(cuts[0].elevation_number, Some(1));
-        assert_eq!(cuts[1].elevation_number, Some(2));
+        assert_eq!(cuts.len(), 26 + 13);
+
+        // Stable sort of the N5 scan-order elevations followed by the N6 ones.
+        let mut expected: Vec<(f32, MomentType)> = N5_TAKA_SCAN_ORDER
+            .iter()
+            .map(|(elevation, _)| (*elevation, MomentType::Reflectivity))
+            .chain(
+                N6_TAKA_SCAN_ORDER
+                    .iter()
+                    .map(|elevation| (*elevation, MomentType::Velocity)),
+            )
+            .collect();
+        expected.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (index, (cut, (elevation, moment))) in cuts.iter().zip(&expected).enumerate() {
+            assert_eq!(cut.elevation_deg, *elevation, "cut {index}");
+            assert!(cut.moments.contains_key(moment), "cut {index} {moment}");
+            assert_eq!(cut.elevation_number, Some(index as u8 + 1));
+        }
+        assert_eq!(cuts[0].elevation_deg, 0.0);
+        assert_eq!(cuts[38].elevation_deg, 25.0);
+    }
+
+    #[test]
+    fn decodes_single_station_member_with_real_gate_values() {
+        let volumes = decode_jma_tar_volumes(&corpus(N5_TAKA), None).expect("decode TAKA N5");
+        assert_eq!(volumes.len(), 1);
+        let volume = &volumes[0];
+        assert_station(volume, "TAKA");
+        assert_eq!(volume.metadata.decoded_radial_count, 26 * 512);
+
+        // Stable sort: the two 0.0 deg sweeps are scan indices 8 then 25.
+        let lowest = &volume.cuts[0];
+        assert_eq!(lowest.elevation_deg, 0.0);
+        assert_eq!(lowest.radials.len(), 512);
+        let gates = &lowest.radials[0].gate_range;
+        assert_eq!(
+            (gates.first_gate_m, gates.gate_spacing_m, gates.gate_count),
+            (0, 500, 800)
+        );
+        // Scan index 8: start azimuth 261.56 deg, clockwise 360/512 steps;
+        // per-ray elevation table 0.09 deg wins over the 0.0 product angle.
+        assert_eq!(lowest.radials[0].azimuth_deg, 261.56);
+        assert!((lowest.radials[1].azimuth_deg - (261.56 + 0.703_125)).abs() < 1e-4);
+        assert_eq!(lowest.radials[0].elevation_deg, 0.09);
+        let reflectivity = &lowest.moments[&MomentType::Reflectivity];
+        assert_level(reflectivity.scaled_value(100, 20), 12.96);
+        assert_level(reflectivity.scaled_value(0, 0), 0.0);
+        assert_eq!(volume.cuts[1].radials[0].azimuth_deg, 142.73);
+        assert_level(
+            volume.cuts[1].moments[&MomentType::Reflectivity].scaled_value(256, 100),
+            13.6,
+        );
+        // Scan index 3 (0.3 deg, 500 gates, per-ray 0.26 deg).
+        let third = &volume.cuts[2];
+        assert_eq!(third.radials[0].gate_range.gate_count, 500);
+        assert_eq!(third.radials[0].elevation_deg, 0.26);
+        assert_level(
+            third.moments[&MomentType::Reflectivity].scaled_value(100, 20),
+            10.08,
+        );
+        assert_level(
+            third.moments[&MomentType::Reflectivity].scaled_value(256, 100),
+            10.72,
+        );
+
+        // N6 velocity: level 0 = missing -> NaN. Sorted cut 0 is scan index 3
+        // (0.3 deg, 500 gates, per-ray elevation table missing -> product
+        // angle, first valid gate [0,1] = -4.0 m/s, 66708 valid gates).
+        let velocity_volume = &decode_jma_tar_volumes(&corpus(N6_TAKA), None).unwrap()[0];
+        let low = &velocity_volume.cuts[0];
+        assert_eq!(low.radials[0].elevation_deg, 0.3);
+        assert_eq!(low.radials[0].azimuth_deg, 243.98);
+        let velocity = &low.moments[&MomentType::Velocity];
+        assert!(velocity.scaled_value(0, 0).is_some_and(f32::is_nan));
+        assert_level(velocity.scaled_value(0, 1), -4.0);
+        assert_level(velocity.scaled_value(100, 20), -18.5);
+        let valid = |grid: &MomentGrid| {
+            let MomentStorage::F32(values) = &grid.storage else {
+                panic!("JMA planes are F32");
+            };
+            values.iter().filter(|value| value.is_finite()).count()
+        };
+        assert_eq!(valid(velocity), 66_708);
+        // Every N6 sweep: 547108 non-missing gates in total (manifest).
+        let total: usize = velocity_volume
+            .cuts
+            .iter()
+            .map(|cut| valid(&cut.moments[&MomentType::Velocity]))
+            .sum();
+        assert_eq!(total, 547_108);
     }
 
     #[test]
     fn decodes_every_station_in_archive_order() {
-        let tar = two_station_tar();
-        let volumes = decode_jma_tar_volumes(&tar, None).expect("two-station decode");
-        assert_eq!(volumes.len(), 2, "every station must come back");
-        assert_eq!(volumes[0].site.id, "ALFA");
-        assert_eq!(volumes[1].site.id, "BRVO");
-        assert_eq!(
-            volumes[0].volume_time.to_rfc3339(),
-            "2026-06-12T06:40:00+00:00"
-        );
-
-        let alfa = &volumes[0];
-        assert_eq!(alfa.site.name.as_deref(), Some("RS47001"));
-        let lat = f64::from(alfa.site.latitude_deg.expect("site latitude"));
-        let lon = f64::from(alfa.site.longitude_deg.expect("site longitude"));
-        assert!((lat - 36.512345).abs() < 1e-5, "lat was {lat}");
-        assert!((lon - 136.987654).abs() < 1e-4, "lon was {lon}");
-        assert_eq!(alfa.site.elevation_m, Some(123.4));
-        assert_eq!(alfa.cuts.len(), 1);
-        assert_eq!(alfa.metadata.scan_mode, Some(ScanMode::Ppi));
-
-        let cut = &alfa.cuts[0];
-        assert_eq!(cut.elevation_deg, 0.5);
-        assert_eq!(cut.elevation_number, Some(1));
-        assert_eq!(cut.radials.len(), 2);
-        assert_eq!(cut.radials[0].azimuth_deg, 45.0);
-        assert_eq!(cut.radials[1].azimuth_deg, 225.0);
-        assert_eq!(cut.radials[0].elevation_deg, 0.55); // per-ray table wins
-        assert_eq!(cut.radials[0].gate_range.gate_spacing_m, 500);
-        assert_eq!(cut.radials[0].gate_range.gate_count, 3);
-
-        let grid = cut
-            .moments
-            .get(&MomentType::Reflectivity)
-            .expect("REF moment");
-        assert_eq!(grid.scaled_value(0, 0), Some(10.5));
-        assert_eq!(grid.scaled_value(0, 1), Some(20.5));
-        assert_eq!(grid.scaled_value(0, 2), Some(30.5));
-        assert_eq!(grid.scaled_value(1, 1), Some(20.5));
-        assert!(grid.scaled_value(1, 2).is_some_and(f32::is_nan)); // level 0
-
-        // The velocity member mapped to the Velocity moment.
-        assert!(
-            volumes[1].cuts[0]
-                .moments
-                .contains_key(&MomentType::Velocity)
-        );
+        // The full N6 (velocity) tar: 20 members of 13 sweeps each, 44032000
+        // grid points (golden n6_full.total_grid_points). The full N5 tar holds
+        // 150528000 points (n5_full.total_grid_points), over the 67108864-point
+        // MAX_POINTS_PER_DECODE limit, so an unfiltered N5 decode is refused;
+        // N5 stations are decoded with a site filter below.
+        let tar = std::fs::read(recast_radar_testdata::require_file!(
+            "jma-n6-20191012-090000"
+        ))
+        .expect("read N6 tar");
+        let volumes = decode_jma_tar_volumes(&tar, None).expect("20-station decode");
+        assert_eq!(volumes.len(), 20, "every station must come back");
+        for (volume, id) in volumes.iter().zip(N6_ORDER) {
+            assert_station(volume, id);
+            assert_eq!(volume.cuts.len(), 13, "{id}");
+            assert!(volume.cuts.iter().all(|cut| cut.radials.len() == 512));
+            assert!(
+                volume
+                    .cuts
+                    .iter()
+                    .all(|cut| cut.moments.contains_key(&MomentType::Velocity))
+            );
+        }
+        // The TAKA member decodes exactly as the committed single-member tar.
+        let taka = decode_jma_tar_volumes(&corpus(N6_TAKA), None)
+            .unwrap()
+            .remove(0);
+        assert_same_cuts(&volumes[12], &taka);
     }
 
     #[test]
     fn site_filter_selects_one_station_by_id_or_number() {
-        let tar = two_station_tar();
-        for filter in ["BRVO", "brvo", "RS47002", "47002"] {
+        let tar = std::fs::read(recast_radar_testdata::require_file!(
+            "jma-n5-20191012-090000"
+        ))
+        .expect("read N5 tar");
+        for filter in ["TAKA", "taka", "RS47773", "47773"] {
             let volumes = decode_jma_tar_volumes(&tar, Some(filter)).expect("filtered decode");
             assert_eq!(volumes.len(), 1, "filter '{filter}'");
-            assert_eq!(volumes[0].site.id, "BRVO", "filter '{filter}'");
+            assert_station(&volumes[0], "TAKA");
         }
         let err = decode_jma_tar_volumes(&tar, Some("NOPE")).unwrap_err();
         assert!(err.to_string().contains("NOPE"), "unexpected error: {err}");
@@ -1554,66 +1608,141 @@ mod tests {
 
     #[test]
     fn first_station_decode_takes_the_first_member_only() {
-        let tar = two_station_tar();
-        let volume = decode_jma_tar_first_station(&tar).expect("first-station decode");
-        assert_eq!(volume.site.id, "ALFA");
+        let n5 = std::fs::read(recast_radar_testdata::require_file!(
+            "jma-n5-20191012-090000"
+        ))
+        .expect("read N5 tar");
+        let volume = decode_jma_tar_first_station(&n5).expect("first-station decode");
+        assert_station(&volume, "MURO"); // first member RS47899
+        assert_eq!(volume.cuts.len(), 26);
+        // The N6 tar lists AKIT (RS47582) first.
+        let n6 = std::fs::read(recast_radar_testdata::require_file!(
+            "jma-n6-20191012-090000"
+        ))
+        .expect("read N6 tar");
+        let volume = decode_jma_tar_first_station(&n6).expect("first-station decode");
+        assert_eq!(volume.site.id, "AKIT");
+        assert_eq!(volume.cuts.len(), 13);
     }
 
     #[test]
     fn station_headers_skip_gate_data_and_dedupe() {
-        let alfa = synthetic_jma_grib2(b"ALFA", 47001, 1);
-        let tar = tar_archive(&[
-            (&member_name(47001, "ze"), alfa.as_slice()),
-            (&member_name(47001, "ze"), alfa.as_slice()), // duplicate station
-        ]);
-        let stations = jma_tar_station_headers(&tar).expect("station headers");
+        // Committed members: the TAKA N5 and N6 members name one station.
+        let stations = jma_tar_station_headers(&taka_n5_then_n6()).expect("station headers");
         assert_eq!(stations.len(), 1);
-        assert_eq!(stations[0].id, "ALFA");
-        assert_eq!(stations[0].number, 47001);
-        assert!((stations[0].latitude_deg - 36.512345).abs() < 1e-9);
-        assert!((stations[0].longitude_deg - 136.987654).abs() < 1e-9);
+        assert_eq!(
+            (stations[0].id.as_str(), stations[0].number),
+            ("TAKA", 47773)
+        );
+        assert!((stations[0].latitude_deg - 34.616389).abs() < 1e-9);
+        assert!((stations[0].longitude_deg - 135.656389).abs() < 1e-9);
+        assert_eq!(stations[0].elevation_m, Some(497.6));
+
+        // Full N5 members followed by the full N6 tar: 40 members, 20 unique
+        // stations in first-seen (N5) order.
+        let n5 = std::fs::read(recast_radar_testdata::require_file!(
+            "jma-n5-20191012-090000"
+        ))
+        .expect("read N5 tar");
+        let n6 = std::fs::read(recast_radar_testdata::require_file!(
+            "jma-n6-20191012-090000"
+        ))
+        .expect("read N6 tar");
+        // golden n5_full: last member YAHI data ends at 35083264 + 4012647.
+        let n5_members_end = (35_083_264 + 4_012_647usize).div_ceil(TAR_BLOCK_LEN) * TAR_BLOCK_LEN;
+        let mut both = n5[..n5_members_end].to_vec();
+        both.extend_from_slice(&n6);
+        let stations = jma_tar_station_headers(&both).expect("station headers");
+        assert_eq!(stations.len(), 20);
+        for (station, (id, number, latitude, longitude, altitude)) in
+            stations.iter().zip(N5_STATIONS)
+        {
+            assert_eq!((station.id.as_str(), station.number), (id, number));
+            assert!((station.latitude_deg - latitude).abs() < 1e-9, "{id}");
+            assert!((station.longitude_deg - longitude).abs() < 1e-9, "{id}");
+            assert_eq!(station.elevation_m, Some(altitude), "{id}");
+        }
     }
 
     #[test]
     fn repeated_station_members_merge_into_one_volume() {
-        let alfa = synthetic_jma_grib2(b"ALFA", 47001, 1);
-        let tar = tar_archive(&[
-            (&member_name(47001, "ze"), alfa.as_slice()),
-            (&member_name(47001, "ze"), alfa.as_slice()),
-        ]);
-        let volumes = decode_jma_tar_volumes(&tar, None).expect("merged decode");
+        let volumes = decode_jma_tar_volumes(&taka_n5_then_n6(), None).expect("merged decode");
         assert_eq!(volumes.len(), 1);
-        assert_eq!(volumes[0].cuts.len(), 2, "cuts append in arrival order");
-        assert_eq!(volumes[0].metadata.decoded_radial_count, 4);
+        let volume = &volumes[0];
+        assert_station(volume, "TAKA");
+        assert_eq!(volume.metadata.message_count, 26 + 13);
+        assert_eq!(volume.metadata.decoded_radial_count, 39 * 512);
+        let reflectivity_cuts = volume
+            .cuts
+            .iter()
+            .filter(|cut| cut.moments.contains_key(&MomentType::Reflectivity))
+            .count();
+        let velocity_cuts = volume
+            .cuts
+            .iter()
+            .filter(|cut| cut.moments.contains_key(&MomentType::Velocity))
+            .count();
+        assert_eq!((reflectivity_cuts, velocity_cuts), (26, 13));
     }
 
     #[test]
     fn corrupt_member_is_skipped_but_alone_is_an_error() {
-        let alfa = synthetic_jma_grib2(b"ALFA", 47001, 1);
-        let garbage = vec![0xAAu8; 64];
-        let mixed = tar_archive(&[
-            (&member_name(47999, "ze"), garbage.as_slice()),
-            (&member_name(47001, "ze"), alfa.as_slice()),
-        ]);
-        let volumes = decode_jma_tar_volumes(&mixed, None).expect("good member survives");
-        assert_eq!(volumes.len(), 1);
-        assert_eq!(volumes[0].site.id, "ALFA");
-
-        let only_garbage = tar_archive(&[(&member_name(47999, "ze"), garbage.as_slice())]);
-        let err = decode_jma_tar_volumes(&only_garbage, None).unwrap_err();
+        // A lone TAKA member whose GRIB indicator is overwritten.
+        let mut lone = corpus(N5_TAKA);
+        assert_eq!(&lone[TAR_BLOCK_LEN..TAR_BLOCK_LEN + 4], GRIB_MAGIC);
+        lone[TAR_BLOCK_LEN..TAR_BLOCK_LEN + 4].fill(0);
+        let err = decode_jma_tar_volumes(&lone, None).unwrap_err();
         assert!(err.to_string().contains("GRIB"), "unexpected error: {err}");
 
-        let no_members = tar_archive(&[("notes.txt", b"hi".as_slice())]);
-        let err = decode_jma_tar_volumes(&no_members, None).unwrap_err();
+        // The same tar whose only member is no longer a JMA data member.
+        let mut renamed = corpus(N5_TAKA);
+        renamed[..10].copy_from_slice(b"notjma.bin");
+        let err = decode_jma_tar_volumes(&renamed, None).unwrap_err();
         assert!(
             err.to_string().contains("no Z__C_RJTD"),
             "unexpected error: {err}"
         );
+
+        // TAKA N5 + N6 with the N5 member corrupted: the N6 member survives.
+        let mut mixed = taka_n5_then_n6();
+        mixed[TAR_BLOCK_LEN..TAR_BLOCK_LEN + 4].fill(0);
+        let volumes = decode_jma_tar_volumes(&mixed, None).expect("good member survives");
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].site.id, "TAKA");
+        assert_eq!(volumes[0].cuts.len(), 13);
+        assert!(
+            volumes[0]
+                .cuts
+                .iter()
+                .all(|cut| cut.moments.contains_key(&MomentType::Velocity))
+        );
+    }
+
+    #[test]
+    fn corrupt_station_in_full_archive_is_skipped() {
+        // Full N6 tar with MURO's (second member, data at 1178624) GRIB
+        // indicator overwritten: the other 19 stations decode in order.
+        let mut tar = std::fs::read(recast_radar_testdata::require_file!(
+            "jma-n6-20191012-090000"
+        ))
+        .expect("read N6 tar");
+        const MURO_DATA: usize = 1_178_624;
+        assert_eq!(&tar[MURO_DATA..MURO_DATA + 4], GRIB_MAGIC);
+        tar[MURO_DATA..MURO_DATA + 4].fill(0);
+        let expected: Vec<&str> = N6_ORDER.into_iter().filter(|id| *id != "MURO").collect();
+        let volumes = decode_jma_tar_volumes(&tar, None).expect("19 stations survive");
+        let ids: Vec<&str> = volumes
+            .iter()
+            .map(|volume| volume.site.id.as_str())
+            .collect();
+        assert_eq!(ids, expected);
+        let stations = jma_tar_station_headers(&tar).expect("headers survive");
+        assert_eq!(stations.len(), 19);
     }
 
     #[test]
     fn truncated_tar_member_is_an_error_not_a_panic() {
-        let tar = two_station_tar();
+        let tar = corpus(N5_TAKA);
         let err = decode_jma_tar_volumes(&tar[..TAR_BLOCK_LEN + 17], None).unwrap_err();
         assert!(
             err.to_string().contains("overruns"),

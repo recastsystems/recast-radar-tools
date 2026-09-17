@@ -981,6 +981,7 @@ dependencies = [
  "recast-radar-io-jma",
  "recast-radar-io-nexrad",
  "recast-radar-io-odim",
+ "recast-radar-testdata",
  "thiserror",
 ]
 
@@ -992,6 +993,7 @@ dependencies = [
  "recast-radar-core",
  "recast-radar-io-dorade",
  "recast-radar-io-odim",
+ "recast-radar-testdata",
  "thiserror",
 ]
 
@@ -1003,6 +1005,7 @@ dependencies = [
  "rayon",
  "recast-radar-core",
  "recast-radar-io-nexrad",
+ "recast-radar-testdata",
  "thiserror",
  "zip",
 ]
@@ -1013,6 +1016,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "recast-radar-core",
+ "recast-radar-testdata",
  "thiserror",
 ]
 
@@ -1035,6 +1039,7 @@ dependencies = [
  "chrono",
  "flate2",
  "recast-radar-core",
+ "recast-radar-testdata",
  "thiserror",
 ]
 

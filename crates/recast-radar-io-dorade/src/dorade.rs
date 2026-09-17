@@ -1102,153 +1102,66 @@ mod tests {
     use super::*;
     use recast_radar_core::MomentStorage;
 
-    fn put_i16(block: &mut [u8], offset: usize, value: i16, endian: Endian) {
-        let bytes = match endian {
-            Endian::Little => value.to_le_bytes(),
-            Endian::Big => value.to_be_bytes(),
-        };
-        block[offset..offset + 2].copy_from_slice(&bytes);
+    // Real inputs (corpus ids below). Expected values:
+    // tools/golden_io_formats.py, section `dorade` (a DORADE block walker and
+    // HRD run-length decoder written from the DORADE format document and the
+    // lrose-core DoradeData.hh offsets; physical = (word - bias) / scale).
+    const COW2: &str = "dorade-cow2-20260521-225514-sur-head24";
+    const DOW6_RHI: &str = "dorade-dow6-20211230-222139-rhi-head41";
+    const NOXP_SECTOR: &str = "dorade-noxp-20090525-203211-sector";
+    const NOXP_0610_05: &str = "dorade-noxp-20090610-003210-ppi-head6";
+    const NOXP_0610_10: &str = "dorade-noxp-20090610-003222-ppi-head6";
+    const NOXP_0610_20: &str = "dorade-noxp-20090610-003226-ppi-head6";
+
+    fn corpus(id: &str) -> Vec<u8> {
+        recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
     }
 
-    fn put_i32(block: &mut [u8], offset: usize, value: i32, endian: Endian) {
-        let bytes = match endian {
-            Endian::Little => value.to_le_bytes(),
-            Endian::Big => value.to_be_bytes(),
-        };
-        block[offset..offset + 4].copy_from_slice(&bytes);
-    }
-
-    fn put_f32(block: &mut [u8], offset: usize, value: f32, endian: Endian) {
-        put_i32(block, offset, value.to_bits() as i32, endian);
-    }
-
-    fn base_block(id: &[u8; 4], len: usize, endian: Endian) -> Vec<u8> {
-        let mut block = vec![0u8; len];
-        block[..4].copy_from_slice(id);
-        put_i32(&mut block, 4, len as i32, endian);
-        block
-    }
-
-    struct Synth {
-        endian: Endian,
-        compressed: bool,
-    }
-
-    impl Synth {
-        fn build(&self, rays: &[(f32, f32, i32, &[i16])]) -> Vec<u8> {
-            let endian = self.endian;
-            let mut bytes = Vec::new();
-
-            let mut sswb = base_block(b"SSWB", 200, endian);
-            put_i32(&mut sswb, 12, 1_779_404_114, endian); // 2026-05-21T22:55:14Z
-            put_i32(&mut sswb, 16, 1_779_404_126, endian);
-            bytes.extend(sswb);
-
-            let mut vold = base_block(b"VOLD", 72, endian);
-            put_i16(&mut vold, 10, 42, endian); // volume number
-            put_i16(&mut vold, 36, 2026, endian);
-            put_i16(&mut vold, 38, 5, endian);
-            put_i16(&mut vold, 40, 21, endian);
-            put_i16(&mut vold, 42, 22, endian);
-            put_i16(&mut vold, 44, 55, endian);
-            put_i16(&mut vold, 46, 14, endian);
-            bytes.extend(vold);
-
-            let mut radd = base_block(b"RADD", 144, endian);
-            radd[8..12].copy_from_slice(b"TST1");
-            put_i16(&mut radd, 50, 8, endian); // scan mode SUR
-            put_i16(&mut radd, 68, if self.compressed { 1 } else { 0 }, endian);
-            put_f32(&mut radd, 80, -103.2927, endian); // lon
-            put_f32(&mut radd, 84, 39.74, endian); // lat
-            put_f32(&mut radd, 88, 1.519, endian); // alt km
-            put_f32(&mut radd, 92, 68.76, endian); // eff unamb vel
-            put_i16(&mut radd, 102, 2, endian); // num ipps
-            put_f32(&mut radd, 104, 5.45, endian); // freq GHz
-            put_f32(&mut radd, 124, 0.4, endian); // prt1 ms
-            put_f32(&mut radd, 128, 0.6, endian); // prt2 ms
-            bytes.extend(radd);
-
-            let mut parm = base_block(b"PARM", 216, endian);
-            parm[8..11].copy_from_slice(b"DBZ");
-            put_i16(&mut parm, 78, 2, endian); // 16-bit
-            put_f32(&mut parm, 92, 100.0, endian); // scale
-            put_f32(&mut parm, 96, 0.0, endian); // bias
-            put_i32(&mut parm, 100, -32768, endian); // bad
-            put_i32(&mut parm, 200, 4, endian); // cells
-            put_f32(&mut parm, 204, 50.0, endian);
-            put_f32(&mut parm, 208, 100.0, endian);
-            bytes.extend(parm);
-
-            let mut csfd = base_block(b"CSFD", 64, endian);
-            put_i32(&mut csfd, 8, 1, endian); // one segment
-            put_f32(&mut csfd, 12, 50.0, endian); // first cell m
-            put_f32(&mut csfd, 16, 100.0, endian); // spacing m
-            put_i16(&mut csfd, 48, 4, endian); // cells
-            bytes.extend(csfd);
-
-            let mut swib = base_block(b"SWIB", 40, endian);
-            put_i32(&mut swib, 16, 6, endian); // sweep number
-            put_i32(&mut swib, 20, rays.len() as i32, endian);
-            put_f32(&mut swib, 32, 1.0, endian); // fixed angle
-            bytes.extend(swib);
-
-            for (azimuth, elevation, status, gates) in rays {
-                let mut ryib = base_block(b"RYIB", 44, self.endian);
-                put_i32(&mut ryib, 8, 6, endian); // sweep number
-                put_i32(&mut ryib, 12, 141, endian); // julian day (May 21)
-                put_i16(&mut ryib, 16, 22, endian);
-                put_i16(&mut ryib, 18, 55, endian);
-                put_i16(&mut ryib, 20, 15, endian);
-                put_i16(&mut ryib, 22, 250, endian);
-                put_f32(&mut ryib, 24, *azimuth, endian);
-                put_f32(&mut ryib, 28, *elevation, endian);
-                put_i32(&mut ryib, 40, *status, endian);
-                bytes.extend(ryib);
-
-                let words: Vec<i16> = if self.compressed {
-                    let mut encoded = Vec::new();
-                    encoded.push((0x8000u16 | gates.len() as u16) as i16);
-                    encoded.extend_from_slice(gates);
-                    encoded.push(1); // end sentinel
-                    encoded
-                } else {
-                    gates.to_vec()
-                };
-                let mut rdat = base_block(b"RDAT", 16 + words.len() * 2, endian);
-                rdat[8..11].copy_from_slice(b"DBZ");
-                for (index, word) in words.iter().enumerate() {
-                    put_i16(&mut rdat, 16 + index * 2, *word, endian);
-                }
-                bytes.extend(rdat);
-            }
-            bytes
+    fn assert_gate(grid: &MomentGrid, row: usize, gate: usize, expected: Option<f32>) {
+        let actual = grid.scaled_value(row, gate);
+        match (actual, expected) {
+            (None, None) => {}
+            (Some(actual), Some(expected)) => assert!(
+                (actual - expected).abs() < 1e-3,
+                "{} [{row},{gate}]: {actual} != {expected}",
+                grid.moment
+            ),
+            _ => panic!("{} [{row},{gate}]: {actual:?} != {expected:?}", grid.moment),
         }
     }
 
-    fn synth_rays() -> Vec<(f32, f32, i32, &'static [i16])> {
-        vec![
-            (45.0, 1.0, 0, &[1000, 2000, -32768, 500][..]),
-            (46.0, 1.0, 0, &[1500, -32768, 700, 800][..]),
-            (47.0, 9.5, 1, &[1, 2, 3, 4][..]), // transition ray
-        ]
+    /// Missing gates among the sweep's CSFD/CELV cells. (Uncompressed NOXP
+    /// RDAT payloads carry one more word than the 1001 cells, padding the
+    /// block to a 4-byte boundary; only the described cells are counted.)
+    fn missing_gates(grid: &MomentGrid, cells: usize, row: usize) -> usize {
+        (0..cells)
+            .filter(|gate| grid.scaled_value(row, *gate).is_none())
+            .count()
+    }
+
+    fn close(actual: f32, expected: f32, tolerance: f32) -> bool {
+        (actual - expected).abs() <= tolerance
     }
 
     #[test]
-    fn decodes_big_endian_synthetic_sweep() {
-        let bytes = Synth {
-            endian: Endian::Big,
-            compressed: false,
-        }
-        .build(&synth_rays());
+    fn decodes_big_endian_real_cow2_sweep() {
+        let bytes = corpus(COW2);
         assert!(looks_like_dorade_bytes(&bytes));
+        assert_eq!(detect_endian(&bytes).unwrap(), Endian::Big);
 
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
-        assert_eq!(volume.site.id, "TST1");
-        // RADD scan mode 8 (SUR) maps to the shared PPI mode.
+        let volume = decode_dorade_sweep_volume(&bytes).expect("decode COW2");
+        // RADD: name COW2, scan mode 8 (SUR), lat 39.739979, lon -103.292664,
+        // altitude 1.519 km, HRD RLE (data_compress 1).
+        assert_eq!(volume.site.id, "COW2");
         assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Ppi));
-        assert_eq!(volume.site.latitude_deg, Some(39.74));
-        assert_eq!(volume.site.longitude_deg, Some(-103.2927));
-        assert!((volume.site.elevation_m.unwrap() - 1519.0).abs() < 0.5);
+        assert!(close(volume.site.latitude_deg.unwrap(), 39.739_98, 1e-5));
+        assert!(close(volume.site.longitude_deg.unwrap(), -103.292_66, 1e-5));
+        assert!(close(volume.site.elevation_m.unwrap(), 1519.0, 0.01));
+        assert_eq!(
+            volume.metadata.compression.as_deref(),
+            Some("dorade-hrd-rle")
+        );
+        // SSWB start 1779404114 = 2026-05-21T22:55:14Z.
         assert_eq!(
             volume.volume_time,
             Utc.with_ymd_and_hms(2026, 5, 21, 22, 55, 14).unwrap()
@@ -1256,40 +1169,178 @@ mod tests {
         assert_eq!(volume.cuts.len(), 1);
 
         let cut = &volume.cuts[0];
-        assert_eq!(cut.elevation_deg, 1.0);
-        // Transition ray dropped.
-        assert_eq!(cut.radials.len(), 2);
-        assert_eq!(cut.radials[0].azimuth_deg, 45.0);
-        assert_eq!(cut.radials[0].nyquist_velocity_mps, Some(68.76));
-        assert_eq!(cut.radials[0].gate_range.first_gate_m, 50);
-        assert_eq!(cut.radials[0].gate_range.gate_spacing_m, 100);
-        assert_eq!(cut.radials[0].gate_range.gate_count, 4);
-        // RYIB time 22:55:15.250 − SSWB start 22:55:14 = 1250 ms.
-        assert_eq!(cut.radials[0].time_offset_ms, 1250);
+        // SWIB fixed angle 1.0052556, sweep 6; RYIB status [1, 1, 1, 0, ...]:
+        // three transition rays dropped, 21 kept.
+        assert_eq!(cut.elevation_deg, 1.005_255_6);
+        assert_eq!(cut.elevation_number, Some(6));
+        assert_eq!(cut.radials.len(), 21);
+        assert_eq!(volume.metadata.skipped_message_count, 3);
+        for (row, (azimuth, time_offset_ms)) in
+            [(0, (73.0, 280)), (1, (73.5, 297)), (20, (83.0, 609))]
+        {
+            let radial = &cut.radials[row];
+            assert_eq!(radial.azimuth_deg, azimuth, "ray {row}");
+            assert_eq!(radial.elevation_deg, 0.818_481_45, "ray {row}");
+            assert_eq!(radial.time_offset_ms, time_offset_ms, "ray {row}");
+            // CSFD: one segment, 375 cells, 50 m to the first, 100 m apart.
+            assert_eq!(
+                (
+                    radial.gate_range.first_gate_m,
+                    radial.gate_range.gate_spacing_m,
+                    radial.gate_range.gate_count
+                ),
+                (50, 100, 375)
+            );
+            // RADD eff_unamb_vel 68.75974 m/s.
+            assert!(close(radial.nyquist_velocity_mps.unwrap(), 68.759_74, 1e-4));
+        }
 
-        let grid = cut.moments.get(&MomentType::Reflectivity).expect("DBZ");
-        assert_eq!(grid.radial_count(), 2);
-        assert_eq!(grid.scaled_value(0, 0), Some(10.0));
-        assert_eq!(grid.scaled_value(0, 1), Some(20.0));
-        assert_eq!(grid.scaled_value(0, 2), None); // bad gate
-        assert_eq!(grid.scaled_value(1, 2), Some(7.0));
+        // PARM DBZHC_F / VEL_F / ZDR_F (scale 100) and RHOHV_F (scale 10000),
+        // bias 0, bad -32768, on the first and last kept rays.
+        let reflectivity = &cut.moments[&MomentType::Reflectivity];
+        let velocity = &cut.moments[&MomentType::Velocity];
+        let zdr = &cut.moments[&MomentType::DifferentialReflectivity];
+        let rhohv = &cut.moments[&MomentType::CorrelationCoefficient];
+        assert_gate(reflectivity, 0, 1, Some(-14.22));
+        assert_gate(reflectivity, 20, 0, Some(-19.85));
+        assert_gate(reflectivity, 20, 1, Some(-11.37));
+        assert_gate(reflectivity, 20, 50, None);
+        assert_gate(velocity, 0, 1, Some(-49.06));
+        assert_gate(velocity, 20, 0, Some(-66.56));
+        assert_gate(velocity, 20, 100, Some(54.18));
+        assert_gate(velocity, 20, 374, Some(-34.55));
+        assert_gate(zdr, 20, 0, Some(6.53));
+        assert_gate(rhohv, 20, 1, Some(0.8043));
+        // Bad-gate counts of the first and last kept rays.
+        assert_eq!(missing_gates(reflectivity, 375, 0), 265);
+        assert_eq!(missing_gates(velocity, 375, 0), 112);
+        assert_eq!(missing_gates(zdr, 375, 20), 335);
+        assert_eq!(missing_gates(rhohv, 375, 20), 332);
     }
 
     #[test]
     fn decodes_little_endian_rle_sweep() {
-        let bytes = Synth {
-            endian: Endian::Little,
-            compressed: true,
-        }
-        .build(&synth_rays());
-        assert!(looks_like_dorade_bytes(&bytes));
-
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
+        // DOW6low RHI: little-endian HRD RLE, CELV 1000 cells from 24.98 m at
+        // 49.97 m spacing, 104-byte PARMs, 41 rays of which the first 6 are
+        // transition rays.
+        let bytes = corpus(DOW6_RHI);
+        assert_eq!(detect_endian(&bytes).unwrap(), Endian::Little);
+        let volume = decode_dorade_sweep_volume(&bytes).expect("decode DOW6 RHI");
+        assert_eq!(volume.site.id, "DOW6low");
+        assert_eq!(
+            volume.metadata.compression.as_deref(),
+            Some("dorade-hrd-rle")
+        );
+        assert!(close(volume.site.latitude_deg.unwrap(), 39.995_46, 1e-5));
+        assert!(close(volume.site.longitude_deg.unwrap(), -105.191_68, 1e-5));
+        assert!(close(volume.site.elevation_m.unwrap(), 1615.0, 0.01));
         let cut = &volume.cuts[0];
-        let grid = cut.moments.get(&MomentType::Reflectivity).expect("DBZ");
-        assert_eq!(grid.scaled_value(0, 0), Some(10.0));
-        assert_eq!(grid.scaled_value(0, 3), Some(5.0));
-        assert_eq!(grid.scaled_value(1, 1), None);
+        assert_eq!(cut.radials.len(), 35);
+        assert_eq!(volume.metadata.skipped_message_count, 6);
+        let first = &cut.radials[0];
+        assert_eq!(
+            (
+                first.gate_range.first_gate_m,
+                first.gate_range.gate_spacing_m,
+                first.gate_range.gate_count
+            ),
+            (25, 50, 1000)
+        );
+        assert!(close(first.nyquist_velocity_mps.unwrap(), 39.866_02, 1e-4));
+        assert_eq!(first.time_offset_ms, 1126);
+        assert_eq!(cut.radials[34].time_offset_ms, 3503);
+
+        // First canonical match wins: DBZHC -> Reflectivity, VEL -> Velocity;
+        // the edited VEL_F copy keeps its DORADE name.
+        let reflectivity = &cut.moments[&MomentType::Reflectivity];
+        let velocity = &cut.moments[&MomentType::Velocity];
+        let velocity_f = &cut.moments[&MomentType::Unknown("VEL_F".to_owned())];
+        assert_gate(reflectivity, 0, 0, Some(-12.24));
+        assert_gate(reflectivity, 0, 10, Some(-13.07));
+        assert_gate(reflectivity, 0, 100, None);
+        assert_gate(reflectivity, 34, 100, Some(-6.92));
+        assert_gate(velocity, 0, 0, Some(36.76));
+        assert_gate(velocity, 0, 10, Some(0.12));
+        assert_gate(velocity, 0, 100, Some(-34.92));
+        assert_gate(velocity, 0, 500, Some(40.44));
+        assert_gate(velocity, 0, 999, Some(-0.53));
+        assert_gate(velocity, 34, 500, Some(31.42));
+        assert_gate(velocity_f, 0, 0, Some(32.6));
+        assert_gate(velocity_f, 0, 10, Some(18.6));
+        assert_gate(
+            &cut.moments[&MomentType::CorrelationCoefficient],
+            0,
+            0,
+            Some(0.6755),
+        );
+        assert_gate(
+            &cut.moments[&MomentType::DifferentialPhase],
+            0,
+            999,
+            Some(125.2),
+        );
+        assert_eq!(missing_gates(reflectivity, 1000, 0), 887);
+        assert_eq!(
+            missing_gates(
+                &cut.moments[&MomentType::SpecificDifferentialPhase],
+                1000,
+                0
+            ),
+            1000
+        );
+    }
+
+    #[test]
+    fn decodes_little_endian_uncompressed_sweep() {
+        // NOXP sector PPI: little-endian, uncompressed (data_compress 0), CSFD
+        // 1001 cells x 150 m from 75 m, RADD scan mode 1, 100 rays.
+        let bytes = corpus(NOXP_SECTOR);
+        assert_eq!(detect_endian(&bytes).unwrap(), Endian::Little);
+        let volume = decode_dorade_sweep_volume(&bytes).expect("decode NOXP sector");
+        assert_eq!(volume.site.id, "NOXPRVP");
+        assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Ppi));
+        assert_eq!(
+            volume.metadata.compression.as_deref(),
+            Some("dorade-uncompressed")
+        );
+        assert!(close(volume.site.latitude_deg.unwrap(), 34.480_247, 1e-5));
+        assert!(close(volume.site.longitude_deg.unwrap(), -100.336_24, 1e-5));
+        assert_eq!(
+            volume.volume_time,
+            Utc.with_ymd_and_hms(2009, 5, 25, 20, 32, 11).unwrap()
+        );
+        let cut = &volume.cuts[0];
+        assert_eq!(cut.radials.len(), 100);
+        assert_eq!(cut.elevation_deg, 0.499_877_93);
+        let first = &cut.radials[0];
+        assert_eq!(
+            (
+                first.gate_range.first_gate_m,
+                first.gate_range.gate_spacing_m,
+                first.gate_range.gate_count
+            ),
+            (75, 150, 1001)
+        );
+        // RYIB azimuth -160.03235 deg, normalized into [0, 360).
+        assert!(close(first.azimuth_deg, 360.0 - 160.032_35, 1e-3));
+        assert!(close(cut.radials[98].azimuth_deg, 360.0 - 62.168_884, 1e-3));
+        assert_eq!(cut.radials[98].time_offset_ms, -4000);
+        assert!(close(first.nyquist_velocity_mps.unwrap(), 7.576_25, 1e-4));
+
+        let reflectivity = &cut.moments[&MomentType::Reflectivity]; // DZ
+        let velocity = &cut.moments[&MomentType::Velocity]; // VR
+        assert_gate(reflectivity, 0, 0, Some(6.5));
+        assert_gate(reflectivity, 0, 50, Some(40.0));
+        assert_gate(reflectivity, 0, 100, Some(-2.0));
+        assert_gate(reflectivity, 0, 300, None);
+        assert_gate(reflectivity, 0, 900, Some(39.5));
+        assert_gate(reflectivity, 98, 300, Some(25.5));
+        assert_gate(velocity, 0, 100, Some(-4.18));
+        assert_gate(velocity, 0, 900, Some(-6.14));
+        assert_gate(velocity, 98, 300, Some(0.18));
+        assert_eq!(missing_gates(reflectivity, 1001, 0), 679);
+        assert_eq!(missing_gates(velocity, 1001, 0), 718);
+        assert_eq!(missing_gates(reflectivity, 1001, 99), 1001);
     }
 
     #[test]
@@ -1302,100 +1353,161 @@ mod tests {
 
     #[test]
     fn rejects_extended_parm_with_absurd_gate_count() {
-        let mut block = base_block(b"PARM", 216, Endian::Big);
-        block[8..11].copy_from_slice(b"DBZ");
-        put_i16(&mut block, 78, 2, Endian::Big);
-        put_f32(&mut block, 92, 100.0, Endian::Big);
-        put_i32(&mut block, 200, i32::MAX, Endian::Big);
+        // COW2 PARM DBZHC_F: 216-byte extended block at offset 1080,
+        // number_cells 375 at block offset 200 (big-endian).
+        let mut bytes = corpus(COW2);
+        const PARM: usize = 1080;
+        assert_eq!(&bytes[PARM..PARM + 4], b"PARM");
+        assert_eq!(Endian::Big.i32(&bytes, PARM + 4), 216);
+        assert_eq!(Endian::Big.i32(&bytes, PARM + 200), 375);
+        {
+            let mut sweep = SweepParse::new(Endian::Big);
+            sweep
+                .parse_parm(&bytes[PARM..PARM + 216], PARM)
+                .expect("real PARM parses");
+            assert_eq!(sweep.params[0].name, "DBZHC_F");
+            assert_eq!(sweep.params[0].number_cells, Some(375));
+        }
 
+        bytes[PARM + 200..PARM + 204].copy_from_slice(&i32::MAX.to_be_bytes());
         let mut sweep = SweepParse::new(Endian::Big);
         let err = sweep
-            .parse_parm(&block, 0)
+            .parse_parm(&bytes[PARM..PARM + 216], PARM)
             .expect_err("absurd gate count must be rejected");
-        assert!(err.to_string().contains("gates per radial"));
+        assert!(err.to_string().contains("gates per radial"), "{err}");
+        let err = decode_dorade_sweep_volume(&bytes).expect_err("whole sweep rejected");
+        assert!(err.to_string().contains("gates per radial"), "{err}");
     }
 
     #[test]
     fn peek_reads_grouping_metadata_without_rays() {
-        let bytes = Synth {
-            endian: Endian::Big,
-            compressed: false,
+        // (id, instrument, VOLD volume, SWIB sweep, fixed angle, SSWB start,
+        // RADD latitude, first RYIB offset)
+        for (id, instrument, volume_number, sweep_number, fixed, start, latitude, first_ray) in [
+            (
+                COW2,
+                "COW2",
+                215,
+                6,
+                1.005_255_6f32,
+                (2026, 5, 21, 22, 55, 14),
+                39.739_98f32,
+                2048,
+            ),
+            (
+                DOW6_RHI,
+                "DOW6low",
+                169,
+                0,
+                143.998_75,
+                (2021, 12, 30, 22, 21, 39),
+                39.995_46,
+                10_372,
+            ),
+            (
+                NOXP_0610_05,
+                "NOXPRVP",
+                1,
+                1,
+                0.499_877_93,
+                (2009, 6, 10, 0, 32, 10),
+                37.597_79,
+                3196,
+            ),
+        ] {
+            let bytes = corpus(id);
+            // Only the descriptor blocks before the first ray are needed.
+            let header = peek_dorade_sweep(&bytes[..first_ray]).expect("peek");
+            assert_eq!(header.instrument, instrument, "{id}");
+            assert_eq!(header.volume_number, volume_number, "{id}");
+            assert_eq!(header.sweep_number, sweep_number, "{id}");
+            assert_eq!(header.fixed_angle_deg, fixed, "{id}");
+            let (y, mo, d, h, mi, s) = start;
+            assert_eq!(
+                header.start_time,
+                Some(Utc.with_ymd_and_hms(y, mo, d, h, mi, s).unwrap()),
+                "{id}"
+            );
+            assert!(close(header.latitude_deg, latitude, 1e-5), "{id}");
+            assert_eq!(peek_dorade_sweep(&bytes).expect("peek full file"), header);
         }
-        .build(&synth_rays());
-        let header = peek_dorade_sweep(&bytes).expect("peek");
-        assert_eq!(header.instrument, "TST1");
-        assert_eq!(header.volume_number, 42);
-        assert_eq!(header.sweep_number, 6);
-        assert_eq!(header.fixed_angle_deg, 1.0);
-        assert_eq!(
-            header.start_time,
-            Some(Utc.with_ymd_and_hms(2026, 5, 21, 22, 55, 14).unwrap())
-        );
-        assert!((header.latitude_deg - 39.74).abs() < 1e-5);
     }
 
     #[test]
     fn multi_sweep_volume_sorts_cuts_by_elevation() {
-        let synth = Synth {
-            endian: Endian::Big,
-            compressed: false,
-        };
-        let high = {
-            let mut rays = synth_rays();
-            for ray in &mut rays {
-                ray.1 = 2.4;
-            }
-            let mut bytes = synth.build(&rays);
-            // Rewrite SWIB fixed angle (offset of SWIB block in the byte
-            // stream is stable for the synth builder).
-            let swib_pos = find_block(&bytes, b"SWIB");
-            put_f32(&mut bytes[swib_pos..], 32, 2.4, Endian::Big);
-            bytes
-        };
-        let low = synth.build(&synth_rays());
-        let volume = decode_dorade_volume_from_slices(&[high, low]).expect("decode");
-        assert_eq!(volume.cuts.len(), 2);
-        assert!(volume.cuts[0].elevation_deg < volume.cuts[1].elevation_deg);
-        assert_eq!(volume.metadata.decoded_radial_count, 4);
+        // Three sweeps of NOXP volume NOX090610003210 (SWIB fixed angles
+        // 0.49987793, 0.99975586, 1.9995117; 6 rays each), passed out of
+        // order.
+        let sweeps = [
+            corpus(NOXP_0610_20),
+            corpus(NOXP_0610_05),
+            corpus(NOXP_0610_10),
+        ];
+        let volume = decode_dorade_volume_from_slices(&sweeps).expect("decode");
+        let angles: Vec<f32> = volume.cuts.iter().map(|cut| cut.elevation_deg).collect();
+        assert_eq!(angles, [0.499_877_93, 0.999_755_86, 1.999_511_7]);
+        assert!(volume.cuts.iter().all(|cut| cut.radials.len() == 6));
+        assert_eq!(volume.metadata.decoded_radial_count, 18);
+        // Earliest SSWB start (the 0.5 deg sweep, 00:32:10Z) is the volume time.
+        assert_eq!(
+            volume.volume_time,
+            Utc.with_ymd_and_hms(2009, 6, 10, 0, 32, 10).unwrap()
+        );
+        // Per-ray elevations of the 1.0 deg sweep: 0.98876953.
+        assert!(
+            volume.cuts[1]
+                .radials
+                .iter()
+                .all(|r| r.elevation_deg == 0.988_769_53)
+        );
+        // CSFD 1174 cells x 75 m from 37.5 m.
+        let gates = &volume.cuts[2].radials[0].gate_range;
+        assert_eq!(
+            (gates.first_gate_m, gates.gate_spacing_m, gates.gate_count),
+            (38, 75, 1174)
+        );
+        assert_gate(
+            &volume.cuts[0].moments[&MomentType::Reflectivity],
+            0,
+            100,
+            Some(-2.5),
+        );
+        assert_gate(
+            &volume.cuts[1].moments[&MomentType::Velocity],
+            5,
+            100,
+            Some(-13.56),
+        );
     }
 
     #[test]
     fn mismatched_instruments_are_rejected() {
-        let synth = Synth {
-            endian: Endian::Big,
-            compressed: false,
-        };
-        let first = synth.build(&synth_rays());
-        let mut second = synth.build(&synth_rays());
-        let radd_pos = find_block(&second, b"RADD");
-        second[radd_pos + 8..radd_pos + 12].copy_from_slice(b"TST2");
-        let err = decode_dorade_volume_from_slices(&[first, second]).unwrap_err();
-        assert!(err.to_string().contains("does not match"));
+        let err =
+            decode_dorade_volume_from_slices(&[corpus(COW2), corpus(NOXP_0610_05)]).unwrap_err();
+        assert!(err.to_string().contains("does not match"), "{err}");
+        assert!(err.to_string().contains("NOXPRVP"), "{err}");
     }
 
     #[test]
     fn rhi_scan_mode_is_detected_from_radd() {
-        // An RHI sweep: RADD scan mode 3, fixed azimuth, elevation-swept rays.
-        let rays: Vec<(f32, f32, i32, &[i16])> = vec![
-            (271.0, 0.5, 0, &[1000, 2000, 1500, 500][..]),
-            (271.0, 1.5, 0, &[1500, 1200, 700, 800][..]),
-            (271.0, 2.5, 0, &[900, 1100, 600, 400][..]),
-        ];
-        let mut bytes = Synth {
-            endian: Endian::Big,
-            compressed: false,
-        }
-        .build(&rays);
-        let radd_pos = find_block(&bytes, b"RADD");
-        put_i16(&mut bytes[radd_pos..], 50, 3, Endian::Big); // RHI per DORADE doc
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
+        // DOW6low: RADD scan mode 3 (RHI), SWIB fixed angle 143.99875 deg;
+        // kept rays step elevation down from 30.0 to 13.0 deg by 0.5 deg at
+        // RYIB azimuths 125.78-126.55 deg (CFAC corrections all zero).
+        let volume = decode_dorade_sweep_volume(&corpus(DOW6_RHI)).expect("decode");
         assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Rhi));
-        // Per-radial elevations carry the sweep; azimuth is fixed.
         let cut = &volume.cuts[0];
-        assert_eq!(cut.radials.len(), 3);
-        assert!(cut.radials.iter().all(|r| r.azimuth_deg == 271.0));
-        assert_eq!(cut.radials[0].elevation_deg, 0.5);
-        assert_eq!(cut.radials[2].elevation_deg, 2.5);
+        assert_eq!(cut.elevation_deg, 143.998_75);
+        assert_eq!(cut.radials.len(), 35);
+        for (index, radial) in cut.radials.iter().enumerate() {
+            assert_eq!(
+                radial.elevation_deg,
+                30.0 - 0.5 * index as f32,
+                "ray {index}"
+            );
+            assert!((125.7..126.6).contains(&radial.azimuth_deg), "ray {index}");
+        }
+        assert!(close(cut.radials[0].azimuth_deg, 125.775_07, 1e-4));
+        assert!(close(cut.radials[34].azimuth_deg, 126.549_61, 1e-4));
     }
 
     #[test]
@@ -1457,26 +1569,27 @@ mod tests {
 
     #[test]
     fn u16_grids_preserve_dorade_scaling() {
-        let bytes = Synth {
-            endian: Endian::Big,
-            compressed: false,
+        // COW2 PARM (binary_format 2 = i16): DBZHC_F scale 100, RHOHV_F scale
+        // 10000, bias 0, bad_data -32768; i16 words shift into u16 storage.
+        let volume = decode_dorade_sweep_volume(&corpus(COW2)).expect("decode");
+        let cut = &volume.cuts[0];
+        for (moment, scale) in [
+            (MomentType::Reflectivity, 100.0),
+            (MomentType::Velocity, 100.0),
+            (MomentType::DifferentialReflectivity, 100.0),
+            (MomentType::CorrelationCoefficient, 10_000.0),
+        ] {
+            let grid = &cut.moments[&moment];
+            assert!(matches!(grid.storage, MomentStorage::U16(_)), "{moment}");
+            assert_eq!(grid.scale, scale, "{moment}");
+            assert_eq!(grid.offset, 32768.0, "{moment}");
+            assert_eq!(grid.nodata, Some(0), "{moment}");
         }
-        .build(&synth_rays());
-        let volume = decode_dorade_sweep_volume(&bytes).expect("decode");
-        let grid = volume.cuts[0]
-            .moments
-            .get(&MomentType::Reflectivity)
-            .unwrap();
-        assert!(matches!(grid.storage, MomentStorage::U16(_)));
-        assert_eq!(grid.scale, 100.0);
-        assert_eq!(grid.offset, 32768.0);
-        assert_eq!(grid.nodata, Some(0));
-    }
-
-    fn find_block(bytes: &[u8], id: &[u8; 4]) -> usize {
-        bytes
-            .windows(4)
-            .position(|window| window == id)
-            .expect("block present")
+        // Raw word -3030 (golden REF gate 0 of the first kept ray) is stored as
+        // -3030 + 32768.
+        let MomentStorage::U16(words) = &cut.moments[&MomentType::Reflectivity].storage else {
+            unreachable!()
+        };
+        assert_eq!(words[0], 29_738);
     }
 }
