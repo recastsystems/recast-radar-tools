@@ -2,9 +2,11 @@
 
 Cassettes replayed by `tests/iterator.rs`. Each was recorded by `capture.sh`, which runs the real
 `ChunkIterator` with its HTTPS transport against the public `unidata-nexrad-level2-chunks` bucket.
-Every S3 response is stored verbatim: listing XML inline in the `.jsonl` file, chunk bytes in
-`chunks/`. The file also holds the iterator configuration, every event with its wall-clock time and
-the final counters. Nothing in these files was edited after capture.
+Every S3 response is stored verbatim: listing XML inline in the `.jsonl` file, chunk bytes as
+corpus entries of `testdata/level2/manifest.toml` (ids `l2chunk-<file name, lowercase>`, committed
+under `testdata/files/level2-chunks/`; `capture.sh` writes them to `chunks/` first). The file also
+holds the iterator configuration, every event with its wall-clock time and the final counters.
+Nothing in these files was edited after capture.
 
 The first five captures were made on 2026-09-17 between 01:50 and 01:54 UTC, the last two between
 02:44 and 02:49 UTC.
@@ -19,7 +21,8 @@ The first five captures were made on 2026-09-17 between 01:50 and 01:54 UTC, the
 | `pabc-rollover-leftover` | PABC (WSR-88D) | Live `Volume(42)` follow. PABC restarts its volume numbering every few hours, so ids keep volumes of earlier cycles. Id 42 listed volumes from 2026-09-15, 2026-09-16 and the one in progress (02:42:19Z), which is followed to its End chunk. Id 43 then held only a complete volume from 2026-09-15 21:39:55Z, which is not newer and is skipped for two polls, until the new volume 43 (02:46:54Z) appears beside it; its first three chunks are taken. | 31 |
 | `tlas-chunk-too-large` | TLAS (TDWR) | `Volume(998)` walk with downloads and `max_chunk_bytes` = 4096. The Start chunks (263 and 265 bytes) download; each first Intermediate chunk (7546 bytes and up) is refused by the HTTPS transport from its Content-Length, and the volume is abandoned: 998 -> 999 -> 1. | 6 |
 
-Chunk files (downloaded by `tlas-next-volume-bytes` and `tlas-chunk-too-large`):
+Chunk files (downloaded by `tlas-next-volume-bytes` and `tlas-chunk-too-large`; the manifest
+entries carry the same hashes):
 
 | file | bytes | sha256 |
 |---|---|---|
@@ -41,4 +44,6 @@ Volume ids repeat every 999 volumes, and the bucket purges volumes after about t
 historical joins (`volume:N`) therefore only work while those volumes are kept, and each live capture
 records different volumes. Replay fails at the first request that differs from the recording. If the
 iterator's request plan changes, re-capture with `capture.sh [scenario ...]`, choose sites and ids
-that show the same situations, and update the scenario expectations in `tests/iterator.rs`.
+that show the same situations, move the downloaded chunk files from `chunks/` to
+`testdata/files/level2-chunks/` with manifest entries, and update the scenario expectations in
+`tests/iterator.rs`.

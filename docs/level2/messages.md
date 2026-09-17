@@ -26,8 +26,8 @@ The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crate
 | 8 | `clutter_censor.rs` | `ClutterCensorZones` (`ClutterCensorZones`) | **no real sample** |
 | 9 | `request.rs` | `RequestForData` (`RequestForData`) | **no real sample** |
 | 11, 12 | `loopback.rs` | `LoopbackTest` (`Loopback`) | **no real sample** |
-| 13 | `bypass_map.rs` | `ClutterFilterBypassMap` (`BypassMap`) | MetPy, 9 files (time, counts, radial 0); hex for other radials (`messages_clutter.rs`) |
-| 15 | `clutter_filter_map.rs` | `ClutterFilterMap` (`ClutterFilterMap`) | MetPy, 20 files, every range zone (`messages_clutter.rs`) |
+| 13 | `bypass_map.rs` | `ClutterFilterBypassMap` (`BypassMap`) | MetPy, 12 files (time, counts, radial 0); hex for other radials (`messages_clutter.rs`) |
+| 15 | `clutter_filter_map.rs` | `ClutterFilterMap` (`ClutterFilterMap`) | MetPy, 25 files, every range zone (`messages_clutter.rs`) |
 | 18 | `adaptation.rs` | `RdaAdaptationData` (`Adaptation`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 49 Build 24.0 offsets MetPy lacks. Legacy layout: not decoded |
 | 29 | none | `Unparsed` | framing only, against `tools/level2_message_scan.py` |
 | 31 | `msg31_blocks.rs` | `DigitalRadarDataGeneric` (`DigitalRadarDataGeneric`) | MetPy, 13 volumes and the KIWA chunks (`messages_msg31.rs`); hex (one radial); Py-ART VOL/ELV/RAD of each elevation's first ray, 23 sources (`volume_metadata.rs`); Py-ART rays and moment codes, 4 sources (`volume_pyart.rs`). Compressed radials: **no real sample** |
@@ -300,7 +300,7 @@ run in KLIX 2005. The ICD says it has not been sent since Build 19.
   reads the legacy layout, as MetPy does. Each radial is 32 halfwords of 512 range bins, 1 km each. A 1 bit
   means bypass the clutter filters, and `BypassMapSegment::bypass(radial, bin)` reads it.
 - MetPy 1.7.1 goldens (`tools/level2_golden.py`, `testdata/level2/golden/clutter/`): generation time, segment
-  and radial counts, and radial 0 of every segment in 9 files. MetPy has two differences from the ICD, so no
+  and radial counts, and radial 0 of every segment in 12 files. MetPy has two differences from the ICD, so no
   other values are compared: it reads every radial of a segment from radial 0's halfwords, and it orders each
   halfword's bits least significant first, while note 4 puts bin 0 in the MSB.
 - Checked beyond MetPy: halfwords at documented record offsets for 4 radials each in KTLX 2013, KDVN 2020
@@ -321,7 +321,7 @@ Real samples: every WSR-88D metadata record from 2005 on (not TDWR). Segment cou
   has 1 to 20 range zones of (op code, end range in km). The decoder rejects segment and zone counts
   outside those ranges. Op codes and end ranges are kept as sent (unknown op codes as `Unknown`). Bytes
   after the map are counted in `trailing_bytes`.
-- MetPy 1.7.1 goldens: generation time and every range zone of every azimuth, in 20 files from 2008 to
+- MetPy 1.7.1 goldens: generation time and every range zone of every azimuth, in 25 files from 2008 to
   2026. Every decoded map has 360 azimuths per segment, ends strictly increasing, a last end range of 511
   and known op codes. The generation time is before the volume time. KTLX 2013 and KMAF 2023 have
   3-zone azimuths. All other maps are one zone ending at 511 with "bypass map in control".

@@ -790,6 +790,8 @@ fn in_range<T: PartialOrd + std::fmt::Debug>(id: &str, name: &str, value: T, low
 fn icd_ranges_from_build_19() {
     let ids = [
         "l2-klix-20210829-180425",
+        "l2-klix-20210829-173117",
+        "l2-klix-20210829-175748",
         "l2-kbox-20220129-150537",
         "l2-tjua-20220918-190621",
         "l2-kdgx-20230325-010651",
@@ -803,7 +805,7 @@ fn icd_ranges_from_build_19() {
         "l2-kiwa-20260917-003629",
     ];
     // Every archive volume from Build 19.0 on: the manifest's build tags
-    // name these 12 and no other.
+    // name these 14 and no other.
     let tagged: Vec<&str> = recast_radar_testdata::manifest()
         .files
         .iter()

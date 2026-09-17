@@ -981,101 +981,187 @@ fn validate_solution(lambda: f32, mu: f32) -> Result<(), P3LookupFailure> {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Write as _;
-
     use super::*;
 
     fn test_descriptor(kind: P3OfficialTableKind, bytes: &[u8]) -> P3LookupTableDescriptor {
         descriptor(kind, Sha256Digest::compute(bytes))
     }
 
-    fn synthetic_table(kind: P3OfficialTableKind, layout: TableLayout) -> String {
-        let mut output = String::new();
-        writeln!(output, "{}", kind.exact_header()).unwrap();
-        writeln!(output, " ").unwrap();
-        match kind {
-            P3OfficialTableKind::TwoMoment => {
-                for density in 1..=layout.densities {
-                    for rime in 1..=layout.rimes {
-                        for mass in 1..=layout.masses {
-                            write!(output, "{density} {rime} {mass}").unwrap();
-                            for field in 0..TWO_MOMENT_MAIN_FIELDS {
-                                let value = match field {
-                                    6 => 2.0e15 + (density * 100 + rime * 10 + mass) as f32 * 1.0e9,
-                                    7 => 2.0e5 + (density * 100 + rime * 10 + mass) as f32 * 100.0,
-                                    12 => 100_000.0 + (density * 100 + rime * 10 + mass) as f32,
-                                    13 => (density + rime + mass) as f32,
-                                    _ => 101.25 + field as f32,
-                                };
-                                write!(output, " {value}").unwrap();
-                            }
-                            writeln!(output).unwrap();
-                        }
-                        write_collision_rows(&mut output, layout, rime);
-                    }
-                }
-            }
-            P3OfficialTableKind::ThreeMoment => {
-                for shape in 1..=layout.shapes {
-                    for density in 1..=layout.densities {
-                        for rime in 1..=layout.rimes {
-                            for mass in 1..=layout.masses {
-                                write!(output, "{shape} {density} {rime} {mass}").unwrap();
-                                for field in 0..THREE_MOMENT_MAIN_FIELDS {
-                                    let value = match field {
-                                        6 => {
-                                            2.0e15
-                                                + (shape * 1_000 + density * 100 + rime * 10 + mass)
-                                                    as f32
-                                                    * 1.0e9
-                                        }
-                                        7 => {
-                                            2.0e5
-                                                + (shape * 1_000 + density * 100 + rime * 10 + mass)
-                                                    as f32
-                                                    * 100.0
-                                        }
-                                        11 => 200.0 + shape as f32,
-                                        13 => {
-                                            100_000.0
-                                                + (shape * 1_000 + density * 100 + rime * 10 + mass)
-                                                    as f32
-                                        }
-                                        14 => (shape + density + rime + mass) as f32,
-                                        _ => 101.25 + field as f32,
-                                    };
-                                    write!(output, " {value}").unwrap();
-                                }
-                                writeln!(output).unwrap();
-                            }
-                            write_collision_rows(&mut output, layout, rime);
-                        }
-                    }
-                }
-            }
-        }
-        output
+    /// The committed first (density 1, rime 1[, shape 1]) blocks of the
+    /// official tables: a byte prefix of the WRF files (corpus ids
+    /// `wrf-p3-lookup-table-1-v5.4-{2,3}momI-first-block`) holding the 50
+    /// main records of that block and their 1500 collision records.
+    const FIRST_BLOCK_LAYOUT: TableLayout = TableLayout {
+        shapes: 1,
+        densities: 1,
+        rimes: 1,
+        masses: MASS_AXIS_SIZE,
+        rain_collisions: RAIN_COLLISION_AXIS_SIZE,
+    };
+
+    fn first_block(kind: P3OfficialTableKind) -> Vec<u8> {
+        let id = match kind {
+            P3OfficialTableKind::TwoMoment => "wrf-p3-lookup-table-1-v5.4-2momI-first-block",
+            P3OfficialTableKind::ThreeMoment => "wrf-p3-lookup-table-1-v5.4-3momI-first-block",
+        };
+        crate::test_corpus::corpus_bytes(id)
     }
 
-    fn write_collision_rows(output: &mut String, layout: TableLayout, rime: usize) {
-        for mass in 1..=layout.masses {
-            for rain in 1..=layout.rain_collisions {
-                writeln!(output, "{mass} {rain} {rime} -86.446 -97.531").unwrap();
-            }
-        }
-    }
-
-    fn parse_synthetic(
+    fn parse_first_block(
         kind: P3OfficialTableKind,
-        text: &str,
-        layout: TableLayout,
+        bytes: &[u8],
     ) -> Result<P3OfficialTableV54, P3TableLoadError> {
         parse_exact_table(
             kind,
-            text.as_bytes(),
-            layout,
-            test_descriptor(kind, text.as_bytes()),
+            bytes,
+            FIRST_BLOCK_LAYOUT,
+            test_descriptor(kind, bytes),
         )
+    }
+
+    /// One golden record of a table text (`tools/scattering_golden.py`, read
+    /// from the text with the WRF record layout): the 1-based index and the
+    /// retained fields.
+    struct GoldenRecord {
+        index: Vec<usize>,
+        inverse_qmin: f32,
+        inverse_qmax: f32,
+        lambda: f32,
+        mu: f32,
+        mean_density: Option<f32>,
+    }
+
+    fn golden_samples(key: &str) -> Vec<GoldenRecord> {
+        let golden = crate::test_corpus::golden("p3_tables.json");
+        let table = &golden[key];
+        crate::test_corpus::array(&table["samples"])
+            .iter()
+            .map(|sample| GoldenRecord {
+                index: crate::test_corpus::array(&sample["index"])
+                    .iter()
+                    .map(crate::test_corpus::as_usize)
+                    .collect(),
+                inverse_qmin: crate::test_corpus::as_f64(&sample["inverse_qmin"]) as f32,
+                inverse_qmax: crate::test_corpus::as_f64(&sample["inverse_qmax"]) as f32,
+                lambda: crate::test_corpus::as_f64(&sample["lambda"]) as f32,
+                mu: crate::test_corpus::as_f64(&sample["mu"]) as f32,
+                mean_density: sample["mean_density"].as_f64().map(|v| v as f32),
+            })
+            .collect()
+    }
+
+    fn golden_count(key: &str, field: &str) -> usize {
+        crate::test_corpus::as_usize(&crate::test_corpus::golden("p3_tables.json")[key][field])
+    }
+
+    fn assert_two_moment_samples(table: &P3OfficialTableV54, key: &str) {
+        let TablePayload::TwoMoment {
+            inverse_qmin,
+            inverse_qmax,
+            lambda,
+            mu,
+        } = &table.payload
+        else {
+            panic!("wrong payload")
+        };
+        let retained = table.layout.densities * table.layout.rimes * table.layout.masses;
+        assert_eq!(retained, golden_count(key, "main_records"));
+        assert_eq!(inverse_qmin.len(), retained);
+        assert_eq!(inverse_qmax.len(), retained);
+        assert_eq!(lambda.len(), retained);
+        assert_eq!(mu.len(), retained);
+        for record in golden_samples(key) {
+            let index = &record.index;
+            let flat = two_index(table.layout, index[0] - 1, index[1] - 1, index[2] - 1);
+            assert_eq!(
+                inverse_qmin[flat].to_bits(),
+                record.inverse_qmin.to_bits(),
+                "{key} {index:?} inv_Qmin"
+            );
+            assert_eq!(
+                inverse_qmax[flat].to_bits(),
+                record.inverse_qmax.to_bits(),
+                "{key} {index:?} inv_Qmax"
+            );
+            assert_eq!(
+                lambda[flat].to_bits(),
+                record.lambda.to_bits(),
+                "{key} {index:?} lambda"
+            );
+            assert_eq!(
+                mu[flat].to_bits(),
+                record.mu.to_bits(),
+                "{key} {index:?} mu"
+            );
+        }
+        assert!(
+            inverse_qmin
+                .iter()
+                .zip(inverse_qmax)
+                .all(|(a, b)| a >= b && *b > 0.0)
+        );
+    }
+
+    fn assert_three_moment_samples(table: &P3OfficialTableV54, key: &str) {
+        let TablePayload::ThreeMoment {
+            inverse_qmin,
+            inverse_qmax,
+            mean_density,
+            lambda,
+            mu,
+        } = &table.payload
+        else {
+            panic!("wrong payload")
+        };
+        let retained =
+            table.layout.shapes * table.layout.densities * table.layout.rimes * table.layout.masses;
+        assert_eq!(retained, golden_count(key, "main_records"));
+        assert_eq!(mean_density.len(), retained);
+        assert_eq!(inverse_qmin.len(), retained);
+        for record in golden_samples(key) {
+            let index = &record.index;
+            let flat = three_index(
+                table.layout,
+                index[0] - 1,
+                index[1] - 1,
+                index[2] - 1,
+                index[3] - 1,
+            );
+            assert_eq!(
+                inverse_qmin[flat].to_bits(),
+                record.inverse_qmin.to_bits(),
+                "{key} {index:?} inv_Qmin"
+            );
+            assert_eq!(
+                inverse_qmax[flat].to_bits(),
+                record.inverse_qmax.to_bits(),
+                "{key} {index:?} inv_Qmax"
+            );
+            assert_eq!(
+                lambda[flat].to_bits(),
+                record.lambda.to_bits(),
+                "{key} {index:?} lambda"
+            );
+            assert_eq!(
+                mu[flat].to_bits(),
+                record.mu.to_bits(),
+                "{key} {index:?} mu"
+            );
+            assert_eq!(
+                mean_density[flat].to_bits(),
+                record
+                    .mean_density
+                    .expect("three-moment mean density")
+                    .to_bits(),
+                "{key} {index:?} mean density"
+            );
+        }
+        assert!(
+            inverse_qmin
+                .iter()
+                .zip(inverse_qmax)
+                .all(|(a, b)| a >= b && *b > 0.0)
+        );
     }
 
     #[test]
@@ -1120,82 +1206,103 @@ mod tests {
         ));
     }
 
+    /// The committed first blocks of both official tables parse with the
+    /// reduced layout, and the retained fields (inv_Qmin, inv_Qmax, lambda,
+    /// mu, three-moment mean density) equal the values read from the table
+    /// text by `tools/scattering_golden.py` (WRF record layout, float32).
     #[test]
     fn parser_accepts_exact_two_and_three_moment_record_layouts() {
-        let two_layout = TableLayout {
-            shapes: 1,
-            densities: 2,
-            rimes: 2,
-            masses: 2,
-            rain_collisions: 2,
-        };
-        let two_text = synthetic_table(P3OfficialTableKind::TwoMoment, two_layout);
-        let two = parse_synthetic(P3OfficialTableKind::TwoMoment, &two_text, two_layout).unwrap();
-        let TablePayload::TwoMoment {
-            inverse_qmin,
-            inverse_qmax,
-            lambda,
-            mu,
-        } = two.payload
-        else {
-            panic!("wrong payload")
-        };
-        assert_eq!(inverse_qmin.len(), 8);
-        assert!(inverse_qmin[0] > inverse_qmax[0]);
-        assert_eq!(lambda.len(), 8);
-        assert_eq!(lambda[0], 100_111.0);
-        assert_eq!(mu[7], 6.0);
+        let two_text = first_block(P3OfficialTableKind::TwoMoment);
+        assert_eq!(
+            two_text.len(),
+            golden_count("two_moment_first_block", "bytes")
+        );
+        let two = parse_first_block(P3OfficialTableKind::TwoMoment, &two_text).unwrap();
+        assert_two_moment_samples(&two, "two_moment_first_block");
+        assert_eq!(
+            two.descriptor.table_sha256,
+            Sha256Digest::compute(&two_text)
+        );
 
-        let three_layout = TableLayout {
-            shapes: 2,
-            ..two_layout
-        };
-        let three_text = synthetic_table(P3OfficialTableKind::ThreeMoment, three_layout);
-        let three =
-            parse_synthetic(P3OfficialTableKind::ThreeMoment, &three_text, three_layout).unwrap();
-        let TablePayload::ThreeMoment {
-            inverse_qmin,
-            inverse_qmax,
-            mean_density,
-            lambda,
-            mu,
-        } = three.payload
-        else {
-            panic!("wrong payload")
-        };
-        assert_eq!(mean_density.len(), 16);
-        assert_eq!(inverse_qmin.len(), 16);
-        assert!(inverse_qmin[15] > inverse_qmax[15]);
-        assert_eq!(mean_density[0], 201.0);
-        assert_eq!(lambda[15], 102_222.0);
-        assert_eq!(mu[15], 8.0);
+        let three_text = first_block(P3OfficialTableKind::ThreeMoment);
+        assert_eq!(
+            three_text.len(),
+            golden_count("three_moment_first_block", "bytes")
+        );
+        let three = parse_first_block(P3OfficialTableKind::ThreeMoment, &three_text).unwrap();
+        assert_three_moment_samples(&three, "three_moment_first_block");
+        // The reader tells the two layouts apart by their exact headers.
+        assert!(matches!(
+            parse_first_block(P3OfficialTableKind::ThreeMoment, &two_text),
+            Err(P3TableLoadError::Header { .. })
+        ));
+        assert!(matches!(
+            parse_first_block(P3OfficialTableKind::TwoMoment, &three_text),
+            Err(P3TableLoadError::Header { .. })
+        ));
     }
 
+    /// The complete official tables (downloaded from the pinned WRF commit,
+    /// skipped when offline) load through the byte-length and SHA-256 gate
+    /// and retain every record the golden script read from the text: 1000
+    /// two-moment and 11000 three-moment main records.
+    #[test]
+    fn official_tables_load_and_retain_every_golden_record() {
+        let two_path = recast_radar_testdata::require_file!("wrf-p3-lookup-table-1-v5.4-2momI");
+        let two = P3OfficialTableV54::load_path(P3OfficialTableKind::TwoMoment, &two_path).unwrap();
+        assert_eq!(two.kind(), P3OfficialTableKind::TwoMoment);
+        assert_two_moment_samples(&two, "two_moment");
+        assert_eq!(
+            two.descriptor.table_sha256.to_hex(),
+            P3_TWO_MOMENT_TABLE_ASSET.expected_sha256
+        );
+
+        let three_path = recast_radar_testdata::require_file!("wrf-p3-lookup-table-1-v5.4-3momI");
+        let three =
+            P3OfficialTableV54::load_path(P3OfficialTableKind::ThreeMoment, &three_path).unwrap();
+        assert_three_moment_samples(&three, "three_moment");
+        // The first block of each file is the committed excerpt.
+        let two_bytes = std::fs::read(&two_path).unwrap();
+        assert!(two_bytes.starts_with(&first_block(P3OfficialTableKind::TwoMoment)));
+        let three_bytes = std::fs::read(&three_path).unwrap();
+        assert!(three_bytes.starts_with(&first_block(P3OfficialTableKind::ThreeMoment)));
+    }
+
+    /// Edits of the committed two-moment first block: the last collision
+    /// record removed, a line appended, a field replaced by NaN, inv_Qmin
+    /// zeroed, and a mass index changed.
     #[test]
     fn parser_rejects_truncation_extra_content_nonfinite_values_and_wrong_indices() {
-        let layout = TableLayout {
-            shapes: 1,
-            densities: 1,
-            rimes: 1,
-            masses: 1,
-            rain_collisions: 1,
+        let layout = FIRST_BLOCK_LAYOUT;
+        let kind = P3OfficialTableKind::TwoMoment;
+        let exact = String::from_utf8(first_block(kind)).unwrap();
+        let parse = |text: &str| {
+            parse_exact_table(
+                kind,
+                text.as_bytes(),
+                layout,
+                test_descriptor(kind, text.as_bytes()),
+            )
         };
-        let exact = synthetic_table(P3OfficialTableKind::TwoMoment, layout);
+        parse(&exact).unwrap();
+
         let without_final_row = exact.trim_end().rsplit_once('\n').unwrap().0.to_owned() + "\n";
         assert!(matches!(
-            parse_synthetic(P3OfficialTableKind::TwoMoment, &without_final_row, layout),
+            parse(&without_final_row),
             Err(P3TableLoadError::UnexpectedEof { .. })
         ));
 
         let extra = exact.clone() + "unexpected\n";
         assert!(matches!(
-            parse_synthetic(P3OfficialTableKind::TwoMoment, &extra, layout),
+            parse(&extra),
             Err(P3TableLoadError::ExtraContent { .. })
         ));
 
-        let nonfinite = exact.replacen(" 101.25", " NaN", 1);
+        // Field 1 of the first main record (the 0.15624E-03 of `1 1 1`).
+        let nonfinite = exact.replacen("    0.15624E-03", "            NaN", 1);
+        assert_ne!(nonfinite, exact);
         assert!(matches!(
-            parse_synthetic(P3OfficialTableKind::TwoMoment, &nonfinite, layout),
+            parse(&nonfinite),
             Err(P3TableLoadError::NonFinite { .. })
         ));
 
@@ -1205,17 +1312,19 @@ mod tests {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         // Three integer axes precede table field 7 (`i_qsmall`/`inv_Qmin`).
+        assert_eq!(main_tokens[3 + 6], "0.18052E+15");
         main_tokens[3 + 6] = "0".to_owned();
         invalid_limiter_lines[2] = main_tokens.join(" ");
         let invalid_limiter = invalid_limiter_lines.join("\n") + "\n";
         assert!(matches!(
-            parse_synthetic(P3OfficialTableKind::TwoMoment, &invalid_limiter, layout),
+            parse(&invalid_limiter),
             Err(P3TableLoadError::InvalidNumberLimiter { .. })
         ));
 
-        let wrong_index = exact.replacen("\n1 1 1 ", "\n1 1 2 ", 1);
+        let wrong_index = exact.replacen("\n    1    1    1 ", "\n    1    1    2 ", 1);
+        assert_ne!(wrong_index, exact);
         assert!(matches!(
-            parse_synthetic(P3OfficialTableKind::TwoMoment, &wrong_index, layout),
+            parse(&wrong_index),
             Err(P3TableLoadError::WrongIndex { .. })
         ));
     }

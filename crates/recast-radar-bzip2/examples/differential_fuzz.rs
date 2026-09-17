@@ -24,7 +24,7 @@ mod common;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use common::{Rng, Tally, VOLUMES, check_case, ldm_records, testdata};
+use common::{Rng, Tally, VOLUMES, check_case, ldm_records};
 use recast_radar_bzip2::Decoder;
 
 fn main() -> ExitCode {
@@ -39,10 +39,10 @@ fn main() -> ExitCode {
 
     let mut records: Vec<(String, usize, Vec<u8>)> = Vec::new();
     for id in ids {
-        let Some(bytes) = testdata(id) else {
+        let Some(volume) = ldm_records(id) else {
             continue;
         };
-        for (i, r) in ldm_records(&bytes).into_iter().enumerate() {
+        for (i, r) in volume.into_iter().enumerate() {
             records.push((id.to_owned(), i, r));
         }
     }

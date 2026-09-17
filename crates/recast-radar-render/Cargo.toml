@@ -17,12 +17,13 @@ rayon.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-chrono.workspace = true
 recast-radar-filters = { path = "../recast-radar-filters" }
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-map = { path = "../recast-radar-map" }
 recast-radar-retrieve = { path = "../recast-radar-retrieve" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 recast-radar-track = { path = "../recast-radar-track" }
+serde_json.workspace = true
 
 [lints]
 workspace = true

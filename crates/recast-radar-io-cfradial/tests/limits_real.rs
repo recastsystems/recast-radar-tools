@@ -12,22 +12,23 @@ fn irene() -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// Overwrite the length of the named dimension in the classic netCDF header
-/// (`CDF\x01`, numrecs, dimension list tag and count, then per dimension:
-/// name length, name padded to 4 bytes, length).
-fn set_dimension_len(bytes: &mut [u8], wanted: &str, len: u32) {
-    let be_u32 = |at: usize| {
+/// The Irene file with the length of the named dimension overwritten in the
+/// classic netCDF header (`CDF\x01`, numrecs, dimension list tag and count,
+/// then per dimension: name length, name padded to 4 bytes, length).
+fn irene_with_dimension_len(wanted: &str, len: u32) -> Vec<u8> {
+    let mut bytes = irene();
+    let be_u32 = |bytes: &[u8], at: usize| {
         u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]) as usize
     };
-    let count = be_u32(12);
+    let count = be_u32(&bytes, 12);
     let mut at = 16;
     for _ in 0..count {
-        let name_len = be_u32(at);
+        let name_len = be_u32(&bytes, at);
         let name = &bytes[at + 4..at + 4 + name_len];
         let len_at = at + 4 + name_len.div_ceil(4) * 4;
         if name == wanted.as_bytes() {
             bytes[len_at..len_at + 4].copy_from_slice(&len.to_be_bytes());
-            return;
+            return bytes;
         }
         at = len_at + 4;
     }
@@ -46,8 +47,7 @@ fn assert_limit_error(bytes: &[u8], what: &str) {
 
 #[test]
 fn unmodified_real_volume_decodes_within_limits() {
-    let mut bytes = irene();
-    set_dimension_len(&mut bytes, "range", 1107); // identity edit
+    let bytes = irene_with_dimension_len("range", 1107); // identity edit
     assert_eq!(bytes, irene());
     let volume = decode_cfradial1_volume(&bytes).expect("real Irene volume decodes");
     assert_eq!(volume.cuts.len(), 2);
@@ -55,30 +55,26 @@ fn unmodified_real_volume_decodes_within_limits() {
 
 #[test]
 fn range_dimension_beyond_the_gate_limit_is_rejected() {
-    let mut bytes = irene();
-    set_dimension_len(&mut bytes, "range", (MAX_GATES_PER_RADIAL + 1) as u32);
+    let bytes = irene_with_dimension_len("range", (MAX_GATES_PER_RADIAL + 1) as u32);
     assert_limit_error(&bytes, "16,385 gates per ray");
 }
 
 #[test]
 fn dimension_longer_than_the_netcdf_limit_is_rejected() {
-    let mut bytes = irene();
-    set_dimension_len(&mut bytes, "range", 200_000_000);
+    let bytes = irene_with_dimension_len("range", 200_000_000);
     assert_limit_error(&bytes, "200 million gates");
 }
 
 #[test]
 fn time_dimension_claiming_a_variable_beyond_the_array_limit_is_rejected() {
-    let mut bytes = irene();
     // 100 million rays: each float per-ray variable becomes a 400 MiB slab.
-    set_dimension_len(&mut bytes, "time", 100_000_000);
+    let bytes = irene_with_dimension_len("time", 100_000_000);
     assert_limit_error(&bytes, "100 million rays");
 }
 
 #[test]
 fn sweep_dimension_beyond_the_sweep_limit_is_rejected() {
-    let mut bytes = irene();
-    set_dimension_len(&mut bytes, "sweep", (MAX_SWEEPS_PER_VOLUME + 1) as u32);
+    let bytes = irene_with_dimension_len("sweep", (MAX_SWEEPS_PER_VOLUME + 1) as u32);
     assert_limit_error(&bytes, "1,025 sweeps");
 }
 

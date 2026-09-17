@@ -20,5 +20,17 @@ serde.workspace = true
 # feature already forwards here.
 serde = []
 
+[dev-dependencies]
+# Real-data model tests (tests/real_model.rs): corpus files decoded with the
+# real readers, goldens as JSON. Dev-only cycles through the io crates are
+# allowed by cargo; the integration tests link the library build, so the
+# model types are shared.
+recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
+recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-io-odim = { path = "../recast-radar-io-odim" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+serde_json.workspace = true
+
 [lints]
 workspace = true

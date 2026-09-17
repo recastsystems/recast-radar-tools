@@ -1,0 +1,234 @@
+{
+ "name": "l2-ktlx-20030508-221041-trim",
+ "ids": ["l2-ktlx-20030508-221041-trim"],
+ "generator": "tools/level2_decode_golden.py (MetPy 1.7.1 Level2File, Py-ART 2.2.5 NEXRADLevel2File, byte walker)",
+ "outer_compression": "none",
+ "ldm_records": [
+  {
+   "control_word": 75,
+   "offset": 24,
+   "decompressed_len": 2432,
+   "radials": 0
+  },
+  {
+   "control_word": 10721,
+   "offset": 103,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 11137,
+   "offset": 10828,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 11030,
+   "offset": 21969,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 836,
+   "offset": 33003,
+   "decompressed_len": 17024,
+   "radials": 7
+  },
+  {
+   "control_word": 53856,
+   "offset": 33843,
+   "decompressed_len": 294272,
+   "radials": 120
+  },
+  {
+   "control_word": 54810,
+   "offset": 87703,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": 39163,
+   "offset": 142517,
+   "decompressed_len": 291840,
+   "radials": 120
+  },
+  {
+   "control_word": -3270,
+   "offset": 181684,
+   "decompressed_len": 17024,
+   "radials": 7
+  }
+ ],
+ "stream_len": 1789952,
+ "volume_header": {
+  "tape": "ARCHIVE2.",
+  "extension": "224",
+  "icao_hex": "00000000",
+  "metpy_stid": "\u0000\u0000\u0000\u0000",
+  "julian_date": 12181,
+  "time_ms": 79841818,
+  "metpy_epoch_ms": 1052431841818
+ },
+ "message_count": 736,
+ "messages_by_type": {
+  "202": 1,
+  "1": 734,
+  "2": 1
+ },
+ "messages_before_first_radial": [
+  [0, 18, 0, 202, 0, 12181, 79841818, 1, 1],
+  [2432, 1208, 0, 1, 3837, 12181, 79842274, 1, 1]
+ ],
+ "first_radial": {
+  "message_type": 1,
+  "body_offset": 2460,
+  "time_ms": 79841818,
+  "date": 12181,
+  "azimuth_number": 1,
+  "azimuth_deg": 95.1416015625,
+  "status": 3,
+  "elevation_number": 1,
+  "cut_sector": 1,
+  "elevation_deg": 0.439453125,
+  "vcp": 11,
+  "nyquist_offset_46_raw": 0
+ },
+ "site": null,
+ "message1_vcp": 11,
+ "message5_vcp": null,
+ "metpy_sweep_radials": [367, 367],
+ "pyart_sweep_rays": [367, 367],
+ "sweeps": [
+  {
+   "radials": 367,
+   "message_type": 1,
+   "elevation_number": 1,
+   "first_status": 3,
+   "last_status": 2,
+   "first_elevation_deg": 0.439453125,
+   "first_azimuth_deg": 95.1416015625,
+   "last_azimuth_deg": 96.4599609375,
+   "azimuth_sum_deg": 65911.5087890625,
+   "elevation_sum_deg": 180.4833984375,
+   "first_epoch_ms": 1052431841818,
+   "nyquist_count": 0,
+   "nyquist_sum_mps": 0.0,
+   "nyquist_min_mps": null,
+   "nyquist_max_mps": null,
+   "moments": {
+    "REF": {
+     "rows": 367,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 460,
+     "first_gate_m": 0,
+     "gate_width_m": 1000,
+     "scale": 2.0,
+     "offset": 66.0,
+     "valid_count": 36362,
+     "raw_valid_sum": 3178364,
+     "scaled_sum": 389236.0,
+     "scaled_min": -22.0,
+     "scaled_max": 65.5,
+     "samples": [
+      [274, 264, 197, 65.5],
+      [98, 6, 22, -22.0],
+      [0, 2, 63, -1.5],
+      [0, 184, 0, null],
+      [73, 1, 80, 7.0],
+      [73, 184, 0, null],
+      [146, 1, 75, 4.5],
+      [146, 184, 0, null],
+      [219, 1, 78, 6.0],
+      [219, 184, 0, null],
+      [292, 1, 73, 3.5],
+      [292, 184, 0, null],
+      [366, 1, 77, 5.5],
+      [366, 184, 0, null]
+     ]
+    }
+   }
+  },
+  {
+   "radials": 367,
+   "message_type": 1,
+   "elevation_number": 2,
+   "first_status": 0,
+   "last_status": 2,
+   "first_elevation_deg": 0.4833984375,
+   "first_azimuth_deg": 102.744140625,
+   "last_azimuth_deg": 104.1064453125,
+   "azimuth_sum_deg": 65851.787109375,
+   "elevation_sum_deg": 177.4072265625,
+   "first_epoch_ms": 1052431861501,
+   "nyquist_count": 367,
+   "nyquist_sum_mps": 9578.7,
+   "nyquist_min_mps": 26.1,
+   "nyquist_max_mps": 26.1,
+   "moments": {
+    "SW": {
+     "rows": 367,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 920,
+     "first_gate_m": -375,
+     "gate_width_m": 250,
+     "scale": 2.0,
+     "offset": 129.0,
+     "valid_count": 120380,
+     "raw_valid_sum": 16213926,
+     "scaled_sum": 342453.0,
+     "scaled_min": 0.0,
+     "scaled_max": 15.0,
+     "samples": [
+      [7, 36, 159, 15.0],
+      [0, 14, 129, 0.0],
+      [0, 12, 132, 1.5],
+      [0, 368, 139, 5.0],
+      [73, 12, 129, 0.0],
+      [73, 368, 133, 2.0],
+      [146, 18, 138, 4.5],
+      [146, 368, 129, 0.0],
+      [219, 12, 132, 1.5],
+      [219, 368, 135, 3.0],
+      [292, 12, 129, 0.0],
+      [292, 368, 0, null],
+      [366, 12, 132, 1.5],
+      [366, 368, 0, null]
+     ]
+    },
+    "VEL": {
+     "rows": 367,
+     "row_radials": null,
+     "word_size": 8,
+     "gates_max": 920,
+     "first_gate_m": -375,
+     "gate_width_m": 250,
+     "scale": 2.0,
+     "offset": 129.0,
+     "valid_count": 120380,
+     "raw_valid_sum": 14947142,
+     "scaled_sum": -290939.0,
+     "scaled_min": -26.0,
+     "scaled_max": 26.0,
+     "samples": [
+      [3, 318, 181, 26.0],
+      [35, 109, 77, -26.0],
+      [0, 12, 119, -5.0],
+      [0, 368, 136, 3.5],
+      [73, 12, 119, -5.0],
+      [73, 368, 92, -18.5],
+      [146, 18, 128, -0.5],
+      [146, 368, 104, -12.5],
+      [219, 12, 141, 6.0],
+      [219, 368, 131, 1.0],
+      [292, 12, 139, 5.0],
+      [292, 368, 0, null],
+      [366, 12, 119, -5.0],
+      [366, 368, 0, null]
+     ]
+    }
+   }
+  }
+ ]
+}

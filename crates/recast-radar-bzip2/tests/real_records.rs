@@ -36,8 +36,7 @@ fn every_record_matches_the_reference() {
     }
     // Committed real-time chunks: always available, one record each.
     for id in [KIWA_START_CHUNK, KIWA_CHUNK_2] {
-        let bytes = testdata(id).expect("committed fixture");
-        let records = ldm_records(&bytes);
+        let records = ldm_records(id).expect("committed fixture");
         assert_eq!(records.len(), 1, "{id}: one LDM record");
         let expected = vec![reference_decode(&records[0]).expect("reference decodes")];
         check_volume(&mut dec, id, &records, &expected);
@@ -153,12 +152,9 @@ fn records_match_the_golden_sha256_lists() {
 fn real_bytes_for_recompression(dec: &mut Decoder) -> Option<Vec<u8>> {
     let mut raw = Vec::new();
     let tstl = volume_records("l2-tstl-20230331-230314", 70)?;
+    let ktlx = volume_records("l2-ktlx-20240315-000217", 97)?;
     let ktlx_file = testdata("l2-ktlx-20240315-000217")?;
-    for r in tstl
-        .iter()
-        .take(30)
-        .chain(ldm_records(&ktlx_file).iter().take(3))
-    {
+    for r in tstl.iter().take(30).chain(ktlx.iter().take(3)) {
         dec.decode_stream_into(r, &mut raw)
             .unwrap_or_else(|e| panic!("real record: {e}"));
     }
@@ -384,8 +380,7 @@ fn edge_cases() {
     }
     assert_eq!(ours(&mut dec, b"not bzip2"), Err(Error::BadStreamHeader));
     // A real record.
-    let bytes = testdata(KIWA_START_CHUNK).expect("committed fixture");
-    let records = ldm_records(&bytes);
+    let records = ldm_records(KIWA_START_CHUNK).expect("committed fixture");
     let good = &records[0];
     let expect = reference_decode(good).expect("reference");
     // Output restored on error; appended on success.

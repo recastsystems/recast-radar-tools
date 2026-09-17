@@ -2967,133 +2967,210 @@ REMARKS:
         assert!(merged[0].max_wind_kt.unwrap() >= merged[1].max_wind_kt.unwrap());
     }
 
-    /// Minimal hand-built record for the merge/failover tests (the committed
-    /// fixtures carry no GDACS storm inside an NHC basin).
-    fn synthetic_storm(
-        id: &str,
-        name: &str,
-        source: Source,
-        lon: f32,
-        lat: f32,
-        wind_kt: f32,
-    ) -> TropicalCyclone {
-        TropicalCyclone {
-            id: id.to_owned(),
-            name: name.to_owned(),
-            basin: Basin::from_lon_lat(lon, lat),
-            source,
-            classification: "Tropical Cyclone".to_owned(),
-            category: Some(Category::from_wind_kt(wind_kt)),
-            position: GeoPoint { lon, lat },
-            max_wind_kt: Some(wind_kt),
-            gust_kt: None,
-            min_pressure_mb: None,
-            movement_dir_deg: None,
-            movement_speed_kt: None,
-            advisory_time: None,
-            alert_level: None,
-            affected_areas: None,
-            forecast: Vec::new(),
-            current_wind_radii: Vec::new(),
-            cone: Vec::new(),
-            report_url: None,
-            geometry_url: None,
-            forecast_url: None,
-            warning: None,
-            jtwc_warning_nr: None,
+    // Real feed captures for the merge/failover tests.
+    //
+    // - `NHC_ARTHUR`: NHC `CurrentStorms.json` as the Internet Archive saved
+    //   it on 2026-06-18T02:11:38Z (fetched through web.archive.org `id_`):
+    //   Tropical Storm Arthur, AL012026, 29.4N 94.9W, 35 kt, advisory 7A.
+    // - `GDACS_JUNE`: the GDACS TC event list for 2026-06-10..2026-06-30
+    //   (`geteventlist/SEARCH?eventlist=TC`, the same FeatureCollection
+    //   schema as the live list; fetched 2026-09-17): MEKKHALA-26, HIGOS-26,
+    //   ARTHUR-26 at its final position 29.7N 94.5W (55 km from the NHC fix),
+    //   CRISTINA-26 at 13.2N 89.1W (an NHC basin, no NHC counterpart at the
+    //   snapshot time).
+    // - `NHC_QUIET` and `GDACS_SEPTEMBER`: the live feeds captured within
+    //   the same minute, 2026-09-17T05:38:23Z and 05:38:36Z: NHC lists no
+    //   active storm while GDACS still carries FIFTEEN-E-26 (East Pacific,
+    //   NOAA source, 56 km/h) and DUJUAN-26 (West Pacific, 130 km/h) among
+    //   98 non-TC events.
+    const NHC_ARTHUR: &str =
+        include_str!("../tests/fixtures/tropical/nhc_current_storms_20260618T0211Z.json");
+    const GDACS_JUNE: &str =
+        include_str!("../tests/fixtures/tropical/gdacs_tc_search_20260610_20260630.json");
+    const NHC_QUIET: &str =
+        include_str!("../tests/fixtures/tropical/nhc_current_storms_20260917T0538Z.json");
+    const GDACS_SEPTEMBER: &str =
+        include_str!("../tests/fixtures/tropical/gdacs_events4app_20260917T0538Z.json");
+
+    /// Storm names and positions read straight from a captured GDACS
+    /// FeatureCollection with serde_json (no crate parser), TC features only.
+    fn captured_gdacs_points(json: &str) -> Vec<(String, f32, f32)> {
+        let value: serde_json::Value = serde_json::from_str(json).expect("capture parses");
+        value["features"]
+            .as_array()
+            .expect("features")
+            .iter()
+            .filter(|feature| feature["properties"]["eventtype"] == "TC")
+            .map(|feature| {
+                let coordinates = feature["geometry"]["coordinates"]
+                    .as_array()
+                    .expect("point");
+                (
+                    feature["properties"]["eventname"]
+                        .as_str()
+                        .expect("eventname")
+                        .to_owned(),
+                    coordinates[0].as_f64().expect("lon") as f32,
+                    coordinates[1].as_f64().expect("lat") as f32,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn captured_feeds_parse_to_the_storms_they_list() {
+        let arthur = parse_nhc_current_storms(NHC_ARTHUR).unwrap();
+        assert_eq!(arthur.len(), 1);
+        assert_eq!(arthur[0].name, "Arthur");
+        assert_eq!(arthur[0].id, "nhc:al012026");
+        assert_eq!(
+            arthur[0].position,
+            GeoPoint {
+                lon: -94.9,
+                lat: 29.4
+            }
+        );
+        assert_eq!(arthur[0].max_wind_kt, Some(35.0));
+        assert_eq!(arthur[0].basin, Basin::Atlantic);
+
+        let june = parse_gdacs_event_list(GDACS_JUNE).unwrap();
+        let points = captured_gdacs_points(GDACS_JUNE);
+        assert_eq!(
+            points
+                .iter()
+                .map(|(name, ..)| name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["MEKKHALA-26", "HIGOS-26", "ARTHUR-26", "CRISTINA-26"]
+        );
+        assert_eq!(june.len(), points.len());
+        for (storm, (name, lon, lat)) in june.iter().zip(&points) {
+            assert_eq!(storm.name, clean_storm_name(name));
+            assert_eq!(
+                storm.position,
+                GeoPoint {
+                    lon: *lon,
+                    lat: *lat
+                }
+            );
+            assert_eq!(storm.source, Source::Gdacs);
         }
+        let gdacs_arthur = &june[2];
+        assert_eq!(gdacs_arthur.name, "Arthur");
+        let separation = great_circle_km(gdacs_arthur.position, arthur[0].position);
+        assert!(
+            separation > 40.0 && separation < DUPLICATE_STORM_KM,
+            "GDACS's last Arthur fix is {separation} km from the NHC advisory fix"
+        );
+
+        assert!(parse_nhc_current_storms(NHC_QUIET).unwrap().is_empty());
+        let september = parse_gdacs_event_list(GDACS_SEPTEMBER).unwrap();
+        let points = captured_gdacs_points(GDACS_SEPTEMBER);
+        assert_eq!(
+            points
+                .iter()
+                .map(|(name, ..)| name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["DUJUAN-26", "FIFTEEN-E-26"]
+        );
+        assert_eq!(
+            september.len(),
+            2,
+            "the 98 earthquake/flood/fire events are filtered out"
+        );
+        assert_eq!(september[0].basin, Basin::WestPacific);
+        assert_eq!(september[1].basin, Basin::EastPacific);
+        assert_eq!(
+            september[1].position,
+            GeoPoint {
+                lon: -125.8,
+                lat: 15.5
+            }
+        );
     }
 
     #[test]
     fn merge_dedupes_per_storm_not_per_basin() {
-        // Audit #1: a legitimate GDACS-tracked Atlantic system with NO NHC
-        // counterpart (NHC hasn't initiated advisories) must survive the
-        // merge — the old per-basin filter silently discarded it.
-        let nhc = parse_nhc_current_storms(NHC).unwrap(); // Alberto, 24.5N 88.9W
-        let oscar = synthetic_storm("gdacs:900001:3", "Oscar", Source::Gdacs, -60.0, 30.0, 90.0);
-        let mut gdacs = parse_gdacs_event_list(GDACS_LIST).unwrap();
-        gdacs.push(oscar);
+        // Audit #1: a legitimate GDACS-tracked system in an NHC basin with
+        // NO NHC counterpart must survive the merge — the old per-basin
+        // filter silently discarded it. CRISTINA-26 (13.2N 89.1W) had no
+        // NHC advisory when Arthur was active; GDACS's ARTHUR-26 record is
+        // the same storm and is dropped.
+        let nhc = parse_nhc_current_storms(NHC_ARTHUR).unwrap(); // Arthur, 29.4N 94.9W
+        let gdacs = parse_gdacs_event_list(GDACS_JUNE).unwrap();
         let merged = merge_sources(nhc, gdacs);
-        assert_eq!(merged.len(), 4, "Alberto + BAVI + MAYSAK + Oscar");
+        assert_eq!(
+            merged.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            vec!["Mekkhala", "Higos", "Cristina", "Arthur"],
+            "strongest first; one Arthur: {merged:?}"
+        );
         assert!(
-            merged.iter().any(|s| s.name == "Oscar"
+            merged.iter().any(|s| s.name == "Cristina"
                 && s.source == Source::Gdacs
                 && s.basin == Basin::Atlantic),
             "non-duplicate GDACS storm in an NHC basin survives: {merged:?}"
         );
+        let arthur = merged.iter().find(|s| s.name == "Arthur").unwrap();
+        assert_eq!(arthur.source, Source::Nhc, "the NHC record wins");
+        assert_eq!(arthur.id, "nhc:al012026");
     }
 
     #[test]
     fn merge_drops_gdacs_duplicate_by_name() {
-        // GDACS's record of the SAME hurricane, position drifted well past the
-        // proximity gate — the (case-insensitive) name still identifies it.
-        let nhc = parse_nhc_current_storms(NHC).unwrap();
-        let dup = synthetic_storm(
-            "gdacs:900002:1",
-            "ALBERTO",
-            Source::Gdacs,
-            -70.0,
-            35.0,
-            80.0,
-        );
-        let merged = merge_sources(nhc, vec![dup]);
+        // GDACS's record of the SAME storm with its position moved 10 degrees
+        // of longitude east (edit of the captured fix: ~1000 km, well past
+        // the proximity gate) — the (case-insensitive, suffix-stripped) name
+        // still identifies it.
+        let nhc = parse_nhc_current_storms(NHC_ARTHUR).unwrap();
+        let mut gdacs = parse_gdacs_event_list(GDACS_JUNE).unwrap();
+        let arthur = gdacs.iter_mut().find(|s| s.name == "Arthur").unwrap();
+        arthur.position.lon += 10.0;
+        assert!(great_circle_km(arthur.position, nhc[0].position) > 2.0 * DUPLICATE_STORM_KM);
+        let drifted = arthur.clone();
+        let merged = merge_sources(nhc, vec![drifted]);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].source, Source::Nhc, "the NHC record wins");
     }
 
     #[test]
     fn merge_drops_gdacs_duplicate_by_position() {
-        // Same storm under a placeholder name: caught by position proximity.
-        // An unrelated far-away placeholder must NOT alias (names don't match
-        // and "Unnamed" is excluded from name matching anyway).
-        let nhc = parse_nhc_current_storms(NHC).unwrap(); // Alberto, 24.5N 88.9W
-        let near_dup = synthetic_storm(
-            "gdacs:900003:1",
-            "Unnamed",
-            Source::Gdacs,
-            -88.5,
-            24.8,
-            80.0,
-        );
-        let far_invest = synthetic_storm(
-            "gdacs:900004:1",
-            "Unnamed",
-            Source::Gdacs,
-            -30.0,
-            20.0,
-            45.0,
-        );
+        // The same storm under a placeholder name: caught by position
+        // proximity (GDACS's final Arthur fix is 55 km from the NHC fix). An
+        // unrelated far-away placeholder must NOT alias (names don't match
+        // and "Unnamed" is excluded from name matching anyway). Both are the
+        // captured records with only the name field replaced.
+        let nhc = parse_nhc_current_storms(NHC_ARTHUR).unwrap(); // Arthur, 29.4N 94.9W
+        let gdacs = parse_gdacs_event_list(GDACS_JUNE).unwrap();
+        let mut near_dup = gdacs.iter().find(|s| s.name == "Arthur").unwrap().clone();
+        near_dup.name = "Unnamed".to_owned();
+        let mut far_invest = gdacs.iter().find(|s| s.name == "Cristina").unwrap().clone();
+        far_invest.name = "Unnamed".to_owned();
+        assert!(great_circle_km(far_invest.position, nhc[0].position) > DUPLICATE_STORM_KM);
+        let (near_id, far_id) = (near_dup.id.clone(), far_invest.id.clone());
         let merged = merge_sources(nhc, vec![near_dup, far_invest]);
         assert_eq!(merged.len(), 2, "{merged:?}");
-        assert!(merged.iter().any(|s| s.id == "gdacs:900004:1"));
-        assert!(!merged.iter().any(|s| s.id == "gdacs:900003:1"));
+        assert!(merged.iter().any(|s| s.id == far_id));
+        assert!(!merged.iter().any(|s| s.id == near_id));
     }
 
     #[test]
     fn combine_keeps_all_gdacs_storms_when_nhc_is_down() {
         // Audit #1 regression: during an NHC outage, GDACS's record of an
-        // Atlantic hurricane is the only witness. The old code ran the
-        // per-basin filter anyway and returned Ok(vec![]) — a false
-        // "Quiet across every basin" that also reset the aggressive retry.
-        let atlantic = synthetic_storm(
-            "gdacs:900005:2",
-            "Milton",
-            Source::Gdacs,
-            -87.5,
-            25.0,
-            120.0,
-        );
-        let wpac = synthetic_storm("gdacs:900006:4", "Bavi", Source::Gdacs, 145.0, 14.3, 145.0);
-        let out = combine_source_results(Err("NHC HTTP 503".to_owned()), Ok(vec![atlantic, wpac]))
+        // East Pacific system (FIFTEEN-E-26, NOAA-sourced) is the only
+        // witness. The old code ran the per-basin filter anyway and returned
+        // Ok(vec![]) — a false "Quiet across every basin" that also reset the
+        // aggressive retry.
+        let gdacs = parse_gdacs_event_list(GDACS_SEPTEMBER).unwrap();
+        let out = combine_source_results(Err("NHC HTTP 503".to_owned()), Ok(gdacs))
             .expect("a reporting GDACS alone is trusted");
         assert_eq!(out.len(), 2, "{out:?}");
         assert!(
             out.iter()
-                .any(|s| s.name == "Milton" && s.basin == Basin::Atlantic),
+                .any(|s| s.name == "Fifteen" && s.basin == Basin::EastPacific),
             "the NHC-basin storm survives the NHC outage: {out:?}"
         );
         // Strongest first still applies on the failover path.
-        assert_eq!(out[0].name, "Bavi");
+        assert_eq!(out[0].name, "Dujuan");
+        assert!(out[0].max_wind_kt.unwrap() > out[1].max_wind_kt.unwrap());
     }
 
     #[test]
@@ -3123,15 +3200,23 @@ REMARKS:
     }
 
     #[test]
-    fn empty_nhc_feed_does_not_hide_gdacs_atlantic_storm() {
-        // NHC responding but with no active systems listed yet; GDACS already
-        // carries the storm. The merge keeps it (nothing to duplicate).
-        let atlantic =
-            synthetic_storm("gdacs:900007:1", "Nadine", Source::Gdacs, -80.0, 27.0, 70.0);
-        let merged =
-            combine_source_results(Ok(Vec::new()), Ok(vec![atlantic])).expect("both sources ok");
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].name, "Nadine");
+    fn empty_nhc_feed_does_not_hide_gdacs_nhc_basin_storm() {
+        // NHC responding with no active systems (the 2026-09-17T05:38Z
+        // capture) while GDACS, captured in the same minute, still carries
+        // the East Pacific FIFTEEN-E-26. The merge keeps it (nothing to
+        // duplicate).
+        let nhc = parse_nhc_current_storms(NHC_QUIET).unwrap();
+        assert!(nhc.is_empty());
+        let gdacs = parse_gdacs_event_list(GDACS_SEPTEMBER).unwrap();
+        let merged = combine_source_results(Ok(nhc), Ok(gdacs)).expect("both sources ok");
+        assert_eq!(merged.len(), 2);
+        let east_pacific = merged
+            .iter()
+            .find(|s| s.basin == Basin::EastPacific)
+            .expect("FIFTEEN-E-26 survives");
+        assert_eq!(east_pacific.name, "Fifteen");
+        assert_eq!(east_pacific.id, "gdacs:1001321:10");
+        assert_eq!(east_pacific.source, Source::Gdacs);
     }
 
     #[test]

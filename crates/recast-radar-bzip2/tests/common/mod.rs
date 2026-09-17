@@ -47,10 +47,13 @@ pub fn testdata(id: &str) -> Option<Vec<u8>> {
     }
 }
 
-/// Split an LDM block-bzip2 archive into its records: after the optional
-/// 24-byte volume header, each record is a big-endian `i32` length (negative
-/// for the last record) followed by one bzip2 stream.
-pub fn ldm_records(bytes: &[u8]) -> Vec<Vec<u8>> {
+/// The LDM block-bzip2 archive `id` split into its records, or `None` when
+/// the file is unavailable offline: after the optional 24-byte volume header,
+/// each record is a big-endian `i32` length (negative for the last record)
+/// followed by one bzip2 stream.
+pub fn ldm_records(id: &str) -> Option<Vec<Vec<u8>>> {
+    let bytes = testdata(id)?;
+    let bytes = bytes.as_slice();
     let mut cursor = if bytes.starts_with(b"AR2V") || bytes.starts_with(b"ARCH") {
         VOLUME_HEADER_LEN
     } else {
@@ -76,12 +79,12 @@ pub fn ldm_records(bytes: &[u8]) -> Vec<Vec<u8>> {
             break;
         }
     }
-    records
+    Some(records)
 }
 
 /// Every record of `id`, or `None` when the file is unavailable offline.
 pub fn volume_records(id: &str, expected: usize) -> Option<Vec<Vec<u8>>> {
-    let records = ldm_records(&testdata(id)?);
+    let records = ldm_records(id)?;
     assert_eq!(records.len(), expected, "{id}: LDM record count");
     Some(records)
 }

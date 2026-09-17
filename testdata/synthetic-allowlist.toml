@@ -1,0 +1,91 @@
+# Synthetic test inputs still in the workspace (plan task C.1).
+#
+# Empty since C.3: every C.1 entry was converted to real inputs in C.2, and the
+# tests merged from main in C.3 were converted too (docs/testdata/synthetic-inventory.md).
+# New findings must be converted; an entry may be added only as a justified
+# exception (see `status` below).
+#
+# `crates/recast-radar-testdata/tests/no_synthetic.rs` scans test code and data
+# files (rules: `recast_radar_testdata::synthetic`) and fails on any finding
+# that is not listed here, and on any entry that no longer matches a finding.
+# docs/testdata/synthetic-inventory.md gives the real replacement for each one.
+#
+# One array of tables per conversion group (plan task C.2):
+#   io-nexrad, io-formats, correct, filters-map, retrieve, track, render-bench,
+#   core-data-scattering
+# Each entry sits under the group that owns its crate (the test checks this).
+#
+#   [[<group>]]
+#   path = "crates/<crate>/..."   # workspace-relative
+#   name = "tests::helper"        # item path inside the file; omitted for a data file
+#   status = "pending"            # "pending": convert in C.2, then delete the entry
+#                                 # "exception": permanent; allowed only for pure math or
+#                                 #   geometry helpers that do not consume radar data, fuzz
+#                                 #   regression inputs, and corruption helpers that start
+#                                 #   from real bytes
+#   justification = "..."         # pending: the real replacement; exception: why it stays
+#
+# Converting a test: switch it to real files, delete its entry and the entries of
+# helpers it no longer uses. To print every current finding as tables:
+#   RECAST_RADAR_SYNTHETIC_REPORT=findings.toml cargo test -p recast-radar-testdata --test no_synthetic
+
+# ============================================================================
+# io-nexrad (0 entries)
+# ============================================================================
+
+# All converted to real files in C.2 (see crates/recast-radar-io-nexrad/src/lib.rs
+# `tests` and tools/level2_decode_golden.py).
+
+# ============================================================================
+# io-formats (0 entries; every test converted to real data in C.2)
+# ============================================================================
+
+# ============================================================================
+# correct (0 entries): every synthetic test was converted to real data in C.2
+# ============================================================================
+
+# ============================================================================
+# filters-map (0 entries)
+# ============================================================================
+
+# All 36 converted in C.2 (branch real-tests-filters-map): real-data tests in
+# crates/recast-radar-filters/tests/{gate_filter,smooth,interpolate}_real.rs and
+# crates/recast-radar-map/tests/{rhi,volumetric}_real.rs, goldens from
+# tools/filters_map_golden.py.
+
+# ============================================================================
+# retrieve (0 entries)
+# ============================================================================
+
+# All 48 converted in C.2 (branch real-tests-retrieve): real-data tests in
+# crates/recast-radar-retrieve/tests/{availability,detect,gbvtd,shear,sweep,volume,vwp}_real.rs
+# and the wind.rs unit test, goldens from tools/retrieve_golden.py
+# (testdata/golden/retrieve/*.json).
+
+# ============================================================================
+# track (0 entries)
+# ============================================================================
+#
+# Converted in C.2 (branch real-tests-track): the 22 synthetic tests and 8
+# helpers of crates/recast-radar-track/src/{cells,swath,temporal,tracking,tracks}.rs
+# were replaced by crates/recast-radar-track/tests/*_real.rs on corpus files,
+# with goldens under testdata/golden/track/ from tools/track_golden.py.
+
+# ============================================================================
+# render-bench (0 entries): converted in C.2 (tests read the corpus and
+# testdata/golden/{bench,render}/*.json from tools/render_bench_golden.py)
+# ============================================================================
+
+# ============================================================================
+# core-data-scattering (0 entries)
+# ============================================================================
+#
+# Every entry of this group was converted in C.2 (branch
+# real-tests-core-data-scattering): recast-radar-core's model tests moved to
+# crates/recast-radar-core/tests/{real_model,real_merge}.rs over decoded corpus
+# files (goldens: tools/core_golden.py); recast-radar-data's provider-contract
+# tests run over committed ORD archive listings and its tropical merge tests
+# over captured NHC/GDACS feeds; recast-radar-scattering's LUT, PSD and runtime
+# tests load the committed PyTMatrix 0.3.3 tables and WRF P3 tables
+# (testdata/scattering/manifest.toml, goldens: tools/scattering_golden.py).
+# The group keeps no exception.

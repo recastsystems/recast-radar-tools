@@ -330,7 +330,10 @@ impl Cassette {
         match body {
             RecordedBody::Text(text) => text.as_bytes().to_vec(),
             RecordedBody::File(file) => {
-                let path = Path::new(FIXTURES).join("chunks").join(file);
+                // The downloaded chunk bytes are corpus entries
+                // (`testdata/level2/manifest.toml`, ids `l2chunk-<file>`).
+                let id = format!("l2chunk-{}", file.to_ascii_lowercase());
+                let path = recast_radar_testdata::path(&id).unwrap_or_else(|err| panic!("{err}"));
                 fs::read(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()))
             }
         }
@@ -859,10 +862,14 @@ fn next_volume_join_downloads_real_chunk_bytes() {
         assert_eq!(chunk.info.volume_id, expected_id);
         assert_eq!(usize::from(chunk.info.chunk_id), index + 1);
         let data = chunk.data.as_ref().expect("downloaded");
-        let file = Path::new(FIXTURES)
-            .join("chunks")
-            .join(chunk_file_name(&chunk.info.object.key));
-        assert_eq!(data, &fs::read(&file).expect("chunk file"));
+        let id = format!(
+            "l2chunk-{}",
+            chunk_file_name(&chunk.info.object.key).to_ascii_lowercase()
+        );
+        assert_eq!(
+            data,
+            &recast_radar_testdata::bytes(&id).expect("chunk corpus entry")
+        );
         assert_eq!(data.len() as u64, chunk.info.object.size);
     }
     // The Start chunk carries the Archive II volume header, whose extension

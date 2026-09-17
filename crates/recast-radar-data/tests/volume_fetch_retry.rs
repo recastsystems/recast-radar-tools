@@ -8,7 +8,6 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -16,14 +15,19 @@ use std::time::Duration;
 use recast_radar_data::realtime::retry::{Jitter, RetryPolicy};
 use recast_radar_data::{VOLUME_FETCH_RETRY, fetch_volume_bytes_with_retry};
 
-const CHUNK: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/listings/chunks/TLAS-3-20260917-015242-003-I"
-);
+/// The 24,018-byte TLAS chunk the `tlas-next-volume-bytes` cassette
+/// downloaded (`testdata/level2/manifest.toml`).
+const CHUNK: &str = "l2chunk-tlas-3-20260917-015242-003-i";
 
-/// Serves `responses` connections in order: each writes the full headers
-/// and the first `body_bytes` bytes of `body`, then closes.
-fn serve(body: Vec<u8>, responses: Vec<usize>) -> (String, Arc<Mutex<usize>>) {
+/// Serves the real chunk [`CHUNK`] over `responses` connections in order:
+/// each writes the full headers and the first `body_bytes(chunk length)`
+/// bytes of the chunk, then closes. Returns the URL, the count of served
+/// connections and the chunk bytes.
+fn serve(responses: Vec<fn(usize) -> usize>) -> (String, Arc<Mutex<usize>>, Vec<u8>) {
+    let body = recast_radar_testdata::bytes(CHUNK).expect("chunk fixture");
+    assert_eq!(body.len(), 24018);
+    let responses: Vec<usize> = responses.iter().map(|part| part(body.len())).collect();
+    let served_body = body.clone();
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let url = format!(
         "http://{}/TLAS/3/20260917-015242-003-I",
@@ -50,14 +54,12 @@ fn serve(body: Vec<u8>, responses: Vec<usize>) -> (String, Arc<Mutex<usize>>) {
             *counter.lock().expect("lock") += 1;
         }
     });
-    (url, served)
+    (url, served, served_body)
 }
 
 #[test]
 fn truncated_volume_body_is_retried_with_the_callers_policy_and_sleep() {
-    let body = std::fs::read(Path::new(CHUNK)).expect("chunk fixture");
-    assert_eq!(body.len(), 24018);
-    let (url, served) = serve(body.clone(), vec![body.len() / 2, body.len()]);
+    let (url, served, body) = serve(vec![|len| len / 2, |len| len]);
     let mut slept = Vec::new();
     let bytes = fetch_volume_bytes_with_retry(&url, &VOLUME_FETCH_RETRY, |delay| slept.push(delay))
         .expect("second attempt succeeds");
@@ -70,8 +72,7 @@ fn truncated_volume_body_is_retried_with_the_callers_policy_and_sleep() {
 
 #[test]
 fn a_policy_without_retries_returns_the_body_error() {
-    let body = std::fs::read(Path::new(CHUNK)).expect("chunk fixture");
-    let (url, served) = serve(body.clone(), vec![body.len() / 2]);
+    let (url, served, _body) = serve(vec![|len| len / 2]);
     let policy = RetryPolicy {
         jitter: Jitter::None,
         ..RetryPolicy::no_retry()

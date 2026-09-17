@@ -1174,125 +1174,30 @@ pub enum InterpolationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_corpus::{self, CorpusLut, array, as_f64, as_usize, f64s};
     use crate::{MeltingModel, OrientationModel, TableValidation, TemporalSampling};
 
-    /// Analytic synthetic fixture only. These affine values are chosen to test
-    /// serialization/interpolation invariants and are not T-matrix output.
-    fn synthetic_node(diameter_m: f64, temperature_k: f64) -> AdditiveScattering {
-        let zh = 100.0 + 10.0 * diameter_m + 0.5 * (temperature_k - 260.0);
-        AdditiveScattering::from_components([
-            zh,
-            0.8 * zh,
-            0.25 * zh,
-            -0.05 * zh,
-            1.0 + 0.2 * diameter_m + 0.01 * (temperature_k - 260.0),
-            0.1 + 0.01 * diameter_m + 0.001 * (temperature_k - 260.0),
-            0.08 + 0.008 * diameter_m + 0.0008 * (temperature_k - 260.0),
-            2.0 * zh,
-            5.0 * zh,
-        ])
-        .unwrap()
-    }
+    const COMPONENT_NAMES: [&str; AdditiveScattering::COMPONENT_COUNT] = [
+        "zh",
+        "zv",
+        "hh_vv_covariance_real",
+        "hh_vv_covariance_imaginary",
+        "kdp",
+        "ah",
+        "av",
+        "fall_speed_first_moment",
+        "fall_speed_second_moment",
+    ];
 
-    fn synthetic_fixture() -> OfflineLut {
-        let axes = vec![
-            Axis::new(AxisKind::EquivolumeDiameter, Unit::Meter, vec![1.0, 2.0]).unwrap(),
-            Axis::new(AxisKind::Temperature, Unit::Kelvin, vec![260.0, 280.0]).unwrap(),
-        ];
-        let generator = GeneratorMetadata::new(
-            "synthetic-unit-test-generator",
-            "1",
-            "internal-test",
-            "synthetic-fixture-v1",
-            None,
-            BTreeMap::new(),
-        )
-        .unwrap();
-        let science = ScienceMetadata::new(
-            KernelModel::SyntheticFixtureOnly,
-            OrientationModel::FixedEuler {
-                yaw_deg: 0.0,
-                pitch_deg: 0.0,
-                roll_deg: 0.0,
-            },
-            MeltingModel::Dry,
-            TemporalSampling::Instantaneous,
-            TableValidation::SyntheticFixtureOnly,
-        )
-        .unwrap();
-        let values = [1.0, 2.0]
-            .into_iter()
-            .flat_map(|diameter| {
-                [260.0, 280.0]
-                    .into_iter()
-                    .map(move |temperature| synthetic_node(diameter, temperature))
-            })
-            .collect();
-        OfflineLut::new(
-            axes,
-            generator,
-            r#"{"fixture":"affine-synthetic-v1","physical":false}"#,
-            science,
-            values,
-        )
-        .unwrap()
-    }
-
-    fn singleton_axis_fixture() -> OfflineLut {
-        let axes = vec![
-            Axis::new(AxisKind::EquivolumeDiameter, Unit::Meter, vec![1.0, 2.0]).unwrap(),
-            Axis::new(AxisKind::Temperature, Unit::Kelvin, vec![270.0]).unwrap(),
-            Axis::new(
-                AxisKind::BulkDensity,
-                Unit::KilogramPerCubicMeter,
-                vec![100.0, 200.0, 300.0],
-            )
-            .unwrap(),
-        ];
-        let generator = GeneratorMetadata::new(
-            "synthetic-unit-test-generator",
-            "1",
-            "internal-test",
-            "singleton-axis-fixture-v1",
-            None,
-            BTreeMap::new(),
-        )
-        .unwrap();
-        let science = ScienceMetadata::new(
-            KernelModel::SyntheticFixtureOnly,
-            OrientationModel::FixedEuler {
-                yaw_deg: 0.0,
-                pitch_deg: 0.0,
-                roll_deg: 0.0,
-            },
-            MeltingModel::Dry,
-            TemporalSampling::Instantaneous,
-            TableValidation::SyntheticFixtureOnly,
-        )
-        .unwrap();
-        let mut values = Vec::new();
-        for diameter in [1.0, 2.0] {
-            for temperature in [270.0] {
-                for density in [100.0, 200.0, 300.0] {
-                    let components = synthetic_node(diameter, temperature).components();
-                    let scale = 1.0 + density / 1_000.0;
-                    values.push(
-                        AdditiveScattering::from_components(
-                            components.map(|component| component * scale),
-                        )
-                        .unwrap(),
-                    );
-                }
-            }
-        }
-        OfflineLut::new(
-            axes,
-            generator,
-            r#"{"fixture":"singleton-axis-v1","physical":false}"#,
-            science,
-            values,
-        )
-        .unwrap()
+    /// Axis coordinates of a golden query, in the table's declared order.
+    fn query(table: &OfflineLut, values: &[f64]) -> Vec<AxisCoordinate> {
+        table
+            .header()
+            .axes()
+            .iter()
+            .zip(values)
+            .map(|(axis, value)| AxisCoordinate::new(axis.kind(), *value).unwrap())
+            .collect()
     }
 
     // Frozen copy of the pre-plan implementation. Comparing component bits
@@ -1392,76 +1297,210 @@ mod tests {
         }
     }
 
-    #[test]
-    fn synthetic_fixture_round_trip_is_byte_deterministic() {
-        let table = synthetic_fixture();
-        let first = table.to_bytes().unwrap();
-        let second = table.to_bytes().unwrap();
-        assert_eq!(first, second);
-        let decoded = OfflineLut::from_bytes(&first).unwrap();
-        assert_eq!(decoded, table);
-        assert_eq!(decoded.header.magic(), "BRSLUT01");
-        assert_eq!(decoded.header.schema_version(), 1);
-        decoded
-            .verify_generator_config(br#"{"fixture":"affine-synthetic-v1","physical":false}"#)
-            .unwrap();
-    }
-
-    #[test]
-    fn synthetic_affine_fixture_interpolates_exactly_in_declared_axis_order() {
-        let table = synthetic_fixture();
-        let query = [
-            AxisCoordinate::new(AxisKind::EquivolumeDiameter, 1.25).unwrap(),
-            AxisCoordinate::new(AxisKind::Temperature, 265.0).unwrap(),
-        ];
-        let actual = table.interpolate(&query).unwrap().components();
-        let expected = synthetic_node(1.25, 265.0).components();
-        for index in 0..AdditiveScattering::COMPONENT_COUNT {
+    fn assert_relative(actual: &[f64], expected: &[f64], tolerance: f64, what: &str) {
+        for (index, (a, e)) in actual.iter().zip(expected).enumerate() {
+            let scale = e.abs().max(f64::MIN_POSITIVE);
             assert!(
-                (actual[index] - expected[index]).abs() < 1.0e-12,
-                "component {index}: {} != {}",
-                actual[index],
-                expected[index]
+                (a - e).abs() / scale <= tolerance,
+                "{what}: component {index} ({}) {a:e} != {e:e}",
+                COMPONENT_NAMES[index]
             );
         }
+    }
 
-        let order_error = table
-            .interpolate(&[
-                AxisCoordinate::new(AxisKind::Temperature, 265.0).unwrap(),
-                AxisCoordinate::new(AxisKind::EquivolumeDiameter, 1.25).unwrap(),
-            ])
-            .unwrap_err();
+    /// The two committed tables decode with the metadata their generator
+    /// manifests record, and re-encode to exactly the committed bytes.
+    #[test]
+    fn committed_pytmatrix_tables_round_trip_byte_exactly() {
+        for corpus in [test_corpus::rain(), test_corpus::dry_ice()] {
+            let CorpusLut {
+                table,
+                bytes,
+                config,
+                golden,
+            } = corpus;
+            assert_eq!(table.to_bytes().unwrap(), bytes, "{}", golden["id"]);
+            assert_eq!(table.to_bytes().unwrap(), table.to_bytes().unwrap());
+            assert_eq!(table.header().magic(), "BRSLUT01");
+            assert_eq!(table.header().schema_version(), 1);
+            assert_eq!(table.values().len(), as_usize(&golden["grid_point_count"]));
+            assert_eq!(
+                table.header().grid_point_count(),
+                golden["grid_point_count"].as_u64().unwrap()
+            );
+            assert_eq!(
+                table.header().payload_byte_length(),
+                golden["payload_byte_length"].as_u64().unwrap()
+            );
+            assert_eq!(
+                table.header().payload_sha256(),
+                Sha256Digest::from_hex(golden["payload_sha256"].as_str().unwrap()).unwrap()
+            );
+            assert_eq!(
+                table.header().config_sha256(),
+                Sha256Digest::from_hex(golden["config_sha256"].as_str().unwrap()).unwrap()
+            );
+            table.verify_generator_config(&config).unwrap();
+            assert_eq!(
+                table.header().generator_config_utf8().as_bytes(),
+                &config[..]
+            );
+            assert_eq!(
+                table
+                    .header()
+                    .generator()
+                    .package_versions()
+                    .get("pytmatrix"),
+                Some(&"0.3.3".to_owned())
+            );
+            assert_eq!(
+                *table.header().science().validation(),
+                TableValidation::ResearchOnlyUnvalidated
+            );
+            assert!(matches!(
+                table.header().science().kernel(),
+                KernelModel::TMatrix {
+                    implementation: TMatrixImplementation::PyTMatrix033
+                }
+            ));
+            assert_eq!(*table.header().science().melting(), MeltingModel::Dry);
+            assert_eq!(
+                *table.header().science().temporal(),
+                TemporalSampling::Instantaneous
+            );
+            for (axis, want) in table.header().axes().iter().zip(array(&golden["axes"])) {
+                assert_eq!(
+                    serde_json::to_value(axis.kind()).unwrap(),
+                    want["kind"],
+                    "axis kind"
+                );
+                assert_eq!(axis.coordinates().len(), as_usize(&want["count"]));
+                assert_eq!(axis.coordinates()[0], as_f64(&want["first"]));
+                assert_eq!(*axis.coordinates().last().unwrap(), as_f64(&want["last"]));
+            }
+            // Payload nodes read directly from the file bytes.
+            for probe in array(&golden["probes"]) {
+                let index = as_usize(&probe["index"]);
+                let want = f64s(&probe["components"]);
+                for (got, want) in table.values()[index].components().iter().zip(&want) {
+                    assert_eq!(got.to_bits(), want.to_bits(), "node {index}");
+                }
+            }
+        }
         assert!(matches!(
-            order_error,
-            InterpolationError::AxisOrder { index: 0, .. }
+            test_corpus::rain().table.header().science().orientation(),
+            OrientationModel::FixedEuler { .. }
+        ));
+        assert!(matches!(
+            test_corpus::dry_ice()
+                .table
+                .header()
+                .science()
+                .orientation(),
+            OrientationModel::GaussianCanting {
+                standard_deviation_deg: 20.0,
+                ..
+            }
         ));
     }
 
+    /// Interpolation at the post-freeze held-out nodes (coordinates absent
+    /// from the grids, chosen from a public seed) reproduces the validator's
+    /// own multilinear interpolation and agrees with the direct PyTMatrix
+    /// recomputation exactly where the report says it does. Coordinates
+    /// must be named in the declared axis order.
+    #[test]
+    fn held_out_nodes_match_the_validator_and_direct_pytmatrix() {
+        let golden = test_corpus::golden("tmatrix_luts.json");
+        let thresholds = &golden["thresholds"];
+        let mut checked = 0;
+        for corpus in [test_corpus::rain(), test_corpus::dry_ice()] {
+            for node in array(&corpus.golden["held_out"]) {
+                let coordinates = query(&corpus.table, &f64s(&node["coordinates"]));
+                let actual = corpus.table.interpolate(&coordinates).unwrap().components();
+                assert_relative(
+                    &actual,
+                    &f64s(&node["validator_interpolation"]),
+                    1.0e-9,
+                    "validator interpolation",
+                );
+                let direct = f64s(&node["direct_pytmatrix"]);
+                // The report's per-component rule: |error| / max(|direct|,
+                // absolute floor) within the predeclared relative budget.
+                let within =
+                    actual
+                        .iter()
+                        .zip(&direct)
+                        .zip(COMPONENT_NAMES)
+                        .all(|((a, d), name)| {
+                            let floor = as_f64(&thresholds[name]["absolute"]);
+                            (a - d).abs() / d.abs().max(floor)
+                                <= as_f64(&thresholds[name]["relative"])
+                        });
+                assert_eq!(
+                    within,
+                    node["within_thresholds"].as_bool().unwrap(),
+                    "{} node {}: {actual:?} vs direct {direct:?}",
+                    corpus.golden["id"],
+                    node["node_index"]
+                );
+                checked += 1;
+            }
+            let mut swapped = query(
+                &corpus.table,
+                &f64s(&corpus.golden["held_out"][0]["coordinates"]),
+            );
+            swapped.swap(0, 1);
+            assert!(matches!(
+                corpus.table.interpolate(&swapped).unwrap_err(),
+                InterpolationError::AxisOrder { index: 0, .. }
+            ));
+        }
+        assert_eq!(checked, 12);
+    }
+
+    /// The prepared plan of the rain table (dimensions [16, 3, 1, 1],
+    /// last-axis-fastest strides [3, 1, 1, 1]) for a query between diameter
+    /// nodes 1 and 2 and between the first two axis ratios: base at the
+    /// all-lower corner, two active axes in header order, offsets 3 and 1,
+    /// the singleton frequency and elevation axes omitted; serializable and
+    /// bit-identical to the legacy corner walk.
     #[test]
     fn prepared_plan_has_fixed_serializable_axis_ordered_layout() {
-        let table = singleton_axis_fixture();
-        let coordinates = [
-            AxisCoordinate::new(AxisKind::EquivolumeDiameter, 1.25).unwrap(),
-            AxisCoordinate::new(AxisKind::Temperature, 270.0).unwrap(),
-            AxisCoordinate::new(AxisKind::BulkDensity, 250.0).unwrap(),
-        ];
-        let plan = table.prepare_interpolation(&coordinates).unwrap();
-
-        // Last-axis-fastest dimensions [2, 1, 3]: all-lower base is
-        // [0, 0, 1], then active diameter and density offsets retain header
-        // order while the singleton temperature axis is omitted.
-        assert_eq!(plan.base_point_index(), 1);
-        assert_eq!(plan.active_axis_count(), 2);
-        assert_eq!(plan.corner_count(), 4);
-        assert_eq!(&plan.upper_point_offsets()[..2], &[3, 1]);
-        assert_eq!(&plan.upper_fractions()[..2], &[0.25, 0.5]);
+        let corpus = test_corpus::rain();
+        let want = &corpus.golden["plans"]["between"];
+        let coordinates = query(&corpus.table, &f64s(&want["query"]));
+        let plan = corpus.table.prepare_interpolation(&coordinates).unwrap();
+        let layout = &want["plan"];
+        assert_eq!(
+            plan.base_point_index(),
+            layout["base_point_index"].as_u64().unwrap()
+        );
+        assert_eq!(
+            plan.active_axis_count(),
+            as_usize(&layout["active_axis_count"]) as u32
+        );
+        assert_eq!(
+            plan.corner_count(),
+            as_usize(&layout["corner_count"]) as u32
+        );
+        let offsets: Vec<u64> = array(&layout["upper_point_offsets"])
+            .iter()
+            .map(|v| v.as_u64().unwrap())
+            .collect();
+        assert_eq!(&plan.upper_point_offsets()[..offsets.len()], &offsets[..]);
+        assert_eq!(offsets, vec![3, 1]);
+        let fractions = f64s(&layout["upper_fractions"]);
+        for (got, want) in plan.upper_fractions().iter().zip(&fractions) {
+            assert_eq!(got.to_bits(), want.to_bits());
+        }
         assert!(
-            plan.upper_point_offsets()[2..]
+            plan.upper_point_offsets()[offsets.len()..]
                 .iter()
                 .all(|value| *value == 0)
         );
         assert!(
-            plan.upper_fractions()[2..]
+            plan.upper_fractions()[fractions.len()..]
                 .iter()
                 .all(|value| *value == 0.0)
         );
@@ -1470,103 +1509,153 @@ mod tests {
         let encoded = serde_json::to_vec(&plan).unwrap();
         let decoded: PreparedInterpolationPlan = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded, plan);
+        let prepared = corpus.table.interpolate_prepared(&decoded).unwrap();
         assert_bit_identical(
-            table.interpolate_prepared(&decoded).unwrap(),
-            legacy_interpolate(&table, &coordinates).unwrap(),
+            prepared,
+            legacy_interpolate(&corpus.table, &coordinates).unwrap(),
+        );
+        assert_relative(
+            &prepared.components(),
+            &f64s(&want["interpolation"]),
+            1.0e-12,
+            "reference interpolation",
         );
     }
 
+    /// Prepared execution on both tables is bit-identical to the legacy
+    /// corner order at the held-out nodes and at the golden queries.
     #[test]
     fn prepared_execution_is_bit_identical_to_legacy_corner_order() {
-        let table = synthetic_fixture();
-        for (diameter, temperature) in [
-            (1.0, 260.0),
-            (1.0, 267.3),
-            (1.37, 260.0),
-            (1.37, 267.3),
-            (2.0, 267.3),
-            (2.0, 280.0),
-        ] {
-            let coordinates = [
-                AxisCoordinate::new(AxisKind::EquivolumeDiameter, diameter).unwrap(),
-                AxisCoordinate::new(AxisKind::Temperature, temperature).unwrap(),
-            ];
-            let expected = legacy_interpolate(&table, &coordinates).unwrap();
-            let plan = table.prepare_interpolation(&coordinates).unwrap();
-            assert_bit_identical(table.interpolate_prepared(&plan).unwrap(), expected);
-            assert_bit_identical(table.interpolate(&coordinates).unwrap(), expected);
+        for corpus in [test_corpus::rain(), test_corpus::dry_ice()] {
+            let mut queries: Vec<Vec<f64>> = array(&corpus.golden["held_out"])
+                .iter()
+                .map(|node| f64s(&node["coordinates"]))
+                .collect();
+            for plan in ["between", "exact_first", "exact_last"] {
+                queries.push(f64s(&corpus.golden["plans"][plan]["query"]));
+            }
+            for values in queries {
+                let coordinates = query(&corpus.table, &values);
+                let expected = legacy_interpolate(&corpus.table, &coordinates).unwrap();
+                let plan = corpus.table.prepare_interpolation(&coordinates).unwrap();
+                assert_bit_identical(corpus.table.interpolate_prepared(&plan).unwrap(), expected);
+                assert_bit_identical(corpus.table.interpolate(&coordinates).unwrap(), expected);
+            }
         }
     }
 
+    /// Queries on the exact first and last nodes of every axis (the
+    /// singleton frequency and elevation axes included) bracket to the node
+    /// itself: no active axis, one corner, the stored node returned.
     #[test]
     fn prepared_plan_handles_singletons_and_exact_boundaries() {
-        let table = singleton_axis_fixture();
-        let lower = [
-            AxisCoordinate::new(AxisKind::EquivolumeDiameter, 1.0).unwrap(),
-            AxisCoordinate::new(AxisKind::Temperature, 270.0).unwrap(),
-            AxisCoordinate::new(AxisKind::BulkDensity, 100.0).unwrap(),
-        ];
-        let upper = [
-            AxisCoordinate::new(AxisKind::EquivolumeDiameter, 2.0).unwrap(),
-            AxisCoordinate::new(AxisKind::Temperature, 270.0).unwrap(),
-            AxisCoordinate::new(AxisKind::BulkDensity, 300.0).unwrap(),
-        ];
-        for (coordinates, expected_base) in [(&lower[..], 0), (&upper[..], 5)] {
-            let plan = table.prepare_interpolation(coordinates).unwrap();
-            assert_eq!(plan.base_point_index(), expected_base);
-            assert_eq!(plan.active_axis_count(), 0);
-            assert_eq!(plan.corner_count(), 1);
-            assert_bit_identical(
-                table.interpolate_prepared(&plan).unwrap(),
-                legacy_interpolate(&table, coordinates).unwrap(),
-            );
+        for corpus in [test_corpus::rain(), test_corpus::dry_ice()] {
+            for (name, expected_index) in [
+                ("exact_first", 0),
+                ("exact_last", corpus.table.values().len() - 1),
+            ] {
+                let want = &corpus.golden["plans"][name];
+                let coordinates = query(&corpus.table, &f64s(&want["query"]));
+                let plan = corpus.table.prepare_interpolation(&coordinates).unwrap();
+                assert_eq!(plan.base_point_index(), expected_index as u64);
+                assert_eq!(
+                    plan.base_point_index(),
+                    want["plan"]["base_point_index"].as_u64().unwrap()
+                );
+                assert_eq!(plan.active_axis_count(), 0);
+                assert_eq!(plan.corner_count(), 1);
+                let value = corpus.table.interpolate_prepared(&plan).unwrap();
+                assert_bit_identical(
+                    value,
+                    legacy_interpolate(&corpus.table, &coordinates).unwrap(),
+                );
+                assert_bit_identical(value, corpus.table.values()[expected_index]);
+            }
         }
     }
 
+    /// Outside-axis failures of the dry-ice table (diameter 0.1-50 mm,
+    /// ratios 0.7-1.0, singleton 2.7008 GHz and 0 deg) survive plan
+    /// preparation unchanged.
     #[test]
     fn plan_preparation_preserves_outside_axis_failures() {
-        let table = singleton_axis_fixture();
-        let outside_density = [
-            AxisCoordinate::new(AxisKind::EquivolumeDiameter, 1.5).unwrap(),
-            AxisCoordinate::new(AxisKind::Temperature, 270.0).unwrap(),
-            AxisCoordinate::new(AxisKind::BulkDensity, 301.0).unwrap(),
-        ];
+        let corpus = test_corpus::dry_ice();
+        let axes = corpus.table.header().axes();
+        let (dmin, dmax) = (
+            axes[0].coordinates()[0],
+            *axes[0].coordinates().last().unwrap(),
+        );
+        let (rmin, rmax) = (
+            axes[1].coordinates()[0],
+            *axes[1].coordinates().last().unwrap(),
+        );
+        let frequency = axes[2].coordinates()[0];
+
+        let above_ratio = query(&corpus.table, &[dmin, rmax + 0.01, frequency, 0.0]);
         let expected = InterpolationError::OutsideAxis {
-            kind: AxisKind::BulkDensity,
-            value: 301.0,
-            minimum: 100.0,
-            maximum: 300.0,
+            kind: AxisKind::MinorToMajorAxisRatio,
+            value: rmax + 0.01,
+            minimum: rmin,
+            maximum: rmax,
         };
         assert_eq!(
-            table.prepare_interpolation(&outside_density).unwrap_err(),
+            corpus
+                .table
+                .prepare_interpolation(&above_ratio)
+                .unwrap_err(),
             expected
         );
-        assert_eq!(table.interpolate(&outside_density).unwrap_err(), expected);
+        assert_eq!(
+            corpus.table.interpolate(&above_ratio).unwrap_err(),
+            expected
+        );
 
-        let outside_singleton = [
-            AxisCoordinate::new(AxisKind::EquivolumeDiameter, 1.5).unwrap(),
-            AxisCoordinate::new(AxisKind::Temperature, 269.0).unwrap(),
-            AxisCoordinate::new(AxisKind::BulkDensity, 200.0).unwrap(),
-        ];
+        let above_diameter = query(&corpus.table, &[dmax * 1.5, rmin, frequency, 0.0]);
         assert!(matches!(
-            table.prepare_interpolation(&outside_singleton),
+            corpus.table.prepare_interpolation(&above_diameter),
             Err(InterpolationError::OutsideAxis {
-                kind: AxisKind::Temperature,
-                minimum: 270.0,
-                maximum: 270.0,
+                kind: AxisKind::EquivolumeDiameter,
+                ..
+            })
+        ));
+
+        let outside_singleton = query(&corpus.table, &[dmin, rmin, frequency, 0.5]);
+        assert!(matches!(
+            corpus.table.prepare_interpolation(&outside_singleton),
+            Err(InterpolationError::OutsideAxis {
+                kind: AxisKind::RadarElevation,
+                minimum: 0.0,
+                maximum: 0.0,
+                ..
+            })
+        ));
+        let other_frequency = query(&corpus.table, &[dmin, rmin, 2.8e9, 0.0]);
+        assert!(matches!(
+            corpus.table.prepare_interpolation(&other_frequency),
+            Err(InterpolationError::OutsideAxis {
+                kind: AxisKind::Frequency,
                 ..
             })
         ));
     }
 
+    /// The rain table never extrapolates below its 0.3 mm diameter floor,
+    /// and non-finite coordinates are refused before any lookup.
     #[test]
     fn interpolation_refuses_extrapolation_and_nonfinite_coordinates() {
-        let table = synthetic_fixture();
+        let corpus = test_corpus::rain();
+        let axes = corpus.table.header().axes();
+        let below = query(
+            &corpus.table,
+            &[
+                axes[0].coordinates()[0] / 2.0,
+                0.9,
+                axes[2].coordinates()[0],
+                0.0,
+            ],
+        );
         assert!(matches!(
-            table.interpolate(&[
-                AxisCoordinate::new(AxisKind::EquivolumeDiameter, 0.5).unwrap(),
-                AxisCoordinate::new(AxisKind::Temperature, 270.0).unwrap(),
-            ]),
+            corpus.table.interpolate(&below),
             Err(InterpolationError::OutsideAxis {
                 kind: AxisKind::EquivolumeDiameter,
                 ..
@@ -1576,30 +1665,57 @@ mod tests {
             AxisCoordinate::new(AxisKind::Temperature, f64::NAN),
             Err(InterpolationError::NonFiniteCoordinate { .. })
         ));
+        assert!(matches!(
+            AxisCoordinate::new(AxisKind::EquivolumeDiameter, f64::INFINITY),
+            Err(InterpolationError::NonFiniteCoordinate { .. })
+        ));
+        let short = &query(&corpus.table, &[0.001, 0.9, axes[2].coordinates()[0], 0.0])[..3];
+        assert!(matches!(
+            corpus.table.interpolate(short),
+            Err(InterpolationError::CoordinateCount {
+                expected: 4,
+                actual: 3
+            })
+        ));
     }
 
+    /// One flipped bit in the last payload byte of the committed rain table
+    /// fails the payload digest; a config that is not the generator's exact
+    /// bytes fails the external config digest.
     #[test]
     fn payload_and_external_config_hash_mismatches_fail_closed() {
-        let table = synthetic_fixture();
-        let mut bytes = table.to_bytes().unwrap();
+        let corpus = test_corpus::rain();
+        let mut bytes = corpus.bytes.clone();
         *bytes.last_mut().unwrap() ^= 0x01;
         assert!(matches!(
             OfflineLut::from_bytes(&bytes),
             Err(LutError::PayloadDigestMismatch { .. })
         ));
+        let mut config = corpus.config.clone();
+        // The dry-ice config is a different real generator config.
         assert!(matches!(
-            table.verify_generator_config(br#"{"fixture":"different"}"#),
+            corpus
+                .table
+                .verify_generator_config(&test_corpus::dry_ice().config),
+            Err(LutError::ExternalConfigDigestMismatch { .. })
+        ));
+        // One byte of trailing whitespace is already a different config.
+        config.push(b'\n');
+        assert!(matches!(
+            corpus.table.verify_generator_config(&config),
             Err(LutError::ExternalConfigDigestMismatch { .. })
         ));
     }
 
+    /// Replacing the embedded config text of the committed table with the
+    /// dry-ice table's real config while keeping the recorded config digest
+    /// is caught: the digest is recomputed from the embedded bytes.
     #[test]
     fn embedded_config_hash_is_recomputed_not_trusted() {
-        let table = synthetic_fixture();
-        let mut header = table.header.clone();
-        header.generator_config_utf8 =
-            r#"{"fixture":"affine-synthetic-v2","physical":false}"#.to_owned();
-        let payload = encode_payload(&table.values).unwrap();
+        let corpus = test_corpus::rain();
+        let mut header = corpus.table.header.clone();
+        header.generator_config_utf8 = String::from_utf8(test_corpus::dry_ice().config).unwrap();
+        let payload = encode_payload(&corpus.table.values).unwrap();
         let bytes = assemble_file(&header, &payload).unwrap();
         assert!(matches!(
             OfflineLut::from_bytes(&bytes),
@@ -1607,19 +1723,25 @@ mod tests {
         ));
     }
 
+    /// A node of the real payload rewritten to a non-physical covariance
+    /// (real part above sqrt(ZH * ZV)) is rejected even with the payload
+    /// digest recomputed for the edited bytes.
     #[test]
     fn digest_cannot_hide_an_invalid_additive_grid_node() {
-        let table = synthetic_fixture();
+        let path = recast_radar_testdata::path("tmatrix-lut-rain-sband-pytmatrix-0.3.3").unwrap();
+        let table = OfflineLut::from_bytes(&std::fs::read(path).unwrap()).unwrap();
         let mut header = table.header.clone();
         let mut payload = encode_payload(&table.values).unwrap();
-        // Point 0 covariance real is component 2; make it exceed sqrt(ZH*ZV).
-        let offset = 2 * size_of::<f64>();
-        payload[offset..offset + 8].copy_from_slice(&1.0e9_f64.to_le_bytes());
+        let point = table.values().len() / 2;
+        let node = table.values()[point].components();
+        let bound = (node[0] * node[1]).sqrt();
+        let offset = (point * AdditiveScattering::COMPONENT_COUNT + 2) * size_of::<f64>();
+        payload[offset..offset + 8].copy_from_slice(&(bound * 1.5).to_le_bytes());
         header.payload_sha256 = Sha256Digest::compute(&payload);
         let bytes = assemble_file(&header, &payload).unwrap();
         assert!(matches!(
             OfflineLut::from_bytes(&bytes),
-            Err(LutError::InvalidOutput { point: 0, .. })
+            Err(LutError::InvalidOutput { point: p, .. }) if p == point
         ));
     }
 
@@ -1635,26 +1757,43 @@ mod tests {
         ));
     }
 
+    /// The file magic and the schema prefix of the committed bytes are
+    /// checked before anything is parsed.
     #[test]
     fn file_magic_and_schema_are_never_guessed() {
-        let mut bytes = synthetic_fixture().to_bytes().unwrap();
+        let path = recast_radar_testdata::path("tmatrix-lut-rain-sband-pytmatrix-0.3.3").unwrap();
+        let committed = std::fs::read(path).unwrap();
+        OfflineLut::from_bytes(&committed).unwrap();
+        let mut bytes = committed.clone();
         bytes[0] = b'X';
         assert!(matches!(
             OfflineLut::from_bytes(&bytes),
             Err(LutError::FileMagic { .. })
         ));
 
-        let mut bytes = synthetic_fixture().to_bytes().unwrap();
+        let mut bytes = committed.clone();
         bytes[8..10].copy_from_slice(&2_u16.to_le_bytes());
         assert!(matches!(
             OfflineLut::from_bytes(&bytes),
             Err(LutError::UnsupportedSchema { actual: 2 })
         ));
+
+        assert!(matches!(
+            OfflineLut::from_bytes(&committed[..10]),
+            Err(LutError::TruncatedPrefix { actual: 10 })
+        ));
+        assert!(matches!(
+            OfflineLut::from_bytes(&committed[..200]),
+            Err(LutError::TruncatedHeader { .. })
+        ));
     }
 
+    /// The redundant header fields of the committed table (magic, schema,
+    /// axis set, output descriptors) are each checked against the schema.
     #[test]
     fn redundant_header_contract_rejects_mislabeled_schema_axes_and_outputs() {
-        let table = synthetic_fixture();
+        let corpus = test_corpus::rain();
+        let table = &corpus.table;
         let payload = encode_payload(&table.values).unwrap();
 
         let mut header = table.header.clone();
@@ -1691,42 +1830,34 @@ mod tests {
         ));
     }
 
+    /// The singleton frequency and elevation axes of both tables contribute
+    /// no corner: a query on a grid node returns exactly the stored node,
+    /// and each singleton coordinate is exact.
     #[test]
     fn singleton_axis_is_exact_and_does_not_duplicate_corner_weight() {
-        let table = OfflineLut::new(
-            vec![Axis::new(AxisKind::Frequency, Unit::Hertz, vec![2.8e9]).unwrap()],
-            GeneratorMetadata::new(
-                "synthetic-unit-test-generator",
-                "1",
-                "internal-test",
-                "singleton-synthetic-fixture-v1",
-                None,
-                BTreeMap::new(),
-            )
-            .unwrap(),
-            r#"{"fixture":"singleton-synthetic-v1","physical":false}"#,
-            ScienceMetadata::new(
-                KernelModel::SyntheticFixtureOnly,
-                OrientationModel::FixedEuler {
-                    yaw_deg: 0.0,
-                    pitch_deg: 0.0,
-                    roll_deg: 0.0,
-                },
-                MeltingModel::Dry,
-                TemporalSampling::Instantaneous,
-                TableValidation::SyntheticFixtureOnly,
-            )
-            .unwrap(),
-            vec![synthetic_node(1.0, 260.0)],
-        )
-        .unwrap();
-        let expected = table.values()[0];
-        assert_eq!(
-            table
-                .interpolate(&[AxisCoordinate::new(AxisKind::Frequency, 2.8e9).unwrap()])
-                .unwrap(),
-            expected
-        );
+        for corpus in [test_corpus::rain(), test_corpus::dry_ice()] {
+            let axes = corpus.table.header().axes();
+            assert_eq!(
+                axes[2].coordinates().len(),
+                1,
+                "frequency is a singleton axis"
+            );
+            assert_eq!(
+                axes[3].coordinates().len(),
+                1,
+                "elevation is a singleton axis"
+            );
+            for probe in array(&corpus.golden["probes"]) {
+                let coordinates = query(&corpus.table, &f64s(&probe["coordinates"]));
+                let plan = corpus.table.prepare_interpolation(&coordinates).unwrap();
+                assert_eq!(plan.active_axis_count(), 0);
+                assert_eq!(plan.corner_count(), 1);
+                assert_eq!(plan.base_point_index(), probe["index"].as_u64().unwrap());
+                let expected = corpus.table.values()[as_usize(&probe["index"])];
+                assert_eq!(corpus.table.interpolate(&coordinates).unwrap(), expected);
+                assert_bit_identical(corpus.table.interpolate_prepared(&plan).unwrap(), expected);
+            }
+        }
     }
 
     #[test]

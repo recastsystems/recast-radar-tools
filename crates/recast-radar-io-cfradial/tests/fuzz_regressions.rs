@@ -55,10 +55,13 @@ fn dimension_len_at(bytes: &[u8], wanted: &str) -> usize {
     panic!("dimension {wanted} not found");
 }
 
-fn set_sweep_dimension(bytes: &mut [u8], sweeps: usize) {
-    let at = dimension_len_at(bytes, "sweep");
+/// The testdata file `id` with its `sweep` dimension length replaced.
+fn with_sweep_dimension(id: &str, sweeps: usize) -> Vec<u8> {
+    let mut bytes = testdata_bytes(id);
+    let at = dimension_len_at(&bytes, "sweep");
     let sweeps = u32::try_from(sweeps).unwrap_or_else(|e| panic!("{e}"));
     bytes[at..at + 4].copy_from_slice(&sweeps.to_be_bytes());
+    bytes
 }
 
 /// The Irene file with `sweep_start_ray_index[1]` replaced, after checking
@@ -110,8 +113,7 @@ fn fuzz_input_is_rejected_by_the_sweep_limit() {
 fn fuzz_input_within_the_sweep_limit_is_rejected_as_overlapping() {
     // The same garbage ray indices, read for 1,024 sweeps: sweeps 1 and 16
     // both cover every ray.
-    let mut bytes = testdata_bytes(FUZZ_INPUT);
-    set_sweep_dimension(&mut bytes, MAX_SWEEPS_PER_VOLUME);
+    let bytes = with_sweep_dimension(FUZZ_INPUT, MAX_SWEEPS_PER_VOLUME);
     assert_overlap_error(&bytes, "fuzz input with 1,024 sweeps");
 }
 
@@ -120,8 +122,7 @@ fn real_volume_claiming_the_maximum_sweep_count_is_rejected_as_overlapping() {
     // The fuzz finding's mechanism on the intact seed: with `sweep` = 1,024
     // the sweep variables run into the following header variables. The
     // decoder used to return 292 cuts, several repeating all 719 rays.
-    let mut bytes = testdata_bytes(IRENE);
-    set_sweep_dimension(&mut bytes, MAX_SWEEPS_PER_VOLUME);
+    let bytes = with_sweep_dimension(IRENE, MAX_SWEEPS_PER_VOLUME);
     assert_overlap_error(&bytes, "Irene with 1,024 sweeps");
 }
 

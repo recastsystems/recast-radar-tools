@@ -883,6 +883,7 @@ dependencies = [
  "recast-radar-correct",
  "recast-radar-io",
  "recast-radar-render",
+ "recast-radar-testdata",
  "serde",
  "serde_json",
 ]
@@ -900,7 +901,13 @@ name = "recast-radar-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
+ "recast-radar-io-odim",
+ "recast-radar-testdata",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -911,7 +918,10 @@ dependencies = [
  "image",
  "rayon",
  "recast-radar-core",
+ "recast-radar-io-jma",
  "recast-radar-io-nexrad",
+ "recast-radar-testdata",
+ "serde_json",
 ]
 
 [[package]]
@@ -938,6 +948,12 @@ version = "0.1.0"
 dependencies = [
  "rayon",
  "recast-radar-core",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-dorade",
+ "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
+ "recast-radar-testdata",
+ "serde_json",
 ]
 
 [[package]]
@@ -998,6 +1014,7 @@ dependencies = [
  "bzip2",
  "chrono",
  "flate2",
+ "recast-radar-testdata",
  "thiserror",
 ]
 
@@ -1036,13 +1053,17 @@ dependencies = [
  "recast-radar-correct",
  "recast-radar-filters",
  "recast-radar-io-cfradial",
+ "recast-radar-io-dorade",
+ "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
+ "recast-radar-testdata",
+ "serde_json",
 ]
 
 [[package]]
 name = "recast-radar-render"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "image",
  "rayon",
  "recast-radar-core",
@@ -1051,7 +1072,9 @@ dependencies = [
  "recast-radar-io-nexrad",
  "recast-radar-map",
  "recast-radar-retrieve",
+ "recast-radar-testdata",
  "recast-radar-track",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1063,8 +1086,14 @@ dependencies = [
  "rayon",
  "recast-radar-core",
  "recast-radar-correct",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-dorade",
+ "recast-radar-io-jma",
  "recast-radar-io-nexrad",
+ "recast-radar-io-odim",
  "recast-radar-map",
+ "recast-radar-testdata",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1072,6 +1101,7 @@ dependencies = [
 name = "recast-radar-scattering"
 version = "0.1.0"
 dependencies = [
+ "recast-radar-testdata",
  "serde",
  "serde_json",
  "sha2",
@@ -1118,12 +1148,16 @@ name = "recast-radar-track"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "flate2",
  "image",
  "recast-radar-core",
  "recast-radar-correct",
+ "recast-radar-io-dorade",
  "recast-radar-io-nexrad",
  "recast-radar-map",
  "recast-radar-retrieve",
+ "recast-radar-testdata",
+ "serde_json",
 ]
 
 [[package]]

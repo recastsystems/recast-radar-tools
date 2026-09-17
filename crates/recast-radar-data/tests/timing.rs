@@ -1860,8 +1860,6 @@ fn plan_from_start_chunk(bytes: &[u8]) -> TestResult<ScanPlan> {
 /// chunk maps to its decoded elevation.
 #[test]
 fn rust_message5_decoder_gives_the_captured_plans() -> TestResult {
-    let listings_chunks =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/listings/chunks");
     let kiwa_start = match recast_radar_testdata::path("l2chunk-kiwa-307-20260917-003629-001-s") {
         Ok(path) => path,
         Err(err) if err.is_offline() => {
@@ -1880,11 +1878,11 @@ fn rust_message5_decoder_gives_the_captured_plans() -> TestResult {
     let cases = [
         (fs::read(&kiwa_start)?, kiwa_307),
         (
-            fs::read(listings_chunks.join("TLAS-998-20260917-012843-001-S"))?,
+            recast_radar_testdata::bytes("l2chunk-tlas-998-20260917-012843-001-s")?,
             &tlas[0],
         ),
         (
-            fs::read(listings_chunks.join("TLAS-999-20260917-013443-001-S"))?,
+            recast_radar_testdata::bytes("l2chunk-tlas-999-20260917-013443-001-s")?,
             &tlas[1],
         ),
     ];

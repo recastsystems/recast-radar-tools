@@ -1,0 +1,495 @@
+{
+ "source": "tools/retrieve_golden.py gbvtd; NHC HURDAT2 hurdat2-1851-2024-040425.txt, Py-ART 2.2.5 read_nexrad_archive + dealias_region_based, numpy ring fits",
+ "cases": [
+  {
+   "id": "l2-klix-20210829-180425",
+   "storm": "AL092021",
+   "radar": {
+    "latitude_deg": 30.336666107177734,
+    "longitude_deg": -89.8254165649414,
+    "altitude_m": 54.0
+   },
+   "volume_time": "2021-08-29T18:04:25Z",
+   "doppler_sweep": 1,
+   "doppler_sweep_elevation_deg": 0.48,
+   "doppler_sweep_nyquist_mps": 32.12,
+   "doppler_sweep_rays": 720,
+   "sweep_time": "2021-08-29T18:04:53Z",
+   "hurdat2": ["20210829, 1800,  , HU, 29.2N,  90.4W, 125,  932,  130,  120,   80,   80,   70,   60,   40,   40,   45,   35,   20,   25,   10","20210830, 0000,  , HU, 29.9N,  90.6W, 105,  944,   80,  120,   80,   70,   50,   60,   40,   40,   30,   30,   20,   20,   10"],
+   "best_track": {
+    "latitude_deg": 29.2095,
+    "longitude_deg": -90.4027,
+    "east_km": -56.03,
+    "north_km": -125.19,
+    "azimuth_deg": 204.11,
+    "range_km": 137.16,
+    "wind_kt": 125,
+    "wind_mps": 64.31,
+    "rmw_nmi": 10,
+    "rmw_km": 18.52,
+    "motion_east_mps": -0.896,
+    "motion_north_mps": 3.604
+   },
+   "rings": {
+    "n_azimuths": 72,
+    "radii_km": [8.0,12.0,16.0,20.0,24.0,28.0,32.0,36.0,40.0,44.0,48.0,52.0,56.0,60.0,64.0,68.0,72.0,76.0,80.0],
+    "fits": [
+     {
+      "radius_km": 8.0,
+      "vt": 58.0726,
+      "vr": 11.8987,
+      "vt1_cos": -6.499,
+      "vt1_sin": 1.4936,
+      "vt1_amp": 6.6685,
+      "vt1_phase_deg": 167.057,
+      "samples": 30,
+      "rms": 7.196
+     },
+     {
+      "radius_km": 12.0,
+      "vt": 63.7413,
+      "vr": 7.5472,
+      "vt1_cos": -20.0478,
+      "vt1_sin": 2.2587,
+      "vt1_amp": 20.1746,
+      "vt1_phase_deg": 173.572,
+      "samples": 38,
+      "rms": 14.9596
+     },
+     {
+      "radius_km": 16.0,
+      "vt": 49.9173,
+      "vr": 10.2172,
+      "vt1_cos": -8.9847,
+      "vt1_sin": -16.3133,
+      "vt1_amp": 18.6239,
+      "vt1_phase_deg": -118.844,
+      "samples": 49,
+      "rms": 15.3554
+     },
+     {
+      "radius_km": 20.0,
+      "vt": 54.3875,
+      "vr": 8.0518,
+      "vt1_cos": -1.0987,
+      "vt1_sin": -6.3503,
+      "vt1_amp": 6.4446,
+      "vt1_phase_deg": -99.816,
+      "samples": 46,
+      "rms": 7.9073
+     },
+     {
+      "radius_km": 24.0,
+      "vt": 55.2523,
+      "vr": 1.4082,
+      "vt1_cos": -6.2632,
+      "vt1_sin": -1.3976,
+      "vt1_amp": 6.4172,
+      "vt1_phase_deg": -167.421,
+      "samples": 57,
+      "rms": 10.656
+     },
+     {
+      "radius_km": 28.0,
+      "vt": 52.7524,
+      "vr": 0.6799,
+      "vt1_cos": -4.5388,
+      "vt1_sin": -1.0835,
+      "vt1_amp": 4.6663,
+      "vt1_phase_deg": -166.573,
+      "samples": 65,
+      "rms": 7.7865
+     },
+     {
+      "radius_km": 32.0,
+      "vt": 52.0931,
+      "vr": 0.2708,
+      "vt1_cos": -4.9891,
+      "vt1_sin": -3.5152,
+      "vt1_amp": 6.1031,
+      "vt1_phase_deg": -144.833,
+      "samples": 63,
+      "rms": 7.0012
+     },
+     {
+      "radius_km": 36.0,
+      "vt": 49.7467,
+      "vr": -0.4062,
+      "vt1_cos": -1.9539,
+      "vt1_sin": -5.051,
+      "vt1_amp": 5.4158,
+      "vt1_phase_deg": -111.148,
+      "samples": 64,
+      "rms": 6.3049
+     },
+     {
+      "radius_km": 40.0,
+      "vt": 48.37,
+      "vr": -0.3282,
+      "vt1_cos": -3.0227,
+      "vt1_sin": -3.6364,
+      "vt1_amp": 4.7286,
+      "vt1_phase_deg": -129.734,
+      "samples": 68,
+      "rms": 5.3809
+     },
+     {
+      "radius_km": 44.0,
+      "vt": 47.774,
+      "vr": -0.4905,
+      "vt1_cos": -3.3484,
+      "vt1_sin": -3.2594,
+      "vt1_amp": 4.6728,
+      "vt1_phase_deg": -135.772,
+      "samples": 66,
+      "rms": 4.5697
+     },
+     {
+      "radius_km": 48.0,
+      "vt": 46.9589,
+      "vr": -0.7589,
+      "vt1_cos": -3.6814,
+      "vt1_sin": -2.4148,
+      "vt1_amp": 4.4028,
+      "vt1_phase_deg": -146.737,
+      "samples": 68,
+      "rms": 4.4099
+     },
+     {
+      "radius_km": 52.0,
+      "vt": 45.7563,
+      "vr": -1.7437,
+      "vt1_cos": -3.0181,
+      "vt1_sin": -1.9229,
+      "vt1_amp": 3.5786,
+      "vt1_phase_deg": -147.499,
+      "samples": 66,
+      "rms": 3.6976
+     },
+     {
+      "radius_km": 56.0,
+      "vt": 44.8871,
+      "vr": -2.0759,
+      "vt1_cos": -2.8386,
+      "vt1_sin": -2.1621,
+      "vt1_amp": 3.5682,
+      "vt1_phase_deg": -142.704,
+      "samples": 58,
+      "rms": 4.0925
+     },
+     {
+      "radius_km": 60.0,
+      "vt": 44.4977,
+      "vr": -1.1248,
+      "vt1_cos": -2.6877,
+      "vt1_sin": -2.3998,
+      "vt1_amp": 3.6031,
+      "vt1_phase_deg": -138.239,
+      "samples": 52,
+      "rms": 5.5457
+     },
+     {
+      "radius_km": 64.0,
+      "vt": 43.947,
+      "vr": -1.2889,
+      "vt1_cos": -2.972,
+      "vt1_sin": -1.0133,
+      "vt1_amp": 3.14,
+      "vt1_phase_deg": -161.173,
+      "samples": 53,
+      "rms": 3.8473
+     },
+     {
+      "radius_km": 68.0,
+      "vt": 40.0538,
+      "vr": -2.9349,
+      "vt1_cos": -6.2246,
+      "vt1_sin": 1.0571,
+      "vt1_amp": 6.3137,
+      "vt1_phase_deg": 170.361,
+      "samples": 61,
+      "rms": 5.8668
+     },
+     {
+      "radius_km": 72.0,
+      "vt": 40.8132,
+      "vr": -1.8023,
+      "vt1_cos": -2.7341,
+      "vt1_sin": -1.4221,
+      "vt1_amp": 3.0818,
+      "vt1_phase_deg": -152.52,
+      "samples": 61,
+      "rms": 3.7031
+     },
+     {
+      "radius_km": 76.0,
+      "vt": 39.5947,
+      "vr": -1.6071,
+      "vt1_cos": -2.6808,
+      "vt1_sin": -1.6037,
+      "vt1_amp": 3.1239,
+      "vt1_phase_deg": -149.111,
+      "samples": 61,
+      "rms": 3.355
+     },
+     {
+      "radius_km": 80.0,
+      "vt": 39.9677,
+      "vr": -1.4227,
+      "vt1_cos": -2.6671,
+      "vt1_sin": -1.7502,
+      "vt1_amp": 3.1901,
+      "vt1_phase_deg": -146.726,
+      "samples": 64,
+      "rms": 3.0922
+     }
+    ]
+   }
+  },
+  {
+   "id": "l2-tjua-20220918-190621",
+   "storm": "AL072022",
+   "radar": {
+    "latitude_deg": 18.1175,
+    "longitude_deg": -66.07861,
+    "altitude_m": 851.6112
+   },
+   "volume_time": "2022-09-18T19:06:21Z",
+   "doppler_sweep": 1,
+   "doppler_sweep_elevation_deg": 0.53,
+   "doppler_sweep_nyquist_mps": 26.27,
+   "doppler_sweep_rays": 720,
+   "sweep_time": "2022-09-18T19:07:04Z",
+   "hurdat2": ["20220918, 1800,  , HU, 17.8N,  66.9W,  75,  986,  110,  120,   30,   80,   50,   50,    0,    0,   25,   25,    0,    0,   25","20220918, 1920, L, HU, 18.0N,  67.1W,  75,  986,  110,  120,   30,   80,   50,   50,    0,    0,   25,   25,    0,    0,   25"],
+   "best_track": {
+    "latitude_deg": 17.9677,
+    "longitude_deg": -67.0677,
+    "east_km": -104.62,
+    "north_km": -16.38,
+    "azimuth_deg": 261.1,
+    "range_km": 105.89,
+    "wind_kt": 75,
+    "wind_mps": 38.58,
+    "rmw_nmi": 25,
+    "rmw_km": 46.3,
+    "motion_east_mps": -4.409,
+    "motion_north_mps": 4.633
+   },
+   "rings": {
+    "n_azimuths": 72,
+    "radii_km": [8.0,12.0,16.0,20.0,24.0,28.0,32.0,36.0,40.0,44.0,48.0,52.0,56.0,60.0,64.0,68.0,72.0,76.0,80.0],
+    "fits": [
+     {
+      "radius_km": 8.0,
+      "vt": 10.5054,
+      "vr": 2.6771,
+      "vt1_cos": -3.3326,
+      "vt1_sin": -3.5401,
+      "vt1_amp": 4.8619,
+      "vt1_phase_deg": -133.271,
+      "samples": 72,
+      "rms": 3.1828
+     },
+     {
+      "radius_km": 12.0,
+      "vt": 14.687,
+      "vr": 4.6351,
+      "vt1_cos": -3.2017,
+      "vt1_sin": -1.4304,
+      "vt1_amp": 3.5067,
+      "vt1_phase_deg": -155.927,
+      "samples": 71,
+      "rms": 2.5508
+     },
+     {
+      "radius_km": 16.0,
+      "vt": 19.4475,
+      "vr": 4.5333,
+      "vt1_cos": -1.5546,
+      "vt1_sin": -0.5508,
+      "vt1_amp": 1.6493,
+      "vt1_phase_deg": -160.49,
+      "samples": 70,
+      "rms": 2.5977
+     },
+     {
+      "radius_km": 20.0,
+      "vt": 26.3533,
+      "vr": 1.8014,
+      "vt1_cos": 1.6215,
+      "vt1_sin": -2.1384,
+      "vt1_amp": 2.6837,
+      "vt1_phase_deg": -52.827,
+      "samples": 70,
+      "rms": 2.9516
+     },
+     {
+      "radius_km": 24.0,
+      "vt": 30.2454,
+      "vr": 0.8671,
+      "vt1_cos": 5.7542,
+      "vt1_sin": -2.1438,
+      "vt1_amp": 6.1405,
+      "vt1_phase_deg": -20.433,
+      "samples": 72,
+      "rms": 3.4624
+     },
+     {
+      "radius_km": 28.0,
+      "vt": 31.6144,
+      "vr": -1.0682,
+      "vt1_cos": 7.5446,
+      "vt1_sin": -1.1332,
+      "vt1_amp": 7.6292,
+      "vt1_phase_deg": -8.542,
+      "samples": 72,
+      "rms": 3.4892
+     },
+     {
+      "radius_km": 32.0,
+      "vt": 31.9337,
+      "vr": -1.8789,
+      "vt1_cos": 7.0643,
+      "vt1_sin": -1.3482,
+      "vt1_amp": 7.1918,
+      "vt1_phase_deg": -10.805,
+      "samples": 72,
+      "rms": 3.5809
+     },
+     {
+      "radius_km": 36.0,
+      "vt": 30.4519,
+      "vr": -1.3916,
+      "vt1_cos": 7.0685,
+      "vt1_sin": 0.7651,
+      "vt1_amp": 7.1098,
+      "vt1_phase_deg": 6.178,
+      "samples": 72,
+      "rms": 3.907
+     },
+     {
+      "radius_km": 40.0,
+      "vt": 29.5043,
+      "vr": -2.3503,
+      "vt1_cos": 4.9962,
+      "vt1_sin": 0.5427,
+      "vt1_amp": 5.0255,
+      "vt1_phase_deg": 6.199,
+      "samples": 72,
+      "rms": 2.818
+     },
+     {
+      "radius_km": 44.0,
+      "vt": 29.1248,
+      "vr": -3.1152,
+      "vt1_cos": 3.8324,
+      "vt1_sin": -0.3602,
+      "vt1_amp": 3.8493,
+      "vt1_phase_deg": -5.37,
+      "samples": 68,
+      "rms": 2.4067
+     },
+     {
+      "radius_km": 48.0,
+      "vt": 28.3921,
+      "vr": -2.4938,
+      "vt1_cos": 2.6706,
+      "vt1_sin": -0.8035,
+      "vt1_amp": 2.7888,
+      "vt1_phase_deg": -16.745,
+      "samples": 62,
+      "rms": 2.0276
+     },
+     {
+      "radius_km": 52.0,
+      "vt": 26.9562,
+      "vr": -3.0998,
+      "vt1_cos": 1.93,
+      "vt1_sin": -1.1923,
+      "vt1_amp": 2.2686,
+      "vt1_phase_deg": -31.708,
+      "samples": 59,
+      "rms": 2.4287
+     },
+     {
+      "radius_km": 56.0,
+      "vt": 25.7599,
+      "vr": -3.1101,
+      "vt1_cos": 1.0272,
+      "vt1_sin": -1.819,
+      "vt1_amp": 2.089,
+      "vt1_phase_deg": -60.546,
+      "samples": 53,
+      "rms": 2.1609
+     },
+     {
+      "radius_km": 60.0,
+      "vt": 24.7019,
+      "vr": -1.6393,
+      "vt1_cos": 1.6744,
+      "vt1_sin": -1.5944,
+      "vt1_amp": 2.3121,
+      "vt1_phase_deg": -43.596,
+      "samples": 60,
+      "rms": 2.5383
+     },
+     {
+      "radius_km": 64.0,
+      "vt": 23.4253,
+      "vr": -0.4489,
+      "vt1_cos": 2.0131,
+      "vt1_sin": -0.4775,
+      "vt1_amp": 2.069,
+      "vt1_phase_deg": -13.344,
+      "samples": 62,
+      "rms": 2.9112
+     },
+     {
+      "radius_km": 68.0,
+      "vt": 22.597,
+      "vr": -0.8838,
+      "vt1_cos": 1.2575,
+      "vt1_sin": -0.6619,
+      "vt1_amp": 1.4211,
+      "vt1_phase_deg": -27.761,
+      "samples": 58,
+      "rms": 2.5074
+     },
+     {
+      "radius_km": 72.0,
+      "vt": 22.51,
+      "vr": -1.002,
+      "vt1_cos": 0.7459,
+      "vt1_sin": -0.6186,
+      "vt1_amp": 0.969,
+      "vt1_phase_deg": -39.674,
+      "samples": 55,
+      "rms": 2.4103
+     },
+     {
+      "radius_km": 76.0,
+      "vt": 22.6111,
+      "vr": -0.1994,
+      "vt1_cos": 0.328,
+      "vt1_sin": -0.9927,
+      "vt1_amp": 1.0455,
+      "vt1_phase_deg": -71.715,
+      "samples": 60,
+      "rms": 2.1326
+     },
+     {
+      "radius_km": 80.0,
+      "vt": 22.9138,
+      "vr": -0.636,
+      "vt1_cos": 0.2414,
+      "vt1_sin": -1.4896,
+      "vt1_amp": 1.509,
+      "vt1_phase_deg": -80.793,
+      "samples": 65,
+      "rms": 2.4254
+     }
+    ]
+   }
+  }
+ ]
+}

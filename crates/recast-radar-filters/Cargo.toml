@@ -13,5 +13,14 @@ categories = ["science::geo", "algorithms"]
 rayon.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 
+[dev-dependencies]
+# Real-data tests: corpus files decoded with the real readers, goldens as JSON.
+recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
+recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
+recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+serde_json.workspace = true
+
 [lints]
 workspace = true

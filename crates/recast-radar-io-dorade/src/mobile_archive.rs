@@ -605,69 +605,26 @@ fn read_file_head(path: &Path, limit: usize) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use zip::write::SimpleFileOptions;
+    use chrono::TimeZone;
 
-    /// Synthetic sweep start times: a fixed base plus per-sweep offsets.
-    const BASE_UNIX: i32 = 1_779_404_114; // 2026-05-21T22:55:14Z
+    // Real inputs:
+    // - `dorade-noxp-20090610-003210-heads-zip`: one directory of the VORTEX-2
+    //   NOXP archive 2009.NOX.sweep.0609.tar.gz as a zip, members in tar order
+    //   under their tar paths: corrections, NOX090610003210.RAWAL8D.log, the
+    //   1.0, 0.5 and 2.0 deg sweeps (6-ray head trims), sigmet_dorade.out.
+    // - The same three sweeps as loose corpus files, the consecutive NOXP
+    //   single-tilt 0.5 deg sweeps of 2009-05-01 19:02:44Z and 19:03:24Z, and
+    //   the COW2 surveillance sweep of 2026-05-21.
+    // Expected values: tools/golden_io_formats.py, section `dorade` (SSWB
+    // start times, SWIB fixed angles, RADD instrument names).
 
-    /// Minimal synthetic big-endian DORADE sweep (mirrors dorade.rs tests).
-    fn synthetic_sweep(instrument: &[u8; 4], start_offset_s: i32, fixed_angle: f32) -> Vec<u8> {
-        fn block(id: &[u8; 4], len: usize) -> Vec<u8> {
-            let mut bytes = vec![0u8; len];
-            bytes[..4].copy_from_slice(id);
-            bytes[4..8].copy_from_slice(&(len as i32).to_be_bytes());
-            bytes
-        }
-        let mut bytes = Vec::new();
-
-        let mut sswb = block(b"SSWB", 200);
-        sswb[12..16].copy_from_slice(&(BASE_UNIX + start_offset_s).to_be_bytes());
-        bytes.extend(sswb);
-
-        let mut vold = block(b"VOLD", 72);
-        vold[10..12].copy_from_slice(&7i16.to_be_bytes());
-        vold[36..38].copy_from_slice(&2026i16.to_be_bytes());
-        vold[38..40].copy_from_slice(&5i16.to_be_bytes());
-        vold[40..42].copy_from_slice(&21i16.to_be_bytes());
-        bytes.extend(vold);
-
-        let mut radd = block(b"RADD", 144);
-        radd[8..12].copy_from_slice(instrument);
-        radd[50..52].copy_from_slice(&8i16.to_be_bytes());
-        radd[80..84].copy_from_slice(&(-103.29f32).to_bits().to_be_bytes());
-        radd[84..88].copy_from_slice(&39.74f32.to_bits().to_be_bytes());
-        radd[88..92].copy_from_slice(&1.519f32.to_bits().to_be_bytes());
-        bytes.extend(radd);
-
-        let mut parm = block(b"PARM", 216);
-        parm[8..11].copy_from_slice(b"DBZ");
-        parm[78..80].copy_from_slice(&2i16.to_be_bytes());
-        parm[92..96].copy_from_slice(&100.0f32.to_bits().to_be_bytes());
-        parm[100..104].copy_from_slice(&(-32768i32).to_be_bytes());
-        parm[200..204].copy_from_slice(&2i32.to_be_bytes());
-        parm[204..208].copy_from_slice(&50.0f32.to_bits().to_be_bytes());
-        parm[208..212].copy_from_slice(&100.0f32.to_bits().to_be_bytes());
-        bytes.extend(parm);
-
-        let mut swib = block(b"SWIB", 40);
-        swib[16..20].copy_from_slice(&1i32.to_be_bytes());
-        swib[32..36].copy_from_slice(&fixed_angle.to_bits().to_be_bytes());
-        bytes.extend(swib);
-
-        let mut ryib = block(b"RYIB", 44);
-        ryib[24..28].copy_from_slice(&45.0f32.to_bits().to_be_bytes());
-        ryib[28..32].copy_from_slice(&fixed_angle.to_bits().to_be_bytes());
-        bytes.extend(ryib);
-
-        let mut rdat = block(b"RDAT", 20);
-        rdat[8..11].copy_from_slice(b"DBZ");
-        rdat[16..18].copy_from_slice(&1000i16.to_be_bytes());
-        rdat[18..20].copy_from_slice(&2000i16.to_be_bytes());
-        bytes.extend(rdat);
-
-        bytes
-    }
+    const NOXP_ZIP: &str = "dorade-noxp-20090610-003210-heads-zip";
+    const NOXP_0610_05: &str = "dorade-noxp-20090610-003210-ppi-head6";
+    const NOXP_0610_10: &str = "dorade-noxp-20090610-003222-ppi-head6";
+    const NOXP_0610_20: &str = "dorade-noxp-20090610-003226-ppi-head6";
+    const NOXP_0501_A: &str = "dorade-noxp-20090501-190244-ppi";
+    const NOXP_0501_B: &str = "dorade-noxp-20090501-190324-ppi";
+    const COW2: &str = "dorade-cow2-20260521-225514-sur-head24";
 
     /// These archives hold DORADE sweeps only; a Level II member would be a
     /// test bug.
@@ -675,156 +632,221 @@ mod tests {
         Err("unexpected Level II member".to_owned())
     }
 
-    fn write_zip(path: &Path, members: &[(&str, Vec<u8>)]) {
-        let file = File::create(path).unwrap();
-        let mut writer = zip::ZipWriter::new(file);
-        for (name, bytes) in members {
-            writer
-                .start_file(*name, SimpleFileOptions::default())
-                .unwrap();
-            writer.write_all(bytes).unwrap();
-        }
-        writer.finish().unwrap();
+    fn corpus_path(id: &str) -> PathBuf {
+        recast_radar_testdata::path(id).unwrap_or_else(|err| panic!("{err}"))
     }
+
+    /// A fresh scratch directory per test (and per process, so concurrent
+    /// worktrees do not collide).
+    fn scratch_dir(test: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "recast_radar_mobile_archive_{test}_{}",
+            std::process::id()
+        ));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Copy corpus files into `dir` under their committed file names
+    /// (`swp.<time>.<instrument>...`).
+    fn copy_into(dir: &Path, ids: &[&str]) -> Vec<PathBuf> {
+        ids.iter()
+            .map(|id| {
+                let source = corpus_path(id);
+                let target = dir.join(source.file_name().unwrap());
+                std::fs::copy(&source, &target).unwrap();
+                target
+            })
+            .collect()
+    }
+
+    const NOXP_DIR: &str = "2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/";
 
     #[test]
     fn groups_zip_members_into_ascending_elevation_runs_per_instrument() {
-        let dir = std::env::temp_dir().join("bowecho_mobile_archive_group_test");
-        std::fs::create_dir_all(&dir).unwrap();
-        let zip_path = dir.join("deployment.zip");
-        write_zip(
-            &zip_path,
-            &[
-                // One ascending 0.5°→1.0° run split across tilt member
-                // directories, then a new run, then a second radar, plus
-                // chaff that must be ignored.
-                (
-                    "Tilt 0.5/swp.1260521225514.TST1.0.0.5_SUR_v7",
-                    synthetic_sweep(b"TST1", 0, 0.5),
-                ),
-                (
-                    "Tilt 1.0/swp.1260521225520.TST1.0.1.0_SUR_v7",
-                    synthetic_sweep(b"TST1", 6, 1.0),
-                ),
-                (
-                    "Tilt 0.5/swp.1260521225600.TST1.0.0.5_SUR_v8",
-                    synthetic_sweep(b"TST1", 46, 0.5),
-                ),
-                (
-                    "OTHER/swp.1260521225514.TST2.0.0.5_SUR_v7",
-                    synthetic_sweep(b"TST2", 0, 0.5),
-                ),
-                ("README.txt", b"not radar data".to_vec()),
-            ],
+        // Zip: three sweeps of one volume (SSWB 00:32:10 / 00:32:22 /
+        // 00:32:26Z; fixed 0.5 / 1.0 / 2.0 deg) stored 1.0, 0.5, 2.0, among
+        // three text members that must be ignored.
+        let volumes =
+            decode_mobile_archive_from_path(&corpus_path(NOXP_ZIP), no_level2_members).unwrap();
+        assert_eq!(volumes.len(), 1);
+        let volume = &volumes[0];
+        assert_eq!(volume.volume.site.id, "NOXPRVP");
+        assert_eq!(volume.member_count, 3);
+        assert_eq!(
+            volume.member_label,
+            format!("{NOXP_DIR}swp.1090610003210.NOXPRVP.0.0.5_PPI_v1")
         );
-
-        let volumes = decode_mobile_archive_from_path(&zip_path, no_level2_members).unwrap();
-
-        assert_eq!(volumes.len(), 3);
-        let two_cut = volumes
+        let angles: Vec<f32> = volume
+            .volume
+            .cuts
             .iter()
-            .find(|v| v.volume.site.id == "TST1" && v.member_count == 2)
-            .expect("two-cut TST1 volume");
-        assert_eq!(two_cut.volume.cuts.len(), 2);
-        assert!(two_cut.volume.cuts[0].elevation_deg < two_cut.volume.cuts[1].elevation_deg);
+            .map(|cut| cut.elevation_deg)
+            .collect();
+        assert_eq!(angles, [0.499_877_93, 0.999_755_86, 1.999_511_7]);
+        assert_eq!(volume.volume.metadata.decoded_radial_count, 18);
         assert!(
-            volumes
-                .iter()
-                .any(|v| v.volume.site.id == "TST1" && v.member_count == 1)
+            volume
+                .volume
+                .metadata
+                .source_path
+                .as_deref()
+                .is_some_and(|source| source.ends_with("::2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/swp.1090610003210.NOXPRVP.0.0.5_PPI_v1"))
         );
-        assert!(volumes.iter().any(|v| v.volume.site.id == "TST2"));
-        std::fs::remove_file(&zip_path).ok();
+
+        // Per instrument: the same sweeps next to the COW2 sweep in a
+        // deployment folder give one volume per radar, in scan-time order.
+        let dir = scratch_dir("per_instrument");
+        copy_into(&dir, &[NOXP_0610_20, COW2, NOXP_0610_05, NOXP_0610_10]);
+        let volumes = decode_mobile_dir_from_path(&dir, no_level2_members).unwrap();
+        let summary: Vec<(&str, usize, usize)> = volumes
+            .iter()
+            .map(|v| {
+                (
+                    v.volume.site.id.as_str(),
+                    v.member_count,
+                    v.volume.cuts.len(),
+                )
+            })
+            .collect();
+        assert_eq!(summary, [("NOXPRVP", 3, 3), ("COW2", 1, 1)]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn same_elevation_sequences_become_one_volume_per_sweep() {
-        // COW2-style single-tilt surveillance: 1.0°, 1.0°, 1.0° must NOT
-        // merge into one volume.
-        let runs = segment_volume_runs(vec![
-            GroupableSweep {
-                start_time: DateTime::<Utc>::from_timestamp(i64::from(BASE_UNIX), 0),
-                fixed_angle_deg: 1.0,
-                label: "a".into(),
-                payload: (),
-            },
-            GroupableSweep {
-                start_time: DateTime::<Utc>::from_timestamp(i64::from(BASE_UNIX) + 12, 0),
-                fixed_angle_deg: 1.0,
-                label: "b".into(),
-                payload: (),
-            },
-            GroupableSweep {
-                start_time: DateTime::<Utc>::from_timestamp(i64::from(BASE_UNIX) + 24, 0),
-                fixed_angle_deg: 1.0,
-                label: "c".into(),
-                payload: (),
-            },
-        ]);
-        assert_eq!(runs.len(), 3);
+        // Consecutive NOXP single-tilt sweeps: both 0.49987793 deg, SSWB
+        // 19:02:44Z and 19:03:24Z. A repeated angle starts a new volume.
+        let dir = scratch_dir("same_elevation");
+        let paths = copy_into(&dir, &[NOXP_0501_A, NOXP_0501_B]);
+        let volumes = decode_mobile_dir_from_path(&dir, no_level2_members).unwrap();
+        assert_eq!(volumes.len(), 2);
+        assert!(
+            volumes
+                .iter()
+                .all(|v| v.member_count == 1 && v.volume.cuts.len() == 1)
+        );
+        assert_eq!(
+            volumes[0].volume.volume_time,
+            Utc.with_ymd_and_hms(2009, 5, 1, 19, 2, 44).unwrap()
+        );
+        assert_eq!(
+            volumes[1].volume.volume_time,
+            Utc.with_ymd_and_hms(2009, 5, 1, 19, 3, 24).unwrap()
+        );
+        // Opening one loose sweep does not pull in its same-angle sibling.
+        let volume = decode_dorade_volume_for_path(&paths[0]).unwrap();
+        assert_eq!(volume.cuts.len(), 1);
+        assert_eq!(volume.cuts[0].radials.len(), 51);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn long_time_gap_splits_an_ascending_run() {
-        let runs = segment_volume_runs(vec![
-            GroupableSweep {
-                start_time: DateTime::<Utc>::from_timestamp(i64::from(BASE_UNIX), 0),
-                fixed_angle_deg: 0.5,
-                label: "a".into(),
-                payload: (),
-            },
-            GroupableSweep {
-                // Ascending but an hour later: deployment pause.
-                start_time: DateTime::<Utc>::from_timestamp(i64::from(BASE_UNIX) + 3600, 0),
-                fixed_angle_deg: 1.0,
-                label: "b".into(),
-                payload: (),
-            },
-        ]);
-        assert_eq!(runs.len(), 2);
+        // 0.5 deg at 2009-05-01 19:02:44Z, then 1.0 deg at 2009-06-10
+        // 00:32:22Z: ascending, but 39 days apart.
+        let dir = scratch_dir("time_gap");
+        copy_into(&dir, &[NOXP_0501_A, NOXP_0610_10]);
+        let volumes = decode_mobile_dir_from_path(&dir, no_level2_members).unwrap();
+        let cuts: Vec<(f32, usize)> = volumes
+            .iter()
+            .map(|v| (v.volume.cuts[0].elevation_deg, v.volume.cuts.len()))
+            .collect();
+        assert_eq!(cuts, [(0.499_877_93, 1), (0.999_755_86, 1)]);
+        std::fs::remove_dir_all(&dir).ok();
+
+        // The same 1.0 deg sweep after its own volume's 0.5 deg sweep (12 s
+        // earlier) continues the run.
+        let dir = scratch_dir("no_time_gap");
+        copy_into(&dir, &[NOXP_0610_05, NOXP_0610_10]);
+        let volumes = decode_mobile_dir_from_path(&dir, no_level2_members).unwrap();
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].volume.cuts.len(), 2);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn rejects_archive_without_radar_members() {
-        let dir = std::env::temp_dir().join("bowecho_mobile_archive_empty_test");
-        std::fs::create_dir_all(&dir).unwrap();
-        let zip_path = dir.join("empty.zip");
-        write_zip(&zip_path, &[("README.txt", b"nothing here".to_vec())]);
+        // The real zip with every sweep member renamed from "swp." to "swp_"
+        // (local headers and central directory; data and CRCs untouched)
+        // leaves only non-radar members.
+        let mut bytes = std::fs::read(corpus_path(NOXP_ZIP)).unwrap();
+        let mut renamed = 0;
+        let needle = b"RAWAL8D/swp.";
+        let mut index = 0;
+        while let Some(found) = bytes[index..]
+            .windows(needle.len())
+            .position(|window| window == needle)
+        {
+            let at = index + found + needle.len() - 1;
+            bytes[at] = b'_';
+            renamed += 1;
+            index = at;
+        }
+        // 3 sweeps x (local header + central directory entry).
+        assert_eq!(renamed, 6);
+        let dir = scratch_dir("no_radar_members");
+        let zip_path = dir.join("NOX090610003210.RAWAL8D.renamed.zip");
+        std::fs::write(&zip_path, &bytes).unwrap();
 
         let err = decode_mobile_archive_from_path(&zip_path, no_level2_members).unwrap_err();
-        assert!(err.to_string().contains("no radar members"));
-        std::fs::remove_file(&zip_path).ok();
+        assert!(err.to_string().contains("no radar members"), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn loose_sweepfile_groups_directory_siblings_from_same_run() {
-        let dir = std::env::temp_dir().join("bowecho_mobile_archive_loose_test");
-        std::fs::create_dir_all(&dir).unwrap();
-        // Ascending same-instrument run → grouped; the next run → excluded.
-        let low = dir.join("swp.1260521225514.TST1.0.0.5_SUR_v7");
-        let high = dir.join("swp.1260521225520.TST1.0.1.0_SUR_v7");
-        let other = dir.join("swp.1260521225600.TST1.0.0.5_SUR_v8");
-        std::fs::write(&low, synthetic_sweep(b"TST1", 0, 0.5)).unwrap();
-        std::fs::write(&high, synthetic_sweep(b"TST1", 6, 1.0)).unwrap();
-        std::fs::write(&other, synthetic_sweep(b"TST1", 46, 0.5)).unwrap();
+        // One volume's three sweeps plus an older single-tilt NOXP sweep in the
+        // same folder: opening the 1.0 deg sweep pulls in its run only.
+        let dir = scratch_dir("loose_siblings");
+        let paths = copy_into(
+            &dir,
+            &[NOXP_0610_05, NOXP_0610_10, NOXP_0610_20, NOXP_0501_A],
+        );
 
-        let volume = decode_dorade_volume_for_path(&low).unwrap();
+        let volume = decode_dorade_volume_for_path(&paths[1]).unwrap();
+        assert_eq!(volume.site.id, "NOXPRVP");
+        let angles: Vec<f32> = volume.cuts.iter().map(|cut| cut.elevation_deg).collect();
+        assert_eq!(angles, [0.499_877_93, 0.999_755_86, 1.999_511_7]);
+        assert_eq!(
+            volume.volume_time,
+            Utc.with_ymd_and_hms(2009, 6, 10, 0, 32, 10).unwrap()
+        );
+        assert!(close_to(volume.site.latitude_deg.unwrap(), 37.597_79));
 
-        assert_eq!(volume.site.id, "TST1");
-        assert_eq!(volume.cuts.len(), 2);
-        for path in [&low, &high, &other] {
-            std::fs::remove_file(path).ok();
-        }
+        let older = decode_dorade_volume_for_path(&paths[3]).unwrap();
+        assert_eq!(older.cuts.len(), 1);
+        assert_eq!(
+            older.volume_time,
+            Utc.with_ymd_and_hms(2009, 5, 1, 19, 2, 44).unwrap()
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn close_to(actual: f32, expected: f32) -> bool {
+        (actual - expected).abs() < 1e-5
     }
 
     #[test]
     fn archive_decoding_beyond_the_batch_limit_is_rejected() {
-        // The five committed real DORADE sweepfiles, as a deployment folder.
+        // The committed real DORADE sweepfiles (`swp.*`, eight after the
+        // io-formats corpus additions), as a deployment folder.
         let dir = recast_radar_testdata::testdata_dir().join("files/other/dorade");
+        let sweepfiles = std::fs::read_dir(&dir)
+            .expect("committed dorade directory")
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .is_ok_and(|entry| entry.file_name().to_string_lossy().starts_with("swp."))
+            })
+            .count();
+        assert!(sweepfiles >= 5, "{sweepfiles} sweepfiles");
         let mut members = Vec::new();
         let mut budget = MemberBudget::default();
         collect_dir_members(&dir, &dir, &mut members, &mut budget, 0)
             .expect("read committed sweepfiles");
-        assert_eq!(members.len(), 5);
+        assert_eq!(members.len(), sweepfiles);
         members.sort_by(|left, right| left.name.cmp(&right.name));
         let volumes = decode_members(
             &dir,
@@ -858,10 +880,27 @@ mod tests {
 
     #[test]
     fn zip_sniffers_match_magic_and_extension() {
-        assert!(looks_like_zip_bytes(b"PK\x03\x04rest"));
-        assert!(!looks_like_zip_bytes(b"PK\x05\x06"));
-        assert!(looks_like_zip_path(Path::new("c:/data/deploy.ZIP")));
-        assert!(!looks_like_zip_path(Path::new("c:/data/deploy.tar")));
+        // PKWARE APPNOTE: a local file header starts "PK\x03\x04"; the
+        // end-of-central-directory record "PK\x05\x06" is the last 22 bytes
+        // of a zip without a comment.
+        let path = corpus_path(NOXP_ZIP);
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(looks_like_zip_bytes(&bytes));
+        let eocd = &bytes[bytes.len() - 22..];
+        assert_eq!(&eocd[..4], b"PK\x05\x06");
+        assert!(!looks_like_zip_bytes(eocd));
+        assert!(!looks_like_zip_bytes(&bytes[..3]));
+        // A real DORADE sweep and a real tar are not zips.
+        assert!(!looks_like_zip_bytes(
+            &std::fs::read(corpus_path(COW2)).unwrap()
+        ));
+
+        assert!(looks_like_zip_path(&path));
+        assert!(looks_like_zip_path(&path.with_extension("ZIP")));
+        assert!(!looks_like_zip_path(&corpus_path(
+            "jma-n5-20191012-090000-rs47773"
+        )));
+        assert!(!looks_like_zip_path(&corpus_path(COW2)));
     }
 
     #[test]

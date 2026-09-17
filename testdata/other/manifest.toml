@@ -113,6 +113,16 @@ committed = "files/other/odim/dkrom.pvol.20260820T1130.dualpol.h5"
 tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:dkrom", "country:DK", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:dualpol", "scan:ppi", "quirk:vrad-not-vradh", "quirk:fractional-elevations", "replaces:odim_pvol_synth"]
 description = "DMI Romo dual-pol PVOL 2026-08-20 11:30Z; 10 sweeps 0.47-15 deg x 8 quantities (DBZH TH VRAD WRAD ZDR RHOHV PHIDP LDR, LDR all nodata), 474 gates x 500 m from rstart 0.5 km; unmodified OPERA ORD archive object"
 
+[[file]]
+id = "odim-au24-20260610-000300-nci-zip-member"
+format = "zip-local-member"
+urls = ["https://thredds.nci.org.au/thredds/fileServer/rq0/24/2026/vol/24_20260610.pvol.zip/24_20260610_000300.pvol.h5"]
+sha256 = "2b7f4f60d82c92fe294320bd5b9bbdaf5e39559f5e86443cefea481dfa038d49"
+size = 354749
+committed = "files/other/odim/nci/24_20260610_000300.pvol.h5.nci-response"
+tags = ["contains:odim-h5", "provider:nci-thredds", "license:CC-BY-4.0", "era:2026", "site:au24", "country:AU", "object:pvol", "odim:h5rad-2.4", "quirk:zip-local-member-stream"]
+description = "Unmodified NCI THREDDS response (fetched 2026-09-17, identical on repeat) for the first member of the Bureau of Meteorology Bowen (site 24) daily ODIM zip 2026-06-10: the server returns the first Content-Length bytes of the zip, where Content-Length is the requested member's size, so the body is the member's ZIP local-file record (deflate, 85154 compressed bytes) followed by the start of the next record and no central directory; the member is a 10-sweep PVOL (0.8-32 deg)"
+
 # ---------------------------------------------------------------------------
 # CfRadial 1.x / 2
 # ---------------------------------------------------------------------------
@@ -261,6 +271,46 @@ derivation = "head trim: first 1471504 bytes (SSWB VOLD RADD 32xPARM CELV CFAC S
 tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2021", "site:dow6", "platform:mobile", "dorade:rle", "dorade:celv", "endian:little", "scan:rhi", "moments:dualpol", "regime:wildfire", "quirk:transition-rays", "derived", "derivation:head-trim"]
 description = "FARM DOW6 (DOW6low channel) RHI during the Marshall Fire, Colorado, 2021-12-30 22:21:39Z; RADD scan mode 3 (RHI), fixed angle 144 deg, little-endian HRD-RLE DORADE, CELV 1000 gates, 32 fields (raw and _F edited); rays 0-40 of 156 (6 antenna-transition rays, then 30.0 down to 13.0 deg elevation)"
 
+[[file]]
+id = "dorade-noxp-20090610-003210-ppi-head6"
+format = "dorade"
+sha256 = "4f1c7d4e2be87c157ba363116fa16ff257f4f5ca868fc1d0f67e4522399a23ed"
+size = 131596
+committed = "files/other/dorade/swp.1090610003210.NOXPRVP.0.0.5_PPI_v1.head6"
+derivation = "head trim: first 131596 bytes (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB + the first 6 RYIB/ASIB/RDAT ray groups, cut at the RYIB block of ray 6) of archive member 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/swp.1090610003210.NOXPRVP.0.0.5_PPI_v1 (4116256 bytes, 192 rays, sha256 135c2aeb1f030633e3522691c1ba541294a56c0fd92b033b69f07a736bc86eef) of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size)"
+tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "platform:mobile", "dorade:uncompressed", "dorade:csfd", "endian:little", "writer:sigmet_dorade", "scan:ppi", "sweepset:noxp-20090610-003210", "derived", "derivation:head-trim"]
+description = "NOXP 0.5 deg PPI sweep of the multi-elevation volume NOX090610003210.RAWAL8D (2009-06-10 00:32Z, VORTEX-2); little-endian uncompressed DORADE at 37.598N 99.322W, RADD scan mode 1, 1174 gates x 75 m from 37.5 m (CSFD), 9 fields (DZ VR SW DB_ZDR DB_PHIDP DB_SQI DB_RHOHV DM KDP); first 6 of 192 rays"
+
+[[file]]
+id = "dorade-noxp-20090610-003222-ppi-head6"
+format = "dorade"
+sha256 = "b7589a418a7ffdeceecf7cb6fd9f336b57cdefb4aac9df35b2be7ea993bcb962"
+size = 131596
+committed = "files/other/dorade/swp.1090610003222.NOXPRVP.0.1.0_PPI_v1.head6"
+derivation = "head trim: first 131596 bytes (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB + the first 6 RYIB/ASIB/RDAT ray groups, cut at the RYIB block of ray 6) of archive member 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/swp.1090610003222.NOXPRVP.0.1.0_PPI_v1 (4244728 bytes, 198 rays, sha256 89294056e1e9b82439f49c3ddcc103c2ee958c7f4f00efef7792fa05b3741df0) of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size)"
+tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "platform:mobile", "dorade:uncompressed", "dorade:csfd", "endian:little", "writer:sigmet_dorade", "scan:ppi", "sweepset:noxp-20090610-003210", "derived", "derivation:head-trim"]
+description = "NOXP 1.0 deg PPI sweep of the multi-elevation volume NOX090610003210.RAWAL8D (2009-06-10 00:32Z, VORTEX-2); little-endian uncompressed DORADE at 37.598N 99.322W, RADD scan mode 1, 1174 gates x 75 m from 37.5 m (CSFD), 9 fields (DZ VR SW DB_ZDR DB_PHIDP DB_SQI DB_RHOHV DM KDP); first 6 of 198 rays"
+
+[[file]]
+id = "dorade-noxp-20090610-003226-ppi-head6"
+format = "dorade"
+sha256 = "c41068f1c9cb1c9b4b5e3a597af60f9abd5bc14a9acaeea4133384ec24306bb8"
+size = 131596
+committed = "files/other/dorade/swp.1090610003226.NOXPRVP.0.2.0_PPI_v1.head6"
+derivation = "head trim: first 131596 bytes (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB + the first 6 RYIB/ASIB/RDAT ray groups, cut at the RYIB block of ray 6) of archive member 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/swp.1090610003226.NOXPRVP.0.2.0_PPI_v1 (4244728 bytes, 198 rays, sha256 976daee4c0570f25b874658f098de05839ac6f6150ff458293a8331fdce62fca) of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size)"
+tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "platform:mobile", "dorade:uncompressed", "dorade:csfd", "endian:little", "writer:sigmet_dorade", "scan:ppi", "sweepset:noxp-20090610-003210", "derived", "derivation:head-trim"]
+description = "NOXP 2.0 deg PPI sweep of the multi-elevation volume NOX090610003210.RAWAL8D (2009-06-10 00:32Z, VORTEX-2); little-endian uncompressed DORADE at 37.598N 99.322W, RADD scan mode 1, 1174 gates x 75 m from 37.5 m (CSFD), 9 fields (DZ VR SW DB_ZDR DB_PHIDP DB_SQI DB_RHOHV DM KDP); first 6 of 198 rays"
+
+[[file]]
+id = "dorade-noxp-20090610-003210-heads-zip"
+format = "zip"
+sha256 = "2b1682be4fe728e87c580510f6e17a1a374a5b98bb51ce2c415cc79ae6d218fc"
+size = 44980
+committed = "files/other/dorade/NOX090610003210.RAWAL8D.head6.zip"
+derivation = "container conversion of part of one directory of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size): members corrections, NOX090610003210.RAWAL8D.log, swp.1090610003222.NOXPRVP.0.1.0_PPI_v1, swp.1090610003210.NOXPRVP.0.0.5_PPI_v1, swp.1090610003226.NOXPRVP.0.2.0_PPI_v1 and sigmet_dorade.out of 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/, in the source tar's member order and under their tar paths, written with Python 3.13 zipfile (zlib 1.3.1, deflate level 9, tar mtimes); the three sweeps are the head6 trims (dorade-noxp-20090610-*-ppi-head6), the three text files are unmodified (zip_noxp_heads.py in docs/testdata/corpus.md)"
+tags = ["archive", "contains:dorade", "provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "sweepset:noxp-20090610-003210", "derived", "derivation:container-conversion"]
+description = "Zip of one NOXP volume directory: three head-trimmed ascending sweeps (0.5, 1.0, 2.0 deg, stored out of time order) plus the directory's three non-radar text files"
+
 # ---------------------------------------------------------------------------
 # JMA polar-coordinate radar GRIB2 tar
 # ---------------------------------------------------------------------------
@@ -306,6 +356,61 @@ tags = ["provider:nict-jma", "license:unknown", "era:2019", "country:JP", "netwo
 description = "JMA Osaka/Takayasu (TAKA, RS47773) radial-velocity member of the Hagibis N6 tar: 13 sweeps, 512 radials x 300 gates, 547108 of 2201600 gates non-missing"
 
 # ---------------------------------------------------------------------------
+# ODIM_H5 per-quantity parts of one scan (EUMETNET ORD archive): the inputs of
+# recast_radar_core::merge_radar_volumes in crates/recast-radar-core/tests
+# ---------------------------------------------------------------------------
+
+[[file]]
+id = "odim-bejab-20260612-1450-dbzh"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/BE/bejab/PVOL/bejab%4020260612T1450%400.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0%40DBZH.h5"]
+sha256 = "4db04d6a791a5e98d6b3c122377e3f080a5fbffaccb46f1a268127d961dfffd7"
+size = 243054
+committed = "files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@DBZH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:bejab", "country:BE", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:dbzh", "scan:ppi", "split-scan:bejab-20260612-1450-doppler", "part-of-scan"]
+description = "RMI Jabbeke Doppler-task PVOL 2026-06-12 14:50:05Z, DBZH part: 9 sweeps 0.5-25 deg x 360 rays x 300 gates (500 m); one scan delivered as one file per quantity (RAINBOW 5.59.10 task bejab_scan_v3_V.vol); unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-bejab-20260612-1450-vrad"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/BE/bejab/PVOL/bejab%4020260612T1450%400.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0%40VRAD.h5"]
+sha256 = "94ebfd5bbb83872e4be13141c760eaf57212b75c56fb6198b44ff1466beccbea"
+size = 219191
+committed = "files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@VRAD.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:bejab", "country:BE", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:vrad", "scan:ppi", "split-scan:bejab-20260612-1450-doppler", "part-of-scan", "quirk:vrad-not-vradh"]
+description = "RMI Jabbeke Doppler-task PVOL 2026-06-12 14:50:05Z, VRAD part: the same 9 sweeps and ray/gate geometry as the DBZH part (per-sweep start/end times identical); unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-nohur-20260612-1445-dbzh"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/NO/nohur/PVOL/nohur%4020260612T1445%400.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0%40DBZH.h5"]
+sha256 = "b537880ae7caf247d93380cdec6560f0bf83aefd4f5975a977a9722349a9175f"
+size = 773343
+committed = "files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@DBZH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:nohur", "country:NO", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:dbzh", "scan:ppi", "scan:vertical-pointing", "split-scan:nohur-20260612-1445", "part-of-scan"]
+description = "MET Norway Hurum PVOL 2026-06-12 14:45:13Z, DBZH part: 10 sweeps 0.5-90 deg (0.5 deg sweep 720 rays, others 360; 960/480/320/280 gates x 250 m by tier, 832 x 30 m vertical sweep); one scan delivered as one file per quantity; unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-nohur-20260612-1445-th"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/NO/nohur/PVOL/nohur%4020260612T1445%400.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0%40TH.h5"]
+sha256 = "ee2db644603f11e002c0fcf991cfb4083c6ac88c6ce6f2fc1c71baf02131db61"
+size = 1478472
+committed = "files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@TH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:nohur", "country:NO", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:th", "scan:ppi", "scan:vertical-pointing", "split-scan:nohur-20260612-1445", "part-of-scan"]
+description = "MET Norway Hurum PVOL 2026-06-12 14:45:13Z, TH (unfiltered reflectivity) part: the same 10 sweeps and geometry as the DBZH part; unmodified OPERA ORD archive object"
+
+[[file]]
+id = "odim-nohur-20260612-1446-vradh"
+format = "odim-h5"
+urls = ["https://s3.waw3-1.cloudferro.com/openradar-archive/2026/06/12/NO/nohur/PVOL/nohur%4020260612T1446%402.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0%40VRADH.h5"]
+sha256 = "4e03d90bfef8896db81fe80ccfcc7aa74374ec697179b3bbce72685a40818c0a"
+size = 197553
+committed = "files/other/odim/ord-parts/nohur@20260612T1446@2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@VRADH.h5"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:nohur", "country:NO", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:vradh", "scan:ppi", "scan:vertical-pointing", "split-scan:nohur-20260612-1445", "part-of-scan"]
+description = "MET Norway Hurum PVOL 2026-06-12 14:46:48Z, VRADH part of the 14:45 scan: only the 8 sweeps from 2.6 deg up (the 0.5 and 1.0 deg sweeps have no velocity), same ray/gate geometry as the DBZH sweeps they match, /what/time later than the DBZH/TH parts; unmodified OPERA ORD archive object"
+
+# ---------------------------------------------------------------------------
 # NEXRAD Level III (carried over with the other BowEcho fixtures)
 # ---------------------------------------------------------------------------
 
@@ -328,3 +433,49 @@ derived_from = "l3-kbmx-19980416-archive-tarz"
 derivation = "unmodified archive member KBMX_SDUS54_NVWBMX_199804160006"
 tags = ["carryover:bowecho", "provider:gcp-nexrad-l3", "license:public-domain", "era:1998", "site:kbmx", "product:48", "product:NVW", "quirk:crosses-midnight", "derived", "derivation:archive-member"]
 description = "KBMX Product 48 VAD Wind Profile 1998-04-16 00:06:45Z; symbology fallback, metadata pages and a rolling HHMM timeline crossing midnight (NEXRAD Julian-date epoch regression)"
+
+# Storm Tracking Information (product 58) for the four consecutive KDVN derecho
+# volumes 2020-08-10 17:57-18:17Z (tag sequence:kdvn-20200810): the SCIT cell
+# ids, positions, past and forecast positions and the tabular motion/DBZM block
+# are the reference for the storm-tracking tests (tools/track_golden.py reads
+# them with MetPy Level3File).
+
+[[file]]
+id = "l3-kdvn-20200810-1757-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_17_57_18"]
+sha256 = "13f13f4b2022601007f2335fbd0ef1f6233c8d112b43f70556a62eaa7102cfe8"
+size = 14838
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101757"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 17:57:18Z volume (l2-kdvn-20200810-175718): WMO header SDUS33 KDVN, 50 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_17_57_18."
+
+[[file]]
+id = "l3-kdvn-20200810-1804-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_18_04_01"]
+sha256 = "e4cef6f52ef50a93e05e0c5653b5cba97857b71065b10bcb43df715de8a231b6"
+size = 14928
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101804"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 18:04:01Z volume (l2-kdvn-20200810-180401): WMO header SDUS33 KDVN, 45 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_18_04_01."
+
+[[file]]
+id = "l3-kdvn-20200810-1810-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_18_10_43"]
+sha256 = "6c0137006bbe1fe1fe46c8aee1bac064d9c5a817172e8f1a06f65550bbeb7211"
+size = 13758
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101810"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 18:10:43Z volume (l2-kdvn-20200810-181043): WMO header SDUS33 KDVN, 35 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_18_10_43."
+
+[[file]]
+id = "l3-kdvn-20200810-1817-nst"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/DVN_NST_2020_08_10_18_17_24"]
+sha256 = "8fb2fa712add1e4c582a3395da16fc1523cf796881b5077836f2d7122d2082c5"
+size = 13158
+committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101817"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
+description = "KDVN Product 58 Storm Tracking Information for the 18:17:24Z volume (l2-kdvn-20200810-181724): WMO header SDUS33 KDVN, 33 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_18_17_24."

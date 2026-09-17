@@ -15,5 +15,12 @@ serde_json.workspace = true
 sha2 = "0.10.9"
 thiserror.workspace = true
 
+[dev-dependencies]
+# Real inputs for the unit tests: the committed PyTMatrix 0.3.3 tables and
+# WRF P3 tables of the corpus (testdata/scattering/manifest.toml).
+recast-radar-testdata = { path = "../recast-radar-testdata" }
+# Golden JSON floats must parse to the exact f64 the generator wrote.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
 [lints]
 workspace = true

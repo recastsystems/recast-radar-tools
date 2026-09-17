@@ -213,19 +213,47 @@ mod tests {
         encoder.finish().unwrap()
     }
 
-    /// Deterministic, moderately compressible bytes (radar-like runs plus noise).
-    fn payload(len: usize, seed: u32) -> Vec<u8> {
-        let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
-        let mut out = Vec::with_capacity(len);
-        while out.len() < len {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            let run = (state % 7) as usize + 1;
-            let value = (state >> 8) as u8 & 0x3f;
-            out.extend(std::iter::repeat_n(value, run.min(len - out.len())));
+    /// The KTLX 1999-05-04 volume as archived: a whole-file gzip object
+    /// (`ARCHIVE2` header, Message 1 radials in raw 2432-byte records),
+    /// downloaded on first use.
+    const KTLX_1999_GZIP: &str = "l2-ktlx-19990504-002218";
+    /// The committed trim of the same volume (LDM bzip2 records): its
+    /// decompressed bytes are the real payload the gzip cases wrap.
+    const KTLX_1999_TRIM: &str = "l2-ktlx-19990504-002218-trim";
+
+    /// The real gzip archive, or `None` when it is not cached and cannot be
+    /// downloaded now.
+    fn real_gzip_archive() -> Option<Vec<u8>> {
+        match recast_radar_testdata::bytes(KTLX_1999_GZIP) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.is_offline() => {
+                eprintln!("skipping {KTLX_1999_GZIP}: {e}");
+                None
+            }
+            Err(e) => panic!("{e}"),
         }
-        out
+    }
+
+    /// `len` bytes of the decompressed real trim (volume header, metadata
+    /// messages, Message 1 radials), starting where `seed` points, so
+    /// different seeds give different stretches of radial data.
+    fn payload(len: usize, seed: u32) -> Vec<u8> {
+        use std::sync::OnceLock;
+        static DECODED: OnceLock<Vec<u8>> = OnceLock::new();
+        let decoded = DECODED.get_or_init(|| {
+            let trim =
+                recast_radar_testdata::bytes(KTLX_1999_TRIM).unwrap_or_else(|e| panic!("{e}"));
+            let (decoded, _) = crate::normalize_archive_bytes(&trim).unwrap();
+            assert!(decoded.starts_with(b"ARCHIVE2"));
+            decoded
+        });
+        assert!(
+            len <= decoded.len(),
+            "{len} bytes asked of a {}-byte archive",
+            decoded.len()
+        );
+        let offset = (seed as usize).wrapping_mul(61_803) % (decoded.len() - len + 1);
+        decoded[offset..offset + len].to_vec()
     }
 
     fn multi_gz_reference(raw: &[u8]) -> Vec<u8> {
@@ -247,6 +275,24 @@ mod tests {
             }
             out.extend_from_slice(&chunk[..count]);
         }
+    }
+
+    #[test]
+    fn real_gzip_archive_matches_gz_decoder_and_presizes_exactly() {
+        let Some(raw) = real_gzip_archive() else {
+            return;
+        };
+        assert!(raw.starts_with(&[0x1f, 0x8b]));
+        let out = inflate_gzip_members_limited(&raw, LIMIT, CTX).unwrap();
+        let mut reference = Vec::new();
+        GzDecoder::new(raw.as_slice())
+            .read_to_end(&mut reference)
+            .unwrap();
+        assert_eq!(out, reference);
+        assert!(out.starts_with(b"ARCHIVE2"));
+        assert_eq!(gzip_size_hint(&raw, LIMIT), out.len());
+        assert_eq!(out.capacity(), out.len());
+        assert_eq!(streamed(&raw).unwrap(), out);
     }
 
     #[test]
