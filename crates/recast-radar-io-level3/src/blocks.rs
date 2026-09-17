@@ -202,7 +202,15 @@ fn read_symbology(data: &[u8], o: usize) -> Result<Symbology, Level3Error> {
     Ok(Symbology { layers })
 }
 
-/// Graphic Alphanumeric Block (Figure 3-6 sheets 4 and 9).
+/// Graphic Alphanumeric Block (section 3.3.1.3, Figure 3-6 sheets 4 and 9).
+///
+/// Each page is walked from its own page number and length; the block length is
+/// not used to bound the pages. **Observed:** it can be shorter than the pages
+/// it holds (KTLX product 61 of 2022-05-03 00:52Z declares 1162 bytes for a
+/// 10-byte header and two 578-byte pages, 1166 bytes). In every corpus file the
+/// pages hold only the storm attribute table of Table VII, drawn with text
+/// packets 8 and unlinked vector packets 10 in screen pixels; symbol packets
+/// occur in the symbology block and in product 62 cell trend data.
 fn read_graphic(data: &[u8], o: usize) -> Result<GraphicAlphanumeric, Level3Error> {
     expect_i16(data, o, -1, "graphic block divider")?;
     expect_i16(data, o + 2, 2, "graphic block ID")?;
