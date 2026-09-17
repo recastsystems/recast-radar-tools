@@ -139,7 +139,7 @@ pub enum MessageBody<'a> {
     /// Message 2, RDA Status Data (Table IV).
     RdaStatus(rda_status::RdaStatus),
     /// Message 3, Performance/Maintenance Data (Table V).
-    Performance(performance::PerformanceMaintenance),
+    Performance(Box<performance::PerformanceMaintenance>),
     /// Messages 4 (RDA to RPG) and 10 (RPG to RDA), Console Message (Table VI).
     Console(console::ConsoleMessage),
     /// Messages 5 (RDA to RPG) and 7 (RPG to RDA), Volume Coverage Pattern
@@ -159,7 +159,7 @@ pub enum MessageBody<'a> {
     /// Message 15, Clutter Filter Map (Table XIV).
     ClutterFilterMap(clutter_filter_map::ClutterFilterMap),
     /// Message 18, RDA Adaptation Data (Table XV).
-    Adaptation(adaptation::RdaAdaptationData),
+    Adaptation(Box<adaptation::RdaAdaptationData>),
     /// Message 32, RDA PRF Data (Table XVIII).
     Prf(prf::RdaPrfData),
     /// Message 33, RDA Log Data (Table XVIV).
@@ -169,11 +169,13 @@ pub enum MessageBody<'a> {
     Unparsed(Cow<'a, [u8]>),
 }
 
-/// Route a complete message body to its table decoder.
-fn decode_body<'a>(message_type: u8, body: Cow<'a, [u8]>) -> Result<MessageBody<'a>> {
-    match message_type {
-        2 => rda_status::message_body(body),
-        3 => performance::message_body(body),
+/// Route a complete message body to its table decoder. Messages 2, 3 and 18
+/// also need the header's RDA channel byte to tell legacy and Open RDA
+/// layouts apart.
+fn decode_body<'a>(header: &MessageHeader, body: Cow<'a, [u8]>) -> Result<MessageBody<'a>> {
+    match header.message_type {
+        2 => rda_status::message_body(header, body),
+        3 => performance::message_body(header, body),
         4 | 10 => console::message_body(body),
         5 | 7 => vcp::message_body(body),
         6 => control::message_body(body),
@@ -182,7 +184,7 @@ fn decode_body<'a>(message_type: u8, body: Cow<'a, [u8]>) -> Result<MessageBody<
         11 | 12 => loopback::message_body(body),
         13 => bypass_map::message_body(body),
         15 => clutter_filter_map::message_body(body),
-        18 => adaptation::message_body(body),
+        18 => adaptation::message_body(header, body),
         32 => prf::message_body(body),
         33 => rda_log::message_body(body),
         _ => Ok(MessageBody::Unparsed(body)),
@@ -209,7 +211,7 @@ impl<'a> RawMessage<'a> {
     /// [`NexradError::InvalidMessage`] naming the message type and offset.
     pub fn decode(self) -> Result<(MessageHeader, MessageBody<'a>)> {
         let message_type = self.header.message_type;
-        match decode_body(message_type, self.body) {
+        match decode_body(&self.header, self.body) {
             Ok(body) => Ok((self.header, body)),
             Err(error) => Err(NexradError::InvalidMessage {
                 offset: self.offset,

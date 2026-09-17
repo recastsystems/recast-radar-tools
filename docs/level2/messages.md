@@ -46,13 +46,45 @@ Real samples: ARCHIVE2 files 1991-2003 and KLIX 2005.
 
 ## Message 2: RDA Status Data (Table IV)
 
-Module: `rda_status.rs`. Status: placeholder; the walker yields the body unparsed.
+Module: `rda_status.rs`. Status: decoded, **verified** against MetPy on 27 real files.
 Real samples: every archive volume in the corpus (not the `_MDM` file or intermediate chunks).
+
+- The RDA channel byte of the message header picks the layout: bit 3 set is an Open RDA (`OrdaRdaStatus`, ICD
+  2620002AA Table IV), clear is a legacy RDA (`LegacyRdaStatus`, ICD 2620002B Table IV, the last revision that
+  documents it). The walker passes the header to the decoder for messages 2, 3 and 18.
+- ORDA bodies are 40 halfwords up to Build 17 and 60 from Build 18 (first seen in KDVN 2020, Build 18.2);
+  halfwords 41, 59 and 60 decode to `None` for 40-halfword bodies. TDWR files set bit 3 and use the ORDA layout
+  (build 2.0, local VCP 80 or 90).
+- Legacy halfwords 10 to 14 are interference detection rate, operational mode, interference suppression unit,
+  Archive II status and remaining capacity; 21-22 is the notch width map time. The legacy calibration
+  correction (halfword 6) is kept raw, because ICD 2620002B does not state its scale.
+- Codes are enums with `Unknown(raw)` or bit-field newtypes with named accessors. Alarm codes (27-40) are kept as
+  numbers; the Table IV-A alarm text is not included.
+- Verified: `tests/messages_status.rs` compares every halfword MetPy 1.7.1 reads (golden files from
+  `tools/level2_golden.py status`, including raw codes before MetPy's name converters) for legacy files from
+  1991, 1999, 2005 and 2008, ORDA Builds 10.0 to 24.1, and TDWR. Halfwords 26 and 59, which MetPy skips, are
+  0000 in every corpus file; the KLIX 2005 legacy fields and several Build 22 codes are checked against values
+  read from the file bytes.
 
 ## Message 3: Performance/Maintenance Data (Table V)
 
-Module: `performance.rs`. Status: placeholder; the walker yields the body unparsed.
-Real samples: metadata records from 2005 on, except KVWX 2008 and the TDWR files.
+Module: `performance.rs`. Status: decoded per ICD 2620002AA (Build 24.0), **verified** against MetPy and file
+bytes. Real samples: metadata records from 2005 on, except KVWX 2008 and the TDWR files.
+
+- `PerformanceMaintenance` has one struct per Table V section (communications, AME, RCP/SPIP, power,
+  transmitter, tower/utilities, equipment shelter, antenna/pedestal, RF generator/receiver, calibration, file
+  status, device status) plus the version halfword. Every field documents its halfword, units, range and codes.
+- Table V has reassigned locations over the builds: the DAU-to-SPIP change in Build 17.0, NTP/GPS counters
+  removed in 18.0, IFDR and RSP status added in 19.0, CSU alarm counts removed in 20.0, T1/Ethernet port status
+  added in 23.0. The module documentation lists the locations. Files from earlier builds decode with the
+  Build 24.0 names, so those fields carry the older content. There is no per-build layout.
+- The legacy RDA layout (ICD 2620002B, 520 halfwords, bit-packed, non-IEEE floating point) is not decoded. The
+  walker yields the KLIX 2005 body unparsed.
+- Verified: MetPy's message 3 layout predates Build 17, so the test compares by halfword and type. Each of the
+  237 MetPy fields whose location and type match a Build 24.0 field matches exactly in all 20 ORDA volumes
+  (Builds 10.0 to 24.1). The 32 MetPy locations with no Build 24.0 counterpart and the 21 Build 24.0 locations
+  MetPy does not read are fixed lists in the test. Those 21 are checked against hex values from the KIWA 2026
+  volume (Build 24.1), and against ICD ranges in the 12 volumes from Build 19.0 on.
 
 ## Messages 4 and 10: Console Message (Table VI)
 
@@ -100,8 +132,27 @@ Real samples: every WSR-88D metadata record from 2005 on (not TDWR). Segment cou
 
 ## Message 18: RDA Adaptation Data (Table XV)
 
-Module: `adaptation.rs`. Status: placeholder; the walker yields the body unparsed.
-Real samples: 4 segments in every metadata record from 2005 on, except KVWX 2008 and the TDWR files.
+Module: `adaptation.rs`. Status: decoded per ICD 2620002AA (Build 24.0), **verified** against MetPy and file
+bytes. Real samples: 4 segments in every metadata record from 2005 on, except KVWX 2008 and the TDWR files.
+
+- `RdaAdaptationData` has one field per Table XV entry, named after the ICD mnemonic, with its byte location,
+  units and range. Arrays: `a_fuel_conv`, `atten_table`, `h_rnscale`, `atmos`, `el_index`, `v_rnscale` (whose
+  last two elements follow VEL/WIDTH_DATA_TOVER). "T"/"F" strings decode to `Option<bool>`. Helpers give site
+  latitude and longitude in decimal degrees and the manual setup binary angles in degrees.
+- The ICD assigns bytes 8828-8843 to one Real*4 (BASELINE_ZDR_OFFSET); only the first four bytes are read.
+- Reassigned locations since Build 10: the default VCP tables (bytes 1328-8359) are spare from Build 18, and
+  DIG_RCVR_CLOCK_FREQ and COHO_FREQ (2500-2515) appear in files from Build 23.1. K1/K3 became the pre-limit
+  angles, and the pedestal/DAU regulation limits became dead limits and SPIP limits, in Build 17. The noise
+  temperature maintenance limits (Real*4) became H/V_MIN_NOISETEMP (Integer*4). The module documentation lists
+  them; the VCP tables are not decoded.
+- The legacy RDA's 9600-byte message 18 is documented by no available ICD revision (2620002B lists type 18 as
+  reserved), so the walker yields it unparsed.
+- Verified: each of the 320 MetPy locations (without the VCP tables) whose location and type match a Build 24.0
+  field matches exactly in all 20 ORDA volumes. The 31 MetPy-only and 49 Build-24.0-only offsets are fixed
+  lists. The Build-24.0-only fields are checked against KIWA 2026 hex values and ICD ranges from Build 19.0 on.
+  REFINED_PARK is zero before Build 21.0. Two blocked sites exceed the ICD's 1.800 maximum for H_RNSCALE and
+  V_RNSCALE (KMAF 2023: 1.981 and 2.059; KMTX 2024: 2.539 and 2.233). The site position matches the message 31
+  volume data block of the same volume.
 
 ## Message 29: Model Data
 
