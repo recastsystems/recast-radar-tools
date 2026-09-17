@@ -4,8 +4,10 @@
 //!
 //! Each packet decodes into its header fields and a [`RasterGrid`] of raw data
 //! levels, rows in file order. What a level means depends on the product
-//! (Product Description Block halfwords 31-46; `docs/level3/reference.md`
-//! section 5).
+//! (Product Description Block halfwords 31-53; `docs/level3/reference.md`
+//! section 5): [`RasterGrid::values`] and [`RasterGrid::level_at`] map levels
+//! with the mapping [`DataLevels::for_packet`] returns for the packet. Packet
+//! 18 levels have no mapping (no halfword describes them).
 //!
 //! Rows are encoded per packet code:
 //!
@@ -26,6 +28,7 @@
 
 use super::Packet;
 use crate::Level3Error;
+use crate::levels::{DataLevels, Level};
 
 /// Largest number of rows, and of cells per row, accepted in a raster packet.
 ///
@@ -93,6 +96,20 @@ impl RasterGrid {
                 .get(start..start + self.columns)
                 .unwrap_or_default()
         })
+    }
+
+    /// Physical values of [`levels`](Self::levels) in the same row-major
+    /// layout, NaN where a level has no physical value; see
+    /// [`DataLevels::values`]. `levels` is the mapping from
+    /// [`DataLevels::for_packet`] for the packet holding this grid.
+    pub fn values(&self, levels: &DataLevels) -> Vec<f32> {
+        levels.values(&self.levels)
+    }
+
+    /// What the level at `row`, `column` means, or `None` outside the grid.
+    pub fn level_at(&self, row: usize, column: usize, levels: &DataLevels) -> Option<Level> {
+        self.get(row, column)
+            .map(|level| levels.level(u16::from(level)))
     }
 }
 

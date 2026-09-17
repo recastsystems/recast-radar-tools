@@ -53,8 +53,8 @@ No root-level item re-exports: stream F renames the model types, and module
 paths stay stable across that.
 
 `level3` was added when the `level3` branch merged into `main` (1da8d33).
-Moving `recast_radar_io_nexrad::level3_vwp` into `recast-radar-io-level3` is
-separate work (plan, "Waiting streams") and does not change the facade.
+The VAD Wind Profile decoder that lived in `recast-radar-io-nexrad` has since
+moved into `recast-radar-io-level3` (`vwp`); the facade did not change.
 
 Deferred until other streams land:
 - `net`: when E.1 adds the `net` feature to `recast-radar-data`, the facade

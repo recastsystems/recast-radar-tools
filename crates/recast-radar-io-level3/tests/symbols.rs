@@ -32,7 +32,7 @@ use common::{Entry, Json};
 use recast_radar_io_level3::packets::symbols::{
     CellTrend, Circle, HdaHail, PointFeatureKind, Position, StormId, TrendKind, WindBarb,
 };
-use recast_radar_io_level3::{GraphicLayout, Level3Product, Packet, SymbolPacket, decode_product};
+use recast_radar_io_level3::{GraphicLayout, Level3Product, Packet, SymbolPacket};
 
 /// Packet codes of this family.
 const FAMILY: [u16; 16] = [3, 4, 5, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24, 25, 26];
@@ -98,23 +98,10 @@ fn symbols(product: &Level3Product, code: u16) -> Vec<&SymbolPacket> {
     out
 }
 
-/// Decodes a corpus file; `None` for files that are not binary products.
-fn decode(entry: &Entry) -> Option<Level3Product> {
-    if entry.golden().get("product_code").is_null() {
-        return None;
-    }
-    Some(
-        decode_product(&entry.bytes())
-            .unwrap_or_else(|e| panic!("{}: decode_product failed: {e}", entry.id)),
-    )
-}
-
+/// Family codes among the golden walker's `packet_codes` (nested ones included).
 fn golden_family_codes(golden: &Json) -> Vec<u16> {
-    golden
-        .get("packet_codes")
-        .items()
-        .iter()
-        .map(|c| u16::try_from(c.int("packet code")).unwrap())
+    common::golden_packet_codes(golden)
+        .into_iter()
         .filter(|&c| is_family(c))
         .collect()
 }
@@ -128,7 +115,7 @@ fn symbol_files() -> Vec<(Entry, Json, Level3Product)> {
             if golden_family_codes(&golden).is_empty() {
                 return None;
             }
-            let product = decode(&entry).unwrap();
+            let product = common::decode_golden_product(&entry, &golden).unwrap();
             Some((entry, golden, product))
         })
         .collect();
@@ -164,7 +151,7 @@ fn symbol_packets_decode_in_every_corpus_file() {
     let mut failures = Vec::new();
     for entry in common::level3_manifest() {
         let golden = entry.golden();
-        let Some(product) = decode(&entry) else {
+        let Some(product) = common::decode_golden_product(&entry, &golden) else {
             continue;
         };
         let mut problems = Vec::new();
@@ -226,30 +213,24 @@ fn check_nested_codes(product: &Level3Product, golden: &Json, problems: &mut Vec
                     SymbolPacket::ScitPast(nested) | SymbolPacket::ScitForecast(nested),
                 ) = packet
                 {
-                    let codes: Vec<i64> = nested.iter().map(|p| i64::from(p.code())).collect();
-                    decoded.push((layer as i64, index as i64, i64::from(packet.code()), codes));
+                    let codes: Vec<u16> = nested.iter().map(Packet::code).collect();
+                    decoded.push((layer as i64, index as i64, packet.code(), codes));
                 }
             }
         }
     }
-    let golden_nested: Vec<(i64, i64, i64, Vec<i64>)> = golden
+    let golden_nested: Vec<(i64, i64, u16, Vec<u16>)> = golden
         .get("blocks")
         .get("symbology")
         .get("nested")
         .items()
         .iter()
         .map(|n| {
-            let codes = n
-                .get("packets")
-                .items()
-                .iter()
-                .map(|c| c.int("code"))
-                .collect();
             (
                 n.get("layer").int("layer"),
                 n.get("index").int("index"),
-                n.get("code").int("code"),
-                codes,
+                u16::try_from(n.get("code").int("code")).unwrap(),
+                common::packet_codes(n.get("packets")),
             )
         })
         .collect();

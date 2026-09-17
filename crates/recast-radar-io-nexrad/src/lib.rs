@@ -6,9 +6,9 @@
 //!
 //! Other radar formats live in their own crates (`recast-radar-io-odim`,
 //! `-io-cfradial`, `-io-dorade`, `-io-jma`); `recast-radar-io` routes byte
-//! buffers of unknown format to the right decoder. [`level3_vwp`] holds the
-//! Level III VAD Wind Profile decoder until the full Level III crate
-//! subsumes it.
+//! buffers of unknown format to the right decoder, and
+//! `recast-radar-io-level3` decodes Level III products (including the VAD Wind
+//! Profile, `recast_radar_io_level3::vwp`).
 //!
 //! # Limits
 //!
@@ -34,12 +34,9 @@
 //! Gate, cut, and budget violations are [`NexradError::LimitExceeded`]
 //! errors. Preview callbacks receive a clone of the partial volume, so memory
 //! briefly doubles while one runs. [`decode_volume_from_path`] reads the
-//! whole file first; callers choose which files to open. [`level3_vwp`]
-//! inflates at most 32 MiB and accepts blocks under 500,000 bytes.
+//! whole file first; callers choose which files to open.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-
-pub mod level3_vwp;
 
 use std::collections::btree_map::Entry;
 use std::fs;
