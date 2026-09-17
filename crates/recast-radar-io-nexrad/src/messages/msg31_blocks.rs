@@ -73,11 +73,16 @@ pub const RADIAL_BLOCK_CALIBRATED_LEN: usize = 28;
 /// Length of a data moment block's descriptor, before the gate data.
 pub const MOMENT_BLOCK_HEADER_LEN: usize = 28;
 
-/// Table XVII-I offset shared by the ZDR data moment and the VOL block's ZDR
-/// bias estimate (note 33): `dB = (raw - 418) / 32`.
+/// Table XVII-I typical offset of the "ZDR" data moment, which the VOL
+/// block's ZDR bias estimate shares (note 33): `dB = (raw - 418) / 32`. Note
+/// 20 says to convert with the scale and offset of the radial's own ZDR
+/// moment block, which could change from radial to radial; this is the
+/// fallback when the radial has no ZDR block. The encoding has changed
+/// between builds: Builds 12 to 18 write 8-bit ZDR with scale 16 and offset
+/// 128 (their 44-byte VOL has no estimate), and every volume with the
+/// 52-byte VOL layout in the corpus writes these values.
 pub const ZDR_OFFSET: f32 = 418.0;
-/// Table XVII-I scale shared by the ZDR data moment and the VOL block's ZDR
-/// bias estimate.
+/// Table XVII-I typical scale of the "ZDR" data moment (see [`ZDR_OFFSET`]).
 pub const ZDR_SCALE: f32 = 32.0;
 
 /// One decoded message 31 radial (Table XVII).
@@ -156,6 +161,17 @@ impl<'a> DigitalRadarDataGeneric<'a> {
     /// The first data moment block with this name.
     pub fn moment(&self, name: DataMomentName) -> Option<&MomentDataBlock<'a>> {
         self.moments.iter().find(|moment| moment.name == name)
+    }
+
+    /// The VOL block's ZDR bias estimate in dB, converted with this radial's
+    /// ZDR moment block as Table XVII-E notes 20 and 33 require
+    /// ([`VolumeDataBlock::zdr_bias_estimate_db`]). `None` without a VOL
+    /// block, in the 44-byte VOL layout, or when the RPG reports the
+    /// estimate as not available.
+    pub fn zdr_bias_estimate_db(&self) -> Option<f32> {
+        self.volume
+            .as_ref()?
+            .zdr_bias_estimate_db(self.moment(DataMomentName::DifferentialReflectivity))
     }
 }
 
@@ -422,9 +438,18 @@ impl DataHeaderBlock {
             .max(self.pointer_table_len())
     }
 
-    /// Radar identifier with trailing spaces and NULs removed.
+    /// Radar identifier with trailing spaces and NULs removed ("" when the
+    /// identifier is blank).
     pub fn radar_identifier_str(&self) -> String {
         crate::ascii_trim(&self.radar_identifier)
+    }
+
+    /// The radar identifier, or `volume_header_icao` (trimmed) when the
+    /// identifier is blank, or "" when both are. The walker reads records
+    /// without the volume header, so the caller passes its ICAO (bytes 20-23
+    /// of the file).
+    pub fn radar_identifier_or(&self, volume_header_icao: &str) -> String {
+        crate::radar_identifier_or(&self.radar_identifier, volume_header_icao)
     }
 
     /// Collection time from the modified Julian date and milliseconds.
@@ -625,12 +650,25 @@ impl VolumeDataBlock {
         }
     }
 
-    /// ZDR bias estimate in dB, `(raw - 418) / 32`, or `None` in the 44-byte
-    /// layout or when the RPG reports it as not available (raw 0).
-    pub fn zdr_bias_estimate_db(&self) -> Option<f32> {
-        self.zdr_bias_estimate_raw
-            .filter(|&raw| raw != 0)
-            .map(|raw| (f32::from(raw) - ZDR_OFFSET) / ZDR_SCALE)
+    /// ZDR bias estimate in dB, or `None` in the 44-byte layout or when the
+    /// RPG reports it as not available (raw 0).
+    ///
+    /// Table XVII-E note 33: the estimate is encoded like the "ZDR" data
+    /// moment. Note 20: the conversion should use the scale and offset in
+    /// the Data Moment Block of the same radial, since they could change
+    /// from radial to radial. `zdr` is that radial's ZDR block, which
+    /// [`DigitalRadarDataGeneric::zdr_bias_estimate_db`] passes. When the
+    /// radial has no ZDR block (Doppler cuts of split cuts carry REF, VEL and
+    /// SW only), or the block's scale is 0 (floating-point gates, note 15,
+    /// which cannot encode an Integer*2), the Table XVII-I typical values
+    /// [`ZDR_OFFSET`] and [`ZDR_SCALE`] are used: `(raw - 418) / 32`.
+    pub fn zdr_bias_estimate_db(&self, zdr: Option<&MomentDataBlock<'_>>) -> Option<f32> {
+        let raw = self.zdr_bias_estimate_raw.filter(|&raw| raw != 0)?;
+        let (scale, offset) = match zdr {
+            Some(block) if block.scale != 0.0 => (block.scale, block.offset),
+            _ => (ZDR_SCALE, ZDR_OFFSET),
+        };
+        Some((f32::from(raw) - offset) / scale)
     }
 }
 

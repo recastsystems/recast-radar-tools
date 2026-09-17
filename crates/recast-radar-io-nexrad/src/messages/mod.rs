@@ -594,9 +594,7 @@ impl<'a> Iterator for MessageWalker<'a> {
 /// they start with `AR2V` or `ARCHIVE2`, otherwise 0 (real-time intermediate
 /// chunks, model-data files and bare records have no volume header).
 pub fn volume_header_len(bytes: &[u8]) -> usize {
-    if bytes.len() >= VOLUME_HEADER_LEN
-        && (bytes.starts_with(b"AR2V") || bytes.starts_with(b"ARCHIVE2"))
-    {
+    if bytes.len() >= VOLUME_HEADER_LEN && crate::starts_with_volume_header(bytes) {
         VOLUME_HEADER_LEN
     } else {
         0

@@ -1,0 +1,10 @@
+{
+  "source": ["l2chunk-kiwa-307-20260917-003629-001-s", "l2chunk-kiwa-307-20260917-003629-002-i", "l2chunk-kiwa-307-20260917-003629-003-i"],
+  "generator": "tools/level2_golden.py volume",
+  "pyart": "2.2.5",
+  "icao": "KIWA",
+  "nrays": 240,
+  "scans": [
+    {"elevation_number": 1, "nrays": 240, "collect_ms_sum": 526692722, "azimuth_sum": 51599.9267578125, "moments": {"REF": {"rays": 240, "ngates": [1832], "gates": 439680, "first_gate": [2125], "gate_spacing": [250], "word_size": [8], "scale": [2.0], "offset": [66.0], "code_sum": 10296785, "code_0": 322103, "code_1": 0}, "ZDR": {"rays": 240, "ngates": [1192], "gates": 286080, "first_gate": [2125], "gate_spacing": [250], "word_size": [16], "scale": [32.0], "offset": [418.0], "code_sum": 52668710, "code_0": 169727, "code_1": 0}, "PHI": {"rays": 240, "ngates": [1192], "gates": 286080, "first_gate": [2125], "gate_spacing": [250], "word_size": [16], "scale": [2.8361001014709473], "offset": [2.0], "code_sum": 27141319, "code_0": 169727, "code_1": 0}, "RHO": {"rays": 240, "ngates": [1192], "gates": 286080, "first_gate": [2125], "gate_spacing": [250], "word_size": [8], "scale": [300.0], "offset": [-60.5], "code_sum": 24755343, "code_0": 169727, "code_1": 0}, "CFP": {"rays": 240, "ngates": [1832], "gates": 439680, "first_gate": [2125], "gate_spacing": [250], "word_size": [8], "scale": [1.0], "offset": [8.0], "code_sum": 1398924, "code_0": 385855, "code_1": 3289}}}
+  ]
+}

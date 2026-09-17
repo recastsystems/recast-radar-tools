@@ -161,6 +161,27 @@ fn router_sends_netcdf4_cfradial_to_the_hdf5_side_like_the_app_chains_did() {
     assert_eq!(routed_err, direct_err);
 }
 
+/// The KLIX 2021-08-29 model-data (`_MDM`) file: an LDM record without an
+/// Archive II volume header holding one Message 29. The magic-byte router
+/// sends it to the Level II decoder, which rejects it (before wave 3 it read
+/// the compressed bytes as records); the router surfaces that error.
+#[test]
+fn router_rejects_model_data_file_like_the_direct_decoder() {
+    let path = recast_radar_testdata::require_file!("l2-klix-20210829-175748-mdm");
+    let bytes = std::fs::read(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+    let direct_err = recast_radar_io_nexrad::decode_volume_from_bytes(&bytes)
+        .expect_err("model-data file must not decode")
+        .to_string();
+    let routed_err = decode_supported_volume_bytes(&bytes)
+        .expect_err("model-data file must not decode")
+        .to_string();
+    assert_eq!(routed_err, direct_err);
+    assert!(
+        routed_err.starts_with("no Archive II volume header"),
+        "unexpected error text: {routed_err}"
+    );
+}
+
 #[test]
 fn image_decoder_and_volume_router_remain_separate() {
     let volume_error = decode_supported_volume_bytes(IMGW_KDP_MAX)
