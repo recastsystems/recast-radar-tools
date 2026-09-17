@@ -1,0 +1,18 @@
+# recast-radar-tools real test corpus manifest.
+#
+# Loaded by the `recast-radar-testdata` crate together with every
+# `testdata/*/manifest.toml`. One `[[file]]` table per real file:
+#
+#   [[file]]
+#   id = "l2-ktlx-20240315-000217"      # unique; also the cache file name
+#   format = "nexrad-level2"            # nexrad-level2 | nexrad-level2-chunk | nexrad-level3 |
+#                                       # odim-h5 | cfradial1 | cfradial2 | dorade | jma-grib2-tar | <other>
+#   urls = ["https://unidata-nexrad-level2.s3.amazonaws.com/2024/03/15/KTLX/KTLX20240315_000217_V06"]
+#   sha256 = "<64 lowercase hex>"
+#   size = 10786581                     # bytes
+#   committed = "files/level2/x.V06"    # optional; relative to testdata/ (a leading "testdata/" is accepted)
+#   derived_from = "<id>"               # optional; source entry id for derived fixtures
+#   derivation = "<how it was derived>" # optional
+#   ephemeral = false                   # optional; true when URLs expire (real-time chunks)
+#   tags = ["era:2024", "vcp:212"]
+#   description = "KTLX 2024-03-15 00:02Z; radrs/nexrad comparison volume"
