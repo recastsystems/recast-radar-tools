@@ -15,6 +15,8 @@ zip.workspace = true
 # Level II decoder for `.msg31` members in the examples and the ignored
 # mobile-radar corpus test; the library takes it as a parameter instead.
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+# Real corpus files (spec section 5).
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]
 workspace = true

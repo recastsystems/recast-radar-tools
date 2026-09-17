@@ -17,6 +17,8 @@ thiserror.workspace = true
 [dev-dependencies]
 # Only for examples/intl_assembly_probe.rs (live download + decode + merge).
 recast-radar-data = { path = "../recast-radar-data" }
+# Real corpus files (spec section 5).
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]
 workspace = true

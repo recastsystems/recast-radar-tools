@@ -629,97 +629,151 @@ fn truncated(offset: usize, needed: usize, available: usize) -> CfRadialError {
 mod tests {
     use super::*;
 
-    /// Handcrafted CDF-1: dim x=3; gattr title="hi"; var v(short, dims [x])
-    /// with attr f=1.5f, data [1, -2, 300].
-    fn tiny_cdf1() -> Vec<u8> {
-        let mut b: Vec<u8> = Vec::new();
-        b.extend(b"CDF\x01");
-        b.extend(0u32.to_be_bytes()); // numrecs
-        // dim list
-        b.extend(NC_DIMENSION.to_be_bytes());
-        b.extend(1u32.to_be_bytes());
-        b.extend(1u32.to_be_bytes()); // name len
-        b.extend(b"x\0\0\0"); // padded
-        b.extend(3u32.to_be_bytes()); // length
-        // global attrs
-        b.extend(NC_ATTRIBUTE.to_be_bytes());
-        b.extend(1u32.to_be_bytes());
-        b.extend(5u32.to_be_bytes());
-        b.extend(b"title\0\0\0");
-        b.extend(2u32.to_be_bytes()); // NC_CHAR
-        b.extend(2u32.to_be_bytes()); // 2 chars
-        b.extend(b"hi\0\0");
-        // var list
-        b.extend(NC_VARIABLE.to_be_bytes());
-        b.extend(1u32.to_be_bytes());
-        b.extend(1u32.to_be_bytes());
-        b.extend(b"v\0\0\0");
-        b.extend(1u32.to_be_bytes()); // ndims
-        b.extend(0u32.to_be_bytes()); // dim id 0
-        b.extend(NC_ATTRIBUTE.to_be_bytes());
-        b.extend(1u32.to_be_bytes());
-        b.extend(1u32.to_be_bytes());
-        b.extend(b"f\0\0\0");
-        b.extend(5u32.to_be_bytes()); // NC_FLOAT
-        b.extend(1u32.to_be_bytes());
-        b.extend(1.5f32.to_be_bytes());
-        b.extend(3u32.to_be_bytes()); // NC_SHORT
-        b.extend(8u32.to_be_bytes()); // vsize (3×2 padded to 8)
-        let begin = (b.len() + 4) as u32;
-        b.extend(begin.to_be_bytes());
-        b.extend(1i16.to_be_bytes());
-        b.extend((-2i16).to_be_bytes());
-        b.extend(300i16.to_be_bytes());
-        b.extend([0u8, 0]); // pad
-        b
+    // Golden values: tools/golden_io_formats.py, section `cfradial`
+    // (netCDF4-python reading the same files with mask/scale disabled).
+    const XSAPR_CLASSIC: &str = "cfrad1-xsapr-sgp-20110520-ppi-classic";
+    const IRENE: &str = "cfrad1-irene-sr2-20110827-120420-sur-sweeps01";
+
+    fn corpus(id: &str) -> Vec<u8> {
+        recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
     }
 
     #[test]
     fn magic_sniffer_accepts_classic_versions() {
-        assert!(looks_like_netcdf3_bytes(b"CDF\x01...."));
-        assert!(looks_like_netcdf3_bytes(b"CDF\x02...."));
-        assert!(looks_like_netcdf3_bytes(b"CDF\x05....")); // sniffed, then rejected
-        assert!(!looks_like_netcdf3_bytes(b"CDF\x03...."));
-        assert!(!looks_like_netcdf3_bytes(b"\x89HDF\r\n\x1a\n"));
+        // netCDF classic format specification: magic "CDF" + version byte
+        // 1 (CDF-1), 2 (64-bit offset) or 5 (64-bit data).
+        let classic = corpus(XSAPR_CLASSIC);
+        // golden cfradial.xsapr_classic.magic = 43444601 ("CDF", version 1)
+        assert_eq!(classic[..4], [0x43, 0x44, 0x46, 0x01]);
+        assert!(looks_like_netcdf3_bytes(&classic));
+        assert!(looks_like_netcdf3_bytes(&corpus(IRENE)));
+        for (version, accepted) in [(2u8, true), (5, true), (3, false), (0, false)] {
+            let mut mutated = classic.clone();
+            mutated[3] = version;
+            assert_eq!(
+                looks_like_netcdf3_bytes(&mutated),
+                accepted,
+                "version byte {version}"
+            );
+        }
+        // The published netCDF-4 container is HDF5 (signature 89 48 44 46).
+        let netcdf4 = corpus("cfrad1-xsapr-sgp-20110520-ppi-netcdf4");
+        assert_eq!(&netcdf4[1..4], b"HDF");
+        assert!(!looks_like_netcdf3_bytes(&netcdf4));
+        assert!(!looks_like_netcdf3_bytes(&classic[..3]));
     }
 
     #[test]
-    fn parses_handcrafted_cdf1() {
-        let bytes = tiny_cdf1();
-        let file = Nc3File::open(&bytes).expect("open");
-        assert_eq!(file.dims, vec![("x".to_owned(), 3)]);
-        assert_eq!(file.gattr_str("title"), Some("hi"));
-        let var = file.vars.get("v").expect("var v");
-        assert_eq!(var.attr_f64("f"), Some(1.5));
-        assert_eq!(file.var_dims(var), vec![3]);
-        let data = file.read_var("v").expect("data");
-        match data {
-            NcArray::I16(values) => assert_eq!(values, vec![1, -2, 300]),
-            other => panic!("unexpected array {other:?}"),
+    fn parses_real_classic_cdf1_header_and_record_variables() {
+        let bytes = corpus(XSAPR_CLASSIC);
+        let file = Nc3File::open(&bytes).expect("open X-SAPR classic");
+        // golden cfradial.xsapr_classic.dims: time is the UNLIMITED record
+        // dimension with 40 records.
+        assert_eq!(
+            file.dims,
+            vec![
+                ("time".to_owned(), 40),
+                ("range".to_owned(), 42),
+                ("sweep".to_owned(), 1),
+                ("string_length".to_owned(), 32),
+            ]
+        );
+        assert_eq!(file.record_dim, Some(0));
+        assert_eq!(file.numrecs, 40);
+        assert_eq!(file.gattr_str("instrument_name"), Some("xsapr-sgp"));
+
+        let var = file.vars.get("reflectivity_horizontal").expect("field");
+        assert_eq!(file.var_dims(var), vec![40, 42]);
+        assert_eq!(var.attr_str("units"), Some("dBZ"));
+        assert_eq!(var.attr_f64("_FillValue"), Some(-9999.0));
+        let NcArray::F32(values) = file.read_var("reflectivity_horizontal").expect("data") else {
+            panic!("reflectivity_horizontal is float32");
+        };
+        assert_eq!(values.len(), 40 * 42);
+        // golden cfradial.xsapr_classic.refl_raw (record-interleaved rows).
+        for ((ray, gate), expected) in [
+            ((0, 0), -6.05f32),
+            ((0, 21), 23.3),
+            ((10, 14), 25.23),
+            ((39, 41), 19.68),
+        ] {
+            assert_eq!(values[ray * 42 + gate], expected, "[{ray},{gate}]");
+        }
+        // golden refl_fill_count 15, first at [3, 37].
+        assert_eq!(values.iter().filter(|value| **value == -9999.0).count(), 15);
+        assert_eq!(values[3 * 42 + 37], -9999.0);
+
+        // prt(time) is a record variable too: golden ray 0/3/39 values.
+        let NcArray::F32(prt) = file.read_var("prt").expect("prt") else {
+            panic!("prt is float32");
+        };
+        assert_eq!(prt.len(), 40);
+        assert!(prt.iter().all(|value| *value == 0.000_450_045_02));
+        let NcArray::F64(time) = file.read_var("time").expect("time") else {
+            panic!("time is float64");
+        };
+        assert_eq!((time[0], time[3], time[39]), (8.0, 9.0, 7.0));
+    }
+
+    #[test]
+    fn parses_real_packed_int8_fixed_dimension_variables() {
+        let bytes = corpus(IRENE);
+        let file = Nc3File::open(&bytes).expect("open Irene");
+        assert_eq!(file.record_dim, None, "golden: no unlimited dimension");
+        assert_eq!(file.dims.len(), 8);
+        assert_eq!(file.dims[0], ("time".to_owned(), 719));
+        assert_eq!(file.dims[1], ("range".to_owned(), 1107));
+        assert_eq!(file.gattr_str("version"), Some("CF-Radial-1.3"));
+        let var = file.vars.get("DBZ").expect("DBZ");
+        // golden cfradial.irene.dbz_attrs
+        assert_eq!(var.attr_f64("scale_factor"), Some(0.5));
+        assert_eq!(var.attr_f64("add_offset"), Some(32.0));
+        assert_eq!(var.attr_f64("_FillValue"), Some(-128.0));
+        let NcArray::I8(raw) = file.read_var("DBZ").expect("DBZ data") else {
+            panic!("DBZ is int8");
+        };
+        assert_eq!(raw.len(), 719 * 1107);
+        // golden cfradial.irene.dbz_raw
+        for ((ray, gate), expected) in [
+            ((0, 0), -127i8),
+            ((0, 100), -10),
+            ((10, 200), -21),
+            ((180, 50), -32),
+            ((359, 1106), -128),
+            ((360, 10), 20),
+            ((500, 300), -18),
+            ((718, 700), 5),
+        ] {
+            assert_eq!(raw[ray * 1107 + gate], expected, "DBZ[{ray},{gate}]");
         }
     }
 
     #[test]
     fn cdf5_is_rejected_with_guidance() {
-        let mut bytes = tiny_cdf1();
-        bytes[3] = 5;
+        let mut bytes = corpus(XSAPR_CLASSIC);
+        bytes[3] = 5; // real CDF-1 header relabelled as CDF-5
         let Err(err) = Nc3File::open(&bytes) else {
             panic!("CDF-5 must be rejected");
         };
-        assert!(err.to_string().contains("CDF-5"));
+        assert!(err.to_string().contains("CDF-5"), "{err}");
     }
 
     #[test]
     fn rejects_absurd_header_counts_before_allocating() {
-        let mut bytes = b"CDF\x01".to_vec();
-        bytes.extend(0u32.to_be_bytes());
-        bytes.extend(NC_DIMENSION.to_be_bytes());
-        bytes.extend(u32::MAX.to_be_bytes());
+        // netCDF classic header: magic (4) | numrecs (4) | NC_DIMENSION tag (4)
+        // | dimension count (4) | ... (golden dim_list_tag 10, dim_count 4).
+        let mut bytes = corpus(XSAPR_CLASSIC);
+        assert_eq!(
+            u32::from_be_bytes(bytes[8..12].try_into().unwrap()),
+            NC_DIMENSION
+        );
+        assert_eq!(u32::from_be_bytes(bytes[12..16].try_into().unwrap()), 4);
+        bytes[12..16].copy_from_slice(&u32::MAX.to_be_bytes());
 
         let Err(err) = Nc3File::open(&bytes) else {
             panic!("dimension bomb must fail");
         };
-        assert!(err.to_string().contains("dimension count"));
+        assert!(err.to_string().contains("dimension count"), "{err}");
     }
 
     #[test]

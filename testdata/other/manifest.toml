@@ -113,6 +113,16 @@ committed = "files/other/odim/dkrom.pvol.20260820T1130.dualpol.h5"
 tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:dkrom", "country:DK", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v0", "hdf5:gzip-chunked", "moments:dualpol", "scan:ppi", "quirk:vrad-not-vradh", "quirk:fractional-elevations", "replaces:odim_pvol_synth"]
 description = "DMI Romo dual-pol PVOL 2026-08-20 11:30Z; 10 sweeps 0.47-15 deg x 8 quantities (DBZH TH VRAD WRAD ZDR RHOHV PHIDP LDR, LDR all nodata), 474 gates x 500 m from rstart 0.5 km; unmodified OPERA ORD archive object"
 
+[[file]]
+id = "odim-au24-20260610-000300-nci-zip-member"
+format = "zip-local-member"
+urls = ["https://thredds.nci.org.au/thredds/fileServer/rq0/24/2026/vol/24_20260610.pvol.zip/24_20260610_000300.pvol.h5"]
+sha256 = "2b7f4f60d82c92fe294320bd5b9bbdaf5e39559f5e86443cefea481dfa038d49"
+size = 354749
+committed = "files/other/odim/nci/24_20260610_000300.pvol.h5.nci-response"
+tags = ["contains:odim-h5", "provider:nci-thredds", "license:CC-BY-4.0", "era:2026", "site:au24", "country:AU", "object:pvol", "odim:h5rad-2.4", "quirk:zip-local-member-stream"]
+description = "Unmodified NCI THREDDS response (fetched 2026-09-17, identical on repeat) for the first member of the Bureau of Meteorology Bowen (site 24) daily ODIM zip 2026-06-10: the server returns the first Content-Length bytes of the zip, where Content-Length is the requested member's size, so the body is the member's ZIP local-file record (deflate, 85154 compressed bytes) followed by the start of the next record and no central directory; the member is a 10-sweep PVOL (0.8-32 deg)"
+
 # ---------------------------------------------------------------------------
 # CfRadial 1.x / 2
 # ---------------------------------------------------------------------------
@@ -260,6 +270,46 @@ committed = "files/other/dorade/swp.1211230222139.DOW6low.648.144.0_RHI_v169.hea
 derivation = "head trim: first 1471504 bytes (SSWB VOLD RADD 32xPARM CELV CFAC SWIB COMM + first 41 RYIB/ASIB/RDAT ray groups, cut at the ray-group boundary before ray 41) of zip member DOW6_edited_swps/swp.1211230222139.DOW6low.648.144.0_RHI_v169 (6323580 bytes, CRC-32 037370be, sha256 400f456666a33f8951b374a70b5ce980bc7d399cabc137342637fdc59dc3145e) of https://zenodo.org/records/7897477/files/DOW6_edited_swps.zip (9190385915 bytes; the member is readable with HTTP range requests; not a manifest entry because of its size)"
 tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2021", "site:dow6", "platform:mobile", "dorade:rle", "dorade:celv", "endian:little", "scan:rhi", "moments:dualpol", "regime:wildfire", "quirk:transition-rays", "derived", "derivation:head-trim"]
 description = "FARM DOW6 (DOW6low channel) RHI during the Marshall Fire, Colorado, 2021-12-30 22:21:39Z; RADD scan mode 3 (RHI), fixed angle 144 deg, little-endian HRD-RLE DORADE, CELV 1000 gates, 32 fields (raw and _F edited); rays 0-40 of 156 (6 antenna-transition rays, then 30.0 down to 13.0 deg elevation)"
+
+[[file]]
+id = "dorade-noxp-20090610-003210-ppi-head6"
+format = "dorade"
+sha256 = "4f1c7d4e2be87c157ba363116fa16ff257f4f5ca868fc1d0f67e4522399a23ed"
+size = 131596
+committed = "files/other/dorade/swp.1090610003210.NOXPRVP.0.0.5_PPI_v1.head6"
+derivation = "head trim: first 131596 bytes (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB + the first 6 RYIB/ASIB/RDAT ray groups, cut at the RYIB block of ray 6) of archive member 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/swp.1090610003210.NOXPRVP.0.0.5_PPI_v1 (4116256 bytes, 192 rays, sha256 135c2aeb1f030633e3522691c1ba541294a56c0fd92b033b69f07a736bc86eef) of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size)"
+tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "platform:mobile", "dorade:uncompressed", "dorade:csfd", "endian:little", "writer:sigmet_dorade", "scan:ppi", "sweepset:noxp-20090610-003210", "derived", "derivation:head-trim"]
+description = "NOXP 0.5 deg PPI sweep of the multi-elevation volume NOX090610003210.RAWAL8D (2009-06-10 00:32Z, VORTEX-2); little-endian uncompressed DORADE at 37.598N 99.322W, RADD scan mode 1, 1174 gates x 75 m from 37.5 m (CSFD), 9 fields (DZ VR SW DB_ZDR DB_PHIDP DB_SQI DB_RHOHV DM KDP); first 6 of 192 rays"
+
+[[file]]
+id = "dorade-noxp-20090610-003222-ppi-head6"
+format = "dorade"
+sha256 = "b7589a418a7ffdeceecf7cb6fd9f336b57cdefb4aac9df35b2be7ea993bcb962"
+size = 131596
+committed = "files/other/dorade/swp.1090610003222.NOXPRVP.0.1.0_PPI_v1.head6"
+derivation = "head trim: first 131596 bytes (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB + the first 6 RYIB/ASIB/RDAT ray groups, cut at the RYIB block of ray 6) of archive member 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/swp.1090610003222.NOXPRVP.0.1.0_PPI_v1 (4244728 bytes, 198 rays, sha256 89294056e1e9b82439f49c3ddcc103c2ee958c7f4f00efef7792fa05b3741df0) of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size)"
+tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "platform:mobile", "dorade:uncompressed", "dorade:csfd", "endian:little", "writer:sigmet_dorade", "scan:ppi", "sweepset:noxp-20090610-003210", "derived", "derivation:head-trim"]
+description = "NOXP 1.0 deg PPI sweep of the multi-elevation volume NOX090610003210.RAWAL8D (2009-06-10 00:32Z, VORTEX-2); little-endian uncompressed DORADE at 37.598N 99.322W, RADD scan mode 1, 1174 gates x 75 m from 37.5 m (CSFD), 9 fields (DZ VR SW DB_ZDR DB_PHIDP DB_SQI DB_RHOHV DM KDP); first 6 of 198 rays"
+
+[[file]]
+id = "dorade-noxp-20090610-003226-ppi-head6"
+format = "dorade"
+sha256 = "c41068f1c9cb1c9b4b5e3a597af60f9abd5bc14a9acaeea4133384ec24306bb8"
+size = 131596
+committed = "files/other/dorade/swp.1090610003226.NOXPRVP.0.2.0_PPI_v1.head6"
+derivation = "head trim: first 131596 bytes (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB + the first 6 RYIB/ASIB/RDAT ray groups, cut at the RYIB block of ray 6) of archive member 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/swp.1090610003226.NOXPRVP.0.2.0_PPI_v1 (4244728 bytes, 198 rays, sha256 976daee4c0570f25b874658f098de05839ac6f6150ff458293a8331fdce62fca) of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size)"
+tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "platform:mobile", "dorade:uncompressed", "dorade:csfd", "endian:little", "writer:sigmet_dorade", "scan:ppi", "sweepset:noxp-20090610-003210", "derived", "derivation:head-trim"]
+description = "NOXP 2.0 deg PPI sweep of the multi-elevation volume NOX090610003210.RAWAL8D (2009-06-10 00:32Z, VORTEX-2); little-endian uncompressed DORADE at 37.598N 99.322W, RADD scan mode 1, 1174 gates x 75 m from 37.5 m (CSFD), 9 fields (DZ VR SW DB_ZDR DB_PHIDP DB_SQI DB_RHOHV DM KDP); first 6 of 198 rays"
+
+[[file]]
+id = "dorade-noxp-20090610-003210-heads-zip"
+format = "zip"
+sha256 = "2b1682be4fe728e87c580510f6e17a1a374a5b98bb51ce2c415cc79ae6d218fc"
+size = 44980
+committed = "files/other/dorade/NOX090610003210.RAWAL8D.head6.zip"
+derivation = "container conversion of part of one directory of https://zenodo.org/records/14194361/files/2009.NOX.sweep.0609.tar.gz (157788051 bytes, md5 af414f78b0bc77625747a9799a54200a as published by Zenodo; not a manifest entry because of its size): members corrections, NOX090610003210.RAWAL8D.log, swp.1090610003222.NOXPRVP.0.1.0_PPI_v1, swp.1090610003210.NOXPRVP.0.0.5_PPI_v1, swp.1090610003226.NOXPRVP.0.2.0_PPI_v1 and sigmet_dorade.out of 2009/NOX/sweep/0609/NOX090610003210.RAWAL8D/, in the source tar's member order and under their tar paths, written with Python 3.13 zipfile (zlib 1.3.1, deflate level 9, tar mtimes); the three sweeps are the head6 trims (dorade-noxp-20090610-*-ppi-head6), the three text files are unmodified (zip_noxp_heads.py in docs/testdata/corpus.md)"
+tags = ["archive", "contains:dorade", "provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "sweepset:noxp-20090610-003210", "derived", "derivation:container-conversion"]
+description = "Zip of one NOXP volume directory: three head-trimmed ascending sweeps (0.5, 1.0, 2.0 deg, stored out of time order) plus the directory's three non-radar text files"
 
 # ---------------------------------------------------------------------------
 # JMA polar-coordinate radar GRIB2 tar

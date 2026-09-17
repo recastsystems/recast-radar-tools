@@ -1639,12 +1639,123 @@ mod tests {
         }
     }
 
+    // Real HDF5 inputs: corpus entry `odim-bejab-20190606-0000-pvol`
+    // (superblock v0, 8-byte offsets and lengths, version-1 object headers,
+    // v1 group and chunk B-trees). Byte offsets: tools/golden_io_formats.py,
+    // section `odim`, key `bejab_hdf5` (h5py `h5o.get_info` object-header
+    // addresses and chunk info, plus a version-1 header / B-tree reader
+    // written from the HDF5 file format specification).
+    const BEJAB: &str = "odim-bejab-20190606-0000-pvol";
+
+    fn corpus(id: &str) -> Vec<u8> {
+        recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
+    }
+
     #[test]
     fn magic_sniffer_matches_signature_only() {
-        assert!(looks_like_hdf5_bytes(b"\x89HDF\r\n\x1a\nrest"));
-        assert!(!looks_like_hdf5_bytes(b"\x89HDF\r\n\x1a"));
-        assert!(!looks_like_hdf5_bytes(b"CDF\x01...."));
-        assert!(!looks_like_hdf5_bytes(b"AR2V0006."));
+        // HDF5 format specification: the superblock signature is the 8 bytes
+        // 89 48 44 46 0d 0a 1a 0a (golden signatures.bejab_first8).
+        let bejab = corpus(BEJAB);
+        assert_eq!(bejab[..8], [0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a]);
+        assert!(looks_like_hdf5_bytes(&bejab));
+        assert!(looks_like_hdf5_bytes(&bejab[..8]));
+        assert!(!looks_like_hdf5_bytes(&bejab[..7]));
+        assert!(looks_like_hdf5_bytes(&corpus(
+            "cfrad1-xsapr-sgp-20110520-ppi-netcdf4"
+        )));
+        assert!(!looks_like_hdf5_bytes(&corpus(
+            "cfrad1-xsapr-sgp-20110520-ppi-classic"
+        )));
+        assert!(!looks_like_hdf5_bytes(&corpus(
+            "l2-ktlx-20240315-000217-trim"
+        )));
+    }
+
+    /// Root group object header: address 96 (h5py), 3 messages in 2 chunks;
+    /// the first block starts at 112 and holds the continuation message whose
+    /// body (offset, length) sits at 120 and points at 800.
+    const ROOT_HEADER: u64 = 96;
+    const ROOT_FIRST_BLOCK: u64 = 112;
+    const ROOT_CONTINUATION_BODY: usize = 120;
+
+    #[test]
+    fn v1_object_header_rejects_continuation_cycle() {
+        let mut bytes = corpus(BEJAB);
+        assert_eq!((bytes[8], bytes[13], bytes[14]), (0, 8, 8));
+        {
+            let file = parser(&bytes);
+            let header = file
+                .parse_object_header(ROOT_HEADER)
+                .expect("real root header parses");
+            // nmesgs 3 including the continuation message.
+            assert_eq!(header.messages.len(), 2);
+        }
+        let target = &bytes[ROOT_CONTINUATION_BODY..ROOT_CONTINUATION_BODY + 8];
+        assert_eq!(u64::from_le_bytes(target.try_into().unwrap()), 800);
+        // Point the continuation back at the header's own first block.
+        bytes[ROOT_CONTINUATION_BODY..ROOT_CONTINUATION_BODY + 8]
+            .copy_from_slice(&ROOT_FIRST_BLOCK.to_le_bytes());
+
+        let file = parser(&bytes);
+        let Err(err) = file.parse_object_header(ROOT_HEADER) else {
+            panic!("continuation cycle must fail");
+        };
+        assert!(err.to_string().contains("cycle"), "{err}");
+    }
+
+    /// Root symbol-table B-tree node at 136 (TREE, type 0, level 0, 3
+    /// entries), first child pointer at 168 (an SNOD). Chunk B-tree of
+    /// `dataset1/data1/data` at 3440 (TREE, type 1, level 0, 1 entry, key
+    /// dimensionality 3), first child pointer at 3496 = h5py chunk byte offset
+    /// 6112, stored size 103544.
+    const GROUP_BTREE: u64 = 136;
+    const GROUP_CHILD0: usize = 168;
+    const CHUNK_BTREE: u64 = 3440;
+    const CHUNK_CHILD0: usize = 3496;
+
+    #[test]
+    fn btree_walks_reject_self_references() {
+        let original = corpus(BEJAB);
+        {
+            let file = parser(&original);
+            let mut entries = Vec::new();
+            file.collect_group_entries(GROUP_BTREE, &mut entries, &mut BTreeSet::new())
+                .expect("real group B-tree walks");
+            assert_eq!(entries.len(), 14, "h5py: 14 root children");
+            let mut refs = Vec::new();
+            file.collect_chunks(CHUNK_BTREE, 3, &mut refs, &mut BTreeSet::new())
+                .expect("real chunk B-tree walks");
+            assert_eq!(refs.len(), 1);
+            assert_eq!((refs[0].address, refs[0].stored_size), (6112, 103_544));
+        }
+
+        // Group node: raise it to level 1 and point its first child at itself.
+        let mut group = original.clone();
+        assert_eq!(
+            group[GROUP_BTREE as usize..GROUP_BTREE as usize + 6],
+            *b"TREE\0\0"
+        );
+        group[GROUP_BTREE as usize + 5] = 1;
+        group[GROUP_CHILD0..GROUP_CHILD0 + 8].copy_from_slice(&GROUP_BTREE.to_le_bytes());
+        let file = parser(&group);
+        let err = file
+            .collect_group_entries(GROUP_BTREE, &mut Vec::new(), &mut BTreeSet::new())
+            .expect_err("group B-tree cycle must fail");
+        assert!(err.to_string().contains("cycle"), "{err}");
+
+        // Chunk node: the same edit on the dataset's chunk B-tree.
+        let mut chunks = original;
+        assert_eq!(
+            chunks[CHUNK_BTREE as usize..CHUNK_BTREE as usize + 6],
+            *b"TREE\x01\0"
+        );
+        chunks[CHUNK_BTREE as usize + 5] = 1;
+        chunks[CHUNK_CHILD0..CHUNK_CHILD0 + 8].copy_from_slice(&CHUNK_BTREE.to_le_bytes());
+        let file = parser(&chunks);
+        let err = file
+            .collect_chunks(CHUNK_BTREE, 3, &mut Vec::new(), &mut BTreeSet::new())
+            .expect_err("chunk B-tree cycle must fail");
+        assert!(err.to_string().contains("cycle"), "{err}");
     }
 
     #[test]
@@ -1693,52 +1804,6 @@ mod tests {
         let Err(_) = file.parse_filter_pipeline(&[1, 1]) else {
             panic!("truncated filter pipeline must fail");
         };
-    }
-
-    #[test]
-    fn v1_object_header_rejects_continuation_cycle() {
-        let mut bytes = vec![0u8; 40];
-        bytes[0] = 1;
-        bytes[2..4].copy_from_slice(&1u16.to_le_bytes());
-        bytes[8..12].copy_from_slice(&24u32.to_le_bytes());
-        bytes[16..18].copy_from_slice(&0x0010u16.to_le_bytes());
-        bytes[18..20].copy_from_slice(&16u16.to_le_bytes());
-        bytes[24..32].copy_from_slice(&16u64.to_le_bytes());
-        bytes[32..40].copy_from_slice(&24u64.to_le_bytes());
-
-        let file = parser(&bytes);
-        let Err(err) = file.parse_object_header(0) else {
-            panic!("continuation cycle must fail");
-        };
-        assert!(err.to_string().contains("cycle"));
-    }
-
-    #[test]
-    fn btree_walks_reject_self_references() {
-        let mut group = vec![0u8; 40];
-        group[..4].copy_from_slice(b"TREE");
-        group[5] = 1;
-        group[6..8].copy_from_slice(&1u16.to_le_bytes());
-        let file = parser(&group);
-        let mut entries = Vec::new();
-        let mut visited = BTreeSet::new();
-        let err = file
-            .collect_group_entries(0, &mut entries, &mut visited)
-            .expect_err("group B-tree cycle must fail");
-        assert!(err.to_string().contains("cycle"));
-
-        let mut chunks = vec![0u8; 48];
-        chunks[..4].copy_from_slice(b"TREE");
-        chunks[4] = 1;
-        chunks[5] = 1;
-        chunks[6..8].copy_from_slice(&1u16.to_le_bytes());
-        let file = parser(&chunks);
-        let mut refs = Vec::new();
-        let mut visited = BTreeSet::new();
-        let err = file
-            .collect_chunks(0, 1, &mut refs, &mut visited)
-            .expect_err("chunk B-tree cycle must fail");
-        assert!(err.to_string().contains("cycle"));
     }
 
     /// Jenkins lookup3 (hashlittle) known-answer vectors. The 30-byte

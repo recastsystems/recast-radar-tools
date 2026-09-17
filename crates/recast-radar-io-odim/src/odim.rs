@@ -705,107 +705,182 @@ mod tests {
         assert_eq!(remap_sentinel(0u8, None, Some(255)), 0);
     }
 
-    /// Build a one-ray float moment grid (offset 0, scale 1) for the recovery
-    /// tests: NaN encodes no-echo, finite values are physical readings.
-    fn float_grid(moment: MomentType, row: Vec<f32>) -> MomentGrid {
-        let gate_range = GateRange {
-            first_gate_m: 0,
-            gate_spacing_m: 500,
-            gate_count: row.len(),
-        };
-        let mut grid = MomentGrid {
-            moment,
-            gate_range,
-            scale: 1.0,
-            offset: 0.0,
-            nodata: None,
-            range_folded: None,
-            radial_indices: Vec::new(),
-            storage: recast_radar_core::MomentStorage::F32(Vec::new()),
-        };
-        grid.push_row(0, MomentRow::F32(row)).expect("push row");
-        grid
+    // ----- copied-what-group velocity recovery on real AEMET planes --------
+    //
+    // Input: corpus entry `odim-espdg-20260707-1927-pvol-dbzh-vradh` (AEMET
+    // Perdiguera, IRIS 10.3 export). Both datasets stamp the DBZH `what`
+    // sentinels (nodata 95.5, undetect -32.0, offset 0.0, gain 1.0) onto
+    // VRADH, whose no-echo gates hold the offset (0 m/s).
+    //
+    // Expected values: tools/golden_io_formats.py, section `odim`, keys
+    // `espdg_recovery` (h5py raw planes: a fill gate is DBZH no-echo and VRADH
+    // on offset; a genuine zero is DBZH echo and VRADH on offset) and
+    // `espdg_distinct_sentinel_mutation` (the file offset of dataset2 VRADH
+    // what/nodata, found by editing candidates and reading them back with
+    // libhdf5; the v2 object-header checksum recomputed with lookup3; h5py
+    // reads the edited file).
+
+    const ESPDG: &str = "odim-espdg-20260707-1927-pvol-dbzh-vradh";
+    /// dataset2 VRADH what/nodata f64 value (95.5) and its OHDR checksum.
+    const VRADH_NODATA_OFFSET: usize = 101_591;
+    const VRADH_OHDR_CHECKSUM_OFFSET: usize = 101_629;
+    const ORIGINAL_CHECKSUM: u32 = 320_803_438;
+    const DISTINCT_NODATA: f64 = -9999.0;
+    const DISTINCT_CHECKSUM: u32 = 3_075_319_015;
+
+    fn espdg_bytes() -> Vec<u8> {
+        recast_radar_testdata::bytes(ESPDG).unwrap_or_else(|err| panic!("{err}"))
     }
 
-    fn copied_sentinel_cut() -> recast_radar_core::ElevationCut {
-        // gate0: Z no-echo, V=0  -> collapsed no-data fill (must mask)
-        // gate1: Z echo,    V=0  -> genuine 0 m/s reading (must keep)
-        // gate2: Z no-echo, V=5  -> velocity off `offset` (must keep)
-        // gate3: Z echo,    V=3  -> ordinary gate (must keep)
-        let reflectivity = float_grid(
-            MomentType::Reflectivity,
-            vec![f32::NAN, 10.0, f32::NAN, 20.0],
+    /// The same file with dataset2 (0.5 deg) VRADH what/nodata rewritten to a
+    /// value no gate holds: a writer that gives velocity its own sentinels.
+    fn espdg_with_distinct_velocity_nodata() -> Vec<u8> {
+        let mut bytes = espdg_bytes();
+        let nodata = &bytes[VRADH_NODATA_OFFSET..VRADH_NODATA_OFFSET + 8];
+        assert_eq!(f64::from_le_bytes(nodata.try_into().unwrap()), 95.5);
+        let checksum = &bytes[VRADH_OHDR_CHECKSUM_OFFSET..VRADH_OHDR_CHECKSUM_OFFSET + 4];
+        assert_eq!(
+            u32::from_le_bytes(checksum.try_into().unwrap()),
+            ORIGINAL_CHECKSUM
         );
-        let velocity = float_grid(MomentType::Velocity, vec![0.0, 0.0, 5.0, 3.0]);
-        let mut cut = recast_radar_core::ElevationCut::new(0.5, None);
-        cut.moments.insert(MomentType::Reflectivity, reflectivity);
-        cut.moments.insert(MomentType::Velocity, velocity);
-        cut
+        bytes[VRADH_NODATA_OFFSET..VRADH_NODATA_OFFSET + 8]
+            .copy_from_slice(&DISTINCT_NODATA.to_le_bytes());
+        bytes[VRADH_OHDR_CHECKSUM_OFFSET..VRADH_OHDR_CHECKSUM_OFFSET + 4]
+            .copy_from_slice(&DISTINCT_CHECKSUM.to_le_bytes());
+        bytes
+    }
+
+    /// (finite gates, NaN flat-index sum, NaN flat-index square sum,
+    /// 0 m/s gates, 0 m/s flat-index sum) of a velocity plane.
+    fn velocity_summary(grid: &MomentGrid) -> (usize, u64, u64, usize, u64) {
+        let recast_radar_core::MomentStorage::F32(values) = &grid.storage else {
+            panic!("espdg planes decode to F32");
+        };
+        let mut summary = (0usize, 0u64, 0u64, 0usize, 0u64);
+        for (index, value) in values.iter().enumerate() {
+            let index = index as u64;
+            if value.is_finite() {
+                summary.0 += 1;
+                if *value == 0.0 {
+                    summary.3 += 1;
+                    summary.4 += index;
+                }
+            } else {
+                summary.1 += index;
+                summary.2 += index * index;
+            }
+        }
+        summary
+    }
+
+    fn aemet_sentinels(offset: f64) -> PlaneNoData {
+        PlaneNoData {
+            nodata: Some(95.5),
+            undetect: Some(-32.0),
+            offset,
+        }
     }
 
     #[test]
     fn copied_whatgroup_recovery_masks_only_no_echo_offset_gates() {
-        let mut cut = copied_sentinel_cut();
-        // Copied-what-group signature: velocity carries the reflectivity
-        // sentinels (the AEMET/IRIS bug), so recovery engages.
-        let mut plane_meta = BTreeMap::new();
-        let sentinels = |offset| PlaneNoData {
-            nodata: Some(95.5),
-            undetect: Some(-32.0),
-            offset,
-        };
-        plane_meta.insert(MomentType::Reflectivity, sentinels(-32.0));
-        plane_meta.insert(MomentType::Velocity, sentinels(0.0));
+        // Start from the edited file, whose 0.5 deg VRADH plane decodes with
+        // the full 0 m/s wall: 107640 finite gates, 102106 of them zero
+        // (89237 fill + 12869 genuine).
+        let edited = espdg_with_distinct_velocity_nodata();
+        let mut volume = decode_odim_h5_volume(&edited).expect("decode edited espdg");
+        let mut cut = volume.cuts.remove(0);
+        assert_eq!(cut.elevation_deg, 0.499_877_93);
+        let before = velocity_summary(&cut.moments[&MomentType::Velocity]);
+        assert_eq!((before.0, before.3), (107_640, 102_106));
 
+        // Apply the recovery with the file's real what attributes (DBZH and
+        // VRADH both nodata 95.5 / undetect -32.0 / offset 0.0).
+        let mut plane_meta = BTreeMap::new();
+        plane_meta.insert(MomentType::Reflectivity, aemet_sentinels(0.0));
+        plane_meta.insert(MomentType::Velocity, aemet_sentinels(0.0));
         recover_copied_whatgroup_velocity_nodata(&mut cut, &plane_meta);
-        let vel = cut.moments.get(&MomentType::Velocity).unwrap();
-        assert!(
-            vel.scaled_value(0, 0).unwrap().is_nan(),
-            "no-echo 0 m/s fill masked"
-        );
+
+        // golden espdg_recovery.dataset2: 89237 fill gates masked (index sum
+        // 4625669116, square sum 326315664938928), 12869 genuine 0 m/s gates
+        // with echo kept (index sum 821953830), 18403 valid gates left.
+        let velocity = &cut.moments[&MomentType::Velocity];
         assert_eq!(
-            vel.scaled_value(0, 1),
-            Some(0.0),
-            "genuine 0 m/s with echo kept"
+            velocity_summary(velocity),
+            (
+                18_403,
+                4_625_669_116,
+                326_315_664_938_928,
+                12_869,
+                821_953_830
+            )
         );
+        // First fill gate (0,0) masked; first genuine zero (0,32) kept.
+        assert!(velocity.scaled_value(0, 0).unwrap().is_nan());
+        assert_eq!(velocity.scaled_value(0, 32), Some(0.0));
+
+        // The decoder applies the same recovery to the unedited file.
+        let original = decode_odim_h5_volume(&espdg_bytes()).expect("decode espdg");
+        let decoded = &original.cuts[0].moments[&MomentType::Velocity];
+        assert_eq!(velocity_summary(decoded), velocity_summary(velocity));
+        // dataset1 (1.5 deg): golden 90846 fill gates, 8141 genuine zeros,
+        // 16794 valid gates.
+        let upper = &original.cuts[1].moments[&MomentType::Velocity];
         assert_eq!(
-            vel.scaled_value(0, 2),
-            Some(5.0),
-            "velocity off offset kept even without echo"
+            velocity_summary(upper),
+            (
+                16_794,
+                4_709_191_624,
+                333_031_625_592_866,
+                8_141,
+                511_192_353
+            )
         );
-        assert_eq!(vel.scaled_value(0, 3), Some(3.0), "ordinary gate kept");
     }
 
     #[test]
     fn distinct_velocity_sentinels_are_never_reflectivity_gated() {
-        // Velocity declares its OWN sentinels (not the reflectivity ones):
-        // a conformant writer. Recovery must not touch the plane, so the
-        // 0 m/s gate co-located with no-echo reflectivity survives unchanged.
-        let mut cut = copied_sentinel_cut();
-        let mut plane_meta = BTreeMap::new();
-        plane_meta.insert(
-            MomentType::Reflectivity,
-            PlaneNoData {
-                nodata: Some(95.5),
-                undetect: Some(-32.0),
-                offset: -32.0,
-            },
+        // dataset2 VRADH now declares nodata -9999.0 while DBZH keeps 95.5: a
+        // conformant writer. golden espdg_distinct_sentinel_mutation: h5py
+        // reads 107640 non-sentinel VRADH gates, 102106 of them 0 m/s.
+        let edited = espdg_with_distinct_velocity_nodata();
+        let volume = decode_odim_h5_volume(&edited).expect("decode edited espdg");
+        let low = &volume.cuts[0];
+        let summary = velocity_summary(&low.moments[&MomentType::Velocity]);
+        assert_eq!((summary.0, summary.1, summary.3), (107_640, 0, 102_106));
+        // Co-located no-echo reflectivity at (0,0) does not mask velocity.
+        assert!(
+            low.moments[&MomentType::Reflectivity]
+                .scaled_value(0, 0)
+                .unwrap()
+                .is_nan()
         );
+        assert_eq!(
+            low.moments[&MomentType::Velocity].scaled_value(0, 0),
+            Some(0.0)
+        );
+
+        // Calling the recovery with the edited plane's real sentinels is a
+        // no-op.
+        let mut cut = low.clone();
+        let mut plane_meta = BTreeMap::new();
+        plane_meta.insert(MomentType::Reflectivity, aemet_sentinels(0.0));
         plane_meta.insert(
             MomentType::Velocity,
             PlaneNoData {
-                nodata: Some(-999.0),
-                undetect: Some(888.0),
+                nodata: Some(DISTINCT_NODATA),
+                undetect: Some(-32.0),
                 offset: 0.0,
             },
         );
-
         recover_copied_whatgroup_velocity_nodata(&mut cut, &plane_meta);
-        let vel = cut.moments.get(&MomentType::Velocity).unwrap();
         assert_eq!(
-            vel.scaled_value(0, 0),
-            Some(0.0),
-            "distinct-sentinel writer left untouched"
+            velocity_summary(&cut.moments[&MomentType::Velocity]),
+            summary
         );
+
+        // The unedited 1.5 deg sweep still carries the copied sentinels and is
+        // still recovered (golden espdg_recovery.dataset1: 16794 valid).
+        let upper = velocity_summary(&volume.cuts[1].moments[&MomentType::Velocity]);
+        assert_eq!(upper.0, 16_794);
     }
 }

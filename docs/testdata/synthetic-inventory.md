@@ -99,14 +99,14 @@ so a row names the full volume when the feature is outside the trimmed sector.
 | group | crates | tests | helpers | data files | entries |
 |---|---|---:|---:|---:|---:|
 | io-nexrad | `recast-radar-io-nexrad` | 21 | 11 | 0 | 32 |
-| io-formats | `recast-radar-io-odim`, `recast-radar-io-cfradial`, `recast-radar-io-dorade`, `recast-radar-io-jma`, `recast-radar-io` | 45 | 30 | 4 | 79 |
+| io-formats | `recast-radar-io-odim`, `recast-radar-io-cfradial`, `recast-radar-io-dorade`, `recast-radar-io-jma`, `recast-radar-io` | 0 | 0 | 0 | 0 (79 converted) |
 | correct | `recast-radar-correct` | 28 | 4 | 0 | 32 |
 | filters-map | `recast-radar-filters`, `recast-radar-map` | 28 | 8 | 0 | 36 |
 | retrieve | `recast-radar-retrieve` | 35 | 13 | 0 | 48 |
 | track | `recast-radar-track` | 22 | 8 | 0 | 30 |
 | render-bench | `recast-radar-render`, `recast-radar-bench` | 27 | 5 | 0 | 32 |
 | core-data-scattering | `recast-radar-core`, `recast-radar-data`, `recast-radar-scattering` | 68 | 19 | 0 | 87 |
-| **all** | | **274** | **98** | **4** | **376** |
+| **all** | | **229** | **68** | **0** | **297** |
 
 ## io-nexrad
 
@@ -163,199 +163,88 @@ Notes:
 
 ## io-formats
 
-### `crates/recast-radar-io-cfradial/src/netcdf3.rs`
+Converted in plan task C.2 (branch `real-tests-io-formats`): all 79 entries are gone from
+`testdata/synthetic-allowlist.toml`, with no exceptions. The synthetic data files `cfrad_synth.nc`,
+`gen_cfradial_fixture.py`, `odim_pvol_synth.h5` and `gen_odim_fixture.py` and every builder helper
+(`tiny_cdf1`, `Synth`, `put_i16/i32/f32`, `base_block`, `synth_rays`, `synthetic_sweep`, `write_zip`,
+`synthetic_jma_grib2*`, `tar_member_blocks`, `tar_archive`, `two_station_tar`, `push_u16/u32`,
+`section`, `float_grid`, `copied_sentinel_cut`, `synthetic_archive_ii`, `synthetic_message_31_body`,
+`push_volume_block`, `push_radial_block`, `push_u8_moment`, `set_pointer`, the `FIXTURE`,
+`ODIM_SYNTH` and `CFRADIAL_SYNTH` includes) are deleted. Expected values come from
+`tools/golden_io_formats.py` (sections `cfradial`, `odim`, `dorade`, `jma`, `router`); the key is named
+in each test's comments.
 
-A handcrafted 3-element CDF-1 file (`tiny_cdf1`) and hand-written CDF headers with absurd counts; netCDF magic literals.
+Corpus additions made for this group (`testdata/other/manifest.toml`, recipes in
+docs/testdata/corpus.md): `dorade-noxp-20090610-{003210,003222,003226}-ppi-head6` (three sweeps of one
+multi-elevation NOXP volume), `dorade-noxp-20090610-003210-heads-zip` (that archive directory as a zip)
+and `odim-au24-20260610-000300-nci-zip-member` (an unmodified NCI THREDDS response).
 
-| test | real input | assertion source |
-|---|---|---|
-| `tests::magic_sniffer_accepts_classic_versions` | first bytes of `cfrad1-xsapr-sgp-20110520-ppi-classic` (CDF-1), the same bytes with the version byte set to 2, 5 (accepted) and 3 (rejected), and `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` (HDF5 signature, rejected) | netCDF classic format specification (magic `CDF` + version 1, 2 or 5) |
-| `tests::parses_handcrafted_cdf1` | `cfrad1-xsapr-sgp-20110520-ppi-classic` (CDF-1, UNLIMITED time of 40 records, range 42) | dimensions, a global attribute and a packed variable with its attributes from netCDF4-python on the same file |
-| `tests::cdf5_is_rejected_with_guidance` | `cfrad1-xsapr-sgp-20110520-ppi-classic` with the version byte set to 5 (mutated real bytes) | error text mentions CDF-5 |
-| `tests::rejects_absurd_header_counts_before_allocating` | `cfrad1-xsapr-sgp-20110520-ppi-classic` with the dimension count set to u32::MAX (mutated real header) | error before allocating; offsets from the netCDF classic header layout |
+| file | test (renamed from) | real input | assertion source |
+|---|---|---|---|
+| `recast-radar-io-cfradial/src/netcdf3.rs` | `tests::magic_sniffer_accepts_classic_versions` | xsapr classic and Irene bytes; xsapr version byte set to 2, 5, 3, 0; xsapr netCDF-4 | netCDF classic specification |
+| | `tests::parses_real_classic_cdf1_header_and_record_variables` (`parses_handcrafted_cdf1`) | `cfrad1-xsapr-sgp-20110520-ppi-classic` (UNLIMITED `time`, 40 records) | netCDF4-python: dims, attributes, raw record-variable values |
+| | `tests::parses_real_packed_int8_fixed_dimension_variables` (new) | `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` | netCDF4-python: int8 DBZ attributes and raw codes |
+| | `tests::cdf5_is_rejected_with_guidance` | xsapr classic with the version byte set to 5 | error text |
+| | `tests::rejects_absurd_header_counts_before_allocating` | xsapr classic with the dimension count at offset 12 set to `u32::MAX` | header layout checked in the test (NC_DIMENSION tag, count 4) |
+| `recast-radar-io-cfradial/tests/cfradial_real.rs` | `decodes_real_irene_cfradial1_volume` (`decodes_synthetic_cfradial1_volume`) | Irene | Py-ART `read_cfradial` (site, sweeps, gates, masked values, valid counts), xradar sweep sizes and fixed angles, netCDF4 per-ray variables |
+| | `record_variable_ray_metadata_decodes_from_unlimited_time` (new) | xsapr classic | netCDF4 per-ray `prt`, `unambiguous_range`, `nyquist_velocity`, fill gate |
+| | `level2_decoder_is_not_fooled_by_netcdf_magic` | Irene and xsapr classic bytes | manifest format `cfradial1` |
+| `recast-radar-io-dorade/src/dorade.rs` | `tests::decodes_big_endian_real_cow2_sweep` (`decodes_big_endian_synthetic_sweep`) | `dorade-cow2-20260521-225514-sur-head24` | Python DORADE walker: RADD, SSWB, SWIB, CSFD, ray status/azimuth/time, gate values and bad counts |
+| | `tests::decodes_little_endian_rle_sweep` | `dorade-dow6-20211230-222139-rhi-head41` | Python walker (HRD RLE decode) |
+| | `tests::decodes_little_endian_uncompressed_sweep` (new) | `dorade-noxp-20090525-203211-sector` | Python walker |
+| | `tests::rejects_extended_parm_with_absurd_gate_count` | COW2 PARM at offset 1080 with `number_cells` set to `i32::MAX` | error text; block layout from the walker |
+| | `tests::peek_reads_grouping_metadata_without_rays` | COW2, DOW6 RHI, NOXP 2009-06-10 0.5 deg head (descriptor bytes only) | Python walker |
+| | `tests::multi_sweep_volume_sorts_cuts_by_elevation` | the three `dorade-noxp-20090610-*-ppi-head6` sweeps, passed out of order | Python walker fixed angles, times, CSFD, gate values |
+| | `tests::mismatched_instruments_are_rejected` | COW2 with NOXP | RADD names |
+| | `tests::rhi_scan_mode_is_detected_from_radd` | DOW6 RHI | Python walker: RADD scan mode 3, per-ray elevations and azimuths |
+| | `tests::u16_grids_preserve_dorade_scaling` | COW2 | PARM scale, bias, bad value |
+| `recast-radar-io-dorade/src/mobile_archive.rs` | `tests::groups_zip_members_into_ascending_elevation_runs_per_instrument` | `dorade-noxp-20090610-003210-heads-zip`; the three heads with COW2 in a folder | walker start times and fixed angles; member names |
+| | `tests::same_elevation_sequences_become_one_volume_per_sweep` | `dorade-noxp-20090501-190244-ppi`, `-190324-ppi` in a folder | walker times and angles |
+| | `tests::long_time_gap_splits_an_ascending_run` | NOXP 2009-05-01 0.5 deg with the 2009-06-10 1.0 deg head (and, as control, the 2009-06-10 0.5 and 1.0 deg heads) | walker times and angles |
+| | `tests::rejects_archive_without_radar_members` | the NOXP zip with its three sweep names changed from `swp.` to `swp_` | error text |
+| | `tests::loose_sweepfile_groups_directory_siblings_from_same_run` | three 2009-06-10 heads and the 2009-05-01 sweep in a folder | walker times and angles |
+| | `tests::zip_sniffers_match_magic_and_extension` | the NOXP zip bytes and its end-of-central-directory record; COW2 and JMA paths | PKWARE APPNOTE signatures |
+| `recast-radar-io-jma/src/lib.rs` | `tests::grid_axis_limits_reject_pathological_radial_tables` | section 3 of `jma-n5-20191012-090000-rs47773` (offset 37) with 2049 radials | Python GRIB2 walker |
+| | `tests::oversized_tar_member_is_rejected_from_its_header` | TAKA N5 tar with its size field set over the member limit | ustar header |
+| | `tests::sniffs_jma_tar_bytes` | TAKA N5 and N6 tars; the N5 header renamed; ODIM and Level II bytes | manifest formats |
+| | `tests::cuts_sort_lowest_elevation_first_across_members` | the TAKA N5 member followed by the TAKA N6 tar | Python walker elevations (stable sort) |
+| | `tests::decodes_single_station_member_with_real_gate_values` (new) | TAKA N5 and N6 tars | Python walker: site, geometry, per-ray elevations, run-length gate values, 547,108 valid N6 gates |
+| | `tests::decodes_every_station_in_archive_order` | `jma-n6-20191012-090000` (full) | ustar member order, PDT 4.51022 station fields |
+| | `tests::site_filter_selects_one_station_by_id_or_number` | `jma-n5-20191012-090000` (full) | Python walker |
+| | `tests::first_station_decode_takes_the_first_member_only` | full N5 (MURO first) and N6 (AKIT first) | ustar member order |
+| | `tests::station_headers_skip_gate_data_and_dedupe` | TAKA N5 + N6; full N5 members followed by the full N6 tar | Python walker |
+| | `tests::repeated_station_members_merge_into_one_volume` | TAKA N5 + N6 | Python walker sweep counts |
+| | `tests::corrupt_member_is_skipped_but_alone_is_an_error` | TAKA N5 with its GRIB indicator zeroed, renamed, and before the N6 member | error text; 13 surviving velocity cuts |
+| | `tests::corrupt_station_in_full_archive_is_skipped` (split out) | full N6 with MURO's GRIB indicator zeroed | 19 stations in member order |
+| | `tests::truncated_tar_member_is_an_error_not_a_panic` | TAKA N5 cut inside the member | error text |
+| `recast-radar-io-odim/src/hdf5lite.rs` | `tests::magic_sniffer_matches_signature_only` | `odim-bejab-20190606-0000-pvol` (and 7-byte prefix), xsapr netCDF-4 and classic, a Level II trim | HDF5 superblock signature |
+| | `tests::v1_object_header_rejects_continuation_cycle` | bejab root object header (address 96) with its continuation pointed at its own first block | h5py `h5o.get_info` address and message counts; v1 header layout from the HDF5 specification |
+| | `tests::btree_walks_reject_self_references` | bejab root group B-tree (136) and `dataset1/data1/data` chunk B-tree (3440), each raised to level 1 with child 0 set to itself | h5py chunk offset and size, 14 root children |
+| `recast-radar-io-odim/src/odim.rs` | `tests::copied_whatgroup_recovery_masks_only_no_echo_offset_gates` | `odim-espdg-20260707-1927-pvol-dbzh-vradh`, recovery applied to the edited file's unrecovered 0.5 deg plane with the file's real `what` sentinels | h5py raw planes: fill and genuine-zero gate counts and index sums |
+| | `tests::distinct_velocity_sentinels_are_never_reflectivity_gated` | espdg with dataset2 VRADH `what/nodata` rewritten to -9999 and its v2 object-header checksum recomputed (libhdf5 reads the edited file) | h5py on the edited file |
+| `recast-radar-io-odim/tests/odim_real.rs` | `decodes_real_iesha_pvol` (`decodes_synthetic_odim_pvol`) | `odim-iesha-20260305-0115-pvol` | h5py attributes and raw planes; xradar sweep sizes, range and azimuth |
+| | `non_odim_hdf5_is_rejected_with_guidance` | xsapr netCDF-4 (superblock 2); `odim-imgw-ram-20260711-0015-kdp-max` (IMAGE) | error text |
+| `recast-radar-io/src/lib.rs` | `tests::sniffs_supported_volume_formats_in_router_order` | committed DORADE, ODIM, netCDF-4, CfRadial, JMA, Level II and NCI zip files; mutated CDF-3 and renamed JMA header | manifest formats |
+| | `tests::sniffs_gzip_archive_and_generic_tar_as_level2_fallthrough` (new) | `l2-kvwx-20080415-235337` (gzip); first tar header of `dorade-noxp-20090501-sweeps-tgz` | gzip and ustar signatures |
+| | `tests::unwraps_zip_local_member_stream_without_central_directory` | `odim-au24-20260610-000300-nci-zip-member` | `struct` + `zlib` unwrap, CRC-32, member sha256, h5py |
+| `recast-radar-io/tests/router_real_files.rs` | `router_matches_direct_odim_decoder_on_real_pvols` | bejab, bewid, norst, espdg, iesha, dkrom | routed equals direct; NOD site ids |
+| | `router_matches_direct_cfradial_decoder_on_classic_netcdf` | xsapr classic, DOW8 trim3, Irene | routed equals direct |
+| | `image_decoder_and_volume_router_remain_separate` | IMGW KDP IMAGE; iesha PVOL | error texts |
+| | `router_decodes_real_archive_ii_same_as_direct_decoder` (`..._synthetic_...`) | `l2-ktlx-20240315-000217-trim`, `l2-ktlx-19990504-002218-trim`, `l2-kpah-20080415-235014` (gzip) | routed equals direct; Py-ART and MetPy radial counts per sweep |
+| | `router_matches_direct_archive_ii_decoder_on_real_volumes` (`..._synthetic_volume`) | same | MetPy station ids |
 
-| helper | builds | used by |
-|---|---|---|
-| `tests::tiny_cdf1` | handcrafted CDF-1 file | `tests::parses_handcrafted_cdf1`, `tests::cdf5_is_rejected_with_guidance` |
+Deviations from the proposals above them in C.1:
 
-
-### `crates/recast-radar-io-cfradial/tests/cfradial_real.rs`
-
-Decodes `tests/data/cfrad_synth.nc`, a synthetic CfRadial 1.4 file written by `gen_cfradial_fixture.py` with ramp values.
-
-| test | real input | assertion source |
-|---|---|---|
-| `decodes_synthetic_cfradial1_volume` | `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` (tagged `replaces:cfrad_synth`: classic CfRadial 1.3, 2 sweeps, int8-packed DBZ/VEL, per-ray prt/nyquist/n_samples) and `cfrad1-xsapr-sgp-20110520-ppi-classic` (UNLIMITED time, record-interleaved variables) | Py-ART `read_cfradial` and xradar `open_cfradial1_datatree` goldens: site, time, fixed angles, rays per sweep, gate geometry, per-ray instrument values, sample packed gates |
-| `level2_decoder_is_not_fooled_by_netcdf_magic` | bytes of `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` and `cfrad1-xsapr-sgp-20110520-ppi-classic` | manifest format `cfradial1`: the HDF5 and DORADE sniffers reject both |
-
-| helper | builds | used by |
-|---|---|---|
-| `FIXTURE` | includes `tests/data/cfrad_synth.nc` | `decodes_synthetic_cfradial1_volume`, `level2_decoder_is_not_fooled_by_netcdf_magic` |
-
-
-### `crates/recast-radar-io-cfradial/tests/data/cfrad_synth.nc`
-
-Data file: synthetic CfRadial 1.4 file (sha256 not in any manifest). Real replacement: `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad1-xsapr-sgp-20110520-ppi-classic`. Delete it once no test includes it.
-
-### `crates/recast-radar-io-cfradial/tests/data/gen_cfradial_fixture.py`
-
-Data file: generator of `cfrad_synth.nc`. Delete with `cfrad_synth.nc`.
-
-### `crates/recast-radar-io-dorade/src/dorade.rs`
-
-`Synth::build` writes a DORADE sweep block by block (SSWB, VOLD, RADD, PARM, CSFD, SWIB, RYIB, RDAT) in either byte order, with 3 rays of 4 gates; tests patch blocks in place.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::decodes_big_endian_synthetic_sweep` | `dorade-cow2-20260521-225514-sur-head24` (big-endian, HRD RLE, CSFD, 3 transition rays) | independent Python DORADE block walker and RLE decoder (the method of tests/dorade_real.rs): site, scan mode, gate geometry, time offsets, bad gates |
-| `tests::decodes_little_endian_rle_sweep` | `dorade-dow6-20211230-222139-rhi-head41` (little-endian HRD RLE) and `dorade-noxp-20090501-190244-ppi` (little-endian uncompressed) | Python block walker: decoded gate values per field |
-| `tests::rejects_extended_parm_with_absurd_gate_count` | `dorade-cow2-20260521-225514-sur-head24` with a PARM cell count set to i32::MAX (mutated real block) | error names gates per radial |
-| `tests::peek_reads_grouping_metadata_without_rays` | `dorade-cow2-20260521-225514-sur-head24` | manifest and Python walker: instrument COW2, volume 215, sweep 6, fixed angle 1.0, start 22:55:14Z, latitude |
-| `tests::multi_sweep_volume_sorts_cuts_by_elevation` | needs corpus addition: two sweeps of one DORADE volume at different fixed angles (every corpus DORADE sweep set is single-elevation) | fixed angles from the Python walker; cut order and radial totals |
-| `tests::mismatched_instruments_are_rejected` | `dorade-cow2-20260521-225514-sur-head24` with `dorade-noxp-20090501-190244-ppi` (COW2 vs NOXPRVP) | error: instruments do not match |
-| `tests::rhi_scan_mode_is_detected_from_radd` | `dorade-dow6-20211230-222139-rhi-head41` (RADD scan mode 3, fixed azimuth 144 deg) | manifest and Python walker: scan mode, per-ray elevations |
-| `tests::u16_grids_preserve_dorade_scaling` | `dorade-cow2-20260521-225514-sur-head24` | PARM scale, bias and bad value from the Python walker |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::put_i16` | writes an i16 into a block | `tests::Synth::build`, `tests::rejects_extended_parm_with_absurd_gate_count`, `tests::rhi_scan_mode_is_detected_from_radd` |
-| `tests::put_i32` | writes an i32 into a block | `tests::put_f32`, `tests::base_block`, `tests::Synth::build`, `tests::rejects_extended_parm_with_absurd_gate_count` |
-| `tests::put_f32` | writes an f32 into a block | `tests::Synth::build`, `tests::rejects_extended_parm_with_absurd_gate_count`, `tests::multi_sweep_volume_sorts_cuts_by_elevation` |
-| `tests::base_block` | empty DORADE descriptor block | `tests::Synth::build`, `tests::rejects_extended_parm_with_absurd_gate_count` |
-| `tests::Synth` | synthetic sweep builder settings | `tests::decodes_big_endian_synthetic_sweep`, `tests::decodes_little_endian_rle_sweep`, `tests::peek_reads_grouping_metadata_without_rays`, `tests::multi_sweep_volume_sorts_cuts_by_elevation`, `tests::mismatched_instruments_are_rejected`, `tests::rhi_scan_mode_is_detected_from_radd`, `tests::u16_grids_preserve_dorade_scaling` |
-| `tests::Synth::build` | synthetic DORADE sweep file | `tests::decodes_big_endian_synthetic_sweep`, `tests::decodes_little_endian_rle_sweep`, `tests::peek_reads_grouping_metadata_without_rays`, `tests::multi_sweep_volume_sorts_cuts_by_elevation`, `tests::mismatched_instruments_are_rejected`, `tests::rhi_scan_mode_is_detected_from_radd`, `tests::u16_grids_preserve_dorade_scaling` |
-| `tests::synth_rays` | three synthetic rays | `tests::decodes_big_endian_synthetic_sweep`, `tests::decodes_little_endian_rle_sweep`, `tests::peek_reads_grouping_metadata_without_rays`, `tests::multi_sweep_volume_sorts_cuts_by_elevation`, `tests::mismatched_instruments_are_rejected`, `tests::u16_grids_preserve_dorade_scaling` |
-
-
-### `crates/recast-radar-io-dorade/src/mobile_archive.rs`
-
-`synthetic_sweep` writes a one-ray DORADE sweep; `write_zip` packs synthetic sweeps and text into a zip; grouping tests build `GroupableSweep` headers by hand.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::groups_zip_members_into_ascending_elevation_runs_per_instrument` | needs corpus addition: a real CSWR/FARM deployment zip with tilt directories and a second radar; until then a zip of real sweep members (`dorade-noxp-20090501-sweeps-tgz` members, `dorade-cow2-20260521-225514-sur-head24`) | grouping expected from member names and Python-walker headers |
-| `tests::same_elevation_sequences_become_one_volume_per_sweep` | headers peeked from `dorade-noxp-20090501-190244-ppi` and `dorade-noxp-20090501-190324-ppi` (consecutive 0.5 deg single tilts) | one run per sweep; times and angles from the Python walker |
-| `tests::long_time_gap_splits_an_ascending_run` | headers peeked from `dorade-noxp-20090501-190244-ppi` and `dorade-noxp-20090525-203211-sector` (24 days apart) | run split; times from the Python walker |
-| `tests::rejects_archive_without_radar_members` | a zip with no radar members (no radar bytes involved; candidate `exception` if no real archive without radar members is added) | error: no radar members |
-| `tests::loose_sweepfile_groups_directory_siblings_from_same_run` | sweep files extracted from `dorade-noxp-20090501-sweeps-tgz` into a temporary directory | siblings grouped per the archive member names and walker times |
-| `tests::zip_sniffers_match_magic_and_extension` | first bytes of a real zip (needs corpus addition, as above) and of `dorade-noxp-20090501-sweeps-tgz` (not zip) | zip local-header signature from the PKWARE APPNOTE |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::synthetic_sweep` | one-ray DORADE sweep | `tests::groups_zip_members_into_ascending_elevation_runs_per_instrument`, `tests::loose_sweepfile_groups_directory_siblings_from_same_run` |
-| `tests::write_zip` | zip archive of synthetic members | `tests::groups_zip_members_into_ascending_elevation_runs_per_instrument`, `tests::rejects_archive_without_radar_members` |
-
-
-### `crates/recast-radar-io-jma/src/lib.rs`
-
-`synthetic_jma_grib2` writes a JMA polar GRIB2 message section by section; `tar_member_blocks`/`tar_archive` write ustar members; tests build two-station tars and patch headers.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::grid_axis_limits_reject_pathological_radial_tables` | section 3 of the `jma-n5-20191012-090000-rs47773` member with the radial count set above the limit (mutated real bytes) | error: grid dimensions exceed limits; section offsets from an independent Python GRIB2 section walker |
-| `tests::oversized_tar_member_is_rejected_from_its_header` | `jma-n5-20191012-090000-rs47773` with the first member's size field set above the member limit | error: declares ... limit |
-| `tests::sniffs_jma_tar_bytes` | `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, and the non-JMA ustar inside `dorade-noxp-20090501-sweeps-tgz` | manifest formats; ustar magic and JMA member names from `tar -t` |
-| `tests::cuts_sort_lowest_elevation_first_across_members` | `jma-n5-20191012-090000-rs47773` (26 sweeps in four descending ladders with repeated angles) | elevation order from the Python GRIB2 section walker |
-| `tests::decodes_every_station_in_archive_order` | `jma-n5-20191012-090000` (20 station members) | station order from `tar -t` member names (RS47899 first) |
-| `tests::site_filter_selects_one_station_by_id_or_number` | `jma-n5-20191012-090000` | RS47773 / TAKA selected by number and id; coordinates 34.6164N 135.6564E (manifest) |
-| `tests::first_station_decode_takes_the_first_member_only` | `jma-n5-20191012-090000` | first member RS47899 per `tar -t` |
-| `tests::station_headers_skip_gate_data_and_dedupe` | `jma-n5-20191012-090000` and `jma-n6-20191012-090000` | 20 unique stations with coordinates from the Python GRIB2 walker |
-| `tests::repeated_station_members_merge_into_one_volume` | members of `jma-n5-20191012-090000-rs47773` and `jma-n6-20191012-090000-rs47773` in one tar (real members) | one TAKA volume with reflectivity and velocity; sweep counts 26 and 13 (manifest) |
-| `tests::corrupt_member_is_skipped_but_alone_is_an_error` | `jma-n5-20191012-090000` with one member's GRIB2 bytes zeroed; that member alone | 19 stations decode; the lone corrupt member is an error |
-| `tests::truncated_tar_member_is_an_error_not_a_panic` | `jma-n5-20191012-090000-rs47773` truncated inside the member data | error, no panic |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::push_u16` | big-endian u16 writer | `tests::synthetic_jma_grib2_at_elevation`, `tests::grid_axis_limits_reject_pathological_radial_tables` |
-| `tests::push_u32` | big-endian u32 writer | `tests::synthetic_jma_grib2_at_elevation`, `tests::grid_axis_limits_reject_pathological_radial_tables` |
-| `tests::section` | GRIB2 section with length prefix | `tests::synthetic_jma_grib2_at_elevation`, `tests::grid_axis_limits_reject_pathological_radial_tables` |
-| `tests::synthetic_jma_grib2` | JMA polar GRIB2 message for one station | `tests::two_station_tar`, `tests::station_headers_skip_gate_data_and_dedupe`, `tests::repeated_station_members_merge_into_one_volume`, `tests::corrupt_member_is_skipped_but_alone_is_an_error` |
-| `tests::synthetic_jma_grib2_at_elevation` | JMA polar GRIB2 message at a chosen elevation | `tests::synthetic_jma_grib2`, `tests::cuts_sort_lowest_elevation_first_across_members` |
-| `tests::tar_member_blocks` | ustar header and data blocks | `tests::tar_archive` |
-| `tests::tar_archive` | tar archive of members | `tests::two_station_tar`, `tests::sniffs_jma_tar_bytes`, `tests::cuts_sort_lowest_elevation_first_across_members`, `tests::station_headers_skip_gate_data_and_dedupe`, `tests::repeated_station_members_merge_into_one_volume`, `tests::corrupt_member_is_skipped_but_alone_is_an_error` |
-| `tests::two_station_tar` | two-station JMA tar | `tests::sniffs_jma_tar_bytes`, `tests::decodes_every_station_in_archive_order`, `tests::site_filter_selects_one_station_by_id_or_number`, `tests::first_station_decode_takes_the_first_member_only`, `tests::truncated_tar_member_is_an_error_not_a_panic` |
-
-
-### `crates/recast-radar-io-odim/src/hdf5lite.rs`
-
-HDF5 signature literals and hand-written 40-byte object headers and B-tree nodes with self-referencing addresses.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::magic_sniffer_matches_signature_only` | first bytes of `odim-bejab-20190606-0000-pvol` (accepted), the same prefix cut to 7 bytes, `cfrad1-xsapr-sgp-20110520-ppi-classic` and `l2-ktlx-20240315-000217-trim` (rejected) | HDF5 format specification superblock signature |
-| `tests::v1_object_header_rejects_continuation_cycle` | `odim-bejab-20190606-0000-pvol` (superblock v0, v1 object headers) with an object header continuation address pointed back at its own header (mutated real bytes) | error mentions a cycle; header addresses located with h5py low-level `h5o`/`h5g` info |
-| `tests::btree_walks_reject_self_references` | `odim-bejab-20190606-0000-pvol` with a group B-tree child pointer and a chunk B-tree child pointer set to the node's own address | error mentions a cycle; node addresses from h5py (dataset `id.get_offset`, chunk info) |
-
-
-### `crates/recast-radar-io-odim/src/odim.rs`
-
-One-ray float `MomentGrid`s and an `ElevationCut` with hand-picked reflectivity/velocity gates for the copied-`what`-group recovery.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::copied_whatgroup_recovery_masks_only_no_echo_offset_gates` | `odim-espdg-20260707-1927-pvol-dbzh-vradh` (VRADH `what` copies the DBZH sentinels: nodata 95.5, undetect -32.0, checked with h5py) | expected mask computed from the h5py raw DBZH/VRADH planes |
-| `tests::distinct_velocity_sentinels_are_never_reflectivity_gated` | `odim-dkrom-20260820-1130-pvol` (VRAD gain/offset differ from DBZH) | velocity equals h5py raw * gain + offset with nodata/undetect masked |
-
-| helper | builds | used by |
-|---|---|---|
-| `tests::float_grid` | one-ray float moment grid | `tests::copied_sentinel_cut` |
-| `tests::copied_sentinel_cut` | cut with 4 hand-picked Z/V gates | `tests::copied_whatgroup_recovery_masks_only_no_echo_offset_gates`, `tests::distinct_velocity_sentinels_are_never_reflectivity_gated` |
-
-
-### `crates/recast-radar-io-odim/tests/data/gen_odim_fixture.py`
-
-Data file: generator of `odim_pvol_synth.h5`. Delete with `odim_pvol_synth.h5`.
-
-### `crates/recast-radar-io-odim/tests/data/odim_pvol_synth.h5`
-
-Data file: synthetic ODIM PVOL (sha256 not in any manifest). Real replacement: `odim-iesha-20260305-0115-pvol`. Delete it once no test includes it.
-
-### `crates/recast-radar-io-odim/tests/odim_real.rs`
-
-Decodes `tests/data/odim_pvol_synth.h5`, a synthetic PVOL written by `gen_odim_fixture.py` with ramp values.
-
-| test | real input | assertion source |
-|---|---|---|
-| `decodes_synthetic_odim_pvol` | `odim-iesha-20260305-0115-pvol` (tagged `replaces:odim_pvol_synth`: 10 sweeps 0.5-90 deg, DBZH/TH/VRADH, gate counts by tier) | h5py raw planes and `what`/`where`/`how` attributes; xradar `open_odim_datatree` sweep geometry |
-| `non_odim_hdf5_is_rejected_with_guidance` | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` (HDF5 container without ODIM `Conventions`) | error guidance text |
-
-| helper | builds | used by |
-|---|---|---|
-| `FIXTURE` | includes `tests/data/odim_pvol_synth.h5` | `decodes_synthetic_odim_pvol`, `non_odim_hdf5_is_rejected_with_guidance` |
-
-
-### `crates/recast-radar-io/src/lib.rs`
-
-Format sniffing on hand-written headers (DORADE `VOLD`, HDF5, CDF, a zeroed tar with a JMA member name, AR2V, gzip) and a hand-assembled zip local-file header.
-
-| test | real input | assertion source |
-|---|---|---|
-| `tests::sniffs_supported_volume_formats_in_router_order` | leading bytes of `dorade-cow2-20260521-225514-sur-head24`, `odim-bejab-20190606-0000-pvol`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `jma-n5-20191012-090000-rs47773`, `l2-ktlx-20240315-000217-trim`, `l2-kvwx-20080415-235337` (gzip) and the non-JMA ustar inside `dorade-noxp-20090501-sweeps-tgz` | each id's manifest `format` (the tar and gzip fall through to Level II) |
-| `tests::unwraps_zip_local_member_stream_without_central_directory` | needs corpus addition: one real Australia NCI THREDDS `{site}_{date}.pvol.zip/{member}.pvol.h5` response (the zip local-member stream `recast-radar-data` `australia_nci` requests) | unwrapped bytes equal the member extracted with Python `zipfile` and open in h5py |
-
-
-### `crates/recast-radar-io/tests/router_real_files.rs`
-
-Routes the synthetic ODIM and CfRadial fixtures alongside real files, and a byte-for-byte copy of the io-nexrad synthetic single-radial Archive II volume.
-
-| test | real input | assertion source |
-|---|---|---|
-| `router_matches_direct_odim_decoder_on_real_pvols` | drop the synthetic row; add `odim-iesha-20260305-0115-pvol` and `odim-dkrom-20260820-1130-pvol` | routed decode equals direct decode; site ids IESHA/DKROM |
-| `router_matches_direct_cfradial_decoder_on_classic_netcdf` | drop the synthetic row; add `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` | routed decode equals direct decode |
-| `image_decoder_and_volume_router_remain_separate` | `odim-iesha-20260305-0115-pvol` (PVOL) in place of the synthetic PVOL | image decoder rejects the PVOL |
-| `router_decodes_synthetic_archive_ii_same_as_direct_decoder` | `l2-ktlx-20240315-000217-trim`, `l2-ktlx-19990504-002218-trim` (Message 1), `l2-kvwx-20080415-235337` (gzip) | routed decode equals `recast_radar_io_nexrad::decode_volume_from_bytes` |
-| `router_matches_direct_archive_ii_decoder_on_synthetic_volume` | same files as above | routed decode equals direct decode; site ids from the manifest |
-
-| helper | builds | used by |
-|---|---|---|
-| `ODIM_SYNTH` | includes `odim_pvol_synth.h5` | `router_matches_direct_odim_decoder_on_real_pvols`, `image_decoder_and_volume_router_remain_separate` |
-| `CFRADIAL_SYNTH` | includes `cfrad_synth.nc` | `router_matches_direct_cfradial_decoder_on_classic_netcdf` |
-| `synthetic_archive_ii` | single-radial Archive II volume | `router_decodes_synthetic_archive_ii_same_as_direct_decoder`, `router_matches_direct_archive_ii_decoder_on_synthetic_volume` |
-| `synthetic_message_31_body` | Message 31 body | `synthetic_archive_ii` |
-| `push_volume_block` | RVOL block | `synthetic_message_31_body` |
-| `push_radial_block` | RRAD block | `synthetic_message_31_body` |
-| `push_u8_moment` | 8-bit moment block | `synthetic_message_31_body` |
-| `set_pointer` | data-block pointer | `synthetic_message_31_body` |
+- `l2-kvwx-20080415-235337` is not decodable by `recast_radar_io_nexrad::decode_volume_from_bytes`
+  ("empty message 31 id"), so the gzip Archive II leg of the router tests uses
+  `l2-kpah-20080415-235014`; KVWX is still used for gzip sniffing.
+- An unfiltered `decode_jma_tar_volumes` of the full N5 tar is refused (150,528,000 grid points against
+  the 67,108,864-point `MAX_POINTS_PER_DECODE`), so the all-station and corrupt-member archive tests use
+  the full N6 tar (44,032,000 points); N5 is exercised with a site filter and header-only paths.
+- `odim-dkrom-20260820-1130-pvol` cannot stand for distinct velocity sentinels: its VRAD `what`
+  sentinels (255/0) equal DBZH's. The distinct case edits one espdg attribute instead.
+- `v1_object_header_rejects_continuation_cycle` and `btree_walks_reject_self_references` take their
+  offsets from h5py addresses plus a version-1 header reader in the golden script, not from h5py alone.
 
 
 ## correct
@@ -977,14 +866,12 @@ Model unit tests build `MomentGrid`s from hand-written u8/u16 rows and `Elevatio
 
 ## Corpus additions needed
 
-Inputs proposed above that are not in the corpus yet:
+Inputs proposed above that are not in the corpus yet (the io-formats additions were made; see that
+section):
 
 | group | input | for |
 |---|---|---|
 | io-nexrad | a real GR2 `.msg31` export (back-to-back Message 31 records) | `decodes_gr2_style_variable_framed_msg31_records` |
-| io-formats | a real CSWR/FARM deployment zip (tilt directories, second radar) | `mobile_archive` zip grouping and zip sniffing |
-| io-formats | two sweeps of one DORADE volume at different fixed angles | `multi_sweep_volume_sorts_cuts_by_elevation` |
-| io-formats | one Australia NCI THREDDS `{site}_{date}.pvol.zip/{member}.pvol.h5` response | `unwraps_zip_local_member_stream_without_central_directory` |
 | correct | the KLIX volume before `l2-klix-20210829-180425` (about 17:58Z) and one 30 min or more earlier | v4 temporal-reference tests |
 | track | 30-60 min sequences of consecutive WSR-88D volumes (crossing, splitting, merging cells; a QLCS) with the Level III Storm Tracking Information product for the same volumes | `tracking.rs` |
 | core-data-scattering | one scan delivered as per-quantity files (MeteoRomania or DWD) | `merge_three_product_parts_assembles_full_dual_pol_cut` |
