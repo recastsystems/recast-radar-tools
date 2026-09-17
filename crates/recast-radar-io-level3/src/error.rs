@@ -129,6 +129,24 @@ pub enum Level3Error {
         limit: usize,
     },
 
+    /// The product has no radial, raster or generic data array to convert
+    /// into a volume ([`crate::Level3Product::to_volume`]).
+    #[error("product {code} has no radial, raster or generic data array")]
+    NoDataArray {
+        /// Product code.
+        code: i16,
+    },
+
+    /// The ICD gives no range bin or raster cell size for the product, so its
+    /// data array cannot be placed on a range coordinate.
+    #[error("product {code}: {what} is not known")]
+    UnknownGeometry {
+        /// Product code.
+        code: i16,
+        /// What is missing: "range bin size" or "raster cell size".
+        what: &'static str,
+    },
+
     /// A date/time pair is outside the range `chrono` represents.
     #[error("{field}: date {date} and {seconds} s are not a representable time")]
     InvalidTimestamp {

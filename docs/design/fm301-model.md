@@ -1346,7 +1346,11 @@ give.
 - **NEXRAD Level II:** xradar's `nexrad_mapping` (REF→DBZH, VEL→VRADH, SW→WRADH, ZDR,
   PHI→PHIDP, RHO→RHOHV, CFP→CCORH). Unknown block names stay verbatim (`Other`).
 - **NEXRAD Level III radial products:** the FM301 name of the moment (N0B→DBZH, N0G→VRADH,
-  ...), with the product code in the field attributes. Details come with the level3 merge.
+  ...), with the product code in the field attributes. Derived products keep the ICD mnemonic
+  (`CR`, `ET`, `DVL`, `OHA`, ...); hydrometeor classifications are `REC` and the instantaneous
+  precipitation rate `RR`. The full mapping of a radial, raster or generic product onto one
+  sweep (bin geometry, elevation, ray time, level codings, the raster convention) is the
+  `recast_radar_io_level3::volume` module documentation (F.3).
 - **JMA:** FM301 names (DBZH for Pze, VRADH for Pvr).
 - **ODIM:** `what/quantity` verbatim, as xradar returns it (dkrom: `DBZH VRAD TH WRAD ZDR
   RHOHV PHIDP LDR`; iesha: `DBZH TH VRADH`).

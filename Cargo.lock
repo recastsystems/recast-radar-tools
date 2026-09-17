@@ -994,6 +994,7 @@ dependencies = [
  "bzip2",
  "chrono",
  "flate2",
+ "recast-radar-core",
  "thiserror",
 ]
 

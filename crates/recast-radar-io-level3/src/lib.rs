@@ -27,6 +27,10 @@
 //! [`messages`] holds the General Status Message and text message types, and
 //! [`vwp::VadWindProfile`] reads the winds of a VAD Wind Profile (product 48).
 //!
+//! [`read_level3_volume`] and [`Level3Product::to_volume`] carry a radial,
+//! raster or generic product's data array as a one-sweep FM301
+//! [`recast_radar_core::model::Volume`] ([`volume`]).
+//!
 //! The format reference with ICD section numbers is `docs/level3/reference.md`.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
@@ -40,6 +44,7 @@ pub mod messages;
 pub mod packets;
 mod products;
 mod read;
+pub mod volume;
 pub mod vwp;
 
 pub use blocks::{
@@ -56,6 +61,7 @@ pub use packets::{
     SymbolPacket, TextPacket, VectorPacket,
 };
 pub use products::{ProductInfo, ProductKind, product_info, products};
+pub use volume::read_level3_volume;
 
 use std::borrow::Cow;
 
