@@ -8,29 +8,65 @@
 //! - each golden `data` grid (MetPy 1.7.1 levels, cut to the header's bin
 //!   count) matches the decoded packet: header fields, dimensions, SHA-256 of
 //!   the levels and the level histogram;
-//! - where MetPy maps the product (`physical` not null), finite/masked counts
-//!   and min/max/mean of [`DataLevels`] values match within 1e-4 relative. Where
-//!   the ICD and MetPy disagree the comparison is adjusted and the ICD reading
-//!   is checked against the file's own header instead (see
-//!   [`metpy_equivalent`]);
+//! - where MetPy maps the product (`physical` not null), the public physical
+//!   value API ([`DataLevels::for_packet`], [`RadialPacket::values`],
+//!   [`GenericRadialComponent::values`]) is compared with MetPy's `map_data`
+//!   summary: finite/masked counts equal, min/max/mean within 1e-4 relative
+//!   ([`MetpyRelation`] lists the products in each case). Where MetPy and the
+//!   ICD disagree the decoder follows the ICD and the documented difference is
+//!   asserted instead: categorical products and product 138
+//!   ([`product_138_follows_the_icd_and_differs_from_metpy_as_documented`]);
 //! - fields MetPy does not expose are checked against ICD semantics with values
 //!   taken from the file itself: radial angles, generic product description
 //!   against the Product Description Block, class labels of categorical
-//!   products, product 138's maximum accumulation halfword.
+//!   products.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use common::{Entry, Json};
+use common::{Entry, Json, PhysicalSummary};
 use recast_radar_io_level3::levels::{DataLevels, Level, LevelEncoding, LevelFlag, Threshold};
-use recast_radar_io_level3::packets::generic::{GenericComponent, GenericPacket};
+use recast_radar_io_level3::packets::generic::{
+    GenericComponent, GenericPacket, GenericRadialComponent,
+};
 use recast_radar_io_level3::packets::radial::{MAX_RADIAL_CELLS, RadialPacket};
 use recast_radar_io_level3::{Level3Error, Level3Product, Packet, decode_product};
 
 const FAMILY_CODES: [u16; 4] = [16, 0xAF1F, 28, 29];
+
+/// How decoded physical values relate to MetPy 1.7.1 `map_data` for a product.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum MetpyRelation {
+    /// `values` summarize exactly as MetPy's physical values.
+    Equal,
+    /// Categorical: the decoder gives classes (NaN values); MetPy gives class
+    /// numbers, reproduced from the decoded classes by [`metpy_class_number`].
+    Classes,
+    /// Product 138: MetPy masks levels 0 and 1 and shifts the rest two
+    /// increments down ([`dsp_as_metpy`]).
+    Dsp,
+}
+
+impl MetpyRelation {
+    fn of(product_code: i16) -> Self {
+        match product_code {
+            34 | 113 | 165 | 177 => Self::Classes,
+            138 => Self::Dsp,
+            _ => Self::Equal,
+        }
+    }
+}
+
+/// Radial and generic products whose physical values MetPy maps, per relation.
+const METPY_EQUAL: [i16; 34] = [
+    19, 20, 25, 27, 28, 30, 32, 56, 78, 79, 80, 94, 99, 134, 135, 153, 154, 155, 159, 161, 163,
+    167, 169, 170, 171, 172, 173, 174, 175, 176, 180, 181, 182, 186,
+];
+const METPY_CLASSES: [i16; 4] = [34, 113, 165, 177];
+const METPY_DSP: [i16; 1] = [138];
 
 /// Records a mismatch between a decoded value and its golden value.
 macro_rules! check_eq {
@@ -53,6 +89,8 @@ struct Counts {
     grids: usize,
     physical_vs_metpy: usize,
     icd_checks: usize,
+    /// Product codes compared with MetPy, per relation.
+    metpy_products: BTreeMap<MetpyRelation, BTreeSet<i16>>,
 }
 
 #[test]
@@ -61,12 +99,7 @@ fn radial_and_generic_packets_match_golden() {
     let mut failures = Vec::new();
     for entry in common::level3_manifest() {
         let golden = entry.golden();
-        let codes: Vec<u16> = golden
-            .get("packet_codes")
-            .items()
-            .iter()
-            .map(|c| u16::try_from(c.int("packet code")).unwrap())
-            .collect();
+        let codes = common::golden_packet_codes(&golden);
         if !codes.iter().any(|c| FAMILY_CODES.contains(c)) {
             continue;
         }
@@ -88,6 +121,15 @@ fn radial_and_generic_packets_match_golden() {
     assert_eq!(counts.radial_packets, 136);
     assert_eq!(counts.generic_packets, 5);
     assert_eq!(counts.grids, 138);
+    // Every grid but product 197's (no MetPy mapper) is compared with MetPy.
+    assert_eq!(counts.physical_vs_metpy, 137);
+    let relation = |r| counts.metpy_products.get(&r).cloned().unwrap_or_default();
+    assert_eq!(relation(MetpyRelation::Equal), BTreeSet::from(METPY_EQUAL));
+    assert_eq!(
+        relation(MetpyRelation::Classes),
+        BTreeSet::from(METPY_CLASSES)
+    );
+    assert_eq!(relation(MetpyRelation::Dsp), BTreeSet::from(METPY_DSP));
     eprintln!(
         "{} files: {} radial packets, {} generic packets, {} grids matched, \
          {} physical summaries matched MetPy, {} ICD checks",
@@ -137,7 +179,6 @@ fn check_file(entry: &Entry, golden: &Json, counts: &mut Counts) -> Vec<String> 
         }
     }
 
-    let levels = DataLevels::from_description(&product.description);
     let data = golden.get("data").items();
     for (n, entry_data) in data.iter().enumerate() {
         let what = format!("data[{n}]");
@@ -156,11 +197,25 @@ fn check_file(entry: &Entry, golden: &Json, counts: &mut Counts) -> Vec<String> 
             problems.push(format!("{what}: no packet at layer {layer} index {index}"));
             continue;
         };
+        let Some(levels) = DataLevels::for_packet(&product.description, packet.code()) else {
+            problems.push(format!(
+                "{what}: no data level mapping for packet {} of product {}",
+                packet.code(),
+                product.description.product_code
+            ));
+            continue;
+        };
         let grid = match packet {
-            Packet::Radial(radial) => {
-                radial_grid(radial, entry_data.get("header"), &what, &mut problems)
+            Packet::Radial(radial) => radial_grid(
+                radial,
+                &levels,
+                entry_data.get("header"),
+                &what,
+                &mut problems,
+            ),
+            Packet::Generic(generic) => {
+                generic_grid(generic, &levels, entry_data, &what, &mut problems)
             }
-            Packet::Generic(generic) => generic_grid(generic, entry_data, &what, &mut problems),
             other => {
                 problems.push(format!(
                     "{what}: packet {} is not radial or generic",
@@ -172,24 +227,23 @@ fn check_file(entry: &Entry, golden: &Json, counts: &mut Counts) -> Vec<String> 
         let Some(grid) = grid else { continue };
         counts.grids += 1;
         check_grid(&grid, entry_data, &what, &mut problems);
+        check_values_match_levels(&grid, &levels, &what, &mut problems);
 
         let physical = entry_data.get("physical");
-        let Some(levels) = &levels else {
-            problems.push(format!(
-                "{what}: no data level mapping for product {}",
-                product.description.product_code
-            ));
-            continue;
-        };
         if physical.is_null() {
             // MetPy has no mapper for this product (197): ICD class table only.
-            check_classes_without_metpy(&product, levels, &grid, &what, &mut problems);
+            check_classes_without_metpy(&product, &levels, &grid, &what, &mut problems);
             counts.icd_checks += 1;
         } else {
-            check_physical(&product, levels, &grid, physical, &what, &mut problems);
+            let relation = check_physical(&product, &levels, &grid, physical, &what, &mut problems);
             counts.physical_vs_metpy += 1;
+            counts
+                .metpy_products
+                .entry(relation)
+                .or_default()
+                .insert(product.description.product_code);
         }
-        counts.icd_checks += check_icd_levels(&product, levels, &grid, &what, &mut problems);
+        counts.icd_checks += check_icd_levels(&product, &levels, &grid, &what, &mut problems);
     }
     // Generic products whose components carry no grid (152) have an empty `data`.
     problems
@@ -203,7 +257,16 @@ struct Grid {
     /// SHA-256 input as the golden tool encodes it: `u8` for radial packets,
     /// big-endian `u16` for generic packets.
     bytes: Vec<u8>,
+    /// Physical values from the public API (`RadialPacket::values`,
+    /// `GenericRadialComponent::values`).
+    values: Vec<f32>,
+    /// `Level` of each cell from the public API (`level_at`), sampled every
+    /// [`LEVEL_AT_STRIDE`] cells: (cell index, level).
+    level_at: Vec<(usize, Option<Level>)>,
 }
+
+/// Cells between two `level_at` samples (a prime, so every bin column is hit).
+const LEVEL_AT_STRIDE: usize = 97;
 
 /// ICD Figure 3-10/3-11c: angles are tenths of a degree; every corpus sweep is
 /// a full circle of 0.4-2.0 degree radials, each starting where the previous
@@ -345,6 +408,7 @@ fn check_generic_description(
 
 fn radial_grid(
     radial: &RadialPacket,
+    levels: &DataLevels,
     header: &Json,
     what: &str,
     problems: &mut Vec<String>,
@@ -365,16 +429,29 @@ fn radial_grid(
             header.get(name).int(name)
         );
     }
+    let bins = usize::from(radial.num_bins).max(1);
+    let mut level_at: Vec<_> = (0..radial.levels.len() + 2 * bins)
+        .step_by(LEVEL_AT_STRIDE)
+        .map(|i| (i, radial.level_at(i / bins, i % bins, levels)))
+        .collect();
+    // Past the last bin of a radial: no level (cell index outside every grid).
+    level_at.push((
+        usize::MAX,
+        radial.level_at(0, usize::from(radial.num_bins), levels),
+    ));
     Some(Grid {
         rows: radial.num_radials(),
         cols: usize::from(radial.num_bins),
         levels: radial.levels.iter().map(|&l| u16::from(l)).collect(),
         bytes: radial.levels.clone(),
+        values: radial.values(levels),
+        level_at,
     })
 }
 
 fn generic_grid(
     generic: &GenericPacket,
+    levels: &DataLevels,
     data: &Json,
     what: &str,
     problems: &mut Vec<String>,
@@ -403,10 +480,10 @@ fn generic_grid(
         info.get("first_gate").as_f64()
     );
     let cols = component.radials.first().map_or(0, |r| r.num_bins);
-    let mut levels = Vec::new();
+    let mut grid_levels = Vec::new();
     for (i, radial) in component.radials.iter().enumerate() {
         let bins = usize::try_from(radial.num_bins).unwrap_or(0);
-        if radial.num_bins != cols || radial.values.len() < bins {
+        if radial.num_bins != cols || radial.values.len() < bins || radial.bins().len() != bins {
             problems.push(format!(
                 "{what}: radial {i} has {} bins and {} values",
                 radial.num_bins,
@@ -421,15 +498,111 @@ fn generic_grid(
                 ));
                 return None;
             };
-            levels.push(level);
+            grid_levels.push(level);
         }
     }
+    let cols = usize::try_from(cols).unwrap_or(0);
+    check_generic_value_accessors(component, levels, cols, what, problems);
+    let step = cols.max(1);
+    let mut level_at: Vec<_> = (0..grid_levels.len() + 2 * step)
+        .step_by(LEVEL_AT_STRIDE)
+        .map(|i| {
+            let level = component
+                .radials
+                .get(i / step)
+                .and_then(|radial| radial.level_at(i % step, levels));
+            (i, level)
+        })
+        .collect();
+    // Past the last bin of a radial: no level (cell index outside every grid).
+    level_at.push((
+        usize::MAX,
+        component
+            .radials
+            .first()
+            .and_then(|radial| radial.level_at(cols, levels)),
+    ));
     Some(Grid {
         rows: component.radials.len(),
-        cols: usize::try_from(cols).unwrap_or(0),
-        bytes: levels.iter().flat_map(|l| l.to_be_bytes()).collect(),
-        levels,
+        cols,
+        bytes: grid_levels.iter().flat_map(|l| l.to_be_bytes()).collect(),
+        levels: grid_levels,
+        values: component.values(levels),
+        level_at,
     })
+}
+
+/// `GenericRadialComponent::num_bins`/`values` against the per-radial
+/// `GenericRadial::values`: same column count, rows equal to the radial values.
+fn check_generic_value_accessors(
+    component: &GenericRadialComponent,
+    levels: &DataLevels,
+    cols: usize,
+    what: &str,
+    problems: &mut Vec<String>,
+) {
+    check_eq!(
+        problems,
+        format!("{what} component num_bins"),
+        component.num_bins(),
+        cols
+    );
+    let joined: Vec<u32> = component
+        .radials
+        .iter()
+        .flat_map(|radial| radial.values(levels))
+        .map(f32::to_bits)
+        .collect();
+    let whole: Vec<u32> = component
+        .values(levels)
+        .into_iter()
+        .map(f32::to_bits)
+        .collect();
+    if joined != whole {
+        problems.push(format!(
+            "{what}: component values differ from its radials' values"
+        ));
+    }
+}
+
+/// `values` and the sampled `level_at` of a grid agree with `DataLevels::level`
+/// of its levels, and `level_at` is `None` past the grid.
+fn check_values_match_levels(
+    grid: &Grid,
+    levels: &DataLevels,
+    what: &str,
+    problems: &mut Vec<String>,
+) {
+    if grid.values.len() != grid.levels.len() {
+        problems.push(format!(
+            "{what}: {} values for {} levels",
+            grid.values.len(),
+            grid.levels.len()
+        ));
+        return;
+    }
+    // One cell per distinct level: the value is the level's value as f32, or NaN.
+    let mut seen = BTreeSet::new();
+    for (&value, &level) in grid.values.iter().zip(&grid.levels) {
+        if seen.insert(level) {
+            let expected = levels.value(level).map_or(f32::NAN, |v| v as f32);
+            if value.to_bits() != expected.to_bits() {
+                problems.push(format!(
+                    "{what}: level {level} value {value}, DataLevels gives {:?}",
+                    levels.level(level)
+                ));
+            }
+        }
+    }
+    for &(i, level) in &grid.level_at {
+        let expected = grid.levels.get(i).map(|&n| levels.level(n));
+        if level != expected {
+            problems.push(format!(
+                "{what}: level_at cell {i} is {level:?}, expected {expected:?}"
+            ));
+            break;
+        }
+    }
 }
 
 fn check_grid(grid: &Grid, data: &Json, what: &str, problems: &mut Vec<String>) {
@@ -445,7 +618,7 @@ fn check_grid(grid: &Grid, data: &Json, what: &str, problems: &mut Vec<String>) 
         grid.cols as i64,
         data.get("cols").int("cols")
     );
-    let digest = sha256_hex(&grid.bytes);
+    let digest = common::sha256_hex(&grid.bytes);
     check_eq!(
         problems,
         format!("{what} raw levels sha256"),
@@ -471,35 +644,43 @@ fn histogram(levels: &[u16]) -> BTreeMap<u16, u64> {
     h
 }
 
-/// The value MetPy 1.7.1 `map_data` gives a level, derived from the decoded level.
-///
-/// - Classes: MetPy maps hydrometeor classes (165, 177) to `level // 10` and
-///   power removed control (113) through its threshold halfwords, which hold
-///   the level itself.
-/// - Product 138: the ICD makes level 0 "no accumulation" (0 in) and level `N`
-///   `N * increment`; MetPy masks levels 0 and 1 and maps `N >= 2` to
-///   `(N - 2) * increment`. The ICD reading is checked separately against
-///   halfword 47 in [`check_icd_levels`].
-/// - Product 34: MetPy maps the threshold halfwords (all zero in the corpus) to
-///   0; the ICD defines classes. Checked in [`check_icd_levels`].
-fn metpy_equivalent(product_code: i16, levels: &DataLevels, n: u16) -> Option<f64> {
-    match (product_code, levels.level(n)) {
-        (138, _) if n < 2 => None,
-        (138, Level::Value(v)) => match levels.encoding() {
-            LevelEncoding::Linear(l) => Some(v - 2.0 * l.increment),
-            _ => None,
-        },
-        (165 | 177, Level::Class(class)) => Some(f64::from(class.code / 10)),
-        (113, Level::Class(class)) => Some(f64::from(class.code)),
-        (34, Level::Class(_)) => Some(0.0),
-        (_, level) => level.value(),
-    }
-}
-
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-4 * a.abs().max(b.abs()) + 1e-12
 }
 
+/// The number MetPy 1.7.1 `map_data` gives a class of a categorical product:
+/// the class index `level // 10` for hydrometeor classes (165, 177), the level
+/// itself for power removed control (113, through threshold halfwords that
+/// hold the level), 0 for clutter filter control (34, whose threshold
+/// halfwords are all zero). Flags have no number (NaN).
+fn metpy_class_number(product_code: i16, level: Level) -> f64 {
+    match (product_code, level) {
+        (165 | 177, Level::Class(class)) => f64::from(class.code / 10),
+        (113, Level::Class(class)) => f64::from(class.code),
+        (34, Level::Class(_)) => 0.0,
+        _ => f64::NAN,
+    }
+}
+
+/// Product 138 values as MetPy 1.7.1 maps them, from the decoded (ICD) values:
+/// levels 0 and 1 masked, level `N >= 2` two increments below the ICD value.
+fn dsp_as_metpy(levels: &DataLevels, grid_levels: &[u16], values: &[f32]) -> PhysicalSummary {
+    let LevelEncoding::Linear(linear) = levels.encoding() else {
+        panic!("product 138 is not linear: {:?}", levels.encoding());
+    };
+    // In f32, like the values, so level 2 maps to exactly 0 as in MetPy.
+    let shift = (2.0 * linear.increment) as f32;
+    PhysicalSummary::of(grid_levels.iter().zip(values).map(|(&n, &v)| {
+        if n < 2 {
+            f64::NAN
+        } else {
+            f64::from(v - shift)
+        }
+    }))
+}
+
+/// Compares the public API's physical values with MetPy's `map_data` summary
+/// and returns how they relate.
 fn check_physical(
     product: &Level3Product,
     levels: &DataLevels,
@@ -507,60 +688,40 @@ fn check_physical(
     golden: &Json,
     what: &str,
     problems: &mut Vec<String>,
-) {
+) -> MetpyRelation {
     let code = product.description.product_code;
-    let (mut finite, mut masked, mut topped) = (0i64, 0i64, 0i64);
-    let (mut min, mut max, mut sum) = (f64::INFINITY, f64::NEG_INFINITY, 0.0);
-    for (&level, &count) in &histogram(&grid.levels) {
-        match metpy_equivalent(code, levels, level) {
-            Some(v) => {
-                finite += count as i64;
-                min = min.min(v);
-                max = max.max(v);
-                sum += v * count as f64;
+    let relation = MetpyRelation::of(code);
+    let decoded = match relation {
+        MetpyRelation::Equal => PhysicalSummary::of_f32(&grid.values),
+        MetpyRelation::Classes => {
+            // Classes carry no physical value.
+            if let Some(v) = grid.values.iter().find(|v| !v.is_nan()) {
+                problems.push(format!("{what}: categorical product has value {v}"));
             }
-            None => masked += count as i64,
+            PhysicalSummary::of(
+                levels
+                    .levels(&grid.levels)
+                    .map(|level| metpy_class_number(code, level)),
+            )
         }
-        if matches!(levels.level(level), Level::Topped(_)) {
-            topped += count as i64;
-        }
+        MetpyRelation::Dsp => dsp_as_metpy(levels, &grid.levels, &grid.values),
+    };
+    for mismatch in decoded.mismatches(&PhysicalSummary::from_golden(golden)) {
+        problems.push(format!("{what} physical ({relation:?}) {mismatch}"));
     }
-    check_eq!(
-        problems,
-        format!("{what} finite"),
-        finite,
-        golden.get("finite").int("finite")
-    );
-    check_eq!(
-        problems,
-        format!("{what} masked"),
-        masked,
-        golden.get("masked").int("masked")
-    );
     if !golden.get("topped").is_null() {
+        let topped = levels
+            .levels(&grid.levels)
+            .filter(|level| matches!(level, Level::Topped(_)))
+            .count();
         check_eq!(
             problems,
             format!("{what} topped"),
-            topped,
+            topped as i64,
             golden.get("topped").int("topped")
         );
     }
-    if finite > 0 {
-        let mean = sum / finite as f64;
-        for (name, decoded) in [("min", min), ("max", max), ("mean", mean)] {
-            let expected = golden.get(name).as_f64().unwrap();
-            if !close(decoded, expected) {
-                problems.push(format!(
-                    "{what} physical {name}: decoded {decoded}, MetPy {expected}"
-                ));
-            }
-        }
-    } else if !golden.get("min").is_null() {
-        problems.push(format!(
-            "{what}: no finite values, MetPy min {:?}",
-            golden.get("min")
-        ));
-    }
+    relation
 }
 
 /// Explicit ICD checks with values from the file's own header. Returns the
@@ -585,40 +746,8 @@ fn check_icd_levels(
         }
     }
     match d.product_code {
-        // Figure 3-6 sheet 6 Note 1: level 0 is no accumulation, level N is
-        // (hw31 + N * hw32) / 100 inches; halfword 47 is the maximum
-        // accumulation in 0.01 in, so the highest level present must lie within
-        // one increment of it (levels are quantized).
-        138 => {
-            let increment = f64::from(hw(32)) / 100.0;
-            check_eq!(
-                problems,
-                format!("{what} DSP level 0"),
-                levels.value(0),
-                Some(f64::from(hw(31)) / 100.0)
-            );
-            check_eq!(
-                problems,
-                format!("{what} DSP level 1"),
-                levels.value(1),
-                Some(f64::from(hw(31) + hw(32)) / 100.0)
-            );
-            check_eq!(
-                problems,
-                format!("{what} DSP units"),
-                levels.units(),
-                Some("in")
-            );
-            let highest = *present.keys().next_back().unwrap();
-            let max_accumulation = f64::from(hw(47)) / 100.0;
-            let value = levels.value(highest).unwrap();
-            if (value - max_accumulation).abs() > increment + 1e-9 {
-                problems.push(format!(
-                    "{what}: highest level {highest} is {value} in, halfword 47 says {max_accumulation} in"
-                ));
-            }
-            1
-        }
+        // Product 138 against the ICD and halfword 47:
+        // `product_138_follows_the_icd_and_differs_from_metpy_as_documented`.
         // Note 1: coefficients are 16-bit floats; levels below halfword 33 use
         // the linear relation, levels from it the log relation; 254 is the cap
         // for VIL above 80 kg m-2.
@@ -839,9 +968,8 @@ fn threshold_halfwords_decode_per_icd() {
         ("l3-tlx-ntp-20130520-2016", 33, Some(0.3), None, "0.3"),
         ("l3-tlx-n0v-20130520-2016", 46, None, Some(3), "RF"),
     ];
-    let manifest = common::level3_manifest();
     for (id, n, value, code, label) in cases {
-        let entry = manifest.iter().find(|e| e.id == id).unwrap();
+        let entry = common::entry(id);
         let product = decode_product(&entry.bytes()).unwrap();
         let t = Threshold {
             raw: product.description.halfword(n).unwrap(),
@@ -861,15 +989,123 @@ fn threshold_halfwords_decode_per_icd() {
     }
 }
 
+/// Product 138 (Digital Storm Total Precipitation), documented in
+/// `src/levels.rs` ("Differences from MetPy") and `docs/level3/coverage.md`.
+///
+/// ICD 2620001AD Figure 3-6 sheet 6 Note 1: "data level code 0 corresponds to
+/// no accumulation and data level codes 1 through 255 denote accumulation
+/// values in units of hundredths-of-inches, in even data increments, with data
+/// level code 1 being the first non-zero accumulation value"; halfword 31 is
+/// the minimum (0), halfword 32 the increment in 0.01 in. The decoder follows
+/// it. MetPy 1.7.1 (`DigitalStormPrecipMapper`, a `DigitalMapper` with
+/// `_min_data = 2`) masks levels 0 and 1 and maps level `N >= 2` to
+/// `(N - 2) * increment`.
+///
+/// Per corpus file, with halfwords and level counts read from the file: the
+/// ICD values; MetPy's golden summary equal to exactly that documented shift of
+/// the decoded values; and halfword 47 (maximum accumulation, 0.01 in) within
+/// one increment of the ICD maximum but more than one increment away from
+/// MetPy's (or, with no accumulation at all, 0 in where MetPy has no value).
+#[test]
+fn product_138_follows_the_icd_and_differs_from_metpy_as_documented() {
+    // (id, halfword 32, bins at level 0, bins at level 1, highest level, halfword 47)
+    const FILES: [(&str, u16, u64, u64, u16, u16); 3] = [
+        ("l3-mci-dsp-20160526-2154", 2, 2395, 3304, 219, 438),
+        ("l3-tlx-dsp-20130520-2016", 2, 33265, 2494, 145, 289),
+        ("l3-tlx-dsp-20260629-173638", 1, 41760, 0, 0, 0),
+    ];
+    for (id, hw32, level0, level1, highest, hw47) in FILES {
+        let entry = common::entry(id);
+        let golden = entry.golden();
+        let product = decode_product(&entry.bytes()).unwrap();
+        let d = &product.description;
+        assert_eq!(d.product_code, 138, "{id}");
+        assert_eq!(
+            [31, 32, 33, 47].map(|n| d.halfword(n).unwrap()),
+            [0, hw32, 256, hw47],
+            "{id}: halfwords 31, 32, 33, 47"
+        );
+        let Packet::Radial(radial) = &product.symbology.as_ref().unwrap().layers[0][0] else {
+            panic!("{id}: layer 0 is not a radial packet");
+        };
+        let present = histogram(
+            &radial
+                .levels
+                .iter()
+                .map(|&l| u16::from(l))
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            (
+                present.get(&0).copied().unwrap_or(0),
+                present.get(&1).copied().unwrap_or(0),
+                *present.keys().next_back().unwrap()
+            ),
+            (level0, level1, highest),
+            "{id}: level counts"
+        );
+        let bins = radial.levels.len() as u64;
+
+        // ICD: level 0 is 0 in, level N is N increments.
+        let levels = DataLevels::for_packet(d, radial.code).unwrap();
+        let increment = f64::from(hw32) / 100.0;
+        assert_eq!(levels.units(), Some("in"), "{id}");
+        assert_eq!(levels.level(0), Level::Value(0.0), "{id}");
+        for n in [1u16, 2, 145, 255] {
+            let value = levels.value(n).unwrap();
+            assert!(
+                close(value, f64::from(n) * increment),
+                "{id}: level {n} is {value}"
+            );
+        }
+        let values = radial.values(&levels);
+        let icd = PhysicalSummary::of_f32(&values);
+        assert_eq!(
+            (icd.finite, icd.masked),
+            (bins, 0),
+            "{id}: every bin has a value"
+        );
+        assert_eq!(icd.min, Some(0.0), "{id}");
+        let icd_max = icd.max.unwrap();
+        assert!(
+            close(icd_max, f64::from(highest) * increment),
+            "{id}: {icd_max}"
+        );
+        let max_accumulation = f64::from(hw47) / 100.0;
+        assert!(
+            (icd_max - max_accumulation).abs() <= increment + 1e-6,
+            "{id}: ICD maximum {icd_max} in, halfword 47 {max_accumulation} in"
+        );
+
+        // MetPy: the documented shift of the same values.
+        let metpy = PhysicalSummary::from_golden(golden.get("data").items()[0].get("physical"));
+        assert_eq!(
+            (metpy.finite, metpy.masked),
+            (bins - level0 - level1, level0 + level1),
+            "{id}: MetPy masks levels 0 and 1"
+        );
+        let grid_levels: Vec<u16> = radial.levels.iter().map(|&l| u16::from(l)).collect();
+        let mismatches = dsp_as_metpy(&levels, &grid_levels, &values).mismatches(&metpy);
+        assert!(mismatches.is_empty(), "{id}: {mismatches:?}");
+        match metpy.max {
+            Some(metpy_max) => {
+                assert!(close(metpy_max, f64::from(highest - 2) * increment), "{id}");
+                assert!(
+                    (metpy_max - max_accumulation).abs() > increment,
+                    "{id}: MetPy maximum {metpy_max} in is within one increment of halfword 47"
+                );
+            }
+            None => assert_eq!((highest, icd_max), (0, max_accumulation), "{id}"),
+        }
+    }
+}
+
 /// Real files with header fields corrupted: decoding returns an error or a
 /// well-formed result, allocates nothing unbounded and never panics.
 #[test]
 fn corrupted_radial_and_generic_packets() {
-    let manifest = common::level3_manifest();
-    let find = |id: &str| manifest.iter().find(|e| e.id == id).unwrap();
-
     // KFWS 1995 N0R: uncompressed, 30-byte WMO/AWIPS heading, one 0xAF1F packet.
-    let entry = find("l3-fws-n0r-19950517-2304");
+    let entry = common::entry("l3-fws-n0r-19950517-2304");
     let bytes = entry.bytes();
     let original = decode_product(&bytes).unwrap();
     let Packet::Radial(radial) = &original.symbology.as_ref().unwrap().layers[0][0] else {
@@ -906,18 +1142,13 @@ fn corrupted_radial_and_generic_packets() {
     // KTLX 2013 DPR and ASP: bzip2 products. Decompress, corrupt the XDR data
     // and hand the decoder the uncompressed message.
     let unpacked = |id: &str| {
-        let entry = find(id);
+        let entry = common::entry(id);
         let golden = entry.golden();
         let bytes = entry.bytes();
-        let framing = golden.get("framing");
-        let trailer = if framing.get("trailer").is_null() {
-            0
-        } else {
-            4
-        };
-        let start =
-            bytes.len() - trailer - framing.get("message_bytes").int("message_bytes") as usize;
-        let message = &bytes[start..bytes.len() - trailer];
+        assert!(common::is_bzip2(&golden), "{id}");
+        let range = common::message_range(&golden, bytes.len());
+        let start = range.start;
+        let message = &bytes[range];
         let mut out = bytes[..start + 120].to_vec();
         std::io::Read::read_to_end(&mut bzip2::read::BzDecoder::new(&message[120..]), &mut out)
             .unwrap();
@@ -1000,85 +1231,4 @@ fn corrupted_radial_and_generic_packets() {
             assert!(decode_product(&message[..cut]).is_err(), "cut at {cut}");
         }
     }
-}
-
-#[test]
-fn sha256_known_answers() {
-    // FIPS 180-4 examples (one and two blocks) and the empty message.
-    assert_eq!(
-        sha256_hex(b"abc"),
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    );
-    assert_eq!(
-        sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
-        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
-    );
-    assert_eq!(
-        sha256_hex(b""),
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    );
-}
-
-/// SHA-256 (FIPS 180-4), hex encoded. The crate has no dev-dependencies.
-fn sha256_hex(data: &[u8]) -> String {
-    const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
-    ];
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let mut message = data.to_vec();
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
-    }
-    message.extend_from_slice(&((data.len() as u64) * 8).to_be_bytes());
-    for block in message.chunks_exact(64) {
-        let mut w = [0u32; 80];
-        for (i, word) in block.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes(word.try_into().unwrap());
-        }
-        for i in 16..64 {
-            w[i] = w[i - 16]
-                .wrapping_add(
-                    w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3),
-                )
-                .wrapping_add(w[i - 7])
-                .wrapping_add(
-                    w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10),
-                );
-        }
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
-        for i in 0..64 {
-            let t1 = hh
-                .wrapping_add(e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25))
-                .wrapping_add((e & f) ^ (!e & g))
-                .wrapping_add(K[i])
-                .wrapping_add(w[i]);
-            let t2 = (a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22))
-                .wrapping_add((a & b) ^ (a & c) ^ (b & c));
-            hh = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
-        }
-        for (x, y) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
-            *x = x.wrapping_add(y);
-        }
-    }
-    h.iter().map(|x| format!("{x:08x}")).collect()
 }

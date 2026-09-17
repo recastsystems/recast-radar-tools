@@ -1,4 +1,8 @@
 //! Debug helper: list + download KMKX volumes 16:30-17:10 UTC 2026-06-11.
+
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::Path;
 
 fn main() {

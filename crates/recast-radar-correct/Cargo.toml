@@ -2,7 +2,12 @@
 name = "recast-radar-correct"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Weather radar data correction: Doppler velocity dealiasing"
+readme.workspace = true
+keywords = ["radar", "weather", "dealiasing", "doppler", "meteorology"]
+categories = ["science::geo", "algorithms"]
 
 [dependencies]
 chrono.workspace = true

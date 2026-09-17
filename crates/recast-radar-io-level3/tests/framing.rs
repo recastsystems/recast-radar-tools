@@ -119,6 +119,39 @@ fn product_table_is_sorted_and_covers_the_corpus() {
     }
 }
 
+/// The shared SHA-256 (`common::sha256_hex`, used for golden raw-level and text
+/// digests) reproduces the FIPS 180-4 examples (empty, one and two blocks) and
+/// the manifest checksum of every committed corpus file.
+#[test]
+fn sha256_matches_fips_examples_and_manifest_checksums() {
+    for (message, digest) in [
+        (
+            &b""[..],
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ),
+        (
+            b"abc",
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        ),
+        (
+            b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+        ),
+    ] {
+        assert_eq!(common::sha256_hex(message), digest);
+    }
+    let manifest = common::level3_manifest();
+    assert!(!manifest.is_empty());
+    for entry in manifest {
+        assert_eq!(
+            common::sha256_hex(&entry.bytes()),
+            entry.sha256,
+            "{}",
+            entry.id
+        );
+    }
+}
+
 /// Real files cut short at header, block and midpoint boundaries decode to
 /// `Ok` or an error, never a panic, and a cut inside the Product Description
 /// Block is always an error.
@@ -128,15 +161,10 @@ fn truncated_corpus_files_do_not_panic() {
     for entry in common::level3_manifest() {
         let bytes = entry.bytes();
         let golden = entry.golden();
-        let framing = golden.get("framing");
-        let trailer = if framing.get("trailer").is_null() {
-            0
-        } else {
-            4
-        };
-        // Bytes of NOAAPort/WMO/AWIPS heading in front of an unwrapped message.
-        let framed_prefix =
-            bytes.len() as i64 - trailer - framing.get("message_bytes").int("message_bytes");
+        // Bytes of NOAAPort/WMO/AWIPS heading in front of a message that is not
+        // split into zlib frames.
+        let framed_prefix = (golden.get("framing").get("zlib_frames").int("zlib_frames") == 0)
+            .then(|| common::message_range(&golden, bytes.len()).start);
         let mut cuts = vec![
             0,
             1,
@@ -156,10 +184,7 @@ fn truncated_corpus_files_do_not_panic() {
             let prefix = &bytes[..cut];
             match std::panic::catch_unwind(|| decode_product(prefix)) {
                 Err(_) => failures.push(format!("{} cut at {cut}: panicked", entry.id)),
-                Ok(Ok(_))
-                    if framing.get("zlib_frames").int("zlib_frames") == 0
-                        && (cut as i64) < framed_prefix + 120 =>
-                {
+                Ok(Ok(_)) if framed_prefix.is_some_and(|prefix| cut < prefix + 120) => {
                     failures.push(format!(
                         "{} cut at {cut}: decoded a product without a full description block",
                         entry.id
@@ -412,8 +437,8 @@ fn check_description(
     }
 }
 
-fn codes(packets: &[Packet]) -> Vec<i64> {
-    packets.iter().map(|p| i64::from(p.code())).collect()
+fn codes(packets: &[Packet]) -> Vec<u16> {
+    packets.iter().map(Packet::code).collect()
 }
 
 /// When every packet is still `Unknown`, their byte lengths must add up to the
@@ -448,13 +473,9 @@ fn check_unknown_sizes(
     }
 }
 
-fn golden_codes(json: &Json) -> Vec<i64> {
-    json.items().iter().map(|c| c.int("packet code")).collect()
-}
-
 fn check_blocks(product: &Level3Product, golden: &Json, problems: &mut Vec<String>) {
     let blocks = golden.get("blocks");
-    let mut all_codes: Vec<i64> = Vec::new();
+    let mut all_codes: Vec<u16> = Vec::new();
 
     // Symbology block: top-level packet codes per layer.
     let golden_sym = blocks.get("symbology");
@@ -473,7 +494,7 @@ fn check_blocks(product: &Level3Product, golden: &Json, problems: &mut Vec<Strin
                     problems,
                     format!("symbology layer {i} packet codes"),
                     codes(layer),
-                    golden_codes(golden_layer.get("packets"))
+                    common::packet_codes(golden_layer.get("packets"))
                 );
                 check_unknown_sizes(
                     &format!("symbology layer {i}"),
@@ -484,7 +505,7 @@ fn check_blocks(product: &Level3Product, golden: &Json, problems: &mut Vec<Strin
                 all_codes.extend(codes(layer));
             }
             for nested in golden_sym.get("nested").items() {
-                all_codes.extend(golden_codes(nested.get("packets")));
+                all_codes.extend(common::packet_codes(nested.get("packets")));
             }
         }
         (decoded, _) => problems.push(format!(
@@ -527,7 +548,7 @@ fn check_blocks(product: &Level3Product, golden: &Json, problems: &mut Vec<Strin
                     problems,
                     format!("{what} packet codes"),
                     codes(&page.packets),
-                    golden_codes(golden_page.get("packets"))
+                    common::packet_codes(golden_page.get("packets"))
                 );
                 check_unknown_sizes(&what, &page.packets, golden_page.get("length"), problems);
                 all_codes.extend(codes(&page.packets));
@@ -538,12 +559,12 @@ fn check_blocks(product: &Level3Product, golden: &Json, problems: &mut Vec<Strin
             pages,
             ..
         }) if !golden_trend.is_null() => {
-            let decoded: Vec<Vec<i64>> = pages.iter().map(|p| codes(&p.packets)).collect();
+            let decoded: Vec<Vec<u16>> = pages.iter().map(|p| codes(&p.packets)).collect();
             check_eq!(
                 problems,
                 "cell trend packet codes",
                 decoded,
-                vec![golden_codes(golden_trend.get("packets"))]
+                vec![common::packet_codes(golden_trend.get("packets"))]
             );
             all_codes.extend(decoded.into_iter().flatten());
         }
@@ -608,7 +629,7 @@ fn check_blocks(product: &Level3Product, golden: &Json, problems: &mut Vec<Strin
         problems,
         "packet codes present",
         all_codes,
-        golden_codes(golden.get("packet_codes"))
+        common::golden_packet_codes(golden)
     );
 }
 

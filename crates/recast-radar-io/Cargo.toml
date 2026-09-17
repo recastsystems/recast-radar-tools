@@ -2,7 +2,12 @@
 name = "recast-radar-io"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Format-sniffing weather radar reader that routes bytes to the recast-radar-io-* decoders"
+readme.workspace = true
+keywords = ["radar", "weather", "nexrad", "odim", "cfradial"]
+categories = ["science::geo", "parser-implementations"]
 
 [dependencies]
 flate2.workspace = true
@@ -17,6 +22,8 @@ thiserror.workspace = true
 [dev-dependencies]
 # Only for examples/intl_assembly_probe.rs (live download + decode + merge).
 recast-radar-data = { path = "../recast-radar-data" }
+# Real-file resource-limit tests (tests/limits_real.rs).
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]
 workspace = true

@@ -9,7 +9,9 @@
 //! that owns it, that the codes found (including nested ones) are the codes the
 //! golden ICD walker found, and that the only files that do not decode to a
 //! product are the ones the golden JSON marks as text-only or as having no
-//! Product Description Block.
+//! Product Description Block, which `decode_message` decodes to
+//! `Level3Message::Text` and `Level3Message::GeneralStatus`
+//! (`tests/messages.rs` compares their contents).
 //!
 //! `docs/level3/coverage.md` must match what this test renders. After a corpus
 //! or decoder change, regenerate it with
@@ -28,7 +30,8 @@ use recast_radar_io_level3::levels::{DataLevels, LevelEncoding};
 use recast_radar_io_level3::packets::generic::GenericComponent;
 use recast_radar_io_level3::packets::symbols::SymbolPacket;
 use recast_radar_io_level3::{
-    GraphicLayout, Level3Error, Level3Product, Packet, TabularLayout, decode_product, product_info,
+    GraphicLayout, Level3Message, Level3Product, Packet, TabularLayout, decode_message,
+    product_info,
 };
 
 /// Environment variable that makes the test write `docs/level3/coverage.md`.
@@ -85,10 +88,12 @@ const DISPATCH: &[(u16, &str, Option<&str>)] = &[
 const KNOWN_GAPS: &[&str] = &[
     "**Core data model.** Spec section 4.5 asks for radial and raster products \
      in the core `Volume`/`Sweep` model (one sweep). That conversion does not \
-     exist yet: `recast-radar-core` is not on the `level3` branch. Products \
-     decode to the packet structs listed above, and \
-     `levels::DataLevels::from_description` maps their data levels to physical \
-     values.",
+     exist yet. Products decode to the packet structs listed above; \
+     `levels::DataLevels::for_packet` gives a data packet's level mapping, and \
+     `RadialPacket::values`, `RasterGrid::values` and \
+     `GenericRadialComponent::values` return its physical values as `f32` \
+     (NaN without a value), with `level_at` and `DataLevels::levels` giving each \
+     cell's `Level` (value, class, or flag such as missing or range folded).",
     "**Packets without a real sample.** 5 (vector arrow), 7 (unlinked vector, \
      no value), 9 (linked vector, uniform value), 26 (ETVS), 33 (digital \
      raster data array), 0xBA0F (raster data) and 0x3501 (unlinked contour \
@@ -106,11 +111,10 @@ const KNOWN_GAPS: &[&str] = &[
      bytes, but no corpus file has one.",
     "**Data levels.** TDWR product 184 has no data level mapping \
      (`DataLevels::from_description` returns `None`): 2620063E does not give \
-     its 256-level encoding. No corpus file has product 184.",
-    "**Text-only messages.** Plain-text messages (WMO heading `NOUS..`, e.g. \
-     the Free Text Message) return `Level3Error::TextOnly` without their text.",
-    "**General Status Message** (message code 2) returns \
-     `Level3Error::NotAProduct`; its contents are not decoded.",
+     its 256-level encoding. No corpus file has product 184. Packet 18 \
+     (precipitation rate data array, products 81 and 82) has no mapping either \
+     (`DataLevels::for_packet` returns `None`): no halfword describes its 4-bit \
+     levels, and MetPy maps none.",
     "**Radar coded message** (product 74) is split into 70-character records \
      (`TabularAlphanumeric::pages`); the coded groups inside them (legacy ICD \
      Appendix B) are not decoded.",
@@ -118,6 +122,29 @@ const KNOWN_GAPS: &[&str] = &[
      Alphanumeric Block pages decode as text packets 8 and vector packets 10 \
      in screen coordinates; they are not parsed into typed storm cell structs \
      (their layout differs by product and ICD build).",
+];
+
+/// Where decoded physical values follow the ICD and differ from MetPy 1.7.1
+/// `map_data`, as asserted in `tests/radial_generic.rs`. Rendered into the
+/// "Differences from MetPy" section of the document.
+const METPY_DIFFERENCES: &[&str] = &[
+    "**Product 138 (DSP).** ICD 2620001AD Figure 3-6 sheet 6 Note 1: data \
+     level 0 is no accumulation and levels 1-255 are accumulations in even \
+     increments, level 1 being the first non-zero one; halfword 31 is the \
+     minimum (0) and halfword 32 the increment in 0.01 in. The decoder gives \
+     level `N` the value `(hw31 + N * hw32) / 100` in (level 0 is 0 in). \
+     MetPy's `DigitalStormPrecipMapper` masks levels 0 and 1 and maps level \
+     `N >= 2` to `(N - 2) * hw32 / 100`, two increments lower. In the three \
+     corpus files halfword 47 (maximum accumulation: 4.38, 2.89 and 0 in) is \
+     within one increment of the decoded maximum (4.38, 2.90 and 0 in) and not \
+     of MetPy's (4.34 in, 2.86 in, and no value with every bin masked). The test \
+     `product_138_follows_the_icd_and_differs_from_metpy_as_documented` \
+     asserts MetPy's summary is exactly that shift of the decoded values.",
+    "**Categorical products** (34, 113, 165, 177). The decoder returns \
+     `Level::Class` for each class and NaN from `values`; MetPy returns \
+     numbers: the class index `N / 10` (165, 177), the level (113, read from \
+     threshold halfwords that hold it) or 0 (34, whose threshold halfwords are \
+     all zero). The tests reproduce MetPy's numbers from the decoded classes.",
 ];
 
 /// Decode outcome of one manifest file.
@@ -135,8 +162,8 @@ struct FileOutcome {
 
 enum Outcome {
     Product(ProductSummary),
-    TextOnly,
-    NotAProduct { message_code: i16 },
+    Text,
+    GeneralStatus { message_code: i16 },
     Failed(String),
 }
 
@@ -170,8 +197,8 @@ fn decode_entry(entry: &Entry) -> FileOutcome {
     let product_code = golden_code
         .or_else(|| entry.tag("product").and_then(|t| t.parse().ok()))
         .map(|c| i16::try_from(c).unwrap());
-    let result = match decode_product(&entry.bytes()) {
-        Ok(product) => {
+    let result = match decode_message(&entry.bytes()) {
+        Ok(Level3Message::Product(product)) => {
             let mut summary = summarize(&product);
             if golden_code != Some(i64::from(product.description.product_code)) {
                 summary.golden_mismatches.push(format!(
@@ -179,13 +206,8 @@ fn decode_entry(entry: &Entry) -> FileOutcome {
                     product.description.product_code
                 ));
             }
-            let found: Vec<i64> = summary.packets.keys().map(|&c| i64::from(c)).collect();
-            let golden_codes: Vec<i64> = golden
-                .get("packet_codes")
-                .items()
-                .iter()
-                .map(|c| c.int("packet code"))
-                .collect();
+            let found: Vec<u16> = summary.packets.keys().copied().collect();
+            let golden_codes = common::golden_packet_codes(&golden);
             if found != golden_codes {
                 summary.golden_mismatches.push(format!(
                     "packet codes found (including nested) {found:?}, golden {golden_codes:?}"
@@ -193,12 +215,15 @@ fn decode_entry(entry: &Entry) -> FileOutcome {
             }
             Outcome::Product(summary)
         }
-        Err(Level3Error::TextOnly { .. }) if framing.get("text_only").as_bool() == Some(true) => {
-            Outcome::TextOnly
+        Ok(Level3Message::Text(_)) if framing.get("text_only").as_bool() == Some(true) => {
+            Outcome::Text
         }
-        Err(Level3Error::NotAProduct { code }) if golden_code.is_none() => {
-            Outcome::NotAProduct { message_code: code }
+        Ok(Level3Message::GeneralStatus(status)) if golden_code.is_none() => {
+            Outcome::GeneralStatus {
+                message_code: status.message_header.code,
+            }
         }
+        Ok(_) => Outcome::Failed("message kind differs from the golden JSON".to_string()),
         Err(e) => Outcome::Failed(e.to_string()),
     };
     FileOutcome {
@@ -344,7 +369,7 @@ fn every_corpus_file_decodes_without_unknown_packets() {
                 problems.extend(summary.wrong_variants.iter().cloned());
                 problems.extend(summary.golden_mismatches.iter().cloned());
             }
-            Outcome::TextOnly | Outcome::NotAProduct { .. } => {}
+            Outcome::Text | Outcome::GeneralStatus { .. } => {}
             Outcome::Failed(error) => problems.push(format!("decode failed: {error}")),
         }
         if !problems.is_empty() {
@@ -412,8 +437,10 @@ fn status(files: &[&FileOutcome]) -> String {
                 format!("**Unknown packets {}**", codes.join(", "))
             }
             Outcome::Product(_) => "**differs from golden**".to_string(),
-            Outcome::TextOnly => "text only (`Level3Error::TextOnly`)".to_string(),
-            Outcome::NotAProduct { .. } => "not a product (`Level3Error::NotAProduct`)".to_string(),
+            Outcome::Text => "decoded text (`Level3Message::Text`)".to_string(),
+            Outcome::GeneralStatus { .. } => {
+                "decoded status (`Level3Message::GeneralStatus`)".to_string()
+            }
             Outcome::Failed(error) => format!("**error: {error}**"),
         });
     }
@@ -443,7 +470,7 @@ fn render(outcomes: &[FileOutcome]) -> String {
     let mut messages: BTreeMap<i16, Vec<&FileOutcome>> = BTreeMap::new();
     for file in outcomes {
         match (&file.result, file.product_code) {
-            (Outcome::NotAProduct { message_code }, None) => {
+            (Outcome::GeneralStatus { message_code }, None) => {
                 messages.entry(*message_code).or_default().push(file);
             }
             (_, Some(code)) => by_product.entry(code).or_default().push(file),
@@ -481,8 +508,8 @@ fn render(outcomes: &[FileOutcome]) -> String {
     writeln!(
         w,
         "Corpus files: {}. Decoded products: {decoded_products} files, {} product \
-         codes. Messages without a Product Description Block: {}. Text-only \
-         messages: {}.",
+         codes. General Status Messages (no Product Description Block): {}. \
+         Plain-text messages: {}.",
         outcomes.len(),
         by_product
             .values()
@@ -492,11 +519,11 @@ fn render(outcomes: &[FileOutcome]) -> String {
             .count(),
         outcomes
             .iter()
-            .filter(|f| matches!(f.result, Outcome::NotAProduct { .. }))
+            .filter(|f| matches!(f.result, Outcome::GeneralStatus { .. }))
             .count(),
         outcomes
             .iter()
-            .filter(|f| matches!(f.result, Outcome::TextOnly))
+            .filter(|f| matches!(f.result, Outcome::Text))
             .count(),
     )
     .unwrap();
@@ -509,9 +536,13 @@ fn render(outcomes: &[FileOutcome]) -> String {
          packets nested in SCIT packets 23/24) decodes to its family's typed \
          variant: no `Packet::Unknown`, no `GenericComponent::Undecoded`, and \
          the packet codes found equal the golden ICD walker's.",
-        "- **text only** / **not a product**: the golden JSON marks the file as a \
-         plain-text message or a message without a Product Description Block, \
-         and `decode_product` returns the matching error.",
+        "- **decoded text** / **decoded status**: the golden JSON marks the file \
+         as a plain-text message or a message without a Product Description \
+         Block, and `decode_message` returns `Level3Message::Text` or \
+         `Level3Message::GeneralStatus` (`decode_product` returns \
+         `Level3Error::TextOnly` or `Level3Error::NotAProduct`). \
+         `tests/messages.rs` compares every General Status Message field and \
+         the text with the files' bytes and with MetPy 1.7.1.",
         "- **Values**: `tests/framing.rs` compares headers, blocks and packet \
          codes with the golden JSON for every file. The family tests \
          (`radial_generic.rs`, `raster.rs`, `symbols.rs`, `text_vectors.rs`) \
@@ -521,8 +552,23 @@ fn render(outcomes: &[FileOutcome]) -> String {
          MetPy cannot read against their own header fields per the ICD. Files \
          MetPy reads only with default product metadata or not at all are \
          marked in the Files column.",
+        "- **Physical values**: for every data packet MetPy maps (radial 16 and \
+         0xAF1F, raster 0xBA07, packet 17 and generic 28 radial components), \
+         the `f32` values from `DataLevels::for_packet` and the packets' \
+         `values` methods have MetPy's finite and masked counts and \
+         min/max/mean within 1e-4 relative, except where the ICD and MetPy \
+         differ (see Differences from MetPy), where the documented difference \
+         is asserted instead. MetPy maps no physical values for packet 18 and \
+         product 197.",
         "- **Data levels**: the encoding `levels::DataLevels::from_description` \
          selects for the product's files (— when the product has no data levels).",
+        "- **VAD Wind Profile** (product 48): `vwp::VadWindProfile` gives the \
+         tabular winds, the time-height display winds and the adaptable \
+         parameters. `tests/vwp.rs` checks them on every product 48 file (the 5 \
+         here and KBMX 1998 in `testdata/other`) against the page text, every \
+         display barb, Product Description Block halfwords 47-49, and the \
+         recorded output of `recast_radar_io_nexrad::level3_vwp`, the decoder it \
+         replaced (`tests/level3_vwp/`).",
     ] {
         writeln!(w, "{line}").unwrap();
     }
@@ -637,6 +683,13 @@ fn render(outcomes: &[FileOutcome]) -> String {
             )
             .unwrap();
         }
+    }
+    writeln!(w).unwrap();
+
+    writeln!(w, "## Differences from MetPy").unwrap();
+    writeln!(w).unwrap();
+    for difference in METPY_DIFFERENCES {
+        writeln!(w, "- {difference}").unwrap();
     }
     writeln!(w).unwrap();
 

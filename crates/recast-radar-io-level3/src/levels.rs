@@ -8,6 +8,48 @@
 //! turns any level into a [`Level`]: a physical value, a class of a
 //! categorical product, or a flag such as "below threshold".
 //!
+//! # Physical values of a data packet
+//!
+//! [`DataLevels::for_packet`] gives the mapping for one data packet of a
+//! product. Every data packet then has two views of its grid, in the packet's
+//! own layout (row-major, same length as its levels):
+//!
+//! - `values(&levels)`: `f32` physical values in [`units`](DataLevels::units),
+//!   NaN where a level has no physical value (below threshold, missing, range
+//!   folded, classes, undefined levels): [`RadialPacket::values`],
+//!   [`RasterGrid::values`], [`GenericRadialComponent::values`] and the
+//!   underlying [`DataLevels::values`].
+//! - `level_at(.., &levels)` and [`DataLevels::levels`]: the [`Level`] of each
+//!   cell, which tells the NaN cases apart ([`LevelFlag::Missing`],
+//!   [`LevelFlag::RangeFolded`], [`Level::Class`], ...) and marks topped echo
+//!   tops.
+//!
+//! ```no_run
+//! use recast_radar_io_level3::levels::{DataLevels, Level, LevelFlag};
+//! use recast_radar_io_level3::{Packet, decode_product};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let product = decode_product(&std::fs::read("KTLX_N0U.nids")?)?;
+//! for packet in product.symbology.iter().flat_map(|s| s.layers.iter().flatten()) {
+//!     if let Packet::Radial(radial) = packet {
+//!         let Some(levels) = DataLevels::for_packet(&product.description, radial.code) else {
+//!             continue;
+//!         };
+//!         let velocity: Vec<f32> = radial.values(&levels); // m s-1, NaN without a value
+//!         let folded = radial.level_at(0, 10, &levels) == Some(Level::Flag(LevelFlag::RangeFolded));
+//!         println!("{} bins, {:?}, bin 10 of radial 0 folded: {folded}", velocity.len(), levels.units());
+//!     }
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! [`RadialPacket::values`]: crate::packets::radial::RadialPacket::values
+//! [`RasterGrid::values`]: crate::packets::raster::RasterGrid::values
+//! [`GenericRadialComponent::values`]: crate::packets::generic::GenericRadialComponent::values
+//!
+//! # Encodings
+//!
 //! | Encoding ([`LevelEncoding`]) | Products |
 //! |---|---|
 //! | [`Thresholds`](LevelEncoding::Thresholds) (16 threshold halfwords) | 16-31, 33, 35-38, 41, 43-46, 48, 50, 51, 55-57, 63-67, 78-80, 84-87, 89, 90, 95-98, 132, 133, 137, 144-147, 150, 151, 158, 160, 162, 164, 169, 171, 181, 183, 185, 187 |
@@ -20,6 +62,26 @@
 //!
 //! Graphic, alphanumeric and generic products without data levels, and TDWR
 //! product 184 (its 256-level encoding is not given in 2620063E), have no mapping.
+//!
+//! # Differences from MetPy
+//!
+//! Values follow ICD 2620001AD. They equal MetPy 1.7.1 `Level3File.map_data`
+//! for every product MetPy maps in the test corpus, except:
+//!
+//! - **Product 138 (DSP).** The ICD (Figure 3-6 sheet 6 Note 1) makes level 0
+//!   "no accumulation" and levels 1-255 accumulations in even increments,
+//!   "with data level code 1 being the first non-zero accumulation value":
+//!   level `N` is `(hw31 + N * hw32) / 100` inches, so level 0 is 0 in and
+//!   level 1 one increment. MetPy's `DigitalStormPrecipMapper` masks levels 0
+//!   and 1 and maps level `N >= 2` to `(N - 2) * hw32 / 100`: two increments
+//!   lower, and no value for bins without accumulation. The ICD reading agrees
+//!   with halfword 47 (maximum accumulation) in the real products: the
+//!   highest level present is within one increment of it, while MetPy's
+//!   maximum is two increments below that.
+//! - **Categorical products** (34, 113, 165, 177). This module returns
+//!   [`Level::Class`] (and NaN from `values`); MetPy returns numbers: the
+//!   class index `N / 10` (165, 177), the level itself (113, from its threshold
+//!   halfwords) or 0 (34, whose threshold halfwords are all zero).
 
 use crate::header::ProductDescription;
 
@@ -537,6 +599,8 @@ impl DataLevels {
             ),
             // Level 0 is no accumulation (the minimum, 0) and level 1 the first
             // non-zero accumulation: value = (hw31 + N * hw32) / 100 inches.
+            // MetPy 1.7.1 differs (levels 0 and 1 masked, N >= 2 two increments
+            // lower); see "Differences from MetPy" in the module documentation.
             138 => (
                 LevelEncoding::Linear(Linear {
                     first_level: 0,
@@ -595,6 +659,24 @@ impl DataLevels {
             units,
             encoding,
         })
+    }
+
+    /// The data level mapping for the levels of packet `packet_code` in the
+    /// product described by `desc`.
+    ///
+    /// The Product Description Block describes the data levels of radial
+    /// (16, 0xAF1F), raster (0xBA07, 0xBA0F), digital raster (33), digital
+    /// precipitation (17) and generic (28) packets: for those this is
+    /// [`from_description`](Self::from_description). It returns `None` for
+    /// every other packet code, including packet 18 (precipitation rate data
+    /// array of products 81 and 82): no halfword describes its 4-bit levels
+    /// (ICD 2620001AD Figure 3-11b gives only the layout), and product 81's
+    /// halfwords 31-33 describe its packet 17 levels.
+    pub fn for_packet(desc: &ProductDescription, packet_code: u16) -> Option<Self> {
+        match packet_code {
+            16 | 0xAF1F | 0xBA07 | 0xBA0F | 17 | 28 | 33 => Self::from_description(desc),
+            _ => None,
+        }
     }
 
     /// The product code this mapping was built for.
@@ -723,5 +805,40 @@ impl DataLevels {
                     .map_or(f32::NAN, |v| v as f32)
             })
             .collect()
+    }
+
+    /// Physical values of `data`, data levels as a packet stores them (`u8`
+    /// for radial and raster packets, `i32` for generic packets): one `f32`
+    /// per level, in order, in [`units`](Self::units).
+    ///
+    /// A level without a physical value is NaN: flags (below threshold,
+    /// missing, range folded, ...), classes of categorical products, levels
+    /// the encoding does not define and stored values outside 0-65535. A
+    /// topped echo top (product 135) keeps its value. [`levels`](Self::levels)
+    /// tells these cases apart.
+    pub fn values<T>(&self, data: &[T]) -> Vec<f32>
+    where
+        T: Copy + TryInto<u16>,
+    {
+        let highest = data.iter().filter_map(|&v| v.try_into().ok()).max();
+        let table = self.lookup_table(highest.map_or(0, |n| usize::from(n) + 1));
+        data.iter()
+            .map(|&v| {
+                v.try_into()
+                    .ok()
+                    .and_then(|n| table.get(usize::from(n)).copied())
+                    .unwrap_or(f32::NAN)
+            })
+            .collect()
+    }
+
+    /// What each level of `data` means, in order (see [`level`](Self::level));
+    /// stored values outside 0-65535 are [`Level::Undefined`].
+    pub fn levels<'a, T>(&'a self, data: &'a [T]) -> impl Iterator<Item = Level> + 'a
+    where
+        T: Copy + TryInto<u16>,
+    {
+        data.iter()
+            .map(|&v| v.try_into().map_or(Level::Undefined, |n| self.level(n)))
     }
 }

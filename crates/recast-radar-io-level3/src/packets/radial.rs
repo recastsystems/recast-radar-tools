@@ -3,11 +3,14 @@
 //! `docs/level3/reference.md` section 6.1.
 //!
 //! Both decode to a [`RadialPacket`]: the 14-byte packet header, the start and
-//! width angle of every radial, and a radials x bins grid of data levels. Map
-//! levels to physical values with [`crate::levels::DataLevels`].
+//! width angle of every radial, and a radials x bins grid of data levels.
+//! [`RadialPacket::values`] and [`RadialPacket::level_at`] map the levels to
+//! physical values with the product's [`DataLevels`]
+//! ([`DataLevels::for_packet`]).
 
 use super::Packet;
 use crate::Level3Error;
+use crate::levels::{DataLevels, Level};
 
 /// Largest radials x bins grid a radial packet may declare. The largest ICD
 /// products hold 720 x 1840 bins; packets declaring more than 2^24 cells are
@@ -88,6 +91,21 @@ impl RadialPacket {
     pub fn rows(&self) -> impl Iterator<Item = &[u8]> {
         // `max(1)`: `chunks_exact` panics on 0; with 0 bins `levels` is empty.
         self.levels.chunks_exact(usize::from(self.num_bins).max(1))
+    }
+
+    /// Physical values of [`levels`](Self::levels) in the same layout
+    /// (radials x `num_bins`, file order), NaN where a level has no physical
+    /// value; see [`DataLevels::values`]. `levels` is the product's mapping
+    /// from [`DataLevels::for_packet`].
+    pub fn values(&self, levels: &DataLevels) -> Vec<f32> {
+        levels.values(&self.levels)
+    }
+
+    /// What the level of bin `bin` in radial `radial` means, or `None` outside
+    /// the grid.
+    pub fn level_at(&self, radial: usize, bin: usize, levels: &DataLevels) -> Option<Level> {
+        let level = self.row(radial)?.get(bin)?;
+        Some(levels.level(u16::from(*level)))
     }
 }
 

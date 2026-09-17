@@ -28,7 +28,6 @@ mod common;
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use common::{Entry, Json};
 use recast_radar_io_level3::packets::contour::Contour;
 use recast_radar_io_level3::packets::text::SpecialSymbol;
 use recast_radar_io_level3::packets::vectors::{Point, Segment, Vectors};
@@ -114,18 +113,6 @@ macro_rules! check_eq {
     }};
 }
 
-/// The decoded product for a manifest entry the golden JSON marks as a product;
-/// `None` for text-only messages and messages without a Product Description Block.
-fn decode_entry(entry: &Entry, golden: &Json) -> Option<Level3Product> {
-    if golden.get("product_code").is_null() {
-        return None;
-    }
-    Some(
-        decode_product(&entry.bytes())
-            .unwrap_or_else(|e| panic!("{}: decode failed: {e}", entry.id)),
-    )
-}
-
 /// Top-level packets of the symbology layers (`s<layer index>`) and graphic
 /// pages (`g<page number>`) in file order.
 fn located_packets(product: &Level3Product) -> Vec<(String, &Packet)> {
@@ -145,37 +132,6 @@ fn located_packets(product: &Level3Product) -> Vec<(String, &Packet)> {
         }
     }
     out
-}
-
-/// Counts of family packet codes the golden walker found at top level.
-fn golden_family_counts(golden: &Json) -> BTreeMap<u16, usize> {
-    let blocks = golden.get("blocks");
-    let mut lists: Vec<&Json> = Vec::new();
-    lists.extend(
-        blocks
-            .get("symbology")
-            .get("layers")
-            .items()
-            .iter()
-            .map(|l| l.get("packets")),
-    );
-    lists.extend(
-        blocks
-            .get("graphic")
-            .get("pages")
-            .items()
-            .iter()
-            .map(|p| p.get("packets")),
-    );
-    lists.push(blocks.get("cell_trend").get("packets"));
-    let mut counts = BTreeMap::new();
-    for code in lists.into_iter().flat_map(Json::items) {
-        let code = u16::try_from(code.int("packet code")).unwrap();
-        if FAMILY.contains(&code) {
-            *counts.entry(code).or_default() += 1;
-        }
-    }
-    counts
 }
 
 fn hex(text: &str) -> String {
@@ -332,7 +288,7 @@ fn family_packets_match_golden_and_metpy() {
     let mut decoded: BTreeMap<u16, usize> = BTreeMap::new();
     for entry in common::level3_manifest() {
         let golden = entry.golden();
-        let Some(product) = decode_entry(&entry, &golden) else {
+        let Some(product) = common::decode_golden_product(&entry, &golden) else {
             continue;
         };
         let mut problems = Vec::new();
@@ -351,7 +307,7 @@ fn family_packets_match_golden_and_metpy() {
             problems,
             "family packet counts",
             counts,
-            golden_family_counts(&golden)
+            common::golden_top_level_counts(&golden, &FAMILY)
         );
         for (code, n) in &counts {
             *decoded.entry(*code).or_default() += n;
@@ -366,7 +322,7 @@ fn family_packets_match_golden_and_metpy() {
             Some((id, count, digest)) => {
                 matched_metpy.push(*id);
                 check_eq!(problems, "packets decoded by MetPy", rendered.len(), *count);
-                if sha256_hex(text.as_bytes()) != *digest {
+                if common::sha256_hex(text.as_bytes()) != *digest {
                     let head: Vec<&str> = text.lines().take(6).collect();
                     problems.push(format!(
                         "rendering differs from MetPy's; first lines:\n      {}",
@@ -422,7 +378,7 @@ fn tabular_pages_match_golden() {
     let (mut paged, mut rcm) = (0, 0);
     for entry in common::level3_manifest() {
         let golden = entry.golden();
-        let Some(product) = decode_entry(&entry, &golden) else {
+        let Some(product) = common::decode_golden_product(&entry, &golden) else {
             continue;
         };
         let blocks = golden.get("blocks");
@@ -454,7 +410,7 @@ fn tabular_pages_match_golden() {
             check_eq!(
                 problems,
                 "page text sha256",
-                sha256_hex(&page_text_bytes(&tab.pages)),
+                common::sha256_hex(&page_text_bytes(&tab.pages)),
                 g.get("text_sha256").as_str().unwrap()
             );
             if let Some(metpy_pages) = golden.get("metpy_detail").get("tab_pages").as_i64() {
@@ -499,7 +455,7 @@ fn tabular_pages_match_golden() {
                     check_eq!(
                         problems,
                         "radar coded message sha256",
-                        sha256_hex(&bytes),
+                        common::sha256_hex(&bytes),
                         rcm_golden.get("text_sha256").as_str().unwrap()
                     );
                     let lines = &tab.pages[0].lines;
@@ -550,7 +506,7 @@ fn radar_coded_messages_match_their_headers() {
         if golden.get("blocks").get("rcm").is_null() {
             continue;
         }
-        let product = decode_entry(&entry, &golden).unwrap();
+        let product = common::decode_golden_product(&entry, &golden).unwrap();
         let id = product.message_header.source_id;
         let stamp = rcm_stamp(product.description.volume_scan_time);
         let lines = &product.tabular.as_ref().unwrap().pages[0].lines;
@@ -591,12 +547,11 @@ fn radar_coded_messages_match_their_headers() {
 /// Files MetPy 1.7.1 cannot read, checked against values from their own headers.
 #[test]
 fn metpy_unsupported_files_match_their_headers() {
-    let entries = common::level3_manifest();
     let find = |id: &str| {
-        let entry = entries.iter().find(|e| e.id == id).unwrap();
+        let entry = common::entry(id);
         let golden = entry.golden();
         assert_eq!(golden.get("metpy").as_str(), Some("unsupported"), "{id}");
-        decode_entry(entry, &golden).unwrap()
+        common::decode_golden_product(&entry, &golden).unwrap()
     };
 
     // 1995 product 82 (SUP, version 0): a symbology block whose second layer is
@@ -698,9 +653,8 @@ fn metpy_unsupported_files_match_their_headers() {
 /// decodes them; MetPy's symbology coordinates are these divided by 4).
 #[test]
 fn packet_values_read_as_documented() {
-    let entries = common::level3_manifest();
     let product = |id: &str| {
-        let entry = entries.iter().find(|e| e.id == id).unwrap();
+        let entry = common::entry(id);
         decode_product(&entry.bytes()).unwrap()
     };
 
@@ -829,25 +783,6 @@ fn packet_values_read_as_documented() {
     );
 }
 
-/// Message byte offset of an unwrapped, uncompressed corpus file's Message Header Block.
-fn message_start(entry: &Entry, bytes: &[u8]) -> usize {
-    let golden = entry.golden();
-    let framing = golden.get("framing");
-    assert_eq!(framing.get("zlib_frames").int("zlib_frames"), 0);
-    assert_eq!(
-        golden.get("compression").get("bzip2").as_bool(),
-        Some(false)
-    );
-    let trailer = if framing.get("trailer").is_null() {
-        0
-    } else {
-        4
-    };
-    bytes.len()
-        - trailer
-        - usize::try_from(framing.get("message_bytes").int("message_bytes")).unwrap()
-}
-
 fn halfword_at(bytes: &[u8], at: usize) -> u16 {
     u16::from_be_bytes([bytes[at], bytes[at + 1]])
 }
@@ -855,8 +790,6 @@ fn halfword_at(bytes: &[u8], at: usize) -> u16 {
 /// Real files with one ICD-fixed field changed decode to errors.
 #[test]
 fn corrupted_family_fields_are_errors() {
-    let entries = common::level3_manifest();
-    let entry = |id: &str| entries.iter().find(|e| e.id == id).unwrap();
     let with = |bytes: &[u8], at: usize, value: u16| {
         let mut changed = bytes.to_vec();
         changed[at..at + 2].copy_from_slice(&value.to_be_bytes());
@@ -864,11 +797,12 @@ fn corrupted_family_fields_are_errors() {
     };
 
     // Contours: layer 0 of this product 166 opens with 0x0802 then 0x0E03.
-    let melting = entry("l3-tlx-n0m-20130520-2016");
+    let melting = common::entry("l3-tlx-n0m-20130520-2016");
     let bytes = melting.bytes();
     let product = decode_product(&bytes).unwrap();
-    let layer0 =
-        message_start(melting, &bytes) + 2 * product.description.symbology_offset as usize + 16;
+    let layer0 = common::uncompressed_message_start(&melting.golden(), bytes.len())
+        + 2 * product.description.symbology_offset as usize
+        + 16;
     assert_eq!(
         [halfword_at(&bytes, layer0), halfword_at(&bytes, layer0 + 2)],
         [0x0802, 0x0002]
@@ -891,10 +825,11 @@ fn corrupted_family_fields_are_errors() {
 
     // Tabular pages of this product 59: block divider and ID, second headers,
     // then the page block divider, page count and first line's character count.
-    let hail = entry("l3-tlx-nhi-20130520-2016");
+    let hail = common::entry("l3-tlx-nhi-20130520-2016");
     let bytes = hail.bytes();
     let product = decode_product(&bytes).unwrap();
-    let block = message_start(hail, &bytes) + 2 * product.description.tabular_offset as usize;
+    let block = common::uncompressed_message_start(&hail.golden(), bytes.len())
+        + 2 * product.description.tabular_offset as usize;
     let pages = block + 8 + 120;
     assert_eq!(
         [halfword_at(&bytes, block), halfword_at(&bytes, block + 2)],
@@ -935,79 +870,6 @@ fn corrupted_family_fields_are_errors() {
             ..
         })
     ));
-}
-
-/// The SHA-256 below reproduces every manifest checksum.
-#[test]
-fn sha256_matches_manifest_checksums() {
-    for entry in common::level3_manifest() {
-        assert_eq!(sha256_hex(&entry.bytes()), entry.sha256, "{}", entry.id);
-    }
-}
-
-/// SHA-256 (FIPS 180-4) as lowercase hex; the crate has no dev-dependencies.
-fn sha256_hex(data: &[u8]) -> String {
-    const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
-    ];
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let mut message = data.to_vec();
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
-    }
-    message.extend_from_slice(&(data.len() as u64 * 8).to_be_bytes());
-    for block in message.chunks_exact(64) {
-        let mut w = [0u32; 64];
-        for (t, word) in block.chunks_exact(4).enumerate() {
-            w[t] = u32::from_be_bytes(word.try_into().unwrap());
-        }
-        for t in 16..64 {
-            let s0 = w[t - 15].rotate_right(7) ^ w[t - 15].rotate_right(18) ^ (w[t - 15] >> 3);
-            let s1 = w[t - 2].rotate_right(17) ^ w[t - 2].rotate_right(19) ^ (w[t - 2] >> 10);
-            w[t] = w[t - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[t - 7])
-                .wrapping_add(s1);
-        }
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
-        for t in 0..64 {
-            let sigma1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-            let choose = (e & f) ^ (!e & g);
-            let t1 = hh
-                .wrapping_add(sigma1)
-                .wrapping_add(choose)
-                .wrapping_add(K[t])
-                .wrapping_add(w[t]);
-            let sigma0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-            let majority = (a & b) ^ (a & c) ^ (b & c);
-            let t2 = sigma0.wrapping_add(majority);
-            hh = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
-        }
-        for (state, value) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
-            *state = state.wrapping_add(value);
-        }
-    }
-    h.iter().map(|v| format!("{v:08x}")).collect()
 }
 
 // Script that produced METPY_PACKETS (run from the workspace root with the

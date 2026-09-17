@@ -21,6 +21,8 @@
 //! counting both the moments a cut already carries and the ones [`sweep`]
 //! could derive from them on demand.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 mod availability;
 mod detect;
 mod gbvtd;

@@ -26,6 +26,7 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
 use recast_radar_core::{
     ElevationCut, GateRange, MomentGrid, MomentRow, MomentType, RadarSite, RadarVolume, Radial,
     RayInstrumentMetadata, ScanLegMetadata, ScanMode, VcpInfo, canonical_moment,
@@ -37,6 +38,11 @@ use crate::{CfRadialError, Result};
 
 /// Decode a CfRadial 1.x byte buffer into the shared radar model.
 pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
+    decode_cfradial1_volume_within(bytes, DecodeBudget::volume())
+}
+
+/// [`decode_cfradial1_volume`] with an explicit output budget.
+fn decode_cfradial1_volume_within(bytes: &[u8], mut budget: DecodeBudget) -> Result<RadarVolume> {
     let file = Nc3File::open(bytes)?;
     let dim = |name: &str| file.dims.iter().position(|(dim_name, _)| dim_name == name);
     let (Some(time_dim), Some(range_dim)) = (dim("time"), dim("range")) else {
@@ -49,28 +55,43 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
     if n_rays == 0 || n_gates == 0 {
         return Err(invalid("CfRadial volume has no rays or gates"));
     }
+    check_gate_count(n_gates, "CfRadial range dimension").map_err(CfRadialError::LimitExceeded)?;
 
-    let azimuth = read_f64s(&file, "azimuth")?;
-    let elevation = read_f64s(&file, "elevation")?;
+    let azimuth = read_f64s(&file, "azimuth", &mut budget)?;
+    let elevation = read_f64s(&file, "elevation", &mut budget)?;
     if azimuth.len() < n_rays || elevation.len() < n_rays {
         return Err(invalid("azimuth/elevation shorter than the time dimension"));
     }
-    let nyquist = read_f64s(&file, "nyquist_velocity").ok();
+    let nyquist = optional_f64s(&file, "nyquist_velocity", &mut budget)?;
     // Keep physical timing/sample quantities aligned to their source rays.
     // VCP Appendix-C PRF values elsewhere in the file are source-table CODES,
     // not frequencies; they remain in ScanLegMetadata and never feed these
     // physical variables.
-    let ray_prt_s = aligned_time_f32s(&file, "prt", time_dim, n_rays, time_units_scale);
+    let ray_prt_s = aligned_time_f32s(
+        &file,
+        "prt",
+        time_dim,
+        n_rays,
+        time_units_scale,
+        &mut budget,
+    )?;
     let ray_unambiguous_range_km = aligned_time_f32s(
         &file,
         "unambiguous_range",
         time_dim,
         n_rays,
         range_units_to_km_scale,
-    );
-    let ray_pulse_count = aligned_time_u32s(&file, "pulse_count", time_dim, n_rays);
-    let ray_independent_samples =
-        aligned_time_f32s(&file, "independent_samples", time_dim, n_rays, |_| 1.0);
+        &mut budget,
+    )?;
+    let ray_pulse_count = aligned_time_u32s(&file, "pulse_count", time_dim, n_rays, &mut budget)?;
+    let ray_independent_samples = aligned_time_f32s(
+        &file,
+        "independent_samples",
+        time_dim,
+        n_rays,
+        |_| 1.0,
+        &mut budget,
+    )?;
     let has_ray_instrument_metadata = ray_prt_s.is_some()
         || ray_unambiguous_range_km.is_some()
         || ray_pulse_count.is_some()
@@ -79,7 +100,7 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
     // Gate geometry: range(range) gate centers in metres (spec §5.5); the
     // start_range/gate spacing attributes are optional, so derive from the
     // coordinate values themselves.
-    let range = read_f64s(&file, "range")?;
+    let range = read_f64s(&file, "range", &mut budget)?;
     if range.len() < 2 {
         return Err(invalid("range coordinate needs at least two gates"));
     }
@@ -93,9 +114,12 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
     };
 
     // Sweep index ranges; a missing sweep dimension means one sweep.
-    let fixed_angles = read_f64s(&file, "fixed_angle").unwrap_or_default();
-    let sweep_starts = read_f64s(&file, "sweep_start_ray_index").unwrap_or_default();
-    let sweep_ends = read_f64s(&file, "sweep_end_ray_index").unwrap_or_default();
+    let fixed_angles = optional_f64s(&file, "fixed_angle", &mut budget)?.unwrap_or_default();
+    check_sweep_count(fixed_angles.len(), "CfRadial fixed_angle")
+        .map_err(CfRadialError::LimitExceeded)?;
+    let sweep_starts =
+        optional_f64s(&file, "sweep_start_ray_index", &mut budget)?.unwrap_or_default();
+    let sweep_ends = optional_f64s(&file, "sweep_end_ray_index", &mut budget)?.unwrap_or_default();
     let sweep_count = fixed_angles.len().max(1);
     let sweep_modes = read_sweep_modes(&file, sweep_count);
 
@@ -154,16 +178,17 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
     volume.metadata.scattering_model = metadata_text(&file, "scattering_model");
 
     // Ray times (seconds offset from time_coverage_start).
-    let ray_seconds = read_f64s(&file, "time").ok();
-    let source_row_indices = read_f64s(&file, "vcp_source_row_index").ok();
-    let vcp_azimuth_rates = read_f64s(&file, "vcp_azimuth_rate").ok();
-    let vcp_source_periods = read_f64s(&file, "vcp_source_period").ok();
-    let vcp_waveform_codes = read_f64s(&file, "vcp_waveform_code").ok();
-    let vcp_moment_coverage_codes = read_f64s(&file, "vcp_moment_coverage_code").ok();
-    let surveillance_prf_codes = read_f64s(&file, "vcp_surveillance_prf_code").ok();
-    let surveillance_pulse_counts = read_f64s(&file, "vcp_surveillance_pulse_count").ok();
-    let doppler_prf_codes = read_f64s(&file, "vcp_doppler_prf_code").ok();
-    let doppler_pulse_counts = read_f64s(&file, "vcp_doppler_pulse_count").ok();
+    let ray_seconds = optional_f64s(&file, "time", &mut budget)?;
+    let source_row_indices = optional_f64s(&file, "vcp_source_row_index", &mut budget)?;
+    let vcp_azimuth_rates = optional_f64s(&file, "vcp_azimuth_rate", &mut budget)?;
+    let vcp_source_periods = optional_f64s(&file, "vcp_source_period", &mut budget)?;
+    let vcp_waveform_codes = optional_f64s(&file, "vcp_waveform_code", &mut budget)?;
+    let vcp_moment_coverage_codes = optional_f64s(&file, "vcp_moment_coverage_code", &mut budget)?;
+    let surveillance_prf_codes = optional_f64s(&file, "vcp_surveillance_prf_code", &mut budget)?;
+    let surveillance_pulse_counts =
+        optional_f64s(&file, "vcp_surveillance_pulse_count", &mut budget)?;
+    let doppler_prf_codes = optional_f64s(&file, "vcp_doppler_prf_code", &mut budget)?;
+    let doppler_pulse_counts = optional_f64s(&file, "vcp_doppler_pulse_count", &mut budget)?;
     let has_scan_leg_metadata = source_row_indices.is_some()
         || vcp_azimuth_rates.is_some()
         || vcp_source_periods.is_some()
@@ -184,20 +209,24 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
         return Err(invalid("CfRadial volume has no (time, range) fields"));
     }
 
+    // Validate every sweep's ray range before building anything. Sweeps that
+    // share rays would each copy the same field rows, so a header claiming
+    // many overlapping sweeps multiplied the decoded size (fuzz regression
+    // `fuzz-cfradial-overlapping-sweep-ray-ranges`).
+    let ray_ranges: Vec<Option<(usize, usize)>> = (0..sweep_count)
+        .map(|sweep| sweep_ray_range(&sweep_starts, &sweep_ends, sweep, n_rays))
+        .collect();
+    check_disjoint_sweeps(&ray_ranges)?;
+
     // Build sweep geometry first, then read each full (time, range) field
     // once and distribute its rows across every sweep. The former
     // sweep-outer loop reread and reconverted each full field once per sweep.
     let mut sweeps = Vec::with_capacity(sweep_count);
-    for sweep in 0..sweep_count {
-        let start_ray = sweep_starts.get(sweep).map(|v| *v as usize).unwrap_or(0);
-        let end_ray = sweep_ends
-            .get(sweep)
-            .map(|v| (*v as usize).min(n_rays.saturating_sub(1)))
-            .unwrap_or(n_rays.saturating_sub(1));
-        if start_ray > end_ray || end_ray >= n_rays {
+    for (sweep, ray_range) in ray_ranges.into_iter().enumerate() {
+        let Some((start_ray, end_ray)) = ray_range else {
             volume.metadata.skipped_message_count += 1;
             continue;
-        }
+        };
         let fixed = fixed_angles.get(sweep).copied().unwrap_or_else(|| {
             fallback_fixed_angle(
                 sweep_modes.get(sweep).copied().flatten(),
@@ -206,6 +235,20 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
             )
         }) as f32;
         let mut cut = ElevationCut::new(fixed, Some(sweep.min(255) as u8));
+        let sweep_rays = end_ray - start_ray + 1;
+        let ray_bytes = size_of::<Radial>()
+            + if has_ray_instrument_metadata {
+                size_of::<RayInstrumentMetadata>()
+            } else {
+                0
+            };
+        budget
+            .charge(sweep_rays, ray_bytes, "CfRadial sweep radials")
+            .map_err(CfRadialError::LimitExceeded)?;
+        cut.radials.reserve_exact(sweep_rays);
+        if has_ray_instrument_metadata {
+            cut.ray_instrument_metadata.reserve_exact(sweep_rays);
+        }
         for ray in start_ray..=end_ray {
             let time_offset_ms = ray_seconds
                 .as_ref()
@@ -269,7 +312,7 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
             Some(moment) if canonical_fields.insert(moment.clone()) => moment,
             _ => MomentType::Unknown(field.name.clone()),
         };
-        let values = read_field_physical(&file, field)?;
+        let values = read_field_physical(&file, field, &mut budget)?;
         if values.len() < expected_values {
             return Err(invalid(format!(
                 "CfRadial field '{}' has {} values; expected at least {expected_values}",
@@ -281,6 +324,14 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
             if !scan_leg_allows_moment(&sweep.scan_leg, &moment) {
                 continue;
             }
+            let sweep_rays = sweep.end_ray - sweep.start_ray + 1;
+            budget
+                .charge(
+                    sweep_rays,
+                    n_gates * size_of::<f32>() + size_of::<usize>(),
+                    "CfRadial moment grid",
+                )
+                .map_err(CfRadialError::LimitExceeded)?;
             let mut grid = MomentGrid {
                 moment: moment.clone(),
                 gate_range: gate_range.clone(),
@@ -291,6 +342,7 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
                 radial_indices: Vec::new(),
                 storage: recast_radar_core::MomentStorage::F32(Vec::new()),
             };
+            grid.reserve_rows(sweep_rays);
             for (radial_index, ray) in (sweep.start_ray..=sweep.end_ray).enumerate() {
                 let row_start = ray * n_gates;
                 let row = &values[row_start..row_start + n_gates];
@@ -298,6 +350,7 @@ pub fn decode_cfradial1_volume(bytes: &[u8]) -> Result<RadarVolume> {
             }
             sweep.cut.moments.insert(moment.clone(), grid);
         }
+        budget.release(values.len() * size_of::<f32>());
     }
     sweeps.sort_by(|left, right| left.cut.elevation_deg.total_cmp(&right.cut.elevation_deg));
     if sweeps
@@ -317,6 +370,57 @@ struct DecodedSweep {
     end_ray: usize,
     cut: ElevationCut,
     scan_leg: ScanLegMetadata,
+}
+
+/// The rays `start..=end` of `sweep` from `sweep_start_ray_index` and
+/// `sweep_end_ray_index`; a missing value means the first or last ray.
+/// `None` (the sweep is skipped) when an index is not a non-negative integer
+/// (fill values, garbage) or the sweep starts after it ends. An end past the
+/// last ray is clamped to it, which keeps the rays a truncated `time`
+/// dimension still holds.
+fn sweep_ray_range(
+    starts: &[f64],
+    ends: &[f64],
+    sweep: usize,
+    n_rays: usize,
+) -> Option<(usize, usize)> {
+    let last_ray = n_rays.checked_sub(1)?;
+    let index = |values: &[f64], missing: usize| match values.get(sweep) {
+        None => Some(missing),
+        // `as` saturates, and a start past the last ray fails `start <= end`.
+        Some(value) => {
+            (value.is_finite() && *value >= 0.0 && value.fract() == 0.0).then_some(*value as usize)
+        }
+    };
+    let start = index(starts, 0)?;
+    let end = index(ends, last_ray)?.min(last_ray);
+    (start <= end).then_some((start, end))
+}
+
+/// CfRadial sweeps partition the rays: reject two sweeps whose ray ranges
+/// overlap instead of duplicating the shared rows into both.
+fn check_disjoint_sweeps(ray_ranges: &[Option<(usize, usize)>]) -> Result<()> {
+    let mut by_start: Vec<(usize, usize, usize)> = ray_ranges
+        .iter()
+        .enumerate()
+        .filter_map(|(sweep, range)| range.map(|(start, end)| (start, end, sweep)))
+        .collect();
+    by_start.sort_unstable();
+    // Sorted by start, any overlap shows up between neighbours.
+    for pair in by_start.windows(2) {
+        if let [(_, previous_end, previous), (start, end, sweep)] = pair
+            && start <= previous_end
+        {
+            return Err(invalid(format!(
+                "CfRadial sweeps {} and {} overlap: sweep_start_ray_index/sweep_end_ray_index \
+                 put rays {start}..={} in both",
+                previous.min(sweep),
+                previous.max(sweep),
+                end.min(previous_end)
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn numeric_at(values: &Option<Vec<f64>>, index: usize) -> Option<f64> {
@@ -422,8 +526,13 @@ fn arithmetic_mean(values: &[f64]) -> Option<f64> {
 }
 
 /// Apply CF packing (physical = raw·scale_factor + add_offset) and
-/// `_FillValue`/`missing_value` masking; everything lands in f32.
-fn read_field_physical(file: &Nc3File<'_>, var: &NcVar) -> Result<Vec<f32>> {
+/// `_FillValue`/`missing_value` masking; everything lands in f32. The
+/// returned buffer is charged to `budget`; the caller releases it.
+fn read_field_physical(
+    file: &Nc3File<'_>,
+    var: &NcVar,
+    budget: &mut DecodeBudget,
+) -> Result<Vec<f32>> {
     let scale = var.attr_f64("scale_factor").unwrap_or(1.0);
     let offset = var.attr_f64("add_offset").unwrap_or(0.0);
     let fill = var
@@ -431,6 +540,9 @@ fn read_field_physical(file: &Nc3File<'_>, var: &NcVar) -> Result<Vec<f32>> {
         .or_else(|| var.attr_f64("missing_value"));
     let raw = file.read_var(&var.name)?;
     let count = raw.len();
+    budget
+        .charge(count, size_of::<f32>(), "CfRadial field values")
+        .map_err(CfRadialError::LimitExceeded)?;
     let mut out = Vec::with_capacity(count);
     for index in 0..count {
         let value = raw.get_f64(index);
@@ -444,9 +556,17 @@ fn read_field_physical(file: &Nc3File<'_>, var: &NcVar) -> Result<Vec<f32>> {
     Ok(out)
 }
 
-fn read_f64s(file: &Nc3File<'_>, name: &str) -> Result<Vec<f64>> {
+/// Read a numeric variable as f64, charging the widened array to `budget`
+/// (an 8-bit variable grows eightfold).
+fn read_f64s(file: &Nc3File<'_>, name: &str, budget: &mut DecodeBudget) -> Result<Vec<f64>> {
     let raw = file.read_var(name)?;
+    if matches!(raw, NcArray::Char(_)) {
+        return Err(invalid(format!("variable '{name}' is not numeric")));
+    }
     let count = raw.len();
+    budget
+        .charge(count, size_of::<f64>(), "CfRadial numeric variable")
+        .map_err(CfRadialError::LimitExceeded)?;
     let mut out = Vec::with_capacity(count);
     for index in 0..count {
         out.push(
@@ -455,6 +575,20 @@ fn read_f64s(file: &Nc3File<'_>, name: &str) -> Result<Vec<f64>> {
         );
     }
     Ok(out)
+}
+
+/// [`read_f64s`] for an optional variable: a missing or unusable variable is
+/// `None`, but exceeding a resource limit is still an error.
+fn optional_f64s(
+    file: &Nc3File<'_>,
+    name: &str,
+    budget: &mut DecodeBudget,
+) -> Result<Option<Vec<f64>>> {
+    match read_f64s(file, name, budget) {
+        Ok(values) => Ok(Some(values)),
+        Err(error @ CfRadialError::LimitExceeded(_)) => Err(error),
+        Err(_) => Ok(None),
+    }
 }
 
 /// `sweep_mode(sweep, string_length)` char matrix → per-sweep scan modes.
@@ -680,11 +814,15 @@ fn aligned_time_values(
     name: &str,
     time_dim: usize,
     n_rays: usize,
-) -> Option<Vec<f64>> {
-    let var = file.vars.get(name)?;
-    (var.dim_ids.as_slice() == [time_dim]).then_some(())?;
-    let values = read_f64s(file, name).ok()?;
-    (values.len() == n_rays).then_some(values)
+    budget: &mut DecodeBudget,
+) -> Result<Option<Vec<f64>>> {
+    let Some(var) = file.vars.get(name) else {
+        return Ok(None);
+    };
+    if var.dim_ids.as_slice() != [time_dim] {
+        return Ok(None);
+    }
+    Ok(optional_f64s(file, name, budget)?.filter(|values| values.len() == n_rays))
 }
 
 fn aligned_time_f32s(
@@ -693,14 +831,17 @@ fn aligned_time_f32s(
     time_dim: usize,
     n_rays: usize,
     units_scale: impl FnOnce(Option<&str>) -> f64,
-) -> Option<Vec<Option<f32>>> {
+    budget: &mut DecodeBudget,
+) -> Result<Option<Vec<Option<f32>>>> {
     let scale = units_scale(file.vars.get(name).and_then(|var| var.attr_str("units")));
-    aligned_time_values(file, name, time_dim, n_rays).map(|values| {
-        values
-            .into_iter()
-            .map(|value| positive_f32(value * scale))
-            .collect()
-    })
+    Ok(
+        aligned_time_values(file, name, time_dim, n_rays, budget)?.map(|values| {
+            values
+                .into_iter()
+                .map(|value| positive_f32(value * scale))
+                .collect()
+        }),
+    )
 }
 
 fn aligned_time_u32s(
@@ -708,19 +849,22 @@ fn aligned_time_u32s(
     name: &str,
     time_dim: usize,
     n_rays: usize,
-) -> Option<Vec<Option<u32>>> {
-    aligned_time_values(file, name, time_dim, n_rays).map(|values| {
-        values
-            .into_iter()
-            .map(|value| {
-                (value.is_finite()
-                    && value > 0.0
-                    && value.fract() == 0.0
-                    && value <= u32::MAX as f64)
-                    .then_some(value as u32)
-            })
-            .collect()
-    })
+    budget: &mut DecodeBudget,
+) -> Result<Option<Vec<Option<u32>>>> {
+    Ok(
+        aligned_time_values(file, name, time_dim, n_rays, budget)?.map(|values| {
+            values
+                .into_iter()
+                .map(|value| {
+                    (value.is_finite()
+                        && value > 0.0
+                        && value.fract() == 0.0
+                        && value <= u32::MAX as f64)
+                        .then_some(value as u32)
+                })
+                .collect()
+        }),
+    )
 }
 
 fn aligned_at<T: Copy>(values: &Option<Vec<Option<T>>>, ray: usize) -> Option<T> {
@@ -799,6 +943,24 @@ fn invalid(reason: impl Into<String>) -> CfRadialError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_volume_exceeding_the_output_budget_is_rejected() {
+        let path = recast_radar_testdata::path("cfrad1-irene-sr2-20110827-120420-sur-sweeps01")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let bytes = std::fs::read(path).expect("read committed CfRadial file");
+        decode_cfradial1_volume_within(&bytes, DecodeBudget::volume())
+            .expect("real file fits the default budget");
+        // The moment grids alone (719 rays x 1,107 gates x two f32 fields)
+        // take 6.1 MiB; a 4 MiB budget must fail cleanly.
+        let Err(error) = decode_cfradial1_volume_within(&bytes, DecodeBudget::new(4 << 20)) else {
+            panic!("4 MiB budget must fail");
+        };
+        assert!(
+            matches!(&error, CfRadialError::LimitExceeded(reason) if reason.contains("limit")),
+            "unexpected error: {error}"
+        );
+    }
 
     #[test]
     fn sweep_mode_vocabulary_maps_to_scan_modes() {
