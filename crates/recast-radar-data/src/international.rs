@@ -1,6 +1,6 @@
 //! International (non-NEXRAD) radar feed provider scaffolding.
 //!
-//! BowEcho's decode layer is already source-agnostic: `recast_radar_io_nexrad`'s shared
+//! BowEcho's decode layer is already source-agnostic: `recast_radar_io`'s shared
 //! magic-byte router decodes ODIM_H5 polar volumes (EUMETNET OPERA Data
 //! Information Model; Michelson et al., OPERA WP 2.1/2.2, v2.2-2.3),
 //! CfRadial 1.x classic netCDF, DORADE sweepfiles, and NEXRAD Archive II
@@ -22,7 +22,7 @@
 //!    installed, the poller does nothing — no part is downloaded.
 //! 4. Otherwise every [`PlanPart::url`] is fetched with
 //!    [`crate::fetch_volume_bytes`] and decoded with
-//!    `recast_radar_io_nexrad::decode_supported_volume_bytes`; multi-part plans with
+//!    `recast_radar_io::decode_supported_volume_bytes`; multi-part plans with
 //!    [`FramePlan::merge`] set are then assembled with
 //!    `recast_radar_core::merge_radar_volumes`.
 //!
@@ -32,10 +32,10 @@
 //! bytes, retries, decode, and merge.
 //!
 //! One provider-specific decode exception: JMA tars are multi-station
-//! archives, and `recast_radar_io_nexrad::decode_supported_volume_bytes` decodes only
+//! archives, and `recast_radar_io::decode_supported_volume_bytes` decodes only
 //! the FIRST station of such a tar. The poll consumer must therefore pass
 //! the selected site as a `site_filter` to
-//! `recast_radar_io_nexrad::jma::decode_jma_tar_volumes` when the plan came from
+//! `recast_radar_io_jma::decode_jma_tar_volumes` when the plan came from
 //! [`JmaProvider`] (see its docs).
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -100,7 +100,7 @@ pub struct IntlSite {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlanPart {
     /// Absolute URL, fetched with [`crate::fetch_volume_bytes`] and decoded
-    /// with `recast_radar_io_nexrad::decode_supported_volume_bytes`.
+    /// with `recast_radar_io::decode_supported_volume_bytes`.
     pub url: String,
 }
 
@@ -707,14 +707,14 @@ const JMA_LOOKBACK_MINUTES: i64 = 40;
 /// Catalog model: one tar carries every station of the network, so
 /// [`IntlProvider::list_sites`] downloads the newest reflectivity tar once,
 /// decodes only the per-station GRIB2 headers
-/// (`recast_radar_io_nexrad::jma::jma_tar_station_headers`), and caches the station list
+/// (`recast_radar_io_jma::jma_tar_station_headers`), and caches the station list
 /// in-memory for the life of the process. [`IntlProvider::latest`] HEAD-
 /// probes backward over [`JMA_LOOKBACK_MINUTES`] of 5-minute stamps for the
 /// newest tar that exists.
 ///
 /// Decode contract: the plan's first part is the N5 (reflectivity) tar
 /// containing ALL stations — the poll consumer must decode JMA parts with
-/// `recast_radar_io_nexrad::jma::decode_jma_tar_volumes(bytes, Some(site_id))`; the
+/// `recast_radar_io_jma::decode_jma_tar_volumes(bytes, Some(site_id))`; the
 /// generic `decode_supported_volume_bytes` router would return the tar's
 /// first station regardless of the selection. When the `_N6_` sibling exists
 /// at the same stamp, the plan includes it and requests a per-elevation merge
@@ -725,7 +725,7 @@ pub struct JmaProvider;
 ///
 /// Decoded from the live N5 reflectivity tar
 /// `Z__C_RJTD_20260612083000_RDR_JMAGPV_N5_grib2.tar` (NICT mirror, fetched
-/// 2026-06-12) via `recast_radar_io_nexrad::jma::jma_tar_station_headers` — the same
+/// 2026-06-12) via `recast_radar_io_jma::jma_tar_station_headers` — the same
 /// per-station GRIB2 product-section headers (JMA GRIB2 template 4.51022
 /// per the JMA technical format documentation) that the live catalog path
 /// reads, so the static table and a live listing agree on ids and
@@ -850,7 +850,7 @@ impl IntlProvider for JmaProvider {
             let url = jma_tar_url(JMA_REFLECTIVITY_PRODUCT, stamp);
             let bytes = crate::fetch_volume_bytes(&url)
                 .map_err(|err| format!("JMA station catalog download failed ({url}): {err}"))?;
-            let stations = recast_radar_io_nexrad::jma::jma_tar_station_headers(&bytes)
+            let stations = recast_radar_io_jma::jma_tar_station_headers(&bytes)
                 .map_err(|err| format!("JMA station catalog decode failed ({url}): {err}"))?;
 
             let mut sites: Vec<IntlSite> = stations
@@ -1519,7 +1519,7 @@ mod tests {
         println!("// source tar: {url}");
         let bytes = crate::fetch_volume_bytes(&url).expect("tar download");
         let mut stations =
-            recast_radar_io_nexrad::jma::jma_tar_station_headers(&bytes).expect("station headers");
+            recast_radar_io_jma::jma_tar_station_headers(&bytes).expect("station headers");
         stations.sort_by(|left, right| left.id.cmp(&right.id));
         for station in &stations {
             println!(
@@ -1539,7 +1539,7 @@ mod tests {
         let stamp = jma_newest_stamp().expect("newest JMA stamp");
         let url = jma_tar_url(JMA_REFLECTIVITY_PRODUCT, stamp);
         let bytes = crate::fetch_volume_bytes(&url).expect("tar download");
-        let stations = recast_radar_io_nexrad::jma::jma_tar_station_headers(&bytes).expect("station headers");
+        let stations = recast_radar_io_jma::jma_tar_station_headers(&bytes).expect("station headers");
         assert_eq!(stations.len(), JMA_STATIONS.len(), "station count changed");
         for station in &stations {
             let (_, number, latitude, longitude) = JMA_STATIONS
@@ -1702,7 +1702,7 @@ mod tests {
         for part in &plan.parts {
             println!("downloading {}", part.url);
             let bytes = crate::fetch_volume_bytes(&part.url).expect("live tar download");
-            let volumes = recast_radar_io_nexrad::jma::decode_jma_tar_volumes(&bytes, Some(&site.site_id))
+            let volumes = recast_radar_io_jma::decode_jma_tar_volumes(&bytes, Some(&site.site_id))
                 .expect("site-filtered decode");
             assert_eq!(volumes.len(), 1, "filter must select exactly one station");
             assert_eq!(volumes[0].site.id, site.site_id);

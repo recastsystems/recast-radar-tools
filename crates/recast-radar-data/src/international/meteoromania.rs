@@ -24,7 +24,7 @@
 //! `recast_radar_core::merge_radar_volumes`, dBZ first (merge base), V second,
 //! then ZDR/KDP/RhoHV when present at that stamp. ODIM quantities inside
 //! the files are the canonical codes (`DBZH`, `VRADH`, `ZDR`, `KDP`,
-//! `RHOHV`), so the existing `recast_radar_io_nexrad` ODIM decode path handles every
+//! `RHOHV`), so the existing `recast_radar_io_odim` ODIM decode path handles every
 //! part unchanged.
 //!
 //! LISTED BUT SKIPPED — `dBR` and `Height`: those files are NOT polar
@@ -595,7 +595,7 @@ mod tests {
             println!("downloading {}", part.url);
             let bytes = crate::fetch_volume_bytes(&part.url).expect("live download");
             let volume =
-                recast_radar_io_nexrad::decode_supported_volume_bytes(&bytes).expect("ODIM PVOL decode");
+                recast_radar_io::decode_supported_volume_bytes(&bytes).expect("ODIM PVOL decode");
             println!(
                 "decoded {}: {} cuts, {} radials",
                 volume.site.id,

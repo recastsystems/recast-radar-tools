@@ -4,7 +4,7 @@
 //! serve raw Level II over the GR2A dir.list convention: the shared
 //! custom-URL poller fetches `{poll_url}/dir.list` (or discovers the one
 //! site named by `{poll_url}/grlevel2.cfg`), downloads the newest entry,
-//! and decodes it through `recast_radar_io_nexrad`'s magic-byte router. NEXRAD proper
+//! and decodes it through `recast_radar_io`'s magic-byte router. NEXRAD proper
 //! loads natively from S3, so this catalog covers only what S3 can't.
 //!
 //! Coordinates are community-contributed (forwarded by a BowEcho user;

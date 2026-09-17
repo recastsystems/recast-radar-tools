@@ -1,13 +1,13 @@
 [package]
-name = "recast-radar-io-nexrad"
+name = "recast-radar-io-jma"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-bzip2.workspace = true
 chrono.workspace = true
-flate2.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
-rayon.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

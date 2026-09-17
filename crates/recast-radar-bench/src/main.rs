@@ -1,7 +1,7 @@
 //! BowEcho headless benchmark harness.
 //!
 //! Decodes one Level-II archive volume and rasterizes its lowest
-//! reflectivity and velocity cuts through the exact `recast_radar_io_nexrad` /
+//! reflectivity and velocity cuts through the exact `recast_radar_io` /
 //! `recast_radar_render` paths the app uses, with wall-clock timing and a pixel
 //! checksum. See README.md for the three purposes this serves (LTO A/B
 //! referee, x86-64-v3 validation, PGO training workload).
@@ -225,7 +225,7 @@ fn run_iteration(
     // provider downloads); a Level-II buffer falls through to
     // decode_volume_from_bytes, the same entry the archive path uses.
     // No site hint is needed: Archive II embeds the ICAO in the header.
-    let volume = recast_radar_io_nexrad::decode_supported_volume_bytes(raw)?;
+    let volume = recast_radar_io::decode_supported_volume_bytes(raw).map_err(|err| err.to_string())?;
     let decode_ms = elapsed_ms(started);
 
     let reflectivity_cut = lowest_cut_with_moment(&volume, &MomentType::Reflectivity)

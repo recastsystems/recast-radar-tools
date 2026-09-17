@@ -4,18 +4,18 @@
 //! the same entry points the app's RHI panel calls (`cut_looks_like_rhi`,
 //! `rhi_fixed_azimuth_deg`, `rhi_coverage_*`, `rhi_section`) on the FARM
 //! DOW8 truck RHI fixture decoded through the real CfRadial path. See
-//! `recast-radar-io-nexrad/tests/cfradial_real_files.rs` for fixture provenance
+//! `recast-radar-io-cfradial/tests/cfradial_real_files.rs` for fixture provenance
 //! (open-radar-data, MIT; netCDF-4 -> classic container conversion,
 //! 3 of 8 fields kept).
 
 use recast_radar_core::{MomentType, ScanMode};
 
 const DOW8_RHI: &[u8] =
-    include_bytes!("../../recast-radar-io-nexrad/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc");
+    include_bytes!("../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc");
 
 #[test]
 fn real_dow8_rhi_drives_the_rhi_panel_pipeline() {
-    let volume = recast_radar_io_nexrad::cfradial::decode_cfradial1_volume(DOW8_RHI).expect("decode DOW8 RHI");
+    let volume = recast_radar_io_cfradial::cfradial::decode_cfradial1_volume(DOW8_RHI).expect("decode DOW8 RHI");
     // The app's panel gate: declared scan mode wins (volume_is_rhi).
     assert_eq!(volume.metadata.scan_mode, Some(ScanMode::Rhi));
     let cut = &volume.cuts[0];

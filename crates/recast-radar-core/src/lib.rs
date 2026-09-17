@@ -8,8 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
+pub mod bounded_read;
+mod field_names;
 mod refractivity;
 
+pub use field_names::canonical_moment;
 pub use refractivity::{
     EARTH_DUCTING_GRADIENT_N_PER_KM, PropagationRegime, RefractedBeamError, RefractedBeamPoint,
     RefractedBeamTrace, RefractivityLevel, RefractivityProfile, RefractivityProfileError,

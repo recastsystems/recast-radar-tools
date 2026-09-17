@@ -1,0 +1,20 @@
+[package]
+name = "recast-radar-io-dorade"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+rayon.workspace = true
+recast-radar-core = { path = "../recast-radar-core" }
+thiserror.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+# Level II decoder for `.msg31` members in the examples and the ignored
+# mobile-radar corpus test; the library takes it as a parameter instead.
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+
+[lints]
+workspace = true
