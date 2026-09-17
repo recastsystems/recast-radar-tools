@@ -39,29 +39,6 @@ const CHUNKS: [&str; 3] = [
     "l2chunk-kiwa-307-20260917-003629-003-i",
 ];
 
-/// Volumes the volume decoder rejects, with its error text. Their metadata
-/// is checked through [`NexradMetadata::from_metadata_record`] in
-/// `matches_metpy_metadata_messages`.
-///
-/// KVWX 2008-04-15 writes four spaces as the radar identifier of every
-/// message 31 radial, which `decode_volume_from_bytes` treats as an empty
-/// message and rejects (MetPy and Py-ART read the file).
-const VOLUME_DECODER_REJECTS: [(&str, &str); 1] =
-    [("l2-kvwx-20080415-235337", "empty message 31 id")];
-
-/// For a volume in [`VOLUME_DECODER_REJECTS`], checks that both decoders
-/// return the listed error and returns true.
-fn rejected_by_volume_decoder(name: &str, bytes: &[u8]) -> bool {
-    let Some((_, reason)) = VOLUME_DECODER_REJECTS.iter().find(|(id, _)| *id == name) else {
-        return false;
-    };
-    let plain = decode_volume_from_bytes(bytes).unwrap_err().to_string();
-    let with_metadata = decode_volume_with_metadata(bytes).unwrap_err().to_string();
-    assert!(plain.contains(reason), "{name}: {plain}");
-    assert_eq!(with_metadata, plain, "{name}: same error");
-    true
-}
-
 /// Real file bytes, or `None` (with a message) when the file cannot be
 /// downloaded right now.
 fn load(id: &str) -> Option<Vec<u8>> {
@@ -457,9 +434,6 @@ fn matches_pyart_and_the_volume_decoder() {
         let Some(bytes) = load_all(&source_ids(&golden)) else {
             continue;
         };
-        if rejected_by_volume_decoder(&name, &bytes) {
-            continue;
-        }
         let decoded =
             decode_volume_with_metadata(&bytes).unwrap_or_else(|error| panic!("{name}: {error}"));
         assert_eq!(
@@ -680,9 +654,6 @@ fn per_sweep_data_matches_metpy_sweeps() {
         let Some(bytes) = load_all(&source_ids(&golden)) else {
             continue;
         };
-        if rejected_by_volume_decoder(&name, &bytes) {
-            continue;
-        }
         let decoded = decode_volume_with_metadata(&bytes).unwrap();
         let sweeps = sweeps(&name, &decoded);
         let metpy = golden["sweeps"].as_array().unwrap();

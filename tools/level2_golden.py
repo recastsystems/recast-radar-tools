@@ -4,7 +4,7 @@ Writes JSON files under testdata/level2/golden/<group>/, one per source. The
 Rust tests in crates/recast-radar-io-nexrad/tests/ compare their decoded values
 against these files.
 
-Needs MetPy 1.7.1 and, for the metadata group, Py-ART (arm_pyart) 2.2.5: the
+Needs MetPy 1.7.1 and Py-ART (arm_pyart) 2.2.5: the
 versions the committed files were written with. Other versions are refused,
 because the files record them. Files come from the committed path in the
 manifest, or else from the shared download cache that recast-radar-testdata
@@ -121,6 +121,17 @@ metadata  (tests/volume_metadata.rs)
     processing status, RAD radial flags) are written as big-endian integers.
     Files are decompressed as `read_nexrad_archive` does; sources joined with
     "+" are concatenated and named as in msg31.
+
+volume  (tests/volume_pyart.rs)
+    What Py-ART's `NEXRADLevel2File` reads for `decode_volume_from_bytes`:
+    the volume header ICAO, the ray count, and per scan the ray count, the
+    sums of the rays' collection times (ms) and azimuths (degrees), and for
+    each moment Py-ART names (REF, VEL, SW, ZDR, PHI, RHO, CFP) the rays
+    that carry it, the distinct gate counts, first gate ranges, gate
+    spacings, word sizes, scales and offsets, the total gate count, and the
+    sum of the raw gate codes with the counts of codes 0 and 1. Message 31
+    files only. The sources include KVWX 2008-04-15, whose message 31 radar
+    identifiers are four spaces.
 """
 
 import argparse
@@ -985,18 +996,89 @@ def metadata_golden(source, pyart):
 def metadata_documents(sources):
     pyart = import_pyart()
     for source in sources:
-        doc = metadata_golden(source, pyart)
-        lines = ['{']
-        items = list(doc.items())
-        for index, (key, value) in enumerate(items):
-            comma = ',' if index + 1 < len(items) else ''
-            if key == 'scans':
-                inner = ',\n'.join(f'    {json.dumps(scan)}' for scan in value)
-                lines.append(f'  "scans": [\n{inner}\n  ]{comma}')
-            else:
-                lines.append(f'  {json.dumps(key)}: {json.dumps(value)}{comma}')
-        lines.append('}')
-        yield joined_source_name(source), '\n'.join(lines) + '\n'
+        yield joined_source_name(source), scans_document_lines(metadata_golden(source, pyart))
+
+
+def scans_document_lines(doc):
+    """One line per top-level member, and one per element of `scans`."""
+    lines = ['{']
+    items = list(doc.items())
+    for index, (key, value) in enumerate(items):
+        comma = ',' if index + 1 < len(items) else ''
+        if key == 'scans':
+            inner = ',\n'.join(f'    {json.dumps(scan)}' for scan in value)
+            lines.append(f'  "scans": [\n{inner}\n  ]{comma}')
+        else:
+            lines.append(f'  {json.dumps(key)}: {json.dumps(value)}{comma}')
+    lines.append('}')
+    return '\n'.join(lines) + '\n'
+
+
+# --- group: volume ------------------------------------------------------------
+
+VOLUME_SOURCES = [
+    'l2-kvwx-20080415-235337',      # four-space radar identifier in every message 31
+    'l2-kpah-20080415-235014',      # Build 10.0, the same evening, identifier "KPAH"
+    'l2-ktlx-20240315-000217',      # Build 22.0 benchmark volume: 16-bit ZDR/PHI, CFP
+    'l2chunk-kiwa-307-20260917-003629-001-s'
+    '+l2chunk-kiwa-307-20260917-003629-002-i'
+    '+l2chunk-kiwa-307-20260917-003629-003-i',
+]
+
+PYART_MOMENTS = ('REF', 'VEL', 'SW', 'ZDR', 'PHI', 'RHO', 'CFP')
+
+
+def volume_golden(source, pyart):
+    """The rays and moment data Py-ART's NEXRADLevel2File reads, per scan."""
+    import numpy as np
+
+    f = pyart_level2_file(source)
+    if f._msg_type != '31':
+        raise SystemExit(f'{source}: the volume group covers message 31 files')
+    scans = []
+    for index, messages in enumerate(f.scan_msgs):
+        rays = [f.radial_records[m] for m in messages]
+        scan = {
+            'elevation_number': index + 1,
+            'nrays': len(rays),
+            'collect_ms_sum': sum(int(ray['msg_header']['collect_ms']) for ray in rays),
+            'azimuth_sum': math.fsum(ray['msg_header']['azimuth_angle'] for ray in rays),
+            'moments': {},
+        }
+        for name in PYART_MOMENTS:
+            blocks = [ray[name] for ray in rays if name in ray]
+            if not blocks:
+                continue
+            codes = [np.asarray(block['data'][:block['ngates']], dtype=np.int64)
+                     for block in blocks]
+            scan['moments'][name] = {
+                'rays': len(blocks),
+                'ngates': sorted({int(block['ngates']) for block in blocks}),
+                'gates': sum(int(block['ngates']) for block in blocks),
+                'first_gate': sorted({int(block['first_gate']) for block in blocks}),
+                'gate_spacing': sorted({int(block['gate_spacing']) for block in blocks}),
+                'word_size': sorted({int(block['word_size']) for block in blocks}),
+                'scale': sorted({float(block['scale']) for block in blocks}),
+                'offset': sorted({float(block['offset']) for block in blocks}),
+                'code_sum': sum(int(c.sum()) for c in codes),
+                'code_0': sum(int((c == 0).sum()) for c in codes),
+                'code_1': sum(int((c == 1).sum()) for c in codes),
+            }
+        scans.append(scan)
+    return {
+        'source': source.split('+'),
+        'generator': 'tools/level2_golden.py volume',
+        'pyart': pyart.__version__,
+        'icao': f.volume_header['icao'].decode('latin-1'),
+        'nrays': len(f.radial_records),
+        'scans': scans,
+    }
+
+
+def volume_documents(sources):
+    pyart = import_pyart()
+    for source in sources:
+        yield joined_source_name(source), scans_document_lines(volume_golden(source, pyart))
 
 
 # --- dispatch -----------------------------------------------------------------
@@ -1008,6 +1090,7 @@ GROUPS = {
     'clutter': (clutter_documents, clutter_default_ids),
     'msg31': (msg31_documents, lambda: MSG31_SOURCES),
     'metadata': (metadata_documents, lambda: METADATA_SOURCES),
+    'volume': (volume_documents, lambda: VOLUME_SOURCES),
 }
 
 

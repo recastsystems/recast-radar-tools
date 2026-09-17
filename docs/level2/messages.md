@@ -30,7 +30,7 @@ The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crate
 | 15 | `clutter_filter_map.rs` | `ClutterFilterMap` (`ClutterFilterMap`) | MetPy, 20 files, every range zone (`messages_clutter.rs`) |
 | 18 | `adaptation.rs` | `RdaAdaptationData` (`Adaptation`) | MetPy, 20 ORDA volumes; hex (KIWA 2026) for 49 Build 24.0 offsets MetPy lacks. Legacy layout: not decoded |
 | 29 | none | `Unparsed` | framing only, against `tools/level2_message_scan.py` |
-| 31 | `msg31_blocks.rs` | `DigitalRadarDataGeneric` (`DigitalRadarDataGeneric`) | MetPy, 13 volumes and the KIWA chunks (`messages_msg31.rs`); hex (one radial); Py-ART VOL/ELV/RAD of each elevation's first ray, 22 sources (`volume_metadata.rs`). Compressed radials: **no real sample** |
+| 31 | `msg31_blocks.rs` | `DigitalRadarDataGeneric` (`DigitalRadarDataGeneric`) | MetPy, 13 volumes and the KIWA chunks (`messages_msg31.rs`); hex (one radial); Py-ART VOL/ELV/RAD of each elevation's first ray, 23 sources (`volume_metadata.rs`); Py-ART rays and moment codes, 4 sources (`volume_pyart.rs`). Compressed radials: **no real sample** |
 | 32 | `prf.rs` | `RdaPrfData` (`Prf`) | hex, 3 volumes; PRFs checked against MetPy's message 31 unambiguous ranges (no reader decodes message 32) |
 | 33 | `rda_log.rs` | `RdaLogData` (`RdaLog`) | **no real sample** |
 
@@ -40,7 +40,7 @@ message 31 constant blocks into `NexradMetadata`.
 ## Golden files
 
 `tools/level2_golden.py` writes every file under `testdata/level2/golden/` (groups `status`, `vcp`, `clutter`,
-`msg31`, `metadata`) with MetPy 1.7.1 and Py-ART (arm_pyart) 2.2.5, and refuses other versions. It reads each
+`msg31`, `metadata`, `volume`) with MetPy 1.7.1 and Py-ART (arm_pyart) 2.2.5, and refuses other versions. It reads each
 source from its committed path or the testdata download cache and checks the manifest sha256 first. The module
 docstring describes each group.
 
@@ -132,17 +132,17 @@ same bytes, with the same errors. `metadata` is a `NexradMetadata`:
   second time. On KTLX 2024-03-15 with one thread, that costs about 1 ms of a 310-370 ms decode
   (`NexradMetadata::from_metadata_record` alone: 0.8-0.9 ms).
 - Verified (`tests/volume_metadata.rs`):
-  - The Py-ART goldens cover 27 sources. 26 of them decode: 22 message 31 volumes and chunk sets from 2008 to
-    2026, and 4 message 1 files from 1991 to 2005. The 27th is KVWX 2008 (see the known limitation below). For
-    each of the 26, `volume` equals `decode_volume_from_bytes`, every metadata field equals the first message of
+  - The Py-ART goldens cover 27 sources, and all 27 decode: 23 message 31 volumes and chunk sets from 2008 to
+    2026 (including KVWX 2008, whose radials carry a blank radar identifier), and 4 message 1 files from 1991 to
+    2005. For each, `volume` equals `decode_volume_from_bytes`, every metadata field equals the first message of
     its type the walker decodes, and the rays per elevation number equal Py-ART's. For message 31 sources, these
     also equal Py-ART's raw values: the VCP number, the message 5 target angles, and, for each elevation, the
     first ray's time, azimuth and elevation and every VOL, ELV and RAD field.
   - For the 27 files with MetPy status goldens: message 2 layout, build and VCP; presence of messages 3 and 18;
     message 5 pattern and cut count; message 32 in the three volumes that have it and in no volume before
     Build 23; message 15 and 13 generation times and segment counts.
-  - For the 13 MetPy message 31 goldens that decode (KVWX 2008 does not): one entry per MetPy sweep, with the
-    same radial count, first radial time and elevation, and VOL, ELV and RAD values.
+  - For the 14 MetPy message 31 goldens: one entry per MetPy sweep, with the same radial count, first radial
+    time and elevation, and VOL, ELV and RAD values.
   - Mutations of the committed KIWA chunks (they run offline): a message 15 with 9 elevation segments is reported
     in `errors` and leaves `clutter_filter_map` `None`, while the volume and every other field are unchanged. A
     second message 2 inserted before the real one is the one kept. When elevation 3's first chunk is decoded
@@ -150,9 +150,8 @@ same bytes, with the same errors. `metadata` is a `NexradMetadata`:
     with the radials that opened each cut.
   - KLIX 2005 lists its zero-filled messages 5 and 15 and the message 13 orphan run in `errors`; KDMX 2008 lists
     its stale frames and decodes every metadata message.
-- Known limitation: `decode_volume_from_bytes` rejects KVWX 2008-04-15 ("empty message 31 id", because every
-  radial's identifier is four spaces), so `decode_volume_with_metadata` returns the same error. The test asserts
-  that error; `from_metadata_record` still reads the file's message 2.
+- KVWX 2008-04-15, whose 2500 radials all record four spaces as the radar identifier, was rejected with "empty
+  message 31 id" until wave 3. MetPy and Py-ART read it, and both decoders now do (see Message 31).
 
 ## Message 1: Digital Radar Data (Table III)
 
@@ -394,8 +393,15 @@ Verification (`tests/messages_msg31.rs`):
   LRTUP sizes exercise layout selection. Re-encoding the real blocks with zlib and BZIP2 exercises compression.
   Pointer, count, word-size and truncation errors are also covered.
 - **Py-ART.** `tests/volume_metadata.rs` compares every VOL, ELV and RAD field of each elevation's first radial,
-  as `decode_volume_with_metadata` stores it, with Py-ART 2.2.5's raw values on 22 sources. That includes the
+  as `decode_volume_with_metadata` stores it, with Py-ART 2.2.5's raw values on 23 sources. That includes the
   RAD radial flags, which MetPy skips. Py-ART reads a 44-byte VOL block, so the ZDR bias estimate is not compared.
+- **Py-ART rays and moments.** `tests/volume_pyart.rs` compares `decode_volume_from_bytes` with the `volume`
+  goldens (`tools/level2_golden.py volume`, Py-ART 2.2.5 `NEXRADLevel2File`) on KVWX 2008, KPAH 2008 (Build 10.0,
+  the same evening), the KTLX 2024-03-15 benchmark volume and the committed KIWA chunks: the site id is the volume
+  header ICAO; per elevation number, the ray count and the sums of the rays' collection times and azimuths; and
+  per moment, the rays that carry it, gate count, first gate, gate spacing, word size, scale, offset, and the sum
+  of the raw gate codes with the counts of codes 0 and 1 (grid rows shorter than the widest radial are padded
+  with code 0).
 
 Quirks found in the real corpus:
 
@@ -403,7 +409,11 @@ Quirks found in the real corpus:
   nonzero pointers first, then zero slots up to the fixed 68- or 72-byte header. For example, a Build 10
   reflectivity-only radial has 4 pointers and 5 zero slots.
 - Build 10 KDMX 2008: 2520 radials declare a radial length one byte shorter than the halfword-padded body.
-- KVWX 2008 has a blank (four-space) ICAO in every radial, no azimuth indexing, and no message 5.
+- KVWX 2008 has a blank (four-space) radar identifier in every radial, no azimuth indexing, and no message 5.
+  A blank identifier (spaces or NULs) is accepted; `DataHeaderBlock::radar_identifier` and
+  `Message31Header::radar_identifier` keep the bytes as recorded, `radar_identifier_str()` trims them to "", and
+  `radar_identifier_or(volume_header_icao)` falls back to the volume header ICAO ("KVWX" here) and then to "".
+  The volume's site id comes from the volume header, as in Py-ART and MetPy.
 
 **No real sample:** compressed radials (compression indicator 1 BZIP2, 2 zlib). The decoder inflates from the
 first block pointer, where the Data Header Block ends in every uncompressed radial. The inflated size is

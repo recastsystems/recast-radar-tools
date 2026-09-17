@@ -61,7 +61,7 @@ fn golden_script_reproduces_every_committed_golden() {
         .lines()
         .map(str::to_owned)
         .collect();
-    // The default sources of the five groups: 32 distinct manifest ids.
+    // The default sources of the six groups: 32 distinct manifest ids.
     assert!(ids.len() >= 32, "sources: {ids:?}");
     for id in &ids {
         recast_radar_testdata::path(id).unwrap_or_else(|error| panic!("{id}: {error}"));

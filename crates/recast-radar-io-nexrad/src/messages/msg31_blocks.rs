@@ -420,9 +420,18 @@ impl DataHeaderBlock {
             .max(self.pointer_table_len())
     }
 
-    /// Radar identifier with trailing spaces and NULs removed.
+    /// Radar identifier with trailing spaces and NULs removed ("" when the
+    /// identifier is blank).
     pub fn radar_identifier_str(&self) -> String {
         crate::ascii_trim(&self.radar_identifier)
+    }
+
+    /// The radar identifier, or `volume_header_icao` (trimmed) when the
+    /// identifier is blank, or "" when both are. The walker reads records
+    /// without the volume header, so the caller passes its ICAO (bytes 20-23
+    /// of the file).
+    pub fn radar_identifier_or(&self, volume_header_icao: &str) -> String {
+        crate::radar_identifier_or(&self.radar_identifier, volume_header_icao)
     }
 
     /// Collection time from the modified Julian date and milliseconds.

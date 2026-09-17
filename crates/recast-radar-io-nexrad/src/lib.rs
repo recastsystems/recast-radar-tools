@@ -841,6 +841,9 @@ pub struct MessageHeader {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message31Header {
+    /// Bytes 0-3: radar identifier as recorded. It can be blank (KVWX
+    /// 2008-04-15 records four spaces); see [`Self::radar_identifier_or`].
+    pub radar_identifier: [u8; 4],
     pub collect_ms: u32,
     pub collect_date: u16,
     pub azimuth_number: u16,
@@ -1969,18 +1972,34 @@ fn volume_needs_constant_block(volume: &RadarVolume) -> bool {
         || volume.vcp.is_none()
 }
 
+impl Message31Header {
+    /// The radar identifier: the message 31 identifier with spaces and NULs
+    /// trimmed, or, when that is blank, `volume_header_icao` trimmed (which
+    /// may be empty too).
+    pub fn radar_identifier_or(&self, volume_header_icao: &str) -> String {
+        radar_identifier_or(&self.radar_identifier, volume_header_icao)
+    }
+}
+
+/// A message 31 radar identifier, falling back to the volume header ICAO when
+/// the identifier is blank (spaces or NULs), and then to the empty string.
+pub(crate) fn radar_identifier_or(identifier: &[u8; 4], volume_header_icao: &str) -> String {
+    let identifier = ascii_trim(identifier);
+    if identifier.is_empty() {
+        volume_header_icao
+            .trim_matches(|c: char| c == '\0' || c.is_whitespace())
+            .to_owned()
+    } else {
+        identifier
+    }
+}
+
+/// Parse the Data Header Block of a message 31 body. A blank radar
+/// identifier (spaces or NULs) is accepted: real files have one (KVWX
+/// 2008-04-15), and MetPy and Py-ART read them.
 pub fn parse_message_31_header(bytes: &[u8], offset: usize) -> Result<Message31Header> {
     require_len(bytes, offset, MSG_31_HEADER_LEN, "message 31 header")?;
     let bytes = &bytes[offset..offset + MSG_31_HEADER_LEN];
-    if bytes[..4]
-        .iter()
-        .all(|byte| *byte == 0 || byte.is_ascii_whitespace())
-    {
-        return Err(NexradError::InvalidMessage {
-            offset,
-            reason: "empty message 31 id".to_owned(),
-        });
-    }
 
     let mut block_pointers = [0; 10];
     for (index, pointer) in block_pointers.iter_mut().enumerate() {
@@ -1988,6 +2007,7 @@ pub fn parse_message_31_header(bytes: &[u8], offset: usize) -> Result<Message31H
     }
 
     Ok(Message31Header {
+        radar_identifier: [bytes[0], bytes[1], bytes[2], bytes[3]],
         collect_ms: be_u32(bytes, 4),
         collect_date: be_u16(bytes, 8),
         azimuth_number: be_u16(bytes, 10),
@@ -2201,6 +2221,8 @@ mod tests {
         let body = synthetic_message_31_body(false);
         let header = parse_message_31_header(&body, 0).unwrap();
 
+        assert_eq!(&header.radar_identifier, b"AR2V");
+        assert_eq!(header.radar_identifier_or("KTLX"), "AR2V");
         assert_eq!(header.azimuth_number, 1);
         assert_eq!(header.azimuth_angle, 180.5);
         assert_eq!(header.elevation_angle, 0.5);
