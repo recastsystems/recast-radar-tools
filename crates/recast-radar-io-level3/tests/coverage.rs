@@ -562,6 +562,13 @@ fn render(outcomes: &[FileOutcome]) -> String {
          product 197.",
         "- **Data levels**: the encoding `levels::DataLevels::from_description` \
          selects for the product's files (— when the product has no data levels).",
+        "- **VAD Wind Profile** (product 48): `vwp::VadWindProfile` gives the \
+         tabular winds, the time-height display winds and the adaptable \
+         parameters. `tests/vwp.rs` checks them on every product 48 file (the 5 \
+         here and KBMX 1998 in `testdata/other`) against the page text, every \
+         display barb, Product Description Block halfwords 47-49, and the output \
+         of `recast_radar_io_nexrad::level3_vwp`, which it replaces \
+         (`tests/level3_vwp/`).",
     ] {
         writeln!(w, "{line}").unwrap();
     }

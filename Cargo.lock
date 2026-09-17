@@ -1023,6 +1023,7 @@ dependencies = [
  "bzip2",
  "chrono",
  "flate2",
+ "recast-radar-io-nexrad",
  "thiserror",
 ]
 

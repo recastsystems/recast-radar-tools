@@ -54,6 +54,16 @@ pub enum Level3Error {
         reason: String,
     },
 
+    /// A product-specific reader was given another product, e.g.
+    /// [`crate::vwp::VadWindProfile::from_product`] a product other than 48.
+    #[error("product code {found}, expected {expected}")]
+    UnexpectedProduct {
+        /// Product code the reader handles.
+        expected: i16,
+        /// Product code of the product given.
+        found: i16,
+    },
+
     /// A block divider or block ID does not have the value the ICD requires.
     #[error("{what} at byte {offset}: expected {expected}, found {found}")]
     BadBlockHeader {

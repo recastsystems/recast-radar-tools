@@ -24,7 +24,8 @@
 //!
 //! [`product_info`] looks up a product code's mnemonic, name and kind, and
 //! [`levels::DataLevels`] maps a product's data levels to physical values.
-//! [`messages`] holds the General Status Message and text message types.
+//! [`messages`] holds the General Status Message and text message types, and
+//! [`vwp::VadWindProfile`] reads the winds of a VAD Wind Profile (product 48).
 //!
 //! The format reference with ICD section numbers is `docs/level3/reference.md`.
 
@@ -37,6 +38,7 @@ pub mod messages;
 pub mod packets;
 mod products;
 mod read;
+pub mod vwp;
 
 pub use blocks::{
     GraphicAlphanumeric, GraphicLayout, GraphicPage, Symbology, TabularAlphanumeric, TabularLayout,
