@@ -1,7 +1,11 @@
 //! Pure-Rust decoder for NEXRAD and TDWR Level III products.
 //!
-//! [`decode_product`] takes the bytes of one Level III file and returns a
-//! [`Level3Product`]:
+//! [`decode_product`] takes the bytes of one Level III product file and returns
+//! a [`Level3Product`]. [`decode_message`] takes any Level III file and also
+//! decodes the messages that are not products: the General Status Message
+//! ([`GeneralStatusMessage`]) and plain-text messages ([`TextMessage`]).
+//!
+//! Decoding a product goes through these steps:
 //!
 //! 1. **Framing** ([`TextHeader`]): optional NOAAPort start-of-header and
 //!    sequence number, WMO abbreviated heading, AWIPS identifier, NOAAPort
@@ -20,24 +24,33 @@
 //!
 //! [`product_info`] looks up a product code's mnemonic, name and kind, and
 //! [`levels::DataLevels`] maps a product's data levels to physical values.
+//! [`messages`] holds the General Status Message and text message types, and
+//! [`vwp::VadWindProfile`] reads the winds of a VAD Wind Profile (product 48).
 //!
 //! The format reference with ICD section numbers is `docs/level3/reference.md`.
+
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod blocks;
 mod decompress;
 mod error;
 mod header;
 pub mod levels;
+pub mod messages;
 pub mod packets;
 mod products;
 mod read;
+pub mod vwp;
 
 pub use blocks::{
     GraphicAlphanumeric, GraphicLayout, GraphicPage, Symbology, TabularAlphanumeric, TabularLayout,
     TextPage,
 };
 pub use error::Level3Error;
-pub use header::{HEADER_HALFWORDS, MessageHeader, ProductDescription, TextHeader};
+pub use header::{
+    HEADER_HALFWORDS, MessageHeader, OperationalMode, ProductDescription, TextHeader,
+};
+pub use messages::{GeneralStatusMessage, TextMessage};
 pub use packets::{
     ContourPacket, DigitalPrecipPacket, GenericPacket, Packet, RadialPacket, RasterPacket,
     SymbolPacket, TextPacket, VectorPacket,
@@ -46,7 +59,7 @@ pub use products::{ProductInfo, ProductKind, product_info, products};
 
 use std::borrow::Cow;
 
-use header::{HEADER_BYTES, MESSAGE_HEADER_BYTES};
+use header::{HEADER_BYTES, MESSAGE_HEADER_BYTES, Unwrapped};
 
 /// A decoded Level III product.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,6 +79,18 @@ pub struct Level3Product {
     pub tabular: Option<TabularAlphanumeric>,
 }
 
+/// Any decoded Level III file.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum Level3Message {
+    /// A product: a message with a Product Description Block.
+    Product(Box<Level3Product>),
+    /// A General Status Message (message code 2).
+    GeneralStatus(Box<GeneralStatusMessage>),
+    /// A plain-text message (WMO heading `NOUS..`).
+    Text(TextMessage),
+}
+
 /// Decodes one Level III product file.
 ///
 /// # Errors
@@ -75,13 +100,67 @@ pub struct Level3Product {
 ///   Block, such as the General Status Message (code 2).
 /// - [`Level3Error::Truncated`], [`Level3Error::BadBlockHeader`],
 ///   [`Level3Error::PacketOverrun`] and decompression errors for malformed input.
+///
+/// [`decode_message`] decodes plain-text and General Status Messages instead of
+/// returning the first two errors.
 pub fn decode_product(bytes: &[u8]) -> Result<Level3Product, Level3Error> {
+    match header::unwrap_framing(bytes)? {
+        Unwrapped::Text { text_header, .. } => Err(Level3Error::TextOnly {
+            heading: text_header.wmo_heading,
+        }),
+        Unwrapped::Binary(framed) => {
+            let message_header = MessageHeader::parse(&framed.message)?;
+            decode_framed_product(framed, message_header)
+        }
+    }
+}
+
+/// Decodes one Level III file: a product, a General Status Message or a
+/// plain-text message.
+///
+/// A plain-text message is recognized by its WMO heading `NOUS..` (the rule
+/// MetPy uses). Its text is the rest of the file after the heading and AWIPS
+/// identifier lines; the last four bytes are dropped when their first three are
+/// `\r\r\n` (NOAAPort trailer) or `FF FF 0A`, as MetPy does.
+///
+/// # Errors
+///
+/// - [`Level3Error::NotAProduct`] for messages other than the General Status
+///   Message that have no Product Description Block.
+/// - [`Level3Error::InvalidMessage`] for a General Status Message block shorter
+///   than the ICD layout.
+/// - The errors of [`decode_product`] for malformed input.
+pub fn decode_message(bytes: &[u8]) -> Result<Level3Message, Level3Error> {
+    match header::unwrap_framing(bytes)? {
+        Unwrapped::Text { text_header, text } => {
+            Ok(Level3Message::Text(TextMessage::new(text_header, text)))
+        }
+        Unwrapped::Binary(framed) => {
+            let message_header = MessageHeader::parse(&framed.message)?;
+            if message_header.code == GENERAL_STATUS_MESSAGE_CODE {
+                GeneralStatusMessage::parse(framed.text_header, message_header, &framed.message)
+                    .map(|gsm| Level3Message::GeneralStatus(Box::new(gsm)))
+            } else {
+                decode_framed_product(framed, message_header)
+                    .map(|product| Level3Message::Product(Box::new(product)))
+            }
+        }
+    }
+}
+
+/// Message code of the General Status Message (ICD 2620001 Table II).
+const GENERAL_STATUS_MESSAGE_CODE: i16 = 2;
+
+/// Decodes a product from a message with its framing removed.
+fn decode_framed_product(
+    framed: header::Framed<'_>,
+    message_header: MessageHeader,
+) -> Result<Level3Product, Level3Error> {
     let header::Framed {
         text_header,
         message,
-    } = header::unwrap_framing(bytes)?;
-    let message_header = MessageHeader::parse(&message)?;
-    let has_description = message_header.code != 2
+    } = framed;
+    let has_description = message_header.code != GENERAL_STATUS_MESSAGE_CODE
         && read::be_i16(
             &message,
             MESSAGE_HEADER_BYTES,

@@ -1,0 +1,4 @@
+# A panic is how a test fails, so tests may unwrap and expect. Library code
+# denies both from each crate root (`#![cfg_attr(not(test), deny(...))]`).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

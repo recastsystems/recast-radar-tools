@@ -1,5 +1,7 @@
 //! Radar gate filters, polar smoothing and display interpolation.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
 mod gate_filter;
 mod interpolate;
 mod smooth;

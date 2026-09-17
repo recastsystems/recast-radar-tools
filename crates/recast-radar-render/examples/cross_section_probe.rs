@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Verify the vertical cross-section on a real scan: locate the strongest
 // composite-reflectivity cell, slice a W->E section through it, and render it
 // (REF palette) to a PNG so the convective vertical structure is visible.

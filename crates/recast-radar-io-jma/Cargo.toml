@@ -2,12 +2,20 @@
 name = "recast-radar-io-jma"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Pure-Rust decoder for Japan Meteorological Agency polar-coordinate radar GRIB2 tar archives"
+readme.workspace = true
+keywords = ["jma", "grib2", "radar", "weather", "japan"]
+categories = ["science::geo", "parser-implementations", "encoding"]
 
 [dependencies]
 chrono.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 thiserror.workspace = true
+
+[dev-dependencies]
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]
 workspace = true

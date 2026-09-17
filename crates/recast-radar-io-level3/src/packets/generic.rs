@@ -19,15 +19,19 @@
 //! more entries, which no corpus file has.
 //!
 //! Radial (type 1, Figures E-3/E-4) and text (type 4, Figure E-8) components
-//! are decoded. Any other component type ends decoding: it and everything after
-//! it are kept as [`GenericComponent::Undecoded`], since XDR data cannot be
-//! skipped without knowing its layout. Packet 29 (External Data Description,
+//! are decoded; [`GenericRadialComponent::values`] and
+//! [`GenericRadial::values`] map radial bin values to physical values with the
+//! product's [`DataLevels`] ([`DataLevels::for_packet`]). Any other component
+//! type ends decoding: it and everything after it are kept as
+//! [`GenericComponent::Undecoded`], since XDR data cannot be skipped without
+//! knowing its layout. Packet 29 (External Data Description,
 //! Figure E-1b) has no real sample and is left as [`Packet::Unknown`].
 
 use chrono::{DateTime, Utc};
 
 use super::Packet;
 use crate::Level3Error;
+use crate::levels::{DataLevels, Level};
 
 /// Generic data packet (28).
 #[derive(Debug, Clone, PartialEq)]
@@ -165,6 +169,34 @@ pub struct GenericRadialComponent {
     pub radials: Vec<GenericRadial>,
 }
 
+impl GenericRadialComponent {
+    /// The most bins any radial holds ([`GenericRadial::bins`]): the column
+    /// count of [`values`](Self::values).
+    pub fn num_bins(&self) -> usize {
+        self.radials
+            .iter()
+            .map(|radial| radial.bins().len())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Physical values of all radials, radials x [`num_bins`](Self::num_bins)
+    /// row-major in file order, NaN where a bin value has no physical value
+    /// (see [`DataLevels::values`]) and after the last bin of a shorter radial.
+    /// `levels` is the product's mapping from [`DataLevels::for_packet`].
+    pub fn values(&self, levels: &DataLevels) -> Vec<f32> {
+        let columns = self.num_bins();
+        // -1 is outside the level range, so padding maps to NaN.
+        let mut data = Vec::with_capacity(self.radials.len().saturating_mul(columns));
+        for radial in &self.radials {
+            let bins = radial.bins();
+            data.extend_from_slice(bins);
+            data.resize(data.len() + (columns - bins.len()), -1);
+        }
+        levels.values(&data)
+    }
+}
+
 /// Radial information (Figure E-4) with its bin values (Figure E-11).
 #[derive(Debug, Clone, PartialEq)]
 pub struct GenericRadial {
@@ -180,8 +212,30 @@ pub struct GenericRadial {
     pub attributes: String,
     /// Bin values as stored: an XDR integer array. Data levels map to
     /// physical values through the product's
-    /// [`DataLevels`](crate::levels::DataLevels).
+    /// [`DataLevels`]; see [`values`](Self::values).
     pub values: Vec<i32>,
+}
+
+impl GenericRadial {
+    /// The stored values that are bins of this radial: the first
+    /// [`num_bins`](Self::num_bins) of them (all when fewer are stored, none
+    /// when `num_bins` is negative).
+    pub fn bins(&self) -> &[i32] {
+        let n = usize::try_from(self.num_bins).unwrap_or(0);
+        &self.values[..n.min(self.values.len())]
+    }
+
+    /// Physical values of [`bins`](Self::bins), NaN where a value has no
+    /// physical value; see [`DataLevels::values`].
+    pub fn values(&self, levels: &DataLevels) -> Vec<f32> {
+        levels.values(self.bins())
+    }
+
+    /// What bin `bin` means, or `None` past the last bin.
+    pub fn level_at(&self, bin: usize, levels: &DataLevels) -> Option<Level> {
+        let value = *self.bins().get(bin)?;
+        Some(u16::try_from(value).map_or(Level::Undefined, |n| levels.level(n)))
+    }
 }
 
 /// Decodes one generic data packet (28, 29). `bytes` is the complete packet, starting

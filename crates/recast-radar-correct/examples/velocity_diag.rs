@@ -1,3 +1,6 @@
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Quantitative + visual diagnostic for velocity dealias spokes.
 //
 // For each velocity cut it dealiases with the current production algorithm,

@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# Toolchains: rustfmt and clippy run on Rust 1.94.0, the workspace
+# `rust-version` (MSRV). Each Rust release adds clippy lints, so a pinned
+# toolchain changes their results only in a commit that moves the pin, and
+# clippy's build of every target with --all-features doubles as the MSRV
+# check. The other jobs run on the latest stable Rust. When the MSRV changes,
+# move both pins with it (crates/recast-radar-tools/tests/readme.rs fails
+# until Cargo.toml, the README and these pins agree).
+
+jobs:
+  fmt:
+    name: rustfmt (Rust 1.94.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy (Rust 1.94.0, MSRV)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Not `-D warnings` until stream D.3 lands (plan G.2). On Rust 1.94.0 the
+      # only warnings are `clippy::unwrap_used` and `clippy::expect_used` from
+      # the workspace lints (newer releases add others, for example 1.98's
+      # `clippy::chunks_exact_to_as_chunks`, so moving the pin means clearing
+      # those first). At D.3, tests and examples still inherit the workspace
+      # `warn`, so unless D.3 also clears those, append
+      # `-- -D warnings -A clippy::unwrap_used -A clippy::expect_used`: the
+      # crate-root `deny` D.3 adds still overrides the `-A` for library code.
+      - run: cargo clippy --workspace --all-targets --all-features --locked
+
+  test:
+    name: test (stable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Download cache for real test files that are not committed
+      # (read by recast-radar-testdata).
+      RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Keyed on the testdata manifests: a manifest change starts from an empty
+      # cache, so a cached file never predates its manifest entry (a cached file
+      # whose sha256 no longer matches is a test error, not a re-download).
+      # Within one manifest version the cache grows with the tests: a run that
+      # downloads new files saves a new entry, and later runs restore the newest.
+      # Skipped while the workspace has no testdata manifests.
+      - name: Restore testdata cache
+        id: testdata-cache
+        if: hashFiles('testdata/**/manifest.toml') != ''
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.RECAST_RADAR_TESTDATA }}
+          key: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-
+      - name: List cached testdata
+        if: steps.testdata-cache.outcome == 'success'
+        run: bash tools/ci/testdata-cache-list.sh > "$RUNNER_TEMP/testdata-before.txt"
+      - run: cargo test --workspace --locked --no-fail-fast
+      - name: Check for new testdata downloads
+        id: testdata-new
+        if: ${{ !cancelled() && steps.testdata-cache.outcome == 'success' }}
+        run: |
+          bash tools/ci/testdata-cache-list.sh > "$RUNNER_TEMP/testdata-after.txt"
+          if cmp -s "$RUNNER_TEMP/testdata-before.txt" "$RUNNER_TEMP/testdata-after.txt"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save testdata cache
+        if: ${{ !cancelled() && steps.testdata-new.outputs.changed == 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.RECAST_RADAR_TESTDATA }}
+          key: ${{ steps.testdata-cache.outputs.cache-primary-key }}
+
+  features:
+    name: facade features, pure Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      # `--no-dev-deps` removes dev-dependencies from the manifests while
+      # cargo-hack runs, so cargo prunes Cargo.lock and `--locked` would fail.
+      # Check that the lock file is current first instead.
+      - run: cargo fetch --locked
+      # Each facade feature alone, plus no features, the defaults and all
+      # features (cargo-hack adds those runs).
+      - run: cargo hack check -p recast-radar-tools --each-feature --no-dev-deps
+      # No C or C++ build without `net`, for any target; see the script header.
+      - run: bash tools/ci/pure-rust-check.sh
+
+  wasm:
+    name: wasm32
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      # Every library crate except networking, plus the facade without `net`;
+      # see the script header.
+      - run: bash tools/ci/wasm-check.sh

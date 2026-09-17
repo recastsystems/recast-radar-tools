@@ -199,6 +199,47 @@ impl ProductDescription {
             .and_then(|i| self.halfwords.get(i))
             .copied()
     }
+
+    /// [`operational_mode`](Self::operational_mode) as an [`OperationalMode`].
+    pub fn mode(&self) -> OperationalMode {
+        OperationalMode::from_code(self.operational_mode)
+    }
+}
+
+/// Operational (weather) mode: Product Description Block halfword 17 and
+/// General Status Message halfword 12 (ICD 2620001 Figures 3-6 and 3-17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OperationalMode {
+    /// 0: maintenance mode.
+    Maintenance,
+    /// 1: clear air mode.
+    ClearAir,
+    /// 2: precipitation/severe weather mode.
+    Precipitation,
+    /// Any other value, which the ICD does not define.
+    Other(u16),
+}
+
+impl OperationalMode {
+    /// The mode for an ICD code.
+    pub fn from_code(code: u16) -> Self {
+        match code {
+            0 => Self::Maintenance,
+            1 => Self::ClearAir,
+            2 => Self::Precipitation,
+            other => Self::Other(other),
+        }
+    }
+
+    /// The ICD code of the mode.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::Maintenance => 0,
+            Self::ClearAir => 1,
+            Self::Precipitation => 2,
+            Self::Other(code) => code,
+        }
+    }
 }
 
 /// `1970-01-01 + (date - 1) days + seconds` (ICD 2620001 Figure 3-3 note).
@@ -218,6 +259,19 @@ pub(crate) struct Framed<'a> {
     pub(crate) message: Cow<'a, [u8]>,
 }
 
+/// A file with its transmission framing removed.
+pub(crate) enum Unwrapped<'a> {
+    /// A binary message.
+    Binary(Framed<'a>),
+    /// A plain-text message (WMO heading `NOUS..`).
+    Text {
+        text_header: TextHeader,
+        /// The bytes after the heading and AWIPS identifier lines, without the
+        /// transmission trailer.
+        text: &'a [u8],
+    },
+}
+
 /// Removes NOAAPort, WMO/AWIPS and zlib framing (`docs/level3/reference.md` section 3):
 ///
 /// 1. optional NOAAPort start-of-header line and sequence number;
@@ -227,9 +281,11 @@ pub(crate) struct Framed<'a> {
 ///    control block (first byte `0x40`, second byte its length in halfwords)
 ///    and repeats the WMO/AWIPS lines.
 ///
-/// A `NOUS` heading marks a plain-text message and yields
-/// [`Level3Error::TextOnly`] (the same rule MetPy uses).
-pub(crate) fn unwrap_framing(bytes: &[u8]) -> Result<Framed<'_>, Level3Error> {
+/// A `NOUS` heading marks a plain-text message (the same rule MetPy uses) and
+/// yields [`Unwrapped::Text`]. Its last four bytes are dropped when the first
+/// three of them are `\r\r\n` (the NOAAPort trailer) or `FF FF 0A`, again as
+/// MetPy does; observed: the Free Text Message ends `FF FF 0A 00`.
+pub(crate) fn unwrap_framing(bytes: &[u8]) -> Result<Unwrapped<'_>, Level3Error> {
     let mut pos = 0;
     let mut noaaport_sequence = None;
     if bytes.starts_with(SOH_LINE) {
@@ -240,13 +296,23 @@ pub(crate) fn unwrap_framing(bytes: &[u8]) -> Result<Framed<'_>, Level3Error> {
         }
     }
     let outer = parse_heading(bytes, pos);
+    if let Some(heading) = outer
+        .as_ref()
+        .filter(|h| h.data_designator.starts_with("NOUS"))
+    {
+        let mut text = bytes.get(heading.end..).unwrap_or_default();
+        if let [.., a, b, c, _] = text
+            && matches!([*a, *b, *c], [b'\r', b'\r', b'\n'] | [0xFF, 0xFF, b'\n'])
+        {
+            text = &text[..text.len() - 4];
+        }
+        return Ok(Unwrapped::Text {
+            text_header: heading.to_text_header(noaaport_sequence, 0),
+            text,
+        });
+    }
     if let Some(heading) = &outer {
         pos = heading.end;
-        if heading.data_designator.starts_with("NOUS") {
-            return Err(Level3Error::TextOnly {
-                heading: heading.wmo_heading.clone(),
-            });
-        }
     }
     let mut body = bytes.get(pos..).unwrap_or_default();
     if let Some(stripped) = body.strip_suffix(ETX_TRAILER) {
@@ -275,20 +341,13 @@ pub(crate) fn unwrap_framing(bytes: &[u8]) -> Result<Framed<'_>, Level3Error> {
         Cow::Borrowed(body)
     };
 
-    let text_header = outer.or(inner).map(|h| TextHeader {
-        noaaport_sequence,
-        wmo_heading: h.wmo_heading,
-        data_designator: h.data_designator,
-        originator: h.originator,
-        day_time: h.day_time,
-        indicator: h.indicator,
-        awips_id: h.awips_id,
-        zlib_frames,
-    });
-    Ok(Framed {
+    let text_header = outer
+        .or(inner)
+        .map(|h| h.to_text_header(noaaport_sequence, zlib_frames));
+    Ok(Unwrapped::Binary(Framed {
         text_header,
         message,
-    })
+    }))
 }
 
 struct Heading {
@@ -300,6 +359,21 @@ struct Heading {
     awips_id: Option<String>,
     /// Offset just past the heading (and AWIPS line when present).
     end: usize,
+}
+
+impl Heading {
+    fn to_text_header(&self, noaaport_sequence: Option<String>, zlib_frames: u32) -> TextHeader {
+        TextHeader {
+            noaaport_sequence,
+            wmo_heading: self.wmo_heading.clone(),
+            data_designator: self.data_designator.clone(),
+            originator: self.originator.clone(),
+            day_time: self.day_time.clone(),
+            indicator: self.indicator.clone(),
+            awips_id: self.awips_id.clone(),
+            zlib_frames,
+        }
+    }
 }
 
 fn all(bytes: &[u8], class: fn(&u8) -> bool) -> bool {

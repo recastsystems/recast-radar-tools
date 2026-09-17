@@ -2,7 +2,12 @@
 name = "recast-radar-io-dorade"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Pure-Rust DORADE sweepfile decoder and mobile-radar (DOW, COW, RaXPol) archive ingest"
+readme.workspace = true
+keywords = ["dorade", "radar", "weather", "sweepfile", "mobile-radar"]
+categories = ["science::geo", "parser-implementations", "encoding"]
 
 [dependencies]
 chrono.workspace = true
@@ -15,6 +20,7 @@ zip.workspace = true
 # Level II decoder for `.msg31` members in the examples and the ignored
 # mobile-radar corpus test; the library takes it as a parameter instead.
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 [lints]
 workspace = true

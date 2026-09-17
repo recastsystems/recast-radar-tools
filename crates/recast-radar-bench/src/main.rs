@@ -6,6 +6,9 @@
 //! checksum. See README.md for the three purposes this serves (LTO A/B
 //! referee, x86-64-v3 validation, PGO training workload).
 
+// Developer tool, not library code: a panic on bad input or I/O is its error report.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;

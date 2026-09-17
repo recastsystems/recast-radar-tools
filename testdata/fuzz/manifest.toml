@@ -1,0 +1,37 @@
+# Fuzz regression inputs (stream D, Task D.4).
+#
+# Schema: see testdata/manifest.toml. Each entry is an input that crashed, hung
+# or exhausted memory in a cargo-fuzz target (fuzz/), committed byte for byte
+# as `cargo fuzz tmin` left it under files/fuzz/<target>/. Every input is a
+# libFuzzer mutation of a real seed file, named in `derived_from`; `derivation`
+# records the artifact it was minimized from and what was wrong.
+#
+# Conventions:
+# - Tags: "fuzz-regression" on every entry, "fuzz-target:<target>" for the
+#   fuzz/src/lib.rs harness that found it, "fuzz-finding:<crash|oom|timeout>".
+# - These files are malformed on purpose. Decoders must return an error (or
+#   decode) without panicking, aborting or allocating out of proportion; each
+#   one is fed to its decoder by a regression test in the affected crate
+#   (tests/fuzz_regressions.rs) and replayed by `fuzz-tools regressions`.
+
+[[file]]
+id = "fuzz-odim-hdf5-local-heap-name-offset-overflow"
+format = "odim-h5"
+sha256 = "22ece25bb43cac8c42caab00616f64360e5f75daf93924f75ced6ae702d5b0fa"
+size = 1640
+committed = "files/fuzz/odim/crash-hdf5-local-heap-name-offset-overflow"
+derived_from = "odim-imgw-ram-20260711-0015-kdp-max"
+derivation = "libFuzzer mutation of the seed (cargo-fuzz 0.13.2, target odim, fuzz at 1c37e21 over decoders at 43a145c, 10-minute run in nexbench): artifact crash-0a723bc6183980452e63127ec4608588d5d597ff (33845 bytes, 89% of its bytes equal to the 33775-byte seed at the same offsets), minimized with libFuzzer `-minimize_crash=1 -max_total_time=300` (what `cargo fuzz tmin` runs) to 1640 bytes. The symbol-table walk read a local heap whose data-segment address plus a link name offset overflowed u64 in hdf5lite heap_string ('attempt to add with overflow' under overflow checks, silent wrap in release)"
+tags = ["fuzz-regression", "fuzz-target:odim", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "hdf5:superblock-v0", "hdf5:local-heap"]
+description = "Minimized odim fuzz crash: HDF5 v0 superblock and root symbol table whose local heap data address plus name offset overflows u64"
+
+[[file]]
+id = "fuzz-cfradial-overlapping-sweep-ray-ranges"
+format = "cfradial1"
+sha256 = "65fe8fec4da87cd57c4d85f798b33a3a58b7518559681a41e3fd9752bb66963c"
+size = 868481
+committed = "files/fuzz/cfradial/oom-overlapping-sweep-ray-ranges"
+derived_from = "cfrad1-irene-sr2-20110827-120420-sur-sweeps01"
+derivation = "libFuzzer mutation of the seed (cargo-fuzz 0.13.2, target cfradial, fuzz at 1c37e21 over decoders at 43a145c, 10-minute run in nexbench): artifact oom-d71f9b2c108e1cfd96aa8a28a98e38162646b7c0 (930870 bytes, 99.5% of its 12-byte windows found in the 1664412-byte seed), minimized with libFuzzer `-minimize_crash=1 -rss_limit_mb=512 -max_total_time=400` (what `cargo fuzz tmin` runs) to 868481 bytes (byte deletion breaks the netCDF data offsets, so it barely shrinks). The header's sweep dimension grew from 2 to 6146, so fixed_angle, sweep_start_ray_index and sweep_end_ray_index read neighbouring header bytes as garbage ray indices; start/end were cast with `as usize` and clamped to the 719 rays, many sweeps covered the same rays, and each copied the full 719 x 1107 DBZ field (peak RSS 2.44 GB) before the VEL read ran past the end of the file"
+tags = ["fuzz-regression", "fuzz-target:cfradial", "fuzz-finding:oom", "derived", "derivation:fuzz-mutation", "container:netcdf3-classic"]
+description = "Minimized cfradial fuzz OOM: SMART-R2 Irene header claiming 6146 sweeps whose garbage ray index ranges overlap"
