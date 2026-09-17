@@ -1,0 +1,398 @@
+{
+ "id": "l3-tlx-nmd-20130520-2016",
+ "sha256": "64b89ea2f67b53c9e60971cf774eaaf415dc9475b03d0de82e03151f08484e33",
+ "size": 2764,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS34 KOUN 202016",
+  "awips_id": "NMDTLX",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 2734
+ },
+ "message_header": {
+  "code": 141,
+  "date": 15846,
+  "time": 73259,
+  "length": 2734,
+  "source_id": 1,
+  "destination_id": 0,
+  "num_blocks": 5
+ },
+ "halfwords": [
+  141,
+  15846,
+  1,
+  7723,
+  0,
+  2734,
+  1,
+  0,
+  5,
+  65535,
+  0,
+  35333,
+  65534,
+  33794,
+  1277,
+  141,
+  2,
+  12,
+  1429,
+  28,
+  15846,
+  1,
+  7467,
+  15846,
+  1,
+  7723,
+  0,
+  1,
+  0,
+  5,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  256,
+  0,
+  60,
+  0,
+  514,
+  0,
+  808
+ ],
+ "product_code": 141,
+ "compression": {
+  "hw51": 0,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 908,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 892,
+     "packets": [
+      20,
+      8,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      20,
+      8,
+      23,
+      24,
+      20,
+      8,
+      23,
+      24
+     ]
+    }
+   ],
+   "nested": [
+    {
+     "layer": 0,
+     "index": 4,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 5,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 8,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 9,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 14,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 15,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 18,
+     "code": 23,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    },
+    {
+     "layer": 0,
+     "index": 19,
+     "code": 24,
+     "packets": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      6
+     ]
+    }
+   ]
+  },
+  "graphic": {
+   "length": 588,
+   "num_pages": 1,
+   "pages": [
+    {
+     "page": 1,
+     "length": 574,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": {
+   "length": 1118,
+   "message_code": 141,
+   "product_code": 141,
+   "num_pages": 1,
+   "lines_per_page": [
+    12
+   ],
+   "text_sha256": "7220b980dc02acbd7dce4cce9e93b9735efcc8695d85fa3758dee84f3a82ec5a"
+  },
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  2,
+  6,
+  8,
+  10,
+  20,
+  23,
+  24
+ ],
+ "data": [],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Mesocyclone Detection",
+  "max_range": 230.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 141,
+   "date": 15846,
+   "time": 73259,
+   "msg_len": 2734,
+   "src_id": 1,
+   "dest_id": 0,
+   "num_blks": 5
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 35333,
+   "lon": -97278,
+   "height": 1277,
+   "prod_code": 141,
+   "op_mode": 2,
+   "vcp": 12,
+   "seq_num": 1429,
+   "vol_num": 28,
+   "vol_date": 15846,
+   "vol_start_time": 73003,
+   "prod_gen_date": 15846,
+   "prod_gen_time": 73259,
+   "dep1": 0,
+   "dep2": 1,
+   "el_num": 0,
+   "dep3": 5,
+   "thr1": 0,
+   "thr2": 0,
+   "thr3": 0,
+   "thr4": 0,
+   "thr5": 0,
+   "thr6": 0,
+   "thr7": 0,
+   "thr8": 0,
+   "thr9": 0,
+   "thr10": 0,
+   "thr11": 0,
+   "thr12": 0,
+   "thr13": 0,
+   "thr14": 0,
+   "thr15": 0,
+   "thr16": 0,
+   "dep4": 0,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": 0,
+   "dep9": 0,
+   "dep10": 0,
+   "version": 1,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 514,
+   "tab_off": 808
+  },
+  "thresholds": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "dep_vals": [
+   0,
+   1,
+   5,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "metadata": {
+   "msg_time": "2013-05-20T20:20:59.000000Z",
+   "vol_time": "2013-05-20T20:16:43.000000Z",
+   "prod_time": "2013-05-20T20:20:59.000000Z",
+   "min_ref_thresh": 0,
+   "overlap_display_filter": 1,
+   "min_strength_rank": 5
+  },
+  "sym_layer_packet_counts": [
+   20
+  ],
+  "graph_page_packet_counts": [
+   7
+  ],
+  "tab_pages": 1,
+  "crosscheck": true
+ }
+}

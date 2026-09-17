@@ -8,6 +8,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
+# Level II trim tool (src/trim.rs): pure-Rust bzip2 (libbz2-rs-sys) and gzip (zlib-rs).
+bzip2 = "0.6"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
 toml = "1.1"
