@@ -915,6 +915,7 @@ dependencies = [
  "quick-xml",
  "recast-radar-io",
  "recast-radar-io-jma",
+ "recast-radar-io-nexrad",
  "recast-radar-testdata",
  "reqwest",
  "serde",

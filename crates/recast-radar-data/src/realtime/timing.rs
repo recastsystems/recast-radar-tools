@@ -48,12 +48,13 @@
 //!   own Start chunk (elevation, azimuth rate and super-resolution flag per
 //!   cut). That table already includes SAILS, MESO-SAILS, MRLE and base-tilt
 //!   insertions and the azimuth rates the radar actually runs. This crate
-//!   does not decode Level II messages, and at this commit no Rust code in
-//!   the workspace decodes the Message 5 cut table either
-//!   (`recast-radar-io-nexrad` reads only the VCP number from Message 5; the
-//!   full decoder is stream A's work). The tests take their tables from
-//!   `tools/capture_chunk_listings.py`, a Python decoder checked against
-//!   MetPy's `Level2File`.
+//!   does not decode Level II messages: decode the Start chunk with
+//!   `recast_radar_io_nexrad::NexradMetadata::from_metadata_record` and map
+//!   each `VcpCut` to [`ScanCut::new`] (elevation, azimuth rate, and
+//!   [`ScanCut::radials_for_azimuth_spacing`] of its half-degree azimuth
+//!   bit). `tests/timing.rs` checks that this gives the same plans as the
+//!   capture tables of `tools/capture_chunk_listings.py`, a Python decoder
+//!   checked against MetPy's `Level2File`, which the other timing tests use.
 //! - [`ScanPlan::from_build24`], an approximate plan from the Build 24
 //!   Appendix C table in [`super::vcp_catalog`] when only the VCP number is
 //!   known. It lacks inserted cuts and staggered-PRT batch cuts: its cut

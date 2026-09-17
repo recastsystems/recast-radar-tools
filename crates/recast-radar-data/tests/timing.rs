@@ -1823,3 +1823,119 @@ fn status_only_chunks_do_not_shift_plan_chunk_numbers() -> TestResult {
         || format!("{fit:?}"),
     )
 }
+
+/// A [`ScanPlan`] from the Message 5 that `recast-radar-io-nexrad` decodes
+/// out of a real-time Start chunk: elevation, azimuth rate and the
+/// half-degree azimuth bit of each cut. This crate does not depend on the
+/// decoder, so callers write this mapping themselves.
+fn plan_from_start_chunk(bytes: &[u8]) -> TestResult<ScanPlan> {
+    let metadata = recast_radar_io_nexrad::NexradMetadata::from_metadata_record(bytes);
+    let vcp = metadata
+        .vcp
+        .ok_or_else(|| fail(format!("no Message 5: {:?}", metadata.errors)))?;
+    Ok(ScanPlan::new(
+        Some(vcp.pattern_number),
+        vcp.cuts
+            .iter()
+            .map(|cut| {
+                ScanCut::new(
+                    cut.elevation_angle_deg,
+                    cut.azimuth_rate_deg_per_s,
+                    ScanCut::radials_for_azimuth_spacing(
+                        cut.super_resolution.half_degree_azimuth(),
+                    ),
+                )
+            })
+            .collect(),
+    ))
+}
+
+/// The Rust Message 5 decoder (`recast_radar_io_nexrad::NexradMetadata`) on
+/// real Start chunks gives the plans the tests take from the Python capture
+/// tables: KIWA 307 (WSR-88D VCP 215 with SAILS; testdata
+/// `l2chunk-kiwa-307-20260917-003629-001-s`) and TLAS 998 and 999 (TDWR VCP
+/// 90; downloaded by the `tlas-chunk-too-large` cassette). Same VCP, cut
+/// count and radial counts; elevations and azimuth rates within 0.001 (the
+/// tables print four decimals). With the decoded plan, every KIWA 307 radial
+/// chunk maps to its decoded elevation.
+#[test]
+fn rust_message5_decoder_gives_the_captured_plans() -> TestResult {
+    let listings_chunks =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/listings/chunks");
+    let kiwa_start = match recast_radar_testdata::path("l2chunk-kiwa-307-20260917-003629-001-s") {
+        Ok(path) => path,
+        Err(err) if err.is_offline() => {
+            eprintln!("skipping: {err}");
+            return Ok(());
+        }
+        Err(err) => return Err(fail(err.to_string())),
+    };
+    let fitted = captures(Set::Fitted)?;
+    let holdout = captures(Set::Holdout)?;
+    let kiwa_307 = find_site(&fitted, "KIWA")?
+        .iter()
+        .find(|capture| capture.volume.volume_id == 307)
+        .ok_or_else(|| fail("KIWA 307"))?;
+    let tlas = find_site(&holdout, "TLAS")?;
+    let cases = [
+        (fs::read(&kiwa_start)?, kiwa_307),
+        (
+            fs::read(listings_chunks.join("TLAS-998-20260917-012843-001-S"))?,
+            &tlas[0],
+        ),
+        (
+            fs::read(listings_chunks.join("TLAS-999-20260917-013443-001-S"))?,
+            &tlas[1],
+        ),
+    ];
+    for (bytes, capture) in &cases {
+        let decoded = plan_from_start_chunk(bytes)?;
+        let captured = capture.plan();
+        check(
+            decoded.vcp == captured.vcp && decoded.cuts.len() == captured.cuts.len(),
+            || {
+                format!(
+                    "{}: VCP {:?} with {} cuts, captured {:?} with {}",
+                    capture.listing,
+                    decoded.vcp,
+                    decoded.cuts.len(),
+                    captured.vcp,
+                    captured.cuts.len()
+                )
+            },
+        )?;
+        for (index, (rust, python)) in decoded.cuts.iter().zip(&captured.cuts).enumerate() {
+            check(
+                (rust.signed_elevation_deg() - python.signed_elevation_deg()).abs() <= 1e-3
+                    && (rust.azimuth_rate_deg_per_second - python.azimuth_rate_deg_per_second)
+                        .abs()
+                        <= 1e-3
+                    && rust.radials == python.radials,
+                || {
+                    format!(
+                        "{} cut {}: {rust:?} vs {python:?}",
+                        capture.listing,
+                        index + 1
+                    )
+                },
+            )?;
+        }
+    }
+    let decoded = plan_from_start_chunk(&cases[0].0)?;
+    for row in &kiwa_307.chunks {
+        let position = kiwa_307
+            .volume
+            .plan_chunk_number(row.chunk_id)
+            .and_then(|number| decoded.chunk_position(number));
+        check(
+            position.map(|position| position.cut_index + 1) == row.elevation_number,
+            || {
+                format!(
+                    "KIWA 307 chunk {}: {position:?} vs {:?}",
+                    row.chunk_id, row.elevation_number
+                )
+            },
+        )?;
+    }
+    Ok(())
+}

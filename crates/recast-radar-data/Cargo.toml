@@ -39,9 +39,12 @@ thiserror.workspace = true
 # Decode checks in unit tests and examples/intl_probe.rs (live download +
 # decode smoke); the library itself does not use the format router.
 recast-radar-io = { path = "../recast-radar-io" }
-# JMA station headers for the caller-provided JmaProvider station table
-# tests; the library itself never parses GRIB2.
+# JMA station headers for the caller-provided JmaCatalogProvider station
+# table tests; the library itself never parses GRIB2.
 recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+# Message 5 from real Start chunks for the timing model tests
+# (tests/timing.rs); the library itself does not decode Level II messages.
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 # Drives AsyncReqwestTransport in tests/iterator.rs (already in the lockfile
