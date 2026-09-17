@@ -11,3 +11,6 @@ flate2.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 rayon.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

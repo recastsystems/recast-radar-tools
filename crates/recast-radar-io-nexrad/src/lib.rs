@@ -12,13 +12,12 @@
 
 pub mod level3_vwp;
 
-use std::cell::UnsafeCell;
 use std::collections::btree_map::Entry;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 
 use bzip2::bufread::BzDecoder;
 use chrono::{DateTime, TimeZone, Utc};
@@ -385,20 +384,11 @@ fn read_exact_into_buffer<R: Read>(
     what: &'static str,
     offset: usize,
 ) -> Result<()> {
-    buffer.clear();
-    if buffer.capacity() < len {
-        buffer.reserve_exact(len);
-    }
-    let spare = buffer.spare_capacity_mut();
-    let target = &mut spare[..len];
-    // SAFETY: u8 has no invalid bit patterns, and the slice is within spare capacity.
-    let target = unsafe { std::slice::from_raw_parts_mut(target.as_mut_ptr().cast::<u8>(), len) };
-    read_exact_required(reader, target, what, offset)?;
-    // SAFETY: read_exact_required returned Ok, so every byte in target was initialized.
-    unsafe {
-        buffer.set_len(len);
-    }
-    Ok(())
+    // The buffer is reused across records without clearing: `resize` only
+    // zero-fills bytes past the previous length, and every byte below `len`
+    // is overwritten by the read (or the caller discards the buffer on error).
+    buffer.resize(len, 0);
+    read_exact_required(reader, buffer, what, offset)
 }
 
 fn skip_record_padding<R: Read>(
@@ -768,22 +758,19 @@ enum MomentPayload<'a> {
     U16(&'a [u8]),
 }
 
-const BLOCK_PENDING: u8 = 0;
-const BLOCK_READY: u8 = 1;
-const BLOCK_FAILED: u8 = 2;
+/// Outcome of decompressing one LDM block: its bytes, or the error message.
+type BlockResult = std::result::Result<Vec<u8>, String>;
 
 /// Slot store connecting parallel LDM-block decompression workers to the
 /// in-order streaming parser.
 ///
-/// Indices are claimed in parse order through `next_claim`, so each slot has
-/// exactly one writer. A slot is published with a `Release` store on its state
-/// flag and readers dereference it only after an `Acquire` load observes
-/// `BLOCK_READY`, after which the slot is never written again.
+/// Indices are claimed in parse order through `next_claim`, so each slot is
+/// filled by exactly one thread. A slot is a `OnceLock` that is set once with
+/// the block's bytes (or error) and never written again, so the parser can
+/// borrow published bytes for the lifetime of the store without copying.
 struct BlockSlots<'a> {
     compressed: Vec<&'a [u8]>,
-    slots: Box<[UnsafeCell<Vec<u8>>]>,
-    states: Box<[AtomicU8]>,
-    errors: Mutex<Vec<Option<String>>>,
+    slots: Box<[OnceLock<BlockResult>]>,
     next_claim: AtomicUsize,
     decoded_bytes: AtomicUsize,
     canceled: AtomicBool,
@@ -791,19 +778,12 @@ struct BlockSlots<'a> {
     published: Condvar,
 }
 
-// SAFETY: each `UnsafeCell` slot is written by exactly one thread (the unique
-// claimant of its index) before being published via the matching `AtomicU8`
-// with Release/Acquire ordering; every other field is already `Sync`.
-unsafe impl Sync for BlockSlots<'_> {}
-
 impl<'a> BlockSlots<'a> {
     fn new(compressed: Vec<&'a [u8]>) -> Self {
         let len = compressed.len();
         Self {
             compressed,
-            slots: (0..len).map(|_| UnsafeCell::new(Vec::new())).collect(),
-            states: (0..len).map(|_| AtomicU8::new(BLOCK_PENDING)).collect(),
-            errors: Mutex::new(vec![None; len]),
+            slots: (0..len).map(|_| OnceLock::new()).collect(),
             next_claim: AtomicUsize::new(0),
             decoded_bytes: AtomicUsize::new(0),
             canceled: AtomicBool::new(false),
@@ -831,39 +811,36 @@ impl<'a> BlockSlots<'a> {
     }
 
     fn decompress_index(&self, index: usize) {
-        let state = match decompress_bzip_block(self.compressed[index]) {
+        match decompress_bzip_block(self.compressed[index]) {
             Ok(decoded) => {
-                if !reserve_atomic_budget(
+                if reserve_atomic_budget(
                     &self.decoded_bytes,
                     decoded.len(),
                     MAX_DECODED_RADAR_BYTES,
                 ) {
-                    self.errors.lock().unwrap()[index] = Some(format!(
-                        "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
-                    ));
-                    self.states[index].store(BLOCK_FAILED, Ordering::Release);
-                    drop(self.wakeup.lock().unwrap());
-                    self.published.notify_all();
+                    self.publish(index, Ok(decoded));
+                } else {
+                    self.publish(
+                        index,
+                        Err(format!(
+                            "block-bzip radar payload expands beyond the {MAX_DECODED_RADAR_BYTES}-byte aggregate limit"
+                        )),
+                    );
                     self.cancel();
-                    return;
                 }
-                // SAFETY: `index` was claimed exactly once via `next_claim`,
-                // so this thread is the slot's unique writer; readers wait for
-                // the Release store below before touching it.
-                unsafe {
-                    *self.slots[index].get() = decoded;
-                }
-                BLOCK_READY
             }
-            Err(err) => {
-                self.errors.lock().unwrap()[index] = Some(err.to_string());
-                BLOCK_FAILED
-            }
-        };
-        self.states[index].store(state, Ordering::Release);
-        // Take the wakeup lock so a parser that has checked the state but not
-        // yet parked cannot miss this notification.
-        drop(self.wakeup.lock().unwrap());
+            Err(err) => self.publish(index, Err(err.to_string())),
+        }
+    }
+
+    fn publish(&self, index: usize, result: BlockResult) {
+        // `index` was claimed exactly once via `next_claim`, so the slot is
+        // still empty; `set` cannot fail here and would never overwrite.
+        let _ = self.slots[index].set(result);
+        // Take the wakeup lock so a parser that has checked the slot but not
+        // yet parked cannot miss this notification. The mutex guards no data,
+        // so a poisoned lock is still usable.
+        drop(self.wakeup.lock().unwrap_or_else(PoisonError::into_inner));
         self.published.notify_all();
     }
 
@@ -874,20 +851,11 @@ impl<'a> BlockSlots<'a> {
     /// worker ever runs — e.g. on a single-threaded pool.
     fn wait_block(&self, index: usize) -> Result<&[u8]> {
         loop {
-            match self.states[index].load(Ordering::Acquire) {
-                BLOCK_READY => {
-                    // SAFETY: published with Release by the unique writer and
-                    // never written again; the slot box itself is pre-sized
-                    // and never reallocated.
-                    return Ok(unsafe { (*self.slots[index].get()).as_slice() });
-                }
-                BLOCK_FAILED => {
-                    let message = self.errors.lock().unwrap()[index]
-                        .clone()
-                        .unwrap_or_else(|| "bzip2 block decompression failed".to_owned());
-                    return Err(NexradError::Compression(message));
-                }
-                _ => {}
+            if let Some(result) = self.slots[index].get() {
+                return match result {
+                    Ok(bytes) => Ok(bytes.as_slice()),
+                    Err(message) => Err(NexradError::Compression(message.clone())),
+                };
             }
             let claimed = self.next_claim.fetch_add(1, Ordering::Relaxed);
             if claimed < self.len() {
@@ -896,9 +864,12 @@ impl<'a> BlockSlots<'a> {
             }
             // Everything is claimed, so `index` is in flight on another
             // thread; park until the next publish.
-            let mut guard = self.wakeup.lock().unwrap();
-            while self.states[index].load(Ordering::Acquire) == BLOCK_PENDING {
-                guard = self.published.wait(guard).unwrap();
+            let mut guard = self.wakeup.lock().unwrap_or_else(PoisonError::into_inner);
+            while self.slots[index].get().is_none() {
+                guard = self
+                    .published
+                    .wait(guard)
+                    .unwrap_or_else(PoisonError::into_inner);
             }
         }
     }

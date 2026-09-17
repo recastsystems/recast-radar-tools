@@ -6,8 +6,6 @@
 //! a typed raw microphysics tuple. In particular, no LUT shipped by this crate
 //! is represented as production T-matrix science.
 
-#![forbid(unsafe_code)]
-
 pub mod closure;
 mod digest;
 mod lut;
