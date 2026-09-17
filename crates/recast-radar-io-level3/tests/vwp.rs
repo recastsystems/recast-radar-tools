@@ -5,13 +5,16 @@
 //!
 //! Expected values come from:
 //!
-//! 1. **`recast_radar_io_nexrad::level3_vwp`**, the decoder this module
-//!    replaces. [`matches_level3_vwp_on_every_product_48_file`] decodes each
-//!    file with both and compares every field of its `VwpProduct` (radar,
-//!    scan times, source, metadata, profile labels and times, and every level)
-//!    through one text rendering, [`render_old`] for the old output and
-//!    [`render_new_as_old`] for the new one. The rendering spells out the
-//!    documented differences:
+//! 1. **`recast_radar_io_nexrad::level3_vwp`**, the decoder `vwp` replaced and
+//!    which was then removed. In commit 9b105fc this test decoded each file
+//!    with both implementations, rendered every field of `level3_vwp`'s
+//!    `VwpProduct` (radar, scan times, source, metadata, profile labels and
+//!    times, and every level) as text, compared that with
+//!    [`render_new_as_old`] of the new output, and checked that
+//!    `tests/level3_vwp/<id>.txt` held exactly `level3_vwp`'s rendering.
+//!    [`matches_level3_vwp_output_on_every_product_48_file`] now compares the
+//!    new output with those snapshots; they must not be regenerated from this
+//!    crate. The rendering spells out the documented differences:
 //!    - Heights: `level3_vwp` converted slant ranges with 6067.1/3281 km per
 //!      nautical mile (6067.1 transposes the 6076.1 ft in a nautical mile) and
 //!      rounded to metres; `height_above_radar_km` uses 1.852 km. The rendering
@@ -27,11 +30,6 @@
 //!      so reported the display winds and no metadata. The new decoder reads
 //!      the table; for this file the old output is compared with the new
 //!      display winds and empty metadata, and the table is checked separately.
-//!
-//!    The old output of each file is also kept as a snapshot in
-//!    `tests/level3_vwp/<id>.txt` (written with `LEVEL3_WRITE_VWP_SNAPSHOT=1`
-//!    and checked to equal the live output), so the comparison outlives
-//!    `level3_vwp`.
 //! 2. **The files themselves**: tabular rows spelled out from the page text,
 //!    row counts from the golden page line counts, every wind barb assigned to
 //!    a column, the Product Description Block's maximum wind halfwords (47-49)
@@ -49,16 +47,12 @@ use recast_radar_io_level3::vwp::{VWP_PRODUCT_CODE, VadWindProfile, VwpSource};
 use recast_radar_io_level3::{
     Level3Error, Level3Product, OperationalMode, Packet, TabularLayout, decode_product,
 };
-use recast_radar_io_nexrad::level3_vwp::{VwpProduct, decode_level3_vwp};
 
 /// The product 48 file of `testdata/other/manifest.toml`.
 const KBMX_ID: &str = "l3-kbmx-19980416-0006-nvw";
 
 /// The file whose zlib frames `level3_vwp` read only in part.
 const FIRST_ZLIB_FRAME_ONLY: &str = "l3-mci-nvw-20160526-2154";
-
-/// Environment variable that makes the parity test write the snapshots.
-const WRITE_ENV: &str = "LEVEL3_WRITE_VWP_SNAPSHOT";
 
 /// Winds of the newest display column in the four files with tabular winds.
 const TABLE_CHECKED_DISPLAY_WINDS: usize = 10 + 29 + 27 + 29;
@@ -127,57 +121,10 @@ fn iso(time: DateTime<Utc>) -> String {
     )
 }
 
-/// `level3_vwp::VwpProduct` as text, one line per radar, scan, source, metadata,
-/// profile and level. Coordinates print with three decimals (0.001 degree in
-/// the file), heights with three (`level3_vwp` rounded them to metres) and
-/// divergence with four (as printed in the table); other numbers print exactly.
-fn render_old(product: &VwpProduct) -> String {
-    let mut lines = vec![
-        format!(
-            "radar latitude_deg={:.3} longitude_deg={:.3} height_ft={} vcp={} mode={:?}",
-            product.radar.latitude_deg,
-            product.radar.longitude_deg,
-            product.radar.height_ft,
-            product.radar.vcp,
-            product.radar.mode
-        ),
-        format!(
-            "scan volume_time={} generation_time={}",
-            iso(product.scan.volume_time),
-            iso(product.scan.generation_time)
-        ),
-        format!("source {:?}", product.source),
-        format!(
-            "metadata rms_threshold_kts={:?} symmetry_threshold_kts={:?} \
-             data_points_threshold={:?} optimum_slant_range_nm={:?}",
-            product.metadata.rms_threshold_kts,
-            product.metadata.symmetry_threshold_kts,
-            product.metadata.data_points_threshold,
-            product.metadata.optimum_slant_range_nm
-        ),
-    ];
-    for profile in &product.profiles {
-        lines.push(format!(
-            "profile label_hhmm={} valid_time={}",
-            profile.label_hhmm,
-            iso(profile.valid_time)
-        ));
-        for level in &profile.levels {
-            lines.push(level_line(
-                level.altitude_km_agl,
-                level.altitude_ft_msl,
-                level.direction_deg,
-                level.speed_kts,
-                level.rms_kts,
-                level.divergence,
-                level.slant_range_nm,
-                level.elevation_angle_deg,
-            ));
-        }
-    }
-    lines.join("\n") + "\n"
-}
-
+/// One level line of the rendering. Coordinates print with three decimals
+/// (0.001 degree in the file), heights with three (`level3_vwp` rounded them to
+/// metres) and divergence with four (as printed in the table); other numbers
+/// print exactly.
 #[allow(clippy::too_many_arguments)]
 fn level_line(
     altitude_km_agl: f64,
@@ -242,8 +189,9 @@ fn old_display_altitude_km(altitude_ft_msl: i32, radar_height_ft: i16) -> f64 {
     (altitude_km_agl * 1_000.0).round() / 1_000.0
 }
 
-/// The new output rendered like [`render_old`], with `level3_vwp`'s derived
-/// values computed from the new decoder's fields.
+/// The new output rendered as `level3_vwp`'s `VwpProduct` was in commit 9b105fc
+/// (one line per radar, scan, source, metadata, profile and level), with
+/// `level3_vwp`'s derived values computed from the new decoder's fields.
 fn render_new_as_old(product: &Level3Product, vwp: &VadWindProfile, view: OldView) -> String {
     let d = &product.description;
     let p = &vwp.parameters;
@@ -340,13 +288,15 @@ fn first_difference(a: &str, b: &str) -> String {
 }
 
 #[test]
-fn matches_level3_vwp_on_every_product_48_file() {
-    let write = std::env::var_os(WRITE_ENV).is_some();
+fn matches_level3_vwp_output_on_every_product_48_file() {
     let mut winds = 0;
     for file in vwp_files() {
         let id = &file.id;
         let (product, vwp) = decode(&file);
-        let old = decode_level3_vwp(&file.bytes).unwrap_or_else(|e| panic!("{id}: {e}"));
+        let path = snapshot_path(id);
+        let snapshot = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+            .replace("\r\n", "\n");
         if id == FIRST_ZLIB_FRAME_ONLY {
             // Three zlib frames; the table and parameters are past the first.
             let framing = common::entry(id).golden().get("framing").clone();
@@ -354,29 +304,14 @@ fn matches_level3_vwp_on_every_product_48_file() {
             assert_eq!(vwp.source(), Some(VwpSource::Tabular));
             assert_eq!(vwp.tabular[0].winds.len(), 17);
             assert_eq!(vwp.parameters.rms_threshold_kt, Some(9.7));
-            assert_eq!(old.metadata.rms_threshold_kts, None);
+            assert_eq!(snapshot.lines().nth(2), Some("source Symbology"));
+            assert!(snapshot.contains("metadata rms_threshold_kts=None "));
         }
-        let old_text = render_old(&old);
         let new_text = render_new_as_old(&product, &vwp, old_view(id, &vwp));
         assert!(
-            new_text == old_text,
-            "{id}: new output differs from level3_vwp at {}",
-            first_difference(&new_text, &old_text)
-        );
-
-        // The snapshot is level3_vwp's output.
-        let path = snapshot_path(id);
-        if write {
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, &old_text).unwrap();
-        }
-        let snapshot = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("{}: {e} (write it with {WRITE_ENV}=1)", path.display()))
-            .replace("\r\n", "\n");
-        assert!(
-            snapshot == old_text,
-            "{id}: snapshot differs from level3_vwp at {}",
-            first_difference(&snapshot, &old_text)
+            new_text == snapshot,
+            "{id}: new output differs from level3_vwp's at {}",
+            first_difference(&new_text, &snapshot)
         );
 
         // Heights differ from level3_vwp's only by its nm conversion and rounding.
@@ -385,19 +320,20 @@ fn matches_level3_vwp_on_every_product_48_file() {
             VwpSource::Tabular => &vwp.tabular,
             VwpSource::Symbology => &vwp.display,
         };
-        assert_eq!(profiles.len(), old.profiles.len(), "{id}");
-        for (new, old) in profiles.iter().zip(&old.profiles) {
-            assert_eq!(new.winds.len(), old.levels.len(), "{id}");
-            for (wind, level) in new.winds.iter().zip(&old.levels) {
-                let old_km = level.altitude_km_agl;
-                assert!(
-                    (wind.height_above_radar_km - old_km).abs() <= 0.0035 * old_km.abs() + 0.0006,
-                    "{id} {}: height {} km, level3_vwp {old_km} km",
-                    new.label_hhmm,
-                    wind.height_above_radar_km
-                );
-                winds += 1;
-            }
+        let old_heights: Vec<f64> = snapshot
+            .lines()
+            .filter_map(|line| line.strip_prefix("  level altitude_km_agl="))
+            .map(|rest| rest.split(' ').next().unwrap().parse().unwrap())
+            .collect();
+        let new_winds: Vec<_> = profiles.iter().flat_map(|p| &p.winds).collect();
+        assert_eq!(new_winds.len(), old_heights.len(), "{id}");
+        for (wind, old_km) in new_winds.iter().zip(old_heights) {
+            assert!(
+                (wind.height_above_radar_km - old_km).abs() <= 0.0035 * old_km.abs() + 0.0006,
+                "{id}: height {} km, level3_vwp {old_km} km",
+                wind.height_above_radar_km
+            );
+            winds += 1;
         }
     }
     // 60 KBMX + 99 FWS + 119 MCI (display) + 48 OKC + 43 + 43 TLX levels.

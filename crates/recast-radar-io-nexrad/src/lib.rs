@@ -6,11 +6,9 @@
 //!
 //! Other radar formats live in their own crates (`recast-radar-io-odim`,
 //! `-io-cfradial`, `-io-dorade`, `-io-jma`); `recast-radar-io` routes byte
-//! buffers of unknown format to the right decoder. [`level3_vwp`] holds the
-//! Level III VAD Wind Profile decoder until the full Level III crate
-//! subsumes it.
-
-pub mod level3_vwp;
+//! buffers of unknown format to the right decoder, and
+//! `recast-radar-io-level3` decodes Level III products (including the VAD Wind
+//! Profile, `recast_radar_io_level3::vwp`).
 
 use std::cell::UnsafeCell;
 use std::collections::btree_map::Entry;

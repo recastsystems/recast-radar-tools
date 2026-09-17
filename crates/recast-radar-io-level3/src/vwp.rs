@@ -23,10 +23,11 @@
 //! and next day, preferring the earlier on a tie, so a profile from 23:55
 //! before a 00:06 volume scan falls on the previous day.
 //!
-//! This module replaces `recast_radar_io_nexrad::level3_vwp`, whose
-//! `decode_level3_vwp` chose tabular winds when there were any and display
-//! winds otherwise; [`VadWindProfile::source`] and
-//! [`VadWindProfile::profiles`] make the same choice.
+//! This module replaced `recast_radar_io_nexrad::level3_vwp` (since removed),
+//! whose `decode_level3_vwp` chose tabular winds when there were any and
+//! display winds otherwise; [`VadWindProfile::source`] and
+//! [`VadWindProfile::profiles`] make the same choice. `tests/vwp.rs` documents
+//! where the two differ.
 
 use chrono::{DateTime, Duration, NaiveTime, Utc};
 

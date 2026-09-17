@@ -15,10 +15,5 @@ chrono = { version = "0.4", default-features = false }
 flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
 thiserror = "2.0"
 
-[dev-dependencies]
-# Parity test against the VAD Wind Profile decoder this crate replaces
-# (tests/vwp.rs); removed together with `recast_radar_io_nexrad::level3_vwp`.
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
-
 [lints]
 workspace = true
