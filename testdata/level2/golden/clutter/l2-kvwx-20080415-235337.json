@@ -1,0 +1,15 @@
+{
+  "id": "l2-kvwx-20080415-235337",
+  "sha256": "31fb5f6c53b452c65e5b0fc0931c521fa1ac2f3e8426a89e04548d0fc4de3d37",
+  "generator": "tools/level2_golden.py",
+  "metpy": "1.7.1",
+  "input": "volume header + metadata record; messages 1 and 31 skipped",
+  "clutter_filter_bypass_map": {
+    "generation_time": null,
+    "elevation_segments": 2,
+    "radials_per_segment": [256,256],
+    "bins_per_radial": 512,
+    "radial_0_halfwords": [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]
+  },
+  "metpy_log": ["Segment out of order (Got: 0 Count: 1) for message type 15.","Message 15 num_el is outside (0, 5]--likely legacy clutter filter notch width. Skipping...","Segment out of order (Got: 0 Count: 1) for message type 13.","Message 13 left data -- Used: 16387 Avail: 16388"]
+}

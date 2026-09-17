@@ -1,0 +1,14 @@
+{
+  "id": "l2-pgua-20230524-030945",
+  "sha256": "0dd7c143aa20093a218baff5359660069f16fc4c8d25b6057ac25509247de883",
+  "generator": "tools/level2_golden.py",
+  "metpy": "1.7.1",
+  "input": "volume header + metadata record; messages 1 and 31 skipped",
+  "clutter_filter_map": {
+    "generation_time": "2023-05-24T02:36:00Z",
+    "elevation_segments": 5,
+    "azimuths_per_segment": [360,360,360,360,360],
+    "azimuth_runs": [[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]],[[0,359,[[1,511]]]]]
+  },
+  "metpy_log": []
+}

@@ -73,8 +73,15 @@ unit tested (ZDR bias encoding, restart cut number); no bytes are tested.
 
 ## Message 8: Clutter Censor Zones (Table XII)
 
-Module: `clutter_censor.rs`. Status: placeholder; the walker yields the body unparsed.
-No real sample (the RPG sends it to the RDA).
+Module: `clutter_censor.rs` (`ClutterCensorZones`). Status: decoded per ICD. **No real sample.**
+The RPG sends this to the RDA, so Archive II files do not record it. Halfword 1 is the number of override
+regions (0 to 25). Each region is 6 halfwords: start and stop range (km), start and stop azimuth (degrees),
+elevation segment number, and operator select code. The operator select code is the `OperatorSelectCode` enum
+shared with Message 15. The decoder rejects more than 25 regions and a body too short for the declared count;
+field values are kept as sent. The legacy layout in ICD 2620002B (8 halfwords per region, scaled azimuths) is
+not decoded. The only real-byte test relabels the committed start chunk's Message 15 as Message 8. The decoder
+rejects it (the map date, 20713, is read as the region count) and the walk continues. That tests the range
+check, not the layout.
 
 ## Message 9: Request for Data (Table XIII)
 
@@ -88,15 +95,48 @@ These are exchanged on wideband connection and not recorded in Archive II files.
 
 ## Message 13: Clutter Filter Bypass Map (Table IX)
 
-Module: `bypass_map.rs`. Status: placeholder; the walker yields the body unparsed.
-Real samples: 49 segments in files from 2008 through Build 18.2 (KDVN 2020); 14 segments plus an orphan run
-in KLIX 2005. The ICD says it has not been sent since Build 19.
+Module: `bypass_map.rs` (`ClutterFilterBypassMap`). Status: **verified** (`tests/messages_clutter.rs`).
+Real samples: 49 segments in KPAH and KDMX 2008 through Build 18.2 (KDVN 2020); 14 segments plus an orphan
+run in KLIX 2005. The ICD says it has not been sent since Build 19.
+
+- Layouts: `Current` (2620002AA: generation date and time, 1 to 5 elevation segments of 360 one-degree
+  radials) and `Legacy` (2620002B, 2001: no generation time, 256 radials of 1.40625 degrees, radial 0 centred
+  on north). KLIX 2005 uses the legacy layout with 2 segments. When halfword 1 is between 1 and 5, the decoder
+  reads the legacy layout, as MetPy does. Each radial is 32 halfwords of 512 range bins, 1 km each. A 1 bit
+  means bypass the clutter filters, and `BypassMapSegment::bypass(radial, bin)` reads it.
+- MetPy 1.7.1 goldens (`tools/level2_golden.py`, `testdata/level2/golden/clutter/`): generation time, segment
+  and radial counts, and radial 0 of every segment in 9 files. MetPy has two differences from the ICD, so no
+  other values are compared: it reads every radial of a segment from radial 0's halfwords, and it orders each
+  halfword's bits least significant first, while note 4 puts bin 0 in the MSB.
+- Checked beyond MetPy: halfwords at documented record offsets for 4 radials each in KTLX 2013, KDVN 2020
+  and KLIX 2005, and per-segment bypass-bin counts computed from the file bytes. The note 4 bit order is
+  checked on all 9 maps by range continuity. Among neighbouring bins with at least one filtered, both are
+  filtered across halfword boundaries at 71% or more of the rate inside a halfword when bits are read MSB
+  first. Read LSB first, the boundary rate is lower by a factor of 1.97 or more.
+- KVWX 2008 has only zero-filled frames whose first segment is numbered 0. MetPy joins them and the walker
+  does not.
 
 ## Message 15: Clutter Filter Map (Table XIV)
 
-Module: `clutter_filter_map.rs`. Status: placeholder; the walker yields the body unparsed.
+Module: `clutter_filter_map.rs` (`ClutterFilterMap`). Status: **verified** (`tests/messages_clutter.rs`).
 Real samples: every WSR-88D metadata record from 2005 on (not TDWR). Segment counts: 5 (most), 6 (KMAF 2023),
 7 (KTLX 2013), 62 (KLIX 2005), 77 (KPAH 2008, see quirks); KVWX 2008 has only broken segments.
+
+- The map has 1 to 5 elevation segments. Each segment has 360 azimuth segments, and each azimuth segment
+  has 1 to 20 range zones of (op code, end range in km). The decoder rejects segment and zone counts
+  outside those ranges. Op codes and end ranges are kept as sent (unknown op codes as `Unknown`). Bytes
+  after the map are counted in `trailing_bytes`.
+- MetPy 1.7.1 goldens: generation time and every range zone of every azimuth, in 20 files from 2008 to
+  2026. Every decoded map has 360 azimuths per segment, ends strictly increasing, a last end range of 511
+  and known op codes. The generation time is before the volume time. KTLX 2013 and KMAF 2023 have
+  3-zone azimuths. All other maps are one zone ending at 511 with "bypass map in control".
+- KPAH 2008: the 77 joined segments hold a 5 403-halfword map followed by 172 800 stale bytes, which go in
+  `trailing_bytes`. MetPy reports the same split ("Used: 5400 Avail: 91800").
+- KLIX 2005 and KVWX 2008 are zero-filled: date, time and elevation segment count are 0. MetPy skips them,
+  and the decoder rejects them. Legacy RDAs used a different Message 15, the "Clutter Filter Notchwidth
+  Map" (2620002B Table XIV: 256 azimuths, 16 range zones, byte fields). It is not decoded because the corpus
+  has no populated sample. The 32 772-byte KVWX message has that layout's length, but all its bytes are
+  zero.
 
 ## Message 18: RDA Adaptation Data (Table XV)
 
