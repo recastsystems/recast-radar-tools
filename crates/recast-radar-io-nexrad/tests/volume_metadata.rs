@@ -27,6 +27,7 @@ mod common;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use recast_radar_core::model::RadarParameters;
 use recast_radar_io_nexrad::messages::rda_status::RdaStatus;
 use recast_radar_io_nexrad::messages::{self, MessageBody, MessageWalker};
 use recast_radar_io_nexrad::{
@@ -431,6 +432,7 @@ fn matches_pyart_and_the_volume_decoder() {
     let mut message_31_volumes = 0;
     let mut sources = Vec::new();
     let mut message_31_goldens = 0;
+    let mut site_constants = 0;
     for (name, golden) in goldens("metadata") {
         let ids: Vec<String> = source_ids(&golden)
             .iter()
@@ -449,6 +451,7 @@ fn matches_pyart_and_the_volume_decoder() {
             "{name}: same volume as read_volume_from_bytes"
         );
         assert_matches_metadata_record(&name, &bytes, &decoded.metadata);
+        site_constants += usize::from(assert_site_constants(&name, &decoded));
 
         match golden["vcp_pattern"].as_u64() {
             // Py-ART reads KLIX 2005's zero-filled message 5 as pattern 0;
@@ -512,7 +515,50 @@ fn matches_pyart_and_the_volume_decoder() {
     assert_eq!(sources.len(), 27, "metadata goldens");
     assert_checked_every_available("metadata goldens", checked, &sources);
     assert_eq!(message_31_volumes, message_31_goldens);
-    eprintln!("checked {checked} volumes ({message_31_volumes} message 31)");
+    // Every Open RDA volume carries message 18 (the committed KIWA chunks
+    // among them).
+    assert!(
+        site_constants >= 1,
+        "no volume with message 18 site constants"
+    );
+    eprintln!(
+        "checked {checked} volumes ({message_31_volumes} message 31, {site_constants} with message 18 site constants)"
+    );
+}
+
+/// `Volume::radar_parameters` of the volume decoder, which reads message 18's
+/// first segment, against the walker's decode of the whole message: the
+/// transmitter frequency, the antenna gain and the beam width within their
+/// ranges, for both polarizations. `true` when the volume has any of them.
+fn assert_site_constants(name: &str, decoded: &NexradVolume) -> bool {
+    let parameters = &decoded.volume.radar_parameters;
+    let Some(adaptation) = decoded.metadata.adaptation.as_deref() else {
+        assert_eq!(
+            *parameters,
+            RadarParameters::default(),
+            "{name}: no message 18, no radar parameters"
+        );
+        return false;
+    };
+    let frequency = (2700..=3000)
+        .contains(&adaptation.tfreq_mhz)
+        .then(|| f64::from(adaptation.tfreq_mhz) * 1e6);
+    let gain = (43.0..=47.0)
+        .contains(&adaptation.antenna_gain)
+        .then_some(adaptation.antenna_gain);
+    let beam = (0.5..=2.0)
+        .contains(&adaptation.beamwidth)
+        .then_some(adaptation.beamwidth);
+    let expected = RadarParameters {
+        frequency_hz: frequency.into_iter().collect(),
+        antenna_gain_h_db: gain,
+        antenna_gain_v_db: gain,
+        beam_width_h_deg: beam,
+        beam_width_v_deg: beam,
+        ..RadarParameters::default()
+    };
+    assert_eq!(*parameters, expected, "{name}: radar parameters");
+    *parameters != RadarParameters::default()
 }
 
 /// Message 2, 3, 5, 13, 15, 18 and 32 fields against the MetPy goldens of

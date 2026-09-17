@@ -724,13 +724,13 @@ fn builder_from_normalized_observed(
                 parse_message_31(body, &header, &mut builder)?;
                 observer.message_31(body, &builder.volume);
             }
-            5 => {
+            5 | 18 => {
                 let body_offset = header_offset + MESSAGE_HEADER_LEN;
                 let fixed_record_end = cursor.saturating_add(RECORD_BYTES).min(bytes.len());
                 let message_end = header_offset.saturating_add(message_total_len);
                 let body_end = message_end.min(fixed_record_end);
                 if body_offset < body_end {
-                    builder.set_vcp_message(&bytes[body_offset..body_end]);
+                    builder.set_metadata_message(&header, &bytes[body_offset..body_end]);
                 }
             }
             _ => builder.count_skipped(),
@@ -887,17 +887,17 @@ where
                     on_preview(&builder)?;
                 }
             }
-            5 => {
+            5 | 18 => {
                 let fixed_body_len = RECORD_BYTES.saturating_sub(prefix.len());
                 let body_read_len = body_len.min(fixed_body_len);
                 read_exact_into_buffer(
                     reader,
                     &mut body_buffer,
                     body_read_len,
-                    "message 5 body",
+                    "metadata message body",
                     header_offset,
                 )?;
-                builder.set_vcp_message(&body_buffer);
+                builder.set_metadata_message(&header, &body_buffer);
                 skip_record_padding(reader, record_len, prefix.len() + body_read_len, cursor)?;
             }
             _ => {
@@ -1576,16 +1576,16 @@ fn parse_bzip_block_volume(
                     cursor + prefix.len() + body_len,
                 )?;
             }
-            5 => {
+            5 | 18 => {
                 let fixed_body_len = RECORD_BYTES.saturating_sub(prefix.len());
                 let body_read_len = body_len.min(fixed_body_len);
                 let body = cursor_reader.read_slice_or_copy(
                     &mut body_buffer,
                     body_read_len,
-                    "message 5 body",
+                    "metadata message body",
                     header_offset,
                 )?;
-                builder.set_vcp_message(body);
+                builder.set_metadata_message(&header, body);
                 cursor_reader.skip_exact(
                     record_len.saturating_sub(prefix.len() + body_read_len),
                     "record padding",

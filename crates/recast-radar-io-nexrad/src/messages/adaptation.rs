@@ -28,6 +28,10 @@
 //!   +28 V, +5 V and +/-15 V regulation limits (now LOWER_DEAD_LIMIT,
 //!   UPPER_DEAD_LIMIT and a spare), and bytes 156-167 the DAU +5 V, +/-15 V
 //!   and +28 V limits (now the SPIP limits and a spare).
+//! - Bytes 1132-1135 held BEAMWIDTH (MetPy's layout). The Build 24.0 table
+//!   makes them spare; corpus files from 2008 to 2016 carry 0.89 to 0.94
+//!   degrees there, and files from 2020 on hold zero.
+//!   [`RdaAdaptationData::beamwidth`] keeps the value.
 //! - Bytes 1164 and 1172 held the horizontal and vertical noise temperature
 //!   maintenance limits (Real*4) through Build 13, were spare in Builds 17
 //!   and 18, and hold the Integer*4 H_MIN_NOISETEMP and V_MIN_NOISETEMP in
@@ -51,6 +55,49 @@ use crate::{MessageHeader, Result};
 
 /// Body length of Table XV: 9468 bytes.
 pub const RDA_ADAPTATION_DATA_LEN: usize = 9468;
+
+/// TFREQ_MHZ location (Table XV bytes 1092-1095).
+const TFREQ_MHZ_OFFSET: usize = 1092;
+/// BEAMWIDTH location (bytes 1132-1135, before Build 18).
+const BEAMWIDTH_OFFSET: usize = 1132;
+/// ANTENNA_GAIN location (Table XV bytes 1136-1139).
+const ANTENNA_GAIN_OFFSET: usize = 1136;
+
+/// Site constants of the FM301 model (`RadarParameters`) at the start of an
+/// Open RDA message 18 body.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SiteConstants {
+    /// TFREQ_MHZ in Hz; `None` outside the ICD range (2700 to 3000 MHz).
+    pub frequency_hz: Option<f64>,
+    /// ANTENNA_GAIN in dB; `None` outside the ICD range (43 to 47 dB).
+    pub antenna_gain_db: Option<f32>,
+    /// BEAMWIDTH in degrees; `None` outside 0.5 to 2 degrees, which leaves out
+    /// the zero of files from Build 18 on.
+    pub beam_width_deg: Option<f32>,
+}
+
+/// The [`SiteConstants`] of a message 18 body. They lie in the first segment
+/// (the first 1204 body bytes), so the volume decoder reads them without
+/// reassembling the message. `None` when `body` is too short to hold them.
+pub(crate) fn site_constants(body: &[u8]) -> Option<SiteConstants> {
+    if body.len() < ANTENNA_GAIN_OFFSET + 4 {
+        return None;
+    }
+    let frequency_mhz = i32_at(body, TFREQ_MHZ_OFFSET);
+    let antenna_gain_db = f32_at(body, ANTENNA_GAIN_OFFSET);
+    let beam_width_deg = f32_at(body, BEAMWIDTH_OFFSET);
+    Some(SiteConstants {
+        frequency_hz: (2700..=3000)
+            .contains(&frequency_mhz)
+            .then(|| f64::from(frequency_mhz) * 1e6),
+        antenna_gain_db: (43.0..=47.0)
+            .contains(&antenna_gain_db)
+            .then_some(antenna_gain_db),
+        beam_width_deg: (0.5..=2.0)
+            .contains(&beam_width_deg)
+            .then_some(beam_width_deg),
+    })
+}
 
 /// Decoded RDA Adaptation Data (Table XV, Build 24.0).
 #[derive(Clone, Debug, PartialEq)]
@@ -265,6 +312,9 @@ pub struct RdaAdaptationData {
     /// Hydrometeor refractivity factor |K|^2 (METEOR_PARAM, bytes 1128-1131), unitless (0.10 to
     /// 1.10).
     pub meteor_param: f32,
+    /// Antenna beamwidth (BEAMWIDTH, bytes 1132-1135), deg. Spare in the Build 24.0 table; see
+    /// the module documentation for the builds that carry it.
+    pub beamwidth: f32,
     /// Antenna gain including radome (ANTENNA_GAIN, bytes 1136-1139), dB (43.00 to 47.00).
     pub antenna_gain: f32,
     /// Velocity check delta degrade limit (VEL_DEGRAD_LIMIT, bytes 1152-1155), m/s (0.5 to 2.0).
@@ -669,7 +719,7 @@ impl RdaAdaptationData {
             h_rnscale: std::array::from_fn(|index| f32_at(body, 940 + index * 4)),
             atmos: std::array::from_fn(|index| f32_at(body, 992 + index * 4)),
             el_index: std::array::from_fn(|index| f32_at(body, 1044 + index * 4)),
-            tfreq_mhz: i32_at(body, 1092),
+            tfreq_mhz: i32_at(body, TFREQ_MHZ_OFFSET),
             base_data_tcn: f32_at(body, 1096),
             refl_data_tover: f32_at(body, 1100),
             tar_h_dbz0_lp: f32_at(body, 1104),
@@ -679,7 +729,8 @@ impl RdaAdaptationData {
             lx_lp: f32_at(body, 1120),
             lx_sp: f32_at(body, 1124),
             meteor_param: f32_at(body, 1128),
-            antenna_gain: f32_at(body, 1136),
+            beamwidth: f32_at(body, BEAMWIDTH_OFFSET),
+            antenna_gain: f32_at(body, ANTENNA_GAIN_OFFSET),
             vel_degrad_limit: f32_at(body, 1152),
             wth_degrad_limit: f32_at(body, 1156),
             h_noisetemp_dgrad_limit: f32_at(body, 1160),

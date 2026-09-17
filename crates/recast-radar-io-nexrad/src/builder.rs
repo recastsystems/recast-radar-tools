@@ -13,8 +13,10 @@ use recast_radar_core::model::{
     SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
 };
 
+use crate::messages::adaptation;
+use crate::messages::rda_status::RdaSystem;
 use crate::messages::vcp::VolumeCoveragePattern;
-use crate::{ArchiveCompression, NexradError, RadialStatus, Result};
+use crate::{ArchiveCompression, MessageHeader, NexradError, RadialStatus, Result};
 
 /// Two cut elevations closer than this (degrees) are the same tilt.
 const CUT_ELEVATION_MATCH_TOLERANCE_DEG: f32 = 0.05;
@@ -80,6 +82,8 @@ pub(crate) struct VolumeBuilder {
     /// Elevation angle of each VCP cut (Message 5, 1-based cut numbers), the
     /// `fixed_angle` xradar and Py-ART report.
     vcp_cut_angles_deg: Vec<f32>,
+    /// `true` once a message 18 set `Volume::radar_parameters`.
+    adaptation_seen: bool,
     pub budget: DecodeBudget,
 }
 
@@ -104,6 +108,7 @@ impl VolumeBuilder {
             reference_from_radial: false,
             reference_ms,
             vcp_cut_angles_deg: Vec::new(),
+            adaptation_seen: false,
             budget,
         }
     }
@@ -150,6 +155,46 @@ impl VolumeBuilder {
         if let Ok(vcp) = VolumeCoveragePattern::decode(body) {
             self.vcp_cut_angles_deg = vcp.cuts.iter().map(|cut| cut.elevation_angle_deg).collect();
         }
+    }
+
+    /// Record a metadata-record message the volume decode reads: message 5
+    /// (see [`Self::set_vcp_message`]) or the first segment of message 18.
+    /// `body` is the message's first frame body.
+    pub fn set_metadata_message(&mut self, header: &MessageHeader, body: &[u8]) {
+        match header.message_type {
+            5 => self.set_vcp_message(body),
+            18 => self.set_adaptation_segment(header, body),
+            _ => {}
+        }
+    }
+
+    /// The transmitter frequency, antenna gain and (before Build 18) beam
+    /// width of the first Open RDA message 18 (RDA Adaptation Data), from its
+    /// first segment, as `Volume::radar_parameters`. WSR-88D transmits both
+    /// polarizations through one antenna, so the gain and beam width are also
+    /// the vertical ones. Legacy RDA bodies have another layout and are
+    /// ignored.
+    ///
+    /// Every message 18 frame still counts as skipped: the model keeps two of
+    /// its values and nothing else.
+    fn set_adaptation_segment(&mut self, header: &MessageHeader, body: &[u8]) {
+        self.count_skipped();
+        if self.adaptation_seen
+            || header.segment_number > 1
+            || RdaSystem::from_channels(header.channels) != RdaSystem::Orda
+        {
+            return;
+        }
+        let Some(site) = adaptation::site_constants(body) else {
+            return;
+        };
+        self.adaptation_seen = true;
+        let parameters = &mut self.volume.radar_parameters;
+        parameters.frequency_hz = site.frequency_hz.into_iter().collect();
+        parameters.antenna_gain_h_db = site.antenna_gain_db;
+        parameters.antenna_gain_v_db = site.antenna_gain_db;
+        parameters.beam_width_h_deg = site.beam_width_deg;
+        parameters.beam_width_v_deg = site.beam_width_deg;
     }
 
     /// Replace the legacy volume time by a radial's collection time (Message

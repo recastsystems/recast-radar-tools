@@ -27,13 +27,16 @@
 //! values hash equal to Py-ART's per-sweep arrays, or, where the two readers
 //! evaluate in different precision, agree in count, min, max and mean.
 //!
-//! Differences the readers are known to have are checked explicitly instead
-//! of being skipped, each with the design-note section that decides it:
-//! [`EXPECTED`] lists them. Everything else must match.
+//! Differences the readers are known to have are listed in [`EXPECTED`], each
+//! with a key and the design-note section that decides it. The code that
+//! applies a rule records its key: an item left uncompared counts as a known
+//! difference (not as a comparison), and an item compared under a rule (a
+//! tolerance, a unit or naming convention) counts as a comparison. When every
+//! case ran, every listed difference must have been applied at least once.
+//! Everything else must match.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -50,33 +53,129 @@ use serde_json::Value;
 /// precision (design note section 15, open question 5).
 const TOLERANCE: f64 = 1e-4;
 
-/// The reader differences this test expects, with the section of
-/// `docs/design/fm301-model.md` (or of the golden README) that documents each.
+/// The reader differences this test expects: a key, used by the code that
+/// applies the rule, and the difference with the section of
+/// `docs/design/fm301-model.md` (or of the golden README) that documents it.
 /// Every rule below is applied only where it says.
-const EXPECTED: &[&str] = &[
-    "xradar writes the text `None` for a global attribute it has no value for (A.2, A.4); ours carries the file's value or omits the attribute",
-    "xradar writes `Conventions = ODIM_H5/V2_2` for every ODIM file; ours writes the file's `/Conventions` (section 11)",
-    "xradar omits `sweep_group_name` / `sweep_fixed_angle` for NEXRAD and writes integer sweep indices as ODIM `sweep_group_name` (section 1); ours always writes the names",
-    "xradar writes `follow_mode = not_set` for NEXRAD and ODIM; ours writes the Table 301-15 value `none` (section 10)",
-    "xradar omits `nyquist_velocity` for NEXRAD and writes one scalar per ODIM sweep; ours writes it per ray, Table 301-8a (section 9)",
-    "xradar has no `polarization_mode`, `frequency`, `_FillValue`, `_Undetect`, `valid_range` or `flag_*` for NEXRAD; ours writes them (7.1, 10)",
-    "xradar puts CfRadial `frequency` at the root; FM301 puts it in every sweep (section 1)",
-    "xradar labels ODIM `TH` linear and unitless; io-odim uses dBZ (8.2 note 1)",
-    "xradar reads the zero-filled Message 5 of KLIX 2005 as VCP 0 (A.3); ours has no VCP definition and takes the VCP number from the radials",
-    "xradar writes CfRadial calibration entries equal to their `_FillValue` (-9999); ours leaves them unset (section 2)",
-    "Py-ART reads ODIM `rstart` in km; AEMET writes metres (espdg), which io-odim detects (odim.rs, `first_gate_m_from_rstart`)",
-    "Py-ART's ODIM reader reports `meters_to_center_of_first_gate = 0` while its data starts at the first centre (section 14)",
-    "Py-ART's ODIM reader takes azimuths as the complex mean of startazA/stopazA in (-180, 180], elevations from where/elangle, and ray times by file position; ours follow xradar (arithmetic mean in [0, 360), startelA/stopelA midpoints, acquisition order from a1gate) (sections 3, 14)",
-    "Py-ART rounds a Message 1 volume's fixed angle (the first radial's elevation) to 0.1 degree (A.3)",
-    "xradar keeps CfRadial variable attributes verbatim on coordinate and instrument variables; the model's typed slots write the FM301 attributes (sections 9, 12.4), so only dataset variables compare attributes there",
-    "xradar puts a moving platform's latitude/longitude/altitude(time) at the root; FM301 keeps them per sweep in the platform track (section 9)",
-    "xradar takes a NEXRAD sweep's range from its coarsest moment and misplaces the finer ones (6.2); the fields still compare natively, the coordinate does not",
-    "xradar omits WRADH for Message 1 volumes and reads the -375 m first gate as 65161 (A.3)",
-    "xradar reads an ODIM Nyquist velocity from the dataset's how/NI only and copies CfRadial's sweep numbers into sweep_number and sweep_group_name; ours falls back to the root how/NI and numbers the groups it writes",
-    "xradar keeps a CfRadial range coordinate's float32 values; a range the decoder found uniform is regenerated from its first centre and spacing (RangeCoord::Uniform, section 3)",
-    "xradar squeezes a one-entry r_calib dimension into scalars and keeps the calibration time as text; ours writes calib arrays and seconds since the reference (section 12.4)",
-    "Py-ART writes a zero Nyquist velocity and unambiguous range for Level II radials that carry none; ours leaves the variable out",
+const EXPECTED: &[(&str, &str)] = &[
+    (
+        "xradar-none-text",
+        "xradar writes the text `None` for a global attribute it has no value for (A.2, A.4), and keeps CfRadial's empty strings; ours carries the file's value or omits the item",
+    ),
+    (
+        "odim-conventions",
+        "xradar writes `Conventions = ODIM_H5/V2_2` for every ODIM file; ours writes the file's `/Conventions` (section 11)",
+    ),
+    (
+        "sweep-group-names",
+        "xradar omits `sweep_group_name` / `sweep_fixed_angle` for NEXRAD and writes integer sweep indices as ODIM `sweep_group_name` (section 1); ours always writes the names",
+    ),
+    (
+        "follow-mode",
+        "xradar writes `follow_mode = not_set` for NEXRAD and ODIM; ours writes the Table 301-15 value `none` (section 10)",
+    ),
+    (
+        "nyquist-per-ray",
+        "xradar omits `nyquist_velocity` and `unambiguous_range` for NEXRAD and writes one Nyquist scalar per ODIM sweep; ours writes both per ray, Table 301-8a (section 9)",
+    ),
+    (
+        "fm301-sentinels",
+        "xradar has no `polarization_mode` or `frequency` for NEXRAD and ODIM, and no `_FillValue`, `_Undetect`, `valid_range` or `flag_*` for NEXRAD; ours writes them (7.1, 10)",
+    ),
+    (
+        "cfradial-frequency",
+        "xradar puts CfRadial `frequency` at the root; FM301 puts it in every sweep (section 1)",
+    ),
+    (
+        "odim-th-units",
+        "xradar labels ODIM `TH` linear and unitless; io-odim uses dBZ (8.2 note 1)",
+    ),
+    (
+        "zero-vcp",
+        "xradar reads the zero-filled Message 5 of KLIX 2005 as VCP 0 (A.3); ours has no VCP definition and takes the VCP number from the radials",
+    ),
+    (
+        "calibration-fill",
+        "xradar writes CfRadial calibration entries equal to their `_FillValue` (-9999); ours leaves them unset (section 2)",
+    ),
+    (
+        "pyart-odim-rstart",
+        "Py-ART reads ODIM `rstart` in km; AEMET writes metres (espdg), which io-odim detects (odim.rs, `first_gate_m_from_rstart`)",
+    ),
+    (
+        "pyart-odim-first-gate",
+        "Py-ART's ODIM reader reports `meters_to_center_of_first_gate = 0` while its data starts at the first centre (section 14)",
+    ),
+    (
+        "pyart-odim-rays",
+        "Py-ART's ODIM reader takes azimuths as the complex mean of startazA/stopazA in (-180, 180], elevations from where/elangle, and ray times by file position; ours follow xradar (arithmetic mean in [0, 360), startelA/stopelA midpoints, acquisition order from a1gate) (sections 3, 14)",
+    ),
+    (
+        "pyart-message-1-fixed-angle",
+        "Py-ART rounds a Message 1 volume's fixed angle (the first radial's elevation) to 0.1 degree (A.3)",
+    ),
+    (
+        "cfradial-verbatim-attrs",
+        "xradar keeps CfRadial variable attributes verbatim on coordinate and instrument variables; the model's typed slots write the FM301 attributes (sections 9, 12.4), so only dataset variables compare attributes there",
+    ),
+    (
+        "platform-track",
+        "xradar puts a moving platform's latitude/longitude/altitude(time) at the root; FM301 keeps them per sweep in the platform track (section 9)",
+    ),
+    (
+        "coarse-range",
+        "xradar takes a NEXRAD sweep's range from its coarsest moment and misplaces the finer ones (6.2); the fields still compare natively, the coordinate does not",
+    ),
+    (
+        "message-1-xradar",
+        "xradar omits WRADH for Message 1 volumes and reads the -375 m first gate as 65161 (A.3)",
+    ),
+    (
+        "xradar-ni-and-sweep-numbers",
+        "xradar reads an ODIM Nyquist velocity from the dataset's how/NI only and copies CfRadial's sweep numbers into sweep_number and sweep_group_name; ours falls back to the root how/NI and numbers the groups it writes (sections 1, 9)",
+    ),
+    (
+        "cfradial-range",
+        "xradar keeps a CfRadial range coordinate's float32 values; a range the decoder found uniform is regenerated from its first centre and spacing (RangeCoord::Uniform, section 3)",
+    ),
+    (
+        "calib-squeeze",
+        "xradar squeezes a one-entry r_calib dimension into scalars and keeps the calibration time as text; ours writes calib arrays and seconds since the reference (section 12.4)",
+    ),
+    (
+        "pyart-zero-nyquist",
+        "Py-ART writes a zero Nyquist velocity and unambiguous range for Level II radials that carry none; ours leaves the variable out (section 9)",
+    ),
+    (
+        "site-parameters",
+        "xradar 0.12 writes an empty radar_parameters group for NEXRAD; ours writes the Message 18 antenna gain and, before Build 18, beam width (section 2)",
+    ),
+    (
+        "empty-groups",
+        "xradar writes radar_parameters, radar_calibration and georeferencing_correction groups with no values; ours omits a group it has nothing for (section 1)",
+    ),
+    (
+        "fm301-extras",
+        "ours writes FM301 items xradar 0.12 omits: the sweep variables rays_are_indexed, rays_angle_resolution, target_scan_rate, calib_index, instrument_type, platform_type, primary_axis, follow_mode and prt_mode where a source lacks them; the root attributes site_name, ray_times_increase, scan_id and platform_is_mobile; and standard_name, long_name, units, coordinates, comment, positive, axis and sampling_ratio on variables (sections 1, 9, 11, 12.4)",
+    ),
+    (
+        "message-1-location",
+        "xradar and Py-ART write 0 for the unknown site location of a Message 1 volume; the model keeps None (section 11)",
+    ),
+    (
+        "pyart-padded-fields",
+        "Py-ART gives every sweep every field, masked where the sweep has none (6.3); ours has no such field",
+    ),
 ];
+
+/// `key` if it is listed in [`EXPECTED`].
+fn expected(key: &'static str) -> &'static str {
+    assert!(
+        EXPECTED.iter().any(|(listed, _)| *listed == key),
+        "expected difference {key} is not listed in EXPECTED"
+    );
+    key
+}
 
 // ---------------------------------------------------------------------------
 // Cases
@@ -368,11 +467,27 @@ struct Report {
     summarized: usize,
     attrs: usize,
     scalars: usize,
+    /// Golden items left uncompared under an [`EXPECTED`] rule.
+    known: usize,
+    /// [`EXPECTED`] keys applied.
+    used: BTreeSet<&'static str>,
 }
 
 impl Report {
     fn error(&mut self, what: impl Into<String>) {
         self.errors.push(what.into());
+    }
+
+    /// A golden item left uncompared under the listed difference `key`.
+    fn skip(&mut self, key: &'static str) {
+        self.known += 1;
+        self.used.insert(expected(key));
+    }
+
+    /// An item compared (or an extra item of ours accepted) under the listed
+    /// difference `key`.
+    fn note(&mut self, key: &'static str) {
+        self.used.insert(expected(key));
     }
 }
 
@@ -380,52 +495,60 @@ impl Report {
 // xradar comparison
 // ---------------------------------------------------------------------------
 
-/// Variables ours writes that xradar 0.12 does not (see [`EXPECTED`]).
-const OURS_ONLY_VARIABLES: &[&str] = &[
-    "nyquist_velocity",
-    "unambiguous_range",
-    "polarization_mode",
-    "sweep_group_name",
-    "sweep_fixed_angle",
-    "frequency",
-    "rays_are_indexed",
-    "rays_angle_resolution",
-    "target_scan_rate",
-    "calib_index",
-    // FM301 mandatory items a CfRadial file may lack; xradar writes only
-    // what the file has.
-    "instrument_type",
-    "platform_type",
-    "primary_axis",
-    "follow_mode",
-    "prt_mode",
+/// Variables ours writes that xradar 0.12 does not, with their [`EXPECTED`]
+/// key.
+const OURS_ONLY_VARIABLES: &[(&str, &str)] = &[
+    ("nyquist_velocity", "nyquist-per-ray"),
+    ("unambiguous_range", "nyquist-per-ray"),
+    ("polarization_mode", "fm301-sentinels"),
+    ("frequency", "fm301-sentinels"),
+    ("sweep_group_name", "sweep-group-names"),
+    ("sweep_fixed_angle", "sweep-group-names"),
+    // FM301 items a source may lack; xradar writes only what the file has.
+    ("rays_are_indexed", "fm301-extras"),
+    ("rays_angle_resolution", "fm301-extras"),
+    ("target_scan_rate", "fm301-extras"),
+    ("calib_index", "fm301-extras"),
+    ("instrument_type", "fm301-extras"),
+    ("platform_type", "fm301-extras"),
+    ("primary_axis", "fm301-extras"),
+    ("follow_mode", "fm301-extras"),
+    ("prt_mode", "fm301-extras"),
 ];
 
 /// Root attributes ours writes that xradar 0.12 does not.
-const OURS_ONLY_ATTRS: &[&str] = &[
-    "site_name",
-    "ray_times_increase",
-    "scan_id",
-    "platform_is_mobile",
+const OURS_ONLY_ATTRS: &[(&str, &str)] = &[
+    ("site_name", "fm301-extras"),
+    ("ray_times_increase", "fm301-extras"),
+    ("scan_id", "fm301-extras"),
+    ("platform_is_mobile", "fm301-extras"),
 ];
 
 /// Variable attributes ours writes that xradar 0.12 does not.
-const OURS_ONLY_VAR_ATTRS: &[&str] = &[
-    "_FillValue",
-    "_Undetect",
-    "valid_range",
-    "flag_values",
-    "flag_meanings",
-    "flag_masks",
-    "coordinates",
-    "comment",
-    "standard_name",
-    "long_name",
-    "units",
-    "positive",
-    "axis",
-    "sampling_ratio",
+const OURS_ONLY_VAR_ATTRS: &[(&str, &str)] = &[
+    ("_FillValue", "fm301-sentinels"),
+    ("_Undetect", "fm301-sentinels"),
+    ("valid_range", "fm301-sentinels"),
+    ("flag_values", "fm301-sentinels"),
+    ("flag_meanings", "fm301-sentinels"),
+    ("flag_masks", "fm301-sentinels"),
+    ("coordinates", "fm301-extras"),
+    ("comment", "fm301-extras"),
+    ("standard_name", "fm301-extras"),
+    ("long_name", "fm301-extras"),
+    ("units", "fm301-extras"),
+    ("positive", "fm301-extras"),
+    ("axis", "fm301-extras"),
+    ("sampling_ratio", "fm301-extras"),
 ];
+
+/// The [`EXPECTED`] key of an item in one of the ours-only tables.
+fn ours_only(table: &[(&str, &'static str)], name: &str) -> Option<&'static str> {
+    table
+        .iter()
+        .find(|(listed, _)| *listed == name)
+        .map(|(_, key)| *key)
+}
 
 /// xradar root attributes derived from the VCP definition (Message 5).
 const VCP_ROOT_ATTRS: &[&str] = &[
@@ -471,6 +594,12 @@ fn same_text(golden: &str, ours: &str) -> bool {
 
 /// One golden attribute against ours. `what` names the owner.
 fn compare_attr(report: &mut Report, what: &str, name: &str, golden: &Value, ours: &AttrValue) {
+    if matches!(golden, Value::Null | Value::Object(_)) {
+        report.error(format!(
+            "{what}: golden attribute {name} = {golden} has no comparable value"
+        ));
+        return;
+    }
     report.attrs += 1;
     let ok = match golden {
         Value::String(text) => attr_text(ours).is_some_and(|t| same_text(text, &t)),
@@ -494,8 +623,7 @@ fn compare_attr(report: &mut Report, what: &str, name: &str, golden: &Value, our
             }
             _ => false,
         },
-        Value::Null => true,
-        Value::Object(_) => true,
+        Value::Null | Value::Object(_) => false,
     };
     if !ok {
         report.error(format!(
@@ -569,9 +697,11 @@ fn compare_group_attrs(
         // xradar's placeholder for an attribute it has no value for, and
         // CfRadial's empty strings.
         if value == "None" || value.as_str().is_some_and(|t| t.trim().is_empty()) {
+            report.skip("xradar-none-text");
             continue;
         }
         if ctx.zero_vcp && VCP_ROOT_ATTRS.contains(&name.as_str()) {
+            report.skip("zero-vcp");
             continue;
         }
         let Some(mine) = ours.attrs.get(name) else {
@@ -580,6 +710,7 @@ fn compare_group_attrs(
         };
         if name == "Conventions" && ctx.source == SourceFormat::OdimH5 {
             report.attrs += 1;
+            report.note("odim-conventions");
             let mine = attr_text(mine).unwrap_or_default();
             if value != "ODIM_H5/V2_2" || !mine.starts_with("ODIM_H5/") {
                 report.error(format!("{what}: Conventions {mine} vs golden {value}"));
@@ -590,10 +721,14 @@ fn compare_group_attrs(
     }
     if path == "/" {
         for name in ours.attrs.keys() {
-            let expected = golden_attrs.contains_key(name)
-                || OURS_ONLY_ATTRS.contains(&name.as_str())
-                || (ctx.zero_vcp && VCP_ROOT_ATTRS.contains(&name.as_str()));
-            if !expected {
+            if golden_attrs.contains_key(name) {
+                continue;
+            }
+            if let Some(key) = ours_only(OURS_ONLY_ATTRS, name) {
+                report.note(key);
+            } else if ctx.zero_vcp && VCP_ROOT_ATTRS.contains(&name.as_str()) {
+                report.note("zero-vcp");
+            } else {
                 report.error(format!("{what}: attribute {name} is not in the golden"));
             }
         }
@@ -875,8 +1010,13 @@ fn compare_variable(
         ));
         return;
     }
-    if name == "range" && (coarse_range || ctx.negative_first_gate(path)) {
-        report.scalars += 1; // xradar's range coordinate is not the sweep's (6.2, A.3)
+    // xradar's range coordinate is not the sweep's (6.2, A.3).
+    if name == "range" && coarse_range {
+        report.skip("coarse-range");
+        return;
+    }
+    if name == "range" && ctx.negative_first_gate(path) {
+        report.skip("message-1-xradar");
         return;
     }
     if name == "range"
@@ -886,6 +1026,7 @@ fn compare_variable(
         // A CfRadial range the decoder found uniform is regenerated from its
         // first centre and spacing; the file's float32 values can differ in
         // the last bit, so the coordinate compares within the tolerance.
+        report.note("cfradial-range");
         compare_summary(
             report,
             &what,
@@ -898,7 +1039,7 @@ fn compare_variable(
     if name == "sweep_number" && ctx.cfradial() {
         // xradar copies the file's sweep_number (DOW8 trim: 2 for its only
         // sweep); ours numbers the groups it writes.
-        report.scalars += 1;
+        report.skip("xradar-ni-and-sweep-numbers");
         return;
     }
 
@@ -909,22 +1050,30 @@ fn compare_variable(
     // dataset variables (two dimensions) compare attributes there.
     let is_field = golden_dims.len() == 2;
     let compare_attrs = !ctx.cfradial() || is_field;
-    if compare_attrs && let Some(attrs) = golden["attrs"].as_object() {
-        for (key, value) in attrs {
-            if key == "units" && name == "TH" && ctx.source == SourceFormat::OdimH5 {
-                continue; // TH units: xradar unitless, io-odim dBZ (8.2 note 1)
+    if let Some(attrs) = golden["attrs"].as_object() {
+        if !compare_attrs {
+            for _ in attrs {
+                report.skip("cfradial-verbatim-attrs");
             }
-            if coarse_range && name == "range" && key.starts_with("meters_") {
-                continue; // xradar's range is the coarse moment's (6.2)
+        } else {
+            for (key, value) in attrs {
+                if key == "units" && name == "TH" && ctx.source == SourceFormat::OdimH5 {
+                    report.skip("odim-th-units");
+                    continue;
+                }
+                match ours.attrs.get(key) {
+                    Some(mine) => compare_attr(report, &what, key, value, mine),
+                    None => report.error(format!("{what}: attribute {key} = {value} missing")),
+                }
             }
-            match ours.attrs.get(key) {
-                Some(mine) => compare_attr(report, &what, key, value, mine),
-                None => report.error(format!("{what}: attribute {key} = {value} missing")),
-            }
-        }
-        for key in ours.attrs.keys() {
-            if !attrs.contains_key(key) && !OURS_ONLY_VAR_ATTRS.contains(&key.as_str()) {
-                report.error(format!("{what}: attribute {key} is not in the golden"));
+            for key in ours.attrs.keys() {
+                if attrs.contains_key(key) {
+                    continue;
+                }
+                match ours_only(OURS_ONLY_VAR_ATTRS, key) {
+                    Some(listed) => report.note(listed),
+                    None => report.error(format!("{what}: attribute {key} is not in the golden")),
+                }
             }
         }
     }
@@ -947,24 +1096,26 @@ fn compare_variable(
     // Values.
     if let Some(text) = &ours.text {
         let theirs = values["value"].as_str().unwrap_or("");
-        let ok = same_text(theirs, text)
-            || (matches!(name, "follow_mode" | "prt_mode")
-                && theirs == "not_set"
-                && text == "none");
         report.scalars += 1;
-        if !ok {
-            report.error(format!("{what}: {text:?}, golden {theirs:?}"));
+        if same_text(theirs, text) {
+            return;
         }
+        if matches!(name, "follow_mode" | "prt_mode") && theirs == "not_set" && text == "none" {
+            report.note("follow-mode");
+            return;
+        }
+        report.error(format!("{what}: {text:?}, golden {theirs:?}"));
         return;
     }
     if let Some(scalar) = ours.scalar {
-        report.scalars += 1;
         let mine = scalar.as_f64();
         match json_f64(&values["value"]) {
-            Some(theirs) if close(mine, theirs) => {}
+            Some(theirs) if close(mine, theirs) => report.scalars += 1,
             // xradar writes 0 for the missing site location of a Message 1
             // volume; the model keeps None (section 11).
-            Some(theirs) if theirs == 0.0 && mine.is_nan() && ctx.message_1 && path == "/" => {}
+            Some(theirs) if theirs == 0.0 && mine.is_nan() && ctx.message_1 && path == "/" => {
+                report.skip("message-1-location");
+            }
             theirs => report.error(format!("{what}: {scalar:?}, golden {theirs:?}")),
         }
         return;
@@ -975,6 +1126,7 @@ fn compare_variable(
     };
     if squeezed_calib {
         report.scalars += 1;
+        report.note("calib-squeeze");
         if name == "time" {
             // xradar keeps the calibration time as text; ours is seconds
             // since the volume reference.
@@ -1001,11 +1153,16 @@ fn compare_variable(
         return;
     }
     if scalar_to_rays {
-        report.scalars += 1;
         let theirs = json_f64(&values["value"]).unwrap_or(f64::NAN);
-        // xradar reads only the dataset's how/NI; ours falls back to the
-        // root how/NI (odim.rs), which xradar reports as NaN.
-        if !theirs.is_nan() && !our_f64s(array).iter().all(|mine| close(*mine, theirs)) {
+        if theirs.is_nan() {
+            // xradar reads only the dataset's how/NI; ours falls back to the
+            // root how/NI (odim.rs), which xradar reports as NaN.
+            report.skip("xradar-ni-and-sweep-numbers");
+            return;
+        }
+        report.scalars += 1;
+        report.note("nyquist-per-ray");
+        if !our_f64s(array).iter().all(|mine| close(*mine, theirs)) {
             report.error(format!(
                 "{what}: per-ray values differ from golden scalar {theirs}"
             ));
@@ -1015,8 +1172,14 @@ fn compare_variable(
     if ours_name == "sweep_group_name" {
         // xradar's ODIM sweep_group_name holds sweep indices, and its
         // CfRadial one the file's sweep numbers (DOW8 trim: `sweep_2` for
-        // group `sweep_0`); ours names the groups it writes.
+        // group `sweep_0`); ours names the groups it writes. Only the count
+        // compares.
         report.scalars += 1;
+        report.note(if ctx.cfradial() {
+            "xradar-ni-and-sweep-numbers"
+        } else {
+            "sweep-group-names"
+        });
         let count = values["count"]
             .as_u64()
             .or_else(|| values["values"].as_array().map(|v| v.len() as u64));
@@ -1025,15 +1188,10 @@ fn compare_variable(
         }
         return;
     }
-    if coarse_range {
-        if name == "range" {
-            report.scalars += 1; // the coordinate is xradar's coarse-moment range
-            return;
-        }
-        if let Some(native) = native {
-            compare_array(report, &what, values, golden_dtype, native, None);
-            return;
-        }
+    if coarse_range && let Some(native) = native {
+        report.note("coarse-range");
+        compare_array(report, &what, values, golden_dtype, native, None);
+        return;
     }
     let time = (name == "time").then_some(ctx.time_reference);
     compare_array(report, &what, values, golden_dtype, array, time);
@@ -1093,7 +1251,11 @@ fn compare_xradar_view(
                     let fill = json_f64(&v["attrs"]["_FillValue"]);
                     fill.is_some() && json_f64(&v["values"]["value"]) == fill
                 });
-            if !(empty || all_fill) {
+            if empty {
+                report.skip("empty-groups");
+            } else if all_fill {
+                report.skip("calibration-fill");
+            } else {
                 report.error(format!("{what}: group missing"));
             }
             continue;
@@ -1108,6 +1270,7 @@ fn compare_xradar_view(
                 let len = len.as_u64().unwrap() as usize;
                 if dim == "frequency" && path == "/" {
                     // FM301 puts frequency in every sweep (section 1).
+                    report.note("cfradial-frequency");
                     match ours.get("/sweep_0").and_then(|s| s.dims.get("frequency")) {
                         Some(mine) if *mine == len => {}
                         other => {
@@ -1118,6 +1281,7 @@ fn compare_xradar_view(
                 }
                 if dim == "time" && path == "/" && has_platform_track(volume) {
                     // xradar's root ray dimension of a moving platform.
+                    report.note("platform-track");
                     let rays: usize = volume.sweeps.iter().map(Sweep::nrays).sum();
                     if rays != len {
                         report.error(format!("{what}: root time dim {rays} rays, golden {len}"));
@@ -1125,7 +1289,7 @@ fn compare_xradar_view(
                     continue;
                 }
                 if dim == "range" && coarse_range {
-                    report.scalars += 1;
+                    report.skip("coarse-range");
                     continue;
                 }
                 match mine.dims.get(dim) {
@@ -1171,6 +1335,7 @@ fn compare_xradar_view(
                 .collect();
             // Moving platform: xradar's root latitude(time) is our per-sweep track.
             if path == "/" && golden_dims == ["time"] && PLATFORM_TRACK.contains(&name) {
+                report.note("platform-track");
                 let what = format!("{what}/{name}");
                 match concatenated_track(volume, name) {
                     Some(track) => compare_array(
@@ -1187,6 +1352,7 @@ fn compare_xradar_view(
             }
             // CfRadial root frequency lives in every sweep in FM301.
             let (owner, ours_name) = if name == "frequency" && path == "/" {
+                report.note("cfradial-frequency");
                 (ours.get("/sweep_0"), "frequency")
             } else {
                 (Some(mine), name)
@@ -1200,8 +1366,12 @@ fn compare_xradar_view(
                     t.trim_matches(|c: char| c == '\0' || c.is_whitespace())
                         .is_empty()
                 });
-                if (fill.is_some() && value == fill) || empty_text {
-                    report.scalars += 1;
+                if fill.is_some() && value == fill {
+                    report.skip("calibration-fill");
+                    continue;
+                }
+                if empty_text {
+                    report.skip("xradar-none-text");
                     continue;
                 }
                 report.error(format!("{what}/{name}: variable missing"));
@@ -1237,20 +1407,31 @@ fn compare_xradar_view(
             );
         }
         for name in mine.vars.keys() {
-            if seen.contains(name) || OURS_ONLY_VARIABLES.contains(&name.as_str()) {
+            if seen.contains(name) {
+                continue;
+            }
+            if let Some(key) = ours_only(OURS_ONLY_VARIABLES, name) {
+                report.note(key);
                 continue;
             }
             if path == "/" && name == "frequency" {
+                report.note("cfradial-frequency");
                 continue;
             }
             // xradar emits no spectrum width for Message 1 volumes (A.3).
             if ctx.message_1 && name == "WRADH" {
-                report.scalars += 1;
+                report.note("message-1-xradar");
                 continue;
             }
             // The platform track and georeference variables of a moving
             // platform (xradar: root coordinates; FM301: per sweep).
             if has_platform_track(volume) && PLATFORM_TRACK.contains(&name.as_str()) {
+                report.note("platform-track");
+                continue;
+            }
+            // Site parameters xradar leaves out of its NEXRAD radar_parameters.
+            if path == "/radar_parameters" && ctx.source == SourceFormat::NexradLevel2 {
+                report.note("site-parameters");
                 continue;
             }
             report.error(format!("{what}/{name}: variable is not in the golden"));
@@ -1456,10 +1637,10 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
             .as_array()
             .and_then(|v| v.first())
             .and_then(json_f64);
-        report.scalars += 1;
         match (mine, theirs) {
-            (Some(mine), Some(theirs)) if close(mine, theirs) => {}
-            (None, Some(0.0)) => {} // Py-ART writes 0 for an unknown Message 1 site
+            (Some(mine), Some(theirs)) if close(mine, theirs) => report.scalars += 1,
+            // Py-ART writes 0 for an unknown Message 1 site.
+            (None, Some(0.0)) if message_1 => report.skip("message-1-location"),
             (mine, theirs) => {
                 report.error(format!("{id} pyart: {name} {mine:?}, golden {theirs:?}"))
             }
@@ -1467,6 +1648,9 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
     }
     // Range: Py-ART's volume range and whether ours fits it.
     let (r0, dr, ngates) = pyart_range(radar);
+    if odim {
+        report.note("pyart-odim-first-gate");
+    }
     let expected_r0 = volume
         .sweeps
         .iter()
@@ -1481,6 +1665,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
     let espdg_rstart = case.id.starts_with("odim-espdg");
     let range_matches = if espdg_rstart {
         report.scalars += 1;
+        report.note("pyart-odim-rstart");
         if !close(r0, 200_250.0) {
             report.error(format!(
                 "{id} pyart: expected Py-ART's 200 km first gate, golden {r0}"
@@ -1519,6 +1704,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
             // Py-ART rounds a Message 1 volume's first-ray elevation to 0.1 deg.
             let mine = f64::from(sweep.fixed_angle_deg);
             let mine = if message_1 {
+                report.note("pyart-message-1-fixed-angle");
                 (mine * 10.0).round() / 10.0
             } else {
                 mine
@@ -1541,6 +1727,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
         }
         if let Some(golden) = per_sweep(&radar["variables"]["azimuth"], index) {
             if odim {
+                report.note("pyart-odim-rays");
                 // Py-ART: complex mean of startazA/stopazA in (-180, 180] when
                 // the file has measured azimuths, else bin centres in [0, 360);
                 // ours (as xradar) the arithmetic mean in [0, 360). Same angles.
@@ -1579,6 +1766,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
         }
         if let Some(golden) = per_sweep(&radar["variables"]["elevation"], index) {
             if odim {
+                report.note("pyart-odim-rays");
                 // Py-ART: where/elangle (or how/elangles) for every ray; ours
                 // (as xradar) the startelA/stopelA midpoints (section 3).
                 let values: Vec<f64> = sweep
@@ -1612,7 +1800,12 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
             // Py-ART's ODIM reader spreads ray times over the sweep by file
             // position; ours (as xradar) by acquisition position from a1gate,
             // so only the sweep's span compares (section 3).
-            let absolute = if odim { 1.0 } else { 1e-3 };
+            let absolute = if odim {
+                report.note("pyart-odim-rays");
+                1.0
+            } else {
+                1e-3
+            };
             compare_summary(
                 &mut report,
                 &format!("{what}/time"),
@@ -1641,7 +1834,7 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
                     // Py-ART writes 0 where a Level II radial carries no value
                     // (surveillance cuts of Message 1 volumes); ours has none.
                     if json_f64(&golden["max"]) == Some(0.0) {
-                        report.scalars += 1;
+                        report.skip("pyart-zero-nyquist");
                         continue;
                     }
                     report.error(format!("{what}/{name}: missing"));
@@ -1672,7 +1865,8 @@ fn check_pyart(case: &Case, decoded: &Decoded, golden: &Value) -> Report {
             });
             let Some(field) = mine else {
                 if golden["count_unmasked"].as_u64() == Some(0) {
-                    continue; // Py-ART pads a sweep that lacks the field
+                    report.skip("pyart-padded-fields");
+                    continue;
                 }
                 report.error(format!(
                     "{what}: field missing (ours: {:?})",
@@ -1739,7 +1933,9 @@ fn every_golden_case_matches_xradar_and_pyart() {
     assert!(cases.len() >= 11, "{} cases in index.json", cases.len());
     let mut failures = String::new();
     let mut checked = 0;
+    let mut used = BTreeSet::new();
     for case in &cases {
+        // `None` only when the file is not cached and the network is off.
         let Some(decoded) = decode(case) else {
             continue;
         };
@@ -1753,14 +1949,16 @@ fn every_golden_case_matches_xradar_and_pyart() {
         }
         for (side, report) in reports {
             eprintln!(
-                "{} {side}: {} hashes, {} summaries, {} scalars, {} attributes, {} errors",
+                "{} {side}: {} hashes, {} summaries, {} scalars, {} attributes compared; {} known differences; {} errors",
                 case.id,
                 report.hashed,
                 report.summarized,
                 report.scalars,
                 report.attrs,
+                report.known,
                 report.errors.len()
             );
+            used.extend(report.used.iter().copied());
             assert!(
                 report.hashed + report.summarized + report.scalars > 0,
                 "{} {side}: nothing compared",
@@ -1775,12 +1973,36 @@ fn every_golden_case_matches_xradar_and_pyart() {
     }
     assert!(checked > 0, "no golden file was available");
     assert!(failures.is_empty(), "\n{failures}");
+    if checked == cases.len() {
+        let unused: Vec<&str> = EXPECTED
+            .iter()
+            .map(|(key, _)| *key)
+            .filter(|key| !used.contains(key))
+            .collect();
+        assert!(
+            unused.is_empty(),
+            "EXPECTED differences no case applies: {unused:?}"
+        );
+    } else {
+        eprintln!(
+            "{} of {} cases were not available offline; the EXPECTED coverage check needs all of them",
+            cases.len() - checked,
+            cases.len()
+        );
+    }
 }
 
 #[test]
 fn expected_differences_are_listed() {
-    // The list is documentation; keep it non-empty and free of duplicates.
-    let set: BTreeSet<&str> = EXPECTED.iter().copied().collect();
-    assert_eq!(set.len(), EXPECTED.len());
-    let _ = Cow::Borrowed("");
+    // Keys and descriptions are unique and every description cites its source.
+    let keys: BTreeSet<&str> = EXPECTED.iter().map(|(key, _)| *key).collect();
+    let texts: BTreeSet<&str> = EXPECTED.iter().map(|(_, text)| *text).collect();
+    assert_eq!(keys.len(), EXPECTED.len());
+    assert_eq!(texts.len(), EXPECTED.len());
+    for (key, text) in EXPECTED {
+        assert!(
+            text.contains("section") || text.contains('(') || text.contains("README"),
+            "{key}: no source cited"
+        );
+    }
 }

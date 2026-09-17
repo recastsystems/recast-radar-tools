@@ -227,10 +227,11 @@ const BUILD_24_ONLY_HALFWORDS: [usize; 21] = [
 ];
 
 /// MetPy byte offsets with no Build 24.0 field of the same type (spare since
-/// Build 17 or 18, or Integer*4 since Build 19 at 1164 and 1172).
-const METPY_ONLY_OFFSETS: [usize; 31] = [
+/// Build 17 or 18, or Integer*4 since Build 19 at 1164 and 1172). BEAMWIDTH
+/// (1132), spare in Build 24.0 too, is decoded and compared.
+const METPY_ONLY_OFFSETS: [usize; 30] = [
     144, 164, 168, 172, 220, 684, 696, 716, 760, 764, 776, 784, 788, 792, 804, 840, 856, 916, 928,
-    932, 1132, 1144, 1148, 1164, 1172, 1188, 1192, 1228, 8896, 8900, 8904,
+    932, 1144, 1148, 1164, 1172, 1188, 1192, 1228, 8896, 8900, 8904,
 ];
 
 /// Build 24.0 byte offsets MetPy does not read with the same type; checked in
@@ -1985,6 +1986,7 @@ fn adaptation_values(a: &RdaAdaptationData) -> Vec<(usize, Num)> {
         (1120, Num::F32(a.lx_lp)),
         (1124, Num::F32(a.lx_sp)),
         (1128, Num::F32(a.meteor_param)),
+        (1132, Num::F32(a.beamwidth)),
         (1136, Num::F32(a.antenna_gain)),
         (1152, Num::F32(a.vel_degrad_limit)),
         (1156, Num::F32(a.wth_degrad_limit)),
