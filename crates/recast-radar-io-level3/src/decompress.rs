@@ -33,27 +33,28 @@ pub(crate) fn is_bzip2(data: &[u8]) -> bool {
 /// Decompresses the single bzip2 stream at the start of `data`. Bytes after the
 /// end of the stream are ignored.
 pub(crate) fn bunzip2(data: &[u8]) -> Result<Vec<u8>, Level3Error> {
-    let mut decoder = bzip2::Decompress::new(false);
-    let mut out = Vec::new();
-    loop {
-        reserve(&mut out, "bzip2")?;
-        let consumed = offset_of(decoder.total_in());
-        let input = data.get(consumed..).unwrap_or_default();
-        let before = (decoder.total_in(), decoder.total_out());
-        let status = decoder
-            .decompress_vec(input, &mut out)
-            .map_err(|e| Level3Error::Bzip2 {
-                reason: e.to_string(),
-            })?;
-        if status == bzip2::Status::StreamEnd {
-            return Ok(out);
-        }
-        if (decoder.total_in(), decoder.total_out()) == before {
-            return Err(Level3Error::Bzip2 {
-                reason: "stream ends before its end-of-stream marker".into(),
-            });
-        }
+    thread_local! {
+        static DECODER: std::cell::RefCell<recast_radar_bzip2::Decoder> =
+            std::cell::RefCell::new(recast_radar_bzip2::Decoder::new());
     }
+
+    let mut out = Vec::new();
+    DECODER.with(|cell| {
+        let mut decoder = cell.borrow_mut();
+        decoder.set_max_output(MAX_DECOMPRESSED_BYTES);
+        decoder
+            .decode_stream_into(data, &mut out)
+            .map_err(|err| match err {
+                recast_radar_bzip2::Error::OutputLimit => Level3Error::DecompressedTooLarge {
+                    format: "bzip2",
+                    limit: MAX_DECOMPRESSED_BYTES,
+                },
+                other => Level3Error::Bzip2 {
+                    reason: other.to_string(),
+                },
+            })
+    })?;
+    Ok(out)
 }
 
 /// True when `data` starts with a zlib header (RFC 1950: deflate method, header

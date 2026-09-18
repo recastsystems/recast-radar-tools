@@ -1016,6 +1016,7 @@ dependencies = [
  "bzip2",
  "chrono",
  "flate2",
+ "recast-radar-bzip2",
  "recast-radar-core",
  "recast-radar-testdata",
  "thiserror",
