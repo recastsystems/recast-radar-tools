@@ -181,6 +181,10 @@ const EXPECTED: &[(&str, &str)] = &[
         "ours writes FM301 items xradar 0.12 omits: the sweep variables rays_are_indexed, rays_angle_resolution, target_scan_rate, calib_index, instrument_type, platform_type, primary_axis, follow_mode and prt_mode where a source lacks them; the root attributes site_name, ray_times_increase, scan_id and platform_is_mobile; and standard_name, long_name, units, coordinates, comment, positive, axis and sampling_ratio on variables (sections 1, 9, 11, 12.4)",
     ),
     (
+        "nexrad-moment-header",
+        "ours keeps the Message 31 data-moment header values FM301 has no field for as source attributes of the field: nexrad_tover_db, nexrad_snr_threshold_db (ICD 2620002 Table XVII-B bytes 14-17, in dB) and nexrad_recombination (byte 18, the code). xradar and Py-ART drop them (section 9)",
+    ),
+    (
         "message-1-location",
         "xradar and Py-ART write 0 for the unknown site location of a Message 1 volume; the model keeps None (section 11)",
     ),
@@ -625,6 +629,9 @@ const OURS_ONLY_VAR_ATTRS: &[(&str, &str)] = &[
     ("positive", "fm301-extras"),
     ("axis", "fm301-extras"),
     ("sampling_ratio", "fm301-extras"),
+    ("nexrad_tover_db", "nexrad-moment-header"),
+    ("nexrad_snr_threshold_db", "nexrad-moment-header"),
+    ("nexrad_recombination", "nexrad-moment-header"),
 ];
 
 /// The [`EXPECTED`] key of an item in one of the ours-only tables.

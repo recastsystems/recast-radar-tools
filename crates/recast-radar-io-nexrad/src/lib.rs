@@ -86,7 +86,7 @@ use recast_radar_core::bounded_read::{self, DecodeBudget, MAX_DECODED_RADAR_BYTE
 use recast_radar_core::model::Volume;
 use thiserror::Error;
 
-use crate::builder::{BlockGates, MomentBlock, MomentPayload, VolumeBuilder};
+use crate::builder::{BlockGates, MomentBlock, MomentHeaderExtras, MomentPayload, VolumeBuilder};
 const VOLUME_HEADER_LEN: usize = 24;
 const CONTROL_WORD_LEN: usize = 12;
 const MESSAGE_HEADER_LEN: usize = 16;
@@ -1976,6 +1976,9 @@ fn parse_message_1(
             scale,
             offset: if name == *b"REF" { 66.0 } else { 129.0 },
             row: MomentPayload::U8(row),
+            // Message 1's legacy moment header has no TOVER, SNR threshold
+            // or recombination code.
+            extras: None,
         };
         builder.push_moment(sweep, ray, &block, ONE_DEGREE_RADIALS_PER_CUT)?;
     }
@@ -2240,6 +2243,11 @@ fn parse_generic_moment_block(bytes: &[u8], offset: usize) -> Result<MomentBlock
         scale,
         offset: offset_value,
         row,
+        extras: Some(MomentHeaderExtras {
+            tover_raw: be_u16(header, 14),
+            snr_threshold_raw: be_i16(header, 16),
+            control_flags: header[18],
+        }),
     })
 }
 

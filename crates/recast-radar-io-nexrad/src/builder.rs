@@ -9,8 +9,8 @@
 use chrono::{DateTime, NaiveTime, Utc};
 use recast_radar_core::bounded_read::{DecodeBudget, MAX_SWEEPS_PER_VOLUME};
 use recast_radar_core::model::{
-    Field, FieldData, FieldName, FollowMode, GateMapping, IntCoding, PolarizationMode, Quantity,
-    SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
+    AttrValue, Field, FieldData, FieldName, FollowMode, GateMapping, IntCoding, PolarizationMode,
+    Quantity, Scalar, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
 };
 
 use crate::messages::adaptation;
@@ -41,6 +41,22 @@ pub(crate) struct MomentBlock<'a> {
     pub scale: f32,
     pub offset: f32,
     pub row: MomentPayload<'a>,
+    /// Message 31 moment-header values with no FM301 slot, carried into
+    /// [`FieldAttrs::other`] when the field is created. `None` for Message 1,
+    /// whose legacy moment header has no equivalent.
+    pub extras: Option<MomentHeaderExtras>,
+}
+
+/// Message 31 data-moment header values the FM301 model has no field for
+/// (ICD 2620002 Table XVII-B bytes 14-18).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MomentHeaderExtras {
+    /// Bytes 14-15, 0.1 dB steps.
+    pub tover_raw: u16,
+    /// Bytes 16-17, 0.125 dB steps (signed).
+    pub snr_threshold_raw: i16,
+    /// Byte 18: the recombination code.
+    pub control_flags: u8,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -375,6 +391,7 @@ impl VolumeBuilder {
                 ) {
                     Ok(mapping) => {
                         let mut field = new_field(name, mapping, ngates, block);
+                        push_header_extras(&mut field, block);
                         reserve_new_field(&mut field, expected_rays, &mut self.budget)?;
                         model.fields.push(field);
                         model.fields.len() - 1
@@ -505,6 +522,28 @@ fn new_field(name: FieldName, mapping: GateMapping, ngates: u32, block: &MomentB
         },
     };
     Field::new(name, mapping, ngates, data)
+}
+
+/// Carry the Message 31 moment-header values that have no FM301 field into
+/// the field's source attributes, with the RDA's own units: TOVER and the SNR
+/// threshold in dB, the recombination as its Table XVII-B code. They are
+/// written once, from the radial that creates the field.
+fn push_header_extras(field: &mut Field, block: &MomentBlock<'_>) {
+    let Some(extras) = block.extras else {
+        return;
+    };
+    field.attrs.other.push((
+        "nexrad_tover_db".into(),
+        AttrValue::Scalar(Scalar::F32(f32::from(extras.tover_raw) * 0.1)),
+    ));
+    field.attrs.other.push((
+        "nexrad_snr_threshold_db".into(),
+        AttrValue::Scalar(Scalar::F32(f32::from(extras.snr_threshold_raw) * 0.125)),
+    ));
+    field.attrs.other.push((
+        "nexrad_recombination".into(),
+        AttrValue::Scalar(Scalar::U8(extras.control_flags)),
+    ));
 }
 
 /// Bytes allocated by a field's value buffer.
