@@ -8,8 +8,8 @@ composites and cross sections, track storm cells and render sweeps to PNG.
 These are libraries, not an application: there is no GUI.
 
 Status: version 0.1.0, not published to crates.io, and the API is not stable.
-The data model is moving to WMO FM301 (CfRadial 2) conventions, so type names
-in `core` will change. Design:
+Every decoder reads into one data model that follows WMO FM301 (CfRadial 2)
+conventions, checked against xradar and Py-ART goldens. Design:
 [docs/superpowers/specs/2026-09-16-recast-radar-tools-design.md](docs/superpowers/specs/2026-09-16-recast-radar-tools-design.md).
 
 ## Using it
