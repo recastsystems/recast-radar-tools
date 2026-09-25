@@ -23,11 +23,12 @@ libfuzzer-sys = { version = "0.4", optional = true }
 # crate's default backend, libbz2-rs-sys (a Rust port of libbzip2 1.0.8).
 bzip2 = "0.6"
 recast-radar-bzip2 = { path = "../crates/recast-radar-bzip2" }
+recast-radar-core = { path = "../crates/recast-radar-core" }
 recast-radar-io = { path = "../crates/recast-radar-io" }
 recast-radar-io-cfradial = { path = "../crates/recast-radar-io-cfradial" }
 recast-radar-io-dorade = { path = "../crates/recast-radar-io-dorade" }
 recast-radar-io-jma = { path = "../crates/recast-radar-io-jma" }
-recast-radar-io-nexrad = { path = "../crates/recast-radar-io-nexrad" }
+recast-radar-io-nexrad = { path = "../crates/recast-radar-io-nexrad", features = ["write"] }
 recast-radar-io-odim = { path = "../crates/recast-radar-io-odim" }
 
 [lib]
@@ -36,6 +37,22 @@ path = "src/lib.rs"
 [[bin]]
 name = "level2_volume"
 path = "fuzz_targets/level2_volume.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "level2_writer"
+path = "fuzz_targets/level2_writer.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "level2_writer_router"
+path = "fuzz_targets/level2_writer_router.rs"
 test = false
 doc = false
 bench = false

@@ -22,9 +22,14 @@ thiserror.workspace = true
 [dev-dependencies]
 # Only for examples/intl_assembly_probe.rs (live download + decode + merge).
 recast-radar-data = { path = "../recast-radar-data" }
+# The Level II writer, for tests/level2_writer_intl.rs and the
+# level2_writer_check and level2_convert examples.
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad", features = ["write"] }
 # Real corpus files (spec section 5) and real-file resource-limit tests
 # (tests/limits_real.rs).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
+# Only for examples/level2_writer_check.rs (the manifest of written files).
+serde_json.workspace = true
 
 [lints]
 workspace = true

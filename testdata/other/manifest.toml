@@ -355,6 +355,46 @@ derivation = "single-member tar: the ustar header block and data blocks of membe
 tags = ["provider:nict-jma", "license:unknown", "era:2019", "country:JP", "network:jma", "site:taka", "moments:velocity", "regime:typhoon", "derived", "derivation:archive-member"]
 description = "JMA Osaka/Takayasu (TAKA, RS47773) radial-velocity member of the Hagibis N6 tar: 13 sweeps, 512 radials x 300 gates, 547108 of 2201600 gates non-missing"
 
+[[file]]
+id = "jma-n5-20260924-210000"
+format = "jma-grib2-tar"
+urls = ["https://pawr.nict.go.jp/jmadata/JMA-PolarCoordsRadar/2026/09/24/Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.tar"]
+sha256 = "fc45c219f0d949b5bc8b95db3ee507854b75f993eeca96381ca1952f813f62c9"
+size = 4014080
+tags = ["provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "moments:reflectivity"]
+description = "JMA N5 (reflectivity, Pze) polar GRIB2 tar 2026-09-24 21:00Z; 20 station members; unmodified NICT mirror file"
+
+[[file]]
+id = "jma-n6-20260924-210000"
+format = "jma-grib2-tar"
+urls = ["https://pawr.nict.go.jp/jmadata/JMA-PolarCoordsRadar/2026/09/24/Z__C_RJTD_20260924210000_RDR_JMAGPV_N6_grib2.tar"]
+sha256 = "fe0b8df71924ceb99c6880d121e9efd2c07497c2c9f599ae5dfe10f5cd94e178"
+size = 2498560
+tags = ["provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "moments:velocity"]
+description = "JMA N6 (radial velocity, Pvr) polar GRIB2 tar 2026-09-24 21:00Z; 20 station members; unmodified NICT mirror file"
+
+[[file]]
+id = "jma-n5-20260924-210000-rs47937"
+format = "jma-grib2-tar"
+sha256 = "3b9c222a5a4f17a21bcd5e6c094f5614686067c667f991649e3eb5c1b53009ff"
+size = 153600
+committed = "files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.RS47937.tar"
+derived_from = "jma-n5-20260924-210000"
+derivation = "single-member tar: the ustar header block and data blocks of member Z__C_RJTD_20260924210000_RDR_JMAGPV_RS47937_Gar0p5km0p7deg_Pze_ANAL_grib2.bin (141941 bytes, sha256 9d463c19931773aa4991ad1e8b531e3d359087853fc3900386d0468a92aa66b1) copied verbatim from the source tar, then zero blocks to the next 10240-byte record (tarslice.py in docs/testdata/corpus.md)"
+tags = ["provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "site:itok", "moments:reflectivity", "quirk:repeated-elevations", "derived", "derivation:archive-member"]
+description = "JMA Okinawa (ITOK, RS47937) reflectivity member of the 2026-09-24 21:00Z N5 tar: 35 sweeps of 512 radials and 128 to 800 gates of 500 m from range start 0, in two 5-minute cycles"
+
+[[file]]
+id = "jma-n6-20260924-210000-rs47937"
+format = "jma-grib2-tar"
+sha256 = "58d628a4a6479e42f08264c6bc308a005914cb94812eaf7efcb6aa68785abd41"
+size = 81920
+committed = "files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N6_grib2.RS47937.tar"
+derived_from = "jma-n6-20260924-210000"
+derivation = "single-member tar: the ustar header block and data blocks of member Z__C_RJTD_20260924210000_RDR_JMAGPV_RS47937_Gar0p5km0p7deg_Pvr_ANAL_grib2.bin (73775 bytes, sha256 0807e28c89af92aea9251256ff85a457d1e7caa2d564af42525cca92a34807f7) copied verbatim from the source tar, then zero blocks to the next 10240-byte record (tarslice.py in docs/testdata/corpus.md)"
+tags = ["provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "site:itok", "moments:velocity", "derived", "derivation:archive-member"]
+description = "JMA Okinawa (ITOK, RS47937) radial-velocity member of the 2026-09-24 21:00Z N6 tar: 23 sweeps of 512 radials and 128 to 500 gates of 500 m (the Doppler ladder of each 5-minute cycle and one 90 deg sweep), no Nyquist velocity"
+
 # ---------------------------------------------------------------------------
 # ODIM_H5 per-quantity parts of one scan (EUMETNET ORD archive): the inputs of
 # recast_radar_core::merge_volumes in crates/recast-radar-core/tests

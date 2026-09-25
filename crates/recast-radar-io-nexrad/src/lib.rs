@@ -70,8 +70,14 @@ mod fm301_attrs;
 pub mod gzip;
 pub mod messages;
 pub mod metadata;
+#[cfg(feature = "write")]
+pub mod write;
 
-pub use metadata::{NexradMetadata, NexradVolume, SweepElevationData, read_volume_with_metadata};
+pub use metadata::{
+    NexradMetadata, NexradVolume, RadialConstants, SweepElevationData, read_volume_with_metadata,
+};
+#[cfg(feature = "write")]
+pub use write::{WriteError, WriteOptions, write_volume, write_volume_to};
 
 use std::cell::RefCell;
 use std::fs;
@@ -233,12 +239,14 @@ pub fn read_volume_from_bytes(bytes: &[u8]) -> Result<Volume> {
 /// blocks of each sweep's first radial during the single decode pass; the
 /// plain decoders pass `()`, whose empty implementation compiles away.
 trait RadialObserver {
-    fn message_31(&mut self, body: &[u8], volume: &Volume);
+    /// A message 31 radial was decoded into ray `ray` of sweep `sweep` of
+    /// `volume`.
+    fn message_31(&mut self, body: &[u8], volume: &Volume, sweep: usize, ray: usize);
 }
 
 impl RadialObserver for () {
     #[inline(always)]
-    fn message_31(&mut self, _body: &[u8], _volume: &Volume) {}
+    fn message_31(&mut self, _body: &[u8], _volume: &Volume, _sweep: usize, _ray: usize) {}
 }
 
 pub(crate) fn builder_from_bytes(bytes: &[u8]) -> Result<VolumeBuilder> {
@@ -256,8 +264,16 @@ fn builder_observed(bytes: &[u8], observer: &mut impl RadialObserver) -> Result<
         && !bytes.starts_with(b"BZh")
         && let Some(blocks) = collect_bzip_block_slices(bytes)?
     {
-        return decode_bzip_blocks_pipelined(bytes, blocks, None, false, |_| Ok(()), observer)
-            .map(|outcome| outcome.builder);
+        return decode_bzip_blocks_pipelined(
+            bytes,
+            blocks,
+            None,
+            false,
+            |_| Ok(()),
+            observer,
+            ArchiveCompression::Bzip2Blocks,
+        )
+        .map(|outcome| outcome.builder);
     }
 
     let (bytes, compression) = normalize_archive_bytes(bytes)?;
@@ -395,6 +411,7 @@ pub(crate) fn builder_bzip_block_preview(
         true,
         |_| Ok(()),
         &mut (),
+        ArchiveCompression::Bzip2Blocks,
     )?;
     Ok(outcome.stopped_at_preview.then_some(outcome.builder))
 }
@@ -442,6 +459,7 @@ pub(crate) fn builder_with_bzip_preview(
         false,
         on_preview,
         &mut (),
+        ArchiveCompression::Bzip2Blocks,
     )?;
     Ok(outcome.builder)
 }
@@ -454,6 +472,11 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
 
     if raw.starts_with(&[0x1f, 0x8b]) {
         let decoded = decompress_gzip_bytes(raw)?;
+        // A gzip wrapper around LDM bzip2 records (Py-ART and MetPy read
+        // these too): expand the records as well.
+        if let Some(records) = try_decode_bzip_blocks(&decoded)? {
+            return Ok((records, ArchiveCompression::Gzip));
+        }
         return Ok((decoded, ArchiveCompression::Gzip));
     }
 
@@ -721,8 +744,8 @@ fn builder_from_normalized_observed(
                     });
                 }
                 let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
-                parse_message_31(body, &header, &mut builder)?;
-                observer.message_31(body, &builder.volume);
+                let (sweep, ray) = parse_message_31(body, &header, &mut builder)?;
+                observer.message_31(body, &builder.volume, sweep, ray);
             }
             5 | 18 => {
                 let body_offset = header_offset + MESSAGE_HEADER_LEN;
@@ -815,6 +838,19 @@ where
     let mut body_buffer = Vec::with_capacity(RECORD_BYTES);
     let mut preview_emitted = false;
     while read_record_prefix(reader, &mut prefix, cursor)? {
+        if record_index == 0 && prefix[4..7] == *b"BZh" {
+            // LDM bzip2 records inside the stream (for example a gzip
+            // wrapper around them): decode the records instead.
+            return decode_ldm_stream(
+                reader,
+                &volume_header_bytes,
+                &prefix,
+                compression,
+                preview_min_radials,
+                stop_at_preview,
+                on_preview,
+            );
+        }
         let header_offset = cursor + CONTROL_WORD_LEN;
         let header = parse_message_header_bytes(&prefix[CONTROL_WORD_LEN..]);
 
@@ -913,6 +949,46 @@ where
     Ok(StreamDecodeResult {
         builder,
         stopped_at_preview: false,
+    })
+}
+
+/// The rest of a stream whose records are LDM bzip2 records: read it
+/// (bounded by the reader's limit) and decode the records.
+fn decode_ldm_stream<R: Read, F>(
+    reader: &mut R,
+    volume_header: &[u8],
+    prefix: &[u8],
+    compression: ArchiveCompression,
+    preview_min_radials: Option<usize>,
+    stop_at_preview: bool,
+    on_preview: F,
+) -> Result<StreamDecodeResult>
+where
+    F: FnMut(&VolumeBuilder) -> Result<()>,
+{
+    let mut raw = Vec::with_capacity(VOLUME_HEADER_LEN + prefix.len());
+    raw.extend_from_slice(volume_header);
+    raw.extend_from_slice(prefix);
+    reader
+        .read_to_end(&mut raw)
+        .map_err(|err| NexradError::Compression(err.to_string()))?;
+    let Some(blocks) = collect_bzip_block_slices(&raw)? else {
+        return Err(NexradError::Compression(
+            "LDM bzip2 records inside the stream do not frame".to_owned(),
+        ));
+    };
+    decode_bzip_blocks_pipelined(
+        &raw,
+        blocks,
+        preview_min_radials,
+        stop_at_preview,
+        on_preview,
+        &mut (),
+        compression,
+    )
+    .map(|outcome| StreamDecodeResult {
+        builder: outcome.builder,
+        stopped_at_preview: outcome.stopped_at_preview,
     })
 }
 
@@ -1423,6 +1499,7 @@ fn decode_bzip_blocks_pipelined(
     stop_at_preview: bool,
     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
+    compression: ArchiveCompression,
 ) -> Result<BlockParseOutcome> {
     let slots = BlockSlots::new(blocks);
     rayon::in_place_scope(|scope| {
@@ -1443,6 +1520,7 @@ fn decode_bzip_blocks_pipelined(
             stop_at_preview,
             on_preview,
             observer,
+            compression,
         );
         // Stop idle claims if the parse returned early (preview-only or error).
         slots.cancel();
@@ -1458,6 +1536,7 @@ fn parse_bzip_block_volume(
     stop_at_preview: bool,
     mut on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
+    compression: ArchiveCompression,
 ) -> Result<BlockParseOutcome> {
     let mut preview_pending = min_displayable_radials;
     let mut cursor_reader = BzipBlockCursor::new(volume_header, blocks);
@@ -1473,7 +1552,7 @@ fn parse_bzip_block_volume(
         volume_header.icao,
         volume_header.archive_version,
         volume_header.volume_time,
-        ArchiveCompression::Bzip2Blocks,
+        compression,
         DecodeBudget::volume(),
     );
 
@@ -1497,6 +1576,9 @@ fn parse_bzip_block_volume(
         }
         let header_offset = cursor + CONTROL_WORD_LEN;
         let header = parse_message_header_bytes(&prefix[CONTROL_WORD_LEN..]);
+        // Chunk 0 is the volume header and chunk 1 the first LDM record (the
+        // metadata record); a message in a later record is radial data.
+        let in_data_record = cursor_reader.chunk_index >= 2;
 
         if header.size_halfwords == 0 && record_index < 134 {
             builder.count_skipped();
@@ -1520,9 +1602,13 @@ fn parse_bzip_block_volume(
             });
         }
 
+        // Message 31 radials are variable length except inside the 134
+        // fixed frames of the metadata record. A first LDM record with fewer
+        // frames (some converted files carry only Messages 18 and 5 there) ends the
+        // fixed frames early: radials of later records are variable length.
         let record_len = if variable_framing {
             message_total_len + CONTROL_WORD_LEN
-        } else if record_index < 134 || header.message_type != 31 {
+        } else if header.message_type != 31 || (record_index < 134 && !in_data_record) {
             RECORD_BYTES
         } else {
             message_total_len + CONTROL_WORD_LEN
@@ -1555,8 +1641,8 @@ fn parse_bzip_block_volume(
                 if header.message_type == 1 {
                     parse_message_1(body, &header, &mut builder)?;
                 } else {
-                    parse_message_31(body, &header, &mut builder)?;
-                    observer.message_31(body, &builder.volume);
+                    let (sweep, ray) = parse_message_31(body, &header, &mut builder)?;
+                    observer.message_31(body, &builder.volume, sweep, ray);
                 }
                 if let Some(min_radials) = preview_pending
                     && builder.has_complete_displayable_sweep(min_radials)
@@ -2006,11 +2092,13 @@ fn legacy_binary_angle_deg(raw: u16) -> f32 {
     raw as f32 * 360.0 / 65_536.0
 }
 
+/// Decode one message 31 radial into `builder`: the sweep and ray indices
+/// it went to.
 fn parse_message_31(
     body: &[u8],
     _message_header: &MessageHeader,
     builder: &mut VolumeBuilder,
-) -> Result<()> {
+) -> Result<(usize, usize)> {
     let header = parse_message_31_header(body, 0)?;
     let expected_radials = expected_radials_for_azimuth_resolution(header.azimuth_resolution);
 
@@ -2083,7 +2171,7 @@ fn parse_message_31(
     }
 
     builder.count_radial();
-    Ok(())
+    Ok((sweep, ray))
 }
 
 fn expected_radials_for_azimuth_resolution(azimuth_resolution: u8) -> usize {

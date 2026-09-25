@@ -463,6 +463,12 @@ pub enum SweepError {
     Geometry(#[from] GeometryError),
 }
 
+/// `length` is a whole number of `step`s (0 included), within `tolerance`.
+fn is_multiple(length: f64, step: f64, tolerance: f64) -> bool {
+    let steps = (length / step).round();
+    (steps * step - length).abs() <= tolerance
+}
+
 impl Sweep {
     /// An empty sweep with an unset range and every optional item absent.
     pub fn new(sweep_number: u32, sweep_mode: SweepMode, fixed_angle_deg: f32) -> Self {
@@ -553,6 +559,11 @@ impl Sweep {
     ///   rewrites the mappings of fields already in [`Sweep::fields`] (no gate
     ///   data moves). Add a field to `fields` before attaching the next
     ///   geometry.
+    /// - When one spacing divides the other and the first gates are a whole
+    ///   number of the finer spacing apart centre to centre, but not edge to
+    ///   edge, the range is refined to half the finer spacing (gates of 1 km
+    ///   and 500 m both centred at 0 m map onto a 250 m range with strides 4
+    ///   and 2).
     /// - A start edge before the range extends the range backwards.
     /// - Anything else is [`GeometryError::Unaligned`]. Tolerance: 1e-6 of the
     ///   range spacing.
@@ -602,19 +613,37 @@ impl Sweep {
                 // Work on copies so a failed call leaves the sweep unchanged.
                 let (mut range_c0, mut range_s0, mut range_n0) = (*c0, *s0, u64::from(*n0));
                 let mut refine = 1u32;
-                if spacing_m < range_s0 - 1e-6 * range_s0 {
-                    // The incoming spacing must divide the range spacing.
-                    let k = (range_s0 / spacing_m).round();
+                // The range spacing after this call: the finer of the two
+                // spacings when it divides the other and the offset between
+                // the start edges. When the spacings nest but the first
+                // gates share a centre instead of an edge (converted feeds
+                // put gates of 1 km and 500 m both centred at 0 m, whose
+                // edges are 250 m apart), half the finer spacing.
+                let tolerance = 1e-6 * range_s0;
+                let edge_offset = (first_center_m - spacing_m / 2.0) - (range_c0 - range_s0 / 2.0);
+                let finer = range_s0.min(spacing_m);
+                let mut target = finer;
+                if !is_multiple(edge_offset, finer, tolerance) {
+                    let nested = is_multiple(range_s0.max(spacing_m), finer, tolerance);
+                    let centred = is_multiple(first_center_m - range_c0, finer, tolerance);
+                    if !(nested && centred) {
+                        return Err(unaligned);
+                    }
+                    target = finer / 2.0;
+                }
+                if target < range_s0 - tolerance {
+                    // The target spacing must divide the range spacing.
+                    let k = (range_s0 / target).round();
                     if k < 2.0
-                        || (k * spacing_m - range_s0).abs() > 1e-6 * range_s0
+                        || (k * target - range_s0).abs() > 1e-6 * range_s0
                         || k > f64::from(u32::MAX)
                     {
                         return Err(unaligned);
                     }
                     refine = k as u32;
                     let edge = range_c0 - range_s0 / 2.0;
-                    range_s0 = spacing_m;
-                    range_c0 = edge + spacing_m / 2.0;
+                    range_s0 = target;
+                    range_c0 = edge + target / 2.0;
                     range_n0 *= u64::from(refine);
                 }
                 let tolerance = 1e-6 * range_s0;

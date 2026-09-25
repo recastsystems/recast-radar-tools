@@ -63,16 +63,25 @@ const BEAMWIDTH_OFFSET: usize = 1132;
 /// ANTENNA_GAIN location (Table XV bytes 1136-1139).
 const ANTENNA_GAIN_OFFSET: usize = 1136;
 
+/// Plausible transmitter frequencies, MHz: L band to Ka band. The ICD range
+/// of the WSR-88D is 2700 to 3000 MHz; Level II files the writer makes from
+/// C- and X-band radars carry theirs.
+pub(crate) const PLAUSIBLE_FREQUENCY_MHZ: std::ops::RangeInclusive<i32> = 1000..=40_000;
+/// Plausible antenna gains, dB (ICD range of the WSR-88D: 43 to 47 dB).
+pub(crate) const PLAUSIBLE_ANTENNA_GAIN_DB: std::ops::RangeInclusive<f32> = 20.0..=60.0;
+/// Plausible beam widths, degrees; leaves out the zero of files from Build
+/// 18 on.
+pub(crate) const PLAUSIBLE_BEAM_WIDTH_DEG: std::ops::RangeInclusive<f32> = 0.1..=10.0;
+
 /// Site constants of the FM301 model (`RadarParameters`) at the start of an
 /// Open RDA message 18 body.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct SiteConstants {
-    /// TFREQ_MHZ in Hz; `None` outside the ICD range (2700 to 3000 MHz).
+    /// TFREQ_MHZ in Hz; `None` outside [`PLAUSIBLE_FREQUENCY_MHZ`].
     pub frequency_hz: Option<f64>,
-    /// ANTENNA_GAIN in dB; `None` outside the ICD range (43 to 47 dB).
+    /// ANTENNA_GAIN in dB; `None` outside [`PLAUSIBLE_ANTENNA_GAIN_DB`].
     pub antenna_gain_db: Option<f32>,
-    /// BEAMWIDTH in degrees; `None` outside 0.5 to 2 degrees, which leaves out
-    /// the zero of files from Build 18 on.
+    /// BEAMWIDTH in degrees; `None` outside [`PLAUSIBLE_BEAM_WIDTH_DEG`].
     pub beam_width_deg: Option<f32>,
 }
 
@@ -87,13 +96,13 @@ pub(crate) fn site_constants(body: &[u8]) -> Option<SiteConstants> {
     let antenna_gain_db = f32_at(body, ANTENNA_GAIN_OFFSET);
     let beam_width_deg = f32_at(body, BEAMWIDTH_OFFSET);
     Some(SiteConstants {
-        frequency_hz: (2700..=3000)
+        frequency_hz: PLAUSIBLE_FREQUENCY_MHZ
             .contains(&frequency_mhz)
             .then(|| f64::from(frequency_mhz) * 1e6),
-        antenna_gain_db: (43.0..=47.0)
+        antenna_gain_db: PLAUSIBLE_ANTENNA_GAIN_DB
             .contains(&antenna_gain_db)
             .then_some(antenna_gain_db),
-        beam_width_deg: (0.5..=2.0)
+        beam_width_deg: PLAUSIBLE_BEAM_WIDTH_DEG
             .contains(&beam_width_deg)
             .then_some(beam_width_deg),
     })

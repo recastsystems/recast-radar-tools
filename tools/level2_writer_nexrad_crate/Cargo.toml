@@ -1,0 +1,17 @@
+# Reads Level II files with the `nexrad` crate (danielway/nexrad) for
+# tools/level2_writer_check.py (`--nexrad-crate`). Standalone: not a
+# workspace member. To read with a local checkout of the crate instead of
+# the published release:
+#
+#   cargo build --release --manifest-path tools/level2_writer_nexrad_crate/Cargo.toml \
+#     --config 'patch.crates-io.nexrad.path="~/nexrad/nexrad"'
+[package]
+name = "level2-writer-nexrad-crate"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+nexrad = { version = "1.0.0-rc.4", default-features = false, features = ["decode", "data", "model"] }
+
+[workspace]

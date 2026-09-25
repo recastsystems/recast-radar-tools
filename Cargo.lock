@@ -972,6 +972,7 @@ dependencies = [
  "recast-radar-io-nexrad",
  "recast-radar-io-odim",
  "recast-radar-testdata",
+ "serde_json",
  "thiserror",
 ]
 

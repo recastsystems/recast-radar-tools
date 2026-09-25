@@ -529,7 +529,10 @@ fn matches_pyart_and_the_volume_decoder() {
 /// `Volume::radar_parameters` of the volume decoder, which reads message 18's
 /// first segment, against the walker's decode of the whole message: the
 /// transmitter frequency, the antenna gain and the beam width within their
-/// ranges, for both polarizations. `true` when the volume has any of them.
+/// plausibility ranges (1000 to 40000 MHz, 20 to 60 dB, 0.1 to 10 degrees:
+/// wider than the WSR-88D's ICD ranges so Level II written from C- and X-band
+/// radars keeps them), for both polarizations. `true` when the volume has any
+/// of them.
 fn assert_site_constants(name: &str, decoded: &NexradVolume) -> bool {
     let parameters = &decoded.volume.radar_parameters;
     let Some(adaptation) = decoded.metadata.adaptation.as_deref() else {
@@ -540,13 +543,13 @@ fn assert_site_constants(name: &str, decoded: &NexradVolume) -> bool {
         );
         return false;
     };
-    let frequency = (2700..=3000)
+    let frequency = (1000..=40_000)
         .contains(&adaptation.tfreq_mhz)
         .then(|| f64::from(adaptation.tfreq_mhz) * 1e6);
-    let gain = (43.0..=47.0)
+    let gain = (20.0..=60.0)
         .contains(&adaptation.antenna_gain)
         .then_some(adaptation.antenna_gain);
-    let beam = (0.5..=2.0)
+    let beam = (0.1..=10.0)
         .contains(&adaptation.beamwidth)
         .then_some(adaptation.beamwidth);
     let expected = RadarParameters {
@@ -1051,11 +1054,17 @@ fn out_of_order_chunks_keep_per_sweep_alignment() {
     );
 
     // Cut 0 opened in chunk 002: the same per-sweep data as when chunks 001
-    // and 002 are decoded alone.
+    // and 002 are decoded alone, whose radials are the first 120 here. Every
+    // radial of both cuts is listed, chunk 003's after chunk 014's.
     let alone = read_volume_with_metadata(&first_two).unwrap();
     let alone_sweeps = sweeps("chunks 001-002", &alone);
     assert_eq!(alone_sweeps.len(), 1);
-    assert_same(&per_sweep[0], &alone_sweeps[0], "cut 0 per-sweep data");
+    assert_eq!(alone_sweeps[0].radials.len(), 120);
+    let mut cut_0 = per_sweep[0].clone();
+    assert_eq!(cut_0.radials.len(), 240);
+    cut_0.radials.truncate(120);
+    assert_same(&cut_0, &alone_sweeps[0], "cut 0 per-sweep data");
+    assert_eq!(per_sweep[1].radials.len(), 120);
     assert_eq!(per_sweep[1].elevation_number, 3);
     assert_eq!(per_sweep[1].sweep_index, 1);
     assert_eq!(

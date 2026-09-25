@@ -29,7 +29,8 @@ use crate::messages::bypass_map::ClutterFilterBypassMap;
 use crate::messages::clutter_censor::ClutterCensorZones;
 use crate::messages::clutter_filter_map::ClutterFilterMap;
 use crate::messages::msg31_blocks::{
-    DigitalRadarDataGeneric, ElevationDataBlock, RadialDataBlock, VolumeDataBlock,
+    DigitalRadarDataGeneric, ElevationDataBlock, RadialDataBlock, SpotBlankingStatus,
+    VolumeDataBlock,
 };
 use crate::messages::performance::PerformanceMaintenance;
 use crate::messages::prf::RdaPrfData;
@@ -94,12 +95,13 @@ pub struct NexradMetadata {
     pub errors: Vec<String>,
 }
 
-/// Message 31 constant blocks of the first radial of one sweep.
+/// Message 31 constant blocks of the first radial of one sweep, and what
+/// every radial of the sweep carried beyond the volume's model.
 ///
 /// The ELV block is constant within a sweep. VOL and RAD blocks are sent with
 /// every radial and can change within a sweep (noise levels, and the Nyquist
 /// velocity of Doppler sectors), so these are the values at the sweep's
-/// start.
+/// start; [`Self::radials`] has each radial's own.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SweepElevationData {
     /// Index of the sweep in [`Volume::sweeps`].
@@ -121,6 +123,64 @@ pub struct SweepElevationData {
     /// block, in the 44-byte VOL layout (before Build 20), or when the RPG
     /// reports it as not available.
     pub zdr_bias_estimate_db: Option<f32>,
+    /// Every radial of the sweep, in ray order: the Data Header Block items
+    /// and constant blocks the volume has no place for. The RAD block's
+    /// noise levels and calibration constants change from radial to radial,
+    /// and the VOL block's transmitter power on the last radials of a cut.
+    /// Empty when a radial of the sweep did not decode, or went to the sweep
+    /// out of ray order (listed in [`NexradMetadata::errors`]).
+    pub radials: Vec<RadialConstants>,
+}
+
+/// What one Message 31 radial carried besides its time, angles, status,
+/// Nyquist velocity, unambiguous range and moments (which the volume holds).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RadialConstants {
+    /// Data Header Block bytes 0-3: the radar identifier as recorded, which
+    /// can differ from the volume header's (early Build 10 files such as
+    /// KVWX 2008 leave it blank).
+    pub radar_identifier: [u8; 4],
+    /// Data Header Block bytes 10-11: radial number within the cut.
+    pub azimuth_number: u16,
+    /// Byte 17: spare.
+    pub spare: u8,
+    /// Byte 20: azimuth resolution spacing code as recorded (1 for 0.5
+    /// degree, 2 for 1 degree; Table XVII-A).
+    pub azimuth_resolution_code: u8,
+    /// Byte 21: radial status code (Table III-C) as recorded, bad-data bit
+    /// and codes outside the table included (KVWX 2008 has 8).
+    pub radial_status_code: u8,
+    /// Byte 23: sector number within the cut.
+    pub cut_sector_number: u8,
+    /// Byte 28: spot blanking status.
+    pub spot_blanking: SpotBlankingStatus,
+    /// Byte 29: azimuth indexing angle in 0.01 degree steps; 0 means no
+    /// indexing.
+    pub azimuth_indexing_raw: u8,
+    /// The radial's Elevation Data Constant block (Table XVII-F).
+    pub elevation: Option<ElevationDataBlock>,
+    /// The radial's Volume Data Constant block (Table XVII-E).
+    pub volume: Option<VolumeDataBlock>,
+    /// The radial's Radial Data Constant block (Table XVII-H).
+    pub radial: Option<RadialDataBlock>,
+}
+
+impl RadialConstants {
+    fn of(radial: &DigitalRadarDataGeneric<'_>) -> Self {
+        Self {
+            radar_identifier: radial.header.radar_identifier,
+            azimuth_number: radial.header.azimuth_number,
+            spare: radial.header.spare,
+            azimuth_resolution_code: radial.header.azimuth_resolution.code(),
+            radial_status_code: radial.header.radial_status_code,
+            cut_sector_number: radial.header.cut_sector_number,
+            spot_blanking: radial.header.spot_blanking,
+            azimuth_indexing_raw: radial.header.azimuth_indexing_raw,
+            elevation: radial.elevation,
+            volume: radial.volume,
+            radial: radial.radial,
+        }
+    }
 }
 
 /// Decode a Level II volume and its NEXRAD metadata.
@@ -188,49 +248,76 @@ fn set_first<T>(slot: &mut Option<T>, value: T) {
     }
 }
 
-/// Collects the constant blocks of each sweep's first message 31 radial
-/// while the volume decoder runs.
+/// Collects the constant blocks of each sweep's first message 31 radial,
+/// and every radial's own, while the volume decoder runs.
 ///
-/// The decoder creates a sweep only for the radial that opens it, and always
-/// appends it, so a message 31 that leaves the volume with more sweeps than
-/// the previous one did is the first radial of the last sweep. Later radials
-/// may go to earlier sweeps (for example out-of-order real-time chunks), but
-/// never open one.
+/// The decoder creates a sweep only for the radial that opens it (ray 0).
+/// Later radials may go to earlier sweeps (for example out-of-order
+/// real-time chunks), but never open one; a sweep opened by a message 1
+/// radial (which the observer does not see) gets no entry.
 #[derive(Default)]
 struct SweepCollector {
-    /// Sweeps in the volume after the previous message 31.
-    sweeps_seen: usize,
     sweeps: Vec<SweepElevationData>,
+    /// Sweeps whose radial list was dropped: a radial did not decode, or
+    /// did not arrive in ray order.
+    incomplete: Vec<usize>,
     errors: Vec<String>,
     saw_message_31: bool,
 }
 
 impl RadialObserver for SweepCollector {
-    fn message_31(&mut self, body: &[u8], volume: &Volume) {
+    fn message_31(&mut self, body: &[u8], _volume: &Volume, sweep: usize, ray: usize) {
         self.saw_message_31 = true;
-        if volume.sweeps.len() == self.sweeps_seen {
+        // The opening radial is decoded whole (its ZDR block converts the
+        // VOL block's ZDR bias); the others need their constant blocks only.
+        let decoded = if ray == 0 {
+            DigitalRadarDataGeneric::decode(body)
+        } else {
+            DigitalRadarDataGeneric::decode_constant_blocks(body)
+        };
+        if ray == 0 {
+            match &decoded {
+                Ok(radial) => self.sweeps.push(SweepElevationData {
+                    sweep_index: sweep,
+                    elevation_number: radial.header.elevation_number,
+                    elevation_angle_deg: radial.header.elevation_angle_deg,
+                    elevation: radial.elevation,
+                    volume: radial.volume,
+                    radial: radial.radial,
+                    zdr_bias_estimate_db: radial.zdr_bias_estimate_db(),
+                    radials: Vec::new(),
+                }),
+                Err(error) => {
+                    self.errors
+                        .push(format!("sweep {sweep} first radial: {error}"));
+                    return;
+                }
+            }
+        }
+        if self.incomplete.contains(&sweep) {
             return;
         }
-        self.sweeps_seen = volume.sweeps.len();
-        let sweep_index = volume.sweeps.len() - 1;
-        // A sweep with more rays was opened by message 1 radials (which the
-        // observer does not see) and this radial went to another sweep.
-        if volume.sweeps[sweep_index].nrays() != 1 {
+        let Some(entry) = self
+            .sweeps
+            .iter_mut()
+            .rev()
+            .find(|entry| entry.sweep_index == sweep)
+        else {
             return;
-        }
-        match DigitalRadarDataGeneric::decode(body) {
-            Ok(radial) => self.sweeps.push(SweepElevationData {
-                sweep_index,
-                elevation_number: radial.header.elevation_number,
-                elevation_angle_deg: radial.header.elevation_angle_deg,
-                elevation: radial.elevation,
-                volume: radial.volume,
-                radial: radial.radial,
-                zdr_bias_estimate_db: radial.zdr_bias_estimate_db(),
-            }),
-            Err(error) => self
-                .errors
-                .push(format!("sweep {sweep_index} first radial: {error}")),
-        }
+        };
+        let problem = match decoded {
+            Ok(radial) if entry.radials.len() == ray => {
+                entry.radials.push(RadialConstants::of(&radial));
+                return;
+            }
+            Ok(_) => format!(
+                "sweep {sweep} radial {ray} arrived after radial {}",
+                entry.radials.len()
+            ),
+            Err(error) => format!("sweep {sweep} radial {ray}: {error}"),
+        };
+        entry.radials = Vec::new();
+        self.incomplete.push(sweep);
+        self.errors.push(problem);
     }
 }

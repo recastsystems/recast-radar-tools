@@ -11,7 +11,7 @@
 //!
 //! Sources: KVWX 2008-04-15, whose message 31 radar identifiers are four
 //! spaces; KPAH 2008-04-15 (Build 10.0, the same evening, identifier "KPAH");
-//! the KTLX 2024-03-15 benchmark volume (16-bit ZDR and PHI, CFP); and the
+//! the KTLX 2024-03-15 benchmark volume (16-bit ZDR and PHI, CFP); the
 //! committed KIWA real-time chunks, which run offline.
 
 mod common;

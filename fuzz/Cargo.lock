@@ -367,6 +367,7 @@ dependencies = [
  "bzip2",
  "libfuzzer-sys",
  "recast-radar-bzip2",
+ "recast-radar-core",
  "recast-radar-io",
  "recast-radar-io-cfradial",
  "recast-radar-io-dorade",
@@ -432,6 +433,7 @@ dependencies = [
 name = "recast-radar-io-nexrad"
 version = "0.1.0"
 dependencies = [
+ "bzip2",
  "chrono",
  "flate2",
  "rayon",

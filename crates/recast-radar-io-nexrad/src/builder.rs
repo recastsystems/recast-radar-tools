@@ -396,9 +396,10 @@ impl VolumeBuilder {
                         model.fields.push(field);
                         model.fields.len() - 1
                     }
-                    // Gates that cannot share the sweep range (only seen in
-                    // garbage radials of misframed files): the moment is
-                    // dropped for this sweep.
+                    // Gates that cannot share the sweep range even on a
+                    // refined one (only seen in garbage radials of
+                    // misframed files): the moment is dropped for this
+                    // sweep.
                     Err(_) => usize::MAX,
                 }
             }

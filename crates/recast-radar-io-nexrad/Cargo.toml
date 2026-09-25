@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Pure-Rust NEXRAD Archive II (Level II) weather radar decoder"
+description = "Pure-Rust NEXRAD Archive II (Level II) weather radar decoder and writer"
 readme.workspace = true
 keywords = ["nexrad", "radar", "weather", "level2", "wsr-88d"]
 categories = ["science::geo", "parser-implementations", "encoding"]
@@ -16,8 +16,16 @@ categories = ["science::geo", "parser-implementations", "encoding"]
 # volumes with large records (KILX20260418) and no change on KTLX20240315 in
 # the single-core decode study. Doubles the per-thread decoder workspace.
 paired-bzip2 = []
+# The Level II writer (`write` module: Archive II files, real-time chunks,
+# GR2Analyst polling directories). Off by default so that decoding alone
+# does not build the temporary bzip2 encoder; `cargo test` of this crate
+# alone needs `--features write` to run the writer tests.
+write = ["dep:bzip2"]
 
 [dependencies]
+# Level II writer only: bzip2 streams for LDM records until the
+# recast-radar-bzip2 encoder lands (src/write/compress.rs is the one seam).
+bzip2 = { workspace = true, optional = true }
 chrono.workspace = true
 flate2.workspace = true
 rayon.workspace = true
@@ -26,11 +34,26 @@ recast-radar-core = { path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]
-# Test fixtures only: the reference encoder for synthetic LDM records and
-# whole-file bzip2 volumes.
+# The unit tests build LDM records to decode.
 bzip2.workspace = true
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 serde_json.workspace = true
+
+[[test]]
+name = "writer_layout"
+required-features = ["write"]
+
+[[test]]
+name = "writer_roundtrip"
+required-features = ["write"]
+
+[[test]]
+name = "fuzz_regressions"
+required-features = ["write"]
+
+[[example]]
+name = "level2_layout"
+required-features = ["write"]
 
 [lints]
 workspace = true

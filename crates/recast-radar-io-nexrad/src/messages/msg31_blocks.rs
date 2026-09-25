@@ -124,15 +124,34 @@ impl<'a> DigitalRadarDataGeneric<'a> {
     pub fn decode(body: &'a [u8]) -> Result<Self> {
         let header = DataHeaderBlock::decode(body)?;
         match header.compression {
-            CompressionIndicator::Uncompressed => decode_blocks(body, header),
+            CompressionIndicator::Uncompressed => decode_blocks(body, header, true),
             CompressionIndicator::Bzip2 | CompressionIndicator::Zlib => {
                 let radial = inflate_radial(body, &header)?;
-                decode_blocks(&radial, header).map(DigitalRadarDataGeneric::into_owned)
+                decode_blocks(&radial, header, true).map(DigitalRadarDataGeneric::into_owned)
             }
             CompressionIndicator::Unknown(code) => Err(NexradError::InvalidMessage {
                 offset: 16,
                 reason: format!("message 31 compression indicator {code} is not defined"),
             }),
+        }
+    }
+
+    /// [`Self::decode`] without the data moment and unknown blocks (left
+    /// empty): the Data Header Block and the VOL, ELV and RAD blocks, with
+    /// the same checks on them and on every pointer. The metadata reader
+    /// takes these from every radial.
+    pub(crate) fn decode_constant_blocks(body: &[u8]) -> Result<DigitalRadarDataGeneric<'static>> {
+        let header = DataHeaderBlock::decode(body)?;
+        match header.compression {
+            CompressionIndicator::Uncompressed => {
+                decode_blocks(body, header, false).map(DigitalRadarDataGeneric::into_owned)
+            }
+            _ => {
+                let mut radial = DigitalRadarDataGeneric::decode(body)?.into_owned();
+                radial.moments.clear();
+                radial.unknown_blocks.clear();
+                Ok(radial)
+            }
         }
     }
 
@@ -227,7 +246,13 @@ fn inflate_radial(body: &[u8], header: &DataHeaderBlock) -> Result<Vec<u8>> {
     Ok(radial)
 }
 
-fn decode_blocks(radial: &[u8], header: DataHeaderBlock) -> Result<DigitalRadarDataGeneric<'_>> {
+/// The blocks of a radial; data moment and unknown blocks only when
+/// `with_moments`.
+fn decode_blocks(
+    radial: &[u8],
+    header: DataHeaderBlock,
+    with_moments: bool,
+) -> Result<DigitalRadarDataGeneric<'_>> {
     let header_len = header.pointer_table_len();
     let mut decoded = DigitalRadarDataGeneric {
         volume: None,
@@ -266,6 +291,7 @@ fn decode_blocks(radial: &[u8], header: DataHeaderBlock) -> Result<DigitalRadarD
                 let block = RadialDataBlock::decode(constant_block(radial, offset, "RAD")?)?;
                 set_once(&mut decoded.radial, block, offset, "RAD")?;
             }
+            _ if !with_moments => {}
             (b'D', _) => decoded
                 .moments
                 .push(MomentDataBlock::decode(radial, offset)?),

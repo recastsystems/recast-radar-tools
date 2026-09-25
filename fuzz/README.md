@@ -10,6 +10,8 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | Target | Crate | Entry points |
 |---|---|---|
 | `level2_volume` | `recast-radar-io-nexrad` | `read_volume_from_bytes`, `read_gzip_volume_from_bytes_with_preview`, `read_volume_from_bytes_with_bzip_preview`, `read_gzip_preview_from_bytes`, `read_bzip_block_preview_from_bytes` (one per input, by length mod 4; the preview threshold is the last byte) |
+| `level2_writer` | `recast-radar-io-nexrad` | `read_volume_with_metadata`, then the writer: `write_volume_with_source` without the source metadata (LDM bzip2), with it (uncompressed), with it gzip-wrapped, or `write_realtime_chunks_with_source` with it (mode = input length mod 4; the last two drop gates before the radar and write site KTLX, so Message 1 volumes are written too); the written bytes must decode again with the reported sweeps and radials, the source's rays in their order (a ray left out only when no written moment has data on it), every radial's time (milliseconds since 1970) and angles, and every written moment's codes, gates and absent rays (a refused write is fine) |
+| `level2_writer_router` | `recast-radar-io`, `recast-radar-io-nexrad` | `read_supported_volume_bytes` (ODIM_H5, CfRadial, DORADE, JMA, Level II), then the writer: `write_volume_with_source` (mode = input length mod 8: the Precise (0 and 3), Compatible (1) or Standard (2) policy by length mod 4; lengths with `(len / 4) % 2 == 1` also drop gates before the radar, accept any range rounding, supply a Nyquist velocity and unambiguous range where the source has none and go through `write_realtime_chunks`); the written bytes must decode again with the reported sweeps and radials, each radial the source ray `WriteSummary::written_rays` names (every ray at most once, a ray left out only when no written moment has data on it) with its time (to the millisecond) and angles (bit for bit), and every written moment's gate count, first gate and spacing (to the metre), absent rays and values (each within the reported `max_abs_error`, sentinels as sentinels) |
 | `io_router` | `recast-radar-io` | `sniff_supported_volume_format`, `read_supported_volume_bytes` (zip/gzip unwrapping, then Level II, ODIM, CfRadial, DORADE or JMA) |
 | `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `read_odim_h5_volume`, `decode_odim_h5_cartesian_max` |
 | `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `read_cfradial1_volume` |
@@ -88,11 +90,31 @@ It prints `decoded` when an entry point returned `Ok` for the input's mode, and
   header.
 - `io_router` rejects the ODIM Cartesian composite, which only the `odim`
   target decodes.
+- `level2_writer` rejects the real-time start chunk alone: it holds the
+  metadata record but no radial, so there is no volume to write.
+- `level2_writer_router` rejects the DOW6 RHI head: Level II cannot hold RHI
+  sweeps, and the typed refusal is the path it covers.
 
 `l2-kvwx-20080415-235337` (AR2V0001 header with Message 31 radials) was
 rejected until the Level II decoder accepted a blank Message 31 radar
 identifier (`09c8d1e`). It now decodes and stays as a seed for that edge
 case.
+
+## Smoke runs on stable Rust
+
+`fuzz-tools smoke <target> <n> [SEED_DIR]` mutates every seed of a target
+`n` times with a fixed pseudo-random sequence (bit flips, boundary bytes,
+overwritten, copied, inserted and deleted spans, truncation) and runs each
+mutant through the harness, on any platform and without libFuzzer. The
+mutants are the same on every run, so a result can be repeated; a panicking
+mutant is saved as `artifacts/<target>/smoke-<seed>-<mutant>` for `replay`.
+Length-changing mutations reach every length-selected mode. It is no
+substitute for a coverage-guided campaign, but it checks a harness and its
+seeds before one, and on Windows.
+
+```bash
+cargo run --release --manifest-path fuzz/tools/Cargo.toml -- smoke level2_writer_router 1000
+```
 
 ## Running
 
@@ -100,7 +122,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All eight targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All ten targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2_volume dorade

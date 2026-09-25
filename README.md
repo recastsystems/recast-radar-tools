@@ -234,7 +234,7 @@ the centre to the edge.
 |---|---|---|
 | `recast-radar-tools` | | The facade: re-exports the crates below as modules behind features |
 | `recast-radar-core` | `core` | FM301 data model: volumes, sweeps, ray coordinates, fields with CF packing, the FM301 group view, beam geometry, field names |
-| `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2; the Level III VAD Wind Profile product |
+| `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2; the Level III VAD Wind Profile product; writes any volume as Archive II, real-time chunks or a GR2Analyst polling directory ([docs/level2/writer.md](docs/level2/writer.md)) |
 | `recast-radar-bzip2` | | bzip2 compressor and decompressor without unsafe code or required dependencies (rayon with the `rayon` feature), written for LDM records: the decoder takes about a quarter of the instructions of C libbzip2; the encoder writes libbzip2's exact streams in 0.6 to 0.8 of its time on LDM records, and in less time than it at every input size measured, from 16 bytes up |
 | `recast-radar-io-level3` | `level3` | NEXRAD and TDWR Level III products: NOAAPort/WMO framing, message and product description headers, symbology, graphic and tabular blocks, display packets, data levels |
 | `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through an HDF5 reader written in Rust |

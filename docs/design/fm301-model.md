@@ -1598,8 +1598,14 @@ Then `stride = k` and `start = m`.
 
 - If the field's start edge lies before the range, the range is extended backwards and every
   existing `start` is increased to match.
-- If the finer spacing is not an integer divisor, the call returns
-  `GeometryError::Unaligned`. NEXRAD never produces that case (6.1).
+- If one spacing divides the other and the first gates are a whole number of the finer spacing
+  apart centre to centre but not edge to edge, the range is refined to half the finer spacing.
+  NEXRAD never produces that case (6.1), but a converted Level II file can: REF gates of 1000 m
+  and VEL gates of 500 m both centred at 0 m have edges 250 m apart; the sweep gets a 250 m range
+  from -375 m, REF stride 4 start 0, VEL stride 2 start 1. Until then the decoder dropped such a
+  moment. No file in the corpus has this layout, so the case has no real-data test.
+- Anything else (a finer spacing that does not divide the other, gates shifted by a fraction of
+  a gate) returns `GeometryError::Unaligned`.
 - When `merge_volumes` assembles an ODIM multi-file volume, an unaligned incoming field is
   counted in `MergeReport::skipped_geometry` and dropped, just as mismatched azimuth
   geometry is today.

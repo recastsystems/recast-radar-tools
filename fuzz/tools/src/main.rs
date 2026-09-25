@@ -5,7 +5,16 @@
 //! fuzz-tools seeds [OUT_DIR]          write seeds/<target>/ from the testdata manifest
 //! fuzz-tools replay <target> <path>.. run inputs (files or directories) through a harness
 //! fuzz-tools regressions              replay the testdata entries tagged fuzz-regression
+//! fuzz-tools smoke <target> <n> [DIR] n seeded mutations of every seed of the target
 //! ```
+//!
+//! `smoke` is a repeatable stand-in for a fuzzing campaign on machines
+//! without libFuzzer: every file under `DIR` (default `seeds/<target>/`) is
+//! mutated `n` times with a fixed pseudo-random sequence (bit flips,
+//! boundary bytes, overwritten, inserted and deleted spans, truncation; the
+//! length changes so every length-selected mode is reached), and each
+//! mutant runs through the harness. A panicking mutant is saved under
+//! `artifacts/<target>/smoke-*` for `replay`.
 //!
 //! Seeds are real test files resolved by manifest id through
 //! `recast-radar-testdata` (committed fixtures, or sha256-verified downloads
@@ -128,6 +137,79 @@ const SEEDS: &[Seed] = &[
     ("level2_volume", "l2-tstl-20230331-230314", L2Sparse),
     ("level2_volume", "l2-pahg-20250909-212549", L2Sparse),
     ("level2_volume", "l2-kiwa-20260917-003629", L2Sparse),
+    // level2_writer: small real volumes the decoder accepts, one per case
+    // the writer handles differently: a real-time start chunk alone and with
+    // the next chunk, Message 1 volumes (a blank ICAO, gates before the
+    // radar), the AR2V0001 header over Message 31, legacy resolution, 8- and
+    // 16-bit ZDR with CFP, VOL block 52, TDWR, and a volume head.
+    ("level2_writer", KIWA_CHUNK_S, Verbatim),
+    (
+        "level2_writer",
+        KIWA_CHUNK_S,
+        ConcatChunks(&[KIWA_CHUNK_I2]),
+    ),
+    ("level2_writer", "l2-ktlx-19910605-162126-trim", Verbatim),
+    ("level2_writer", "l2-klix-20050829-130035-trim", Verbatim),
+    ("level2_writer", "l2-kvwx-20080415-235337", L2Sparse),
+    ("level2_writer", "l2-kpah-20080415-235014", L2Sparse),
+    ("level2_writer", "l2-kvnx-20110315-000203", L2Sparse),
+    ("level2_writer", "l2-klix-20210829-180425", L2Sparse),
+    ("level2_writer", "l2-kbox-20220129-150537", L2Sparse),
+    ("level2_writer", "l2-tstl-20230331-230314", L2Sparse),
+    ("level2_writer", "l2-kiwa-20260917-003629", L2Head),
+    // level2_writer_router: real volumes of the other formats, one per case
+    // the writer's quantiser and geometry handle differently: 8-bit ODIM on
+    // the typical REF coding and on its own grid (DBZH and VRADH), mixed
+    // gains across sweeps (the Norwegian vertical scan), dual-polarization
+    // moments with fields left out (TH, LDR); float CfRadial on a 0.01 grid
+    // and 8-bit CfRadial with 255 levels (Irene VEL); 16-bit DORADE at 0.01
+    // and 0.0001, a sector scan and an RHI (refused); JMA float levels on
+    // an uneven table of hundredths.
+    (
+        "level2_writer_router",
+        "odim-espdg-20260707-1927-pvol-dbzh-vradh",
+        Verbatim,
+    ),
+    (
+        "level2_writer_router",
+        "odim-norst-20170421-0908-pvol",
+        Verbatim,
+    ),
+    (
+        "level2_writer_router",
+        "odim-dkrom-20260820-1130-pvol",
+        Verbatim,
+    ),
+    (
+        "level2_writer_router",
+        "cfrad1-xsapr-sgp-20110520-ppi-classic",
+        Verbatim,
+    ),
+    (
+        "level2_writer_router",
+        "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
+        Verbatim,
+    ),
+    (
+        "level2_writer_router",
+        "dorade-cow2-20260521-225514-sur-head24",
+        Verbatim,
+    ),
+    (
+        "level2_writer_router",
+        "dorade-noxp-20090525-203211-sector",
+        DoradeHead(8),
+    ),
+    (
+        "level2_writer_router",
+        "dorade-dow6-20211230-222139-rhi-head41",
+        DoradeHead(4),
+    ),
+    (
+        "level2_writer_router",
+        "jma-n6-20191012-090000-rs47773",
+        Verbatim,
+    ),
     // io_router: one small real file per routed format, plus gzip and
     // block-bzip Level II.
     ("io_router", "l2-tbwi-20230601-175101-stub", Verbatim),
@@ -245,9 +327,18 @@ fn main() -> ExitCode {
         ),
         Some("replay") if args.len() >= 3 => replay(&args[1], args[2..].iter().map(PathBuf::from)),
         Some("regressions") => replay_regressions(),
+        Some("smoke") if (3..=4).contains(&args.len()) => match args[2].parse() {
+            Ok(iterations) => smoke(
+                &args[1],
+                iterations,
+                args.get(3)
+                    .map_or_else(|| fuzz_dir().join("seeds").join(&args[1]), PathBuf::from),
+            ),
+            Err(_) => Err(other_error(format!("`{}` is not a count", args[2]))),
+        },
         _ => {
             eprintln!(
-                "usage: fuzz-tools seeds [OUT_DIR]\n       fuzz-tools replay <target> <file-or-dir>...\n       fuzz-tools regressions\ntargets: {}",
+                "usage: fuzz-tools seeds [OUT_DIR]\n       fuzz-tools replay <target> <file-or-dir>...\n       fuzz-tools regressions\n       fuzz-tools smoke <target> <mutations-per-seed> [SEED_DIR]\ntargets: {}",
                 TARGETS
                     .iter()
                     .map(|(name, _)| *name)
@@ -577,6 +668,117 @@ fn replay_files(target: &str, harness: Harness, files: &[PathBuf]) -> io::Result
         );
     }
     Ok(clean)
+}
+
+/// xorshift64* pseudo-random numbers: the same mutants on every run.
+struct Mutator(u64);
+
+impl Mutator {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    /// A number below `bound` (at least 1).
+    fn below(&mut self, bound: usize) -> usize {
+        (self.next() % bound.max(1) as u64) as usize
+    }
+
+    /// One to four mutations of `data`.
+    fn mutate(&mut self, data: &mut Vec<u8>) {
+        for _ in 0..=self.below(4) {
+            if data.is_empty() {
+                data.push(0);
+            }
+            let at = self.below(data.len());
+            match self.below(7) {
+                0 => data[at] ^= 1 << self.below(8),
+                1 => data[at] = [0x00, 0x01, 0x7F, 0x80, 0xFF][self.below(5)],
+                2 => {
+                    let end = (at + 1 + self.below(8)).min(data.len());
+                    for byte in &mut data[at..end] {
+                        *byte = self.next() as u8;
+                    }
+                }
+                3 => {
+                    let count = 1 + self.below(5);
+                    let fill = self.next() as u8;
+                    data.splice(at..at, std::iter::repeat_n(fill, count));
+                }
+                4 => {
+                    let end = (at + 1 + self.below(5)).min(data.len());
+                    data.drain(at..end);
+                }
+                5 => {
+                    // Copy a span over another place (a field or header
+                    // repeated elsewhere in the file).
+                    let from = self.below(data.len());
+                    let len = (1 + self.below(16))
+                        .min(data.len() - from)
+                        .min(data.len() - at);
+                    let span = data[from..from + len].to_vec();
+                    data[at..at + len].copy_from_slice(&span);
+                }
+                _ => data.truncate(at.max(1)),
+            }
+        }
+    }
+}
+
+/// `iterations` seeded mutants of every file under `dir` through the
+/// harness of `target`; `false` when any panicked.
+fn smoke(target: &str, iterations: usize, dir: PathBuf) -> io::Result<bool> {
+    let harness =
+        harness(target).ok_or_else(|| other_error(format!("unknown target `{target}`")))?;
+    let mut files = Vec::new();
+    collect_files(&dir, &mut files)?;
+    if files.is_empty() {
+        return Err(other_error(format!(
+            "no seeds under {} (run `fuzz-tools seeds`)",
+            dir.display()
+        )));
+    }
+    let artifacts = fuzz_dir().join("artifacts").join(target);
+    let started = Instant::now();
+    let (mut runs, mut accepted, mut panics) = (0usize, 0usize, 0usize);
+    for (index, file) in files.iter().enumerate() {
+        let seed = fs::read(file)?;
+        let mut mutator = Mutator(0x9E37_79B9_7F4A_7C15 ^ (index as u64 + 1));
+        let mut seed_accepted = 0usize;
+        for iteration in 0..iterations {
+            let mut data = seed.clone();
+            mutator.mutate(&mut data);
+            runs += 1;
+            match panic::catch_unwind(AssertUnwindSafe(|| harness(&data))) {
+                Ok(true) => seed_accepted += 1,
+                Ok(false) => {}
+                Err(_) => {
+                    panics += 1;
+                    fs::create_dir_all(&artifacts)?;
+                    let name = format!("smoke-{index}-{iteration}");
+                    fs::write(artifacts.join(&name), &data)?;
+                    eprintln!(
+                        "PANIC {target} {} mutant {iteration}: saved {}",
+                        file.display(),
+                        artifacts.join(&name).display()
+                    );
+                }
+            }
+        }
+        accepted += seed_accepted;
+        println!(
+            "{target:<14} {seed_accepted:>6}/{iterations} accepted  {}",
+            file.display()
+        );
+    }
+    println!(
+        "{target}: {runs} mutants of {} seeds in {:.1} s, {accepted} accepted, {panics} panicked",
+        files.len(),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(panics == 0)
 }
 
 /// Tag on every fuzz regression input in the testdata manifest

@@ -757,7 +757,8 @@ open(dst, "wb").write(out + b"\0" * (total - len(out)))
 ```
 
 It was run as `tarslice.py <jma-n5-20191012-090000> RS47773 out.tar`, and
-the same way for N6.
+the same way for N6; and as `tarslice.py <jma-n5-20260924-210000> RS47937
+out.tar` (JMA Okinawa, ITOK), and the same way for N6 of that time.
 
 #### Head trims (DORADE)
 
@@ -1050,12 +1051,12 @@ Everything below the marker is generated from the manifests by
 | manifest | entries | committed files | committed bytes | download files | download bytes |
 |---|---:|---:|---:|---:|---:|
 | `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 |
-| `testdata/fuzz/manifest.toml` | 2 | 2 | 870,121 | 0 | 0 |
+| `testdata/fuzz/manifest.toml` | 3 | 3 | 892,278 | 0 | 0 |
 | `testdata/level2/manifest.toml` | 125 | 24 | 10,426,272 | 101 | 332,296,252 |
 | `testdata/level3/manifest.toml` | 216 | 216 | 7,776,988 | 0 | 0 |
-| `testdata/other/manifest.toml` | 44 | 36 | 18,944,048 | 8 | 123,175,908 |
+| `testdata/other/manifest.toml` | 48 | 38 | 19,179,568 | 10 | 129,688,548 |
 | `testdata/scattering/manifest.toml` | 12 | 10 | 403,462 | 2 | 19,492,076 |
-| **all** | **399** | **288** | **38,420,891** | **111** | **474,964,236** |
+| **all** | **404** | **291** | **38,678,568** | **113** | **481,476,876** |
 
 | format | committed | download |
 |---|---:|---:|
@@ -1063,9 +1064,9 @@ Everything below the marker is generated from the manifests by
 | `cfradial1` | 5 | 2 |
 | `cfradial2` | 0 | 1 |
 | `dorade` | 8 | 0 |
-| `jma-grib2-tar` | 2 | 2 |
+| `jma-grib2-tar` | 4 | 4 |
 | `json` | 6 | 0 |
-| `nexrad-level2` | 16 | 34 |
+| `nexrad-level2` | 17 | 34 |
 | `nexrad-level2-chunk` | 8 | 67 |
 | `nexrad-level3` | 221 | 0 |
 | `odim-h5` | 16 | 0 |
@@ -1087,6 +1088,7 @@ No entries.
 |---|---|---|---:|---|
 | `fuzz-odim-hdf5-local-heap-name-offset-overflow` | `odim-h5` | committed `files/fuzz/odim/crash-hdf5-local-heap-name-offset-overflow` | 1,640 | `odim-imgw-ram-20260711-0015-kdp-max` |
 | `fuzz-cfradial-overlapping-sweep-ray-ranges` | `cfradial1` | committed `files/fuzz/cfradial/oom-overlapping-sweep-ray-ranges` | 868,481 | `cfrad1-irene-sr2-20110827-120420-sur-sweeps01` |
+| `fuzz-level2-writer-nexrad-moment-nan-scale` | `nexrad-level2` | committed `files/fuzz/level2_writer/crash-nexrad-moment-nan-scale` | 22,157 | `l2-kiwa-20260917-003629` |
 
 #### `testdata/level2/manifest.toml`
 
@@ -1476,6 +1478,10 @@ No entries.
 | `jma-n6-20191012-090000` | `jma-grib2-tar` | download | 13,209,600 |  |
 | `jma-n5-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N5_grib2.RS47773.tar` | 1,761,280 | `jma-n5-20191012-090000` |
 | `jma-n6-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N6_grib2.RS47773.tar` | 624,640 | `jma-n6-20191012-090000` |
+| `jma-n5-20260924-210000` | `jma-grib2-tar` | download | 4,014,080 |  |
+| `jma-n6-20260924-210000` | `jma-grib2-tar` | download | 2,498,560 |  |
+| `jma-n5-20260924-210000-rs47937` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.RS47937.tar` | 153,600 | `jma-n5-20260924-210000` |
+| `jma-n6-20260924-210000-rs47937` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N6_grib2.RS47937.tar` | 81,920 | `jma-n6-20260924-210000` |
 | `odim-bejab-20260612-1450-dbzh` | `odim-h5` | committed `files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@DBZH.h5` | 243,054 |  |
 | `odim-bejab-20260612-1450-vrad` | `odim-h5` | committed `files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@VRAD.h5` | 219,191 |  |
 | `odim-nohur-20260612-1445-dbzh` | `odim-h5` | committed `files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@DBZH.h5` | 773,343 |  |
@@ -1514,9 +1520,9 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `archive` (4): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090610-003210-heads-zip`, `l3-kbmx-19980416-archive-tarz`
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
-- `derived` (19): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
+- `derived` (22): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `dualpol` (33): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
-- `fuzz-regression` (2): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`
+- `fuzz-regression` (3): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`
 - `golden-source` (1): `tmatrix-held-out-interpolation-report-v10`
 - `long-pulse` (1): `l2-kmaf-20230331-230843`
 - `mpda` (4): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-180425-trim`
@@ -1791,15 +1797,15 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `country:DK` (1): `odim-dkrom-20260820-1130-pvol`
 - `country:ES` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `country:IE` (1): `odim-iesha-20260305-0115-pvol`
-- `country:JP` (4): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
+- `country:JP` (8): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000`, `jma-n6-20260924-210000`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
 - `country:NO` (4): `odim-norst-20170421-0908-pvol`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `country:PL` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 
 #### `derivation:`
 
-- `derivation:archive-member` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `l3-kbmx-19980416-0006-nvw`
+- `derivation:archive-member` (8): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`
 - `derivation:container-conversion` (3): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-noxp-20090610-003210-heads-zip`
-- `derivation:fuzz-mutation` (2): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`
+- `derivation:fuzz-mutation` (3): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`
 - `derivation:head-trim` (5): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 - `derivation:prefix` (2): `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `derivation:subset` (1): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
@@ -1875,7 +1881,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `era:2023` (7): `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`
 - `era:2024` (5): `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`
 - `era:2025` (1): `l2-pahg-20250909-212549`
-- `era:2026` (128): `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2chunk-tlas-998-20260917-012843-001-s`, `l2chunk-tlas-999-20260917-013443-001-s`, `l2chunk-tlas-3-20260917-015242-001-s`, `l2chunk-tlas-3-20260917-015242-002-i`, `l2chunk-tlas-3-20260917-015242-003-i`, `l2-kilx-20260418-013553-trim`, `l3-okc-ncr-20260622-080623`, `l3-okc-nmd-20260622-080640`, `l3-okc-nst-20260622-080640`, `l3-okc-nvl-20260622-080623`, `l3-okc-nvw-20260622-080623`, `l3-okc-tv0-20260622-080547`, `l3-okc-tz0-20260622-080547`, `l3-okc-tzl-20260622-080623`, `l3-tlx-daa-20260622-080623`, `l3-tlx-dhr-20260622-080623`, `l3-tlx-dpa-20260629-173638`, `l3-tlx-dpr-20260622-080623`, `l3-tlx-dsp-20260629-173638`, `l3-tlx-dta-20260622-080623`, `l3-tlx-du3-20260622-080623`, `l3-tlx-du6-20260622-120608`, `l3-tlx-dvl-20260622-080623`, `l3-tlx-eet-20260622-080623`, `l3-tlx-hhc-20260622-080623`, `l3-tlx-n0b-20260622-080623`, `l3-tlx-n0c-20260622-080623`, `l3-tlx-n0g-20260622-080623`, `l3-tlx-n0h-20260622-080623`, `l3-tlx-n0k-20260622-080623`, `l3-tlx-n0m-20260622-080623`, `l3-tlx-n0s-20260622-080623`, `l3-tlx-n0x-20260622-080623`, `l3-tlx-n1p-20260629-173638`, `l3-tlx-ncr-20260622-080623`, `l3-tlx-nmd-20260622-080623`, `l3-tlx-nrr-20260622-080623`, `l3-tlx-nst-20260622-080623`, `l3-tlx-ntp-20260629-173638`, `l3-tlx-nvl-20260622-080623`, `l3-tlx-nvw-20260622-080623`, `l3-tlx-oha-20260622-080623`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-au24-20260610-000300-nci-zip-member`, `dorade-cow2-20260521-225514-sur-head24`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
+- `era:2026` (132): `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-kiwa-307-20260917-003629-001-s`, `l2chunk-kiwa-307-20260917-003629-{002..069}-i`, `l2chunk-kiwa-307-20260917-003629-070-e`, `l2chunk-tlas-998-20260917-012843-001-s`, `l2chunk-tlas-999-20260917-013443-001-s`, `l2chunk-tlas-3-20260917-015242-001-s`, `l2chunk-tlas-3-20260917-015242-002-i`, `l2chunk-tlas-3-20260917-015242-003-i`, `l2-kilx-20260418-013553-trim`, `l3-okc-ncr-20260622-080623`, `l3-okc-nmd-20260622-080640`, `l3-okc-nst-20260622-080640`, `l3-okc-nvl-20260622-080623`, `l3-okc-nvw-20260622-080623`, `l3-okc-tv0-20260622-080547`, `l3-okc-tz0-20260622-080547`, `l3-okc-tzl-20260622-080623`, `l3-tlx-daa-20260622-080623`, `l3-tlx-dhr-20260622-080623`, `l3-tlx-dpa-20260629-173638`, `l3-tlx-dpr-20260622-080623`, `l3-tlx-dsp-20260629-173638`, `l3-tlx-dta-20260622-080623`, `l3-tlx-du3-20260622-080623`, `l3-tlx-du6-20260622-120608`, `l3-tlx-dvl-20260622-080623`, `l3-tlx-eet-20260622-080623`, `l3-tlx-hhc-20260622-080623`, `l3-tlx-n0b-20260622-080623`, `l3-tlx-n0c-20260622-080623`, `l3-tlx-n0g-20260622-080623`, `l3-tlx-n0h-20260622-080623`, `l3-tlx-n0k-20260622-080623`, `l3-tlx-n0m-20260622-080623`, `l3-tlx-n0s-20260622-080623`, `l3-tlx-n0x-20260622-080623`, `l3-tlx-n1p-20260629-173638`, `l3-tlx-ncr-20260622-080623`, `l3-tlx-nmd-20260622-080623`, `l3-tlx-nrr-20260622-080623`, `l3-tlx-nst-20260622-080623`, `l3-tlx-ntp-20260629-173638`, `l3-tlx-nvl-20260622-080623`, `l3-tlx-nvw-20260622-080623`, `l3-tlx-oha-20260622-080623`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-au24-20260610-000300-nci-zip-member`, `dorade-cow2-20260521-225514-sur-head24`, `jma-n5-20260924-210000`, `jma-n6-20260924-210000`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 
 #### `file:`
 
@@ -1894,12 +1900,13 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `fuzz-finding:`
 
-- `fuzz-finding:crash` (1): `fuzz-odim-hdf5-local-heap-name-offset-overflow`
+- `fuzz-finding:crash` (2): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-level2-writer-nexrad-moment-nan-scale`
 - `fuzz-finding:oom` (1): `fuzz-cfradial-overlapping-sweep-ray-ranges`
 
 #### `fuzz-target:`
 
 - `fuzz-target:cfradial` (1): `fuzz-cfradial-overlapping-sweep-ray-ranges`
+- `fuzz-target:level2_writer` (1): `fuzz-level2-writer-nexrad-moment-nan-scale`
 - `fuzz-target:odim` (1): `fuzz-odim-hdf5-local-heap-name-offset-overflow`
 
 #### `generator:`
@@ -1937,7 +1944,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `license:MIT` (7): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 - `license:imgw-attribution` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `license:public-domain` (6): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
-- `license:unknown` (5): `dorade-cow2-20260521-225514-sur-head24`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
+- `license:unknown` (9): `dorade-cow2-20260521-225514-sur-head24`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000`, `jma-n6-20260924-210000`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
 - `license:wrf-public-domain` (4): `wrf-p3-lookup-table-1-v5.4-2momI`, `wrf-p3-lookup-table-1-v5.4-3momI`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 
 #### `lut:`
@@ -2020,10 +2027,10 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `moments:dualpol` (3): `odim-dkrom-20260820-1130-pvol`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`
 - `moments:kdp` (1): `odim-imgw-ram-20260711-0015-kdp-max`
 - `moments:phidp` (1): `odim-imgw-ram-20260711-0015-phidp-max`
-- `moments:reflectivity` (2): `jma-n5-20191012-090000`, `jma-n5-20191012-090000-rs47773`
+- `moments:reflectivity` (4): `jma-n5-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n5-20260924-210000`, `jma-n5-20260924-210000-rs47937`
 - `moments:rhohv` (1): `odim-imgw-ram-20260711-0015-rhohv-max`
 - `moments:th` (1): `odim-nohur-20260612-1445-th`
-- `moments:velocity` (2): `jma-n6-20191012-090000`, `jma-n6-20191012-090000-rs47773`
+- `moments:velocity` (4): `jma-n6-20191012-090000`, `jma-n6-20191012-090000-rs47773`, `jma-n6-20260924-210000`, `jma-n6-20260924-210000-rs47937`
 - `moments:vrad` (1): `odim-bejab-20260612-1450-vrad`
 - `moments:vradh` (1): `odim-nohur-20260612-1446-vradh`
 - `moments:zdr` (1): `odim-imgw-ram-20260711-0015-zdr-max`
@@ -2042,13 +2049,13 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `msg:15` (3): `l2-klix-20050829-130035`, `l2-kvwx-20080415-235337`, `l2-klix-20050829-130035-trim`
 - `msg:18` (2): `l2-klix-20050829-130035`, `l2-klix-20050829-130035-trim`
 - `msg:29` (1): `l2-klix-20210829-175748-mdm`
-- `msg:31` (41): `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-tlas-3-20260917-015242-002-i`, `l2chunk-tlas-3-20260917-015242-003-i`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
+- `msg:31` (42): `fuzz-level2-writer-nexrad-moment-nan-scale`, `l2-kvwx-20080415-235337`, `l2-kpah-20080415-235014`, `l2-kdmx-20080525-205148`, `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-tstl-20230331-230314`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2chunk-tlas-3-20260917-015242-002-i`, `l2chunk-tlas-3-20260917-015242-003-i`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `msg:32` (4): `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-kilx-20260418-013553-trim`
 - `msg:202` (2): `l2-ktlx-20030508-221041`, `l2-ktlx-20030508-221041-trim`
 
 #### `network:`
 
-- `network:jma` (4): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
+- `network:jma` (8): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000`, `jma-n6-20260924-210000`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
 
 #### `object:`
 
@@ -2187,7 +2194,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `provider:metpy-staticdata` (134): `l3-abr-ftm-20110428-1331`, `l3-byx-n0q-20150124-2106`, `l3-ddc-gsm-20200817-1000`, `l3-ddc-n0q-20200817-0501`, `l3-ddc-n0q-20200817-0503`, `l3-den-tz0-20200804-2226`, `l3-den-tz1-20200804-2226`, `l3-den-tz2-20200804-2227`, `l3-eax-gsm-20200817-0933`, `l3-eax-n0q-20200817-0401`, `l3-eax-n0q-20200817-0405`, `l3-ffc-n0q-20140407-1805`, `l3-ftg-n0b-20220304-1820`, `l3-gjx-n0f-20200817-0551`, `l3-gjx-naf-20200817-0551`, `l3-gjx-nbf-20200817-0551`, `l3-gjx-nxf-20200817-0600`, `l3-lzk-h0c-20200814-0417`, `l3-lzk-h0v-20200812-1309`, `l3-lzk-h0w-20200812-1305`, `l3-lzk-h0z-20200812-1318`, `l3-mci-dhr-20160526-2154`, `l3-mci-dpa-20160526-2154`, `l3-mci-dsp-20160526-2154`, `l3-mci-n1p-20160526-2154`, `l3-mci-ncr-20160526-2154`, `l3-mci-net-20160526-2154`, `l3-mci-nmd-20160526-2154`, `l3-mci-nst-20160526-2154`, `l3-mci-ntp-20160526-2154`, `l3-mci-nvl-20160526-2154`, `l3-mci-nvw-20160526-2154`, `l3-mci-tr0-20160526-2154`, `l3-mci-tr1-20160526-2154`, `l3-mci-tr2-20160526-2154`, `l3-mci-tv0-20160526-2154`, `l3-mci-tv1-20160526-2154`, `l3-mci-tv2-20160526-2154`, `l3-mci-tzl-20160526-2154`, `l3-rax-dta-20200818-0454`, `l3-rax-nyf-20200818-0001`, `l3-slc-tv0-20160516-2359`, `l3-tlx-daa-20130520-2016`, `l3-tlx-dhr-20130520-2016`, `l3-tlx-dod-20130520-2016`, `l3-tlx-dpa-20130520-2016`, `l3-tlx-dpr-20130520-2016`, `l3-tlx-dsd-20130520-2016`, `l3-tlx-dsp-20130520-2016`, `l3-tlx-dta-20130520-2016`, `l3-tlx-du3-20130520-2008`, `l3-tlx-dvl-20130520-2016`, `l3-tlx-eet-20130520-2016`, `l3-tlx-gsm-20130520-2100`, `l3-tlx-hhc-20130520-2016`, `l3-tlx-n0c-20130520-2016`, `l3-tlx-n0h-20130520-2016`, `l3-tlx-n0k-20130520-2016`, `l3-tlx-n0m-20130520-2016`, `l3-tlx-n0q-20130520-2016`, `l3-tlx-n0r-20130520-2016`, `l3-tlx-n0s-20130520-2016`, `l3-tlx-n0u-20130520-2016`, `l3-tlx-n0v-20130520-2016`, `l3-tlx-n0x-20130520-2016`, `l3-tlx-n0z-20130520-2016`, `l3-tlx-n1c-20130520-2016`, `l3-tlx-n1h-20130520-2016`, `l3-tlx-n1k-20130520-2016`, `l3-tlx-n1m-20130520-2016`, `l3-tlx-n1p-20130520-2016`, `l3-tlx-n1q-20130520-2016`, `l3-tlx-n1s-20130520-2016`, `l3-tlx-n1u-20130520-2016`, `l3-tlx-n1x-20130520-2016`, `l3-tlx-n2c-20130520-2016`, `l3-tlx-n2h-20130520-2016`, `l3-tlx-n2k-20130520-2016`, `l3-tlx-n2m-20130520-2016`, `l3-tlx-n2q-20130520-2016`, `l3-tlx-n2s-20130520-2016`, `l3-tlx-n2u-20130520-2016`, `l3-tlx-n2x-20130520-2016`, `l3-tlx-n3c-20130520-2016`, `l3-tlx-n3h-20130520-2016`, `l3-tlx-n3k-20130520-2016`, `l3-tlx-n3m-20130520-2016`, `l3-tlx-n3p-20130520-2012`, `l3-tlx-n3q-20130520-2016`, `l3-tlx-n3s-20130520-2016`, `l3-tlx-n3u-20130520-2016`, `l3-tlx-n3x-20130520-2016`, `l3-tlx-nac-20130520-2016`, `l3-tlx-nah-20130520-2016`, `l3-tlx-nak-20130520-2016`, `l3-tlx-nam-20130520-2016`, `l3-tlx-naq-20130520-2016`, `l3-tlx-nau-20130520-2016`, `l3-tlx-nax-20130520-2016`, `l3-tlx-nbc-20130520-2016`, `l3-tlx-nbh-20130520-2016`, `l3-tlx-nbk-20130520-2016`, `l3-tlx-nbm-20130520-2016`, `l3-tlx-nbq-20130520-2016`, `l3-tlx-nbu-20130520-2016`, `l3-tlx-nbx-20130520-2016`, `l3-tlx-nc1-20130520-2354`, `l3-tlx-nc2-20130520-2354`, `l3-tlx-nc3-20130520-2354`, `l3-tlx-nc4-20130520-2354`, `l3-tlx-nc5-20130520-2354`, `l3-tlx-nco-20130520-1816`, `l3-tlx-ncr-20130520-2016`, `l3-tlx-ncz-20130520-2016`, `l3-tlx-net-20130520-2016`, `l3-tlx-nhi-20130520-2016`, `l3-tlx-nhl-20130520-2016`, `l3-tlx-nla-20130520-2016`, `l3-tlx-nll-20130520-2016`, `l3-tlx-nmd-20130520-2016`, `l3-tlx-nml-20130520-2016`, `l3-tlx-nsp-20130520-2016`, `l3-tlx-nss-20130520-2016`, `l3-tlx-nst-20130520-2016`, `l3-tlx-nsw-20130520-2016`, `l3-tlx-ntp-20130520-2016`, `l3-tlx-ntv-20130520-2016`, `l3-tlx-nvl-20130520-2012`, `l3-tlx-nvw-20130520-2016`, `l3-tlx-oha-20130520-2016`, `l3-tlx-pta-20130520-2016`, `l3-tlx-rcm-20130520-2016`, `l3-tlx-rsl-20130520-2358`, `l3-tlx-spd-20130520-2016`
 - `provider:ncei-nexrad-l3-gcp` (15): `l3-fws-dpa-19950517-2304`, `l3-fws-n0r-19950517-2304`, `l3-fws-n1p-19950517-2304`, `l3-fws-ncz-19950517-2304`, `l3-fws-nhi-19950517-1323`, `l3-fws-nme-19950517-2316`, `l3-fws-now-19950517-2304`, `l3-fws-nss-19950517-2304`, `l3-fws-nst-19950517-2304`, `l3-fws-ntp-19950517-2304`, `l3-fws-nvw-19950517-2322`, `l3-fws-nwp-19950517-2304`, `l3-fws-rcm-19950517-2310`, `l3-fws-sup-19950517-2304`, `l3-tlx-102-19990504-0052`
 - `provider:nci-thredds` (1): `odim-au24-20260610-000300-nci-zip-member`
-- `provider:nict-jma` (4): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
+- `provider:nict-jma` (8): `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000`, `jma-n6-20260924-210000`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
 - `provider:open-radar-data` (5): `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 - `provider:opera-ord` (8): `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `provider:pyart` (2): `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`
@@ -2201,7 +2208,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `quirk:coarse-azimuth` (2): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`
 - `quirk:crosses-midnight` (1): `l3-kbmx-19980416-0006-nvw`
 - `quirk:fractional-elevations` (1): `odim-dkrom-20260820-1130-pvol`
-- `quirk:repeated-elevations` (1): `jma-n5-20191012-090000-rs47773`
+- `quirk:repeated-elevations` (2): `jma-n5-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`
 - `quirk:rstart-metres` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `quirk:staggered-prt` (1): `dorade-cow2-20260521-225514-sur-head24`
 - `quirk:transition-rays` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
@@ -2289,6 +2296,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `site:dow8` (2): `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`
 - `site:espdg` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
 - `site:iesha` (1): `odim-iesha-20260305-0115-pvol`
+- `site:itok` (2): `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
 - `site:kbmx` (2): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`
 - `site:kbox` (2): `l2-kbox-20220129-150537`, `l2-kbox-20220129-150537-trim`
 - `site:kdgx` (1): `l2-kdgx-20230325-010651`

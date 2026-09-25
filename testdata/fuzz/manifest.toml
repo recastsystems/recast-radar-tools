@@ -35,3 +35,14 @@ derived_from = "cfrad1-irene-sr2-20110827-120420-sur-sweeps01"
 derivation = "libFuzzer mutation of the seed (cargo-fuzz 0.13.2, target cfradial, fuzz at 1c37e21 over decoders at 43a145c, 10-minute run in nexbench): artifact oom-d71f9b2c108e1cfd96aa8a28a98e38162646b7c0 (930870 bytes, 99.5% of its 12-byte windows found in the 1664412-byte seed), minimized with libFuzzer `-minimize_crash=1 -rss_limit_mb=512 -max_total_time=400` (what `cargo fuzz tmin` runs) to 868481 bytes (byte deletion breaks the netCDF data offsets, so it barely shrinks). The header's sweep dimension grew from 2 to 6146, so fixed_angle, sweep_start_ray_index and sweep_end_ray_index read neighbouring header bytes as garbage ray indices; start/end were cast with `as usize` and clamped to the 719 rays, many sweeps covered the same rays, and each copied the full 719 x 1107 DBZ field (peak RSS 2.44 GB) before the VEL read ran past the end of the file"
 tags = ["fuzz-regression", "fuzz-target:cfradial", "fuzz-finding:oom", "derived", "derivation:fuzz-mutation", "container:netcdf3-classic"]
 description = "Minimized cfradial fuzz OOM: SMART-R2 Irene header claiming 6146 sweeps whose garbage ray index ranges overlap"
+
+[[file]]
+id = "fuzz-level2-writer-nexrad-moment-nan-scale"
+format = "nexrad-level2"
+sha256 = "b8d94eeeeb6101bcf0dbb7b8635638f800b0952757cf5d3169aa42acfec6948a"
+size = 22157
+committed = "files/fuzz/level2_writer/crash-nexrad-moment-nan-scale"
+derived_from = "l2-kiwa-20260917-003629"
+derivation = "libFuzzer mutation of the seed's .l2-head derivation (cargo-fuzz 0.13.2, target level2_writer, fuzz and writer at b6d7e80, AddressSanitizer, 20-minute run in nexbench): artifact crash-a6ae43506b94a3be4a383a09add845c30b95b751 (355780 bytes, 96.7% of its bytes equal to the 355780-byte seed at the same offsets), minimized with `cargo fuzz tmin -r 3000 -- -max_total_time=400` to 22157 bytes. A REF moment header with a NaN scale and offset: the writer did not take that for a NEXRAD coding, resolved every gate to NaN and wrote them all below threshold, so the codes did not come back ('sweep 0: DBZH ray 0 codes differ')"
+tags = ["fuzz-regression", "fuzz-target:level2_writer", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
+description = "Minimized level2_writer fuzz crash: KIWA 2026 head whose REF moment carries a NaN scale and offset"

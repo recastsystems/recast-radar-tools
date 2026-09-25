@@ -284,10 +284,16 @@ fn bypass_maps_match_metpy_radial_0() {
     assert_checked_every_available("bypass map goldens", checked, &golden_sources(&goldens));
 }
 
+/// Fuzz regression inputs (`testdata/fuzz/manifest.toml`) are malformed
+/// on purpose; `tests/fuzz_regressions.rs` covers them.
+fn is_fuzz_regression(entry: &recast_radar_testdata::Entry) -> bool {
+    entry.tags.iter().any(|tag| tag == "fuzz-regression")
+}
+
 /// Level II volumes with no golden file: the 1991-2003 ARCHIVE2 files (no
-/// metadata record), the 2021 model-data file and the TDWR files. MetPy
-/// finds no clutter messages in them, and neither does the walker. Trimmed
-/// fixtures (`derived_from`) are checked against their source files in
+/// metadata record), the 2021 model-data file and the TDWR files. MetPy finds no clutter messages in them, and neither
+/// does the walker. Trimmed and head fixtures (`derived_from`) are checked
+/// against their source files in
 /// `trimmed_fixtures_keep_the_source_clutter_messages`.
 #[test]
 fn files_without_golden_have_no_clutter_messages() {
@@ -297,6 +303,7 @@ fn files_without_golden_have_no_clutter_messages() {
         .iter()
         .filter(|entry| {
             entry.format == Format::NexradLevel2
+                && !is_fuzz_regression(entry)
                 && entry.derived_from.is_none()
                 && !golden_ids.contains(&entry.id)
         })
@@ -328,18 +335,18 @@ fn files_without_golden_have_no_clutter_messages() {
     assert_checked_every_available("files without a clutter golden", checked, &sources);
 }
 
-/// Trimmed fixtures keep their source file's non-radial messages byte for
-/// byte, so the walker finds the same clutter filter and bypass maps in the
-/// trimmed file's first record as in the source's metadata record.
+/// Trimmed fixtures keep their source file's non-radial messages byte for byte, so the walker
+/// finds the same clutter filter and bypass maps in the trimmed file's first
+/// record as in the source's metadata record.
 #[test]
 fn trimmed_fixtures_keep_the_source_clutter_messages() {
     let trimmed: Vec<_> = recast_radar_testdata::manifest()
         .files
         .iter()
-        .filter(|entry| entry.format == Format::NexradLevel2)
+        .filter(|entry| entry.format == Format::NexradLevel2 && !is_fuzz_regression(entry))
         .filter_map(|entry| Some((entry.id.as_str(), entry.derived_from.as_deref()?)))
         .collect();
-    assert_eq!(trimmed.len(), 16, "trimmed Level II fixtures");
+    assert_eq!(trimmed.len(), 16, "trimmed and head Level II fixtures");
     let mut with_maps = 0;
     let mut checked = 0;
     for &(id, source) in &trimmed {
