@@ -87,6 +87,11 @@ jobs:
         if: steps.testdata-cache.outcome == 'success'
         run: bash tools/ci/testdata-cache-list.sh > "$RUNNER_TEMP/testdata-before.txt"
       - run: cargo test --workspace --locked --no-fail-fast
+      # `encode_many` and `EncoderPool` sit behind recast-radar-bzip2's
+      # `rayon` feature, which no workspace crate enables yet, so the run
+      # above never compiles them; clippy's --all-features build does not
+      # run their tests.
+      - run: cargo test -p recast-radar-bzip2 --features rayon --locked --no-fail-fast -- encode_many EncoderPool
       - name: Check for new testdata downloads
         id: testdata-new
         if: ${{ !cancelled() && steps.testdata-cache.outcome == 'success' }}

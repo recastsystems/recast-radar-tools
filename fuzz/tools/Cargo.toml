@@ -13,6 +13,7 @@ name = "fuzz-tools"
 path = "src/main.rs"
 
 [dependencies]
+recast-radar-bzip2 = { path = "../../crates/recast-radar-bzip2" }
 recast-radar-fuzz = { path = "..", default-features = false }
 recast-radar-io-nexrad = { path = "../../crates/recast-radar-io-nexrad" }
 recast-radar-testdata = { path = "../../crates/recast-radar-testdata" }

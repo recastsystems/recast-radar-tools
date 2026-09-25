@@ -1,4 +1,4 @@
-# Fuzzing the recast-radar decoders
+# Fuzzing the recast-radar decoders and the bzip2 encoder
 
 cargo-fuzz (libFuzzer) targets for every byte-level decoder entry point. The
 `fuzz/` directory is its own Cargo workspace, not a member of the main
@@ -16,11 +16,13 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | `dorade` | `recast-radar-io-dorade` | `looks_like_dorade_bytes`, `peek_dorade_sweep`, then `read_dorade_sweep_volume` (even lengths) or `read_dorade_volume_from_slices` with the input twice (odd lengths) |
 | `jma` | `recast-radar-io-jma` | `looks_like_jma_tar_bytes`, then by length mod 3: `read_jma_tar_volumes(None)`, `read_jma_tar_first_station`, or `jma_tar_station_headers` plus a site-filtered `read_jma_tar_volumes` |
 | `bzip2` | `recast-radar-bzip2` | `Decoder::decode_stream_into` on the input, then `Decoder::decode_two_into` on the input paired with its own first half, with a 64 MiB output limit |
+| `bzip2_encode` | `recast-radar-bzip2` | Differential: `Encoder::encode_into` at level 1 + (length mod 9) on the input, then on its first quarter appended to the same output; each stream must equal the `bzip2` crate's (libbz2-rs-sys, a port of libbzip2 1.0.8) except in the `origPtr` of a periodic block, and must decode to what was compressed with our decoder, and with the reference decoder when it differs from the reference's stream. The encoders (one per level) and the decoder are reused across inputs, so every stream is written over buffers that earlier calls filled |
 
 The harness bodies live in `src/lib.rs`; each `fuzz_targets/<target>.rs` is a
 one-line libFuzzer wrapper around the function with the same name. A harness
 fails only by panicking, aborting, hanging or exhausting memory; decode errors
-are the expected result for most inputs.
+are the expected result for most inputs. `bzip2_encode` panics on purpose
+when a round trip or the comparison with the reference fails.
 
 Not covered yet: Level III products (a target belongs with
 `recast-radar-io-level3` once that crate merges), and the mobile-radar zip
@@ -64,6 +66,8 @@ these derivations:
   ray groups, the same head-trim used for the committed DORADE fixtures.
 - `.ldm-recordN`: the bzip2 stream of LDM record `N` of a block-bzip2
   Level II file or real-time chunk, without its control word.
+- `.ldm-payloadN`: the decompressed contents of LDM record `N`, the bytes a
+  Level II writer compresses (the `bzip2_encode` seeds).
 
 No seed byte is synthesized. The seed list, with the reason for each file, is
 the `SEEDS` table in `tools/src/main.rs`.
@@ -96,7 +100,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All seven targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All eight targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2_volume dorade
@@ -117,6 +121,12 @@ has none, so the `bzip2` target gains nothing from a sanitizer). `run.sh` also:
 - runs libFuzzer in fork mode with `-ignore_crashes/-ignore_timeouts/-ignore_ooms`,
   so a run keeps going after the first finding and saves each one under
   `artifacts/<target>/`
+
+`bzip2_encode` seeds are whole LDM record contents (up to 1.2 MB), which
+the target compresses one and a quarter times and checks against the
+reference encoder, so at the default `-max_len` it runs about 8 inputs a
+second on one core of the nexbench host; with `-max_len=8192` about 70
+(15-minute campaigns, 2026-09-25; see `docs/perf/bzip2-encoder.md`).
 
 ### In the nexbench container
 

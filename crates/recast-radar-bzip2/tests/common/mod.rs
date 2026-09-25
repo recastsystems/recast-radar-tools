@@ -11,7 +11,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use bzip2::{Decompress, Status};
-use recast_radar_bzip2::{Decoder, Error};
+use recast_radar_bzip2::{Decoder, Encoder, Error};
 
 /// Archive II volume header (`AR2V0006.123`, date, time, ICAO).
 pub const VOLUME_HEADER_LEN: usize = 24;
@@ -134,6 +134,54 @@ pub fn reference_encode(level: u32, data: &[u8]) -> Vec<u8> {
     encoder
         .finish()
         .unwrap_or_else(|e| panic!("reference encode: {e}"))
+}
+
+/// Reference encode in one `BZ_FINISH` call, as `BZ2_bzBuffToBuffCompress`
+/// does (default work factor). This is the call the encoder's block
+/// boundaries follow; [`reference_encode`] feeds the input with `BZ_RUN`
+/// first, which differs only when the input ends exactly as a block fills.
+pub fn reference_compress(level: u32, data: &[u8]) -> Vec<u8> {
+    let mut c = bzip2::Compress::new(bzip2::Compression::new(level), 30);
+    let mut out = Vec::with_capacity(data.len() + data.len() / 50 + 1024);
+    match c.compress_vec(data, &mut out, bzip2::Action::Finish) {
+        Ok(Status::StreamEnd) => out,
+        other => panic!("reference compress: {other:?}"),
+    }
+}
+
+/// Our encoder as a function: one stream into a fresh vector.
+pub fn encode(enc: &mut Encoder, data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    enc.encode_into(data, &mut out);
+    out
+}
+
+/// Check our stream against the reference encoder's for the same input:
+/// byte-identical, except that the `origPtr` field of a periodic block
+/// (reported by the encoder's test hook) may name another of its identical
+/// rows.
+pub fn assert_matches_reference(enc: &Encoder, ours: &[u8], reference: &[u8], what: &str) {
+    if ours == reference {
+        return;
+    }
+    assert_eq!(
+        ours.len(),
+        reference.len(),
+        "{what}: stream length differs from the reference"
+    );
+    let fields = enc.__periodic_orig_ptr_bits();
+    for (i, (a, b)) in ours.iter().zip(reference).enumerate() {
+        let x = a ^ b;
+        for bit in 0..8 {
+            if x & (0x80 >> bit) != 0 {
+                let at = (i * 8 + bit) as u64;
+                assert!(
+                    fields.iter().any(|&f| (f..f + 24).contains(&at)),
+                    "{what}: bit {at} differs from the reference outside a periodic block's origPtr"
+                );
+            }
+        }
+    }
 }
 
 /// Our decoder as a function: one stream into a fresh vector.

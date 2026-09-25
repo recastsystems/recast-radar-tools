@@ -1,0 +1,27 @@
+# Encoder benchmark harness: recast-radar-bzip2's encoder against libbzip2
+# 1.0.8, either the C library (`--features c`, through bzip2-sys) or its
+# Rust port libbz2-rs-sys (the bzip2 crate's default backend). Not a member
+# of the main workspace (it links C code); method and results are in
+# docs/perf/bzip2-encoder.md.
+[package]
+name = "bzip2-enc-bench"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+# Reference = C libbzip2 (bzip2-sys, built from source) instead of libbz2-rs-sys.
+c = ["bzip2/bzip2-sys", "bzip2/static"]
+
+[dependencies]
+bzip2 = "0.6"
+recast-radar-bzip2 = { path = "..", features = ["rayon"] }
+rayon = "1.11"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"
+
+[workspace]

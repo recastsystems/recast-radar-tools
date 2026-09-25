@@ -1,24 +1,57 @@
-//! Pure-Rust bzip2 decompressor with no `unsafe` code and no dependencies.
+//! Pure-Rust bzip2 compressor and decompressor with no `unsafe` code.
+//!
+//! Written for NEXRAD Level II LDM records, which are one bzip2 stream
+//! each: [`Decoder`] replaces the `bzip2` crate in `recast-radar-io-nexrad`'s
+//! record path, and [`Encoder`] writes the records of the Level II writer.
+//! The crate has no dependencies (rayon only with the `rayon` feature, for
+//! `encode_many` and `EncoderPool`, which compress many independent inputs
+//! in parallel).
+//!
+//! # Compressing
+//!
+//! [`Encoder::encode_into`] compresses a byte slice into one complete bzip2
+//! stream appended to a `Vec<u8>`. The stream is the one libbzip2 1.0.8
+//! (the reference implementation) writes for the same input and block size
+//! with `BZ2_bzBuffToBuffCompress`, byte for byte: the same block boundaries,
+//! Burrows-Wheeler transform, Huffman tables and selectors, so the
+//! compression ratio is libbzip2's exactly. The one exception is a block
+//! that is an exact repetition of a shorter string: its rotations are not
+//! all distinct, any of the identical rows is a valid `origPtr`, and the
+//! row chosen here can differ from libbzip2's (the stream decodes to the
+//! same bytes either way). NOAA writes its LDM records with libbzip2, so
+//! re-encoding a record's contents gives back the published record.
+//!
+//! ```
+//! use recast_radar_bzip2::{Decoder, Encoder, Level};
+//!
+//! let data = b"the contents of one LDM record".repeat(100);
+//! let mut encoder = Encoder::new(Level::BEST);
+//! let mut stream = Vec::new();
+//! encoder.encode_into(&data, &mut stream);
+//! assert!(stream.starts_with(b"BZh9"));
+//!
+//! let mut decoder = Decoder::new();
+//! let mut back = Vec::new();
+//! decoder.decode_stream_into(&stream, &mut back).unwrap();
+//! assert_eq!(back, data);
+//! ```
+//!
+//! # Decompressing
 //!
 //! [`Decoder::decode_stream_into`] decodes one bzip2 stream (`BZh1`..`BZh9`
 //! header, any number of blocks, end-of-stream marker) from a byte slice
-//! and appends the decompressed bytes to a `Vec<u8>`. It was written for
-//! NEXRAD Level II LDM records, which are one bzip2 stream each, as the
-//! replacement for the `bzip2` crate in `recast-radar-io-nexrad`'s record
-//! path.
+//! and appends the decompressed bytes to a `Vec<u8>`.
 //!
 //! What is accepted and what is rejected follows libbzip2 1.0.8's normal
-//! decompressor (the reference implementation): a stream either decodes to
-//! exactly the bytes libbzip2 produces, or the call returns an [`Error`].
-//! Block CRCs and the combined stream CRC are checked. Randomised blocks
-//! (written by bzip2 0.9.0 and earlier) decode, and streams with more than
-//! 18,002 selectors are clamped the way libbzip2 clamps them. Bytes after
-//! the end-of-stream marker are ignored, so a stream followed by trailing
-//! data, or by a second stream, decodes its first stream only. Corrupt or
-//! truncated input never panics: the worst case is an `Err`, after which the
-//! output vector is back at its original length.
-//!
-//! # Example
+//! decompressor: a stream either decodes to exactly the bytes libbzip2
+//! produces, or the call returns an [`Error`]. Block CRCs and the combined
+//! stream CRC are checked. Randomised blocks (written by bzip2 0.9.0 and
+//! earlier) decode, and streams with more than 18,002 selectors are clamped
+//! the way libbzip2 clamps them. Bytes after the end-of-stream marker are
+//! ignored, so a stream followed by trailing data, or by a second stream,
+//! decodes its first stream only. Corrupt or truncated input never panics:
+//! the worst case is an `Err`, after which the output vector is back at its
+//! original length.
 //!
 //! ```
 //! use recast_radar_bzip2::{Decoder, Error};
@@ -40,9 +73,33 @@
 //! caps the memory a hostile stream can claim; the limit is checked against
 //! a block's exact decoded size before that block's output is allocated.
 //!
+//! An [`Encoder`] owns the work buffers for one block of its level: about
+//! 22 bytes of zero-initialised address space per byte of block capacity
+//! (about 20 MB at level 9), of which a block touches roughly 13 bytes per
+//! byte after the initial run-length stage. They too are allocated on the
+//! first call and reused. Memory does not depend on the input: a call
+//! allocates nothing else but its output.
+//!
 //! # Design
 //!
-//! Per block:
+//! Compressing, per block:
+//!
+//! * RLE1 with libbzip2's block boundaries, eight bytes at a time where no
+//!   two neighbours are equal; the block CRC over the block's input range.
+//! * The Burrows-Wheeler transform: the block is rotated so that a byte
+//!   occurring once ends it, or else to its least rotation, where suffix
+//!   order equals rotation order; SA-IS then sorts the suffixes in linear
+//!   time. Stage 1 sorts the LMS substrings directly (counting sort on the
+//!   first symbols, then packed integer keys) and names them in the same
+//!   pass; the induction passes are branch-free and write the last column
+//!   directly.
+//! * Move-to-front over runs of the last column, on a list of 32 words with
+//!   a table of the word holding each byte, and the RUNA/RUNB zero-run code.
+//! * libbzip2's Huffman table selection (initial partition, four refinement
+//!   passes, 17-bit length limit), with the six tables' costs of a symbol
+//!   packed into one word so a group costs one addition per symbol.
+//!
+//! Decompressing, per block:
 //!
 //! * A: a 64-bit MSB-first bit window and table-driven Huffman decoding
 //!   (an 11-bit primary table per coding group whose entries carry the
@@ -64,7 +121,9 @@
 //! The block randomisation table in `rand.rs` is data from libbzip2's
 //! `randtable.c` (BSD-style licence, notice kept in that file). Everything
 //! else was written from the bzip2 format; libbzip2's `decompress.c` was read
-//! for the exact acceptance rules.
+//! for the exact acceptance rules, and its `compress.c`, `huffman.c` and
+//! `bzlib.c` (through the libbz2-rs-sys port) for the exact block
+//! boundaries and table selection that make the encoder's output identical.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
@@ -72,8 +131,13 @@
 mod bits;
 mod block;
 mod crc;
+mod enc;
 mod huff;
 mod rand;
+
+pub use enc::{Encoder, Level};
+#[cfg(feature = "rayon")]
+pub use enc::{EncoderPool, encode_many};
 
 use bits::Bits;
 use block::{BlockInfo, Workspace};
@@ -148,6 +212,14 @@ pub struct Decoder {
 impl Default for Decoder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl core::fmt::Debug for Decoder {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Decoder")
+            .field("max_output", &self.max_output)
+            .finish_non_exhaustive()
     }
 }
 

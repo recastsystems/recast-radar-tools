@@ -1,5 +1,6 @@
-# cargo-fuzz project for the recast-radar decoders. Not a member of the main
-# workspace (it needs nightly and libFuzzer); see README.md.
+# cargo-fuzz project for the recast-radar decoders and the bzip2 encoder.
+# Not a member of the main workspace (it needs nightly and libFuzzer); see
+# README.md.
 [package]
 name = "recast-radar-fuzz"
 version = "0.0.0"
@@ -18,6 +19,9 @@ libfuzzer = ["dep:libfuzzer-sys"]
 
 [dependencies]
 libfuzzer-sys = { version = "0.4", optional = true }
+# Reference decoder and encoder for the bzip2_encode target: the bzip2
+# crate's default backend, libbz2-rs-sys (a Rust port of libbzip2 1.0.8).
+bzip2 = "0.6"
 recast-radar-bzip2 = { path = "../crates/recast-radar-bzip2" }
 recast-radar-io = { path = "../crates/recast-radar-io" }
 recast-radar-io-cfradial = { path = "../crates/recast-radar-io-cfradial" }
@@ -80,6 +84,14 @@ required-features = ["libfuzzer"]
 [[bin]]
 name = "bzip2"
 path = "fuzz_targets/bzip2.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "bzip2_encode"
+path = "fuzz_targets/bzip2_encode.rs"
 test = false
 doc = false
 bench = false

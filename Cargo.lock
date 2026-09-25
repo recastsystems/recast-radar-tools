@@ -893,6 +893,7 @@ name = "recast-radar-bzip2"
 version = "0.1.0"
 dependencies = [
  "bzip2",
+ "rayon",
  "recast-radar-testdata",
 ]
 

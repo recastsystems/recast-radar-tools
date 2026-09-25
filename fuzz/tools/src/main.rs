@@ -55,6 +55,9 @@ enum Derivation {
     /// The bzip2 stream of LDM record `n` of a block-bzip2 Level II file (or
     /// real-time chunk), byte for byte, without its control word.
     LdmRecord(usize),
+    /// The decompressed contents of LDM record `n`: the bytes a Level II
+    /// writer compresses into that record.
+    LdmPayload(usize),
     /// This file followed by the real-time chunk(s) named here, as a
     /// real-time client assembles a volume.
     ConcatChunks(&'static [&'static str]),
@@ -71,6 +74,7 @@ impl Derivation {
             Self::L2Head => ".l2-head".to_owned(),
             Self::L2BlockHead => ".l2-block-head".to_owned(),
             Self::LdmRecord(n) => format!(".ldm-record{n}"),
+            Self::LdmPayload(n) => format!(".ldm-payload{n}"),
             Self::ConcatChunks(ids) => format!(".plus-{}-chunks", ids.len()),
             Self::DoradeHead(rays) => format!(".head{rays}"),
         }
@@ -80,7 +84,9 @@ impl Derivation {
 /// One seed: target, testdata manifest id, derivation.
 type Seed = (&'static str, &'static str, Derivation);
 
-use Derivation::{ConcatChunks, DoradeHead, L2BlockHead, L2Head, L2Sparse, LdmRecord, Verbatim};
+use Derivation::{
+    ConcatChunks, DoradeHead, L2BlockHead, L2Head, L2Sparse, LdmPayload, LdmRecord, Verbatim,
+};
 
 const KIWA_CHUNK_S: &str = "l2chunk-kiwa-307-20260917-003629-001-s";
 const KIWA_CHUNK_I2: &str = "l2chunk-kiwa-307-20260917-003629-002-i";
@@ -214,6 +220,20 @@ const SEEDS: &[Seed] = &[
     ("bzip2", "l2-tstl-20230331-230314", LdmRecord(1)),
     ("bzip2", "l2-tstl-20230331-230314", LdmRecord(69)),
     ("bzip2", "l2-kbox-20220129-150537", LdmRecord(0)),
+    // bzip2_encode: what a Level II writer compresses, the decompressed
+    // LDM records (status-only, metadata, 120-radial and TDWR records; the
+    // largest are multi-block at the low levels), and already-compressed
+    // bytes (a published LDM record: no runs, flat symbol mix).
+    (
+        "bzip2_encode",
+        "l2-tbwi-20230601-175101-stub",
+        LdmPayload(0),
+    ),
+    ("bzip2_encode", KIWA_CHUNK_S, LdmPayload(0)),
+    ("bzip2_encode", KIWA_CHUNK_I2, LdmPayload(0)),
+    ("bzip2_encode", "l2-tstl-20230331-230314", LdmPayload(1)),
+    ("bzip2_encode", "l2-tstl-20230331-230314", LdmPayload(69)),
+    ("bzip2_encode", KIWA_CHUNK_I2, LdmRecord(0)),
 ];
 
 fn main() -> ExitCode {
@@ -295,6 +315,14 @@ fn derive(id: &str, derivation: Derivation) -> io::Result<Vec<u8>> {
         }
         Derivation::L2BlockHead => l2_block_head(&source),
         Derivation::LdmRecord(n) => ldm_record(&source, n),
+        Derivation::LdmPayload(n) => {
+            let record = ldm_record(&source, n)?;
+            let mut payload = Vec::new();
+            recast_radar_bzip2::Decoder::new()
+                .decode_stream_into(&record, &mut payload)
+                .map_err(|e| other_error(format!("LDM record {n} of {id}: {e}")))?;
+            Ok(payload)
+        }
         Derivation::ConcatChunks(more) => {
             let mut bytes = source;
             for id in more {
