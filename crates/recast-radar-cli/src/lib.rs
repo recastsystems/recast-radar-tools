@@ -326,6 +326,12 @@ pub struct EditArgs {
     /// Put the sweeps in the order their first rays were collected.
     #[arg(long)]
     pub sweeps_in_time_order: bool,
+    /// Write each scan cycle of the input as its own volume, its sweeps in the order they were
+    /// collected (a JMA 10-minute tar holds two 5-minute cycles; a Level II file holds one):
+    /// convert writes cycle N to --output with _N before its extension (out_1.ar2v), publish
+    /// publishes each.
+    #[arg(long)]
+    pub split_scan_cycles: bool,
     /// Site position to write, as LAT,LON,HEIGHT: degrees north, degrees east, metres above sea
     /// level (Message 1 volumes carry none).
     #[arg(

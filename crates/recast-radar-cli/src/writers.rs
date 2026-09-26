@@ -212,6 +212,11 @@ fn level2_hint(err: &Level2Error) -> Option<&'static str> {
             "give the radar's position (recast-radar: --position LAT,LON,HEIGHT or \
              --position-from FILE, a file of the same radar; Python: position=(lat, lon, height_m))",
         ),
+        Level2Error::MixedScanCycles { .. } => Some(
+            "write each scan cycle on its own (recast-radar: --split-scan-cycles, or --sweeps \
+             LIST for one cycle; Python: recast_radar.split_scan_cycles(volume), or \
+             sweeps=[...])",
+        ),
         Level2Error::TooManySweeps { .. } => Some(
             "write one scan's sweeps at a time (recast-radar: --sweeps LIST; Python: \
              sweeps=[...])",
@@ -238,6 +243,10 @@ fn level2_error(err: Level2Error) -> BackendError {
                 Level2Error::MissingLocation(what) => {
                     format!("the volume has no site {what} (Message 1 volumes carry none)")
                 }
+                Level2Error::MixedScanCycles { begins } => format!(
+                    "the volume holds more than one scan cycle ({begins}); a Level II file \
+                     holds one volume scan"
+                ),
                 err => err.to_string(),
             };
             BackendError::Unrepresentable {

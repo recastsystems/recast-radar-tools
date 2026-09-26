@@ -154,7 +154,9 @@ def test_odim_to_level2_reads_in_pyart_as_h5py_reads_the_source(tmp_path):
 
 def test_strict_refuses_and_options_reach_the_writer(tmp_path):
     """``strict`` refuses a write that would leave a field out, writing
-    nothing; ``sweeps`` and ``sweeps_in_time_order`` select one JMA cycle;
+    nothing; a JMA 10-minute tar's two cycles are refused as one volume and
+    written one at a time (``split_scan_cycles``, or ``sweeps`` and
+    ``sweeps_in_time_order``);
     ``position`` and ``drop_negative_range_gates`` write a Message 1 volume;
     ``nyquist_velocity`` fills a JMA velocity volume's radials."""
     dkrom = recast_radar.read(data_path("odim-dkrom-20260820-1130-pvol"))
@@ -163,8 +165,14 @@ def test_strict_refuses_and_options_reach_the_writer(tmp_path):
     assert not (tmp_path / "strict.ar2v").exists()
 
     itok = recast_radar.read(data_path("jma-n5-20260924-210000-rs47937"))
-    with pytest.raises(recast_radar.UnrepresentableError, match="sweeps="):
+    with pytest.raises(recast_radar.UnrepresentableError, match="split_scan_cycles"):
         itok.to_bytes("level2")
+    cycles = recast_radar.split_scan_cycles(itok)
+    assert [cycle.nsweeps for cycle in cycles] == [17, 18]
+    for cycle in cycles:
+        again = recast_radar.read(cycle.to_bytes("level2"))
+        assert again.nsweeps == cycle.nsweeps
+        assert abs(again.sweeps[0]["fixed_angle"] - 25.0) < 0.01
     cycle = [0, 2, 3, 6, 7, 10, 11, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]
     data = itok.to_bytes("level2", sweeps=cycle, sweeps_in_time_order=True)
     again = recast_radar.read(data)
@@ -186,7 +194,7 @@ def test_strict_refuses_and_options_reach_the_writer(tmp_path):
     assert abs(again.latitude - located.latitude) < 1e-4
     assert again.nsweeps == klix.nsweeps
 
-    velocity = recast_radar.read(data_path("jma-n6-20191012-090000-rs47773"))
+    velocity = recast_radar.split_scan_cycles(recast_radar.read(data_path("jma-n6-20191012-090000-rs47773")))[0]
     with pytest.warns(recast_radar.WriteWarning, match="without a Nyquist velocity"):
         velocity.to_bytes("level2")
     with warnings.catch_warnings():

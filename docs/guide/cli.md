@@ -301,8 +301,10 @@ has; the size is then noted, not treated as an error.
 recast-radar convert FILE --to level2 -o out.ar2v              # also cfradial1, odim, fm301
 recast-radar convert FILE --to level2 --level2-compression none --gzip -o out.ar2v.gz
 recast-radar convert a.h5 b.h5 c.h5 --merge --to level2 -o merged.ar2v   # parts of one scan
+recast-radar convert tar --station ITOK --to level2 --split-scan-cycles -o ITOK.ar2v
+                                                              # a 10-minute JMA tar: ITOK_1.ar2v, ITOK_2.ar2v
 recast-radar convert tar --station ITOK --to level2 --sweeps 0,2,3,6,7,10,11,14,16,18,20,22,24,26,28,30,32 \
-    --sweeps-in-time-order -o ITOK.ar2v                       # one 5-minute cycle of a 10-minute JMA tar
+    --sweeps-in-time-order -o ITOK.ar2v                       # its first 5-minute cycle only
 recast-radar convert KLIX20050829_130035.V06 --to level2 --position-from KLIX20210829_180425_V06 \
     --drop-negative-range-gates -o KLIX.ar2v                  # Message 1: no position, gates from -375 m
 recast-radar convert jma-n6.tar --to level2 --nyquist 26.48 --quantization compatible -o vel.ar2v
@@ -326,9 +328,25 @@ writer with chunk output (`VolumeWriter::write_chunks`).
 Before writing, `--sweeps LIST` keeps only the listed sweeps (0-based
 indices and ranges such as `0,2,5-9`, the numbers `info` lists), in that
 order; `--sweeps-in-time-order` puts them in the order their first rays were
-collected; `--position LAT,LON,HEIGHT` or `--position-from FILE` (another
-file of the same radar) sets the site position. These apply to every
-format. Level II takes more:
+collected; `--split-scan-cycles` writes each scan cycle of the input as a
+volume of its own, its sweeps in the order they were collected (`convert`
+writes cycle N to the output name with `_N` before its extension:
+`out.ar2v` gives `out_1.ar2v`, `out_2.ar2v`; `publish` publishes each;
+`--chunks` takes one volume and refuses it); `--position LAT,LON,HEIGHT` or
+`--position-from FILE` (another file of the same radar) sets the site
+position. These apply to every format.
+
+A Level II file holds one volume scan, so the Level II writer refuses a
+volume whose sweeps come from more than one scan cycle: a cut collected
+again (JMA's 10-minute tars hold two 5-minute cycles), a sweep that begins
+more than four minutes after the others ended (an ODIM file can carry a
+sweep of the scan before), or a Level II radial that begins a volume again.
+The refusal says where the second cycle begins; `--split-scan-cycles` or
+one cycle's `--sweeps` writes it. `--merge` pairs the sweeps of its parts
+only when they were collected together (first rays at most 60 s apart) and
+keeps any other sweep as a sweep of its own. The writer writes a foreign
+volume's cuts in the order they were collected and stamps the volume with
+its earliest radial. Level II takes more:
 
 | Option | Effect |
 |---|---|

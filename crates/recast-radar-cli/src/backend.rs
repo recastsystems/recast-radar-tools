@@ -35,7 +35,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use recast_radar_core::model::Volume;
+use recast_radar_core::model::{Volume, split_scan_cycles};
 use recast_radar_io::FormatMetadata;
 use thiserror::Error;
 
@@ -279,6 +279,10 @@ pub struct VolumeEdits {
     /// Put the sweeps in the order their first rays were collected (a JMA
     /// cycle is collected from its top sweep down).
     pub sweeps_in_time_order: bool,
+    /// Make one volume of each scan cycle
+    /// ([`split_scan_cycles`](recast_radar_core::model::split_scan_cycles))
+    /// after the other edits: [`VolumeEdits::apply_each`].
+    pub split_scan_cycles: bool,
     /// Site position to set (a Message 1 volume has none).
     pub position: Option<SitePosition>,
 }
@@ -286,11 +290,30 @@ pub struct VolumeEdits {
 impl VolumeEdits {
     /// Whether the edits leave a volume as it is.
     pub fn is_empty(&self) -> bool {
-        self.sweeps.is_none() && !self.sweeps_in_time_order && self.position.is_none()
+        self.sweeps.is_none()
+            && !self.sweeps_in_time_order
+            && !self.split_scan_cycles
+            && self.position.is_none()
     }
 
-    /// `volume` with the edits made; borrowed when there are none. A sweep
-    /// index past the volume's sweeps, or given twice, is refused.
+    /// The volumes to write: `volume` with the edits made ([`VolumeEdits::apply`]),
+    /// then, with [`VolumeEdits::split_scan_cycles`], one volume per scan
+    /// cycle in the order the cycles were collected.
+    pub fn apply_each<'v>(&self, volume: &'v Volume) -> Result<Vec<Cow<'v, Volume>>, String> {
+        let edited = self.apply(volume)?;
+        if !self.split_scan_cycles {
+            return Ok(vec![edited]);
+        }
+        Ok(split_scan_cycles(edited.into_owned())
+            .into_iter()
+            .map(Cow::Owned)
+            .collect())
+    }
+
+    /// `volume` with the edits made (the sweep selection, order and site
+    /// position; not the split, which [`VolumeEdits::apply_each`] makes);
+    /// borrowed when there are none. A sweep index past the volume's sweeps,
+    /// or given twice, is refused.
     pub fn apply<'v>(&self, volume: &'v Volume) -> Result<Cow<'v, Volume>, String> {
         if self.is_empty() {
             return Ok(Cow::Borrowed(volume));

@@ -53,6 +53,7 @@ from ._native import (
     read,
     read_all,
     sniff,
+    split_scan_cycles,
 )
 from ._tree import build_datatree
 
@@ -138,6 +139,7 @@ __all__ = [
     "read",
     "read_all",
     "sniff",
+    "split_scan_cycles",
     "to_bytes",
     "to_datatree",
     "to_pyart",

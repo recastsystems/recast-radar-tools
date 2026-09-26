@@ -939,10 +939,11 @@ fn convert_to_level2_reports_what_it_leaves_out_and_keeps_the_values() {
 /// position and Doppler gates from -375 m, is refused with the options that
 /// write it, then written with the position of a Message 31 file of the
 /// same radar and without the gates before the radar; JMA Okinawa's two
-/// 5-minute cycles (35 sweeps) are refused until one cycle's sweeps are
-/// selected, collected from the top down; and a JMA velocity volume, which
-/// has no Nyquist velocity, is noted as such, or written with the radar's
-/// and in NEXRAD's word sizes.
+/// 5-minute cycles (35 sweeps) are refused as one volume, and written as
+/// two with --split-scan-cycles or one with a cycle's sweeps selected, each
+/// collected from the top down; and a JMA velocity cycle, which has no
+/// Nyquist velocity, is noted as such, or written with the radar's and in
+/// NEXRAD's word sizes.
 #[test]
 fn convert_to_level2_takes_position_sweeps_and_coding_options() {
     let dir = scratch("level2-options");
@@ -1018,7 +1019,36 @@ fn convert_to_level2_takes_position_sweeps_and_coding_options() {
     let out = dir.join("itok.ar2v");
     let output = convert(&itok, &out, &[]);
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("--sweeps"), "{}", stderr(&output));
+    for advice in [
+        "more than one scan cycle",
+        "--split-scan-cycles",
+        "--sweeps",
+    ] {
+        assert!(stderr(&output).contains(advice), "{}", stderr(&output));
+    }
+    assert!(!out.exists());
+    let output = convert(&itok, &out, &["--split-scan-cycles"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    for (name, sweeps) in [("itok_1.ar2v", 17), ("itok_2.ar2v", 18)] {
+        let written = info(&dir.join(name));
+        assert_eq!(written["sweep_count"], sweeps, "{name}");
+        let first = written["sweeps"][0]["fixed_angle_deg"].as_f64();
+        assert!(
+            first.is_some_and(|angle| (angle - 25.0).abs() < 0.01),
+            "{name}"
+        );
+    }
+    let output = run([
+        OsStr::new("convert"),
+        itok.as_os_str(),
+        OsStr::new("--to"),
+        OsStr::new("level2"),
+        OsStr::new("--chunks"),
+        OsStr::new("--split-scan-cycles"),
+        OsStr::new("-o"),
+        dir.join("chunks").as_os_str(),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
     let first_cycle = "0,2,3,6,7,10,11,14,16,18,20,22,24,26,28,30,32";
     let output = convert(
         &itok,
@@ -1042,10 +1072,12 @@ fn convert_to_level2_takes_position_sweeps_and_coding_options() {
     let output = convert(&itok, &out, &["--sweeps", "35"]);
     assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
 
-    // JMA velocity: the Nyquist velocity noted missing, or supplied.
+    // JMA velocity: the Nyquist velocity noted missing, or supplied (the
+    // tar's first 5-minute cycle: sweeps 0, 2, 4, 6 and 8 to 12).
     let velocity = fixture(JMA_N6_2019);
     let out = dir.join("n6.ar2v");
-    let output = convert(&velocity, &out, &[]);
+    let first_cycle = ["--sweeps", "0,2,4,6,8-12"];
+    let output = convert(&velocity, &out, &first_cycle);
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(
         stderr(&output).contains("without a Nyquist velocity"),
@@ -1055,7 +1087,14 @@ fn convert_to_level2_takes_position_sweeps_and_coding_options() {
     let output = convert(
         &velocity,
         &out,
-        &["--nyquist", "26.48", "--quantization", "compatible"],
+        &[
+            first_cycle[0],
+            first_cycle[1],
+            "--nyquist",
+            "26.48",
+            "--quantization",
+            "compatible",
+        ],
     );
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(

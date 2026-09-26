@@ -379,6 +379,36 @@ fn merge(py: Python<'_>, volumes: Vec<Py<PyVolume>>) -> PyResult<PyVolume> {
     }))
 }
 
+/// One volume per scan cycle of `volume`, in the order the cycles were
+/// collected, each with its sweeps in collection order. A Level II file holds
+/// one volume scan and the Level II writer refuses sweeps of more than one
+/// cycle: JMA's 10-minute tars hold two 5-minute cycles. A sweep begins a
+/// new cycle when it collects a cut (mode, fixed angle, gates and fields) the
+/// cycle already collected, when it starts more than four minutes after the
+/// cycle's other sweeps ended, or (Level II) when it begins a volume scan.
+/// A volume of one cycle comes back as one volume, with its format
+/// metadata; the volume is copied.
+#[pyfunction]
+fn split_scan_cycles(py: Python<'_>, volume: Py<PyVolume>) -> Vec<PyVolume> {
+    let loaded = volume.get().loaded().clone();
+    let parts = py.detach(|| recast_radar_core::model::split_scan_cycles(loaded.volume));
+    let single = parts.len() == 1;
+    parts
+        .into_iter()
+        .map(|volume| {
+            PyVolume::new(Loaded {
+                label: loaded.label.clone(),
+                volume,
+                metadata: if single {
+                    loaded.metadata.clone()
+                } else {
+                    FormatMetadata::None
+                },
+            })
+        })
+        .collect()
+}
+
 /// The format of a radar file's bytes, from its first bytes: `"dorade"`,
 /// `"odim_h5"`, `"cfradial"` (classic netCDF), `"cfradial_netcdf4"`
 /// (netCDF-4 CfRadial 1), `"cfradial2"` (netCDF-4 CfRadial 2 / FM301),
@@ -426,6 +456,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(read, module)?)?;
     module.add_function(wrap_pyfunction!(read_all, module)?)?;
     module.add_function(wrap_pyfunction!(merge, module)?)?;
+    module.add_function(wrap_pyfunction!(split_scan_cycles, module)?)?;
     module.add_function(wrap_pyfunction!(sniff, module)?)?;
     Ok(())
 }

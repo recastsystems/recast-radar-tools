@@ -13,7 +13,7 @@ use flate2::write::GzEncoder;
 
 use crate::backend::{
     BackendError, Backends, ChunkedOutput, Level2Compression, PublishRequest, SitePosition,
-    VolumeEdits, WriteInput, WriteOptions, WriteReport,
+    VolumeEdits, VolumeWriter, WriteInput, WriteOptions, WriteReport,
 };
 use crate::open::{self, OpenOptions};
 use crate::output::{AtomicFile, human_bytes, write_file_atomically};
@@ -45,6 +45,7 @@ fn volume_edits(edit: &EditArgs, input: &InputArgs) -> Result<VolumeEdits, CliEr
     let mut edits = VolumeEdits {
         sweeps: edit.sweeps.as_ref().map(|list| list.0.clone()),
         sweeps_in_time_order: edit.sweeps_in_time_order,
+        split_scan_cycles: edit.split_scan_cycles,
         position: edit.position,
     };
     if let Some(path) = &edit.position_from {
@@ -110,6 +111,13 @@ fn convert(args: &ConvertArgs, backends: &Backends, out: &mut Vec<u8>) -> Result
                 .to_owned(),
         ));
     }
+    if args.chunks && args.edit.split_scan_cycles {
+        return Err(CliError::Usage(
+            "--chunks writes one volume: select one scan cycle's sweeps with --sweeps instead of \
+             --split-scan-cycles"
+                .to_owned(),
+        ));
+    }
     let writer = backends.writer(args.to)?;
     if args.chunks && !writer.supports_chunks() {
         return Err(BackendError::ChunksUnavailable(args.to).into());
@@ -122,14 +130,34 @@ fn convert(args: &ConvertArgs, backends: &Backends, out: &mut Vec<u8>) -> Result
         args.merge,
         args.volume,
     )?;
-    let volume = edits.apply(&loaded.volume).map_err(CliError::Usage)?;
+    let volumes = edits.apply_each(&loaded.volume).map_err(CliError::Usage)?;
     let source_name = args
         .inputs
         .first()
         .and_then(|path| path.file_name())
         .map(|name| name.to_string_lossy().into_owned());
+    if edits.split_scan_cycles {
+        if volumes.len() > 1 {
+            writeln!(out, "{} scan cycles", volumes.len())?;
+        }
+        for (number, volume) in volumes.iter().enumerate() {
+            let input = WriteInput {
+                volume,
+                metadata: &loaded.metadata,
+                source_name: source_name.as_deref(),
+            };
+            let output = cycle_path(&args.output, number + 1);
+            write_file(args, writer, &options, &input, &output, out)?;
+        }
+        return Ok(());
+    }
+    let [volume] = &volumes[..] else {
+        return Err(CliError::Failed(
+            "the edits gave more than one volume".to_owned(),
+        ));
+    };
     let input = WriteInput {
-        volume: &volume,
+        volume,
         metadata: &loaded.metadata,
         source_name: source_name.as_deref(),
     };
@@ -147,16 +175,27 @@ fn convert(args: &ConvertArgs, backends: &Backends, out: &mut Vec<u8>) -> Result
         return Ok(());
     }
 
-    let mut file = AtomicFile::create(&args.output, args.force)?;
+    write_file(args, writer, &options, &input, &args.output, out)
+}
+
+/// Write one volume to `output` (gzip-wrapped with `--gzip`) and say what
+/// was written.
+fn write_file(
+    args: &ConvertArgs,
+    writer: &dyn VolumeWriter,
+    options: &WriteOptions,
+    input: &WriteInput<'_>,
+    output: &Path,
+    out: &mut Vec<u8>,
+) -> Result<(), CliError> {
+    let mut file = AtomicFile::create(output, args.force)?;
     let report = if args.gzip {
         let mut encoder = GzEncoder::new(file.writer(), Compression::default());
-        let report = writer.write(&input, &options, &mut encoder)?;
-        encoder
-            .finish()
-            .map_err(|err| CliError::io(&args.output, err))?;
+        let report = writer.write(input, options, &mut encoder)?;
+        encoder.finish().map_err(|err| CliError::io(output, err))?;
         report
     } else {
-        writer.write(&input, &options, file.writer())?
+        writer.write(input, options, file.writer())?
     };
     let path = file.commit()?;
     let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -167,7 +206,7 @@ fn convert(args: &ConvertArgs, backends: &Backends, out: &mut Vec<u8>) -> Result
         path.display(),
         args.to.label(),
         size,
-        volume.sweeps.len(),
+        input.volume.sweeps.len(),
         if report.left_out.is_empty() {
             ""
         } else {
@@ -175,6 +214,22 @@ fn convert(args: &ConvertArgs, backends: &Backends, out: &mut Vec<u8>) -> Result
         }
     )?;
     Ok(())
+}
+
+/// `path` with `_number` before its extension (`.ar2v.gz` counts as one):
+/// the file of scan cycle `number` under `--split-scan-cycles`.
+fn cycle_path(path: &Path, number: usize) -> PathBuf {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dot = |text: &str| text.rfind('.').filter(|&at| at > 0);
+    let split = match dot(&name) {
+        Some(at) if name[at..].eq_ignore_ascii_case(".gz") => dot(&name[..at]).unwrap_or(at),
+        Some(at) => at,
+        None => name.len(),
+    };
+    path.with_file_name(format!("{}_{number}{}", &name[..split], &name[split..]))
 }
 
 /// What [`save_chunks`] wrote.
@@ -277,23 +332,24 @@ fn publish_all(args: &PublishArgs, backends: &Backends, out: &mut Vec<u8>) -> Re
             let source_name = path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned());
-            let volume = edits.apply(&loaded.volume).map_err(CliError::Usage)?;
-            let input = WriteInput {
-                volume: &volume,
-                metadata: &loaded.metadata,
-                source_name: source_name.as_deref(),
-            };
-            let published = publisher.publish(&input, &request)?;
-            print_report(&published.report);
-            writeln!(
-                out,
-                "published {} ({}; dir.list {})",
-                published.path.display(),
-                published.site,
-                published.dir_list.display()
-            )?;
-            for removed in &published.removed {
-                writeln!(out, "removed {}", removed.display())?;
+            for volume in edits.apply_each(&loaded.volume).map_err(CliError::Usage)? {
+                let input = WriteInput {
+                    volume: &volume,
+                    metadata: &loaded.metadata,
+                    source_name: source_name.as_deref(),
+                };
+                let published = publisher.publish(&input, &request)?;
+                print_report(&published.report);
+                writeln!(
+                    out,
+                    "published {} ({}; dir.list {})",
+                    published.path.display(),
+                    published.site,
+                    published.dir_list.display()
+                )?;
+                for removed in &published.removed {
+                    writeln!(out, "removed {}", removed.display())?;
+                }
             }
         }
     }
@@ -383,6 +439,22 @@ mod tests {
         ));
         assert!(save_chunks(&chunked, &dir, true).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn each_scan_cycle_is_written_with_its_number_before_the_extension() {
+        let cases = [
+            ("out.ar2v", "out_2.ar2v"),
+            ("out.ar2v.gz", "out_2.ar2v.gz"),
+            ("OUT.GZ", "OUT_2.GZ"),
+            ("volume", "volume_2"),
+            (".hidden", ".hidden_2"),
+            ("a.b.nc", "a.b_2.nc"),
+        ];
+        for (name, want) in cases {
+            let path = Path::new("dir").join(name);
+            assert_eq!(cycle_path(&path, 2), Path::new("dir").join(want), "{name}");
+        }
     }
 
     #[test]

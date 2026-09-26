@@ -169,13 +169,20 @@ and 14; the Rust conformance test lists every item):
 volume = recast_radar.read(source, *, station=None, volume=0)
 volumes = recast_radar.read_all(source, *, station=None, all_stations=False)
 merged = recast_radar.merge([part1, part2, ...])
+cycles = recast_radar.split_scan_cycles(volume)
 ```
 
 `read` decodes one volume and keeps it in Rust; `read_all` returns every
 volume of an input (each member of a mobile-radar archive, every station of a
 JMA tar with `all_stations=True`). `merge` joins the parts of one scan
 (per-quantity ODIM files, DWD sweep files): the first part is the base, later
-parts add fields to sweeps at the same angle and add the other sweeps.
+parts add fields to sweeps at the same angle, ray geometry and collection
+time (first rays at most 60 s apart), and add the other sweeps as sweeps of
+their own. `split_scan_cycles` returns one volume per scan cycle, its sweeps
+in the order they were collected: a Level II file holds one volume scan,
+and the Level II writer refuses a volume of more than one (a cut collected
+again, as in JMA's 10-minute tars, a sweep that begins minutes after the
+others ended, or a Level II radial that begins a volume again).
 
 Properties: `source_format` (`"nexrad_level2"`, `"odim_h5"`, `"cfradial1"`,
 ...), `format_name`, `label`, `instrument_name`, `time_reference`,
@@ -301,11 +308,14 @@ What a writer leaves out (a field Level II has no moment for, a second
 reflectivity field) and its notes (a coding coarser than the source, radials
 reordered, a missing Nyquist velocity) come as `recast_radar.WriteWarning`s;
 `publish` also returns them under `"left_out"` and `"notes"`. For example,
-JMA's 10-minute tars hold two 5-minute cycles (the 2026 Okinawa member has
-35 sweeps, more than Level II holds); one cycle, from its top sweep down:
+JMA's 10-minute tars hold two 5-minute cycles, which the Level II writer
+refuses as one volume; each cycle, from its top sweep down, or one cycle's
+sweeps:
 
 ```python
 itok = recast_radar.read("Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.RS47937.tar", station="ITOK")
+for number, cycle in enumerate(recast_radar.split_scan_cycles(itok), start=1):
+    cycle.write(f"ITOK_{number}.ar2v", "level2")
 itok.write("ITOK.ar2v", "level2",
            sweeps=[0, 2, 3, 6, 7, 10, 11, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32],
            sweeps_in_time_order=True)
