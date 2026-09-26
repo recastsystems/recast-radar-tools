@@ -3,6 +3,8 @@
 //! starts from real bytes: the committed KIWA volume 307 Start chunk and its
 //! first two intermediate chunks, or a cached archive volume.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use recast_radar_core::bounded_read::{MAX_GATES_PER_RADIAL, MAX_SWEEPS_PER_VOLUME};
 use recast_radar_io_nexrad::{
     ArchiveCompression, NexradError, normalize_archive_bytes, read_normalized_volume_bytes,
@@ -145,5 +147,88 @@ fn volume_with_more_cuts_than_the_sweep_limit_is_rejected() {
                 if reason.contains(&format!("more than {MAX_SWEEPS_PER_VOLUME} elevation cuts"))
         ),
         "unexpected error: {error}"
+    );
+}
+
+/// Size of the zero-filled log each probe message carries.
+const PROBE_LOG_BYTES: usize = 16 * 1024 * 1024;
+
+/// A fixed frame holding a message 33 (RDA Log Data, ICD 2620002AA Table
+/// XVIV) whose appended data is `payload`, a bzip2 stream of
+/// [`PROBE_LOG_BYTES`] zeros.
+fn rda_log_frame(sequence: u16, payload: &[u8]) -> Vec<u8> {
+    let mut body = vec![0u8; 68];
+    body[0..4].copy_from_slice(&1u32.to_be_bytes());
+    body[4..14].copy_from_slice(b"LimitProbe");
+    body[30..34].copy_from_slice(&1u32.to_be_bytes());
+    body[34..38].copy_from_slice(&2u32.to_be_bytes());
+    body[38..42].copy_from_slice(
+        &u32::try_from(payload.len())
+            .expect("short payload")
+            .to_be_bytes(),
+    );
+    body[42..46].copy_from_slice(
+        &u32::try_from(PROBE_LOG_BYTES)
+            .expect("16 MiB fits")
+            .to_be_bytes(),
+    );
+    body.extend_from_slice(payload);
+    let mut frame = vec![0u8; RECORD_BYTES];
+    let header = CONTROL_WORD_LEN;
+    let halfwords =
+        u16::try_from((MESSAGE_HEADER_LEN + body.len()).div_ceil(2)).expect("one frame");
+    frame[header..header + 2].copy_from_slice(&halfwords.to_be_bytes());
+    frame[header + 3] = 33;
+    frame[header + 4..header + 6].copy_from_slice(&sequence.to_be_bytes());
+    frame[header + 12..header + 14].copy_from_slice(&1u16.to_be_bytes());
+    frame[header + 14..header + 16].copy_from_slice(&1u16.to_be_bytes());
+    let start = header + MESSAGE_HEADER_LEN;
+    frame[start..start + body.len()].copy_from_slice(&body);
+    frame
+}
+
+/// Twenty message 33 frames, each inflating 16 MiB from about 50 bytes,
+/// inserted after the real metadata record: the volume keeps the first four
+/// (64 MiB, the volume's RDA log allowance) and counts the other sixteen as
+/// not decoded, instead of inflating 320 MiB.
+#[test]
+fn rda_log_data_is_limited_per_volume() {
+    let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
+    std::io::Write::write_all(&mut encoder, &vec![0u8; PROBE_LOG_BYTES]).expect("bzip2 encode");
+    let payload = encoder.finish().expect("bzip2 encode");
+    assert!(payload.len() < 200, "{} bytes", payload.len());
+
+    let real = kiwa_normalized();
+    let insert_at = VOLUME_HEADER_LEN + METADATA_RECORDS * RECORD_BYTES;
+    let mut bytes = real[..insert_at].to_vec();
+    for sequence in 0..20 {
+        bytes.extend(rda_log_frame(sequence, &payload));
+    }
+    bytes.extend_from_slice(&real[insert_at..]);
+
+    let volume = read_normalized_volume_bytes(&bytes, ArchiveCompression::Bzip2Blocks)
+        .expect("the probe logs do not fail the volume");
+    assert_eq!(volume.provenance.decode.decoded_ray_count, 240);
+    let variable = |name: &str| {
+        volume
+            .extra_vars
+            .iter()
+            .find(|variable| &*variable.name == name)
+            .unwrap_or_else(|| panic!("no {name}"))
+    };
+    assert_eq!(
+        variable("nexrad_rda_log_identifier").values.len(),
+        4,
+        "logs kept"
+    );
+    assert_eq!(
+        variable("nexrad_rda_log_data").values.len(),
+        4 * PROBE_LOG_BYTES
+    );
+    assert_eq!(
+        variable("nexrad_metadata_messages_not_decoded")
+            .values
+            .get_f64(0),
+        Some(16.0)
     );
 }

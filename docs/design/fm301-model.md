@@ -167,8 +167,13 @@ comparable value (JSON null or object) is an error. The second verification move
 `units` and `positive` attributes (and the Py-ART time reference) from skipped to compared,
 which is the 445 attributes and 242 known differences this table gains.
 
-The `EXPECTED` list in the test holds 30 known reader differences, each with a key and the
-section of this note (for example 1, 7.1, 8.2, 9, 10, 11, 14, A.3) or the code that decides it.
+The `EXPECTED` list in the test holds 34 known reader differences (30 at F.4, 31 on `main` at
+`d69f902` with `nexrad-moment-header`; since then `nexrad-radial-extras`,
+`nexrad-pulses-calibration` and `nexrad-transmit-power` for the Level II per-radial values, pulse
+counts, PRT, pulse widths and calibration entries the model carries, `docs/level2/messages.md`
+"Metadata in the model"), each
+with a key and the section of this note (for example 1, 7.1, 8.2, 9, 10, 11, 14, A.3) or the
+code that decides it.
 The code that applies a difference records its key, and the test fails if a listed difference
 is never applied. All 11 cases must run: a case whose file is neither committed nor cached and
 cannot be downloaded (the five Level II files are download-only) fails the test unless
@@ -393,7 +398,7 @@ run 2 shows no cost from the Message 18 read added since then, within that run's
 - A binding that mirrors the xradar 0.12 default (`Flavor::Xradar012` with `FirstDim::Auto`)
   gets no zero-copy field on NEXRAD, CfRadial or JMA files, and copies packed values once per
   field on first read; nothing is copied at decode. By design, with the counts in 12.2.
-- The open questions of section 15 remain open. The 30 `EXPECTED` reader differences are
+- The open questions of section 15 remain open. The 34 `EXPECTED` reader differences are
   deliberate and documented.
 - Branches `fm301-io`, `fm301-algo`, `fm301-render` and `fm301-golden` can be deleted after
   the merge.
@@ -559,7 +564,7 @@ The FM301 view (section 12) builds these groups and variables from the in-memory
 | `/sweep_group_name(sweep)`, `/sweep_fixed_angle(sweep)` | derived from `Volume::sweeps` | CfRadial 2 root variables. xradar emits them for ODIM and CfRadial 1 but not NEXRAD (A.2, A.4, A.5). The view always emits them |
 | `/radar_parameters/*` | `Volume::radar_parameters` | Table 301-12; variable names differ per flavor (12.4) |
 | `/radar_calibration/*` (dim `calib`) | `Volume::radar_calibration: Vec<RadarCalibration>` | Table 301-14; non-FM301 CfRadial entries (`k_squared_water`, `i0_dbm_*`, ...) in `RadarCalibration::extra` |
-| `/georeferencing_correction/*` | `Volume::georeferencing_correction` | CfRadial only; FM301 covers fixed platforms only |
+| `/georeferencing_correction/*` | `Volume::georeferencing_correction` | CfRadial; DORADE (the ten CFAC corrections of the platform georeference the decoder does not apply, metadata-complete); FM301 covers fixed platforms only |
 | `/sweep_<n>` | `Volume::sweeps[n]: Sweep` | `sweep_number == n` |
 | `/sweep_<n>/time(time)`, `azimuth(time)`, `elevation(time)` | `Sweep::rays` | Tables 301-6a, 301-7a; ray dimension name and order follow `ViewOptions::first_dim` (12.1) |
 | `/sweep_<n>/range(range)` | `Sweep::range: RangeCoord` | one per sweep (section 6) |
@@ -649,7 +654,8 @@ pub struct GlobalAttrs {
     /// CfRadial attribute. Empty when the source has none (KTLX 1999 has a NUL ICAO).
     pub instrument_name: String,
     pub site_name: Option<String>,
-    /// `platform_is_mobile` (FM301 requires "false").
+    /// `platform_is_mobile`: true when the source says the platform moves (CfRadial;
+    /// DORADE airborne or shipborne, metadata-complete), else false (FM301's fixed platforms).
     pub platform_is_mobile: bool,
     pub ray_times_increase: Option<bool>,
     /// `simulated` (Table 301-3).
@@ -898,6 +904,23 @@ The FM301 view takes an optional `&dyn fm301::ExtraAttrs` (section 12). io-nexra
 it to emit xradar's NEXRAD root attributes (`scan_name`, `dynamic_scan_type`,
 `rda_build_number`, ...) and sweep attributes (`waveform_type`, `sails_cut`, ...) from
 `NexradMetadata` (A.2).
+
+Update (metadata-complete, G7): the typed extensions stay, and every value a decoder parses
+now also reaches the `Volume` itself, so the router, the view and a future writer see it
+without the side structure: the FM301 slot where one exists (`rays_are_indexed`,
+`rays_angle_resolution`, `target_scan_rate`, `scan_rate`, `antenna_transition`, `prt`,
+monitoring transmit powers, the platform track, `platform_type`, `wmo__originating_centre`,
+`frequency`), otherwise `extra_vars` and `other` items named after the source field with its
+units (Level II `nexrad_*`, `docs/level2/messages.md` "Metadata in the model"; DORADE
+`dorade_*`, `crates/recast-radar-io-dorade/src/descriptors.rs`; JMA `jma_*`,
+`crates/recast-radar-io-jma/src/lib.rs`). The Level II radial status is the per-ray variable
+`nexrad_radial_status`. DORADE antenna-transition rays (RYIB `ray_status` 1) are kept in file
+order and flagged `antenna_transition`, as LROSE Radx reads them (`tests/radxprint_real.rs`);
+until this branch they were dropped whenever a sweep had a normal ray. The DORADE ASIB
+georeference (platform velocities, attitude, winds, change rates) is checked against RadxPrint
+on two airborne sweeps, the NOAA P-3 N42RF tail radar in Hurricane Michael; an airborne (AIR)
+sweep is `elevation_surveillance` with `primary_axis` `axis_y_prime`, and a SEDS block (Solo
+II edit summary) is `history`, all as Radx reads them.
 
 ---
 
@@ -1383,10 +1406,10 @@ impl Quantity {
 | `elevation_deg` | `fixed_angle_deg`; `Sweep::tilt_elevation_deg` | Verbatim. Today NEXRAD writes the first ray's elevation (KTLX 2024 cut 0: 0.582). Native F.3 decoding, using stream A's Message 5, writes the VCP angle (0.4834), as xradar and Py-ART do. The legacy value stays available as `Sweep::tilt_elevation_deg(SourceFormat::NexradLevel2)` (`Volume::tilt_elevation_deg`), the first ray's elevation, and the fixed angle for other sources. The products, the trackers, the dealiasers and the bench use it, so their output equals `main`'s (Status) |
 | `elevation_number: Option<u8>` | `elevation_number: Option<u16>` | widened |
 | `radials[i].azimuth_deg`, `.elevation_deg` | `rays.azimuth_deg[i]`, `rays.elevation_deg[i]` | array-of-structs to struct-of-arrays |
-| `radials[i].time_offset_ms` | `rays.time_s[i]`, and the raw value kept in the residue | Meaning depends on the decoder (13.2). NEXRAD stores ms of day of collection: `time_s = (midnight of volume_time's date + ms) - time_reference`, plus one day when that is more than 12 h before the reference. CfRadial stores ms since volume start (truncated): `time_s = ms / 1000 + (volume_time - time_reference)`. DORADE stores ms since sweep start. ODIM and JMA store 0, so `time_s = 0` until native decoding |
+| `radials[i].time_offset_ms` | `rays.time_s[i]`, and the raw value kept in the residue | Meaning depends on the decoder (13.2). NEXRAD stores ms of day of collection: `time_s = (midnight of volume_time's date + ms) - time_reference`, plus one day when that is more than 12 h before the reference. CfRadial stores ms since volume start (truncated): `time_s = ms / 1000 + (volume_time - time_reference)`. DORADE stores ms since sweep start. ODIM stores 0, so `time_s = 0` until native decoding. JMA has no per-ray time: every ray of a sweep carries the sweep's observation start (template 4.51022 octets 51-52, seconds from the GRIB reference time), and `time_reference` is the earliest start |
 | `radials[i].gate_range` | residue only | the field's `GateMapping` is authoritative |
 | `radials[i].nyquist_velocity_mps` | `ray_vars.nyquist_velocity_mps[i]`, NaN for `None`; the whole vector is `None` if every radial is `None` | a legacy `Some(NaN)` would come back as `None`; residue |
-| `radials[i].radial_status` | residue; io-nexrad also keeps it in `NexradMetadata` | not FM301 |
+| `radials[i].radial_status` | residue; io-nexrad also keeps it in `NexradMetadata`, and (since metadata-complete) as the per-ray sweep variable `nexrad_radial_status` | not FM301 |
 | `ray_instrument_metadata` (empty, or one entry per radial) | `ray_vars` vectors | an all-`None` non-empty vector would come back empty; residue keeps its length |
 | `ray_instrument_metadata[i].prt_s` | `ray_vars.prt_s[i]`, NaN for `None` | as for Nyquist |
 | `.unambiguous_range_km` | `ray_vars.unambiguous_range_m[i] = km × 1000` | inexact in f32; residue |
@@ -1933,15 +1956,16 @@ no meaning may be inferred from absence). A vector that is present always has `n
 |---|---|---|---|---|---|---|
 | nyquist_velocity | RAD block / Msg 1 header, 0.01 m/s units | `how/NI` (dataset, else root), a scalar broadcast to rays | variable | RADD `eff_unamb_vel`, else from wavelength and PRTs | NEXRAD: not present; ODIM: scalar with dims `()`; CfRadial: `(azimuth)` | `instrument_parameters.nyquist_velocity`, per ray, all formats; 0 on NEXRAD Msg 1 surveillance rays |
 | unambiguous_range | RAD block / Msg 1 header, 0.1 km units → m | — | variable | RADD `eff_unamb_range` (km → m) | NEXRAD: not present; CfRadial: `(azimuth)` | `instrument_parameters.unambiguous_range`, per ray, m |
-| prt, prt_ratio | not provided now; stream A may later derive them from VCP and PRF tables | not mapped: `how/lowprf` and `how/highprf` stay verbatim in `Sweep::other` (CfRadial's `prt_ratio` convention for dual PRF is not confirmed) | variables | RADD `prt1` (ms → s); no ratio | CfRadial `(azimuth)` | `instrument_parameters.prt`, `prt_ratio` |
-| n_samples | not per ray; Msg 5 pulse counts go to `NexradMetadata` (A.4) | not mapped (`Vsamples` stays verbatim) | variable (IRENE 32, int32, `_FillValue` -9999) | PARM `num_samples`, when every PARM agrees | CfRadial `(azimuth)` | `instrument_parameters.n_samples` |
-| pulse_width | Msg 5 short/long is a category, **not** a duration, so it stays in `NexradMetadata` | `how/pulsewidth` (µs → s; dataset, else root; values outside 0.05 to 10 stay verbatim) | variable (IRENE 5e-7 s) | PARM `pulse_width` (m → 2L/c s), when every PARM agrees | CfRadial `(azimuth)` | `instrument_parameters.pulse_width` |
-| scan_rate | — | — (`how/rpm` or `antspeed` is the sweep's `target_scan_rate`) | variable | — (RYIB `true_scan_rate` is missing in every corpus file; RADD `req_rotat_vel` is the `target_scan_rate`) | CfRadial `(azimuth)` | `scan_rate` |
-| antenna_transition | — | — | variable (int8) | — (transition rays are dropped) | CfRadial `(azimuth)` | `antenna_transition` |
-| calib_index | — | one `radar_calibration` entry per distinct dataset radar-constant set (16, finding 5) | `r_calib_index` (int32 in DOW8 and IRENE) | one entry per distinct sweepfile RADD constant set | CfRadial `r_calib_index (azimuth)`, float64 after decoding | — |
+| prt, prt_ratio | `prt`: 1 / PRF of the Message 32 PRF table for the Message 5 cut's PRF number (surveillance, or the Doppler sector of the ray), only when the file has a Message 32 (metadata-complete); no ratio | not mapped: `how/lowprf` and `how/highprf` stay verbatim in `Sweep::other` (CfRadial's `prt_ratio` convention for dual PRF is not confirmed) | variables | RADD `prt1` (ms → s); no ratio | CfRadial `(azimuth)` | `instrument_parameters.prt`, `prt_ratio` |
+| n_samples | the Message 5 cut's surveillance pulse count, or its Doppler sector's (metadata-complete) | not mapped (`Vsamples` stays verbatim) | variable (IRENE 32, int32, `_FillValue` -9999) | PARM `num_samples`, when every PARM agrees | CfRadial `(azimuth)` | `instrument_parameters.n_samples` |
+| pulse_width | Msg 5 short/long is a category, not a duration: the duration is the Message 18 TAU_SP or TAU_LP (ns) of that pulse (metadata-complete) | `how/pulsewidth` (µs → s; dataset, else root; values outside 0.05 to 10 stay verbatim) | variable (IRENE 5e-7 s) | PARM `pulse_width` (m → 2L/c s), when every PARM agrees | CfRadial `(azimuth)` | `instrument_parameters.pulse_width` |
+| scan_rate | — | — (`how/rpm` or `antspeed` is the sweep's `target_scan_rate`) | variable | RYIB `true_scan_rate` where it is not a missing value (metadata-complete). Untested on real data: every corpus file and both full N42RF sweepfiles store -9999 or -32768, so only the verbatim `dorade_ryib_true_scan_rate` column is checked. RADD `req_rotat_vel` is the `target_scan_rate` | CfRadial `(azimuth)` | `scan_rate` |
+| antenna_transition | — | — | variable (int8) | RYIB `ray_status` 1; every ray is kept (metadata-complete; earlier the transition rays were dropped) | CfRadial `(azimuth)` | `antenna_transition` |
+| calib_index | one `radar_calibration` entry per distinct VOL calibration constant, system ZDR and initial system PhiDP (`base_1km_hc`, `zdr_correction`, `system_phidp`, as LROSE maps them; metadata-complete) | one `radar_calibration` entry per distinct dataset radar-constant set (16, finding 5) | `r_calib_index` (int32 in DOW8 and IRENE) | one entry per distinct sweepfile RADD constant set | CfRadial `r_calib_index (azimuth)`, float64 after decoding | — |
 
-The existing rule still holds: PRF **codes** from VCP tables never become a physical PRT. The
-legacy `ScanLegMetadata` codes move to `ScanDefinition::legs`.
+The existing rule still holds: PRF **codes** from VCP tables never become a physical PRT on their own; only
+the file's own Message 32 PRF values do (metadata-complete). The legacy `ScanLegMetadata` codes move to
+`ScanDefinition::legs`.
 
 CfRadial 1 carries per-ray variables that are not FM301. None is dropped:
 
@@ -1971,7 +1995,7 @@ CfRadial 1 carries per-ray variables that are not FM301. None is dropped:
 | NEXRAD Level II and III | `AzimuthSurveillance` | xradar and Py-ART both give `azimuth_surveillance` for every sweep (A.2, A.3) |
 | ODIM PVOL / SCAN | `AzimuthSurveillance`, including the 90° birdbath sweep | xradar and Py-ART both do this (iesha `sweep_9`, fixed angle 90). ODIM PVOL has no scan-mode attribute, and inferring vertical pointing from the angle would diverge from xradar |
 | CfRadial 1/2 | parsed from `sweep_mode`; unknown strings become `Other` | IRENE `azimuth_surveillance`, DOW8 `rhi` |
-| DORADE | RADD scan mode: 8 SUR → `AzimuthSurveillance`; 1 PPI → `Sector`; 3 RHI → `Rhi`; 4 VER → `VerticalPointing`; 2 COP → `Coplane`; 7 IDL → `Idle`; 5 TAR → `Pointing`; 6 MAN → `ManualPpi`; 0 CAL → `Other("calibration")`; 9 AIR, 10 HOR → `Other` | DOW8's CfRadial file, written from DORADE by Radx's `DoradeRadxFile`, says `rhi`; the corpus DOW6 DORADE RHI has RADD scan mode 3. The PPI and MAN mappings are proposed and must be checked in F.3 against a Radx conversion of the NOXP sweeps (section 15) |
+| DORADE | RADD scan mode: 8 SUR → `AzimuthSurveillance`; 1 PPI → `Sector`; 3 RHI → `Rhi`; 4 VER → `VerticalPointing`; 2 COP → `Coplane`; 7 IDL → `Idle`; 5 TAR → `Pointing`; 6 MAN → `ManualPpi`; 0 CAL → `Other("calibration")`; 9 AIR → `ElevationSurveillance`; 10 HOR → `Other` | DOW8's CfRadial file, written from DORADE by Radx's `DoradeRadxFile`, says `rhi`; the corpus DOW6 DORADE RHI has RADD scan mode 3. LROSE RadxPrint reads the NOXP sweeps (scan mode 1) as `sector`, COW2 (8) as `azimuth_surveillance`, DOW6 (3) as `rhi` and the N42RF airborne sweeps (9) as `elevation_surveillance`, as the model does (`radxprint_real.rs`); MAN has no real sample (section 15) |
 | JMA | `AzimuthSurveillance` | PPI volumes |
 
 The legacy `VolumeMetadata::scan_mode` (one per volume) maps to every sweep: `Ppi` →
@@ -2002,7 +2026,7 @@ differ, which is today's `combined_scan_mode` rule.
 | `instrument_name` | `attrs.instrument_name` | ICAO from the volume header | NOD, else RAD, else WMO | verbatim | "KTLX"; ODIM "None" | "KTLX"; 1999 file "\x00\x00\x00\x00"; ODIM "" |
 | `site_name` | `attrs.site_name` | — | PLC | verbatim | CfRadial "CPOLRVP" | CfRadial present |
 | `scan_name`, `scan_id` | `scan.name`, `scan.id` (+ `scan_id_text`) | "VCP-212", 212 | `how/task` if present | verbatim ("IRENE_WINDS", "0") | NEXRAD "VCP-212"; 1999 and 2005 files "VCP-0"; CfRadial `scan_id` as an int32 attribute (DOW8) | `vcp_pattern` "212" |
-| `platform_is_mobile` | `attrs.platform_is_mobile` | false | false | verbatim | CfRadial "false" | |
+| `platform_is_mobile` | `attrs.platform_is_mobile` | false | false | verbatim; DORADE true for an airborne or shipborne RADD `radar_type` (as RadxConvert writes it) | CfRadial "false" | |
 | `ray_times_increase` | `attrs.ray_times_increase` | computed | computed | verbatim | CfRadial "true" | |
 | `simulated` | `attrs.simulated` | false | false | verbatim or BowEcho export | | |
 | `wmo__wsi`, `wmo__id` | `attrs.wmo` | — | WIGOS / WMO from `what/source` | verbatim | | |
@@ -2136,7 +2160,8 @@ pub enum ArrayRef<'a> { U8(&'a [u8]), U16(&'a [u16]), I8(&'a [i8]), I16(&'a [i16
 pub enum ViewWarning {
     /// Ray times are not strictly increasing even in acquisition order. The source has no
     /// per-ray times (dkrom: equal ODIM start and end times, which xradar also warns about;
-    /// legacy-converted ODIM and JMA, where every ray time is 0). The `time` coordinate is
+    /// legacy-converted ODIM, where every ray time is 0; JMA, where every ray of a sweep
+    /// carries the sweep's observation start). The `time` coordinate is
     /// written anyway, as xradar writes it. A CF writer reports the warning.
     NonMonotonicTime { sweep: u32 },
 }
@@ -2660,7 +2685,7 @@ private `decode_bzip_blocks_pipelined`).
 | Topic | FM301-2022 text | xradar 0.12 | Py-ART 2.2.5 | Model / view |
 |---|---|---|---|---|
 | Ray dimension | `time` is primary (a CF coordinate, so monotonic) | `azimuth` (PPI) or `elevation` (RHI), rays sorted; `time` in acquisition order with `first_dim="time"` | a 1-D ray index across the volume | `FirstDim::Time`: `time`, acquisition order (a row permutation; the identity for NEXRAD, CfRadial, most DORADE files and sources with equal ray times; not for ODIM with per-ray times or NOXP 2009 DORADE). `FirstDim::Auto` (Xradar flavor): xradar's default. Model storage order never changes (12.1, 12.2) |
-| Time reference | `seconds since YYYY-MM-DDThh:mm:ssZ`, whole seconds (Table 301-6b) | `time` as datetime64 | first radial's time floored to the second | `time_reference` whole seconds; fraction in `time_s` (section 2) |
+| Time reference | `seconds since YYYY-MM-DDThh:mm:ssZ`, whole seconds (Table 301-6b) | `time` as datetime64 | first radial's time floored to the second | `time_reference` whole seconds; fraction in `time_s` (section 2). Level II: the earliest radial's time floored, which is the first radial's in every NEXRAD file; a converted file that stores its lowest cut first although it was observed last would get negative ray times under Py-ART's rule |
 | Attribute types | `_Undetect`, `flag_values`, `flag_masks` "same as field data" (Table 301-10) | NEXRAD attributes as Python bool/int/float; `to_cfradial2` cannot write the bools | NEXRAD `vcp_pattern` as text | typed `AttrValue`; flag and range attributes in the packed type; bools as text in the WMO flavor |
 | Fixed angle variable | `fixed_angle` | `sweep_fixed_angle` | `fixed_angle` (volume array) | Xradar flavor: `sweep_fixed_angle`; WMO flavor: `fixed_angle` |
 | `range` units and meaning | "metres"; the attribute is named `meters_to_center_of_first_gate` but described as "range to start of first gate" | "meters", centre (ODIM 750 = rstart 500 + 250) | "meters", centre in the data; the ODIM reader's attribute says 0.0 while the data starts at 250 | centres; "meters" in the Xradar flavor, "metres" in the WMO flavor |
@@ -2724,7 +2749,8 @@ private `decode_bzip_blocks_pipelined`).
    1 km (matching xradar) but puts a mixed sweep at 250 m, whereas Py-ART puts every sweep at
    250 m. Should a Py-ART-style export pad each sweep to the volume's finest range?
 7. **DORADE PPI and MAN mode mapping (10).** Please verify against RadxConvert output for the
-   NOXP sweeps.
+   NOXP sweeps. Update (metadata-complete): PPI checked, RadxPrint reads the NOXP sweeps as
+   `sector`; MAN has no real sample.
 
 ---
 
@@ -2762,7 +2788,7 @@ None of the resolutions adds work at decode:
 | 5 | major | No passthrough for unmodelled metadata, so CfRadial and DORADE conversion is lossy | **Accepted.** Added `GlobalAttrs::other`, `Volume::extra_vars`, `Sweep::extra_vars`, `Sweep::other`, `RadarCalibration::extra` (named as xradar names them), and `PlatformTrack` attitude vectors (heading, roll, pitch, drift, rotation, tilt, `altitude_agl`); `georef*` go to `extra_vars`. `ViewOptions::passthrough`. **Correction to the finding (checked):** xradar 0.12 does not keep `Sub_conventions`, `original_format`, `driver`, `created`, `start_*`, `end_*` or `n_gates_vary` for CfRadial 1 (DOW8 root has 14 attributes). Only Py-ART keeps them, so the Xradar flavor writes root `other` only with `Passthrough::All`. xradar does keep the per-ray `ray_start_range`, `ray_gate_spacing` and `georef*` variables and the non-FM301 calibration entries (checked) | 0 item 10; 1; 2; 3; 9; 11; 12.1; A.5 |
 | 6 | major | Zero-copy NumPy exposure conflicts with the no-unsafe rule | **Accepted: option (a), ownership moves.** Added `Field::into_parts`, `FieldData::into_array` and `VolumeView::layout()`. The binding moves each `Vec` with `PyArray::from_vec` and reshapes; non-trivial mappings use a lazy backend array. `VolumeView` stays the Rust conformance surface. Checked in `numpy-0.23.0`: `array.rs` line 340 `pub unsafe fn borrow_from_array`, line 446 `pub fn from_owned_array`, line 612 `pub fn from_vec`, and `borrow/mod.rs` line 267 safe `as_slice`. **Not adopted:** option (b), shared buffers plus one audited unsafe site, which would need a spec exception. Recorded as deviation 15.7 | 0 item 9; 4; 6.5; 12.2; 15 |
 | 7 | minor | `unexpected_cfgs` check-cfg misses io-nexrad and render | **Accepted.** Checked: `grep -L '^\[lints\]'` lists exactly those two, and the `safety` branch (D.1) already adds `[lints] workspace = true` to both. A per-crate `[lints.rust]` table is added only if D.1 has not landed, and removed at that sync, because Cargo rejects both tables together (script step 8). No `build.rs` | 13.2 |
-| 8 | minor | The time reference has sub-second precision, but FM301 and Py-ART use whole seconds | **Accepted.** `time_reference` is whole seconds, with the fraction in `time_s`. Sources that state a reference (CfRadial `time.units`) keep it; NEXRAD uses the first radial floored; a differing header time stays in `NexradMetadata`; legacy `volume_time` goes to the residue. Checked: Py-ART `get_times` uses `seconds=int(secs[0])`, units "seconds since 2024-03-15T00:02:17Z", first values 0.182, 0.204 | 0 item 2; 2; 5.1; 5.2; 5.5; 11 |
+| 8 | minor | The time reference has sub-second precision, but FM301 and Py-ART use whole seconds | **Accepted.** `time_reference` is whole seconds, with the fraction in `time_s`. Sources that state a reference (CfRadial `time.units`) keep it; NEXRAD uses the first radial floored (the earliest radial when an earlier one follows it, so no ray time is negative); a differing header time stays in `NexradMetadata`; legacy `volume_time` goes to the residue. Checked: Py-ART `get_times` uses `seconds=int(secs[0])`, units "seconds since 2024-03-15T00:02:17Z", first values 0.182, 0.204 | 0 item 2; 2; 5.1; 5.2; 5.5; 11 |
 | 9 | minor | The `time` coordinate is non-monotonic for ODIM and JMA storage order; xradar parity needs `first_dim` | **Accepted: the view reorders through a row permutation.** `FirstDim::Time` gives acquisition order (the only choice in the WMO flavor); `FirstDim::Auto` gives xradar's default. The model's storage order is unchanged, so decode cost is unchanged. `ViewWarning::NonMonotonicTime` covers sources without per-ray times. The binding exposes `first_dim`. **Not adopted:** a non-coordinate ray dimension with `time` as an auxiliary coordinate, which would not match xradar's `first_dim="time"` layout (dimension `time`, A.2) | 0 item 2; 12.1; 12.3; 14 |
 | 10 | minor | Unit conversions are inexact beyond the one listed tolerance | **Accepted, using the reviewer's residue option instead of a tolerance list.** Every non-invertible value is kept (5.5) and used only while the model still holds its forward image. The audit found four more cases, now covered: legacy `vcp` → `scan.name/id` (moved to native decoding), `scan_mode: None`, `Some(NaN)` in per-ray options, and all-`None` `ray_instrument_metadata` | 5.1; 5.2; 5.5 |
 | 11 | minor | The reverse name mapping ("via Quantity", CFP) collides or loses names | **Accepted, with a different collision rule.** The residue records each field's `MomentType`. `to_legacy_moment` is the exact inverse for the seven variants and `Ccorh` → `CFP` (NEXRAD only), and `Unknown(as_str())` otherwise. **Suggested forward rule not adopted:** mapping `Unknown("DBZH")` to `Other("DBZH")` would still give two variables named `DBZH` by `as_str()`, and `Other` must never hold a known spelling. Instead, `Unknown` names are assigned first, and a colliding canonical variant becomes `Other("<Variant>")` with its quantity kept | 4; 5.4; 13.2 |
@@ -2829,7 +2855,8 @@ for every source. What each decoder fills:
     `attrs.other` when not blank.
   - Still dropped: RYIB `true_scan_rate` (missing in every corpus file), ASIB platform
     records (documented limitation), SWIB `filter_flag`, and PARM polarization, threshold,
-    parameter type and configuration fields. `standard_name` stays unset because DORADE has
+    parameter type and configuration fields. (metadata-complete carries all of them: see the
+    DORADE rows of section 9 and `crates/recast-radar-io-dorade/src/dorade.rs`.) `standard_name` stays unset because DORADE has
     none.
   - A multi-sweepfile volume takes `radar_parameters` and the VOLD text from its first
     sweepfile.

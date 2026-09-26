@@ -31,7 +31,9 @@ documents for each reader:
 - field names: ODIM ``what/quantity`` verbatim; JMA reflectivity and velocity as DBZH
   and VRADH; Level II data blocks through the design note's table (REF -> DBZH,
   VEL -> VRADH, SW -> WRADH, ZDR -> ZDR, PHI -> PHIDP, RHO -> RHOHV, CFP -> CCORH);
-- time references: ODIM ``/what`` date and time; the JMA reference time; for Level II
+- time references: ODIM ``/what`` date and time; for JMA the earliest sweep observation
+  start (the section 1 reference time plus the smallest template 4.51022 observation
+  start offset, octets 51-52); for Level II
   the first radial's collection time floored to the second;
 - fixed angles: ODIM ``where/elangle``; the JMA product elevation; for Level II the
   Message 5 cut angle of the sweep's elevation number (MetPy ``vcp_info``), or the first
@@ -387,7 +389,7 @@ def sm16(raw):
 
 
 def jma_member_sweeps(data):
-    """(elevation_deg, radials, gates, start_azimuth_deg, station_id, reference_time) per sweep."""
+    """(elevation_deg, radials, gates, start_azimuth_deg, station_id, observation start) per sweep."""
     assert data[:4] == b"GRIB" and data[7] == 2
     total = struct.unpack(">Q", data[8:16])[0]
     msg = data[:total]
@@ -414,7 +416,8 @@ def jma_member_sweeps(data):
                     "start_azimuth_deg": struct.unpack(">H", body[39:41])[0] / 100.0}
         elif number == 4:
             product = {"station_id": body[24:28].decode("ascii").strip(),
-                       "elevation_deg": (lambda v: None if v is None else v / 100.0)(sm16(struct.unpack(">H", body[41:43])[0]))}
+                       "elevation_deg": (lambda v: None if v is None else v / 100.0)(sm16(struct.unpack(">H", body[41:43])[0])),
+                       "observation_start_offset_s": sm16(struct.unpack(">H", body[50:52])[0]) or 0}
         elif number == 7:
             sweeps.append({**grid, **product})
     return reference, sweeps
@@ -428,8 +431,12 @@ def jma_summary(entry_id):
         n = s["radials"]
         step = F32(360.0) / F32(n)
         s["azimuth_deg"] = [f32(F32(F32(s["start_azimuth_deg"]) + step * F32(i)) % F32(360.0)) for i in range(n)]
-    return {"member": name, "reference_time": reference, "station_id": sweeps[0]["station_id"],
-            "sweeps_scan_order": sweeps}
+    # The reader's time reference: the earliest sweep observation start.
+    earliest = min(s.pop("observation_start_offset_s") for s in sweeps)
+    time_reference = (datetime.datetime.strptime(reference, "%Y-%m-%dT%H:%M:%SZ")
+                      + datetime.timedelta(seconds=min(earliest, 0))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"member": name, "reference_time": reference, "time_reference": time_reference,
+            "station_id": sweeps[0]["station_id"], "sweeps_scan_order": sweeps}
 
 
 # ------------------------------------------------------ reference merge ---
@@ -513,7 +520,7 @@ def jma_part(summary, name, tag):
     # The JMA reader keeps every sweep separate, sorted lowest elevation first
     # (stable) and renumbered.
     sweeps = sorted(summary["sweeps_scan_order"], key=lambda s: F32(s["elevation_deg"]))
-    return {"site": summary["station_id"], "time": summary["reference_time"],
+    return {"site": summary["station_id"], "time": summary["time_reference"],
             "sweeps": [{"fixed_angle_deg": s["elevation_deg"], "azimuth_deg": s["azimuth_deg"],
                         "fields": {name: tag}} for s in sweeps]}
 
@@ -558,6 +565,7 @@ def main():
     jma = {key: jma_summary(entry_id) for key, entry_id in
            (("n5", "jma-n5-20191012-090000-rs47773"), ("n6", "jma-n6-20191012-090000-rs47773"))}
     golden["jma"] = {key: {"station_id": s["station_id"], "reference_time": s["reference_time"],
+                           "time_reference": s["time_reference"],
                            "sweeps_scan_order": [{k: v for k, v in sw.items() if k != "azimuth_deg"}
                                                  for sw in s["sweeps_scan_order"]]} for key, s in jma.items()}
 

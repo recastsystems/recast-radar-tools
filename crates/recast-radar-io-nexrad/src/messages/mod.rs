@@ -392,7 +392,23 @@ impl<'a> RawMessages<'a> {
             return;
         }
 
-        let body = &self.bytes[header_offset + MESSAGE_HEADER_LEN..header_offset + message_len];
+        let body_start = header_offset + MESSAGE_HEADER_LEN;
+        let body = if variable {
+            &self.bytes[body_start..header_offset + message_len]
+        } else {
+            // A Message 5 or 7 may run past its declared size within the
+            // frame (vcp::fixed_frame_body_len).
+            let frame_end = frame_offset
+                .saturating_add(RECORD_BYTES)
+                .min(self.bytes.len());
+            let frame_body = &self.bytes[body_start..frame_end];
+            let len = vcp::fixed_frame_body_len(
+                header.message_type,
+                message_len - MESSAGE_HEADER_LEN,
+                frame_body,
+            );
+            &frame_body[..len]
+        };
         if variable {
             self.cursor = header_offset + message_len;
         } else {

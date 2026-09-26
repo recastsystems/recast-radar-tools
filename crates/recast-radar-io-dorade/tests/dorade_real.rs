@@ -58,13 +58,16 @@ fn real_cow2_sweep_decodes_site_and_geometry() {
         Some("dorade-hrd-rle")
     );
 
-    // One sweep; the fixture's 24 rays include 3 antenna-transition rays
-    // that must be dropped.
+    // One sweep; the fixture's 24 rays are all kept, and the first 3 (RYIB
+    // ray_status 1) are flagged as antenna transition.
     assert_eq!(volume.sweeps.len(), 1);
     let sweep = &volume.sweeps[0];
     assert_close(sweep.fixed_angle_deg, 1.005_255_6, 1e-5, "fixed angle");
-    assert_eq!(sweep.nrays(), 21);
-    assert_eq!(volume.provenance.decode.skipped_message_count, 3);
+    assert_eq!(sweep.nrays(), 24);
+    let transition = sweep.ray_vars.antenna_transition.as_ref().unwrap();
+    assert_eq!(transition[..4], [1, 1, 1, 0]);
+    assert!(transition[3..].iter().all(|flag| *flag == 0));
+    assert_eq!(volume.provenance.decode.skipped_message_count, 0);
 
     // CSFD gate geometry: 375 gates, first centre at 50 m, 100 m spacing.
     assert_eq!(sweep.range.ngates(), 375);
@@ -81,16 +84,19 @@ fn real_cow2_sweep_decodes_site_and_geometry() {
         "gate 1",
     );
 
-    // First kept ray: az 73.0, el 0.8184814453125, 22:55:14.280 (0.280 s
-    // from the SSWB start).
-    assert_close(sweep.rays.azimuth_deg[0], 73.0, 1e-4, "azimuth");
+    // First ray: the transition ray at az 71.5, 22:55:14.229. First
+    // scanning ray (file ray 3): az 73.0, el 0.8184814453125, 22:55:14.280
+    // (0.280 s from the SSWB start).
+    assert_close(sweep.rays.azimuth_deg[0], 71.5, 1e-4, "azimuth");
+    assert_close(sweep.rays.time_s[0] as f32, 0.229, 1e-6, "ray time");
+    assert_close(sweep.rays.azimuth_deg[3], 73.0, 1e-4, "azimuth");
     assert_close(
-        sweep.rays.elevation_deg[0],
+        sweep.rays.elevation_deg[3],
         0.818_481_4,
         1e-5,
         "ray elevation",
     );
-    assert_close(sweep.rays.time_s[0] as f32, 0.280, 1e-6, "ray time");
+    assert_close(sweep.rays.time_s[3] as f32, 0.280, 1e-6, "ray time");
 
     // RADD eff_unamb_vel (staggered-PRT extended Nyquist) on every ray.
     let nyquist = sweep
@@ -98,7 +104,7 @@ fn real_cow2_sweep_decodes_site_and_geometry() {
         .nyquist_velocity_mps
         .as_ref()
         .expect("nyquist");
-    assert_eq!(nyquist.len(), 21);
+    assert_eq!(nyquist.len(), 24);
     assert_close(nyquist[0], 68.76, 0.01, "nyquist");
     assert!(nyquist.iter().all(|value| value.is_finite()));
 }
@@ -117,48 +123,48 @@ fn real_cow2_sweep_decodes_known_moment_values() {
         let field = sweep.find(quantity).unwrap_or_else(|| {
             panic!("missing {quantity:?}");
         });
-        assert_eq!(field.nrays, 21, "{quantity:?} rows");
+        assert_eq!(field.nrays, 24, "{quantity:?} rows");
         assert!(field.absent_rows.is_empty(), "{quantity:?} rows");
         assert_eq!(field.ngates, 375, "{quantity:?} gates");
     }
 
-    // Row 0 = first kept ray (file ray index 3). Raw i16 values from the
+    // Row 3 = file ray index 3, the first scanning ray. Raw i16 values from the
     // independent decoder: REF (scale 100) -3030, bad, -69; VEL (scale 100)
     // -586, 478, 452, ..., 5805; ZDR (scale 100) -189, bad, 221; RHOHV
     // (scale 10000) 3235, bad, 9759.
     let reflectivity = sweep.find(Quantity::Reflectivity).unwrap();
     assert_close(
-        reflectivity.value(0, 0).unwrap(),
+        reflectivity.value(3, 0).unwrap(),
         -30.30,
         1e-3,
         "REF gate 0",
     );
-    assert_eq!(reflectivity.value(0, 50), None, "REF gate 50 is bad");
+    assert_eq!(reflectivity.value(3, 50), None, "REF gate 50 is bad");
     assert_close(
-        reflectivity.value(0, 100).unwrap(),
+        reflectivity.value(3, 100).unwrap(),
         -0.69,
         1e-3,
         "REF gate 100",
     );
 
     let velocity = sweep.find(Quantity::RadialVelocity).unwrap();
-    assert_close(velocity.value(0, 0).unwrap(), -5.86, 1e-3, "VEL 0");
-    assert_close(velocity.value(0, 50).unwrap(), 4.78, 1e-3, "VEL 50");
-    assert_close(velocity.value(0, 100).unwrap(), 4.52, 1e-3, "VEL 100");
+    assert_close(velocity.value(3, 0).unwrap(), -5.86, 1e-3, "VEL 0");
+    assert_close(velocity.value(3, 50).unwrap(), 4.78, 1e-3, "VEL 50");
+    assert_close(velocity.value(3, 100).unwrap(), 4.52, 1e-3, "VEL 100");
     assert_close(
-        velocity.value(0, 374).unwrap(),
+        velocity.value(3, 374).unwrap(),
         58.05,
         1e-3,
         "VEL 374 (last gate)",
     );
 
     let zdr = sweep.find(Quantity::DifferentialReflectivity).unwrap();
-    assert_close(zdr.value(0, 0).unwrap(), -1.89, 1e-3, "ZDR 0");
-    assert_close(zdr.value(0, 100).unwrap(), 2.21, 1e-3, "ZDR 100");
+    assert_close(zdr.value(3, 0).unwrap(), -1.89, 1e-3, "ZDR 0");
+    assert_close(zdr.value(3, 100).unwrap(), 2.21, 1e-3, "ZDR 100");
 
     let rhohv = sweep.find(Quantity::CorrelationCoefficient).unwrap();
-    assert_close(rhohv.value(0, 0).unwrap(), 0.3235, 1e-4, "RHO 0");
-    assert_close(rhohv.value(0, 100).unwrap(), 0.9759, 1e-4, "RHO 100");
+    assert_close(rhohv.value(3, 0).unwrap(), 0.3235, 1e-4, "RHO 0");
+    assert_close(rhohv.value(3, 100).unwrap(), 0.9759, 1e-4, "RHO 100");
 }
 
 #[test]

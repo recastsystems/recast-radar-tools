@@ -36,7 +36,7 @@ use crate::messages::performance::PerformanceMaintenance;
 use crate::messages::prf::RdaPrfData;
 use crate::messages::rda_status::{RdaBuild, RdaStatus};
 use crate::messages::vcp::VolumeCoveragePattern;
-use crate::messages::{self, MessageBody, MessageWalker};
+use crate::messages::{self, MessageBody, RawMessages};
 use crate::{RadialObserver, Result};
 
 /// A decoded Level II volume and its NEXRAD metadata.
@@ -213,9 +213,22 @@ impl NexradMetadata {
                 return metadata;
             }
         };
-        for item in MessageWalker::new(&record) {
-            let body = match item {
-                Ok((_, body)) => body,
+        for item in RawMessages::new(&record) {
+            // Only the message types kept below are decoded: an RDA log
+            // (message 33) is not inflated just to be dropped.
+            let decoded = item.and_then(|raw| {
+                if matches!(
+                    raw.header.message_type,
+                    2 | 3 | 5 | 7 | 8 | 13 | 15 | 18 | 32
+                ) {
+                    raw.decode().map(Some)
+                } else {
+                    Ok(None)
+                }
+            });
+            let body = match decoded {
+                Ok(Some((_, body))) => body,
+                Ok(None) => continue,
                 Err(error) => {
                     metadata.errors.push(format!("metadata record: {error}"));
                     continue;

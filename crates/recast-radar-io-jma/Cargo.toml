@@ -17,6 +17,8 @@ thiserror.workspace = true
 [dev-dependencies]
 # Real corpus files (spec section 5).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
+# The ecCodes golden (tools/jma_eccodes_golden.py).
+serde_json.workspace = true
 
 [lints]
 workspace = true

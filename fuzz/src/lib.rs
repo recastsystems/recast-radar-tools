@@ -40,6 +40,7 @@ pub const TARGETS: &[(&str, Harness)] = &[
     ("odim", odim),
     ("cfradial", cfradial),
     ("dorade", dorade),
+    ("dorade_archive", dorade_archive),
     ("jma", jma),
     ("bzip2", bzip2),
     ("bzip2_encode", bzip2_encode),
@@ -604,6 +605,16 @@ pub fn dorade(data: &[u8]) -> bool {
         dorade_io::read_dorade_volume_from_slices(&[data, data]).is_ok()
     };
     peek || decoded
+}
+
+/// Mobile-radar zip archives (`recast-radar-io-dorade`):
+/// `read_mobile_archive_from_bytes`, which inflates the radar members,
+/// groups DORADE sweepfiles into volume runs and decodes them, and hands
+/// Level II members to `recast-radar-io-nexrad`.
+pub fn dorade_archive(data: &[u8]) -> bool {
+    let _ = dorade_io::looks_like_zip_bytes(data);
+    dorade_io::read_mobile_archive_from_bytes(data, "fuzz input", nexrad::read_volume_from_bytes)
+        .is_ok()
 }
 
 /// JMA GRIB2 radar tars (`recast-radar-io-jma`): all stations, first

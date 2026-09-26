@@ -4,6 +4,11 @@
 //! back-to-back gzip members of the kind `pigz`, `bgzip` and appended files
 //! produce. Whole-file gzip used to be inflated to its first member only,
 //! which silently gave a partial volume.
+//!
+//! A Level II file of LDM bzip2 records wrapped whole in gzip (the committed
+//! KTLX 2024 trim, gzipped here): the router, which inflates gzip itself,
+//! must decode it to the volume of the inflated file, as the Level II
+//! decoder does.
 
 use std::io::Write;
 
@@ -68,4 +73,26 @@ fn router_decodes_every_member_of_a_regzipped_real_volume() {
         without_nan(&routed) == without_nan(&expected),
         "routed volume differs from the original"
     );
+}
+
+#[test]
+fn router_decodes_gzip_around_ldm_records() {
+    let records = recast_radar_testdata::bytes("l2-ktlx-20240315-000217-trim").unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(&records).unwrap();
+    let stored = encoder.finish().unwrap();
+    let expected = read_volume_from_bytes(&stored).expect("the Level II decoder reads it");
+    // The trim's two sweeps of 480 radials (its manifest entry).
+    assert_eq!(expected.provenance.decode.decoded_ray_count, 960);
+    for routed in [
+        read_supported_volume_bytes(&stored).expect("routed"),
+        recast_radar_io::read_supported_volume_with_metadata(&stored)
+            .expect("routed with metadata")
+            .volume,
+    ] {
+        assert!(
+            without_nan(&routed) == without_nan(&expected),
+            "routed volume differs"
+        );
+    }
 }

@@ -26,6 +26,20 @@
 //! together with its metadata messages and per-sweep message 31 constant
 //! blocks.
 //!
+//! Every value the decoders parse also reaches the volume itself: the
+//! per-radial values (radial status, azimuth number, message header, RAD
+//! noise levels and calibration constants, VOL transmitter powers, ...) as
+//! per-ray sweep variables and FM301 monitoring variables, each sweep's
+//! first-radial VOL and ELV constants as sweep attributes, and every
+//! metadata message and every non-radial message header as `nexrad_*` root
+//! variables ([`passthrough`]; `docs/level2/messages.md`, "Metadata in the
+//! model").
+//!
+//! `Volume::time_reference` is the earliest radial's collection time
+//! floored to the second: the first radial's in every NEXRAD file, and an
+//! earlier one in converted files that store the lowest cut first although
+//! it was observed last, so no ray time is negative.
+//!
 //! # Compression
 //!
 //! LDM block-bzip2 records and whole-file bzip2 volumes are decoded by
@@ -35,7 +49,12 @@
 //! through a bounded process-wide pool. gzip volumes are inflated by
 //! [`gzip`]: whole-buffer input in one pass into a buffer presized from the
 //! gzip trailer, streaming input through a reader; both decode every member
-//! of a multi-member file and ignore bytes after the last member.
+//! of a multi-member file and ignore bytes after the last member. A gzip
+//! file whose records are LDM bzip2 records is inflated and then
+//! decoded record by record on every entry point, including
+//! [`read_normalized_volume_bytes`] given the inflated bytes; the streaming
+//! reader buffers such a file whole, as its records cannot be parsed while
+//! inflating. Its compression is [`ArchiveCompression::GzipBzip2Blocks`].
 //!
 //! # Limits
 //!
@@ -52,11 +71,22 @@
 //!   most `MAX_GATES_PER_RADIAL` (16,384) gates; real volumes reach 1,840.
 //! - **Cuts**: at most `MAX_SWEEPS_PER_VOLUME` (1,024) elevation cuts; real
 //!   volumes reach 23.
-//! - **Decoded moments**: field reservations and growth are checked against a
-//!   `DecodeBudget` of `MAX_DECODED_VOLUME_BYTES` (1 GiB) per volume before
-//!   allocating; real volumes need at most 80 MiB. Ray tables are not
-//!   charged: every radial consumes at least 88 bytes of expanded input and
-//!   occupies 40, so the expanded-input cap bounds them.
+//! - **Decoded moments and ray tables**: field reservations and growth are
+//!   checked against a `DecodeBudget` of `MAX_DECODED_VOLUME_BYTES` (1 GiB)
+//!   per volume before allocating; real volumes need at most 80 MiB. Every
+//!   radial is charged 96 bytes for its coordinates and per-ray columns; a
+//!   sweep whose radials differ in a value kept once per sweep (the VOL and
+//!   ELV constants, spacing, indexing, identifier, moment header values) is
+//!   charged for each ray's copy (at most about 150 bytes more per radial).
+//! - **Metadata messages**: the volume keeps at most 1,024 fixed frames of
+//!   non-radial messages (a metadata record has 134) and 1,024
+//!   variable-length ones of at most 16 MiB together (charged to the
+//!   `DecodeBudget`); RDA log data
+//!   (message 33) inflates to at most 64 MiB per volume, all logs together,
+//!   charged to the `DecodeBudget`; each of messages 3, 5 or 7, 8, 13, 15,
+//!   18 and 32 keeps at most [`passthrough::MAX_COPIES_PER_MESSAGE_TYPE`]
+//!   distinct copies. What goes past these caps is counted in root
+//!   variables ([`passthrough`]), not reported as an error.
 //!
 //! Gate, cut, and budget violations are [`NexradError::LimitExceeded`]
 //! errors. Preview callbacks receive a sealed copy of the partial volume, so
@@ -70,6 +100,8 @@ mod fm301_attrs;
 pub mod gzip;
 pub mod messages;
 pub mod metadata;
+pub mod passthrough;
+mod radial_extras;
 #[cfg(feature = "write")]
 pub mod write;
 
@@ -93,6 +125,10 @@ use recast_radar_core::model::Volume;
 use thiserror::Error;
 
 use crate::builder::{BlockGates, MomentBlock, MomentHeaderExtras, MomentPayload, VolumeBuilder};
+use crate::radial_extras::{
+    ElevationConstants, LegacyConstants, RadialBlockConstants, RadialExtras, RadialMessage,
+    RadialMessageHeader, VolumeConstants,
+};
 const VOLUME_HEADER_LEN: usize = 24;
 const CONTROL_WORD_LEN: usize = 12;
 const MESSAGE_HEADER_LEN: usize = 16;
@@ -101,7 +137,12 @@ const MSG_31_HEADER_LEN: usize = 72;
 const MSG_1_HEADER_LEN: usize = 100;
 const GENERIC_DATA_BLOCK_LEN: usize = 28;
 const VOLUME_CONSTANT_BLOCK_LEN: usize = 44;
+/// VOL block size from Build 20.0, with the ZDR bias estimate.
+const VOLUME_CONSTANT_BLOCK_ZDR_BIAS_LEN: usize = 52;
+const ELEVATION_CONSTANT_BLOCK_LEN: usize = 12;
 const RADIAL_CONSTANT_BLOCK_LEN: usize = 20;
+/// RAD block size from Build 14.0, with the calibration constants.
+const RADIAL_CONSTANT_BLOCK_CALIBRATED_LEN: usize = 28;
 const HALF_DEGREE_RADIALS_PER_CUT: usize = 720;
 const ONE_DEGREE_RADIALS_PER_CUT: usize = 360;
 const FALLBACK_RADIALS_PER_CUT: usize = 760;
@@ -167,11 +208,19 @@ pub enum NexradError {
     LimitExceeded(String),
 }
 
+/// How an Archive II file is compressed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArchiveCompression {
+    /// A gzip wrapper (every member) around uncompressed records.
     Gzip,
+    /// One bzip2 stream around the whole file.
     Bzip2WholeFile,
+    /// LDM records, each a bzip2 stream (NEXRAD's own form).
     Bzip2Blocks,
+    /// A gzip wrapper around LDM bzip2 records (Py-ART and MetPy read these
+    /// too).
+    GzipBzip2Blocks,
+    /// Uncompressed records.
     Uncompressed,
 }
 
@@ -181,7 +230,18 @@ impl ArchiveCompression {
             Self::Gzip => "gzip",
             Self::Bzip2WholeFile => "bzip2-whole-file",
             Self::Bzip2Blocks => "bzip2-blocks",
+            Self::GzipBzip2Blocks => "gzip-bzip2-blocks",
             Self::Uncompressed => "uncompressed",
+        }
+    }
+
+    /// The compression of a file whose records turn out to be LDM bzip2
+    /// records after this wrapper was removed.
+    fn with_bzip2_records(self) -> Self {
+        match self {
+            Self::Gzip => Self::GzipBzip2Blocks,
+            Self::Uncompressed => Self::Bzip2Blocks,
+            other => other,
         }
     }
 }
@@ -267,17 +327,76 @@ fn builder_observed(bytes: &[u8], observer: &mut impl RadialObserver) -> Result<
         return decode_bzip_blocks_pipelined(
             bytes,
             blocks,
-            None,
-            false,
+            BlockDecode::full(ArchiveCompression::Bzip2Blocks, DecodeBudget::volume()),
             |_| Ok(()),
             observer,
-            ArchiveCompression::Bzip2Blocks,
         )
         .map(|outcome| outcome.builder);
+    }
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        // Inflated only: records that are LDM bzip2 records (a gzip wrapper
+        // around LDM records) are decoded block by block from here.
+        let inflated = decompress_gzip_bytes(bytes)?;
+        return builder_from_normalized_observed(
+            &inflated,
+            ArchiveCompression::Gzip,
+            DecodeBudget::volume(),
+            observer,
+        );
     }
 
     let (bytes, compression) = normalize_archive_bytes(bytes)?;
     builder_from_normalized_observed(&bytes, compression, DecodeBudget::volume(), observer)
+}
+
+/// The start of an inflated gzip Archive II stream, read ahead to tell its
+/// records apart: the volume header, an LDM record's byte count and the
+/// `BZh` of its bzip2 stream.
+const GZIP_PEEK_LEN: usize = VOLUME_HEADER_LEN + 4 + 3;
+
+/// An inflating gzip Archive II stream after [`peek_gzip_stream`].
+enum GzipStream {
+    /// The records are LDM bzip2 records, which
+    /// cannot be parsed while inflating: every byte of the stream, bounded
+    /// by the reader's limit.
+    Bzip2Records(Vec<u8>),
+    /// Uncompressed records: the bytes read so far, to parse ahead of the
+    /// rest of the stream.
+    Records(Vec<u8>),
+}
+
+fn peek_gzip_stream<R: Read>(reader: &mut R) -> Result<GzipStream> {
+    let mut head = [0u8; GZIP_PEEK_LEN];
+    let mut filled = 0;
+    while filled < head.len() {
+        let count = reader
+            .read(&mut head[filled..])
+            .map_err(|err| NexradError::Compression(err.to_string()))?;
+        if count == 0 {
+            break;
+        }
+        filled += count;
+    }
+    let head = &head[..filled];
+    let bzip2_records = filled == GZIP_PEEK_LEN
+        && i32_at(head, VOLUME_HEADER_LEN)? != 0
+        && head[VOLUME_HEADER_LEN + 4..] == *b"BZh";
+    if !bzip2_records {
+        return Ok(GzipStream::Records(head.to_vec()));
+    }
+    let rest = bounded_read::read_to_end_limited(
+        reader,
+        MAX_DECODED_RADAR_BYTES - GZIP_PEEK_LEN,
+        "gzip radar payload",
+    )
+    .map_err(NexradError::Compression)?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(GZIP_PEEK_LEN + rest.len())
+        .map_err(|err| NexradError::Compression(format!("cannot reserve gzip payload: {err}")))?;
+    bytes.extend_from_slice(head);
+    bytes.extend_from_slice(&rest);
+    Ok(GzipStream::Bzip2Records(bytes))
 }
 
 /// Decode a gzip-compressed Archive II stream into the FM301 model,
@@ -290,7 +409,18 @@ pub fn read_gzip_volume_from_reader(reader: impl Read) -> Result<Volume> {
 pub(crate) fn builder_from_gzip_reader(reader: impl Read) -> Result<VolumeBuilder> {
     let decoder = gzip::MultiGzReader::new(BufReader::new(reader));
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
-    decode_volume_from_stream_until(&mut decoder, ArchiveCompression::Gzip, None).map(|result| {
+    let head = match peek_gzip_stream(&mut decoder)? {
+        GzipStream::Bzip2Records(bytes) => {
+            return builder_from_normalized(
+                &bytes,
+                ArchiveCompression::Gzip,
+                DecodeBudget::volume(),
+            );
+        }
+        GzipStream::Records(head) => head,
+    };
+    let mut stream = head.as_slice().chain(decoder);
+    decode_volume_from_stream_until(&mut stream, ArchiveCompression::Gzip, None).map(|result| {
         debug_assert!(!result.stopped_at_preview);
         result.builder
     })
@@ -330,8 +460,16 @@ pub(crate) fn builder_from_gzip_bytes_with_preview(
 
     let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
+    let head = match peek_gzip_stream(&mut decoder)? {
+        GzipStream::Bzip2Records(bytes) => {
+            return gzip_bzip2_records_preview(&bytes, min_displayable_radials, false, on_preview)
+                .map(|outcome| outcome.builder);
+        }
+        GzipStream::Records(head) => head,
+    };
+    let mut stream = head.as_slice().chain(decoder);
     decode_volume_from_stream(
-        &mut decoder,
+        &mut stream,
         ArchiveCompression::Gzip,
         Some(min_displayable_radials),
         false,
@@ -341,6 +479,31 @@ pub(crate) fn builder_from_gzip_bytes_with_preview(
         debug_assert!(!result.stopped_at_preview);
         result.builder
     })
+}
+
+/// The block decode of an inflated gzip stream whose records are LDM bzip2
+/// records, with the preview rules of the gzip preview decoders.
+fn gzip_bzip2_records_preview(
+    bytes: &[u8],
+    min_displayable_radials: usize,
+    stop_at_preview: bool,
+    on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
+) -> Result<BlockParseOutcome> {
+    let blocks = collect_bzip_block_slices(bytes)?.ok_or_else(|| {
+        NexradError::Compression("gzip payload: malformed LDM bzip2 records".to_owned())
+    })?;
+    decode_bzip_blocks_pipelined(
+        bytes,
+        blocks,
+        BlockDecode {
+            compression: ArchiveCompression::GzipBzip2Blocks,
+            budget: DecodeBudget::volume(),
+            min_displayable_radials: Some(min_displayable_radials),
+            stop_at_preview,
+        },
+        on_preview,
+        &mut (),
+    )
 }
 
 /// Decode a gzip-wrapped volume only until its first displayable sweep
@@ -368,8 +531,17 @@ pub(crate) fn builder_gzip_preview(
 
     let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
+    let head = match peek_gzip_stream(&mut decoder)? {
+        GzipStream::Bzip2Records(bytes) => {
+            let outcome =
+                gzip_bzip2_records_preview(&bytes, min_displayable_radials, true, |_| Ok(()))?;
+            return Ok(outcome.stopped_at_preview.then_some(outcome.builder));
+        }
+        GzipStream::Records(head) => head,
+    };
+    let mut stream = head.as_slice().chain(decoder);
     let result = decode_volume_from_stream_until(
-        &mut decoder,
+        &mut stream,
         ArchiveCompression::Gzip,
         Some(min_displayable_radials),
     )?;
@@ -407,11 +579,9 @@ pub(crate) fn builder_bzip_block_preview(
     let outcome = decode_bzip_blocks_pipelined(
         raw,
         blocks,
-        Some(min_displayable_radials),
-        true,
+        BlockDecode::preview(min_displayable_radials, true),
         |_| Ok(()),
         &mut (),
-        ArchiveCompression::Bzip2Blocks,
     )?;
     Ok(outcome.stopped_at_preview.then_some(outcome.builder))
 }
@@ -455,11 +625,9 @@ pub(crate) fn builder_with_bzip_preview(
     let outcome = decode_bzip_blocks_pipelined(
         raw,
         blocks,
-        Some(min_displayable_radials),
-        false,
+        BlockDecode::preview(min_displayable_radials, false),
         on_preview,
         &mut (),
-        ArchiveCompression::Bzip2Blocks,
     )?;
     Ok(outcome.builder)
 }
@@ -475,7 +643,7 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
         // A gzip wrapper around LDM bzip2 records (Py-ART and MetPy read
         // these too): expand the records as well.
         if let Some(records) = try_decode_bzip_blocks(&decoded)? {
-            return Ok((records, ArchiveCompression::Gzip));
+            return Ok((records, ArchiveCompression::GzipBzip2Blocks));
         }
         return Ok((decoded, ArchiveCompression::Gzip));
     }
@@ -672,6 +840,19 @@ fn builder_from_normalized_observed(
     budget: DecodeBudget,
     observer: &mut impl RadialObserver,
 ) -> Result<VolumeBuilder> {
+    // Records that are still LDM bzip2 records: a gzip wrapper was removed
+    // around them (a gzip file, the router's gzip expansion), or the
+    // caller passed a raw file.
+    if let Some(blocks) = collect_bzip_block_slices(bytes)? {
+        return decode_bzip_blocks_pipelined(
+            bytes,
+            blocks,
+            BlockDecode::full(compression.with_bzip2_records(), budget),
+            |_| Ok(()),
+            observer,
+        )
+        .map(|outcome| outcome.builder);
+    }
     let volume_header = parse_volume_header(bytes)?;
     let mut builder = VolumeBuilder::new(
         volume_header.icao,
@@ -680,6 +861,7 @@ fn builder_from_normalized_observed(
         compression,
         budget,
     );
+    builder.record_volume_header(volume_header.date, volume_header.milliseconds);
 
     let mut cursor = VOLUME_HEADER_LEN;
     let mut record_index = 0usize;
@@ -747,16 +929,47 @@ fn builder_from_normalized_observed(
                 let (sweep, ray) = parse_message_31(body, &header, &mut builder)?;
                 observer.message_31(body, &builder.volume, sweep, ray);
             }
-            5 | 18 => {
-                let body_offset = header_offset + MESSAGE_HEADER_LEN;
-                let fixed_record_end = cursor.saturating_add(RECORD_BYTES).min(bytes.len());
-                let message_end = header_offset.saturating_add(message_total_len);
-                let body_end = message_end.min(fixed_record_end);
-                if body_offset < body_end {
-                    builder.set_metadata_message(&header, &bytes[body_offset..body_end]);
+            _ if variable_framing => {
+                // A non-radial message in variable framing (a size of 65535,
+                // or message 29): kept for the model when it fits the input
+                // and the builder's cap.
+                let message = header_offset
+                    .checked_add(message_total_len)
+                    .and_then(|end| bytes.get(header_offset..end));
+                match message {
+                    Some(message)
+                        if builder.keeps_variable_message(message.len() - MESSAGE_HEADER_LEN) =>
+                    {
+                        builder.variable_message(
+                            &message[..MESSAGE_HEADER_LEN],
+                            &header,
+                            &message[MESSAGE_HEADER_LEN..],
+                        );
+                    }
+                    Some(_) => builder.variable_message_not_kept(),
+                    None => builder.count_skipped(),
                 }
             }
-            _ => builder.count_skipped(),
+            _ => {
+                // A non-radial message in a fixed frame: the body is the rest
+                // of the frame, as far as the message and the input reach.
+                // A Message 5 or 7 may run past its declared size within the
+                // frame (messages::vcp::fixed_frame_body_len).
+                let body_offset = header_offset + MESSAGE_HEADER_LEN;
+                let fixed_record_end = cursor.saturating_add(RECORD_BYTES).min(bytes.len());
+                let frame_body = &bytes[body_offset.min(fixed_record_end)..fixed_record_end];
+                let body_len = messages::vcp::fixed_frame_body_len(
+                    header.message_type,
+                    message_total_len.saturating_sub(MESSAGE_HEADER_LEN),
+                    frame_body,
+                );
+                builder.metadata_message(
+                    &bytes[header_offset..body_offset],
+                    &header,
+                    &frame_body[..body_len],
+                    frame_body,
+                );
+            }
         }
 
         let record_len = if variable_framing {
@@ -831,6 +1044,7 @@ where
         compression,
         DecodeBudget::volume(),
     );
+    builder.record_volume_header(volume_header.date, volume_header.milliseconds);
 
     let mut cursor = VOLUME_HEADER_LEN;
     let mut record_index = 0usize;
@@ -923,9 +1137,32 @@ where
                     on_preview(&builder)?;
                 }
             }
-            5 | 18 => {
-                let fixed_body_len = RECORD_BYTES.saturating_sub(prefix.len());
-                let body_read_len = body_len.min(fixed_body_len);
+            _ if variable_framing => {
+                if builder.keeps_variable_message(body_len) {
+                    read_exact_into_buffer(
+                        reader,
+                        &mut body_buffer,
+                        body_len,
+                        "metadata message body",
+                        header_offset,
+                    )?;
+                    builder.variable_message(
+                        &prefix[CONTROL_WORD_LEN..],
+                        &header,
+                        &body_buffer[..body_len],
+                    );
+                    skip_record_padding(reader, record_len, prefix.len() + body_len, cursor)?;
+                } else {
+                    builder.variable_message_not_kept();
+                    skip_record_padding(reader, record_len, prefix.len(), cursor)?;
+                }
+            }
+            _ => {
+                // The whole frame is read, as the padding skip would read
+                // it anyway: a Message 5 or 7 may run past its declared size
+                // (messages::vcp::fixed_frame_body_len), and the model keeps
+                // the frame of a message it does not decode.
+                let body_read_len = RECORD_BYTES.saturating_sub(prefix.len());
                 read_exact_into_buffer(
                     reader,
                     &mut body_buffer,
@@ -933,12 +1170,18 @@ where
                     "metadata message body",
                     header_offset,
                 )?;
-                builder.set_metadata_message(&header, &body_buffer);
+                let used = messages::vcp::fixed_frame_body_len(
+                    header.message_type,
+                    body_len,
+                    &body_buffer,
+                );
+                builder.metadata_message(
+                    &prefix[CONTROL_WORD_LEN..],
+                    &header,
+                    &body_buffer[..used],
+                    &body_buffer[..body_read_len],
+                );
                 skip_record_padding(reader, record_len, prefix.len() + body_read_len, cursor)?;
-            }
-            _ => {
-                builder.count_skipped();
-                skip_record_padding(reader, record_len, prefix.len(), cursor)?;
             }
         }
 
@@ -980,11 +1223,14 @@ where
     decode_bzip_blocks_pipelined(
         &raw,
         blocks,
-        preview_min_radials,
-        stop_at_preview,
+        BlockDecode {
+            compression: compression.with_bzip2_records(),
+            budget: DecodeBudget::volume(),
+            min_displayable_radials: preview_min_radials,
+            stop_at_preview,
+        },
         on_preview,
         &mut (),
-        compression,
     )
     .map(|outcome| StreamDecodeResult {
         builder: outcome.builder,
@@ -997,6 +1243,10 @@ struct VolumeHeader {
     archive_version: String,
     volume_time: DateTime<Utc>,
     icao: String,
+    /// Bytes 12-15 and 16-19 as stored: modified Julian date and
+    /// milliseconds past midnight.
+    date: u32,
+    milliseconds: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1491,15 +1741,43 @@ struct BlockParseOutcome {
 /// blocks in order, waiting (or stealing decompression work) only when the
 /// next block is not ready yet. Total wall time is the decompression wall time
 /// instead of decompression followed by a serial parse.
-#[allow(clippy::too_many_arguments)]
+/// How [`decode_bzip_blocks_pipelined`] decodes: the compression the volume
+/// records, its output budget, and the preview rules.
+struct BlockDecode {
+    compression: ArchiveCompression,
+    budget: DecodeBudget,
+    min_displayable_radials: Option<usize>,
+    stop_at_preview: bool,
+}
+
+impl BlockDecode {
+    /// A full decode without a preview.
+    fn full(compression: ArchiveCompression, budget: DecodeBudget) -> Self {
+        Self {
+            compression,
+            budget,
+            min_displayable_radials: None,
+            stop_at_preview: false,
+        }
+    }
+
+    /// A decode of LDM records that previews the first displayable sweep.
+    fn preview(min_displayable_radials: usize, stop_at_preview: bool) -> Self {
+        Self {
+            compression: ArchiveCompression::Bzip2Blocks,
+            budget: DecodeBudget::volume(),
+            min_displayable_radials: Some(min_displayable_radials),
+            stop_at_preview,
+        }
+    }
+}
+
 fn decode_bzip_blocks_pipelined(
     raw: &[u8],
     blocks: Vec<&[u8]>,
-    min_displayable_radials: Option<usize>,
-    stop_at_preview: bool,
+    options: BlockDecode,
     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
-    compression: ArchiveCompression,
 ) -> Result<BlockParseOutcome> {
     let slots = BlockSlots::new(blocks);
     rayon::in_place_scope(|scope| {
@@ -1516,11 +1794,9 @@ fn decode_bzip_blocks_pipelined(
         let outcome = parse_bzip_block_volume(
             &raw[..VOLUME_HEADER_LEN],
             &slots,
-            min_displayable_radials,
-            stop_at_preview,
+            options,
             on_preview,
             observer,
-            compression,
         );
         // Stop idle claims if the parse returned early (preview-only or error).
         slots.cancel();
@@ -1528,16 +1804,19 @@ fn decode_bzip_blocks_pipelined(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn parse_bzip_block_volume(
     volume_header: &[u8],
     blocks: &BlockSlots<'_>,
-    min_displayable_radials: Option<usize>,
-    stop_at_preview: bool,
+    options: BlockDecode,
     mut on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
-    compression: ArchiveCompression,
 ) -> Result<BlockParseOutcome> {
+    let BlockDecode {
+        compression,
+        budget,
+        min_displayable_radials,
+        stop_at_preview,
+    } = options;
     let mut preview_pending = min_displayable_radials;
     let mut cursor_reader = BzipBlockCursor::new(volume_header, blocks);
     let mut volume_header_buffer = Vec::new();
@@ -1553,8 +1832,9 @@ fn parse_bzip_block_volume(
         volume_header.archive_version,
         volume_header.volume_time,
         compression,
-        DecodeBudget::volume(),
+        budget,
     );
+    builder.record_volume_header(volume_header.date, volume_header.milliseconds);
 
     let mut cursor = VOLUME_HEADER_LEN;
     let mut record_index = 0usize;
@@ -1662,28 +1942,44 @@ fn parse_bzip_block_volume(
                     cursor + prefix.len() + body_len,
                 )?;
             }
-            5 | 18 => {
-                let fixed_body_len = RECORD_BYTES.saturating_sub(prefix.len());
-                let body_read_len = body_len.min(fixed_body_len);
+            _ if variable_framing => {
+                let kept = if builder.keeps_variable_message(body_len) {
+                    let body = cursor_reader.read_slice_or_copy(
+                        &mut body_buffer,
+                        body_len,
+                        "metadata message body",
+                        header_offset,
+                    )?;
+                    builder.variable_message(&prefix[CONTROL_WORD_LEN..], &header, body);
+                    body_len
+                } else {
+                    builder.variable_message_not_kept();
+                    0
+                };
+                cursor_reader.skip_exact(
+                    record_len.saturating_sub(prefix.len() + kept),
+                    "record padding",
+                    cursor + prefix.len() + kept,
+                )?;
+            }
+            _ => {
+                // The whole frame is read, as the padding skip would read
+                // it anyway: a Message 5 or 7 may run past its declared size
+                // (messages::vcp::fixed_frame_body_len), and the model keeps
+                // the frame of a message it does not decode.
+                let body_read_len = RECORD_BYTES.saturating_sub(prefix.len());
                 let body = cursor_reader.read_slice_or_copy(
                     &mut body_buffer,
                     body_read_len,
                     "metadata message body",
                     header_offset,
                 )?;
-                builder.set_metadata_message(&header, body);
+                let used = messages::vcp::fixed_frame_body_len(header.message_type, body_len, body);
+                builder.metadata_message(&prefix[CONTROL_WORD_LEN..], &header, &body[..used], body);
                 cursor_reader.skip_exact(
                     record_len.saturating_sub(prefix.len() + body_read_len),
                     "record padding",
                     cursor + prefix.len() + body_read_len,
-                )?;
-            }
-            _ => {
-                builder.count_skipped();
-                cursor_reader.skip_exact(
-                    record_len.saturating_sub(prefix.len()),
-                    "record padding",
-                    cursor + prefix.len(),
                 )?;
             }
         }
@@ -1757,6 +2053,17 @@ fn try_decompress_bzip_blocks(raw: &[u8]) -> Result<Option<Vec<Vec<u8>>>> {
     Ok(Some(decoded_blocks))
 }
 
+/// The LDM records (bzip2 streams) after the volume header, or `None` when
+/// the bytes after the header are not LDM records.
+///
+/// Once the first record is a whole bzip2 stream, the rest is LDM records
+/// too: a record cut short by the end of the input, or one that does not
+/// start with a bzip2 header, is returned as the last block, whose decode
+/// then fails. The volume decoders keep the radials of the records before it
+/// (a partial volume, as for a truncated uncompressed file) or report the
+/// error when there are none, instead of reading the records as uncompressed
+/// frames and returning an empty volume. A zero-length record after whole
+/// records ends the list.
 fn collect_bzip_block_slices(raw: &[u8]) -> Result<Option<Vec<&[u8]>>> {
     if raw.len() < VOLUME_HEADER_LEN + 4 {
         return Ok(None);
@@ -1771,20 +2078,41 @@ fn collect_bzip_block_slices(raw: &[u8]) -> Result<Option<Vec<&[u8]>>> {
             break;
         }
         if signed_block_size == 0 {
-            return Ok(None);
+            if blocks.is_empty() {
+                return Ok(None);
+            }
+            break;
         }
 
         cursor += 4;
         let is_last_block = signed_block_size < 0;
         let block_size = usize::try_from(signed_block_size.unsigned_abs())
             .map_err(|_| NexradError::Compression("bzip2 block size overflow".to_owned()))?;
-        if cursor + block_size > raw.len() {
+        let whole = cursor
+            .checked_add(block_size)
+            .is_some_and(|end| end <= raw.len());
+        let compressed = if whole {
+            &raw[cursor..cursor + block_size]
+        } else {
+            &raw[cursor..]
+        };
+        let is_bzip2 = compressed.starts_with(b"BZh");
+        if blocks.is_empty() && !(whole && is_bzip2) {
+            // A first record that is not a whole bzip2 stream: not LDM
+            // records, or LDM records cut inside the first one.
+            if is_bzip2 {
+                return Err(NexradError::Truncated {
+                    what: "LDM bzip2 record",
+                    offset: cursor,
+                    needed: block_size,
+                    available: raw.len() - cursor,
+                });
+            }
             return Ok(None);
         }
-
-        let compressed = &raw[cursor..cursor + block_size];
-        if !compressed.starts_with(b"BZh") {
-            return Ok(None);
+        if !whole || !is_bzip2 {
+            blocks.push(compressed);
+            break;
         }
 
         blocks.push(compressed);
@@ -1921,6 +2249,8 @@ fn parse_volume_header(bytes: &[u8]) -> Result<VolumeHeader> {
         archive_version: format!("{tape}{extension}"),
         volume_time: nexrad_date_ms_to_datetime(date, milliseconds),
         icao,
+        date,
+        milliseconds,
     })
 }
 
@@ -1962,7 +2292,7 @@ fn parse_message_header_bytes(bytes: &[u8]) -> MessageHeader {
 
 fn parse_message_1(
     body: &[u8],
-    _message_header: &MessageHeader,
+    message_header: &MessageHeader,
     builder: &mut VolumeBuilder,
 ) -> Result<()> {
     require_len(body, 0, MSG_1_HEADER_LEN, "message 1 header")?;
@@ -2026,6 +2356,32 @@ fn parse_message_1(
             .map_err(NexradError::LimitExceeded)?;
     }
 
+    // Table III values with no FM301 coordinate (offsets as MetPy and
+    // Py-ART read them): radial status (halfword 7), azimuth number (6), cut
+    // sector number (16), calibration constant (17-18, Real*4), atmospheric
+    // attenuation (32), TOVER (33) and spot blanking status (34).
+    let extras = RadialExtras {
+        message: RadialMessage::Legacy,
+        message_channels: message_header.channels,
+        message_header: RadialMessageHeader::of(message_header),
+        status_code: be_u16(body, 12),
+        azimuth_number: be_u16(body, 10),
+        cut_sector_number: be_u16(body, 30),
+        spot_blanking: be_u16(body, 66),
+        azimuth_spacing_code: None,
+        azimuth_indexing_raw: None,
+        radial: None,
+        volume: None,
+        elevation: None,
+        zdr_bias_estimate_db: None,
+        radar_identifier: None,
+        legacy: Some(LegacyConstants {
+            calibration_constant_db: be_f32(body, 32),
+            atmospheric_attenuation_raw: be_i16(body, 62),
+            tover_raw: be_i16(body, 64),
+        }),
+    };
+
     let sweep = builder.sweep_for_radial(radial_status, elevation_angle, elevation_number)?;
     let ray = builder.push_ray(
         sweep,
@@ -2036,8 +2392,9 @@ fn parse_message_1(
         nyquist_velocity_mps,
         unambiguous_range_m,
         radial_status,
+        &extras,
         ONE_DEGREE_RADIALS_PER_CUT,
-    );
+    )?;
 
     // ICD 2620002 message 1 encodes REF as (code - 66) / 2 and VEL and SW
     // like velocity at 0.5 m/s resolution ((code - 129) / 2), with code 0
@@ -2096,7 +2453,7 @@ fn legacy_binary_angle_deg(raw: u16) -> f32 {
 /// it went to.
 fn parse_message_31(
     body: &[u8],
-    _message_header: &MessageHeader,
+    message_header: &MessageHeader,
     builder: &mut VolumeBuilder,
 ) -> Result<(usize, usize)> {
     let header = parse_message_31_header(body, 0)?;
@@ -2118,6 +2475,18 @@ fn parse_message_31(
         std::array::from_fn(|_| None);
     let mut moment_count = 0;
     let needs_volume_constants = builder.needs_volume_constants();
+    // Table XVII-A bytes 21 (the status with its bad-data bit), 28 and 29;
+    // the header parse above checked the 72 bytes.
+    let mut extras =
+        RadialExtras::generic(body[21], header.azimuth_number, header.cut_sector, body[28]);
+    extras.message_channels = message_header.channels;
+    extras.message_header = RadialMessageHeader::of(message_header);
+    extras.azimuth_spacing_code = Some(header.azimuth_resolution);
+    extras.azimuth_indexing_raw = Some(body[29]);
+    extras.radar_identifier = Some(header.radar_identifier);
+    if builder.decoded_radials() == 0 {
+        builder.record_radar_identifier(&header.radar_identifier);
+    }
 
     for pointer in &header.block_pointers {
         if *pointer == 0 {
@@ -2130,14 +2499,17 @@ fn parse_message_31(
 
         match body[pointer] {
             b'R' if &body[pointer + 1..pointer + 4] == b"VOL" => {
-                if needs_volume_constants {
-                    parse_volume_constant_block(body, pointer, builder)?;
-                }
+                extras.volume =
+                    parse_volume_constant_block(body, pointer, builder, needs_volume_constants)?;
+            }
+            b'R' if &body[pointer + 1..pointer + 4] == b"ELV" => {
+                extras.elevation = parse_elevation_constant_block(body, pointer);
             }
             b'R' if &body[pointer + 1..pointer + 4] == b"RAD" => {
-                let (nyquist, unambiguous) = parse_radial_constant_block(body, pointer)?;
+                let (nyquist, unambiguous, constants) = parse_radial_constant_block(body, pointer)?;
                 nyquist_velocity_mps = nyquist;
                 unambiguous_range_m = unambiguous;
+                extras.radial = Some(constants);
             }
             b'D' if moment_count < moments.len() => {
                 moments[moment_count] = Some(parse_generic_moment_block(body, pointer)?);
@@ -2146,6 +2518,28 @@ fn parse_message_31(
             _ => {}
         }
     }
+
+    extras.zdr_bias_estimate_db = extras
+        .volume
+        .and_then(|volume| volume.zdr_bias_estimate_raw)
+        .filter(|raw| *raw != 0)
+        .map(|raw| {
+            // Table XVII-E notes 20 and 33: encoded like this radial's ZDR
+            // moment, with the Table XVII-I typical scale and offset when the
+            // radial has none.
+            let zdr = moments[..moment_count]
+                .iter()
+                .flatten()
+                .find(|moment| moment.name == *b"ZDR" && moment.scale != 0.0);
+            let (scale, offset) = zdr.map_or(
+                (
+                    messages::msg31_blocks::ZDR_SCALE,
+                    messages::msg31_blocks::ZDR_OFFSET,
+                ),
+                |moment| (moment.scale, moment.offset),
+            );
+            (f32::from(raw) - offset) / scale
+        });
 
     let sweep = builder.sweep_for_radial(
         header.radial_status,
@@ -2161,8 +2555,9 @@ fn parse_message_31(
         nyquist_velocity_mps,
         unambiguous_range_m,
         header.radial_status,
+        &extras,
         expected_radials,
-    );
+    )?;
 
     // Iterate by reference: moving the whole `[Option<MomentBlock>; 10]`
     // array into an iterator copied it for every radial.
@@ -2232,35 +2627,76 @@ pub fn parse_message_31_header(bytes: &[u8], offset: usize) -> Result<Message31H
     })
 }
 
+/// The Volume Data Constant block (Table XVII-E). While the station location
+/// or VCP is still unknown (`set_location`) it also sets them, and a block
+/// too short for the 44-byte layout is an error, as it always was; on later
+/// radials such a block is skipped.
 fn parse_volume_constant_block(
     bytes: &[u8],
     offset: usize,
     builder: &mut VolumeBuilder,
-) -> Result<()> {
-    require_len(
+    set_location: bool,
+) -> Result<Option<VolumeConstants>> {
+    if let Err(err) = require_len(
         bytes,
         offset,
         VOLUME_CONSTANT_BLOCK_LEN,
         "volume constant block",
-    )?;
-    let bytes = &bytes[offset..offset + VOLUME_CONSTANT_BLOCK_LEN];
-    let location = &mut builder.volume.location;
-    location.latitude_deg = Some(f64::from(be_f32(bytes, 8)));
-    location.longitude_deg = Some(f64::from(be_f32(bytes, 12)));
+    ) {
+        return if set_location { Err(err) } else { Ok(None) };
+    }
+    let declared = usize::from(be_u16(bytes, offset + 4));
+    let with_bias = declared >= VOLUME_CONSTANT_BLOCK_ZDR_BIAS_LEN
+        && bytes.len() - offset >= VOLUME_CONSTANT_BLOCK_ZDR_BIAS_LEN;
+    let block = &bytes[offset..offset + VOLUME_CONSTANT_BLOCK_LEN];
+    if set_location {
+        let location = &mut builder.volume.location;
+        location.latitude_deg = Some(f64::from(be_f32(block, 8)));
+        location.longitude_deg = Some(f64::from(be_f32(block, 12)));
 
-    // Antenna height above MSL: tower plus feedhorn, as xradar and Py-ART.
-    let tower_height_m = be_i16(bytes, 16) as f32;
-    let feedhorn_height_m = be_u16(bytes, 18) as f32;
-    location.altitude_m = Some(f64::from(tower_height_m + feedhorn_height_m));
+        // Antenna height above MSL: tower plus feedhorn, as xradar and Py-ART.
+        let tower_height_m = be_i16(block, 16) as f32;
+        let feedhorn_height_m = be_u16(block, 18) as f32;
+        location.altitude_m = Some(f64::from(tower_height_m + feedhorn_height_m));
 
-    builder.set_vcp(be_u16(bytes, 40));
-    Ok(())
+        builder.set_vcp(be_u16(block, 40));
+    }
+    Ok(Some(VolumeConstants {
+        version_major: block[6],
+        version_minor: block[7],
+        latitude_deg: be_f32(block, 8),
+        longitude_deg: be_f32(block, 12),
+        site_height_m: be_i16(block, 16),
+        feedhorn_height_m: be_u16(block, 18),
+        calibration_constant_db: be_f32(block, 20),
+        horizontal_tx_power_kw: be_f32(block, 24),
+        vertical_tx_power_kw: be_f32(block, 28),
+        system_zdr_db: be_f32(block, 32),
+        initial_system_phidp_deg: be_f32(block, 36),
+        vcp_number: be_u16(block, 40),
+        processing_status: be_u16(block, 42),
+        zdr_bias_estimate_raw: with_bias.then(|| be_u16(bytes, offset + 44)),
+    }))
+}
+
+/// The Elevation Data Constant block (Table XVII-F), or `None` when it runs
+/// past the radial.
+fn parse_elevation_constant_block(bytes: &[u8], offset: usize) -> Option<ElevationConstants> {
+    let block = bytes.get(offset..offset.checked_add(ELEVATION_CONSTANT_BLOCK_LEN)?)?;
+    Some(ElevationConstants {
+        atmospheric_attenuation_raw: be_i16(block, 6),
+        calibration_constant_db: be_f32(block, 8),
+    })
 }
 
 /// The Radial Data Constant block (Table XVII-H): Nyquist velocity (0.01 m/s
 /// at bytes 16-17) and unambiguous range (0.1 km at bytes 6-7), each `None`
-/// when zero.
-fn parse_radial_constant_block(bytes: &[u8], offset: usize) -> Result<(Option<f32>, Option<f32>)> {
+/// when zero, and the noise levels, radial flags and (in the 28-byte layout)
+/// calibration constants.
+fn parse_radial_constant_block(
+    bytes: &[u8],
+    offset: usize,
+) -> Result<(Option<f32>, Option<f32>, RadialBlockConstants)> {
     require_len(
         bytes,
         offset,
@@ -2270,9 +2706,19 @@ fn parse_radial_constant_block(bytes: &[u8], offset: usize) -> Result<(Option<f3
     let block = &bytes[offset..offset + RADIAL_CONSTANT_BLOCK_LEN];
     let nyquist = be_i16(block, 16);
     let unambiguous = be_u16(block, 6);
+    let declared = usize::from(be_u16(block, 4));
+    let calibration_dbz = (declared >= RADIAL_CONSTANT_BLOCK_CALIBRATED_LEN
+        && bytes.len() - offset >= RADIAL_CONSTANT_BLOCK_CALIBRATED_LEN)
+        .then(|| (be_f32(bytes, offset + 20), be_f32(bytes, offset + 24)));
     Ok((
         (nyquist > 0).then_some(nyquist as f32 / 100.0),
         (unambiguous > 0).then_some(f32::from(unambiguous) * 100.0),
+        RadialBlockConstants {
+            horizontal_noise_level_dbm: be_f32(block, 8),
+            vertical_noise_level_dbm: be_f32(block, 12),
+            radial_flags: be_u16(block, 18),
+            calibration_dbz,
+        },
     ))
 }
 
@@ -2629,6 +3075,19 @@ mod tests {
             {
                 for value in values.iter_mut().filter(|value| value.is_nan()) {
                     *value = f32::MAX;
+                }
+            }
+            if let Some(monitoring) = sweep.monitoring.as_deref_mut() {
+                for values in [
+                    &mut monitoring.radar_measured_transmit_power_h_dbm,
+                    &mut monitoring.radar_measured_transmit_power_v_dbm,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    for value in values.iter_mut().filter(|value| value.is_nan()) {
+                        *value = f32::MAX;
+                    }
                 }
             }
             sweep
@@ -4022,7 +4481,13 @@ mod tests {
             .map(count)
             .collect();
         assert_eq!(radials, expected);
-        assert_same(&volume.sweeps, &original.volume.sweeps, "sweeps");
+        // The layout keeps no Message 18, so its sweeps have no transmitter
+        // pulse width; everything else is the original's.
+        let mut original_sweeps = original.volume.sweeps.clone();
+        for sweep in &mut original_sweeps {
+            assert!(sweep.ray_vars.pulse_width_s.take().is_some());
+        }
+        assert_same(&volume.sweeps, &original_sweeps, "sweeps");
         assert_eq!(
             volume.attrs.instrument_name,
             original.volume.attrs.instrument_name
@@ -4043,7 +4508,7 @@ mod tests {
         );
         assert_same(
             &decoded.volume.sweeps,
-            &original.volume.sweeps,
+            &original_sweeps,
             "sweeps with a zeroed header date",
         );
     }

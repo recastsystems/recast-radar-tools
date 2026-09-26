@@ -6,8 +6,12 @@
 //!   identical, for uncompressed records, LDM bzip2 records and a gzip
 //!   wrapper; so does the NEXRAD metadata (messages 2, 3, 5, 13, 15, 18 and
 //!   32, and the per-sweep VOL, ELV and RAD blocks) whenever the source's
-//!   metadata record could be carried over. Without the source metadata the
-//!   volume still comes back identical apart from its provenance.
+//!   metadata record could be carried over. The per-radial message sequence
+//!   numbers and sizes are rewritten, and the radial statuses that place a
+//!   radial in the written volume follow it. Without the source metadata the
+//!   volume still comes back identical apart from its provenance and the
+//!   NEXRAD metadata the decoder takes from the metadata record and the
+//!   constant blocks (`comparable`).
 //! - Message 1 volumes (1991 to 2005): Message 31 cannot hold the Doppler
 //!   gates before the radar (from -375 m), so they are written with
 //!   [`WriteOptions::drop_negative_range_gates`]; every gate written comes
@@ -150,7 +154,22 @@ fn assert_same_sweep_items(label: &str, index: usize, a: &Sweep, b: &Sweep, angl
     );
     assert_eq!(*monitoring, b.monitoring, "{at}");
     assert_eq!(*platform_track, b.platform_track, "{at}");
-    assert_eq!(*extra_vars, b.extra_vars, "{at}");
+    let differing: Vec<&str> = extra_vars
+        .iter()
+        .filter(|variable| b.extra_vars.iter().find(|other| other.name == variable.name) != Some(*variable))
+        .map(|variable| &*variable.name)
+        .collect();
+    let names = |vars: &[recast_radar_core::model::ExtraVariable]| {
+        vars.iter().map(|v| v.name.clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(names(extra_vars), names(&b.extra_vars), "{at}: extra variables");
+    assert!(differing.is_empty(), "{at}: extra variables differ: {differing:?}");
+    let other_differing: Vec<String> = other
+        .iter()
+        .filter(|item| !b.other.contains(item))
+        .map(|item| format!("{item:?}").chars().take(80).collect())
+        .collect();
+    assert!(other_differing.is_empty(), "{at}: other differ: {other_differing:?}");
     assert_eq!(*other, b.other, "{at}");
     assert_eq!(
         *elevation_number, b.elevation_number,
@@ -205,6 +224,52 @@ fn with_written_statuses(source: &NexradMetadata, sweeps: usize) -> NexradMetada
         }
     }
     expected
+}
+
+/// The written radial status of a source radial (see
+/// [`with_written_statuses`]): ray `ray` of `rays` in sweep `index` of
+/// `sweeps`.
+fn written_status(code: u8, ray: usize, rays: usize, index: usize, sweeps: usize) -> u8 {
+    let last_sweep = index + 1 == sweeps;
+    match (ray == 0, index == 0, ray + 1 == rays) {
+        (true, true, _) => 3,
+        (true, false, _) if matches!(code, 0 | 5) => code,
+        (true, false, _) => {
+            if last_sweep {
+                5
+            } else {
+                0
+            }
+        }
+        (false, _, true) => {
+            if last_sweep {
+                4
+            } else {
+                2
+            }
+        }
+        _ if matches!(code, 0 | 2 | 3 | 4 | 5) => 1,
+        _ => code,
+    }
+}
+
+/// `volume` with the model's per-radial `nexrad_radial_status` codes as the
+/// writer writes them back ([`written_status`]).
+fn with_written_status_column(volume: &mut Volume) {
+    let sweeps = volume.sweeps.len();
+    for (index, sweep) in volume.sweeps.iter_mut().enumerate() {
+        for variable in &mut sweep.extra_vars {
+            if &*variable.name != "nexrad_radial_status" {
+                continue;
+            }
+            if let recast_radar_core::model::ArrayBuf::U8(codes) = &mut variable.values {
+                let rays = codes.len();
+                for (ray, code) in codes.iter_mut().enumerate() {
+                    *code = written_status(*code, ray, rays, index, sweeps);
+                }
+            }
+        }
+    }
 }
 
 /// Equal `Debug` text (NaN fields compare equal to themselves); on a
@@ -288,7 +353,67 @@ fn assert_same_volume_items(label: &str, a: &Volume, b: &Volume) {
 }
 
 /// Message 31 source: every item of the decoded volume comes back.
-fn assert_identical(label: &str, a: &Volume, b: &Volume, angle_tolerance: f32) {
+/// Per-radial values the writer rewrites on purpose (`docs/level2/writer.md`,
+/// "Re-encoding a Level II file"): each radial's message sequence number
+/// (numbered from 4) and message size (radials sized to their content).
+const REWRITTEN_PER_RAY: [&str; 2] = ["nexrad_message_sequence_number", "nexrad_message_size"];
+
+/// `volume` without the values a write changes: the rewritten per-radial
+/// values, and when the source's metadata was not carried over
+/// (`carried` false), the NEXRAD metadata the decoder takes from the
+/// metadata record and the radials' constant blocks (every `nexrad_*`
+/// passthrough item, the per-ray values of Messages 5 and 32, and the
+/// monitoring values of the VOL blocks): the writer then builds every
+/// message as for a foreign volume, from the model's radar data.
+fn comparable(volume: &Volume, carried: bool) -> Volume {
+    let keep = |name: &str| {
+        !(REWRITTEN_PER_RAY.contains(&name) || (!carried && name.starts_with("nexrad_")))
+    };
+    let mut volume = volume.clone();
+    if !carried {
+        // Without the source's constant blocks each sweep's VOL block
+        // carries the first calibration set, so only that one comes back.
+        volume.radar_calibration.truncate(1);
+    }
+    volume.attrs.other.retain(|(name, _)| keep(name));
+    volume.extra_vars.retain(|variable| keep(&variable.name));
+    for sweep in &mut volume.sweeps {
+        sweep.extra_vars.retain(|variable| keep(&variable.name));
+        sweep.other.retain(|(name, _)| keep(name));
+        if !carried {
+            // Per-ray values the decoder takes from the metadata messages
+            // (Messages 5 and 32) and the constant blocks: the synthesised
+            // ones hold only what the model gives the writer.
+            let rays = &mut sweep.ray_vars;
+            rays.prt_s = None;
+            rays.prt_ratio = None;
+            rays.prt_sequence_s = None;
+            rays.n_samples = None;
+            rays.pulse_width_s = None;
+            rays.calib_index = None;
+            sweep.monitoring = None;
+            // The PRT mode comes from Message 5's waveform and PRF data,
+            // which the synthesised Message 5 does not hold.
+            sweep.prt_mode = None;
+        }
+    }
+    volume
+}
+
+fn assert_identical(label: &str, a: &Volume, b: &Volume, angle_tolerance: f32, carried: bool) {
+    let mut a = comparable(a, carried);
+    with_written_status_column(&mut a);
+    let (a, mut b) = (&a, comparable(b, carried));
+    if !carried {
+        // A source without a Message 5 that decodes has no scan rates; the
+        // synthesised Message 5 gives the rate measured from the ray times.
+        for (sa, sb) in a.sweeps.iter().zip(&mut b.sweeps) {
+            if sa.target_scan_rate_deg_per_s.is_none() {
+                sb.target_scan_rate_deg_per_s = None;
+            }
+        }
+    }
+    let b = &b;
     assert_same_volume_items(label, a, b);
     for (index, (sa, sb)) in a.sweeps.iter().zip(&b.sweeps).enumerate() {
         assert_same_sweep_items(label, index, sa, sb, angle_tolerance);
@@ -351,6 +476,7 @@ fn roundtrip(
         assert!(written == messages, "{id}: data messages differ");
     }
     let expected = match (options.gzip, options.compression) {
+        (true, Compression::Bzip2LdmRecords) => "gzip-bzip2-blocks",
         (true, _) => "gzip",
         (false, Compression::None) => "uncompressed",
         (false, _) => "bzip2-blocks",
@@ -414,7 +540,7 @@ fn message_31_volumes_come_back_identical() {
             );
             let same_record = record_notes(&summary).is_empty();
             let tolerance = if same_record { 0.0 } else { angle_tolerance };
-            assert_identical(&label, &source.volume, &again.volume, tolerance);
+            assert_identical(&label, &source.volume, &again.volume, tolerance, true);
             if same_record {
                 // NaN fields (message 3) make `==` false on equal bytes.
                 assert_same_debug(
@@ -449,6 +575,7 @@ fn message_31_volumes_come_back_identical() {
             &source.volume,
             &again.volume,
             angle_tolerance,
+            false,
         );
 
         // The convenience entry point does the same as the steps above.
@@ -665,7 +792,7 @@ fn standard_quantisation_copies_nexrad_codes() {
     let mut options = WriteOptions::default();
     options.quantization = recast_radar_io_nexrad::write::Quantization::Standard;
     let (again, summary) = roundtrip(id, &source, None, false, &[], &options);
-    assert_identical(id, &source.volume, &again.volume, 0.0);
+    assert_identical(id, &source.volume, &again.volume, 0.0, false);
     for report in &summary.moments {
         let field = source.volume.sweeps[report.sweep]
             .field(&report.field)

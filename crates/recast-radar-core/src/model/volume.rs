@@ -68,7 +68,10 @@ pub struct GlobalAttrs {
     /// WMO; CfRadial attribute. Empty when the source has none.
     pub instrument_name: String,
     pub site_name: Option<String>,
-    /// `platform_is_mobile` (FM301 requires "false").
+    /// `platform_is_mobile`: `true` when the source says the platform moves
+    /// (a CfRadial file's attribute; a DORADE airborne or shipborne radar,
+    /// as LROSE Radx writes it), else `false`, the only value FM301 2022
+    /// uses for the fixed platforms it describes.
     pub platform_is_mobile: bool,
     pub ray_times_increase: Option<bool>,
     /// `simulated` (Table 301-3).

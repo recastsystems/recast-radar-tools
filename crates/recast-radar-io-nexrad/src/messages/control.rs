@@ -94,6 +94,17 @@ impl RdaStateCommand {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoChange => 0,
+            Self::StandBy => 32769,
+            Self::Operate => 32772,
+            Self::Restart => 32776,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// No change / enable / disable command. Super resolution, CMD, AVSET and
@@ -130,6 +141,26 @@ impl EnableDisable {
             other => Self::Unknown(other),
         }
     }
+
+    /// The 0/2/4 code of halfwords 8, 9, 10 and 21 ([`Self::from_code`]).
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoChange => 0,
+            Self::Enable => 2,
+            Self::Disable => 4,
+            Self::Unknown(code) => code,
+        }
+    }
+
+    /// The 0/1/2 code of the RDA log command ([`Self::from_log_code`]).
+    pub fn log_code(self) -> u16 {
+        match self {
+            Self::NoChange => 0,
+            Self::Enable => 1,
+            Self::Disable => 2,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Auxiliary power generator control (halfword 3).
@@ -153,6 +184,16 @@ impl AuxiliaryPowerCommand {
             32772 => Self::SwitchToAuxiliary,
             32770 => Self::SwitchToUtility,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoChange => 0,
+            Self::SwitchToAuxiliary => 32772,
+            Self::SwitchToUtility => 32770,
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -186,6 +227,18 @@ impl ControlAuthorization {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoChange => 0,
+            Self::ControlCommandClear => 2,
+            Self::LocalControlEnabled => 4,
+            Self::RemoteControlAccepted => 8,
+            Self::RemoteControlRequested => 16,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Restart VCP or elevation cut (halfword 5).
@@ -209,6 +262,16 @@ impl RestartCommand {
             32768 => Self::RestartVcp,
             32769..=33023 => Self::RestartElevationCut((code & 0x00ff) as u8),
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::None => 0,
+            Self::RestartVcp => 32768,
+            Self::RestartElevationCut(cut) => 32768 | u16::from(cut),
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -236,6 +299,15 @@ impl LocalVcpSelection {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::UseRemotePattern => 0,
+            Self::Pattern(code) | Self::Unknown(code) => code,
+            Self::NoChange => 32767,
+        }
+    }
 }
 
 /// Channel control command (halfword 12).
@@ -261,6 +333,16 @@ impl ChannelControlCommand {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoChange => 0,
+            Self::SetControlling => 1,
+            Self::SetNonControlling => 2,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Performance check control (halfword 13).
@@ -281,6 +363,15 @@ impl PerformanceCheckCommand {
             0 => Self::NoChange,
             1 => Self::ForcePerformanceCheck,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoChange => 0,
+            Self::ForcePerformanceCheck => 1,
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -314,6 +405,15 @@ impl ZdrBiasEstimate {
         }
     }
 
+    /// The Table X code.
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NotAvailable => 0,
+            Self::NoChange => 1,
+            Self::Coded(code) | Self::Unknown(code) => code,
+        }
+    }
+
     /// Bias in dB for a coded value: `(code - 418) / 32`, spanning -13 to
     /// +20 dB.
     pub fn db(self) -> Option<f32> {
@@ -339,6 +439,23 @@ mod tests {
         assert_eq!(ZdrBiasEstimate::from_code(1058).db(), Some(20.0));
         assert_eq!(ZdrBiasEstimate::from_code(418).db(), Some(0.0));
         assert_eq!(ZdrBiasEstimate::from_code(1).db(), None);
+    }
+
+    /// Every halfword value maps back to itself through the typed command.
+    #[test]
+    fn command_codes_round_trip() {
+        for code in 0..=u16::MAX {
+            assert_eq!(RdaStateCommand::from_code(code).code(), code);
+            assert_eq!(EnableDisable::from_code(code).code(), code);
+            assert_eq!(EnableDisable::from_log_code(code).log_code(), code);
+            assert_eq!(AuxiliaryPowerCommand::from_code(code).code(), code);
+            assert_eq!(ControlAuthorization::from_code(code).code(), code);
+            assert_eq!(RestartCommand::from_code(code).code(), code);
+            assert_eq!(LocalVcpSelection::from_code(code).code(), code);
+            assert_eq!(ChannelControlCommand::from_code(code).code(), code);
+            assert_eq!(PerformanceCheckCommand::from_code(code).code(), code);
+            assert_eq!(ZdrBiasEstimate::from_code(code).code(), code);
+        }
     }
 
     #[test]

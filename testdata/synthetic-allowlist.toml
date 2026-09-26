@@ -4,9 +4,11 @@
 # from main in C.3 were converted too (docs/testdata/synthetic-inventory.md).
 # What remains comes from the FM301 model (stream F), under
 # core-data-scattering: two pending model unit tests that need a corpus file
-# nobody has found yet (user review), and one exception. New findings must be
-# converted; an entry may be added only as a justified exception (see `status`
-# below).
+# nobody has found yet (user review), and one exception; and from
+# metadata-complete (io-nexrad, io-formats): two exceptions, and ten pending
+# feature tests on edited real bytes that await the owner's decision. New
+# findings must be converted; an entry may be added only as a justified
+# exception (see `status` below), or as pending for the owner's review.
 #
 # `crates/recast-radar-testdata/tests/no_synthetic.rs` scans test code and data
 # files (rules: `recast_radar_testdata::synthetic`) and fails on any finding
@@ -35,15 +37,107 @@
 #   RECAST_RADAR_SYNTHETIC_REPORT=findings.toml cargo test -p recast-radar-testdata --test no_synthetic
 
 # ============================================================================
-# io-nexrad (0 entries)
+# io-nexrad (9 entries: 2 exceptions, 7 pending)
 # ============================================================================
 
 # All converted to real files in C.2 (see crates/recast-radar-io-nexrad/src/lib.rs
-# `tests` and tools/level2_decode_golden.py).
+# `tests` and tools/level2_decode_golden.py). The exceptions are the RDA log
+# limit test of metadata-complete: no real file holds a message 33 (a scan of
+# the real Level II files and chunks of the corpus found none), so the hostile
+# logs the limit must stop are built and inserted into real chunk bytes.
+#
+# The pending entries are the metadata-complete feature tests on edited or
+# rearranged real bytes, for features no real file exercises: a sweep whose
+# radials differ in the values kept once per sweep, two messages of one
+# metadata type (a later different one, a repeated one), and messages 6, 9,
+# 11 and 12. They are not corruption or limit tests, so they fall outside
+# the exception rule; they await the owner's decision (allow them as
+# exceptions, or remove them and leave the features untested). Their helpers
+# are named `fabricate*` so the scanner sees them.
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/radial_extras_real.rs"
+name = "fabricated_differing_radials"
+status = "pending"
+justification = "no real input: edits five values inside the committed KTLX 2024 trim (radial 5's ELV attenuation, radial 7's VOL calibration constant, radial 9's radar identifier, radial 11's REF TOVER, radial 13's VOL latitude) because no real file has a sweep whose radials differ in them (a scan of 96 real volumes found none); awaits the owner's decision"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/radial_extras_real.rs"
+name = "radials_that_differ_keep_their_own_values"
+status = "pending"
+justification = "the per-ray fallback of radial_extras on fabricated_differing_radials; no real replacement exists; awaits the owner's decision"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/metadata_carried_real.rs"
+name = "fabricate_frames_after_metadata"
+status = "pending"
+justification = "no real input: inserts real metadata frames (another volume's record, the same record again, relabelled frames) after the real KIWA 2026 metadata record, because no real Level II file has two messages of one metadata type or any message 6, 9, 11 or 12 (560 real files scanned); awaits the owner's decision"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/metadata_carried_real.rs"
+name = "a_later_different_message_is_carried_as_a_copy"
+status = "pending"
+justification = "the `_message1` copies of passthrough on fabricate_frames_after_metadata (KTLX 2024's record after KIWA 2026's); no real replacement exists; awaits the owner's decision"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/metadata_carried_real.rs"
+name = "a_repeated_message_is_counted_not_copied"
+status = "pending"
+justification = "the repeat counter of passthrough on fabricate_frames_after_metadata (KIWA 2026's record twice); no real replacement exists; awaits the owner's decision"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/metadata_carried_real.rs"
+name = "fabricate_relabelled_frame"
+status = "pending"
+justification = "no real input: a real KIWA 2026 message 2 frame with its type byte changed to 6, 9, 11 or 12, which go from the RPG to the RDA or test the wideband link and are in no real Level II file; awaits the owner's decision"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/metadata_carried_real.rs"
+name = "relabelled_real_frames_carry_messages_6_9_11_and_12"
+status = "pending"
+justification = "the message 6, 9, 11 and 12 tables of passthrough on fabricate_relabelled_frame; no real replacement exists; awaits the owner's decision"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/limits_real.rs"
+name = "rda_log_frame"
+status = "exception"
+justification = "corruption helper for real bytes: one fixed frame holding a message 33 whose appended bzip2 stream inflates to 16 MiB of zeros (a compression bomb), inserted after the real metadata record of the committed KIWA chunks; no real file has a message 33"
+
+[[io-nexrad]]
+path = "crates/recast-radar-io-nexrad/tests/limits_real.rs"
+name = "rda_log_data_is_limited_per_volume"
+status = "exception"
+justification = "limit test on the real KIWA chunk bytes with twenty rda_log_frame bombs inserted: the volume keeps 64 MiB of RDA log data and counts the rest, instead of inflating 320 MiB"
 
 # ============================================================================
-# io-formats (0 entries; every test converted to real data in C.2)
+# io-formats (3 entries: 3 pending)
 # ============================================================================
+
+# Every test was converted to real data in C.2. The pending entries are the
+# JMA member merge test of metadata-complete, a feature test on rearranged
+# and edited real bytes: no real JMA tar holds two members of one station, no
+# real JMA message has a GRIB2 section 2 and no real station's members differ
+# in sections 0 and 1 (the committed RS47773 tars and the 2026-09-24 21Z
+# national N5 and N6 tars, 40 messages of 20 stations, were checked). It
+# awaits the owner's decision, like the io-nexrad pending entries.
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/tests/grib2_sections_real.rs"
+name = "with_local_use"
+status = "pending"
+justification = "no real input: inserts a section 2 (local use) after section 1 of a committed real JMA GRIB2 message and updates section 0's total length; awaits the owner's decision"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/tests/grib2_sections_real.rs"
+name = "tar_of"
+status = "pending"
+justification = "no real input: repacks the two committed real RS47773 members (their own tar headers, size field rewritten) into one ustar archive, because no real tar holds two members of one station; awaits the owner's decision"
+
+[[io-formats]]
+path = "crates/recast-radar-io-jma/tests/grib2_sections_real.rs"
+name = "merged_members_keep_each_members_values"
+status = "pending"
+justification = "awaits the owner's decision; merges the two committed real RS47773 members as they are, then with a section 2 each and another production status in one (with_local_use, tar_of): the per-member values and the renamed local use dimension have no real input"
 
 # ============================================================================
 # correct (0 entries): every synthetic test was converted to real data in C.2

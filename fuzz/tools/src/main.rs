@@ -274,8 +274,9 @@ const SEEDS: &[Seed] = &[
         Verbatim,
     ),
     // dorade: the committed sweepfiles, head-trimmed to a few rays
-    // (little/big endian, uncompressed/HRD RLE, CSFD/CELV, PPI/RHI/SUR),
-    // plus one complete sweepfile for the end-of-sweep path.
+    // (little/big endian, uncompressed/HRD RLE, CSFD/CELV, PPI/RHI/SUR/AIR,
+    // ground-based and airborne ASIB values), plus one complete sweepfile
+    // for the end-of-sweep path.
     ("dorade", "dorade-cow2-20260521-225514-sur-head24", Verbatim),
     ("dorade", "dorade-noxp-20090501-190244-ppi", DoradeHead(8)),
     (
@@ -289,6 +290,18 @@ const SEEDS: &[Seed] = &[
         DoradeHead(4),
     ),
     ("dorade", "dorade-noxp-20090501-190324-ppi", Verbatim),
+    (
+        "dorade",
+        "dorade-n42rf-tm-20181010-123925-air-head48",
+        DoradeHead(4),
+    ),
+    // dorade_archive: the committed deployment zip (three head-trimmed NOXP
+    // sweepfiles of one volume run and three text members).
+    (
+        "dorade_archive",
+        "dorade-noxp-20090610-003210-heads-zip",
+        Verbatim,
+    ),
     // jma: both committed single-station tars.
     ("jma", "jma-n6-20191012-090000-rs47773", Verbatim),
     ("jma", "jma-n5-20191012-090000-rs47773", Verbatim),

@@ -54,7 +54,9 @@ Usage:
     python tools/filters_map_golden.py [gate_filter|smooth|interpolate|rhi|volumetric ...]
 
 With no arguments every golden file is regenerated. The committed files were written with
-Python 3.13, numpy 2.5.3, MetPy 1.7.1, Py-ART 2.2.5 and netCDF4 1.7.4.
+Python 3.13, numpy 2.5.3, MetPy 1.7.1, Py-ART 2.2.5 and netCDF4 1.7.4; map/rhi.json was
+last regenerated with Py-ART 2.3.0 (for the DOW6 antenna-transition rays), and only its
+``dow6`` entry changed.
 """
 
 import gzip
@@ -928,10 +930,12 @@ def section_rhi():
         "beam37_gate316_dbz": jf(dbz[37, 316]),
     }
 
-    # DOW6 DORADE RHI (walker); transition rays (RYIB status != 0) are not part of the sweep.
+    # DOW6 DORADE RHI (walker). Every ray is part of the sweep, the antenna-transition rays
+    # (RYIB status 1) included: the FM301 model keeps them flagged `antenna_transition`, as
+    # LROSE Radx reads them and as the DOW8 CfRadial RHI above keeps its 12.
     dow6_id = "dorade-dow6-20211230-222139-rhi-head41"
     dow6 = dorade_sweep(dow6_id, "DBZHC")
-    kept = [(index, ray) for index, ray in enumerate(dow6["rays"]) if ray["status"] == 0]
+    kept = list(enumerate(dow6["rays"]))
     elevation6 = np.asarray([ray["elevation_deg"] for _, ray in kept], dtype=F32)
     azimuth6 = np.asarray([ray["azimuth_deg"] for _, ray in kept], dtype=F32)
     values6 = np.vstack([ray["values"] for _, ray in kept])
@@ -941,7 +945,7 @@ def section_rhi():
         "id": dow6_id,
         "radd_scan_mode": dow6["scan_mode"],
         "file_rays": len(dow6["rays"]),
-        "transition_rays": len(dow6["rays"]) - len(kept),
+        "transition_rays": sum(1 for ray in dow6["rays"] if ray["status"] == 1),
         **rhi_geometry(elevation6, azimuth6, first6, spacing6, values6.shape[1]),
         "valid_gates": int(np.isfinite(values6).sum()),
         "panels": [
@@ -985,7 +989,7 @@ def section_rhi():
 
     payload = {
         "source": "tools/filters_map_golden.py rhi; netCDF4 1.7.4, DORADE block walker, MetPy 1.7.1"
-                  " and Py-ART 2.2.5; 4/3-Earth panel reference",
+                  " and Py-ART 2.3.0; 4/3-Earth panel reference",
         "note": "first_gate_m and gate_spacing_m are the FM301 model's uniform gate centres: CfRadial"
                 " range[0] and DORADE CELV first cell, spacing (last - first) / (gates - 1)",
         "dow8": dow8_case,

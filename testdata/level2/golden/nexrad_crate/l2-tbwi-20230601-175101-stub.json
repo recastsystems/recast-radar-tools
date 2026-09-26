@@ -1,0 +1,8 @@
+{
+ "id": "l2-tbwi-20230601-175101-stub",
+ "sha256": "4a05662898b319903f499f879a6fe0869bd56407ed27901c169513d4dcf1cc0a",
+ "generator": "tools/nexrad_crate_golden.py",
+ "nexrad_rev": "1591b64f7b34b14a88b1f020384c252052c8255f",
+ "message_3": null,
+ "message_18": null
+}

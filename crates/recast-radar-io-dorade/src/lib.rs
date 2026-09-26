@@ -37,6 +37,7 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+mod descriptors;
 pub mod dorade;
 pub mod mobile_archive;
 
@@ -47,8 +48,8 @@ pub use dorade::{
     read_dorade_volume_from_paths, read_dorade_volume_from_slices,
 };
 pub use mobile_archive::{
-    MobileVolume, looks_like_zip_bytes, read_dorade_volume_for_path, read_mobile_archive_from_path,
-    read_mobile_dir_from_path,
+    MobileVolume, looks_like_zip_bytes, read_dorade_volume_for_path,
+    read_mobile_archive_from_bytes, read_mobile_archive_from_path, read_mobile_dir_from_path,
 };
 
 /// Result type for DORADE and mobile-archive decoding.

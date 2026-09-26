@@ -28,9 +28,34 @@
 //! and cross-validated sweep-for-sweep and gate-for-gate against its decode
 //! of live NICT pulls.
 //!
+//! Every other value of the message reaches the model, named after the
+//! JMA format document ("レーダー毎極座標レーダーエコー強度 GPV フォーマット",
+//! GRIB2 Ver.2.00): the section 1 originating centre and sub-centre as the
+//! FM301 `wmo__originating_centre` and `wmo__originating_sub_centre`, and
+//! the other section 0 and 1 octets as `jma_grib2_*` root attributes; the
+//! section 4 transmitted frequency as `radar_parameters` `frequency`; the
+//! template 3.50120 and 4.51022 octets of each sweep (centre position,
+//! scanning mode, magnetic declination, polarization, operation mode,
+//! quality control and clutter filter indicators, representative PRFs,
+//! observation start and end, ...) as `jma_gdt_*` / `jma_pdt_*` sweep
+//! attributes; each radial's PRF (template 4.51022 octets 63-64 of each
+//! radial) as the FM301 `prt`; and the parameter, template 5.200 values
+//! (bits, levels, decimal scale, the level value table) and the bitmap
+//! indicator as `jma_*` attributes of the field. A section 2 (local use),
+//! which the format does not use, is kept verbatim as a root variable.
+//! ecCodes, an independent GRIB2 reader, agrees on every section 0, 1, 3
+//! header, 5.200 and bitmap value it reads and on every decoded gate of the
+//! committed tars (`tests/eccodes_real.rs`); it has no definition for the
+//! local templates 3.50120 and 4.51022, whose octets
+//! `tests/grib2_sections_real.rs` reads from the bytes.
+//!
 //! Multi-station handling: [`read_jma_tar_volumes`] returns ONE FM301
 //! [`Volume`] per station and never silently drops stations; callers that
-//! want a single station pass `site_filter`. The shared byte router
+//! want a single station pass `site_filter`. Members of the same station
+//! merge into one volume: its attributes are the first member's section 0
+//! and 1 values, the sweeps of a member whose values differ carry that
+//! member's as sweep attributes, and a later member's local use section is
+//! `jma_grib2_local_use_<n>_member<k>` on its own dimension. The shared byte router
 //! (`recast_radar_io::read_supported_volume_bytes`) uses
 //! [`read_jma_tar_first_station`] instead, which keeps only the first
 //! station in the archive.
@@ -44,11 +69,20 @@
 //! raw-to-physical mapping, so compact u8/u16 storage does not apply. The
 //! `range` coordinate treats the template 3.50120 range start as the centre
 //! of the first gate (the pre-FM301 convention; design note 17.9). Ray
-//! azimuths follow the grid's start azimuth and scan direction; the format
-//! has no per-ray times, so every ray of a sweep carries its GRIB reference
-//! time. Nyquist velocity is left unset: the per-ray PRF tables suggest
-//! staggered-PRF operation and a wrong Nyquist would mislead downstream
-//! dealiasing.
+//! azimuths follow the grid's start azimuth and scan direction. The format
+//! has no per-ray times: each sweep's template 4.51022 gives the start and
+//! end of its observation, in seconds from the GRIB reference time (octets
+//! 51-52 and 53-54), so every ray of a sweep carries its sweep's
+//! observation start (the reference time where the start is missing). The
+//! volume `time_reference` is the earliest of those starts, so no ray time
+//! is negative; `time_coverage` runs from it to the latest observation end;
+//! and the GRIB reference time itself is the root attribute
+//! `jma_grib2_reference_time`. A radial whose per-radial elevation is
+//! missing (all ones) takes the product antenna elevation; a sweep with such
+//! a radial also keeps the per-radial table as the per-ray variable
+//! `jma_pdt_radial_elevation_deg`, NaN where the file has none. Nyquist
+//! velocity is left unset: the per-ray PRF tables suggest staggered-PRF
+//! operation and a wrong Nyquist would mislead downstream dealiasing.
 //!
 //! # Limits
 //!
@@ -72,11 +106,11 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use recast_radar_core::bounded_read::MAX_DECODED_BATCH_BYTES;
 use recast_radar_core::model::{
-    Field, FieldData, FieldName, FloatCoding, FollowMode, GateMapping, RangeCoord, SourceFormat,
-    Sweep, SweepMode, Volume,
+    ArrayBuf, AttrValue, ExtraVariable, Field, FieldData, FieldName, FloatCoding, FollowMode,
+    GateMapping, RangeCoord, Scalar, SourceFormat, Sweep, SweepMode, TimeCoverage, Volume,
 };
 use thiserror::Error;
 
@@ -340,8 +374,47 @@ fn sort_sweeps_lowest_first(volume: &mut Volume) -> Result<(), String> {
     volume
         .seal()
         .map_err(|err| format!("JMA volume violates the model invariants: {err}"))?;
-    volume.time_coverage = volume.ray_time_extent();
+    volume.time_coverage = observation_coverage(volume);
     Ok(())
+}
+
+/// The volume's `time_coverage`: from the earliest ray (every ray carries its
+/// sweep's observation start) to the latest sweep observation end, template
+/// 4.51022 octets 53-54 (the sweep's own start where the end is missing).
+fn observation_coverage(volume: &Volume) -> Option<TimeCoverage> {
+    let extent = volume.ray_time_extent()?;
+    let mut end_s: Option<f64> = None;
+    for sweep in &volume.sweeps {
+        let Some(start_s) = sweep.rays.time_s.first().copied() else {
+            continue;
+        };
+        let offset = |name: &str| match find_attr(&sweep.other, name) {
+            Some(AttrValue::Scalar(Scalar::I16(seconds))) => Some(f64::from(*seconds)),
+            _ => None,
+        };
+        let sweep_end = match offset("jma_pdt_observation_end_offset_s") {
+            // Ray times hold the start offset, or 0 where it is missing.
+            Some(end) => {
+                start_s - offset("jma_pdt_observation_start_offset_s").unwrap_or(0.0) + end
+            }
+            None => start_s,
+        };
+        end_s = Some(end_s.map_or(sweep_end, |known| known.max(sweep_end)));
+    }
+    let end = end_s
+        .and_then(|seconds| volume.instant(seconds))
+        .map_or(extent.end, |end| end.max(extent.end));
+    Some(TimeCoverage {
+        start: extent.start,
+        end,
+    })
+}
+
+fn find_attr<'a>(attrs: &'a [(Box<str>, AttrValue)], name: &str) -> Option<&'a AttrValue> {
+    attrs
+        .iter()
+        .find(|(key, _)| &**key == name)
+        .map(|(_, value)| value)
 }
 
 /// Decode only the FIRST station of a JMA tar — the shared byte router's
@@ -387,6 +460,45 @@ fn merge_station_volume(volumes: &mut Vec<Volume>, mut volume: Volume) -> Result
         let shift = (volume.time_reference - existing.time_reference).num_seconds() as f64;
         for sweep in &mut volume.sweeps {
             sweep.rays.time_s.iter_mut().for_each(|time| *time += shift);
+        }
+        // The merged volume keeps the first member's section 0 and 1
+        // values; a member whose values differ keeps its own on its sweeps.
+        if volume.attrs.other != existing.attrs.other || volume.attrs.wmo != existing.attrs.wmo {
+            let mut member_attrs = volume.attrs.other.clone();
+            let wmo = &volume.attrs.wmo;
+            for (name, value) in [
+                ("wmo__originating_centre", wmo.originating_centre),
+                ("wmo__originating_sub_centre", wmo.originating_sub_centre),
+            ] {
+                if let Some(value) = value {
+                    member_attrs.push((name.into(), AttrValue::Scalar(Scalar::U16(value))));
+                }
+            }
+            for sweep in &mut volume.sweeps {
+                sweep.other.extend(member_attrs.iter().cloned());
+            }
+        }
+        for mut variable in std::mem::take(&mut volume.extra_vars) {
+            let base = variable.name.clone();
+            let mut copy = 1;
+            while existing
+                .extra_vars
+                .iter()
+                .any(|known| known.name == variable.name)
+            {
+                variable.name = format!("{base}_member{copy}").into_boxed_str();
+                copy += 1;
+            }
+            // A dimension named after the variable (the local use section's
+            // `_byte`) is renamed with it: the copies differ in length.
+            if variable.name != base {
+                for dim in &mut variable.dims {
+                    if let Some(suffix) = dim.strip_prefix(&*base) {
+                        *dim = format!("{}{suffix}", variable.name).into_boxed_str();
+                    }
+                }
+            }
+            existing.extra_vars.push(variable);
         }
         existing
             .sweeps
@@ -538,6 +650,8 @@ struct PolarGrid {
     range_start_m: f32,
     scan_mode: u8,
     start_azimuth_deg: f32,
+    /// Every octet of the section as a sweep attribute (see [`grid_attrs`]).
+    attrs: Vec<(Box<str>, AttrValue)>,
 }
 
 impl PolarGrid {
@@ -558,6 +672,18 @@ struct SweepProduct {
     station: JmaStationHeader,
     elevation_deg: Option<f32>,
     ray_elevation_deg: Vec<Option<f32>>,
+    /// Octets 51-52: observation start, seconds from the reference time
+    /// (`None` when missing).
+    observation_start_offset_s: Option<i16>,
+    /// Octets 63-64 + 4 (X - 1) of each radial: the pulse repetition
+    /// frequency setting, in Hz (NaN where missing).
+    ray_prf_hz: Vec<f32>,
+    /// Octets 33-36: transmitted frequency setting in kHz, when not missing.
+    frequency_khz: Option<u32>,
+    /// The template octets without an FM301 slot, for the sweep attributes.
+    sweep_attrs: Vec<(Box<str>, AttrValue)>,
+    /// Octets 10-11: parameter category and number, for the field.
+    field_attrs: Vec<(Box<str>, AttrValue)>,
 }
 
 fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<Volume, String> {
@@ -568,12 +694,14 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<Volume, String>
         .iter()
         .find(|section| section.number == 1)
         .ok_or_else(|| format!("{member}: GRIB2 message has no identification section"))?;
-    let volume_time = parse_reference_time(section_bytes(msg, *identification), member)?;
+    let identification_bytes = section_bytes(msg, *identification);
+    let volume_time = parse_reference_time(identification_bytes, member)?;
 
     let mut volume = Volume::new("", volume_time);
     volume.provenance.source_format = SourceFormat::JmaGrib2;
     volume.provenance.source_version = Some("JMA GRIB2".to_owned());
     volume.provenance.compression = Some("jma-grib2-tar".to_owned());
+    describe_message(&mut volume, msg, identification_bytes);
 
     let mut current_grid: Option<PolarGrid> = None;
     let mut pending_product: Option<SectionRef> = None;
@@ -585,7 +713,8 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<Volume, String>
 
     for section in sections {
         match section.number {
-            1 | 2 => {}
+            1 => {}
+            2 => local_use(&mut volume, section_bytes(msg, section))?,
             3 => current_grid = Some(parse_grid(section_bytes(msg, section), member)?),
             4 => pending_product = Some(section),
             5 => pending_data_repr = Some(section),
@@ -624,7 +753,8 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<Volume, String>
                     .take()
                     .ok_or_else(|| format!("{member}: data section without a bitmap section"))?;
 
-                let product = parse_product(section_bytes(msg, product_section), &grid, member)?;
+                let mut product =
+                    parse_product(section_bytes(msg, product_section), &grid, member)?;
                 let values = decode_data(
                     section_bytes(msg, data_repr),
                     section_bytes(msg, bitmap),
@@ -632,8 +762,17 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<Volume, String>
                     grid_points,
                     member,
                 )?;
+                product.field_attrs.extend(representation_attrs(
+                    section_bytes(msg, data_repr),
+                    section_bytes(msg, bitmap),
+                ));
                 if station.is_none() {
                     station = Some(product.station.clone());
+                }
+                if volume.radar_parameters.frequency_hz.is_empty()
+                    && let Some(khz) = product.frequency_khz
+                {
+                    volume.radar_parameters.frequency_hz = vec![f64::from(khz) * 1e3];
                 }
                 push_sweep(&mut volume, &grid, &product, values, volume_time)?;
             }
@@ -644,6 +783,24 @@ fn decode_jma_grib2_volume(bytes: &[u8], member: &str) -> Result<Volume, String>
 
     let station =
         station.ok_or_else(|| format!("{member}: GRIB2 message contains no radar sweeps"))?;
+    // Ray times hold each sweep's observation start from the reference time;
+    // the earliest start becomes the time reference, so none is negative.
+    let earliest_s = volume
+        .sweeps
+        .iter()
+        .flat_map(|sweep| sweep.rays.time_s.iter().copied())
+        .fold(0.0f64, f64::min);
+    if earliest_s < 0.0 {
+        for sweep in &mut volume.sweeps {
+            sweep
+                .rays
+                .time_s
+                .iter_mut()
+                .for_each(|time| *time -= earliest_s);
+        }
+        // Whole seconds: the offsets are whole seconds.
+        volume.time_reference += TimeDelta::seconds(earliest_s as i64);
+    }
     volume.attrs.instrument_name = station.id.clone();
     volume.attrs.site_name = Some(format!("RS{}", station.number));
     volume.attrs.wmo.id = Some(station.number.to_string());
@@ -700,7 +857,10 @@ fn push_sweep(
         .try_reserve_exact(grid.radial_count)
         .map_err(|err| format!("cannot reserve JMA ray table: {err}"))?;
     sweep.reserve_rays(grid.radial_count);
-    let time_s = (reference_time - volume.time_reference).num_seconds() as f64;
+    // Every ray of the sweep at its observation start (template 4.51022
+    // octets 51-52), the reference time where the start is missing.
+    let time_s = (reference_time - volume.time_reference).num_seconds() as f64
+        + product.observation_start_offset_s.map_or(0.0, f64::from);
     for ray in 0..grid.radial_count {
         sweep.push_ray(
             time_s,
@@ -714,9 +874,48 @@ fn push_sweep(
         );
     }
 
+    if product.ray_prf_hz.iter().any(|prf| prf.is_finite()) {
+        sweep.ray_vars.prt_s = Some(product.ray_prf_hz.iter().map(|prf| 1.0 / prf).collect());
+    }
+    // A radial without its own elevation took the product's above; the
+    // per-radial table keeps which ones had none.
+    if product.ray_elevation_deg.iter().any(Option::is_none) {
+        let mut table = Vec::new();
+        table
+            .try_reserve_exact(product.ray_elevation_deg.len())
+            .map_err(|err| format!("cannot reserve JMA radial elevation table: {err}"))?;
+        table.extend(
+            product
+                .ray_elevation_deg
+                .iter()
+                .map(|elevation| elevation.unwrap_or(f32::NAN)),
+        );
+        sweep.extra_vars.push(ExtraVariable {
+            name: "jma_pdt_radial_elevation_deg".into(),
+            dims: vec!["time".into()],
+            shape: vec![u32::try_from(table.len()).unwrap_or(u32::MAX)],
+            values: ArrayBuf::F32(table),
+            attrs: vec![
+                (
+                    "long_name".into(),
+                    AttrValue::text("elevation angle of each radial"),
+                ),
+                ("units".into(), AttrValue::text("degrees")),
+                (
+                    "comment".into(),
+                    AttrValue::text(
+                        "JMA GRIB2 template 4.51022 octets 61-62 + 4 (X - 1), per radial; NaN where the file has none (all ones), and the ray elevation is then the antenna elevation setting (octets 42-43)",
+                    ),
+                ),
+            ],
+        });
+    }
+    sweep.other.extend(grid.attrs.iter().cloned());
+    sweep.other.extend(product.sweep_attrs.iter().cloned());
+
     // `values` is already ray-major. Move it into the field instead of
     // cloning every row into a second full f32 plane.
-    let field = Field::new(
+    let mut field = Field::new(
         product.name.clone(),
         GateMapping::IDENTITY,
         ngates,
@@ -725,6 +924,7 @@ fn push_sweep(
             coding: FloatCoding::default(),
         },
     );
+    field.attrs.other = product.field_attrs.clone();
     sweep
         .add_field(field)
         .map_err(|err| format!("JMA sweep field: {err}"))?;
@@ -885,6 +1085,7 @@ fn parse_grid(section: &[u8], member: &str) -> Result<PolarGrid, String> {
         range_start_m: be_u32(section, 34, member)? as f32 / 1000.0,
         scan_mode: section[38],
         start_azimuth_deg: be_u16(section, 39, member)? as f32 / 100.0,
+        attrs: grid_attrs(section, member)?,
     })
 }
 
@@ -910,20 +1111,298 @@ fn parse_product(section: &[u8], grid: &PolarGrid, member: &str) -> Result<Sweep
     ray_elevation_deg
         .try_reserve_exact(grid.radial_count)
         .map_err(|err| format!("{member}: cannot reserve per-ray elevation table: {err}"))?;
+    let mut ray_prf_hz = Vec::new();
+    ray_prf_hz
+        .try_reserve_exact(grid.radial_count)
+        .map_err(|err| format!("{member}: cannot reserve per-ray PRF table: {err}"))?;
     for ray in 0..grid.radial_count {
         let offset = 60 + ray * 4;
         ray_elevation_deg.push(
             signed_magnitude_i16(be_u16(section, offset, member)?)
                 .map(|value| f32::from(value) / 100.0),
         );
+        ray_prf_hz.push(match be_u16(section, offset + 2, member)? {
+            u16::MAX => f32::NAN,
+            raw => f32::from(raw) / 10.0,
+        });
     }
+    let frequency_khz = Some(be_u32(section, 32, member)?).filter(|khz| *khz != u32::MAX);
+    let observation_start_offset_s = signed_magnitude_i16(be_u16(section, 50, member)?);
 
     Ok(SweepProduct {
         name: field_name_for_parameter(section[9], section[10]),
         station,
         elevation_deg,
         ray_elevation_deg,
+        observation_start_offset_s,
+        ray_prf_hz,
+        frequency_khz,
+        sweep_attrs: product_attrs(section, member)?,
+        field_attrs: vec![
+            (
+                "jma_parameter_category".into(),
+                AttrValue::Scalar(Scalar::U8(section[9])),
+            ),
+            (
+                "jma_parameter_number".into(),
+                AttrValue::Scalar(Scalar::U8(section[10])),
+            ),
+        ],
     })
+}
+
+/// A named attribute.
+fn attr(name: &str, value: Scalar) -> (Box<str>, AttrValue) {
+    (name.into(), AttrValue::Scalar(value))
+}
+
+/// Section 0 (indicator) and section 1 (identification) values the volume
+/// has no other place for (JMA GRIB2 radar format, section 0 octet 7,
+/// section 1 octets 6-12, 20 and 21). The originating centre and
+/// sub-centre are the FM301 `wmo__originating_centre` and
+/// `wmo__originating_sub_centre`; the reference time (octets 13-19) is
+/// `jma_grib2_reference_time`, from which each sweep's observation start and
+/// end are counted.
+fn describe_message(volume: &mut Volume, msg: &[u8], identification: &[u8]) {
+    let wmo = &mut volume.attrs.wmo;
+    wmo.originating_centre = Some(u16::from_be_bytes([identification[5], identification[6]]));
+    wmo.originating_sub_centre = Some(u16::from_be_bytes([identification[7], identification[8]]));
+    volume.attrs.other.extend([
+        attr("jma_grib2_discipline", Scalar::U8(msg[6])),
+        attr("jma_grib2_edition", Scalar::U8(msg[7])),
+        attr(
+            "jma_grib2_master_tables_version",
+            Scalar::U8(identification[9]),
+        ),
+        attr(
+            "jma_grib2_local_tables_version",
+            Scalar::U8(identification[10]),
+        ),
+        attr(
+            "jma_grib2_significance_of_reference_time",
+            Scalar::U8(identification[11]),
+        ),
+        attr(
+            "jma_grib2_production_status",
+            Scalar::U8(identification[19]),
+        ),
+        attr("jma_grib2_type_of_data", Scalar::U8(identification[20])),
+    ]);
+    volume.attrs.other.push((
+        "jma_grib2_reference_time".into(),
+        AttrValue::text(
+            volume
+                .time_reference
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string(),
+        ),
+    ));
+}
+
+/// Section 2 (local use), which the JMA radar format does not use: kept
+/// verbatim when a message has one.
+fn local_use(volume: &mut Volume, section: &[u8]) -> Result<(), String> {
+    let body = section.get(5..).unwrap_or(&[]);
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(body.len())
+        .map_err(|err| format!("cannot reserve GRIB2 local use section: {err}"))?;
+    bytes.extend_from_slice(body);
+    let len =
+        u32::try_from(bytes.len()).map_err(|_| "GRIB2 local use section too long".to_owned())?;
+    let index = volume
+        .extra_vars
+        .iter()
+        .filter(|variable| variable.name.starts_with("jma_grib2_local_use"))
+        .count();
+    volume.extra_vars.push(ExtraVariable {
+        name: format!("jma_grib2_local_use_{index}").into_boxed_str(),
+        dims: vec![format!("jma_grib2_local_use_{index}_byte").into_boxed_str()],
+        shape: vec![len],
+        values: ArrayBuf::U8(bytes),
+        attrs: vec![(
+            "long_name".into(),
+            AttrValue::text("GRIB2 section 2 (local use) octets 6 onward, verbatim"),
+        )],
+    });
+    Ok(())
+}
+
+/// Grid definition template 3.50120 values beyond the polar grid geometry
+/// the sweep coordinates hold: octet 6 (source of grid definition), 11-12
+/// (optional list octets and interpretation), 23-30 (the centre latitude
+/// and longitude, 10^-6 degree) and the raw spacing, first-bin offset
+/// (10^-3 m), scanning mode (flag table JMA 3.1) and start azimuth
+/// (10^-2 degree).
+fn grid_attrs(section: &[u8], member: &str) -> Result<Vec<(Box<str>, AttrValue)>, String> {
+    let degrees = |raw: u32| signed_magnitude_i32(raw).map(|value| f64::from(value) / 1e6);
+    let mut attrs = vec![
+        attr("jma_gdt_source_of_grid_definition", Scalar::U8(section[5])),
+        attr("jma_gdt_optional_list_octets", Scalar::U8(section[10])),
+        attr(
+            "jma_gdt_optional_list_interpretation",
+            Scalar::U8(section[11]),
+        ),
+    ];
+    if let Some(latitude) = degrees(be_u32(section, 22, member)?) {
+        attrs.push(attr("jma_gdt_center_latitude_deg", Scalar::F64(latitude)));
+    }
+    if let Some(longitude) = degrees(be_u32(section, 26, member)?) {
+        attrs.push(attr("jma_gdt_center_longitude_deg", Scalar::F64(longitude)));
+    }
+    attrs.extend([
+        attr(
+            "jma_gdt_bin_spacing_mm",
+            Scalar::U32(be_u32(section, 30, member)?),
+        ),
+        attr(
+            "jma_gdt_first_bin_offset_mm",
+            Scalar::U32(be_u32(section, 34, member)?),
+        ),
+        attr("jma_gdt_scanning_mode", Scalar::U8(section[38])),
+        attr(
+            "jma_gdt_start_azimuth_deg",
+            Scalar::F32(f32::from(be_u16(section, 39, member)?) / 100.0),
+        ),
+    ]);
+    Ok(attrs)
+}
+
+/// Product definition template 4.51022 octets without an FM301 slot, named
+/// after the JMA format document ("レーダー毎極座標レーダーエコー強度 GPV
+/// フォーマット", GRIB2 Ver.2.00). Sign-and-magnitude values are decoded;
+/// an all-ones (missing) value leaves its attribute out.
+fn product_attrs(section: &[u8], member: &str) -> Result<Vec<(Box<str>, AttrValue)>, String> {
+    let u8_present = |value: u8| (value != u8::MAX).then_some(value);
+    let u16_at = |offset: usize| be_u16(section, offset, member);
+    let mut attrs = vec![
+        attr(
+            "jma_pdt_type_of_generating_process",
+            Scalar::U8(section[11]),
+        ),
+        attr("jma_pdt_number_of_radars", Scalar::U8(section[12])),
+        attr("jma_pdt_time_range_unit", Scalar::U8(section[13])),
+    ];
+    if let Some(declination) = signed_magnitude_i16(u16_at(30)?) {
+        attrs.push(attr(
+            "jma_pdt_magnetic_declination_deg",
+            Scalar::F32(f32::from(declination) / 100.0),
+        ));
+    }
+    let frequency = be_u32(section, 32, member)?;
+    if frequency != u32::MAX {
+        attrs.push(attr(
+            "jma_pdt_transmitted_frequency_khz",
+            Scalar::U32(frequency),
+        ));
+    }
+    attrs.extend([
+        attr("jma_pdt_polarization", Scalar::U8(section[36])),
+        attr("jma_pdt_operation_mode", Scalar::U8(section[37])),
+    ]);
+    if let Some(correction) = u8_present(section[38]) {
+        let magnitude = f32::from(correction & 0x7f) / 10.0;
+        attrs.push(attr(
+            "jma_pdt_reflectivity_correction_db",
+            Scalar::F32(if correction & 0x80 != 0 {
+                -magnitude
+            } else {
+                magnitude
+            }),
+        ));
+    }
+    attrs.extend([
+        attr("jma_pdt_quality_control_indicator", Scalar::U8(section[39])),
+        attr("jma_pdt_clutter_filter_indicator", Scalar::U8(section[40])),
+    ]);
+    if let Some(elevation) = signed_magnitude_i16(u16_at(41)?) {
+        attrs.push(attr(
+            "jma_pdt_antenna_elevation_setting_deg",
+            Scalar::F32(f32::from(elevation) / 100.0),
+        ));
+    }
+    attrs.push(attr("jma_pdt_number_of_prfs", Scalar::U8(section[43])));
+    let prfs: Vec<f32> = [44, 46, 48]
+        .into_iter()
+        .map(u16_at)
+        .collect::<Result<Vec<u16>, String>>()?
+        .into_iter()
+        .filter(|raw| *raw != u16::MAX)
+        .map(|raw| f32::from(raw) / 10.0)
+        .collect();
+    if !prfs.is_empty() {
+        attrs.push((
+            "jma_pdt_representative_prf_hz".into(),
+            AttrValue::Array(ArrayBuf::F32(prfs)),
+        ));
+    }
+    for (name, offset) in [
+        ("jma_pdt_observation_start_offset_s", 50),
+        ("jma_pdt_observation_end_offset_s", 52),
+    ] {
+        if let Some(seconds) = signed_magnitude_i16(u16_at(offset)?) {
+            attrs.push(attr(name, Scalar::I16(seconds)));
+        }
+    }
+    if let Some(reference) = u8_present(section[54]) {
+        attrs.push(attr(
+            "jma_pdt_echo_top_reference_reflectivity_db",
+            Scalar::U8(reference),
+        ));
+    }
+    let bin_spacing = u32::from_be_bytes([0, section[55], section[56], section[57]]);
+    if bin_spacing != 0x00ff_ffff {
+        attrs.push(attr(
+            "jma_pdt_range_bin_spacing_m",
+            Scalar::U32(bin_spacing),
+        ));
+    }
+    let radial_spacing = u16_at(58)?;
+    if radial_spacing != u16::MAX {
+        attrs.push(attr(
+            "jma_pdt_radial_spacing_deg",
+            Scalar::F32(f32::from(radial_spacing) / 10.0),
+        ));
+    }
+    Ok(attrs)
+}
+
+/// Data representation template 5.200 and bitmap section values for the
+/// field: bits per value (octet 12), the largest level in this sweep (V,
+/// octets 13-14), the largest level (M, octets 15-16), the decimal scale
+/// factor (octet 17), each level's representative value as stored
+/// (sign-and-magnitude, times 10^decimal scale; octets 18 onward), and the
+/// bitmap indicator (section 6 octet 6).
+fn representation_attrs(section5: &[u8], section6: &[u8]) -> Vec<(Box<str>, AttrValue)> {
+    let u16_at = |offset: usize| {
+        section5
+            .get(offset..offset + 2)
+            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+    };
+    let mut attrs = Vec::new();
+    if let Some(bits) = section5.get(11) {
+        attrs.push(attr("jma_drt_bits_per_value", Scalar::U8(*bits)));
+    }
+    if let Some(used) = u16_at(12) {
+        attrs.push(attr("jma_drt_max_level_used", Scalar::U16(used)));
+    }
+    if let Some(levels) = u16_at(14) {
+        attrs.push(attr("jma_drt_max_level", Scalar::U16(levels)));
+        let table: Vec<u16> = (0..usize::from(levels))
+            .map_while(|index| u16_at(17 + index * 2))
+            .collect();
+        attrs.push((
+            "jma_drt_level_values".into(),
+            AttrValue::Array(ArrayBuf::U16(table)),
+        ));
+    }
+    if let Some(scale) = section5.get(16) {
+        attrs.push(attr("jma_drt_decimal_scale_factor", Scalar::U8(*scale)));
+    }
+    if let Some(indicator) = section6.get(5) {
+        attrs.push(attr("jma_bitmap_indicator", Scalar::U8(*indicator)));
+    }
+    attrs
 }
 
 /// WMO Code table 4.2, discipline 0 (meteorological), category 15 (radar):
@@ -1383,9 +1862,27 @@ mod tests {
             Some(f64::from(altitude)),
             "{id} altitude"
         );
+        // The GRIB reference time is the tar's 09:00Z stamp; the sweeps were
+        // observed in the ten minutes before it.
+        let reference = chrono::DateTime::parse_from_rfc3339("2019-10-12T09:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         assert_eq!(
-            volume.time_reference.to_rfc3339(),
-            "2019-10-12T09:00:00+00:00"
+            volume
+                .attrs
+                .other
+                .iter()
+                .find(|(name, _)| &**name == "jma_grib2_reference_time")
+                .map(|(_, value)| value),
+            Some(&AttrValue::text("2019-10-12T09:00:00Z")),
+            "{id}"
+        );
+        let coverage = volume.time_coverage.unwrap();
+        assert_eq!(coverage.start, volume.time_reference, "{id}");
+        assert!(
+            coverage.start >= reference - chrono::TimeDelta::minutes(10)
+                && coverage.end <= reference,
+            "{id}: {coverage:?}"
         );
         assert!(
             volume

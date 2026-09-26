@@ -16,6 +16,7 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `read_odim_h5_volume`, `decode_odim_h5_cartesian_max` |
 | `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `read_cfradial1_volume` |
 | `dorade` | `recast-radar-io-dorade` | `looks_like_dorade_bytes`, `peek_dorade_sweep`, then `read_dorade_sweep_volume` (even lengths) or `read_dorade_volume_from_slices` with the input twice (odd lengths) |
+| `dorade_archive` | `recast-radar-io-dorade` | `looks_like_zip_bytes`, `read_mobile_archive_from_bytes` (zip members inflated within the archive limits, DORADE sweeps grouped into volume runs and decoded, Level II members decoded by `recast-radar-io-nexrad`) |
 | `jma` | `recast-radar-io-jma` | `looks_like_jma_tar_bytes`, then by length mod 3: `read_jma_tar_volumes(None)`, `read_jma_tar_first_station`, or `jma_tar_station_headers` plus a site-filtered `read_jma_tar_volumes` |
 | `bzip2` | `recast-radar-bzip2` | `Decoder::decode_stream_into` on the input, then `Decoder::decode_two_into` on the input paired with its own first half, with a 64 MiB output limit |
 | `bzip2_encode` | `recast-radar-bzip2` | Differential: `Encoder::encode_into` at level 1 + (length mod 9) on the input, then on its first quarter appended to the same output; each stream must equal the `bzip2` crate's (libbz2-rs-sys, a port of libbzip2 1.0.8) except in the `origPtr` of a periodic block, and must decode to what was compressed with our decoder, and with the reference decoder when it differs from the reference's stream. The encoders (one per level) and the decoder are reused across inputs, so every stream is written over buffers that earlier calls filled |
@@ -27,8 +28,9 @@ are the expected result for most inputs. `bzip2_encode` panics on purpose
 when a round trip or the comparison with the reference fails.
 
 Not covered yet: Level III products (a target belongs with
-`recast-radar-io-level3` once that crate merges), and the mobile-radar zip
-archive and directory readers, which take paths instead of bytes.
+`recast-radar-io-level3` once that crate merges), and the mobile-radar
+directory reader, which walks a folder (its zip counterpart has the
+`dorade_archive` target).
 
 ## Layout
 
@@ -122,7 +124,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All ten targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All eleven targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2_volume dorade

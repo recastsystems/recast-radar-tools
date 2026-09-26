@@ -671,13 +671,15 @@ fn calibration_and_monitoring_variables_carry_units() {
         // and measure the transmit power per ray; NOXP has DORADE's radar
         // constant, powers, gains and system gain, and the RYIB transmit
         // power per ray; iesha per-dataset radar constants and pulse widths;
-        // KTLX none.
+        // KTLX the Message 31 VOL calibration constant, system ZDR and
+        // initial system PhiDP, and the VOL transmitter powers of every
+        // radial.
         let expected = [
             ("cfrad1-irene-sr2-20110827-120420-sur-sweeps01", true, true),
             ("cfrad1-dow8-20211011-223602-rhi-trim3-classic", true, true),
             ("dorade-noxp-20090501-190244-ppi", true, true),
             ("odim-iesha-20260305-0115-pvol", true, false),
-            ("l2-ktlx-20240315-000217-trim", false, false),
+            ("l2-ktlx-20240315-000217-trim", true, true),
         ];
         for ((id, calibration, monitoring), (expected_id, has_calibration, has_monitoring)) in
             counted.iter().zip(expected)

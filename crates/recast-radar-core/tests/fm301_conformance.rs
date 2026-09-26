@@ -185,6 +185,18 @@ const EXPECTED: &[(&str, &str)] = &[
         "ours keeps the Message 31 data-moment header values FM301 has no field for as source attributes of the field: nexrad_tover_db, nexrad_snr_threshold_db (ICD 2620002 Table XVII-B bytes 14-17, in dB) and nexrad_recombination (byte 18, the code). xradar and Py-ART drop them (section 9)",
     ),
     (
+        "nexrad-radial-extras",
+        "ours keeps the per-radial Level II values FM301 has no coordinate for as per-ray sweep variables: nexrad_radial_status, nexrad_azimuth_number, nexrad_cut_sector_number and nexrad_spot_blanking_status (Message 31 Table XVII-A or Message 1 Table III), each radial's message header as stored (nexrad_message_size, _sequence_number, _date, _milliseconds, _segments, _segment_number; Table II), the Message 31 RAD noise levels, radial flags and calibration constants, and the Message 1 calibration constant, atmospheric attenuation and TOVER. xradar and Py-ART drop them (section 9)",
+    ),
+    (
+        "nexrad-pulses-calibration",
+        "xradar 0.12 writes no per-ray n_samples, prt, pulse_width or calibration index for NEXRAD; ours writes each ray's VCP cut pulse count (Message 5), 1/PRF from the Message 32 PRF table where the file has one, the Message 18 transmitter pulse width (TAU_SP or TAU_LP), and a calib_index into radar_calibration entries holding the VOL calibration constant, system ZDR and initial system PhiDP as base_1km_hc, zdr_correction and system_phidp, as LROSE Radx maps them (section 9)",
+    ),
+    (
+        "nexrad-transmit-power",
+        "ours writes the Message 31 VOL SHV transmitter powers of every radial as the Table 301-11 monitoring variables radar_measured_transmit_power_h/v in dBm (xradar spelling measured_transmit_power_h/v); xradar 0.12 drops them for NEXRAD (section 9)",
+    ),
+    (
         "message-1-location",
         "xradar and Py-ART write 0 for the unknown site location of a Message 1 volume; the model keeps None (section 11)",
     ),
@@ -603,6 +615,33 @@ const OURS_ONLY_VARIABLES: &[(&str, &str)] = &[
     ("primary_axis", "fm301-extras"),
     ("follow_mode", "fm301-extras"),
     ("prt_mode", "fm301-extras"),
+    // Level II per-radial values (io-nexrad `radial_extras`).
+    ("nexrad_radial_status", "nexrad-radial-extras"),
+    ("nexrad_azimuth_number", "nexrad-radial-extras"),
+    ("nexrad_cut_sector_number", "nexrad-radial-extras"),
+    ("nexrad_spot_blanking_status", "nexrad-radial-extras"),
+    ("nexrad_message_size", "nexrad-radial-extras"),
+    ("nexrad_message_sequence_number", "nexrad-radial-extras"),
+    ("nexrad_message_date", "nexrad-radial-extras"),
+    ("nexrad_message_milliseconds", "nexrad-radial-extras"),
+    ("nexrad_message_segments", "nexrad-radial-extras"),
+    ("nexrad_message_segment_number", "nexrad-radial-extras"),
+    ("nexrad_horizontal_noise_level", "nexrad-radial-extras"),
+    ("nexrad_vertical_noise_level", "nexrad-radial-extras"),
+    ("nexrad_radial_flags", "nexrad-radial-extras"),
+    (
+        "nexrad_horizontal_calibration_constant",
+        "nexrad-radial-extras",
+    ),
+    (
+        "nexrad_vertical_calibration_constant",
+        "nexrad-radial-extras",
+    ),
+    ("nexrad_calibration_constant", "nexrad-radial-extras"),
+    ("nexrad_atmospheric_attenuation", "nexrad-radial-extras"),
+    ("nexrad_tover", "nexrad-radial-extras"),
+    ("measured_transmit_power_h", "nexrad-transmit-power"),
+    ("measured_transmit_power_v", "nexrad-transmit-power"),
 ];
 
 /// Root attributes ours writes that xradar 0.12 does not.
@@ -1665,6 +1704,16 @@ fn compare_xradar_view(
                 && matches!(name.as_str(), "pulse_width" | "r_calib_index");
             if (site_source && site_group) || odim_ray_constants {
                 report.note("site-parameters");
+                continue;
+            }
+            // Level II per-ray pulse parameters and calibration index.
+            if ctx.source == SourceFormat::NexradLevel2
+                && matches!(
+                    name.as_str(),
+                    "n_samples" | "prt" | "pulse_width" | "r_calib_index" | "calib_index"
+                )
+            {
+                report.note("nexrad-pulses-calibration");
                 continue;
             }
             report.error(format!("{what}/{name}: variable is not in the golden"));

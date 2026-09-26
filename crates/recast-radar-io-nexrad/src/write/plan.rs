@@ -5,8 +5,8 @@
 
 use recast_radar_core::bounded_read::MAX_GATES_PER_RADIAL;
 use recast_radar_core::model::{
-    AttrValue, Field, FieldName, Polarization, Quantity, RangeCoord, SourceFormat, Sweep,
-    SweepMode, Volume,
+    ArrayBuf, AttrValue, Field, FieldName, Polarization, Quantity, RangeCoord, Scalar,
+    SourceFormat, Sweep, SweepMode, Volume,
 };
 
 use super::quantize::{self, FieldEncoding};
@@ -209,6 +209,18 @@ pub(crate) struct SweepPlan<'a> {
     pub unambiguous_raw: Vec<u16>,
     pub moments: Vec<MomentPlan<'a>>,
     pub constants: SweepConstants,
+    /// Table XVII-A byte 29 of radials without their own source constants:
+    /// the azimuth indexing angle in 0.01 degree steps, 0 for none
+    /// ([`azimuth_indexing_raw`]).
+    pub azimuth_indexing_raw: u8,
+    /// Each source ray's message generation date and time as a Level II
+    /// source recorded them ([`source_message_times`]); empty otherwise
+    /// (every radial's message time is its collection time).
+    pub message_times: Vec<NexradTime>,
+    /// Each source ray's message header channel byte as a Level II source
+    /// recorded it ([`source_channels`]); empty otherwise (every radial on
+    /// the Open RDA channel).
+    pub channels: Vec<u8>,
     /// Each ray's own blocks when the source metadata has every radial of
     /// the sweep; empty otherwise (every radial carries `constants`, radial
     /// number = ray + 1, cut sector 1, no spot blanking or indexing).
@@ -454,6 +466,17 @@ pub(crate) fn plan_with_codings<'a>(
             fixed_angle_deg: fixed_angle(index, sweep, &mut summary),
             waveform,
             super_resolution: u8::from(azimuth_resolution == 1),
+            azimuth_indexing_raw: azimuth_indexing_raw(sweep),
+            channels: if volume.provenance.source_format == SourceFormat::NexradLevel2 {
+                source_channels(sweep)
+            } else {
+                Vec::new()
+            },
+            message_times: if volume.provenance.source_format == SourceFormat::NexradLevel2 {
+                source_message_times(sweep)
+            } else {
+                Vec::new()
+            },
             constants,
             rays,
             moments,
@@ -972,6 +995,83 @@ fn nyquist_note(sweeps: &[SweepPlan<'_>], summary: &mut WriteSummary) {
     }
 }
 
+/// Table XVII-A byte 29 for a sweep: the indexing angle a Level II source
+/// recorded (the sweep attribute `nexrad_azimuth_indexing_angle_deg`), else,
+/// when the sweep's rays are indexed (`Sweep::rays_are_indexed`), its ray
+/// angle resolution (`rays_angle_resolution_deg`, 0.01 to 2.55 degrees),
+/// else 0 (no indexing).
+fn azimuth_indexing_raw(sweep: &Sweep) -> u8 {
+    let to_raw = |degrees: f64| {
+        let raw = (degrees * 100.0).round();
+        (raw >= 1.0 && raw <= f64::from(u8::MAX)).then_some(raw as u8)
+    };
+    let recorded = sweep
+        .other
+        .iter()
+        .find(|(name, _)| &**name == "nexrad_azimuth_indexing_angle_deg")
+        .and_then(|(_, value)| match value {
+            AttrValue::Scalar(Scalar::F32(degrees)) => Some(f64::from(*degrees)),
+            _ => None,
+        });
+    if let Some(degrees) = recorded {
+        return to_raw(degrees).unwrap_or(0);
+    }
+    if sweep.rays_are_indexed == Some(true) {
+        return sweep
+            .rays_angle_resolution_deg
+            .and_then(|degrees| to_raw(f64::from(degrees)))
+            .unwrap_or(0);
+    }
+    0
+}
+
+/// The message header generation date and time (Table II halfwords 4 to 6)
+/// of every ray of a Level II sweep, as the decoder carries them
+/// (`nexrad_message_date`, `nexrad_message_milliseconds`). Empty when the
+/// sweep has neither, or they do not have one entry per ray.
+fn source_message_times(sweep: &Sweep) -> Vec<NexradTime> {
+    let find = |name: &str| {
+        sweep
+            .extra_vars
+            .iter()
+            .find(|variable| &*variable.name == name)
+            .map(|variable| &variable.values)
+    };
+    match (
+        find("nexrad_message_date"),
+        find("nexrad_message_milliseconds"),
+    ) {
+        (Some(ArrayBuf::U16(dates)), Some(ArrayBuf::U32(milliseconds)))
+            if dates.len() == sweep.nrays() && milliseconds.len() == sweep.nrays() =>
+        {
+            dates
+                .iter()
+                .zip(milliseconds)
+                .map(|(&date, &ms)| NexradTime { date, ms })
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The message header channel byte (Table II halfword 2, high byte) of every
+/// ray of a Level II sweep, as the decoder carries it: the per-ray
+/// `nexrad_message_channels` variable when the sweep's radials differ, else
+/// the sweep attribute of that name. Empty when the sweep has neither.
+fn source_channels(sweep: &Sweep) -> Vec<u8> {
+    const NAME: &str = "nexrad_message_channels";
+    if let Some(variable) = sweep.extra_vars.iter().find(|variable| &*variable.name == NAME)
+        && let ArrayBuf::U8(values) = &variable.values
+        && values.len() == sweep.nrays()
+    {
+        return values.clone();
+    }
+    match sweep.other.iter().find(|(name, _)| &**name == NAME) {
+        Some((_, AttrValue::Scalar(Scalar::U8(channels)))) => vec![*channels; sweep.nrays()],
+        _ => Vec::new(),
+    }
+}
+
 /// The radar's position must be known: Message 31's VOL block and the RDA
 /// adaptation data hold it, and a made-up one (such as 0, 0) would place
 /// the radar wrongly for every reader.
@@ -1419,7 +1519,9 @@ fn check_radial_lengths(sweeps: &[SweepPlan<'_>]) -> Result<(), WriteError> {
 }
 
 /// The volume header time: the source's when it is Level II, else the
-/// earliest written radial.
+/// first written radial's, the one that opens the volume (the earliest in a
+/// volume whose sweeps run in collection order, as NEXRAD's do). The
+/// real-time start chunk, which goes out with the first sweep, has the same.
 fn header_time(
     source: SourceMetadata<'_>,
     sweeps: &[SweepPlan<'_>],
@@ -1434,7 +1536,7 @@ fn header_time(
     sweeps
         .iter()
         .flat_map(|sweep| sweep.order.iter().filter_map(|ray| sweep.times.get(*ray)))
-        .min_by_key(|time| time.epoch_ms())
+        .next()
         .copied()
         .ok_or(WriteError::EmptyVolume)
 }

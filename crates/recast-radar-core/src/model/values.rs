@@ -8,7 +8,11 @@ use serde::{Deserialize, Serialize};
 /// CF requires `_FillValue`, `valid_range` and `flag_values` in the packed
 /// variable's type, and xarray picks the decoded dtype from the type of
 /// `scale_factor` (float32 attributes on 8/16-bit data decode to float32).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// Equality is structural: floats compare by bit pattern ([`Scalar::bit_eq`]),
+/// so a NaN a source file stores equals itself and two decodes of the same
+/// bytes compare equal.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Scalar {
     I8(i8),
     U8(u8),
@@ -60,13 +64,31 @@ impl Scalar {
         match (self, other) {
             (Self::F32(a), Self::F32(b)) => a.to_bits() == b.to_bits(),
             (Self::F64(a), Self::F64(b)) => a.to_bits() == b.to_bits(),
-            (a, b) => a == b,
+            (Self::I8(a), Self::I8(b)) => a == b,
+            (Self::U8(a), Self::U8(b)) => a == b,
+            (Self::I16(a), Self::I16(b)) => a == b,
+            (Self::U16(a), Self::U16(b)) => a == b,
+            (Self::I32(a), Self::I32(b)) => a == b,
+            (Self::U32(a), Self::U32(b)) => a == b,
+            (Self::I64(a), Self::I64(b)) => a == b,
+            (Self::U64(a), Self::U64(b)) => a == b,
+            _ => false,
         }
     }
 }
 
+impl PartialEq for Scalar {
+    fn eq(&self, other: &Self) -> bool {
+        self.bit_eq(*other)
+    }
+}
+
 /// A typed 1-D buffer, row-major when its owner has more than one dimension.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// Equality is structural: float elements compare by bit pattern, as for
+/// [`Scalar`], so buffers holding a source's NaN values compare equal to
+/// themselves.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ArrayBuf {
     I8(Vec<i8>),
     U8(Vec<u8>),
@@ -78,6 +100,27 @@ pub enum ArrayBuf {
     F32(Vec<f32>),
     F64(Vec<f64>),
     Text(Vec<Box<str>>),
+}
+
+impl PartialEq for ArrayBuf {
+    fn eq(&self, other: &Self) -> bool {
+        fn bits<T: Copy, B: PartialEq>(a: &[T], b: &[T], to_bits: fn(T) -> B) -> bool {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| to_bits(*x) == to_bits(*y))
+        }
+        match (self, other) {
+            (Self::I8(a), Self::I8(b)) => a == b,
+            (Self::U8(a), Self::U8(b)) => a == b,
+            (Self::I16(a), Self::I16(b)) => a == b,
+            (Self::U16(a), Self::U16(b)) => a == b,
+            (Self::I32(a), Self::I32(b)) => a == b,
+            (Self::U32(a), Self::U32(b)) => a == b,
+            (Self::I64(a), Self::I64(b)) => a == b,
+            (Self::F32(a), Self::F32(b)) => bits(a, b, f32::to_bits),
+            (Self::F64(a), Self::F64(b)) => bits(a, b, f64::to_bits),
+            (Self::Text(a), Self::Text(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 impl ArrayBuf {

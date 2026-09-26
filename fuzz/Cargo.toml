@@ -91,6 +91,14 @@ bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
+name = "dorade_archive"
+path = "fuzz_targets/dorade_archive.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
 name = "jma"
 path = "fuzz_targets/jma.rs"
 test = false

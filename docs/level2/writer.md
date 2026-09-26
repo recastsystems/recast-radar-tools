@@ -123,7 +123,9 @@ unwrapped.
 Every message has a 12-byte zero CTM header and a Table II message header: size in halfwords,
 RDA channel 8 (Open RDA, single channel), type, a sequence number (1 to 3 for the metadata
 messages, from 4 on for the radials, wrapping at 0x7FFF), the radial's or volume's date and time,
-and the segment fields.
+and the segment fields. A radial of a volume decoded from Level II keeps the channel byte and the
+message generation date and time its source recorded (the model's `nexrad_message_channels`,
+`nexrad_message_date` and `nexrad_message_milliseconds`).
 
 ### Metadata record
 
@@ -167,7 +169,7 @@ collected (below), each sized to its content (no padding after the last block):
 
 | Block | Content |
 |---|---|
-| Data Header Block (72 bytes, 10 pointer slots) | site (a Level II source radial's own identifier, blank ones included, unless `options.icao` is set; else the written site), ray time (ms), date, radial number (the source's, else ray + 1), azimuth, compression 0, radial length, azimuth resolution (below), radial status (below), elevation number, cut sector (the source's, else 1), elevation, spot blanking and azimuth indexing (the source's, else 0), block count and pointers |
+| Data Header Block (72 bytes, 10 pointer slots) | site (a Level II source radial's own identifier, blank ones included, unless `options.icao` is set; else the written site), ray time (ms), date, radial number (the source's, else ray + 1), azimuth, compression 0, radial length, azimuth resolution (below), radial status (below), elevation number, cut sector (the source's, else 1), elevation, spot blanking (the source's, else 0) and azimuth indexing (the source's; else the sweep's recorded indexing angle, `nexrad_azimuth_indexing_angle_deg`, or its ray angle resolution when `rays_are_indexed`; else 0), block count and pointers |
 | VOL (52 bytes, version 3.0) | latitude and longitude (`volume.location`), site height (the altitude rounded to the metre, feedhorn 0), calibration constant (`radar_calibration[0].base_1km_hc_dbz`), transmitter powers 0, system ZDR (`zdr_correction_db`), initial system PHIDP (`system_phidp_deg`), the VCP, processing status 0, ZDR bias estimate 0 |
 | ELV (12 bytes) | atmospheric attenuation 0, calibration constant |
 | RAD (28 bytes) | the ray's unambiguous range (`ray_vars.unambiguous_range_m`, 0.1 km) and Nyquist velocity (`ray_vars.nyquist_velocity_mps`, 0.01 m/s), each `options.unambiguous_range_m` and `options.nyquist_velocity_mps` where the ray has none, else 0; noise levels (`noise_hc_dbm`, `noise_vc_dbm`), calibration constants |
@@ -324,7 +326,9 @@ gives up is in `max_abs_error`. Which one is the default is an owner decision (O
   JMA's Takayasu becomes `TAKA` and Py-ART 2.3.0 cannot open that file. Set `options.icao` to
   another identifier where Py-ART must read the file.
 - **VCP**: `options.vcp`, else `volume.scan.vcp_pattern`, else 0 (no pattern).
-- **Volume time**: a Level II source's volume header time, else the earliest ray.
+- **Volume time**: a Level II source's volume header time, else the first written radial's (the
+  one that opens the volume; the earliest in a volume whose sweeps run in collection order, as
+  NEXRAD's do), as the real-time start chunk has it.
 - **Location**: latitude and longitude from `volume.location` into the VOL block and Message 18,
   altitude into the VOL block's site height. A volume without a finite latitude, longitude and
   height is refused (`MissingLocation`): the writer never writes a made-up position such as 0, 0.
@@ -372,7 +376,8 @@ record (`messages::metadata_record`) and its data messages (`data_messages`), an
 the non-radial messages of the data records at their places among the radials (the KIWA
 2026-09-17 archive's three mid-volume Message 2 updates, for example), every radial's constant
 blocks and Data Header items (its radar identifier, blank in KVWX 2008's radials, and azimuth
-resolution code included), the volume header time and every gate code. What changes: the grouping
+resolution code included), every radial's message channel byte and generation time, the volume
+header time and every gate code. What changes: the grouping
 of records (`radials_per_record` radials, by `record_layout`) and their compression, the radials'
 message sequence numbers (numbered from 4), the radial statuses that place a radial in the written
 volume (volume start and end, cut starts and ends), and what the options set: the header's volume

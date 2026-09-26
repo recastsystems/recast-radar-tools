@@ -997,6 +997,7 @@ dependencies = [
  "recast-radar-core",
  "recast-radar-io-nexrad",
  "recast-radar-testdata",
+ "serde_json",
  "thiserror",
  "zip",
 ]
@@ -1008,6 +1009,7 @@ dependencies = [
  "chrono",
  "recast-radar-core",
  "recast-radar-testdata",
+ "serde_json",
  "thiserror",
 ]
 

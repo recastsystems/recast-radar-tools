@@ -17,12 +17,16 @@
 //!
 //! A `Volume` needs the site and volume time of the volume header, so
 //! headerless input is [`NexradError::MissingVolumeHeader`] from every
-//! decoder. Inside a volume, a Message 29 record is skipped whole: its bytes
-//! are never read as message headers or radials.
+//! decoder. Inside a volume, a Message 29 record is read whole: its bytes
+//! are never read as message headers or radials, and the volume carries the
+//! message verbatim (`nexrad_unparsed_message_*`) with its header in the
+//! `nexrad_metadata_message_*` table.
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
 
-use recast_radar_core::model::Volume;
+use recast_radar_core::model::{ArrayBuf, Volume};
 use recast_radar_io_nexrad::messages::{self, MessageBody, MessageWalker};
 use recast_radar_io_nexrad::{
     NexradError, NexradMetadata, normalize_archive_bytes, read_bzip_block_preview_from_bytes,
@@ -138,17 +142,113 @@ fn without_message_counters(mut volume: Volume) -> Volume {
     volume
 }
 
+/// The Message 29 of the model-data file as its record holds it: the
+/// message header and body after the 12-byte CTM header, as long as the
+/// extended size in header bytes 12-15 says.
+fn model_data_message(mdm: &[u8]) -> Vec<u8> {
+    let record = messages::record_bytes(mdm).unwrap();
+    let header = &record[12..28];
+    assert_eq!(header[3], 29);
+    assert_eq!(u16::from_be_bytes([header[0], header[1]]), 0xFFFF);
+    let len = u32::from_be_bytes([header[12], header[13], header[14], header[15]]) as usize;
+    assert_eq!(len, MDM_MESSAGE_LEN);
+    record[12..12 + len].to_vec()
+}
+
+fn variable<'v>(volume: &'v Volume, name: &str) -> &'v ArrayBuf {
+    &volume
+        .extra_vars
+        .iter()
+        .find(|variable| &*variable.name == name)
+        .unwrap_or_else(|| panic!("{name} missing"))
+        .values
+}
+
+/// `volume` with the Message 29 it carries taken out: the
+/// `nexrad_unparsed_message_*` variables (which must hold exactly
+/// `message`) and its entry in the `nexrad_metadata_message_*` header table
+/// (which must hold its header as stored), and without the message
+/// counters.
+fn without_model_data(mut volume: Volume, message: &[u8]) -> Volume {
+    assert_eq!(
+        variable(&volume, "nexrad_unparsed_message_type"),
+        &ArrayBuf::U8(vec![29])
+    );
+    assert_eq!(
+        variable(&volume, "nexrad_unparsed_message_length"),
+        &ArrayBuf::U32(vec![message.len() as u32])
+    );
+    assert_eq!(
+        variable(&volume, "nexrad_unparsed_message_frames"),
+        &ArrayBuf::U8(message.to_vec())
+    );
+    volume
+        .extra_vars
+        .retain(|variable| !variable.name.starts_with("nexrad_unparsed_message"));
+    let ArrayBuf::U8(types) = variable(&volume, "nexrad_metadata_message_type") else {
+        panic!("message types are bytes");
+    };
+    let entry = types.iter().position(|kind| *kind == 29).unwrap();
+    assert_eq!(types.iter().filter(|kind| **kind == 29).count(), 1);
+    let be16 = |at: usize| u16::from_be_bytes([message[at], message[at + 1]]);
+    let expected: [(&str, u64); 8] = [
+        ("nexrad_metadata_message_channels", u64::from(message[2])),
+        ("nexrad_metadata_message_size", u64::from(be16(0))),
+        (
+            "nexrad_metadata_message_sequence_number",
+            u64::from(be16(4)),
+        ),
+        ("nexrad_metadata_message_date", u64::from(be16(6))),
+        (
+            "nexrad_metadata_message_milliseconds",
+            u64::from(u32::from_be_bytes([
+                message[8],
+                message[9],
+                message[10],
+                message[11],
+            ])),
+        ),
+        ("nexrad_metadata_message_segments", u64::from(be16(12))),
+        (
+            "nexrad_metadata_message_segment_number",
+            u64::from(be16(14)),
+        ),
+        ("nexrad_metadata_message_type", 29),
+    ];
+    for variable in volume
+        .extra_vars
+        .iter_mut()
+        .filter(|variable| variable.name.starts_with("nexrad_metadata_message_"))
+    {
+        let (_, value) = expected
+            .iter()
+            .find(|(name, _)| *name == &*variable.name)
+            .unwrap_or_else(|| panic!("unexpected {}", variable.name));
+        let removed = match &mut variable.values {
+            ArrayBuf::U8(values) => u64::from(values.remove(entry)),
+            ArrayBuf::U16(values) => u64::from(values.remove(entry)),
+            ArrayBuf::U32(values) => u64::from(values.remove(entry)),
+            other => panic!("{}: {other:?}", variable.name),
+        };
+        assert_eq!(removed, *value, "{}", variable.name);
+        variable.shape[0] -= 1;
+    }
+    without_message_counters(volume)
+}
+
 /// The model-data record inside a volume stream: the start chunk, then the
-/// MDM file's LDM record, then chunk 002. The Message 29 is skipped by its
-/// extended size, so the volume is the one decoded without it. Before the
-/// fix, the decoder advanced one 2432-byte frame into the 809 229-byte
-/// message and read its bytes as message headers: an `Ok` volume with VCP
-/// 52942, a volume time in 2104 and a cut at 339 degrees.
+/// MDM file's LDM record, then chunk 002. The Message 29 is read whole by
+/// its extended size, so the volume is the one decoded without it plus the
+/// message, carried verbatim with its header. Before the wave 3 fix, the
+/// decoder advanced one 2432-byte frame into the 809 229-byte message and
+/// read its bytes as message headers: an `Ok` volume with VCP 52942, a
+/// volume time in 2104 and a cut at 339 degrees.
 #[test]
-fn message_29_record_inside_a_volume_is_skipped_whole() {
+fn message_29_record_inside_a_volume_is_carried_whole() {
     let Some(mdm) = load(MDM) else { return };
     let start = load(START_CHUNK).unwrap();
     let chunk = load(CHUNK_002).unwrap();
+    let message = model_data_message(&mdm);
 
     let mut reference = start.clone();
     reference.extend_from_slice(&chunk);
@@ -173,15 +273,15 @@ fn message_29_record_inside_a_volume_is_skipped_whole() {
         reference.provenance.decode.skipped_message_count + 1
     );
     assert_eq!(
-        without_message_counters(decoded),
+        without_model_data(decoded, &message),
         without_message_counters(reference.clone())
     );
 
     // The same through the metadata decoder and the pipelined block decoder
-    // with a preview: the Message 29 changes nothing but the counters.
+    // with a preview: the Message 29 adds itself and changes the counters.
     let with_metadata = read_volume_with_metadata(&with_model_data).unwrap();
     assert_eq!(
-        without_message_counters(with_metadata.volume),
+        without_model_data(with_metadata.volume, &message),
         without_message_counters(reference.clone())
     );
     assert_eq!(with_metadata.metadata.errors, Vec::<String>::new());
@@ -196,13 +296,14 @@ fn message_29_record_inside_a_volume_is_skipped_whole() {
     let previewed =
         read_volume_from_bytes_with_bzip_preview(&with_model_data, 1, |_| previews += 1).unwrap();
     assert_eq!(
-        without_message_counters(previewed),
+        without_model_data(previewed, &message),
         without_message_counters(reference)
     );
     assert_eq!(previews, 0, "the volume has no complete sweep to preview");
 
     // The start chunk followed by the model-data record alone: the empty
-    // volume the start chunk decodes to, one skipped message more.
+    // volume the start chunk decodes to, one skipped message more, and the
+    // message.
     let mut start_and_model_data = start.clone();
     start_and_model_data.extend_from_slice(&mdm);
     let empty = read_volume_from_bytes(&start_and_model_data).unwrap();
@@ -213,7 +314,7 @@ fn message_29_record_inside_a_volume_is_skipped_whole() {
         start_only.provenance.decode.message_count + 1
     );
     assert_eq!(
-        without_message_counters(empty),
+        without_model_data(empty, &message),
         without_message_counters(start_only)
     );
 
@@ -230,4 +331,8 @@ fn message_29_record_inside_a_volume_is_skipped_whole() {
     assert_eq!(uncompressed.attrs, reference_site_and_sweeps.0);
     assert_eq!(uncompressed.location, reference_site_and_sweeps.1);
     assert_eq!(uncompressed.sweeps, reference_site_and_sweeps.2);
+    assert_eq!(
+        variable(&uncompressed, "nexrad_unparsed_message_frames"),
+        &ArrayBuf::U8(message)
+    );
 }

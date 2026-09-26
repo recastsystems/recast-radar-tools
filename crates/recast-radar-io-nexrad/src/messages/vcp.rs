@@ -280,6 +280,14 @@ impl PatternType {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table XI code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::ConstantElevationCut => 2,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Doppler velocity resolution (halfword 6, upper byte).
@@ -300,6 +308,15 @@ impl DopplerVelocityResolution {
             2 => Self::HalfMetrePerSecond,
             4 => Self::OneMetrePerSecond,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table XI code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u8 {
+        match self {
+            Self::HalfMetrePerSecond => 2,
+            Self::OneMetrePerSecond => 4,
+            Self::Unknown(code) => code,
         }
     }
 
@@ -333,6 +350,15 @@ impl PulseWidth {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table XI code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u8 {
+        match self {
+            Self::Short => 2,
+            Self::Long => 4,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Channel configuration of a cut (E2, upper byte).
@@ -356,6 +382,16 @@ impl ChannelConfiguration {
             1 => Self::RandomPhase,
             2 => Self::Sz2Phase,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table XI code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u8 {
+        match self {
+            Self::ConstantPhase => 0,
+            Self::RandomPhase => 1,
+            Self::Sz2Phase => 2,
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -557,6 +593,38 @@ impl CutSupplemental {
     /// Bit 10: base tilt cut.
     pub fn base_tilt_cut(self) -> bool {
         self.code & (1 << 10) != 0
+    }
+}
+
+/// Body length of a message in a fixed 2432-byte frame, given the body
+/// length its header declares and the body bytes the frame holds
+/// (`frame_body`, from the first body byte to the end of the frame or of the
+/// input).
+///
+/// Every message but 5 and 7 has the declared length (as far as the frame
+/// holds it). A Message 5 or 7 runs to its own length when that is longer:
+/// Table XI halfword 1 counts the halfwords of the VCP without the message
+/// header, and some converted files write that same number as the
+/// message header's size, leaving out the header's 8 halfwords, so the last
+/// 16 bytes of their cut table lie past the declared size but inside the
+/// frame. MetPy and Py-ART read the cut table the VCP declares; so do the
+/// walker and the volume decoder. NEXRAD files declare the same length both
+/// ways.
+pub(crate) fn fixed_frame_body_len(message_type: u8, declared: usize, frame_body: &[u8]) -> usize {
+    let declared = declared.min(frame_body.len());
+    if !matches!(message_type, 5 | 7) {
+        return declared;
+    }
+    match frame_body.first_chunk::<2>() {
+        Some(size) => {
+            let own = usize::from(u16::from_be_bytes(*size)) * 2;
+            if own > declared && own <= frame_body.len() {
+                own
+            } else {
+                declared
+            }
+        }
+        None => declared,
     }
 }
 

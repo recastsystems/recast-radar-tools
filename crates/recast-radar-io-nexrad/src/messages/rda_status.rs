@@ -362,6 +362,19 @@ impl RdaState {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::StartUp => 2,
+            Self::Standby => 4,
+            Self::Restart => 8,
+            Self::Operate => 16,
+            Self::Playback => 32,
+            Self::OfflineOperate => 64,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Operability status (halfword 2).
@@ -384,6 +397,11 @@ impl OperabilityStatus {
             state: OperabilityState::from_code(code & !1),
             automatic_calibration_disabled: code & 1 != 0,
         }
+    }
+
+    /// The halfword 2 code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        self.state.code() | u16::from(self.automatic_calibration_disabled)
     }
 }
 
@@ -416,6 +434,18 @@ impl OperabilityState {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::OnLine => 2,
+            Self::MaintenanceActionRequired => 4,
+            Self::MaintenanceActionMandatory => 8,
+            Self::CommandedShutDown => 16,
+            Self::Inoperable => 32,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Control status (halfword 3; mutually exclusive codes).
@@ -439,6 +469,16 @@ impl ControlStatus {
             4 => Self::RemoteOnly,
             8 => Self::Either,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::LocalOnly => 2,
+            Self::RemoteOnly => 4,
+            Self::Either => 8,
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -558,6 +598,16 @@ impl ControlAuthorization {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoAction => 0,
+            Self::LocalControlRequested => 2,
+            Self::RemoteControlRequested => 4,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// RDA build number (halfword 10, scaled Integer*2, note 6). Message 31
@@ -662,6 +712,16 @@ impl OperationalMode {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::Test => 2,
+            Self::Operational => 4,
+            Self::Maintenance => 8,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Enabled/disabled status coded 2/4 (super resolution in halfword 12 of the
@@ -683,6 +743,15 @@ impl EnableStatus {
             2 => Self::Enabled,
             4 => Self::Disabled,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::Enabled => 2,
+            Self::Disabled => 4,
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -845,6 +914,18 @@ impl CommandAcknowledgment {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::None => 0,
+            Self::RemoteVcpReceived => 1,
+            Self::BypassMapReceived => 2,
+            Self::CensorZonesReceived => 3,
+            Self::RedundantChannelControlAccepted => 4,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Channel control status (halfword 17).
@@ -865,6 +946,15 @@ impl ChannelControlStatus {
             0 => Self::Controlling,
             1 => Self::NonControlling,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::Controlling => 0,
+            Self::NonControlling => 1,
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -890,6 +980,16 @@ impl SpotBlanking {
             2 => Self::Enabled,
             4 => Self::Disabled,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NotInstalled => 0,
+            Self::Enabled => 2,
+            Self::Disabled => 4,
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -944,6 +1044,17 @@ impl TransitionPowerSource {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NotInstalled => 0,
+            Self::Off => 1,
+            Self::Ok => 3,
+            Self::StateUnknown => 4,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// RMS control status (halfword 25; mutually exclusive codes).
@@ -969,6 +1080,16 @@ impl RmsControl {
             other => Self::Unknown(other),
         }
     }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NonRms => 0,
+            Self::RmsInControl => 2,
+            Self::RdaInControl => 4,
+            Self::Unknown(code) => code,
+        }
+    }
 }
 
 /// Performance check status (halfword 26; mutually exclusive codes).
@@ -992,6 +1113,16 @@ impl PerformanceCheckStatus {
             1 => Self::ForcePerformanceCheckPending,
             2 => Self::InProgress,
             other => Self::Unknown(other),
+        }
+    }
+
+    /// The Table IV code, the inverse of [`Self::from_code`].
+    pub fn code(self) -> u16 {
+        match self {
+            Self::NoCommandPending => 0,
+            Self::ForcePerformanceCheckPending => 1,
+            Self::InProgress => 2,
+            Self::Unknown(code) => code,
         }
     }
 }

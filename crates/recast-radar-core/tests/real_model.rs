@@ -224,13 +224,15 @@ fn ray_instrument_variables_are_optional_but_must_align() {
     assert_eq!(sweep.seal(), Ok(()));
 
     // Archive II Message 31 carries the Nyquist velocity and unambiguous range
-    // (RAD block), but no PRT, sample count or independent samples.
+    // (RAD block); the sample count comes from the Message 5 cut (15 pulses on
+    // the surveillance cut, 64 on the Doppler cut). This file has no Message
+    // 32 PRF table, so no PRT, and no independent samples.
     let path = recast_radar_testdata::require_file!("l2-ktlx-20240315-000217-trim");
     let level2 = level2(&path);
-    for sweep in &level2.sweeps {
+    for (sweep, pulses) in level2.sweeps.iter().zip([15, 64]) {
         let vars = &sweep.ray_vars;
         assert_eq!(vars.prt_s, None);
-        assert_eq!(vars.n_samples, None);
+        assert_eq!(vars.n_samples, Some(vec![pulses; sweep.nrays()]));
         assert_eq!(vars.independent_samples, None);
         let nyquist = vars.nyquist_velocity_mps.as_ref().expect("RAD Nyquist");
         assert_eq!(nyquist.len(), sweep.nrays());

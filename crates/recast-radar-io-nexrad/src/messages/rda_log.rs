@@ -9,7 +9,7 @@
 //! data version (15-16), compression type (17-18), compressed size (19-20),
 //! decompressed size (21-22), spare (23-33), data (34 onward). The appended
 //! data is inflated with pure-Rust decoders: gzip via `flate2` (zlib-rs),
-//! bzip2 via `bzip2` (libbz2-rs-sys), and the first member of a ZIP archive
+//! bzip2 via `recast-radar-bzip2`, and the first member of a ZIP archive
 //! (stored or deflate).
 
 use std::borrow::Cow;
@@ -50,8 +50,17 @@ pub struct RdaLogData {
 
 impl RdaLogData {
     /// Decode a message body (the bytes after the 16-byte message header),
-    /// inflating compressed log data.
+    /// inflating compressed log data up to [`MAX_RDA_LOG_BYTES`].
     pub fn decode(body: &[u8]) -> Result<Self> {
+        Self::decode_limited(body, MAX_RDA_LOG_BYTES)
+    }
+
+    /// [`Self::decode`] with the log data limited to `limit` bytes (and
+    /// never more than [`MAX_RDA_LOG_BYTES`]): data that would be longer,
+    /// stored or inflated, is an error. The volume decoder passes what is
+    /// left of its RDA log allowance.
+    pub fn decode_limited(body: &[u8], limit: usize) -> Result<Self> {
+        let limit = limit.min(MAX_RDA_LOG_BYTES);
         crate::require_len(body, 0, RDA_LOG_DATA_OFFSET, "RDA log data header")?;
         let compression = RdaLogCompression::from_code(crate::be_u32(body, 34));
         if let RdaLogCompression::Unknown(code) = compression {
@@ -66,10 +75,18 @@ impl RdaLogData {
         crate::require_len(body, RDA_LOG_DATA_OFFSET, appended_len, "RDA log data")?;
         let appended = &body[RDA_LOG_DATA_OFFSET..RDA_LOG_DATA_OFFSET + appended_len];
         let data = match compression {
-            RdaLogCompression::Gzip => inflate(GzDecoder::new(appended), "gzip")?,
-            RdaLogCompression::Bzip2 => inflate_bzip2(appended)?,
-            RdaLogCompression::Zip => inflate_zip_first_member(appended)?,
-            RdaLogCompression::Uncompressed | RdaLogCompression::Unknown(_) => appended.to_vec(),
+            RdaLogCompression::Gzip => inflate(GzDecoder::new(appended), "gzip", limit)?,
+            RdaLogCompression::Bzip2 => inflate_bzip2(appended, limit)?,
+            RdaLogCompression::Zip => inflate_zip_first_member(appended, limit)?,
+            RdaLogCompression::Uncompressed | RdaLogCompression::Unknown(_) => {
+                if appended.len() > limit {
+                    return Err(NexradError::Compression(format!(
+                        "uncompressed RDA log data of {} bytes exceeds the {limit}-byte limit",
+                        appended.len()
+                    )));
+                }
+                appended.to_vec()
+            }
         };
         Ok(Self {
             version: crate::be_u32(body, 0),
@@ -123,19 +140,19 @@ impl RdaLogCompression {
     }
 }
 
-fn inflate(reader: impl std::io::Read, format: &str) -> Result<Vec<u8>> {
-    recast_radar_core::bounded_read::read_to_end_limited(reader, MAX_RDA_LOG_BYTES, "RDA log data")
+fn inflate(reader: impl std::io::Read, format: &str, limit: usize) -> Result<Vec<u8>> {
+    recast_radar_core::bounded_read::read_to_end_limited(reader, limit, "RDA log data")
         .map_err(|message| NexradError::Compression(format!("{format}: {message}")))
 }
 
-fn inflate_bzip2(compressed: &[u8]) -> Result<Vec<u8>> {
+fn inflate_bzip2(compressed: &[u8], limit: usize) -> Result<Vec<u8>> {
     let mut data = Vec::new();
-    crate::decompress_bzip2_stream_into(compressed, &mut data, MAX_RDA_LOG_BYTES, "RDA log data")?;
+    crate::decompress_bzip2_stream_into(compressed, &mut data, limit, "RDA log data")?;
     Ok(data)
 }
 
 /// Inflate the first member of a ZIP archive from its local file header.
-fn inflate_zip_first_member(bytes: &[u8]) -> Result<Vec<u8>> {
+fn inflate_zip_first_member(bytes: &[u8], limit: usize) -> Result<Vec<u8>> {
     let zip_error = |reason: String| NexradError::Compression(format!("zip: {reason}"));
     if bytes.len() < ZIP_LOCAL_HEADER_LEN || !bytes.starts_with(b"PK\x03\x04") {
         return Err(zip_error(
@@ -176,17 +193,15 @@ fn inflate_zip_first_member(bytes: &[u8]) -> Result<Vec<u8>> {
     };
     match method {
         0 if !has_data_descriptor => {
-            if data.len() > MAX_RDA_LOG_BYTES {
-                return Err(zip_error(format!(
-                    "stored member exceeds {MAX_RDA_LOG_BYTES} bytes"
-                )));
+            if data.len() > limit {
+                return Err(zip_error(format!("stored member exceeds {limit} bytes")));
             }
             Ok(data.to_vec())
         }
         0 => Err(zip_error(
             "stored member with a trailing data descriptor has no size".to_owned(),
         )),
-        8 => inflate(DeflateDecoder::new(data), "zip deflate"),
+        8 => inflate(DeflateDecoder::new(data), "zip deflate", limit),
         other => Err(zip_error(format!("unsupported compression method {other}"))),
     }
 }

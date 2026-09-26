@@ -14,8 +14,9 @@
 //! CFAC range delay. The RADD scan mode maps to `sweep_mode` (SUR ->
 //! `azimuth_surveillance`, PPI -> `sector`, RHI -> `rhi`, VER ->
 //! `vertical_pointing`, COP -> `coplane`, IDL -> `idle`, TAR -> `pointing`,
-//! MAN -> `manual_ppi`, others verbatim); for RHI sweeps the fixed angle is
-//! the AZIMUTH. Sweeps of a multi-file volume stay in input order (scan
+//! MAN -> `manual_ppi`, AIR -> `elevation_surveillance`, others verbatim);
+//! for RHI sweeps the fixed angle is the AZIMUTH. An AIR scan (an airborne
+//! tail radar) also sets the volume's `primary_axis` to `axis_y_prime`. Sweeps of a multi-file volume stay in input order (scan
 //! time), the time reference is the earliest sweep start, and every ray's
 //! RYIB time is a `time(time)` value relative to it.
 //!
@@ -35,18 +36,36 @@
 //! - **VOLD date offsets fixed**: the reference read the volume date at
 //!   offset 32; the standard layout puts `year` at 36 (verified against real
 //!   COW2 bytes). SSWB remains the primary time source.
-//! - **Transition-ray filtering**: rays with RYIB `ray_status != 0` (antenna
-//!   moving between fixed angles) are dropped. A real DOW7 Goshen sweepfile
-//!   is 42% transition rays spanning 0.5°-11.4° inside a "0.5°" sweep; the
-//!   reference kept them, smearing the PPI. Sweeps whose rays are *all*
-//!   flagged in-transition (a writer quirk in the same corpus) keep their
-//!   rays instead of erroring.
+//! - **Transition rays flagged, not dropped**: every ray is kept in file
+//!   order, and RYIB `ray_status` 1 (antenna moving between fixed angles)
+//!   sets FM301 `antenna_transition`, as LROSE Radx does (RadxPrint, LROSE
+//!   release 20250811, reads the COW2 fixture as 24 rays, the first 3 with
+//!   `antennaTransition: 1`), and as the CfRadial reader keeps a CfRadial
+//!   file's flagged rays. A real DOW7 Goshen sweepfile is 42% transition
+//!   rays spanning 0.5°-11.4° inside a "0.5°" sweep: a consumer that should
+//!   not draw them tests the flag.
 //! - **RADD layout**: the standard 1995 layout (lat/lon/alt at 80/84/88,
 //!   `data_compress` at 68) is parsed directly; the reference parsed a
 //!   shifted legacy layout first and patched it afterwards.
-//! - **CFAC corrections**: azimuth/elevation/range-delay/lat/lon correction
-//!   factors are applied when present (all-zero in the observed corpus, but
-//!   cheap and correct; Radx applies them unconditionally too).
+//! - **CFAC corrections**: the azimuth, elevation, range delay, latitude,
+//!   longitude and radar altitude corrections are applied when present (all
+//!   zero in the ground-based corpus; the N42RF fore sweep has a -37.895 m
+//!   range delay, so its first gate is at -37.9 m), and are therefore left
+//!   out of the model's `georeferencing_correction`, so a consumer does not
+//!   apply them a second time. The other ten apply to the platform
+//!   georeference, which the decoder carries as stored (the ASIB values of
+//!   the platform track): they are the `georeferencing_correction` items
+//!   `pressure_altitude_correction` (the CFAC kilometres in metres),
+//!   `eastward_ground_speed_correction`, `northward_ground_speed_correction`,
+//!   `vertical_velocity_correction`, `heading_correction`,
+//!   `roll_correction`, `pitch_correction`, `drift_correction`,
+//!   `rotation_correction` and `tilt_correction`, as LROSE Radx writes them
+//!   (RadxConvert writes the pressure altitude correction's kilometre value
+//!   under a metre unit). The group holds them when every sweepfile of the
+//!   volume has the same ones; each sweep keeps its own CFAC block as the
+//!   `dorade_cfac_*` sweep attributes either way. LROSE Radx leaves every
+//!   coordinate as stored and applies all sixteen only when asked to apply
+//!   the georeference.
 //! - **Per-ray times**: RYIB julian day + h/m/s/ms become the `time`
 //!   coordinate; the reference dropped ray times.
 //! - **Binary formats**: 8-bit int, 16-bit int, 32-bit int, and 32-bit float
@@ -57,24 +76,60 @@
 //!   1389–1399) when RADD `eff_unamb_vel` is missing; the reference used
 //!   `m·Va_short`, which is only correct for `n − m = 1` stagger ratios.
 //!
-//! Known limitations (documented, not silent):
-//! - Per-ray platform georeferencing (`ASIB`) is ignored: DOW/COW/RaXPol
-//!   deployments are parked, so the RADD site position applies to the whole
-//!   sweep. Airborne tail radars would need ASIB handling.
+//! Descriptor and ray block values without a coordinate reach the model
+//! (`descriptors.rs`): every SSWB, VOLD, RADD, CFAC, CSFD, CELV,
+//! SWIB and COMM field as a `dorade_*` sweep attribute, every PARM field as
+//! a `dorade_parm_*` attribute of its field, the CELV distances as the sweep
+//! variable `dorade_celv_distance`, and per ray the RYIB `ray_status` (FM301
+//! `antenna_transition`, and verbatim as `dorade_ryib_ray_status`),
+//! `true_scan_rate` (FM301 `scan_rate`), `sweep_num`, and the ASIB platform
+//! position and attitude (the sweep's platform track) with its velocities,
+//! winds and change rates (the CfRadial georeference variables). The RADD
+//! `radar_type` of an airborne or shipborne radar sets `platform_type` and
+//! `platform_is_mobile` (true, as LROSE Radx writes it). A
+//! SEDS block (Solo II edit summary) is the sweep attribute
+//! `dorade_seds_text` and the volume's `history`. The ASIB mapping is
+//! checked against LROSE RadxPrint on two NOAA P-3 N42RF tail radar sweeps
+//! (Hurricane Michael, 2018), whose ASIB blocks hold every motion and
+//! attitude value. No real file stores a RYIB `true_scan_rate` (every
+//! DORADE fixture and both full N42RF sweepfiles hold -9999 or -32768), so
+//! its mapping to FM301 `scan_rate` is untested on real data; only the
+//! verbatim `dorade_ryib_true_scan_rate` column is checked.
+//!
+//! The typed slots hold physical values, so a missing-value sentinel (-999,
+//! -9999 or -32768: any value at or below -999, or not finite) is NaN there,
+//! and a RYIB peak power that is not positive is NaN in the monitoring
+//! transmit power. Where a column holds such a value, the column is also
+//! kept verbatim as a per-ray variable, so the stored value is not lost:
+//! `dorade_ryib_true_scan_rate`, `dorade_ryib_peak_power_kw` and
+//! `dorade_asib_<field>` (the ASIB member names, with their units).
+//!
+//! Known limitation (documented, not silent): the site position is the RADD
+//! position with the CFAC corrections; the per-ray ASIB position is carried
+//! as the platform track but does not move the gates, so an airborne radar's
+//! gates are placed at the RADD site. An airborne ray's `azimuth` and
+//! `elevation` are its RYIB values as stored (for the N42RF sweeps, the
+//! rotation and tilt relative to the aircraft), not earth-relative angles
+//! computed from the attitude; LROSE Radx reads them the same way unless
+//! asked to apply the georeference.
 
 use std::path::Path;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
 use recast_radar_core::model::{
-    AttrValue, Field, FieldData, FieldName, FloatCoding, FollowMode, GateMapping, IntCoding,
-    LinearTransform, Monitoring, RadarCalibration, RangeCoord, Scalar, SourceFormat, Sweep,
+    ArrayBuf, AttrValue, ExtraVariable, Field, FieldData, FieldName, FloatCoding, FollowMode,
+    GateMapping, GeoreferencingCorrection, IntCoding, LinearTransform, Monitoring, PlatformTrack,
+    PlatformType, PrimaryAxis, RadarCalibration, RangeCoord, Scalar, SourceFormat, Sweep,
     SweepMode, Volume, floor_to_second,
 };
 
+use crate::descriptors::{self, Attrs};
 use crate::{DoradeError, Result};
 
 const BLOCK_HEADER_LEN: usize = 8;
+/// RADD `scan_mode` of an airborne tail radar (AIR).
+const SCAN_MODE_AIR: i16 = 9;
 const DORADE_BAD_F32: f32 = -9999.0;
 /// DORADE altitude fields are kilometres MSL.
 const KM_TO_M: f64 = 1000.0;
@@ -89,7 +144,7 @@ pub(crate) enum Endian {
 }
 
 impl Endian {
-    fn i16(self, bytes: &[u8], offset: usize) -> i16 {
+    pub(crate) fn i16(self, bytes: &[u8], offset: usize) -> i16 {
         let raw = [bytes[offset], bytes[offset + 1]];
         match self {
             Self::Little => i16::from_le_bytes(raw),
@@ -97,7 +152,7 @@ impl Endian {
         }
     }
 
-    fn i32(self, bytes: &[u8], offset: usize) -> i32 {
+    pub(crate) fn i32(self, bytes: &[u8], offset: usize) -> i32 {
         let raw = [
             bytes[offset],
             bytes[offset + 1],
@@ -110,8 +165,17 @@ impl Endian {
         }
     }
 
-    fn f32(self, bytes: &[u8], offset: usize) -> f32 {
+    pub(crate) fn f32(self, bytes: &[u8], offset: usize) -> f32 {
         f32::from_bits(self.i32(bytes, offset) as u32)
+    }
+
+    pub(crate) fn f64(self, bytes: &[u8], offset: usize) -> f64 {
+        let mut raw = [0; 8];
+        raw.copy_from_slice(&bytes[offset..offset + 8]);
+        match self {
+            Self::Little => f64::from_le_bytes(raw),
+            Self::Big => f64::from_be_bytes(raw),
+        }
     }
 }
 
@@ -229,6 +293,8 @@ pub struct DoradeVolumeBuilder {
     volume: Volume,
     /// SSWB/VOLD start time of each appended sweep.
     sweep_starts: Vec<Option<DateTime<Utc>>>,
+    /// The unapplied CFAC corrections of each appended sweep.
+    unapplied_cfac: Vec<Option<UnappliedCfac>>,
 }
 
 impl Default for DoradeVolumeBuilder {
@@ -242,6 +308,7 @@ impl DoradeVolumeBuilder {
         Self {
             volume: Volume::new("", DateTime::<Utc>::UNIX_EPOCH),
             sweep_starts: Vec::new(),
+            unapplied_cfac: Vec::new(),
         }
     }
 
@@ -258,12 +325,12 @@ impl DoradeVolumeBuilder {
     /// Decode one sweepfile and append it as a sweep.
     pub fn append(&mut self, bytes: &[u8]) -> Result<()> {
         let mut parse = SweepParse::new(detect_endian(bytes)?);
-        parse.run(bytes, false)?;
         check_sweep_count(self.volume.sweeps.len() + 1, "DORADE volume")
             .map_err(DoradeError::LimitExceeded)?;
-        // The volume budget covers every sweep appended so far.
-        let mut budget = DecodeBudget::volume();
+        // The volume budget covers every sweep appended so far, then the
+        // rays of this sweepfile as they are read.
         let existing_rays: usize = self.volume.sweeps.iter().map(Sweep::nrays).sum();
+        let budget = &mut parse.budget;
         budget
             .charge(
                 volume_field_capacity_bytes(&self.volume),
@@ -272,12 +339,22 @@ impl DoradeVolumeBuilder {
             )
             .and_then(|()| budget.charge(existing_rays, RAY_BYTES, "DORADE volume rays"))
             .map_err(DoradeError::LimitExceeded)?;
-        parse.finish_into(self, &mut budget)
+        parse.run(bytes, false)?;
+        parse.finish_into(self)
     }
 
-    /// Seal the volume: ray-time coverage and invariants.
+    /// Seal the volume: ray-time coverage and invariants, the FM301
+    /// `history` from the sweepfiles' SEDS edit summaries, and the CFAC
+    /// corrections the decoder does not apply as the
+    /// `georeferencing_correction`.
     pub fn finish(self) -> Result<Volume> {
-        let Self { mut volume, .. } = self;
+        let Self {
+            mut volume,
+            unapplied_cfac,
+            ..
+        } = self;
+        volume.attrs.history = seds_history(&volume.sweeps);
+        volume.georeferencing_correction = georeferencing_correction(&unapplied_cfac);
         volume.provenance.decode.decoded_ray_count = volume.sweeps.iter().map(Sweep::nrays).sum();
         volume.seal().map_err(|err| invalid(0, err.to_string()))?;
         volume.time_coverage = volume.ray_time_extent();
@@ -299,10 +376,81 @@ impl DoradeVolumeBuilder {
     }
 }
 
-/// Bytes a ray occupies in the model: three coordinates plus up to seven
-/// 4-byte ray variables (Nyquist velocity, PRT, unambiguous range, pulse
-/// width, sample count, calibration index, transmit power).
-const RAY_BYTES: usize = 3 * size_of::<f64>() + 7 * size_of::<f32>();
+/// The CfRadial `georeferencing_correction` of a volume: the CFAC corrections
+/// the decoder does not apply (the platform georeference ones), when every
+/// sweepfile has the same; `None` when a sweepfile has no full CFAC block or
+/// they differ (each sweep keeps its own `dorade_cfac_*` attributes). The
+/// pressure altitude correction is in metres (CFAC: km). A missing-value
+/// sentinel leaves its item out.
+fn georeferencing_correction(
+    unapplied: &[Option<UnappliedCfac>],
+) -> Option<Box<GeoreferencingCorrection>> {
+    let first = (*unapplied.first()?)?;
+    let bits = |values: &UnappliedCfac| values.map(f32::to_bits);
+    if !unapplied
+        .iter()
+        .all(|values| values.as_ref().map(bits) == Some(bits(&first)))
+    {
+        return None;
+    }
+    let item = |index: usize| Some(present(first[index])).filter(|value| value.is_finite());
+    Some(Box::new(GeoreferencingCorrection {
+        pressure_altitude_correction: item(0).map(|km| (f64::from(km) * KM_TO_M) as f32),
+        eastward_ground_speed_correction: item(1),
+        northward_ground_speed_correction: item(2),
+        vertical_velocity_correction: item(3),
+        heading_correction: item(4),
+        roll_correction: item(5),
+        pitch_correction: item(6),
+        drift_correction: item(7),
+        rotation_correction: item(8),
+        tilt_correction: item(9),
+        ..GeoreferencingCorrection::default()
+    }))
+}
+
+/// The FM301 `history` of a DORADE volume: the SEDS (Solo II edit summary)
+/// texts of its sweepfiles in sweep order, each distinct text once, joined
+/// by a newline, without trailing whitespace (LROSE Radx's `history` of one
+/// sweepfile); `None` when no sweepfile has one. Each sweep keeps its own
+/// text verbatim as `dorade_seds_text`.
+fn seds_history(sweeps: &[Sweep]) -> Option<String> {
+    let mut texts: Vec<&str> = Vec::new();
+    for sweep in sweeps {
+        for (name, value) in &sweep.other {
+            if let AttrValue::Text(text) = value
+                && name.starts_with("dorade_seds_text")
+            {
+                let text = text.trim_end();
+                if !texts.contains(&text) {
+                    texts.push(text);
+                }
+            }
+        }
+    }
+    (!texts.is_empty()).then(|| texts.join("\n"))
+}
+
+/// Bytes a ray occupies in the model, at most: the three coordinates
+/// (charged as `f64`); seven 4-byte ray variables (Nyquist velocity, PRT,
+/// unambiguous range, pulse width, sample count, calibration index,
+/// transmit power); `antenna_transition`; the RYIB status, sweep number
+/// and scan rate; the platform track (four `f64` and six `f32` columns);
+/// eight georeference `f32` columns; and the verbatim sentinel columns
+/// (eighteen ASIB values, the true scan rate and the peak power, `f32`).
+const RAY_BYTES: usize = 3 * size_of::<f64>()
+    + 7 * size_of::<f32>()
+    + size_of::<u8>()
+    + 3 * size_of::<i32>()
+    + 4 * size_of::<f64>()
+    + 6 * size_of::<f32>()
+    + 8 * size_of::<f32>()
+    + (ASIB_VALUES + 2) * size_of::<f32>();
+
+/// Bytes a ray occupies while the sweepfile is read: its RYIB and ASIB
+/// values and the list of its field rows (the rows themselves are bounded
+/// by `MAX_DORADE_CELLS_PER_SWEEP`).
+const PARSE_RAY_BYTES: usize = size_of::<(PendingRay, Vec<(usize, ParamRow)>)>();
 
 /// Allocated bytes of every field's value buffer in a volume.
 fn volume_field_capacity_bytes(volume: &Volume) -> usize {
@@ -370,6 +518,9 @@ struct ParamState {
     field: Option<Field>,
     /// Decoded row for the in-flight ray, if any.
     pending_row: Option<ParamRow>,
+    /// Every other PARM field ([`descriptors::parm`]), for the field's
+    /// attributes.
+    attrs: Attrs,
 }
 
 /// One decoded RDAT row in its storage type.
@@ -433,7 +584,23 @@ struct Cfac {
     longitude_deg: f32,
     latitude_deg: f32,
     radar_altitude_km: f32,
+    /// The corrections the decoder does not apply, when the block holds all
+    /// sixteen (see [`UnappliedCfac`]).
+    unapplied: Option<UnappliedCfac>,
 }
+
+/// The CFAC corrections of the platform georeference, which the decoder
+/// carries as stored and does not correct, in block order: pressure
+/// altitude (km, offset 28), east-west and north-south ground speed and
+/// vertical velocity (m/s, 36-47), heading, roll, pitch, drift, rotation
+/// angle and tilt (degrees, 48-71).
+type UnappliedCfac = [f32; 10];
+
+/// CFAC offsets of the [`UnappliedCfac`] values.
+const UNAPPLIED_CFAC_OFFSETS: [usize; 10] = [28, 36, 40, 44, 48, 52, 56, 60, 64, 68];
+
+/// The CFAC block length that holds all sixteen corrections.
+const CFAC_LEN: usize = 72;
 
 #[derive(Clone, Copy, Debug)]
 struct PendingRay {
@@ -442,10 +609,23 @@ struct PendingRay {
     /// RYIB `ray_status`: 0 = normal, 1 = in transition, 2 = bad.
     status: i32,
     time: Option<DateTime<Utc>>,
-    /// RYIB `peak_power` (kW), `None` where the file writes a missing value
-    /// (-999 in DOW6 files).
-    peak_power_kw: Option<f32>,
+    /// RYIB `peak_power` (kW), verbatim (-999 in DOW6 files).
+    peak_power_kw: f32,
+    /// RYIB `sweep_num`.
+    sweep_num: i32,
+    /// RYIB `true_scan_rate` (deg/s), verbatim.
+    true_scan_rate: f32,
+    /// The ASIB (platform information block) that follows the RYIB, its 18
+    /// values verbatim: longitude, latitude (deg), altitude MSL and AGL
+    /// (km), east-west, north-south and vertical velocity (m/s), heading,
+    /// roll, pitch, drift, rotation angle and tilt (deg), east-west,
+    /// north-south and vertical wind (m/s), heading and pitch change
+    /// (deg/s).
+    asib: Option<[f32; ASIB_VALUES]>,
 }
+
+/// Values of an ASIB block.
+const ASIB_VALUES: usize = 18;
 
 struct SweepParse {
     endian: Endian,
@@ -473,10 +653,23 @@ struct SweepParse {
     /// CELV per-cell ranges or CSFD-derived gate centres (metres, before the
     /// CFAC range delay).
     range_cells_m: Option<Vec<f32>>,
+    /// Every ray in file order, antenna-transition rays included.
     rays: Vec<(PendingRay, Vec<(usize, ParamRow)>)>,
-    /// Antenna-transition rays, kept aside so an all-transition sweep (seen
-    /// in the 2009 Goshen DOW7 corpus) can still decode instead of erroring.
-    transition_rays: Vec<(PendingRay, Vec<(usize, ParamRow)>)>,
+    /// Every field of the SSWB, VOLD, RADD, CFAC, CSFD, CELV, SWIB, COMM and
+    /// SEDS blocks, in block order ([`descriptors`]), for the sweep's
+    /// attributes.
+    descriptor_attrs: Attrs,
+    /// COMM blocks read so far (the second and later are numbered).
+    comm_blocks: usize,
+    /// SEDS blocks read so far (the second and later are numbered).
+    seds_blocks: usize,
+    /// Memory budget of the volume this sweepfile joins.
+    budget: DecodeBudget,
+    /// CELV cell distances (m) as the file stores them.
+    celv_distances_m: Option<Vec<f32>>,
+    /// RADD `radar_type` (0 ground, 1 airborne fore, 2 aft, 3 tail, 4 lower
+    /// fuselage, 5 shipborne).
+    radar_type: Option<i16>,
     current_ray: Option<PendingRay>,
     skipped_field_blocks: usize,
     decoded_cells: usize,
@@ -508,7 +701,12 @@ impl SweepParse {
             params: Vec::new(),
             range_cells_m: None,
             rays: Vec::new(),
-            transition_rays: Vec::new(),
+            descriptor_attrs: Vec::new(),
+            comm_blocks: 0,
+            seds_blocks: 0,
+            budget: DecodeBudget::volume(),
+            celv_distances_m: None,
+            radar_type: None,
             current_ray: None,
             skipped_field_blocks: 0,
             decoded_cells: 0,
@@ -567,25 +765,42 @@ impl SweepParse {
                 b"CSFD" => self.parse_csfd(block, pos)?,
                 b"SWIB" => self.parse_swib(block, pos)?,
                 b"SSWB" => self.parse_sswb(block, pos)?,
+                b"COMM" => {
+                    let attrs = descriptors::comm(self.endian, block, self.comm_blocks);
+                    self.comm_blocks += 1;
+                    self.descriptor_attrs.extend(attrs);
+                }
+                b"SEDS" => {
+                    let attrs = descriptors::seds(block, self.seds_blocks);
+                    self.seds_blocks += 1;
+                    self.descriptor_attrs.extend(attrs);
+                }
                 b"RYIB" => {
                     if stop_at_first_ray {
                         return Ok(());
                     }
-                    self.finish_current_ray();
+                    self.finish_current_ray()?;
                     self.current_ray = Some(self.parse_ryib(block, pos)?);
                 }
+                b"ASIB" => self.parse_asib(block),
                 b"RDAT" => self.parse_rdat(block, pos)?,
-                // COMM, ASIB, XSTF, RKTB, SEDS, FRIB, FRAD, WAVE, ...: skipped.
+                // RKTB (the untrimmed NOXP and N42RF sweepfiles end with one
+                // after the NULL block) is the writer's ray index: an angle
+                // lookup table and each ray's rotation angle, file offset and
+                // size. It is structural and skipped, like the Level II block
+                // pointers (descriptors.rs). XSTF, FRIB, FRAD, WAVE, ...: no
+                // real sample holds one, so they are skipped.
                 _ => {}
             }
             pos = end;
         }
-        self.finish_current_ray();
-        Ok(())
+        self.finish_current_ray()
     }
 
     fn parse_vold(&mut self, block: &[u8], offset: usize) -> Result<()> {
         require(block, 48, offset, "VOLD")?;
+        self.descriptor_attrs
+            .extend(descriptors::vold(self.endian, block));
         self.volume_number = i32::from(self.endian.i16(block, 10));
         // Standard layout: proj_name[20] at 16, then year at 36 (the
         // reference read offset 32, which lands inside proj_name).
@@ -626,6 +841,9 @@ impl SweepParse {
         // The standard 1995 RADD is 144 bytes; Radx writes a 300-byte
         // extended version with identical leading offsets.
         require(block, 144, offset, "RADD")?;
+        self.descriptor_attrs
+            .extend(descriptors::radd(self.endian, block));
+        self.radar_type = Some(self.endian.i16(block, 48));
         self.instrument = text(&block[8..16]);
         let value = |offset| valid_dorade_f32(self.endian.f32(block, offset));
         self.radd = RaddConstants {
@@ -658,6 +876,8 @@ impl SweepParse {
         // CFAC: nine correction floats starting at offset 8 (azimuth,
         // elevation, range delay, longitude, latitude, pressure alt, radar
         // alt, EW ground speed, NS ground speed, ...).
+        self.descriptor_attrs
+            .extend(descriptors::cfac(self.endian, block));
         if block.len() < 36 {
             return;
         }
@@ -668,6 +888,8 @@ impl SweepParse {
             longitude_deg: self.endian.f32(block, 20),
             latitude_deg: self.endian.f32(block, 24),
             radar_altitude_km: self.endian.f32(block, 32),
+            unapplied: (block.len() >= CFAC_LEN)
+                .then(|| UNAPPLIED_CFAC_OFFSETS.map(|offset| self.endian.f32(block, offset))),
         };
     }
 
@@ -683,6 +905,7 @@ impl SweepParse {
         let scale = self.endian.f32(block, 92);
         let bias = self.endian.f32(block, 96);
         let bad_data = self.endian.i32(block, 100);
+        let attrs = descriptors::parm(self.endian, block);
         // 1997+ extended PARM (216 bytes) carries per-field gate geometry.
         let (number_cells, first_cell_m, cell_spacing_m) = if block.len() >= 212 {
             let number_cells = self.endian.i32(block, 200).max(0) as usize;
@@ -711,12 +934,15 @@ impl SweepParse {
             cell_spacing_m,
             field: None,
             pending_row: None,
+            attrs,
         });
         Ok(())
     }
 
     fn parse_celv(&mut self, block: &[u8], offset: usize) -> Result<()> {
         require(block, 16, offset, "CELV")?;
+        self.descriptor_attrs
+            .extend(descriptors::celv(self.endian, block));
         let cells = self.endian.i32(block, 8).max(0) as usize;
         let available = (block.len() - 12) / 4;
         let count = cells.min(available);
@@ -725,11 +951,11 @@ impl SweepParse {
         }
         validate_gate_count(count, offset, "CELV")?;
         // CELV lists every cell range (uniform in the observed corpus).
-        self.range_cells_m = Some(
-            (0..count)
-                .map(|cell| self.endian.f32(block, 12 + cell * 4))
-                .collect(),
-        );
+        let distances: Vec<f32> = (0..count)
+            .map(|cell| self.endian.f32(block, 12 + cell * 4))
+            .collect();
+        self.celv_distances_m = Some(distances.clone());
+        self.range_cells_m = Some(distances);
         Ok(())
     }
 
@@ -737,6 +963,8 @@ impl SweepParse {
         // CSFD: num_segments (i32 at 8), dist_to_first (f32 at 12),
         // spacing[8] (f32 at 16), num_cells[8] (i16 at 48). 64 bytes.
         require(block, 64, offset, "CSFD")?;
+        self.descriptor_attrs
+            .extend(descriptors::csfd(self.endian, block));
         let segments = self.endian.i32(block, 8).clamp(0, 8) as usize;
         if segments == 0 {
             return Ok(());
@@ -768,6 +996,8 @@ impl SweepParse {
 
     fn parse_swib(&mut self, block: &[u8], offset: usize) -> Result<()> {
         require(block, 36, offset, "SWIB")?;
+        self.descriptor_attrs
+            .extend(descriptors::swib(self.endian, block));
         self.sweep_number = self.endian.i32(block, 16);
         self.fixed_angle_deg = self.endian.f32(block, 32);
         Ok(())
@@ -775,6 +1005,8 @@ impl SweepParse {
 
     fn parse_sswb(&mut self, block: &[u8], offset: usize) -> Result<()> {
         require(block, 20, offset, "SSWB")?;
+        self.descriptor_attrs
+            .extend(descriptors::sswb(self.endian, block));
         let start = self.endian.i32(block, 12);
         if start > 0 {
             self.start_time = DateTime::<Utc>::from_timestamp(i64::from(start), 0);
@@ -795,9 +1027,26 @@ impl SweepParse {
             elevation_deg: self.endian.f32(block, 28) + self.cfac.elevation_deg,
             status: self.endian.i32(block, 40),
             time,
-            peak_power_kw: Some(self.endian.f32(block, 32))
-                .filter(|power| power.is_finite() && *power > 0.0),
+            peak_power_kw: self.endian.f32(block, 32),
+            sweep_num: self.endian.i32(block, 8),
+            true_scan_rate: self.endian.f32(block, 36),
+            asib: None,
         })
+    }
+
+    /// ASIB (platform information block): attached to the ray whose RYIB
+    /// precedes it. A block shorter than its 80 bytes is ignored.
+    fn parse_asib(&mut self, block: &[u8]) {
+        let Some(ray) = self.current_ray.as_mut() else {
+            return;
+        };
+        if block.len() < 8 + ASIB_VALUES * 4 {
+            return;
+        }
+        let endian = self.endian;
+        ray.asib = Some(std::array::from_fn(|index| {
+            endian.f32(block, 8 + index * 4)
+        }));
     }
 
     fn ray_time(
@@ -943,22 +1192,24 @@ impl SweepParse {
             .or_else(|| self.params[param_index].number_cells)
     }
 
-    fn finish_current_ray(&mut self) {
+    /// Record the in-flight ray with its field rows. Every ray is kept,
+    /// whatever its RYIB `ray_status` (0 normal, 1 antenna in transition,
+    /// 2 bad): the status is carried per ray.
+    fn finish_current_ray(&mut self) -> Result<()> {
         let Some(ray) = self.current_ray.take() else {
-            return;
+            return Ok(());
         };
+        self.budget
+            .charge(1, PARSE_RAY_BYTES, "DORADE rays")
+            .map_err(DoradeError::LimitExceeded)?;
         let rows: Vec<(usize, ParamRow)> = self
             .params
             .iter_mut()
             .enumerate()
             .filter_map(|(index, param)| param.pending_row.take().map(|row| (index, row)))
             .collect();
-        // ray_status: 0 = normal, 1 = antenna in transition, 2 = bad.
-        if ray.status != 0 {
-            self.transition_rays.push((ray, rows));
-        } else {
-            self.rays.push((ray, rows));
-        }
+        self.rays.push((ray, rows));
+        Ok(())
     }
 
     /// The sweep's `range` coordinate: CELV / CSFD cell centres plus the
@@ -1046,21 +1297,9 @@ impl SweepParse {
         }
     }
 
-    fn finish_into(
-        mut self,
-        builder: &mut DoradeVolumeBuilder,
-        budget: &mut DecodeBudget,
-    ) -> Result<()> {
-        let mut skipped_transition_rays = self.transition_rays.len();
+    fn finish_into(mut self, builder: &mut DoradeVolumeBuilder) -> Result<()> {
         if self.rays.is_empty() {
-            if self.transition_rays.is_empty() {
-                return Err(invalid(0, "DORADE sweep contains no rays"));
-            }
-            // All-transition sweep (e.g. 2009 Goshen DOW7 v4): the status
-            // flag is the only thing wrong with the data, so keep it rather
-            // than failing the whole volume/archive.
-            self.rays = std::mem::take(&mut self.transition_rays);
-            skipped_transition_rays = 0;
+            return Err(invalid(0, "DORADE sweep contains no rays"));
         }
         if self.instrument.is_empty() {
             self.instrument = "DORADE".to_owned();
@@ -1120,8 +1359,20 @@ impl SweepParse {
         let fixed_angle = if self.fixed_angle_deg.is_finite() {
             self.fixed_angle_deg
         } else {
-            let sum: f32 = self.rays.iter().map(|(ray, _)| ray.elevation_deg).sum();
-            sum / self.rays.len() as f32
+            // The mean elevation of the rays not in antenna transition (of
+            // every ray when all are).
+            let scanning: Vec<f32> = self
+                .rays
+                .iter()
+                .filter(|(ray, _)| ray.status != 1)
+                .map(|(ray, _)| ray.elevation_deg)
+                .collect();
+            let elevations = if scanning.is_empty() {
+                self.rays.iter().map(|(ray, _)| ray.elevation_deg).collect()
+            } else {
+                scanning
+            };
+            elevations.iter().sum::<f32>() / elevations.len() as f32
         };
 
         let mut sweep = Sweep::new(
@@ -1158,14 +1409,14 @@ impl SweepParse {
                 _ => 4,
             };
             let gates = ngates.max(*widest);
-            budget
+            self.budget
                 .charge(nrays, gates.saturating_mul(word_bytes), "DORADE field")
                 .map_err(DoradeError::LimitExceeded)?;
             let mut field = new_field(param, u32::try_from(ngates).unwrap_or(u32::MAX));
             field.reserve_rows(nrays);
             param.field = Some(field);
         }
-        budget
+        self.budget
             .charge(nrays, RAY_BYTES, "DORADE sweep rays")
             .map_err(DoradeError::LimitExceeded)?;
 
@@ -1173,8 +1424,9 @@ impl SweepParse {
         let rays = std::mem::take(&mut self.rays);
         let transmit_power_dbm: Vec<f32> = rays
             .iter()
-            .map(|(ray, _)| ray.peak_power_kw.map_or(f32::NAN, kw_to_dbm))
+            .map(|(ray, _)| transmit_power_dbm(ray.peak_power_kw))
             .collect();
+        let ray_blocks: Vec<PendingRay> = rays.iter().map(|(ray, _)| *ray).collect();
         for (ray, rows) in rays {
             let time_s = ray.time.map_or(f64::NAN, |time| {
                 (time - reference).num_milliseconds() as f64 / 1000.0
@@ -1235,12 +1487,35 @@ impl SweepParse {
                 self.skipped_field_blocks += 1;
             }
         }
+        attach_ray_blocks(&mut sweep, &ray_blocks);
+        sweep.other = std::mem::take(&mut self.descriptor_attrs);
+        if let Some(distances) = self.celv_distances_m.take() {
+            sweep.extra_vars.push(ExtraVariable {
+                name: "dorade_celv_distance".into(),
+                dims: vec!["dorade_cell".into()],
+                shape: vec![u32::try_from(distances.len()).unwrap_or(u32::MAX)],
+                values: ArrayBuf::F32(distances),
+                attrs: vec![
+                    (
+                        "long_name".into(),
+                        AttrValue::text("CELV distance from the radar to each cell"),
+                    ),
+                    ("units".into(), AttrValue::text("m")),
+                    (
+                        "comment".into(),
+                        AttrValue::text(
+                            "DORADE CELV dist_cells, as stored (before the CFAC range delay correction)",
+                        ),
+                    ),
+                ],
+            });
+        }
 
         volume.provenance.decode.message_count += 1;
-        volume.provenance.decode.skipped_message_count +=
-            skipped_transition_rays + self.skipped_field_blocks;
+        volume.provenance.decode.skipped_message_count += self.skipped_field_blocks;
         volume.sweeps.push(sweep);
         builder.sweep_starts.push(sweep_start);
+        builder.unapplied_cfac.push(self.cfac.unapplied);
         Ok(())
     }
 }
@@ -1251,6 +1526,16 @@ impl SweepParse {
     /// (`radar_parameters`), and the VOLD text fields (global attributes,
     /// verbatim).
     fn describe_volume(&self, volume: &mut Volume) {
+        // A moving platform, as LROSE Radx writes `platform_is_mobile`.
+        if let Some(platform) = self.radar_type.and_then(platform_type) {
+            volume.platform_type = platform;
+            volume.attrs.platform_is_mobile = true;
+        }
+        // An airborne (AIR) scan rotates about the aircraft's longitudinal
+        // axis: FM301 `axis_y_prime`, as LROSE Radx sets it for tail radars.
+        if self.scan_mode == SCAN_MODE_AIR {
+            volume.primary_axis = Some(PrimaryAxis::AxisYPrime);
+        }
         let radd = &self.radd;
         let parameters = &mut volume.radar_parameters;
         parameters.beam_width_h_deg = radd.beam_width_h_deg;
@@ -1325,6 +1610,16 @@ fn kw_to_dbm(kw: f32) -> f32 {
     10.0 * kw.log10() + 60.0
 }
 
+/// A RYIB peak power (kW) as the monitoring transmit power (dBm): NaN where
+/// the file writes a missing value (not positive, or not finite).
+fn transmit_power_dbm(kw: f32) -> f32 {
+    if kw.is_finite() && kw > 0.0 {
+        kw_to_dbm(kw)
+    } else {
+        f32::NAN
+    }
+}
+
 /// The `calib_index` of `entry` in `calibration`: an equal entry's, else a
 /// new entry's.
 fn calibration_index(calibration: &mut Vec<RadarCalibration>, entry: RadarCalibration) -> i32 {
@@ -1391,7 +1686,241 @@ fn new_field(param: &ParamState, ngates: u32) -> Field {
     if !param.units.is_empty() {
         field.attrs.units = Some(param.units.clone().into());
     }
+    field.attrs.other = param.attrs.clone();
     field
+}
+
+/// The RADD `radar_type` as an FM301 `platform_type`: 1 to 4 are the
+/// airborne fore, aft, tail and lower fuselage radars, 5 shipborne. Ground
+/// radars (0) and unknown codes keep the default.
+fn platform_type(code: i16) -> Option<PlatformType> {
+    match code {
+        1 => Some(PlatformType::AircraftFore),
+        2 => Some(PlatformType::AircraftAft),
+        3 => Some(PlatformType::AircraftTail),
+        4 => Some(PlatformType::AircraftBelly),
+        5 => Some(PlatformType::Ship),
+        _ => None,
+    }
+}
+
+/// A DORADE float that is not a missing-value sentinel (-999, -9999,
+/// -32768) or NaN, else NaN.
+fn present(value: f32) -> f32 {
+    if value.is_finite() && value > -999.0 {
+        value
+    } else {
+        f32::NAN
+    }
+}
+
+fn per_ray_variable(name: &str, values: ArrayBuf, attrs: Vec<(&str, &str)>) -> ExtraVariable {
+    ExtraVariable {
+        name: name.into(),
+        dims: vec!["time".into()],
+        shape: vec![u32::try_from(values.len()).unwrap_or(u32::MAX)],
+        values,
+        attrs: attrs
+            .into_iter()
+            .map(|(key, value)| (Box::from(key), AttrValue::text(value)))
+            .collect(),
+    }
+}
+
+/// The RYIB and ASIB values of every ray: `ray_status` as FM301
+/// `antenna_transition` (status 1) and verbatim, `true_scan_rate` as FM301
+/// `scan_rate`, `sweep_num` verbatim, and the ASIB platform position and
+/// attitude as the sweep's platform track, with its velocities, winds and
+/// change rates as the CfRadial georeference variables. ASIB values are as
+/// stored: the CFAC corrections (sweep attributes `dorade_cfac_*`) are not
+/// applied to them. A column with a missing-value sentinel is also kept
+/// verbatim ([`push_verbatim_sentinels`]).
+fn attach_ray_blocks(sweep: &mut Sweep, rays: &[PendingRay]) {
+    if rays.is_empty() {
+        return;
+    }
+    sweep.ray_vars.antenna_transition =
+        Some(rays.iter().map(|ray| u8::from(ray.status == 1)).collect());
+    sweep.extra_vars.push(per_ray_variable(
+        "dorade_ryib_ray_status",
+        ArrayBuf::I32(rays.iter().map(|ray| ray.status).collect()),
+        vec![
+            ("long_name", "RYIB ray status"),
+            ("comment", "0 normal, 1 antenna in transition, 2 bad"),
+        ],
+    ));
+    sweep.extra_vars.push(per_ray_variable(
+        "dorade_ryib_sweep_num",
+        ArrayBuf::I32(rays.iter().map(|ray| ray.sweep_num).collect()),
+        vec![("long_name", "RYIB sweep number")],
+    ));
+    let rates: Vec<f32> = rays.iter().map(|ray| present(ray.true_scan_rate)).collect();
+    if rates.iter().any(|rate| rate.is_finite()) {
+        sweep.ray_vars.scan_rate_deg_per_s = Some(rates);
+    }
+    push_verbatim_sentinels(
+        sweep,
+        "dorade_ryib_true_scan_rate",
+        "degrees/s",
+        "RYIB true scan rate",
+        rays.iter().map(|ray| ray.true_scan_rate).collect(),
+        present,
+    );
+    push_verbatim_sentinels(
+        sweep,
+        "dorade_ryib_peak_power_kw",
+        "kW",
+        "RYIB peak transmitted power",
+        rays.iter().map(|ray| ray.peak_power_kw).collect(),
+        transmit_power_dbm,
+    );
+    if rays.iter().all(|ray| ray.asib.is_none()) {
+        return;
+    }
+    let column = |index: usize| -> Vec<f32> {
+        rays.iter()
+            .map(|ray| ray.asib.map_or(f32::NAN, |asib| present(asib[index])))
+            .collect()
+    };
+    let optional = |values: Vec<f32>| values.iter().any(|v| v.is_finite()).then_some(values);
+    let km_to_m = |values: Vec<f32>| -> Vec<f64> {
+        values
+            .into_iter()
+            .map(|km| f64::from(km) * KM_TO_M)
+            .collect()
+    };
+    let degrees = |values: Vec<f32>| -> Vec<f64> { values.into_iter().map(f64::from).collect() };
+    sweep.platform_track = Some(Box::new(PlatformTrack {
+        latitude_deg: degrees(column(1)),
+        longitude_deg: degrees(column(0)),
+        altitude_m: km_to_m(column(2)),
+        altitude_agl_m: optional(column(3)).map(km_to_m),
+        heading_deg: optional(column(7)),
+        roll_deg: optional(column(8)),
+        pitch_deg: optional(column(9)),
+        drift_deg: optional(column(10)),
+        rotation_deg: optional(column(11)),
+        tilt_deg: optional(column(12)),
+    }));
+    for (index, name, units, long_name) in [
+        (
+            4,
+            "eastward_velocity",
+            "m/s",
+            "ASIB east-west velocity of the platform",
+        ),
+        (
+            5,
+            "northward_velocity",
+            "m/s",
+            "ASIB north-south velocity of the platform",
+        ),
+        (
+            6,
+            "vertical_velocity",
+            "m/s",
+            "ASIB vertical velocity of the platform",
+        ),
+        (
+            13,
+            "eastward_wind",
+            "m/s",
+            "ASIB east-west wind at the platform",
+        ),
+        (
+            14,
+            "northward_wind",
+            "m/s",
+            "ASIB north-south wind at the platform",
+        ),
+        (
+            15,
+            "vertical_wind",
+            "m/s",
+            "ASIB vertical wind at the platform",
+        ),
+        (
+            16,
+            "heading_change_rate",
+            "degrees/s",
+            "ASIB heading change rate",
+        ),
+        (
+            17,
+            "pitch_change_rate",
+            "degrees/s",
+            "ASIB pitch change rate",
+        ),
+    ] {
+        if let Some(values) = optional(column(index)) {
+            sweep.extra_vars.push(per_ray_variable(
+                name,
+                ArrayBuf::F32(values),
+                vec![("long_name", long_name), ("units", units)],
+            ));
+        }
+    }
+    for (index, (name, units, long_name)) in ASIB_FIELDS.iter().enumerate() {
+        let raw = rays
+            .iter()
+            .map(|ray| ray.asib.map_or(f32::NAN, |asib| asib[index]))
+            .collect();
+        push_verbatim_sentinels(sweep, name, units, long_name, raw, present);
+    }
+}
+
+/// ASIB (platform_i, lrose-core `DoradeData.hh`) members in block order:
+/// verbatim variable name, units and description.
+#[rustfmt::skip]
+const ASIB_FIELDS: [(&str, &str, &str); ASIB_VALUES] = [
+    ("dorade_asib_longitude_deg", "degrees", "ASIB platform longitude"),
+    ("dorade_asib_latitude_deg", "degrees", "ASIB platform latitude"),
+    ("dorade_asib_altitude_msl_km", "km", "ASIB platform altitude MSL"),
+    ("dorade_asib_altitude_agl_km", "km", "ASIB platform altitude AGL"),
+    ("dorade_asib_ew_velocity_mps", "m/s", "ASIB east-west velocity"),
+    ("dorade_asib_ns_velocity_mps", "m/s", "ASIB north-south velocity"),
+    ("dorade_asib_vert_velocity_mps", "m/s", "ASIB vertical velocity"),
+    ("dorade_asib_heading_deg", "degrees", "ASIB heading"),
+    ("dorade_asib_roll_deg", "degrees", "ASIB roll"),
+    ("dorade_asib_pitch_deg", "degrees", "ASIB pitch"),
+    ("dorade_asib_drift_angle_deg", "degrees", "ASIB drift angle"),
+    ("dorade_asib_rotation_angle_deg", "degrees", "ASIB rotation angle"),
+    ("dorade_asib_tilt_deg", "degrees", "ASIB tilt"),
+    ("dorade_asib_ew_horiz_wind_mps", "m/s", "ASIB east-west wind"),
+    ("dorade_asib_ns_horiz_wind_mps", "m/s", "ASIB north-south wind"),
+    ("dorade_asib_vert_wind_mps", "m/s", "ASIB vertical wind"),
+    ("dorade_asib_heading_change_deg_per_s", "degrees/s", "ASIB heading change rate"),
+    ("dorade_asib_pitch_change_deg_per_s", "degrees/s", "ASIB pitch change rate"),
+];
+
+/// `raw` as the verbatim per-ray variable `name` when a value in it is a
+/// number that `typed` turns into NaN (a missing-value sentinel), so the
+/// stored value survives the typed slot's NaN.
+fn push_verbatim_sentinels(
+    sweep: &mut Sweep,
+    name: &str,
+    units: &str,
+    long_name: &str,
+    raw: Vec<f32>,
+    typed: impl Fn(f32) -> f32,
+) {
+    if raw
+        .iter()
+        .any(|value| !value.is_nan() && typed(*value).is_nan())
+    {
+        sweep.extra_vars.push(per_ray_variable(
+            name,
+            ArrayBuf::F32(raw),
+            vec![
+                ("long_name", long_name),
+                ("units", units),
+                (
+                    "comment",
+                    "as stored, missing-value sentinels included (NaN: the ray has no such block)",
+                ),
+            ],
+        ));
+    }
 }
 
 /// The DORADE RADD `scan_mode` code as an FM301 `sweep_mode` (design note
@@ -1403,6 +1932,10 @@ fn new_field(param: &ParamState, ngates: u32) -> Field {
 /// 1 = PPI (sector), 2 = COP (coplane), 3 = RHI, 4 = VER (vertical
 /// pointing), 5 = TAR (target/stationary), 6 = MAN (manual), 7 = IDL (idle),
 /// 8 = SUR (360° surveillance), 9 = AIR (airborne), 10 = HOR (horizontal).
+/// AIR, the scan of an airborne tail radar rotating about the aircraft's
+/// longitudinal axis, is `elevation_surveillance`, as LROSE Radx reads it
+/// (RadxPrint on the NOAA P-3 N42RF tail radar sweeps of Hurricane
+/// Michael).
 pub fn sweep_mode_from_radd(code: i16) -> SweepMode {
     match code {
         0 => SweepMode::Other("calibration".into()),
@@ -1414,7 +1947,7 @@ pub fn sweep_mode_from_radd(code: i16) -> SweepMode {
         6 => SweepMode::ManualPpi,
         7 => SweepMode::Idle,
         8 => SweepMode::AzimuthSurveillance,
-        9 => SweepMode::Other("airborne".into()),
+        SCAN_MODE_AIR => SweepMode::ElevationSurveillance,
         10 => SweepMode::Other("horizontal".into()),
         other => SweepMode::Other(format!("dorade_scan_mode_{other}").into()),
     }
@@ -1612,14 +2145,17 @@ mod tests {
         let sweep = &volume.sweeps[0];
         assert_eq!(sweep.sweep_mode, SweepMode::AzimuthSurveillance);
         // SWIB fixed angle 1.0052556, sweep 6; RYIB status [1, 1, 1, 0, ...]:
-        // three transition rays dropped, 21 kept.
+        // every ray kept, the first three flagged as antenna transition.
         assert_eq!(sweep.fixed_angle_deg, 1.005_255_6);
         assert_eq!(sweep.elevation_number, Some(6));
-        assert_eq!(sweep.nrays(), 21);
-        assert_eq!(volume.provenance.decode.skipped_message_count, 3);
+        assert_eq!(sweep.nrays(), 24);
+        let transition = sweep.ray_vars.antenna_transition.as_ref().unwrap();
+        assert_eq!(transition[..4], [1, 1, 1, 0]);
+        assert_eq!(transition.iter().filter(|flag| **flag == 1).count(), 3);
+        assert_eq!(volume.provenance.decode.skipped_message_count, 0);
         // CSFD: one segment, 375 cells, 50 m to the first, 100 m apart.
         assert_eq!(range_layout(sweep), (50.0, 100.0, 375));
-        for (ray, (azimuth, time_offset)) in [(0, (73.0, 280)), (1, (73.5, 297)), (20, (83.0, 609))]
+        for (ray, (azimuth, time_offset)) in [(3, (73.0, 280)), (4, (73.5, 297)), (23, (83.0, 609))]
         {
             assert_eq!(sweep.rays.azimuth_deg[ray], azimuth, "ray {ray}");
             assert_eq!(sweep.rays.elevation_deg[ray], 0.818_481_45, "ray {ray}");
@@ -1629,33 +2165,33 @@ mod tests {
         }
 
         // PARM DBZHC_F / VEL_F / ZDR_F (scale 100) and RHOHV_F (scale 10000),
-        // bias 0, bad -32768, on the first and last kept rays.
+        // bias 0, bad -32768, on the first scanning ray (3) and the last ray.
         let reflectivity = field(sweep, "DBZHC_F");
         let velocity = field(sweep, "VEL_F");
         let zdr = field(sweep, "ZDR_F");
         let rhohv = field(sweep, "RHOHV_F");
-        assert_gate(reflectivity, 0, 1, Some(-14.22));
-        assert_gate(reflectivity, 20, 0, Some(-19.85));
-        assert_gate(reflectivity, 20, 1, Some(-11.37));
-        assert_gate(reflectivity, 20, 50, None);
-        assert_gate(velocity, 0, 1, Some(-49.06));
-        assert_gate(velocity, 20, 0, Some(-66.56));
-        assert_gate(velocity, 20, 100, Some(54.18));
-        assert_gate(velocity, 20, 374, Some(-34.55));
-        assert_gate(zdr, 20, 0, Some(6.53));
-        assert_gate(rhohv, 20, 1, Some(0.8043));
-        // Bad-gate counts of the first and last kept rays.
-        assert_eq!(missing_gates(reflectivity, 375, 0), 265);
-        assert_eq!(missing_gates(velocity, 375, 0), 112);
-        assert_eq!(missing_gates(zdr, 375, 20), 335);
-        assert_eq!(missing_gates(rhohv, 375, 20), 332);
+        assert_gate(reflectivity, 3, 1, Some(-14.22));
+        assert_gate(reflectivity, 23, 0, Some(-19.85));
+        assert_gate(reflectivity, 23, 1, Some(-11.37));
+        assert_gate(reflectivity, 23, 50, None);
+        assert_gate(velocity, 3, 1, Some(-49.06));
+        assert_gate(velocity, 23, 0, Some(-66.56));
+        assert_gate(velocity, 23, 100, Some(54.18));
+        assert_gate(velocity, 23, 374, Some(-34.55));
+        assert_gate(zdr, 23, 0, Some(6.53));
+        assert_gate(rhohv, 23, 1, Some(0.8043));
+        // Bad-gate counts of the same rays.
+        assert_eq!(missing_gates(reflectivity, 375, 3), 265);
+        assert_eq!(missing_gates(velocity, 375, 3), 112);
+        assert_eq!(missing_gates(zdr, 375, 23), 335);
+        assert_eq!(missing_gates(rhohv, 375, 23), 332);
     }
 
     #[test]
     fn decodes_little_endian_rle_sweep() {
         // DOW6low RHI: little-endian HRD RLE, CELV 1000 cells from 24.98 m at
         // 49.97 m spacing, 104-byte PARMs, 41 rays of which the first 6 are
-        // transition rays.
+        // flagged as antenna transition.
         let bytes = corpus(DOW6_RHI);
         assert_eq!(detect_endian(&bytes).unwrap(), Endian::Little);
         let volume = read_dorade_sweep_volume(&bytes).expect("decode DOW6 RHI");
@@ -1676,37 +2212,40 @@ mod tests {
         ));
         assert!(close(volume.location.altitude_m.unwrap(), 1615.0, 0.01));
         let sweep = &volume.sweeps[0];
-        assert_eq!(sweep.nrays(), 35);
-        assert_eq!(volume.provenance.decode.skipped_message_count, 6);
+        assert_eq!(sweep.nrays(), 41);
+        let transition = sweep.ray_vars.antenna_transition.as_ref().unwrap();
+        assert!(transition[..6].iter().all(|flag| *flag == 1));
+        assert!(transition[6..].iter().all(|flag| *flag == 0));
+        assert_eq!(volume.provenance.decode.skipped_message_count, 0);
         let (first, spacing, gates) = range_layout(sweep);
         assert!(close(first, 24.98, 0.01), "first gate {first}");
         assert!(close(spacing, 49.97, 0.01), "gate spacing {spacing}");
         assert_eq!(gates, 1000);
-        assert!(close(nyquist(sweep, 0), 39.866_02, 1e-4));
-        assert_eq!(time_offset_ms(sweep, 0), 1126);
-        assert_eq!(time_offset_ms(sweep, 34), 3503);
+        assert!(close(nyquist(sweep, 6), 39.866_02, 1e-4));
+        assert_eq!(time_offset_ms(sweep, 6), 1126);
+        assert_eq!(time_offset_ms(sweep, 40), 3503);
 
         // Fields keep their DORADE names: DBZHC and VEL next to their edited
         // DBZHC_F and VEL_F copies.
         let reflectivity = field(sweep, "DBZHC");
         let velocity = field(sweep, "VEL");
         let velocity_f = field(sweep, "VEL_F");
-        assert_gate(reflectivity, 0, 0, Some(-12.24));
-        assert_gate(reflectivity, 0, 10, Some(-13.07));
-        assert_gate(reflectivity, 0, 100, None);
-        assert_gate(reflectivity, 34, 100, Some(-6.92));
-        assert_gate(velocity, 0, 0, Some(36.76));
-        assert_gate(velocity, 0, 10, Some(0.12));
-        assert_gate(velocity, 0, 100, Some(-34.92));
-        assert_gate(velocity, 0, 500, Some(40.44));
-        assert_gate(velocity, 0, 999, Some(-0.53));
-        assert_gate(velocity, 34, 500, Some(31.42));
-        assert_gate(velocity_f, 0, 0, Some(32.6));
-        assert_gate(velocity_f, 0, 10, Some(18.6));
-        assert_gate(field(sweep, "RHOHV"), 0, 0, Some(0.6755));
-        assert_gate(field(sweep, "PHIDP"), 0, 999, Some(125.2));
-        assert_eq!(missing_gates(reflectivity, 1000, 0), 887);
-        assert_eq!(missing_gates(field(sweep, "KDP"), 1000, 0), 1000);
+        assert_gate(reflectivity, 6, 0, Some(-12.24));
+        assert_gate(reflectivity, 6, 10, Some(-13.07));
+        assert_gate(reflectivity, 6, 100, None);
+        assert_gate(reflectivity, 40, 100, Some(-6.92));
+        assert_gate(velocity, 6, 0, Some(36.76));
+        assert_gate(velocity, 6, 10, Some(0.12));
+        assert_gate(velocity, 6, 100, Some(-34.92));
+        assert_gate(velocity, 6, 500, Some(40.44));
+        assert_gate(velocity, 6, 999, Some(-0.53));
+        assert_gate(velocity, 40, 500, Some(31.42));
+        assert_gate(velocity_f, 6, 0, Some(32.6));
+        assert_gate(velocity_f, 6, 10, Some(18.6));
+        assert_gate(field(sweep, "RHOHV"), 6, 0, Some(0.6755));
+        assert_gate(field(sweep, "PHIDP"), 6, 999, Some(125.2));
+        assert_eq!(missing_gates(reflectivity, 1000, 6), 887);
+        assert_eq!(missing_gates(field(sweep, "KDP"), 1000, 6), 1000);
     }
 
     #[test]
@@ -1923,30 +2462,35 @@ mod tests {
     #[test]
     fn rhi_scan_mode_is_detected_from_radd() {
         // DOW6low: RADD scan mode 3 (RHI), SWIB fixed angle 143.99875 deg;
-        // kept rays step elevation down from 30.0 to 13.0 deg by 0.5 deg at
-        // RYIB azimuths 125.78-126.55 deg (CFAC corrections all zero).
+        // after 6 antenna-transition rays, the rays step elevation down from
+        // 30.0 to 13.0 deg by 0.5 deg at RYIB azimuths 125.78-126.55 deg
+        // (CFAC corrections all zero).
         let volume = read_dorade_sweep_volume(&corpus(DOW6_RHI)).expect("decode");
         let sweep = &volume.sweeps[0];
         assert_eq!(sweep.sweep_mode, SweepMode::Rhi);
         assert_eq!(sweep.fixed_angle_deg, 143.998_75);
-        assert_eq!(sweep.nrays(), 35);
+        assert_eq!(sweep.nrays(), 41);
+        let transition = sweep.ray_vars.antenna_transition.as_ref().unwrap();
         for (index, (azimuth, elevation)) in sweep
             .rays
             .azimuth_deg
             .iter()
             .zip(&sweep.rays.elevation_deg)
             .enumerate()
+            .skip(6)
         {
-            assert_eq!(*elevation, 30.0 - 0.5 * index as f32, "ray {index}");
+            assert_eq!(transition[index], 0, "ray {index}");
+            assert_eq!(*elevation, 30.0 - 0.5 * (index - 6) as f32, "ray {index}");
             assert!((125.7..126.6).contains(azimuth), "ray {index}");
         }
+        assert_eq!(transition[..6], [1; 6]);
         assert!(close(
-            f64::from(sweep.rays.azimuth_deg[0]),
+            f64::from(sweep.rays.azimuth_deg[6]),
             125.775_07,
             1e-4
         ));
         assert!(close(
-            f64::from(sweep.rays.azimuth_deg[34]),
+            f64::from(sweep.rays.azimuth_deg[40]),
             126.549_61,
             1e-4
         ));
@@ -1961,6 +2505,7 @@ mod tests {
         assert_eq!(sweep_mode_from_radd(4), SweepMode::VerticalPointing);
         assert_eq!(sweep_mode_from_radd(2), SweepMode::Coplane);
         assert_eq!(sweep_mode_from_radd(6), SweepMode::ManualPpi);
+        assert_eq!(sweep_mode_from_radd(9), SweepMode::ElevationSurveillance);
         assert_eq!(sweep_mode_from_radd(0).as_str(), "calibration");
         assert_eq!(sweep_mode_from_radd(99).as_str(), "dorade_scan_mode_99");
     }
@@ -1988,11 +2533,12 @@ mod tests {
             );
             assert_eq!(coding.fill_value, Some(-32768), "{name}");
         }
-        // Raw word -3030 is gate 0 of the first kept ray (golden REF).
+        // Raw word -3030 is gate 0 of the first scanning ray, file ray 3
+        // (golden REF).
         let FieldData::I16 { values, .. } = &field(sweep, "DBZHC_F").data else {
             unreachable!()
         };
-        assert_eq!(values[0], -3030);
+        assert_eq!(values[3 * 375], -3030);
     }
 
     fn assert_near(actual: Option<f32>, expected: f64, what: &str) {

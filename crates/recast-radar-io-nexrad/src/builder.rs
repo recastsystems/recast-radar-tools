@@ -9,14 +9,34 @@
 use chrono::{DateTime, NaiveTime, Utc};
 use recast_radar_core::bounded_read::{DecodeBudget, MAX_SWEEPS_PER_VOLUME};
 use recast_radar_core::model::{
-    AttrValue, Field, FieldData, FieldName, FollowMode, GateMapping, IntCoding, PolarizationMode,
-    Quantity, Scalar, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
+    ArrayBuf, AttrValue, ExtraVariable, Field, FieldData, FieldName, FollowMode, GateMapping,
+    IntCoding, PolarizationMode, Quantity, Scalar, SourceFormat, Sweep, SweepMode, Volume,
+    floor_to_second,
 };
 
 use crate::messages::adaptation;
 use crate::messages::rda_status::RdaSystem;
 use crate::messages::vcp::VolumeCoveragePattern;
+use crate::passthrough::{self, MetadataMessages};
+use crate::radial_extras::{CalibrationTable, RAY_TABLE_BYTES, RadialExtras, RayColumns};
 use crate::{ArchiveCompression, MessageHeader, NexradError, RadialStatus, Result};
+
+/// Frames of non-radial messages kept for [`MetadataMessages`]: a metadata
+/// record has 134, and the real corpus adds at most a few message 2 frames
+/// in the data records. The cap bounds the copy (2.5 MiB) for hostile input.
+const MAX_METADATA_FRAMES: usize = 1024;
+/// Bytes of variable-length non-radial messages (a size of 65535, or
+/// message 29) kept for [`MetadataMessages`], all together; charged to the
+/// volume's `DecodeBudget` as well. No real Archive II file has one.
+pub(crate) const MAX_VARIABLE_METADATA_BYTES: usize = 16 * 1024 * 1024;
+/// Variable-length non-radial messages kept, so that tiny hostile ones
+/// cannot grow the header table past the fixed frames' cap.
+const MAX_VARIABLE_METADATA_MESSAGES: usize = MAX_METADATA_FRAMES;
+/// Archive II frame layout (Table II): 12-byte CTM header, 16-byte message
+/// header, then the body, in a 2432-byte frame.
+const FRAME_BYTES: usize = 2432;
+const CTM_BYTES: usize = 12;
+const MESSAGE_HEADER_BYTES: usize = 16;
 
 /// Two cut elevations closer than this (degrees) are the same tilt.
 const CUT_ELEVATION_MATCH_TOLERANCE_DEG: f32 = 0.05;
@@ -49,7 +69,7 @@ pub(crate) struct MomentBlock<'a> {
 
 /// Message 31 data-moment header values the FM301 model has no field for
 /// (ICD 2620002 Table XVII-B bytes 14-18).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct MomentHeaderExtras {
     /// Bytes 14-15, 0.1 dB steps.
     pub tover_raw: u16,
@@ -81,6 +101,22 @@ pub(crate) struct SweepState {
     /// Block name to field index; `usize::MAX` marks a moment whose gates do
     /// not align with the sweep range (it is dropped).
     blocks: Vec<([u8; 3], usize)>,
+    /// Per-radial values without an FM301 coordinate, one entry per ray
+    /// ([`crate::radial_extras`]).
+    columns: RayColumns,
+    /// Per moment block name: the Message 31 moment-header values the
+    /// field's attributes hold (from the radial that created it), and every
+    /// later ray whose values differ, with its own.
+    moment_extras: Vec<MomentExtrasRecord>,
+}
+
+/// See [`SweepState::moment_extras`].
+#[derive(Clone, Debug)]
+struct MomentExtrasRecord {
+    name: [u8; 3],
+    field_index: usize,
+    first: MomentHeaderExtras,
+    differing: Vec<(usize, MomentHeaderExtras)>,
 }
 
 /// A Level II volume under construction.
@@ -100,6 +136,22 @@ pub(crate) struct VolumeBuilder {
     vcp_cut_angles_deg: Vec<f32>,
     /// `true` once a message 18 set `Volume::radar_parameters`.
     adaptation_seen: bool,
+    /// Frames of the non-radial messages, rebuilt as record bytes for
+    /// [`MetadataMessages::from_frames`]: fixed frames, and variable-length
+    /// messages in their own framing.
+    metadata_frames: Vec<u8>,
+    /// Fixed frames in `metadata_frames`.
+    fixed_frames_kept: usize,
+    /// Bytes of variable-length messages in `metadata_frames`.
+    variable_bytes_kept: usize,
+    /// Variable-length messages in `metadata_frames`.
+    variable_messages_kept: usize,
+    /// The message header of each message (each segment) in
+    /// `metadata_frames`, in file order.
+    metadata_headers: Vec<MessageHeader>,
+    /// Non-radial messages past [`MAX_METADATA_FRAMES`] or
+    /// [`MAX_VARIABLE_METADATA_BYTES`], not kept.
+    metadata_frames_not_kept: usize,
     pub budget: DecodeBudget,
 }
 
@@ -125,8 +177,39 @@ impl VolumeBuilder {
             reference_ms,
             vcp_cut_angles_deg: Vec::new(),
             adaptation_seen: false,
+            metadata_frames: Vec::new(),
+            fixed_frames_kept: 0,
+            variable_bytes_kept: 0,
+            variable_messages_kept: 0,
+            metadata_headers: Vec::new(),
+            metadata_frames_not_kept: 0,
             budget,
         }
+    }
+
+    /// Keep the Archive II volume header date and time as stored (Table I
+    /// bytes 12-19): `Volume::time_reference` follows the first radial.
+    pub fn record_volume_header(&mut self, date: u32, milliseconds: u32) {
+        self.volume.attrs.other.extend([
+            (
+                "nexrad_volume_header_date".into(),
+                AttrValue::Scalar(Scalar::U32(date)),
+            ),
+            (
+                "nexrad_volume_header_milliseconds".into(),
+                AttrValue::Scalar(Scalar::U32(milliseconds)),
+            ),
+        ]);
+    }
+
+    /// Keep the first Message 31 radial's radar identifier (Table XVII-A
+    /// bytes 0-3, trimmed), which can differ from the volume header ICAO
+    /// that names the volume (KVWX 2008 radials record four spaces).
+    pub fn record_radar_identifier(&mut self, identifier: &[u8; 4]) {
+        self.volume.attrs.other.push((
+            "nexrad_radar_identifier".into(),
+            AttrValue::text(crate::ascii_trim(identifier)),
+        ));
     }
 
     pub fn decoded_radials(&self) -> usize {
@@ -173,15 +256,94 @@ impl VolumeBuilder {
         }
     }
 
-    /// Record a metadata-record message the volume decode reads: message 5
-    /// (see [`Self::set_vcp_message`]) or the first segment of message 18.
-    /// `body` is the message's first frame body.
-    pub fn set_metadata_message(&mut self, header: &MessageHeader, body: &[u8]) {
+    /// Record a non-radial message in a fixed frame: message 5 sets the VCP
+    /// (see [`Self::set_vcp_message`]), the first segment of message 18 the
+    /// radar parameters, and every frame is kept for the model, whatever
+    /// its type. `header_bytes` are the 16 message header bytes, `frame`
+    /// the rest of the frame (as far as the input reaches) and `body` the
+    /// message body, a prefix of `frame`. The whole frame is kept, so the
+    /// model can carry verbatim a message whose layout is not decoded. Every
+    /// type but 5 counts as skipped, as before the model carried them.
+    pub fn metadata_message(
+        &mut self,
+        header_bytes: &[u8],
+        header: &MessageHeader,
+        body: &[u8],
+        frame: &[u8],
+    ) {
         match header.message_type {
             5 => self.set_vcp_message(body),
             18 => self.set_adaptation_segment(header, body),
-            _ => {}
+            _ => self.count_skipped(),
         }
+        if header_bytes.len() != MESSAGE_HEADER_BYTES {
+            return;
+        }
+        if self.fixed_frames_kept >= MAX_METADATA_FRAMES {
+            self.metadata_frames_not_kept += 1;
+        } else {
+            let frame = if frame.len() >= body.len() {
+                frame
+            } else {
+                body
+            };
+            let frame = &frame[..frame
+                .len()
+                .min(FRAME_BYTES - CTM_BYTES - MESSAGE_HEADER_BYTES)];
+            let start = self.metadata_frames.len();
+            self.metadata_frames.resize(start + CTM_BYTES, 0);
+            self.metadata_frames.extend_from_slice(header_bytes);
+            self.metadata_frames.extend_from_slice(frame);
+            self.metadata_frames.resize(start + FRAME_BYTES, 0);
+            self.fixed_frames_kept += 1;
+            self.metadata_headers.push(header.clone());
+        }
+    }
+
+    /// `true` when a variable-length non-radial message with a
+    /// `body_len`-byte body fits [`MAX_VARIABLE_METADATA_BYTES`],
+    /// [`MAX_VARIABLE_METADATA_MESSAGES`] and the budget, so the decoder
+    /// reads it for [`Self::variable_message`].
+    pub fn keeps_variable_message(&self, body_len: usize) -> bool {
+        let len = (CTM_BYTES + MESSAGE_HEADER_BYTES).saturating_add(body_len);
+        self.variable_messages_kept < MAX_VARIABLE_METADATA_MESSAGES
+            && self.variable_bytes_kept.saturating_add(len) <= MAX_VARIABLE_METADATA_BYTES
+            && len <= self.budget.remaining()
+    }
+
+    /// Record a non-radial message in variable framing (a size of 65535,
+    /// Table II note 6, or message 29): kept for the model in its own
+    /// framing (a CTM header of zeros, `header_bytes`, `body`) when
+    /// [`Self::keeps_variable_message`], else counted. Counts as skipped,
+    /// as before the model carried it.
+    pub fn variable_message(&mut self, header_bytes: &[u8], header: &MessageHeader, body: &[u8]) {
+        self.count_skipped();
+        let len = CTM_BYTES + MESSAGE_HEADER_BYTES + body.len();
+        if header_bytes.len() != MESSAGE_HEADER_BYTES
+            || header.message_len() != MESSAGE_HEADER_BYTES + body.len()
+            || !self.keeps_variable_message(body.len())
+            || self
+                .budget
+                .charge(1, len, "Level II variable-length metadata messages")
+                .is_err()
+        {
+            self.metadata_frames_not_kept += 1;
+            return;
+        }
+        let start = self.metadata_frames.len();
+        self.metadata_frames.resize(start + CTM_BYTES, 0);
+        self.metadata_frames.extend_from_slice(header_bytes);
+        self.metadata_frames.extend_from_slice(body);
+        self.variable_bytes_kept += len;
+        self.variable_messages_kept += 1;
+        self.metadata_headers.push(header.clone());
+    }
+
+    /// A variable-length non-radial message the decoder did not read
+    /// because [`Self::keeps_variable_message`] said no: counted.
+    pub fn variable_message_not_kept(&mut self) {
+        self.count_skipped();
+        self.metadata_frames_not_kept += 1;
     }
 
     /// The transmitter frequency, antenna gain and (before Build 18) beam
@@ -309,8 +471,9 @@ impl VolumeBuilder {
         nyquist_velocity_mps: Option<f32>,
         unambiguous_range_m: Option<f32>,
         status: RadialStatus,
+        extras: &RadialExtras,
         expected_rays: usize,
-    ) -> usize {
+    ) -> Result<usize> {
         let instant_ms = self.ray_instant_ms(collect_date, collect_ms);
         if !self.reference_from_radial {
             self.reference_from_radial = true;
@@ -337,7 +500,14 @@ impl VolumeBuilder {
         unambiguous.push(unambiguous_range_m.unwrap_or(f32::NAN));
         let state = &mut self.sweeps[sweep];
         state.last_status = Some(status);
-        ray
+        if ray == 0 {
+            state.columns.reserve(expected_rays);
+        }
+        let per_sweep_values = state.columns.push(extras);
+        self.budget
+            .charge(1, RAY_TABLE_BYTES + per_sweep_values, "Level II ray tables")
+            .map_err(NexradError::LimitExceeded)?;
+        Ok(ray)
     }
 
     /// Write one moment row of ray `ray` into its field, creating the field on
@@ -365,6 +535,28 @@ impl VolumeBuilder {
         if field.nrays as usize > ray {
             // A second block of the same moment in one radial.
             return Ok(());
+        }
+        if let Some(extras) = block.extras {
+            let records = &mut self.sweeps[sweep].moment_extras;
+            match records.iter_mut().find(|record| record.name == block.name) {
+                None => records.push(MomentExtrasRecord {
+                    name: block.name,
+                    field_index,
+                    first: extras,
+                    differing: Vec::new(),
+                }),
+                Some(record) if record.first != extras => {
+                    self.budget
+                        .charge(
+                            1,
+                            size_of::<(usize, MomentHeaderExtras)>(),
+                            "Level II moment header values",
+                        )
+                        .map_err(NexradError::LimitExceeded)?;
+                    record.differing.push((ray, extras));
+                }
+                Some(_) => {}
+            }
         }
         push_row(field, ray, block.row, &mut self.budget)
     }
@@ -438,6 +630,22 @@ impl VolumeBuilder {
 
     /// Seal every sweep and fill the volume-level items derived from the rays.
     pub fn finish(mut self) -> Result<(Volume, Vec<SweepState>)> {
+        let mut calibration = CalibrationTable::default();
+        for (sweep, state) in self.volume.sweeps.iter_mut().zip(&mut self.sweeps) {
+            std::mem::take(&mut state.columns)
+                .attach(sweep, &mut calibration, &mut self.budget)
+                .map_err(NexradError::LimitExceeded)?;
+            attach_moment_extras(sweep, &state.moment_extras, &mut self.budget)?;
+        }
+        self.volume.radar_calibration = calibration.into_entries();
+        reference_at_earliest_ray(&mut self.volume);
+        MetadataMessages::from_frames(
+            &self.metadata_frames,
+            self.metadata_frames_not_kept,
+            &mut self.budget,
+        )
+        .attach(&mut self.volume);
+        passthrough::message_header_table(&self.metadata_headers, &mut self.volume.extra_vars);
         finalize(&mut self.volume, &self.vcp_cut_angles_deg)?;
         Ok((self.volume, self.sweeps))
     }
@@ -445,9 +653,60 @@ impl VolumeBuilder {
     /// A sealed copy of the volume so far (preview callbacks).
     pub fn snapshot(&self) -> Result<Volume> {
         let mut volume = self.volume.clone();
+        let mut budget = self.budget;
+        let mut calibration = CalibrationTable::default();
+        for (sweep, state) in volume.sweeps.iter_mut().zip(&self.sweeps) {
+            state
+                .columns
+                .clone()
+                .attach(sweep, &mut calibration, &mut budget)
+                .map_err(NexradError::LimitExceeded)?;
+            attach_moment_extras(sweep, &state.moment_extras, &mut budget)?;
+        }
+        volume.radar_calibration = calibration.into_entries();
+        reference_at_earliest_ray(&mut volume);
+        MetadataMessages::from_frames(
+            &self.metadata_frames,
+            self.metadata_frames_not_kept,
+            &mut budget,
+        )
+        .attach(&mut volume);
+        passthrough::message_header_table(&self.metadata_headers, &mut volume.extra_vars);
         finalize(&mut volume, &self.vcp_cut_angles_deg)?;
         Ok(volume)
     }
+}
+
+/// Move `Volume::time_reference` back to the earliest ray, floored to the
+/// second, when a ray was collected before the first radial of the file, so
+/// that no ray time is negative (FM301 `time` is seconds since a reference
+/// at or before the volume). Every NEXRAD file stores its earliest radial
+/// first; a converted file may store its lowest cut first although that cut
+/// was observed last. Ray times are whole milliseconds from the reference,
+/// so each is recomputed exactly.
+fn reference_at_earliest_ray(volume: &mut Volume) {
+    let earliest = volume
+        .sweeps
+        .iter()
+        .flat_map(|sweep| sweep.rays.time_s.iter().copied())
+        .fold(f64::INFINITY, f64::min);
+    if earliest >= 0.0 || !earliest.is_finite() {
+        return;
+    }
+    let old_ms = volume.time_reference.timestamp_millis();
+    let earliest_ms = (earliest * 1000.0).round() as i64;
+    let Some(instant) = DateTime::<Utc>::from_timestamp_millis(old_ms + earliest_ms) else {
+        return;
+    };
+    let reference = floor_to_second(instant);
+    let shift_ms = old_ms - reference.timestamp_millis();
+    for sweep in &mut volume.sweeps {
+        for time in &mut sweep.rays.time_s {
+            let ms = (*time * 1000.0).round() as i64;
+            *time = (ms + shift_ms) as f64 / 1000.0;
+        }
+    }
+    volume.time_reference = reference;
 }
 
 /// Seal sweeps, drop all-missing Nyquist vectors, set the polarization mode,
@@ -545,6 +804,94 @@ fn push_header_extras(field: &mut Field, block: &MomentBlock<'_>) {
         "nexrad_recombination".into(),
         AttrValue::Scalar(Scalar::U8(extras.control_flags)),
     ));
+}
+
+/// For a moment whose Message 31 header values differ between the rays of a
+/// sweep (never seen in the corpus), the values of every ray as the per-ray
+/// variables `nexrad_tover_db_<field>`, `nexrad_snr_threshold_db_<field>`
+/// and `nexrad_recombination_<field>`; the field's attributes keep the
+/// values of the radial that created it. A ray without the moment has the
+/// fill value (NaN, 255). The columns are charged to `budget`.
+fn attach_moment_extras(
+    sweep: &mut Sweep,
+    records: &[MomentExtrasRecord],
+    budget: &mut DecodeBudget,
+) -> Result<()> {
+    let nrays = sweep.nrays();
+    for record in records.iter().filter(|record| !record.differing.is_empty()) {
+        let Some(field) = sweep.fields.get(record.field_index) else {
+            continue;
+        };
+        // The staging column and the three variables: two f32 and one u8.
+        budget
+            .charge(
+                nrays,
+                size_of::<Option<MomentHeaderExtras>>() + 9,
+                "Level II moment header values",
+            )
+            .map_err(NexradError::LimitExceeded)?;
+        let mut values: Vec<Option<MomentHeaderExtras>> = (0..nrays)
+            .map(|ray| {
+                let present = ray < field.nrays as usize
+                    && u32::try_from(ray)
+                        .is_ok_and(|ray| field.absent_rows.binary_search(&ray).is_err());
+                present.then_some(record.first)
+            })
+            .collect();
+        for (ray, extras) in &record.differing {
+            if let Some(slot) = values.get_mut(*ray) {
+                *slot = Some(*extras);
+            }
+        }
+        let name = field.name.to_string();
+        let comment = "ICD 2620002 Table XVII-B bytes 14-18 of each radial's moment header: the radials of this sweep do not all agree";
+        let columns = [
+            (
+                format!("nexrad_tover_db_{name}"),
+                ArrayBuf::F32(
+                    values
+                        .iter()
+                        .map(|v| v.map_or(f32::NAN, |e| f32::from(e.tover_raw) * 0.1))
+                        .collect(),
+                ),
+                "dB",
+            ),
+            (
+                format!("nexrad_snr_threshold_db_{name}"),
+                ArrayBuf::F32(
+                    values
+                        .iter()
+                        .map(|v| v.map_or(f32::NAN, |e| f32::from(e.snr_threshold_raw) * 0.125))
+                        .collect(),
+                ),
+                "dB",
+            ),
+            (
+                format!("nexrad_recombination_{name}"),
+                ArrayBuf::U8(
+                    values
+                        .iter()
+                        .map(|v| v.map_or(u8::MAX, |e| e.control_flags))
+                        .collect(),
+                ),
+                "",
+            ),
+        ];
+        for (variable_name, values, units) in columns {
+            let mut attrs = vec![("comment".into(), AttrValue::text(comment))];
+            if !units.is_empty() {
+                attrs.push(("units".into(), AttrValue::text(units)));
+            }
+            sweep.extra_vars.push(ExtraVariable {
+                name: variable_name.into_boxed_str(),
+                dims: vec!["time".into()],
+                shape: vec![u32::try_from(nrays).unwrap_or(u32::MAX)],
+                values,
+                attrs,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Bytes allocated by a field's value buffer.

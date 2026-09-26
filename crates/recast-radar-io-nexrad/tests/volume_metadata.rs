@@ -27,7 +27,7 @@ mod common;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use recast_radar_core::model::RadarParameters;
+use recast_radar_core::model::{ArrayBuf, RadarParameters};
 use recast_radar_io_nexrad::messages::rda_status::RdaStatus;
 use recast_radar_io_nexrad::messages::{self, MessageBody, MessageWalker};
 use recast_radar_io_nexrad::{
@@ -881,8 +881,9 @@ fn frame_of(record: &[u8], message_type: u8) -> usize {
 
 /// A broken metadata message does not fail the decode: the committed KIWA
 /// start chunk with its Message 15 elevation segment count set to 9 (the
-/// ICD allows 1 to 5) still decodes the same volume and every other
-/// metadata field, and the error is reported.
+/// ICD allows 1 to 5) still decodes the same volume, without the message 15
+/// variables it carries otherwise, and every other metadata field, and the
+/// error is reported.
 #[test]
 fn broken_metadata_message_is_reported_not_fatal() {
     let Some(start) = load(CHUNKS[0]) else {
@@ -909,7 +910,29 @@ fn broken_metadata_message_is_reported_not_fatal() {
     mutated.extend_from_slice(&rest);
 
     let decoded = read_volume_with_metadata(&mutated).unwrap();
-    assert_eq!(decoded.volume, expected.volume);
+    let is_map = |name: &str| name.starts_with("nexrad_clutter_filter_map_");
+    assert!(expected.volume.extra_vars.iter().any(|v| is_map(&v.name)));
+    assert!(!decoded.volume.extra_vars.iter().any(|v| is_map(&v.name)));
+    // The volume counts the message it could not decode.
+    let not_decoded = "nexrad_metadata_messages_not_decoded";
+    assert!(
+        !expected
+            .volume
+            .extra_vars
+            .iter()
+            .any(|v| &*v.name == not_decoded)
+    );
+    let mut decoded_volume = decoded.volume.clone();
+    let count = decoded_volume
+        .extra_vars
+        .iter()
+        .position(|v| &*v.name == not_decoded)
+        .map(|at| decoded_volume.extra_vars.remove(at))
+        .expect("the broken message is counted");
+    assert_eq!(count.values, ArrayBuf::U32(vec![1]));
+    let mut without_map = expected.volume.clone();
+    without_map.extra_vars.retain(|v| !is_map(&v.name));
+    assert_eq!(decoded_volume, without_map);
     assert_eq!(decoded.metadata.clutter_filter_map, None);
     assert_eq!(
         decoded.metadata.errors.len(),

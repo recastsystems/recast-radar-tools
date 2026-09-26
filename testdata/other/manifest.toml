@@ -311,6 +311,46 @@ derivation = "container conversion of part of one directory of https://zenodo.or
 tags = ["archive", "contains:dorade", "provider:zenodo", "license:CC-BY-4.0", "era:2009", "site:noxp", "project:vortex2", "sweepset:noxp-20090610-003210", "derived", "derivation:container-conversion"]
 description = "Zip of one NOXP volume directory: three head-trimmed ascending sweeps (0.5, 1.0, 2.0 deg, stored out of time order) plus the directory's three non-radar text files"
 
+[[file]]
+id = "dorade-n42rf-ts-20181010-122951-air"
+format = "dorade"
+urls = ["https://raw.githubusercontent.com/Alex-DesRosiers/radarqc_scans/0dc45a26087ea2b2e20fcf6aadb87dd4e870d0a3/swp.1181010122951.N42RF-TS.196.-20.0_AIR_v3394"]
+sha256 = "5fd6c9dd5ad4977a968443bd4b59a0a79cf9d2a4943a2b40b1fa8e18010d75b7"
+size = 2919700
+tags = ["provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "quirk:seds-edit-history"]
+description = "NOAA P-3 N42RF tail Doppler radar (aft antenna, N42RF-TS) airborne sweep in the eye of Hurricane Michael 2018-10-10 12:29:51Z, tilt -20 deg; RADD radar type 3 (tail), scan mode 9 (AIR), little-endian HRD RLE, CELV 627 x 75 m, 17 fields, 360 rays, every ASIB motion and attitude value set; ends with NULL, RKTB and a SEDS block (Solo II edit history). Unmodified file of the GitHub repository Alex-DesRosiers/radarqc_scans, which states no license; the data are NOAA AOC P-3 radar data edited in Solo II"
+
+[[file]]
+id = "dorade-n42rf-ts-20181010-122951-air-head24"
+format = "dorade"
+sha256 = "eee18202118cfd6f1b74ae59f59c47917edba42507a8e3189375ae5e9e6b4d35"
+size = 432440
+committed = "files/other/dorade/swp.1181010122951.N42RF-TS.196.-20.0_AIR_v3394.head24"
+derived_from = "dorade-n42rf-ts-20181010-122951-air"
+derivation = "head trim: first 432440 bytes (SSWB VOLD RADD 17xPARM CELV CFAC SWIB COMM + first 24 RYIB/ASIB/RDAT ray groups, cut at the ray-group boundary before ray 24)"
+tags = ["provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "derived", "derivation:head-trim"]
+description = "First 24 of 360 rays of dorade-n42rf-ts-20181010-122951-air: the NOAA P-3 aft tail radar in the eye of Hurricane Michael, with real platform velocities, heading, roll, pitch, drift, rotation, tilt, winds and heading and pitch change rates in every ASIB"
+
+[[file]]
+id = "dorade-n42rf-tm-20181010-123925-air"
+format = "dorade"
+urls = ["https://raw.githubusercontent.com/Alex-DesRosiers/radarqc_scans/0dc45a26087ea2b2e20fcf6aadb87dd4e870d0a3/swp.1181010123925.N42RF-TM.137.20.0_AIR_v3532"]
+sha256 = "7766bc200ab520660071157f23233927055bb4e67653e27dfe2d837872cf5748"
+size = 3100560
+tags = ["provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "quirk:cfac-corrections", "quirk:seds-edit-history"]
+description = "NOAA P-3 N42RF tail Doppler radar (fore antenna, N42RF-TM) airborne sweep in the inner-core convection of Hurricane Michael 2018-10-10 12:39:25Z, tilt +20 deg; RADD radar type 3 (tail), scan mode 9 (AIR), little-endian HRD RLE, CELV 627 x 75 m, 17 fields, 360 rays; non-zero CFAC corrections (range delay -37.895 m, pressure altitude, pitch, drift, rotation and tilt); ends with NULL, RKTB and a SEDS block. Unmodified file of the GitHub repository Alex-DesRosiers/radarqc_scans, which states no license; the data are NOAA AOC P-3 radar data edited in Solo II"
+
+[[file]]
+id = "dorade-n42rf-tm-20181010-123925-air-head48"
+format = "dorade"
+sha256 = "70a9b7ad832bc6d2fcd9282a07fdc18d42393adf977609a88bfe293723fcd723"
+size = 222892
+committed = "files/other/dorade/swp.1181010123925.N42RF-TM.137.20.0_AIR_v3532.head48"
+derived_from = "dorade-n42rf-tm-20181010-123925-air"
+derivation = "head trim: first 222892 bytes (SSWB VOLD RADD 17xPARM CELV CFAC SWIB COMM + first 48 RYIB/ASIB/RDAT ray groups, cut at the ray-group boundary before ray 48)"
+tags = ["provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "quirk:cfac-corrections", "derived", "derivation:head-trim"]
+description = "First 48 of 360 rays of dorade-n42rf-tm-20181010-123925-air: the NOAA P-3 fore tail radar in Hurricane Michael's inner core, with real ASIB motion and attitude values and non-zero CFAC corrections"
+
 # ---------------------------------------------------------------------------
 # JMA polar-coordinate radar GRIB2 tar
 # ---------------------------------------------------------------------------

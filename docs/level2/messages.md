@@ -35,7 +35,8 @@ The goldens are under `testdata/level2/golden/<group>/`; the tests are in `crate
 | 33 | `rda_log.rs` | `RdaLogData` (`RdaLog`) | **no real sample** |
 
 `read_volume_with_metadata` (below) collects messages 2, 3, 5/7, 8, 13, 15, 18 and 32 and the per-sweep
-message 31 constant blocks into `NexradMetadata`.
+message 31 constant blocks into `NexradMetadata`. Every `read_*` volume also carries all of them in the model
+(below, "Metadata in the model").
 
 ## Golden files
 
@@ -161,6 +162,117 @@ same bytes, with the same errors (including `MissingVolumeHeader` for headerless
 - KVWX 2008-04-15, whose 2500 radials all record four spaces as the radar identifier, was rejected with "empty
   message 31 id" until wave 3. MetPy and Py-ART read it, and both decoders now do (see Message 31).
 
+## Metadata in the model
+
+Every value the decoders read reaches the `Volume` and its FM301 view. FM301 slots are used where the ICD value
+is the FM301 quantity; everything else is a `nexrad_*` item named after the ICD field, with the ICD's units.
+Which view shows what: the FM301 slots (the monitoring group and `radar_calibration` included) are in every
+view; the `nexrad_*` root and sweep attributes and the root `nexrad_*` variables need `Passthrough::All`; the
+per-ray `nexrad_*` sweep variables are in the xradar flavor and, in the WMO 2022 flavor, only with
+`Passthrough::All` (`Flavor::Wmo2022` with `Passthrough::Flavor` leaves them out, as it leaves out every item
+FM301 does not name).
+
+- Per radial (`src/radial_extras.rs`), one entry per ray of each sweep: `nexrad_radial_status` (Message 31 byte
+  21 with its bad-data bit 7, Message 1 halfword 7; CF `flag_masks`/`flag_values`/`flag_meanings`: the status in
+  the low seven bits, `bad_data` in bit 7), `nexrad_azimuth_number`,
+  `nexrad_cut_sector_number`, `nexrad_spot_blanking_status` (CF `flag_masks`), the RAD block's
+  `nexrad_horizontal_noise_level` / `nexrad_vertical_noise_level` (dBm), `nexrad_radial_flags` and
+  `nexrad_horizontal_calibration_constant` / `nexrad_vertical_calibration_constant` (dBZ), and for Message 1 the
+  calibration constant, the atmospheric attenuation and TOVER (packed `int16` with their ICD `scale_factor`).
+  The VOL SHV transmitter powers of every radial are the FM301 monitoring variables
+  `radar_measured_transmit_power_h` / `_v` in dBm (0 kW is minus infinity). The VOL calibration constant (dBZ0),
+  system ZDR and initial system PhiDP of every radial are the `radar_calibration` entries `base_1km_hc`,
+  `zdr_correction` and `system_phidp` (the mapping LROSE Radx uses), one entry per distinct set, with the per-ray
+  FM301 `calib_index`. The header columns are 8-bit (the Message 31 bytes) and 16-bit in Message 1 sweeps.
+  The volume keeps the first Message 31 radial's identifier (`nexrad_radar_identifier`) and each field the
+  moment-header TOVER, SNR threshold and recombination of the radial that created it; a sweep whose radials do
+  not all agree also gets `nexrad_radar_identifier(time)` or `nexrad_tover_db_<field>`,
+  `nexrad_snr_threshold_db_<field>` and `nexrad_recombination_<field>` per ray (never the case in the corpus).
+  The RAD noise levels stay per-ray `nexrad_*` variables rather than `radar_calibration` `noise_hc`/`noise_vc`:
+  with RxR noise processing they differ from radial to radial (530 distinct pairs in the 960 radials of the KTLX
+  2024 fixture), so a calibration entry per radial would be needed.
+- Per sweep: the azimuthal spacing is `rays_angle_resolution` and the azimuth indexing angle sets
+  `rays_are_indexed` (both FM301); the raw spacing code, the indexing angle, the other VOL values (version, latitude
+  and longitude, site and feedhorn heights, VCP, processing status, ZDR bias estimate raw and in dB; the volume
+  location is the first radial's) and the ELV block (atmospheric
+  attenuation, calibration constant) are `nexrad_*` sweep attributes when every radial of the sweep has the same
+  ones, as in every corpus file; otherwise each is a per-ray variable of the same name. From the sweep's Message 5
+  cut: the azimuth rate is FM301 `target_scan_rate`; the surveillance pulse count (contiguous surveillance cuts)
+  or the pulse count of the Doppler sector holding each ray's azimuth is per-ray `n_samples`; 1 / PRF of the
+  Message 32 PRF table for the cut's PRF number is per-ray `prt`, with `prt_mode` `fixed` (contiguous cuts) or
+  `staggered` (staggered pulse pair, which gets no `prt`), when the file has a Message 32 (in the corpus, Builds
+  23.1 and 24.1; a PRF number alone is a code whose value depends on the site's PRF set); and the Message 18 TAU_SP or TAU_LP of the VCP's pulse is per-ray `pulse_width`.
+- Per volume (`src/passthrough.rs`): every message 2 in the file (the metadata record and the data records) as a
+  table over the dimension `nexrad_rda_status`, with each message's header time; messages 3, 5 or 7, 8, 13, 15,
+  18 and 32 as root variables `nexrad_performance_*`, `nexrad_vcp_*` (with `nexrad_vcp_message_type`),
+  `nexrad_clutter_censor_*`, `nexrad_bypass_map_*`, `nexrad_clutter_filter_map_*`, `nexrad_adaptation_*` and
+  `nexrad_prf_*`, each with `<prefix>message_time`, the generation time in its message header; and every message
+  4 and 10, 6, 9, 11 and 12, and 33 as tables with a time column: `nexrad_console_*`, `nexrad_control_commands_*`,
+  `nexrad_request_for_data_*`, `nexrad_loopback_*` and `nexrad_rda_log_*`. Each variable has `long_name`, `units`
+  where the ICD gives one, and a `comment` naming its table and location. `passthrough::performance_fields` and
+  `passthrough::adaptation_fields` list the message 3 and 18 variables with their locations. A message 18 flag
+  whose byte is neither "T" nor "F" is carried as the stored byte (`uint8`).
+- A later message 3, 5 or 7, 8, 13, 15, 18 or 32 whose body bytes differ from every earlier one of its type is
+  carried too, up to 16 copies of a type (`passthrough::MAX_COPIES_PER_MESSAGE_TYPE`): copy `n` has `_message<n>`
+  after every variable and dimension name. The first message 5 (or else 7) sets the sweeps' scan rates and pulse
+  values. No Level II file of the corpus or the test-data cache has two of a type.
+- The body bytes after a message 13 or 15 map (stale segment content, 172 800 bytes after KPAH 2008's message 15)
+  are `nexrad_bypass_map_trailing_bytes` and `nexrad_clutter_filter_map_trailing_bytes`.
+- Messages whose layout the decoders do not read, the legacy RDA messages 3 and 18 (KLIX 2005),
+  message 29 and types Table I does not define, are kept verbatim: `nexrad_unparsed_message_type`, `_channels`,
+  `_time`, `_length` and `_frames`, each frame from its message header to the end of the 2432-byte frame. The whole
+  frame is kept because a converted file's legacy message 18 may declare sizes that leave out the message
+  header, so that the last 16 body bytes of each frame lie past the declared size. A variable-length message (a size of 65535, or message 29) is
+  its message header and body.
+- Non-radial messages in variable framing (a size of 65535, Table II note 6, or message 29) are read whole and
+  kept like the fixed frames, so an extended-size message 33 becomes an `nexrad_rda_log_*` entry and a message 29
+  (the model-data record of an `_MDM` file, 809 229 bytes, when it sits inside a volume stream) is carried
+  verbatim. They are limited to 1024 messages and 16 MiB per volume in all, charged to the decode budget; one
+  past that is read over and counted in `nexrad_metadata_frames_not_kept`.
+- RDA log data (message 33) is limited to 64 MiB per volume, all logs together, and charged to the volume's
+  decode budget; a log that does not fit is not inflated.
+- Counted, when not zero, as root variables: `nexrad_metadata_messages_not_decoded` (framing or table errors, and
+  RDA logs beyond the limit), `nexrad_metadata_messages_repeated` (a later message 3, 5 or 7, 8, 13, 15, 18 or 32
+  identical to a carried one apart from its header), `nexrad_metadata_messages_not_carried` (copies past the cap)
+  and `nexrad_metadata_frames_not_kept` (metadata frames past the decoder's cap of 1024 fixed frames, or
+  variable-length messages past 16 MiB).
+- The message header of every non-radial frame the decoder keeps (each segment of a segmented message, each
+  variable-length message, empty frames left out), in file order, as stored: the root table
+  `nexrad_metadata_message_type`, `_channels`, `_size`, `_sequence_number`, `_date` (days since 1969-12-31),
+  `_milliseconds`, `_segments` and `_segment_number` over the dimension `nexrad_metadata_message`.
+- The message header of every radial, as stored, as per-ray variables: `nexrad_message_size`,
+  `nexrad_message_sequence_number`, `nexrad_message_date`, `nexrad_message_milliseconds` (the message's
+  generation time, not the collection time the ray carries), `nexrad_message_segments` and
+  `nexrad_message_segment_number`.
+- The message header channel byte (Table II halfword 2, the RDA redundant channel) is carried with every message:
+  `<prefix>message_channels` beside `<prefix>message_time`, a `_channels` column beside each table's time column,
+  `nexrad_unparsed_message_channels`, and for radials the sweep attribute `nexrad_message_channels` (a per-ray
+  variable when a sweep's radials differ).
+- Not carried: the structural values of Message 31 (compression indicator, radial length, block count, pointers
+  and block sizes, moment data word size), which the decoder consumes to find the data, and the spare halfwords of
+  message 6. Every message header value is carried (above).
+- Verified on real files: `tests/radial_extras_real.rs` (every ray of the 16 committed fixtures and three KIWA
+  chunks against the bytes at their ICD offsets) and `tests/metadata_passthrough_real.rs` (message 2 against the
+  halfwords of every message 2 in each file and MetPy's codes; messages 3 and 18 against their body bytes and
+  MetPy; message 5 and each sweep's scan rate against MetPy; message 15 against MetPy; messages 13 and 32 against their
+  body bytes) and `tests/pulses_calibration_real.rs` (`calib_index`, `n_samples`, `prt` and `pulse_width` of
+  every ray of the 12 committed Message 31 fixtures against MetPy, the Message 32 frames and LROSE RadxPrint) and
+  `tests/metadata_carried_real.rs` (each message time against its header bytes in 27 files; every non-radial
+  frame's message header against the frames the test walks in the files with a status golden; KPAH's trailing
+  bytes against MetPy's left-over count and the message 15 body; the legacy messages of KLIX 2005 against their
+  frames) and `tests/nexrad_crate_real.rs` (every message 3 and 18
+  byte the danielway nexrad crates read, from their own layout, is held by a model variable, and their 7728 values
+  agree in 21 files; message 18 values only in its first segment, because past it the nexrad crates' values
+  differ from MetPy's at 957 of the 1057 locations MetPy also reads, where the model agrees with MetPy; golden from
+  `tools/nexrad_crate_golden.py`). On rearranged real bytes, because no real file has the
+  input: a second metadata record (KTLX 2024's after KIWA 2026's) is carried as `_message1` copies equal to what
+  KTLX carries alone, the same record twice is counted as repeated, and real message 2 frames relabelled as
+  messages 6, 9, 11 and 12 are carried with the halfwords at their ICD positions. Messages 4, 6, 8, 9, 10, 11, 12
+  and 33 have no real sample: a scan of the real files of the Level II corpus and the test-data cache with `messages::RawMessages` found none, so their layouts have no real-file test; `tests/limits_real.rs`
+  exercises the message 33 limit on the real KIWA chunks.
+- A Message 18 on the legacy channel 0 is left unparsed (the legacy layout is not documented); its frames are
+  carried verbatim (above). Whether to read a legacy-channel Message 18 with the Open RDA layout is open.
+
 ## Message 1: Digital Radar Data (Table III)
 
 Status: decoded by the volume decoder (`read_volume_from_bytes`). The walker yields the body unparsed.
@@ -238,6 +350,11 @@ Real samples: Message 5 in metadata records from 2005 on (not in KVWX 2008), inc
   a real message 5 frame, so it checks the dispatch only, not a real message 7.
 - Layout: halfword 1 counts the body only (11 + 23 per cut in every sample; the message header size is 8 more).
   Cuts are read with a stride of (halfword 1 - 11) / cuts, which must be a whole number of at least 23.
+- Body length in a fixed frame (`vcp::fixed_frame_body_len`): the declared size, or halfword 1 when that is longer
+  and the frame holds it. Some converted files write the message header size equal to halfword 1, leaving out
+  the header's 8 halfwords, so the last 16 bytes of the cut table lie past the declared size; MetPy and Py-ART
+  read the cut table halfword 4 declares. The walker and the three volume decode paths apply the rule; NEXRAD
+  files declare the same length both ways.
 - Angles: elevation (E1) and EBC (E19) codes above 90 degrees are negative, per the Table III-A note. Angle and
   azimuth rate codes are decoded from all 16 bits, like MetPy, Py-ART and xradar; the ICD marks bits 0-2 not
   applicable, and they are clear in every sample.

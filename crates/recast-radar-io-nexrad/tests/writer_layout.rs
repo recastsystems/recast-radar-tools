@@ -178,7 +178,28 @@ fn written_files_follow_the_archive_ii_layout() {
 
     // Radial records: 120 radials (the last one the rest); statuses open and
     // close each cut and the volume; azimuth numbers count from 1; sequence
-    // numbers increase; message times are collection times.
+    // numbers increase; message times are the source radials' recorded
+    // generation times (the model's nexrad_message_date and _milliseconds).
+    let generated = |cut: usize, ray: usize| {
+        let sweep = &volume.sweeps[cut];
+        let find = |name: &str| {
+            sweep
+                .extra_vars
+                .iter()
+                .find(|variable| &*variable.name == name)
+                .map(|variable| &variable.values)
+        };
+        match (
+            find("nexrad_message_date"),
+            find("nexrad_message_milliseconds"),
+        ) {
+            (
+                Some(recast_radar_core::model::ArrayBuf::U16(dates)),
+                Some(recast_radar_core::model::ArrayBuf::U32(milliseconds)),
+            ) => (dates[ray], milliseconds[ray]),
+            other => panic!("sweep {cut}: no message times: {other:?}"),
+        }
+    };
     let mut previous_sequence = None;
     let mut radials = 0;
     let mut statuses: Vec<Vec<u8>> = vec![Vec::new(); volume.sweeps.len()];
@@ -199,9 +220,10 @@ fn written_files_follow_the_archive_ii_layout() {
             assert_eq!(radial.elevation.unwrap().block_size, 12);
             assert_eq!(radial.radial.unwrap().block_size, 28);
             assert_eq!(data.azimuth_resolution, AzimuthResolution::HalfDegree);
+            let cut = usize::from(data.elevation_number) - 1;
             assert_eq!(
                 (header.date, header.milliseconds),
-                (data.modified_julian_date, data.collection_time_ms)
+                generated(cut, statuses[cut].len())
             );
             if let Some(previous) = previous_sequence {
                 assert_eq!(header.sequence_id, (previous + 1) % 0x8000);

@@ -22,6 +22,8 @@ zip.workspace = true
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 # Real corpus files (spec section 5).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
+# Goldens from independent readers (testdata/golden/dorade).
+serde_json.workspace = true
 
 [lints]
 workspace = true

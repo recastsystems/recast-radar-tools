@@ -418,6 +418,7 @@ fn radial_block_len(block: &RadialDataBlock) -> usize {
 fn message_header(
     out: &mut Vec<u8>,
     size_halfwords: u16,
+    channels: u8,
     message_type: u8,
     sequence: u16,
     time: NexradTime,
@@ -425,7 +426,7 @@ fn message_header(
     segment: u16,
 ) {
     out.extend_from_slice(&size_halfwords.to_be_bytes());
-    out.push(CHANNELS_ORDA);
+    out.push(channels);
     out.push(message_type);
     out.extend_from_slice(&sequence.to_be_bytes());
     out.extend_from_slice(&time.date.to_be_bytes());
@@ -455,7 +456,11 @@ fn encode_radial(
     let time = sweep.times.get(ray).copied().unwrap_or(plan.header_time);
     out.extend_from_slice(&[0u8; CTM_LEN]);
     let size_halfwords = ((MESSAGE_HEADER_LEN + body_len) / 2) as u16;
-    message_header(out, size_halfwords, 31, sequence, time, 1, 1);
+    // A Level II source radial's own channel byte and message generation
+    // time, else the Open RDA's channel and the radial's collection time.
+    let channels = sweep.channels.get(ray).copied().unwrap_or(CHANNELS_ORDA);
+    let generated = sweep.message_times.get(ray).copied().unwrap_or(time);
+    message_header(out, size_halfwords, channels, 31, sequence, generated, 1, 1);
     let body_start = out.len();
     let (volume, elevation_constants, radial_constants) = sweep.blocks(ray);
     // Radial number, spare, azimuth resolution, cut sector, spot blanking
@@ -482,7 +487,7 @@ fn encode_radial(
             sweep.azimuth_resolution,
             1,
             0,
-            0,
+            sweep.azimuth_indexing_raw,
         ),
     };
 
@@ -621,6 +626,7 @@ fn fixed_frame(
     message_header(
         out,
         size_halfwords,
+        CHANNELS_ORDA,
         message_type,
         sequence,
         time,

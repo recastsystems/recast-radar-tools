@@ -36,7 +36,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -122,17 +122,53 @@ where
     F: Fn(&[u8]) -> std::result::Result<Volume, E> + Sync,
     E: Display,
 {
-    let members = read_radar_members(path)?;
+    let file = File::open(path).map_err(|source| DoradeError::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    let label = path.display().to_string();
+    let members = read_radar_members(file)?;
+    decode_archive_members(&label, members, &decode_level2)
+}
+
+/// [`read_mobile_archive_from_path`] for a zip archive already in memory
+/// (a download, an upload, a fuzz input). `label` names the archive in
+/// errors and in each volume's `provenance.source_path`
+/// (`<label>::<member>`).
+///
+/// The same limits apply as for a file: at most 4,096 candidate members of
+/// at most 256 MiB each and 1 GiB of member bytes in total, checked against
+/// each entry's declared size before it is inflated and against the bytes
+/// it inflates to, and at most `MAX_DECODED_BATCH_BYTES` of decoded volumes.
+pub fn read_mobile_archive_from_bytes<F, E>(
+    bytes: &[u8],
+    label: &str,
+    decode_level2: F,
+) -> Result<Vec<MobileVolume>>
+where
+    F: Fn(&[u8]) -> std::result::Result<Volume, E> + Sync,
+    E: Display,
+{
+    let members = read_radar_members(Cursor::new(bytes))?;
+    decode_archive_members(label, members, &decode_level2)
+}
+
+fn decode_archive_members<F, E>(
+    label: &str,
+    members: Vec<RadarMember>,
+    decode_level2: &F,
+) -> Result<Vec<MobileVolume>>
+where
+    F: Fn(&[u8]) -> std::result::Result<Volume, E> + Sync,
+    E: Display,
+{
     if members.is_empty() {
         return Err(DoradeError::InvalidMessage {
             offset: 0,
-            reason: format!(
-                "zip archive {} contains no radar members (swp.* or .msg31/AR2V)",
-                path.display()
-            ),
+            reason: format!("zip archive {label} contains no radar members (swp.* or .msg31/AR2V)"),
         });
     }
-    decode_members(path, members, &decode_level2, MAX_DECODED_BATCH_BYTES)
+    decode_members(label, members, decode_level2, MAX_DECODED_BATCH_BYTES)
 }
 
 /// Decode every radar volume under a deployment FOLDER (recursive, a few
@@ -158,7 +194,8 @@ where
         });
     }
     members.sort_by(|left, right| left.name.cmp(&right.name));
-    decode_members(dir, members, &decode_level2, MAX_DECODED_BATCH_BYTES)
+    let label = dir.display().to_string();
+    decode_members(&label, members, &decode_level2, MAX_DECODED_BATCH_BYTES)
 }
 
 /// Deployment trees are shallow (day/instrument levels); the cap only
@@ -250,12 +287,8 @@ impl MemberBudget {
     }
 }
 
-fn read_radar_members(path: &Path) -> Result<Vec<RadarMember>> {
-    let file = File::open(path).map_err(|source| DoradeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
-    let mut archive = ZipArchive::new(file).map_err(|err| DoradeError::InvalidMessage {
+fn read_radar_members<R: Read + Seek>(reader: R) -> Result<Vec<RadarMember>> {
+    let mut archive = ZipArchive::new(reader).map_err(|err| DoradeError::InvalidMessage {
         offset: 0,
         reason: format!("not a readable zip archive: {err}"),
     })?;
@@ -369,7 +402,7 @@ fn segment_volume_runs<T>(mut sweeps: Vec<GroupableSweep<T>>) -> Vec<Vec<Groupab
 /// volume counts against `batch_limit` (normally [`MAX_DECODED_BATCH_BYTES`]);
 /// in-flight decodes on other threads may briefly hold more.
 fn decode_members<F, E>(
-    archive_path: &Path,
+    archive_label: &str,
     members: Vec<RadarMember>,
     decode_level2: &F,
     batch_limit: usize,
@@ -400,7 +433,6 @@ where
         }
     }
 
-    let archive_label = archive_path.display().to_string();
     let mut volumes: Vec<MobileVolume> = Vec::new();
     let decoded_bytes = AtomicUsize::new(0);
 
@@ -874,8 +906,9 @@ mod tests {
             .expect("read committed sweepfiles");
         assert_eq!(members.len(), sweepfiles);
         members.sort_by(|left, right| left.name.cmp(&right.name));
+        let label = dir.display().to_string();
         let volumes = decode_members(
-            &dir,
+            &label,
             members.iter().map(clone_member).collect(),
             &no_level2_members,
             MAX_DECODED_BATCH_BYTES,
@@ -886,7 +919,7 @@ mod tests {
             .map(|mobile| retained_bytes(&mobile.volume))
             .sum();
 
-        let error = decode_members(&dir, members, &no_level2_members, needed - 1)
+        let error = decode_members(&label, members, &no_level2_members, needed - 1)
             .expect_err("one byte short of the decoded size must fail");
         assert!(
             matches!(&error, DoradeError::LimitExceeded(reason) if reason.contains("limit")),

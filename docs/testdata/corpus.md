@@ -494,6 +494,9 @@ Every derived file names its source and has a recipe on this page.
 There are 35 entries. 27 files are committed (15,975,753 bytes, each under 2 MB). 8 files are downloaded
 on first use (123,175,908 bytes). Five of the committed entries (the NOXP 2009-06-10 head trims and their
 zip, and the NCI THREDDS zip response) were added by the io-formats test conversion (plan task C.2).
+Later additions are not in these counts (the generated totals at the end of this page are current),
+among them the four NOAA P-3 N42RF entries of the metadata-complete stream (2026-09-25): two airborne
+sweepfiles downloaded on first use (6,020,260 bytes) and their committed head trims (655,332 bytes).
 
 Checked when the files were curated (2026-09-16):
 
@@ -508,6 +511,11 @@ Checked when the files were curated (2026-09-16):
     downloaded DOW8 RHI and S-Pol volume. xradar read the S-Pol volume.
   - A standalone Python DORADE block walker and a JMA GRIB2 section and
     run-length walker checked the DORADE and JMA files.
+  - Later (2026-09-25), LROSE RadxPrint (release 20250811, in the `nexbench`
+    container) read seven of the committed DORADE sweepfiles and both full
+    N42RF sweepfiles (`tools/dorade_radx_golden.py`), and `RadxPrint -native`
+    printed the descriptor blocks of all ten committed sweepfiles
+    (`tools/dorade_radx_native_golden.py`).
 
 ### Layout
 
@@ -567,6 +575,8 @@ Derivation recipes section below.
 | `dorade-dow6-20211230-222139-rhi-head41` | C, derived | 1471504 | **new** first real **DORADE RHI** (RADD scan mode 3): little-endian HRD RLE, CELV, 32 fields, rays 0-40 of 156 | Zenodo DOI 10.48514/JKJ0-TE44, FARM Marshall Fire (CC BY 4.0) |
 | `dorade-noxp-20090610-{003210,003222,003226}-ppi-head6` | C, derived | 131596 each | **new** three sweeps (0.5, 1.0, 2.0 deg) of one **multi-elevation** NOXP volume (NOX090610003210.RAWAL8D): little-endian, uncompressed, CSFD 1174 x 75 m, real site coordinates; first 6 rays each | head trims of members of Zenodo 10.5281/zenodo.14194361 `2009.NOX.sweep.0609.tar.gz` (CC BY 4.0) |
 | `dorade-noxp-20090610-003210-heads-zip` | C, derived | 44980 | **new** zip of that volume directory: the three head trims (stored 1.0, 0.5, 2.0 deg) and the directory's three text files, under their tar paths | container conversion (CC BY 4.0) |
+| `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-tm-20181010-123925-air` | D | 2919700, 3100560 | **new** first **airborne DORADE**: NOAA P-3 N42RF tail radar (aft and fore antennas) in Hurricane Michael, RADD radar type 3 and scan mode 9 (AIR), little-endian HRD RLE, CELV 627 x 75 m, 17 fields, 360 rays; every ASIB motion and attitude value set; each ends with NULL, RKTB and a SEDS (Solo II edit history) block; the fore sweep has non-zero CFAC corrections | GitHub `Alex-DesRosiers/radarqc_scans` at 0dc45a2, unmodified; NOAA AOC P-3 data edited in Solo II (no license stated) |
+| `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48` | C, derived | 432440, 222892 | **new** head trims of those two: the first 24 and 48 rays | head trims (no license stated) |
 
 #### JMA GRIB2 tar
 
@@ -780,6 +790,12 @@ out.tar` (JMA Okinawa, ITOK), and the same way for N6 of that time.
   first one in the archive, so a streaming read can stop after it). In all three the descriptor blocks
   (COMM SSWB VOLD RADD 9xPARM CSFD CFAC SWIB) end at 3,196, rays are 21,400 bytes, and the RYIB block
   of ray 6 starts at 131,596. None of the kept rays is flagged in transition.
+- `dorade-n42rf-ts-20181010-122951-air-head24`: `head -c 432440 <dorade-n42rf-ts-20181010-122951-air>`,
+  and `dorade-n42rf-tm-20181010-123925-air-head48`: `head -c 222892 <dorade-n42rf-tm-20181010-123925-air>`.
+  In both files the descriptor blocks (SSWB VOLD RADD 17xPARM CELV CFAC SWIB COMM) end at 35,580, where
+  the RYIB block of ray 0 starts; the RYIB block of ray 24 (aft) starts at 432,440 and that of ray 48
+  (fore) at 222,892. The trims leave out the rest of the rays and the NULL, RKTB and SEDS blocks at the
+  end, which the tests read from the full files.
 
 #### `zip_noxp_heads.py`: the NOXP volume directory as a zip
 
@@ -866,8 +882,12 @@ hard links to the same files. For the Level III file, run
 - wradlib-data and open-radar-data are MIT. The Py-ART test data is
   BSD-3-Clause.
 - **Unresolved**: the terms for JMA data from the NICT mirror
-  (`license:unknown`), and the source and license of the COW2 head24 fixture
-  (`license:unknown`). Review both before publishing the repository.
+  (`license:unknown`), the source and license of the COW2 head24 fixture
+  (`license:unknown`), and the terms of the N42RF sweepfiles
+  (`license:unknown`): the GitHub repository `Alex-DesRosiers/radarqc_scans`
+  states no license. The data are NOAA AOC P-3 tail radar data, edited in
+  Solo II by the repository's author. Review all three before publishing
+  the repository.
 
 ## Gaps
 
@@ -922,8 +942,8 @@ hard links to the same files. For the Level III file, run
    URL are unknown, and so is its license.
 6. **Expired URLs**: espdg (ORD 24h bucket) and the IMGW datastore. The
    committed copies are the only copies.
-7. **License review needed** for the JMA/NICT data and the COW2 file (see
-   Licensing and attribution under Other formats).
+7. **License review needed** for the JMA/NICT data, the COW2 file and the
+   N42RF sweepfiles (see Licensing and attribution under Other formats).
 8. **Level III VWP placement.** `l3-kbmx-19980416-0006-nvw` and its archive
    entry use the `l3-` prefix. Branch `level3` (checked at d66e163, 216
    entries) has no id or sha256 in common with them. They may move to the
@@ -1017,7 +1037,9 @@ Tags used in this manifest:
 - `container:netcdf3-classic|netcdf4`, `cfradial:*` and `writer:*` describe
   netCDF files.
 - `dorade:rle|uncompressed|csfd|celv` and `endian:*` describe DORADE files.
-- `scan:ppi|rhi|sector|sur` gives the scan type.
+- `scan:ppi|rhi|sector|sur|air` gives the scan type (`air`: the DORADE
+  airborne scan of a tail radar).
+- `platform:mobile|aircraft` marks radars that are not fixed.
 - `moments:*` lists the fields.
 - `regime:*` and `echo:*` describe the weather.
 - `quirk:*` marks writer oddities that decoders must handle.
@@ -1054,16 +1076,16 @@ Everything below the marker is generated from the manifests by
 | `testdata/fuzz/manifest.toml` | 3 | 3 | 892,278 | 0 | 0 |
 | `testdata/level2/manifest.toml` | 125 | 24 | 10,426,272 | 101 | 332,296,252 |
 | `testdata/level3/manifest.toml` | 216 | 216 | 7,776,988 | 0 | 0 |
-| `testdata/other/manifest.toml` | 48 | 38 | 19,179,568 | 10 | 129,688,548 |
+| `testdata/other/manifest.toml` | 52 | 40 | 19,834,900 | 12 | 135,708,808 |
 | `testdata/scattering/manifest.toml` | 12 | 10 | 403,462 | 2 | 19,492,076 |
-| **all** | **404** | **291** | **38,678,568** | **113** | **481,476,876** |
+| **all** | **408** | **293** | **39,333,900** | **115** | **487,497,136** |
 
 | format | committed | download |
 |---|---:|---:|
 | `brslut-v1` | 2 | 0 |
 | `cfradial1` | 5 | 2 |
 | `cfradial2` | 0 | 1 |
-| `dorade` | 8 | 0 |
+| `dorade` | 10 | 2 |
 | `jma-grib2-tar` | 4 | 4 |
 | `json` | 6 | 0 |
 | `nexrad-level2` | 17 | 34 |
@@ -1474,6 +1496,10 @@ No entries.
 | `dorade-noxp-20090610-003222-ppi-head6` | `dorade` | committed `files/other/dorade/swp.1090610003222.NOXPRVP.0.1.0_PPI_v1.head6` | 131,596 |  |
 | `dorade-noxp-20090610-003226-ppi-head6` | `dorade` | committed `files/other/dorade/swp.1090610003226.NOXPRVP.0.2.0_PPI_v1.head6` | 131,596 |  |
 | `dorade-noxp-20090610-003210-heads-zip` | `zip` | committed `files/other/dorade/NOX090610003210.RAWAL8D.head6.zip` | 44,980 |  |
+| `dorade-n42rf-ts-20181010-122951-air` | `dorade` | download | 2,919,700 |  |
+| `dorade-n42rf-ts-20181010-122951-air-head24` | `dorade` | committed `files/other/dorade/swp.1181010122951.N42RF-TS.196.-20.0_AIR_v3394.head24` | 432,440 | `dorade-n42rf-ts-20181010-122951-air` |
+| `dorade-n42rf-tm-20181010-123925-air` | `dorade` | download | 3,100,560 |  |
+| `dorade-n42rf-tm-20181010-123925-air-head48` | `dorade` | committed `files/other/dorade/swp.1181010123925.N42RF-TM.137.20.0_AIR_v3532.head48` | 222,892 | `dorade-n42rf-tm-20181010-123925-air` |
 | `jma-n5-20191012-090000` | `jma-grib2-tar` | download | 39,106,560 |  |
 | `jma-n6-20191012-090000` | `jma-grib2-tar` | download | 13,209,600 |  |
 | `jma-n5-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N5_grib2.RS47773.tar` | 1,761,280 | `jma-n5-20191012-090000` |
@@ -1520,7 +1546,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `archive` (4): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090610-003210-heads-zip`, `l3-kbmx-19980416-archive-tarz`
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
-- `derived` (22): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
+- `derived` (24): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `dualpol` (33): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `fuzz-regression` (3): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`
 - `golden-source` (1): `tmatrix-held-out-interpolation-report-v10`
@@ -1806,15 +1832,15 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `derivation:archive-member` (8): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`
 - `derivation:container-conversion` (3): `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-noxp-20090610-003210-heads-zip`
 - `derivation:fuzz-mutation` (3): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`
-- `derivation:head-trim` (5): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
+- `derivation:head-trim` (7): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `derivation:prefix` (2): `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 - `derivation:subset` (1): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
 
 #### `dorade:`
 
-- `dorade:celv` (1): `dorade-dow6-20211230-222139-rhi-head41`
+- `dorade:celv` (5): `dorade-dow6-20211230-222139-rhi-head41`, `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `dorade:csfd` (7): `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
-- `dorade:rle` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
+- `dorade:rle` (6): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `dorade:uncompressed` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 
 #### `dtype:`
@@ -1856,7 +1882,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `endian:`
 
 - `endian:big` (1): `dorade-cow2-20260521-225514-sur-head24`
-- `endian:little` (7): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
+- `endian:little` (11): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 
 #### `era:`
 
@@ -1874,6 +1900,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `era:2015` (1): `l3-byx-n0q-20150124-2106`
 - `era:2016` (21): `l2-kewx-20160413-022531`, `l2-kewx-20160413-022531-trim`, `l3-mci-dhr-20160526-2154`, `l3-mci-dpa-20160526-2154`, `l3-mci-dsp-20160526-2154`, `l3-mci-n1p-20160526-2154`, `l3-mci-ncr-20160526-2154`, `l3-mci-net-20160526-2154`, `l3-mci-nmd-20160526-2154`, `l3-mci-nst-20160526-2154`, `l3-mci-ntp-20160526-2154`, `l3-mci-nvl-20160526-2154`, `l3-mci-nvw-20160526-2154`, `l3-mci-tr0-20160526-2154`, `l3-mci-tr1-20160526-2154`, `l3-mci-tr2-20160526-2154`, `l3-mci-tv0-20160526-2154`, `l3-mci-tv1-20160526-2154`, `l3-mci-tv2-20160526-2154`, `l3-mci-tzl-20160526-2154`, `l3-slc-tv0-20160516-2359`
 - `era:2017` (1): `odim-norst-20170421-0908-pvol`
+- `era:2018` (4): `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `era:2019` (5): `odim-bejab-20190606-0000-pvol`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`
 - `era:2020` (29): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdvn-20200810-180401-trim`, `l3-ddc-gsm-20200817-1000`, `l3-ddc-n0q-20200817-0501`, `l3-ddc-n0q-20200817-0503`, `l3-den-tz0-20200804-2226`, `l3-den-tz1-20200804-2226`, `l3-den-tz2-20200804-2227`, `l3-eax-gsm-20200817-0933`, `l3-eax-n0q-20200817-0401`, `l3-eax-n0q-20200817-0405`, `l3-gjx-n0f-20200817-0551`, `l3-gjx-naf-20200817-0551`, `l3-gjx-nbf-20200817-0551`, `l3-gjx-nxf-20200817-0600`, `l3-lzk-h0c-20200814-0417`, `l3-lzk-h0v-20200812-1309`, `l3-lzk-h0w-20200812-1305`, `l3-lzk-h0z-20200812-1318`, `l3-rax-dta-20200818-0454`, `l3-rax-nyf-20200818-0001`, `l3-tlx-pta-20200501-000023`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 - `era:2021` (10): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-175748-mdm`, `l2-klix-20210829-180425-trim`, `l3-akc-nc1-20210730-055033`, `l3-jfk-tr0-20210120-154051`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-dow6-20211230-222139-rhi-head41`
@@ -1944,7 +1971,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `license:MIT` (7): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`
 - `license:imgw-attribution` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `license:public-domain` (6): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
-- `license:unknown` (9): `dorade-cow2-20260521-225514-sur-head24`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000`, `jma-n6-20260924-210000`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
+- `license:unknown` (13): `dorade-cow2-20260521-225514-sur-head24`, `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`, `jma-n5-20191012-090000`, `jma-n6-20191012-090000`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000`, `jma-n6-20260924-210000`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
 - `license:wrf-public-domain` (4): `wrf-p3-lookup-table-1-v5.4-2momI`, `wrf-p3-lookup-table-1-v5.4-3momI`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
 
 #### `lut:`
@@ -2108,6 +2135,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `platform:`
 
+- `platform:aircraft` (4): `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `platform:mobile` (11): `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 
 #### `product:`
@@ -2190,6 +2218,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `provider:aws-unidata-nexrad-level3` (67): `l3-akc-nc1-20210730-055033`, `l3-gjx-nyq-20220503-005356`, `l3-jfk-tr0-20210120-154051`, `l3-okc-ncr-20260622-080623`, `l3-okc-net-20220503-005210`, `l3-okc-nhi-20220503-005210`, `l3-okc-nmd-20260622-080640`, `l3-okc-nst-20260622-080640`, `l3-okc-ntv-20220503-005210`, `l3-okc-nvl-20260622-080623`, `l3-okc-nvw-20260622-080623`, `l3-okc-rsl-20220517-085551`, `l3-okc-tv0-20260622-080547`, `l3-okc-tz0-20260622-080547`, `l3-okc-tzl-20260622-080623`, `l3-rax-nll-20220510-155126`, `l3-shv-nzq-20220503-005452`, `l3-tlx-daa-20260622-080623`, `l3-tlx-dhr-20260622-080623`, `l3-tlx-dod-20220503-005231`, `l3-tlx-dpa-20260629-173638`, `l3-tlx-dpr-20260622-080623`, `l3-tlx-dsd-20220503-005231`, `l3-tlx-dsp-20260629-173638`, `l3-tlx-dta-20260622-080623`, `l3-tlx-du3-20260622-080623`, `l3-tlx-du6-20260622-120608`, `l3-tlx-dvl-20260622-080623`, `l3-tlx-eet-20260622-080623`, `l3-tlx-hhc-20260622-080623`, `l3-tlx-n0b-20260622-080623`, `l3-tlx-n0c-20260622-080623`, `l3-tlx-n0f-20220502-235926`, `l3-tlx-n0g-20260622-080623`, `l3-tlx-n0h-20260622-080623`, `l3-tlx-n0k-20260622-080623`, `l3-tlx-n0m-20260622-080623`, `l3-tlx-n0q-20220503-005231`, `l3-tlx-n0r-20220908-131957`, `l3-tlx-n0s-20260622-080623`, `l3-tlx-n0u-20220503-005231`, `l3-tlx-n0v-20220908-131957`, `l3-tlx-n0x-20260622-080623`, `l3-tlx-n0z-20220908-131957`, `l3-tlx-n1p-20260629-173638`, `l3-tlx-n3p-20220503-011226`, `l3-tlx-ncr-20260622-080623`, `l3-tlx-ncz-20220503-005231`, `l3-tlx-net-20220503-005231`, `l3-tlx-nhi-20220503-005231`, `l3-tlx-nhl-20220503-005231`, `l3-tlx-nla-20220503-005231`, `l3-tlx-nmd-20260622-080623`, `l3-tlx-nml-20220503-005231`, `l3-tlx-nrr-20260622-080623`, `l3-tlx-nss-20220503-005231`, `l3-tlx-nst-20260622-080623`, `l3-tlx-nsw-20220503-005231`, `l3-tlx-ntp-20260629-173638`, `l3-tlx-ntv-20220503-005231`, `l3-tlx-nvl-20260622-080623`, `l3-tlx-nvw-20260622-080623`, `l3-tlx-oha-20260622-080623`, `l3-tlx-pta-20200501-000023`, `l3-tlx-rcm-20220503-004553`, `l3-tlx-rsl-20220502-235926`, `l3-tlx-spd-20220503-005231`
 - `provider:cswr` (1): `dorade-cow2-20260521-225514-sur-head24`
 - `provider:gcp-nexrad-l3` (2): `l3-kbmx-19980416-archive-tarz`, `l3-kbmx-19980416-0006-nvw`
+- `provider:github-radarqc-scans` (4): `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `provider:imgw-pib` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
 - `provider:metpy-staticdata` (134): `l3-abr-ftm-20110428-1331`, `l3-byx-n0q-20150124-2106`, `l3-ddc-gsm-20200817-1000`, `l3-ddc-n0q-20200817-0501`, `l3-ddc-n0q-20200817-0503`, `l3-den-tz0-20200804-2226`, `l3-den-tz1-20200804-2226`, `l3-den-tz2-20200804-2227`, `l3-eax-gsm-20200817-0933`, `l3-eax-n0q-20200817-0401`, `l3-eax-n0q-20200817-0405`, `l3-ffc-n0q-20140407-1805`, `l3-ftg-n0b-20220304-1820`, `l3-gjx-n0f-20200817-0551`, `l3-gjx-naf-20200817-0551`, `l3-gjx-nbf-20200817-0551`, `l3-gjx-nxf-20200817-0600`, `l3-lzk-h0c-20200814-0417`, `l3-lzk-h0v-20200812-1309`, `l3-lzk-h0w-20200812-1305`, `l3-lzk-h0z-20200812-1318`, `l3-mci-dhr-20160526-2154`, `l3-mci-dpa-20160526-2154`, `l3-mci-dsp-20160526-2154`, `l3-mci-n1p-20160526-2154`, `l3-mci-ncr-20160526-2154`, `l3-mci-net-20160526-2154`, `l3-mci-nmd-20160526-2154`, `l3-mci-nst-20160526-2154`, `l3-mci-ntp-20160526-2154`, `l3-mci-nvl-20160526-2154`, `l3-mci-nvw-20160526-2154`, `l3-mci-tr0-20160526-2154`, `l3-mci-tr1-20160526-2154`, `l3-mci-tr2-20160526-2154`, `l3-mci-tv0-20160526-2154`, `l3-mci-tv1-20160526-2154`, `l3-mci-tv2-20160526-2154`, `l3-mci-tzl-20160526-2154`, `l3-rax-dta-20200818-0454`, `l3-rax-nyf-20200818-0001`, `l3-slc-tv0-20160516-2359`, `l3-tlx-daa-20130520-2016`, `l3-tlx-dhr-20130520-2016`, `l3-tlx-dod-20130520-2016`, `l3-tlx-dpa-20130520-2016`, `l3-tlx-dpr-20130520-2016`, `l3-tlx-dsd-20130520-2016`, `l3-tlx-dsp-20130520-2016`, `l3-tlx-dta-20130520-2016`, `l3-tlx-du3-20130520-2008`, `l3-tlx-dvl-20130520-2016`, `l3-tlx-eet-20130520-2016`, `l3-tlx-gsm-20130520-2100`, `l3-tlx-hhc-20130520-2016`, `l3-tlx-n0c-20130520-2016`, `l3-tlx-n0h-20130520-2016`, `l3-tlx-n0k-20130520-2016`, `l3-tlx-n0m-20130520-2016`, `l3-tlx-n0q-20130520-2016`, `l3-tlx-n0r-20130520-2016`, `l3-tlx-n0s-20130520-2016`, `l3-tlx-n0u-20130520-2016`, `l3-tlx-n0v-20130520-2016`, `l3-tlx-n0x-20130520-2016`, `l3-tlx-n0z-20130520-2016`, `l3-tlx-n1c-20130520-2016`, `l3-tlx-n1h-20130520-2016`, `l3-tlx-n1k-20130520-2016`, `l3-tlx-n1m-20130520-2016`, `l3-tlx-n1p-20130520-2016`, `l3-tlx-n1q-20130520-2016`, `l3-tlx-n1s-20130520-2016`, `l3-tlx-n1u-20130520-2016`, `l3-tlx-n1x-20130520-2016`, `l3-tlx-n2c-20130520-2016`, `l3-tlx-n2h-20130520-2016`, `l3-tlx-n2k-20130520-2016`, `l3-tlx-n2m-20130520-2016`, `l3-tlx-n2q-20130520-2016`, `l3-tlx-n2s-20130520-2016`, `l3-tlx-n2u-20130520-2016`, `l3-tlx-n2x-20130520-2016`, `l3-tlx-n3c-20130520-2016`, `l3-tlx-n3h-20130520-2016`, `l3-tlx-n3k-20130520-2016`, `l3-tlx-n3m-20130520-2016`, `l3-tlx-n3p-20130520-2012`, `l3-tlx-n3q-20130520-2016`, `l3-tlx-n3s-20130520-2016`, `l3-tlx-n3u-20130520-2016`, `l3-tlx-n3x-20130520-2016`, `l3-tlx-nac-20130520-2016`, `l3-tlx-nah-20130520-2016`, `l3-tlx-nak-20130520-2016`, `l3-tlx-nam-20130520-2016`, `l3-tlx-naq-20130520-2016`, `l3-tlx-nau-20130520-2016`, `l3-tlx-nax-20130520-2016`, `l3-tlx-nbc-20130520-2016`, `l3-tlx-nbh-20130520-2016`, `l3-tlx-nbk-20130520-2016`, `l3-tlx-nbm-20130520-2016`, `l3-tlx-nbq-20130520-2016`, `l3-tlx-nbu-20130520-2016`, `l3-tlx-nbx-20130520-2016`, `l3-tlx-nc1-20130520-2354`, `l3-tlx-nc2-20130520-2354`, `l3-tlx-nc3-20130520-2354`, `l3-tlx-nc4-20130520-2354`, `l3-tlx-nc5-20130520-2354`, `l3-tlx-nco-20130520-1816`, `l3-tlx-ncr-20130520-2016`, `l3-tlx-ncz-20130520-2016`, `l3-tlx-net-20130520-2016`, `l3-tlx-nhi-20130520-2016`, `l3-tlx-nhl-20130520-2016`, `l3-tlx-nla-20130520-2016`, `l3-tlx-nll-20130520-2016`, `l3-tlx-nmd-20130520-2016`, `l3-tlx-nml-20130520-2016`, `l3-tlx-nsp-20130520-2016`, `l3-tlx-nss-20130520-2016`, `l3-tlx-nst-20130520-2016`, `l3-tlx-nsw-20130520-2016`, `l3-tlx-ntp-20130520-2016`, `l3-tlx-ntv-20130520-2016`, `l3-tlx-nvl-20130520-2012`, `l3-tlx-nvw-20130520-2016`, `l3-tlx-oha-20130520-2016`, `l3-tlx-pta-20130520-2016`, `l3-tlx-rcm-20130520-2016`, `l3-tlx-rsl-20130520-2358`, `l3-tlx-spd-20130520-2016`
 - `provider:ncei-nexrad-l3-gcp` (15): `l3-fws-dpa-19950517-2304`, `l3-fws-n0r-19950517-2304`, `l3-fws-n1p-19950517-2304`, `l3-fws-ncz-19950517-2304`, `l3-fws-nhi-19950517-1323`, `l3-fws-nme-19950517-2316`, `l3-fws-now-19950517-2304`, `l3-fws-nss-19950517-2304`, `l3-fws-nst-19950517-2304`, `l3-fws-ntp-19950517-2304`, `l3-fws-nvw-19950517-2322`, `l3-fws-nwp-19950517-2304`, `l3-fws-rcm-19950517-2310`, `l3-fws-sup-19950517-2304`, `l3-tlx-102-19990504-0052`
@@ -2205,11 +2234,13 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 #### `quirk:`
 
 - `quirk:720-ray-lowest-sweep` (1): `odim-norst-20170421-0908-pvol`
+- `quirk:cfac-corrections` (2): `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `quirk:coarse-azimuth` (2): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`
 - `quirk:crosses-midnight` (1): `l3-kbmx-19980416-0006-nvw`
 - `quirk:fractional-elevations` (1): `odim-dkrom-20260820-1130-pvol`
 - `quirk:repeated-elevations` (2): `jma-n5-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`
 - `quirk:rstart-metres` (1): `odim-espdg-20260707-1927-pvol-dbzh-vradh`
+- `quirk:seds-edit-history` (2): `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-tm-20181010-123925-air`
 - `quirk:staggered-prt` (1): `dorade-cow2-20260521-225514-sur-head24`
 - `quirk:transition-rays` (2): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`
 - `quirk:version-string-h5rd` (4): `odim-imgw-ram-20260711-0015-kdp-max`, `odim-imgw-ram-20260711-0015-phidp-max`, `odim-imgw-ram-20260711-0015-rhohv-max`, `odim-imgw-ram-20260711-0015-zdr-max`
@@ -2249,7 +2280,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `regime:convective` (13): `l2-ktlx-19910605-162126`, `l2-kdmx-20080525-205148`, `l2-kgwx-20130601-235640`, `l2-tstl-20230331-230314`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-19910605-162126-trim`, `l2-kdmx-20080525-205148-trim`, `l2-kewx-20160413-022531-trim`, `l2-tstl-20230331-230314-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `regime:derecho` (9): `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-kdvn-20200810-180401-trim`, `l3-kdvn-20200810-1757-nst`, `l3-kdvn-20200810-1804-nst`, `l3-kdvn-20200810-1810-nst`, `l3-kdvn-20200810-1817-nst`
 - `regime:hail` (1): `l2-kewx-20160413-022531`
-- `regime:hurricane` (7): `l2-klix-20050829-130035`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-tjua-20220918-190621`, `l2-klix-20050829-130035-trim`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`
+- `regime:hurricane` (11): `l2-klix-20050829-130035`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-tjua-20220918-190621`, `l2-klix-20050829-130035-trim`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `regime:non-conus` (4): `l2-tjua-20220918-190621`, `l2-pgua-20230524-030945`, `l2-pahg-20250909-212549`, `l2-pgua-20230524-030945-trim`
 - `regime:snow` (2): `l2-kmtx-20240301-212827`, `l2-kmtx-20240301-212827-trim`
 - `regime:stratiform` (1): `l2-pahg-20250909-212549`
@@ -2270,6 +2301,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `scan:`
 
+- `scan:air` (4): `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `scan:ppi` (21): `odim-bejab-20190606-0000-pvol`, `odim-bewid-20130429-0430-pvol-dbzh-scan1`, `odim-norst-20170421-0908-pvol`, `odim-espdg-20260707-1927-pvol-dbzh-vradh`, `odim-iesha-20260305-0115-pvol`, `odim-dkrom-20260820-1130-pvol`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad1-spol-20080604-002217-sur`, `cfrad2-spol-20080604-002217-sur`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `scan:rhi` (3): `cfrad1-dow8-20211011-223602-rhi`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `dorade-dow6-20211230-222139-rhi-head41`
 - `scan:sector` (1): `dorade-noxp-20090525-203211-sector`
@@ -2314,6 +2346,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `site:ktlx` (12): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-ktlx-20130520-201643-trim`, `l2-ktlx-20240315-000217-trim`
 - `site:kvnx` (1): `l2-kvnx-20110315-000203`
 - `site:kvwx` (1): `l2-kvwx-20080415-235337`
+- `site:n42rf` (4): `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `site:nohur` (3): `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `site:norst` (1): `odim-norst-20170421-0908-pvol`
 - `site:noxp` (9): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`
@@ -2382,7 +2415,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `writer:`
 
-- `writer:radx` (2): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`
+- `writer:radx` (6): `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `writer:sigmet_dorade` (6): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`
 
 #### `zdr:`

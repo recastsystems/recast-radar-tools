@@ -8,15 +8,25 @@
 //! decode, streaming reader, the preview decoders, `normalize_archive_bytes`
 //! and the `messages` helpers) must now decode a re-gzipped multi-member
 //! copy of the real volume to the same volume as the original.
+//!
+//! A Level II file of LDM bzip2 records wrapped whole in one gzip member
+//! (the committed KTLX 2024 trim, gzipped here) used to decode to an empty
+//! volume with no error; every gzip entry point must now decode it to the
+//! volume of its inflated bytes. Such a file cut short (plain or gzipped)
+//! is an error when its first LDM record is cut, and otherwise the volume
+//! of the records before the cut.
 
-use std::io::Write;
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use std::io::{Read, Write};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use recast_radar_core::model::Volume;
 use recast_radar_io_nexrad::{
-    ArchiveCompression, messages, normalize_archive_bytes, read_gzip_preview_from_bytes,
-    read_gzip_volume_from_bytes_with_preview, read_gzip_volume_from_reader, read_volume_from_bytes,
+    ArchiveCompression, NexradError, messages, normalize_archive_bytes,
+    read_gzip_preview_from_bytes, read_gzip_volume_from_bytes_with_preview,
+    read_gzip_volume_from_reader, read_normalized_volume_bytes, read_volume_from_bytes,
     read_volume_with_metadata,
 };
 
@@ -184,4 +194,173 @@ fn trailing_padding_after_the_last_member_is_ignored_on_every_gzip_path() {
         &expected,
         "read_gzip_volume_from_bytes_with_preview",
     );
+}
+
+/// `volume` as decoded from the gzip file equals `expected`, decoded from
+/// its inflated bytes, except for the recorded compression.
+fn assert_same_but_gzip(volume: &Volume, expected: &Volume, what: &str) {
+    assert_eq!(
+        volume.provenance.compression.as_deref(),
+        Some("gzip-bzip2-blocks"),
+        "{what}: compression"
+    );
+    let mut volume = volume.clone();
+    volume.provenance.compression = expected.provenance.compression.clone();
+    assert_same_volume(&volume, expected, what);
+}
+
+/// The committed KTLX 2024 trim: an AR2V header, then LDM records.
+fn ldm_records() -> Vec<u8> {
+    recast_radar_testdata::bytes("l2-ktlx-20240315-000217-trim").unwrap()
+}
+
+#[test]
+fn gzip_around_ldm_records_decodes_on_every_gzip_path() {
+    let inflated = ldm_records();
+    // An AR2V file whose first record is an LDM record (byte count, then a
+    // bzip2 stream), wrapped whole in gzip.
+    assert_eq!(&inflated[..4], b"AR2V");
+    assert_eq!(&inflated[28..31], b"BZh");
+    let stored = gzipped(&inflated);
+    let mut check = Vec::new();
+    flate2::read::MultiGzDecoder::new(stored.as_slice())
+        .read_to_end(&mut check)
+        .unwrap();
+    assert!(check == inflated, "the wrapper holds the file");
+    let expected = read_volume_from_bytes(&inflated).unwrap();
+    assert_eq!(
+        expected.provenance.compression.as_deref(),
+        Some("bzip2-blocks")
+    );
+    // The trim holds the two sweeps of the 0.48 deg split cut, 480 radials
+    // each (its manifest entry, checked against Py-ART and MetPy).
+    assert_eq!(
+        expected
+            .sweeps
+            .iter()
+            .map(|sweep| sweep.nrays())
+            .collect::<Vec<_>>(),
+        vec![480; 2]
+    );
+
+    let volume = read_volume_from_bytes(&stored).unwrap();
+    assert_same_but_gzip(&volume, &expected, "read_volume_from_bytes");
+    let volume = read_gzip_volume_from_reader(stored.as_slice()).unwrap();
+    assert_same_but_gzip(&volume, &expected, "read_gzip_volume_from_reader");
+    let mut previews = Vec::new();
+    let volume = read_gzip_volume_from_bytes_with_preview(&stored, 360, |preview| {
+        previews.push(preview.sweeps[0].nrays());
+    })
+    .unwrap();
+    assert_eq!(previews, vec![480]);
+    assert_same_but_gzip(
+        &volume,
+        &expected,
+        "read_gzip_volume_from_bytes_with_preview",
+    );
+    let preview = read_gzip_preview_from_bytes(&stored, 360)
+        .unwrap()
+        .expect("the first 480-radial sweep completes");
+    assert_eq!(preview.sweeps[0].nrays(), 480);
+    let with_metadata = read_volume_with_metadata(&stored).unwrap();
+    assert_same_but_gzip(
+        &with_metadata.volume,
+        &expected,
+        "read_volume_with_metadata",
+    );
+
+    // normalize_archive_bytes decodes the records too, as it does for LDM
+    // records without the wrapper.
+    let (normalized, compression) = normalize_archive_bytes(&stored).unwrap();
+    assert_eq!(compression, ArchiveCompression::GzipBzip2Blocks);
+    let (records, _) = normalize_archive_bytes(&inflated).unwrap();
+    assert!(normalized == records, "normalized bytes differ");
+    let volume = read_normalized_volume_bytes(&normalized, compression).unwrap();
+    assert_same_but_gzip(&volume, &expected, "read_normalized_volume_bytes");
+    // The format router inflates gzip itself and passes the inflated bytes,
+    // records still compressed, as normalized gzip bytes.
+    let volume = read_normalized_volume_bytes(&inflated, ArchiveCompression::Gzip).unwrap();
+    assert_same_but_gzip(&volume, &expected, "router path");
+}
+
+/// The LDM record starts (the 4-byte byte count) of `bytes`, read here:
+/// after the 24-byte volume header, each record is a signed big-endian byte
+/// count and that many bytes.
+fn record_starts(bytes: &[u8]) -> Vec<usize> {
+    let mut starts = Vec::new();
+    let mut cursor = 24;
+    while cursor + 4 <= bytes.len() {
+        starts.push(cursor);
+        let count = i32::from_be_bytes(bytes[cursor..cursor + 4].try_into().unwrap());
+        cursor += 4 + count.unsigned_abs() as usize;
+    }
+    starts
+}
+
+fn gzipped(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+/// The KTLX 2024 trim cut short, as an interrupted download leaves it: cut
+/// inside its first LDM record it is a truncation error; cut inside a later
+/// one it is the volume of the whole records before the cut (every sweep a
+/// prefix of the full volume's), plain and gzipped. Both used to decode to
+/// an empty volume with no error.
+#[test]
+fn truncated_ldm_records_are_an_error_or_the_records_before_the_cut() {
+    let inflated = ldm_records();
+    let starts = record_starts(&inflated);
+    assert_eq!(starts.len(), 9, "the metadata record and 8 radial records");
+    let full = read_volume_from_bytes(&inflated).unwrap();
+
+    let inside_first = &inflated[..starts[1] - 100];
+    for (what, bytes) in [
+        ("plain", inside_first.to_vec()),
+        ("gzipped", gzipped(inside_first)),
+    ] {
+        match read_volume_from_bytes(&bytes) {
+            Err(NexradError::Truncated { what: kind, .. }) => {
+                assert_eq!(kind, "LDM bzip2 record", "{what}");
+            }
+            other => panic!("{what}: {other:?}"),
+        }
+    }
+
+    // Inside the fourth record: the metadata record and two radial records
+    // before it are whole.
+    let cut = (starts[3] + starts[4]) / 2;
+    let cut_record = starts.iter().rposition(|start| *start < cut).unwrap();
+    assert!(cut_record == 3 && cut < inflated.len());
+    let whole = &inflated[..starts[cut_record]];
+    let expected = read_volume_from_bytes(whole).unwrap();
+    assert!(expected.provenance.decode.decoded_ray_count > 0);
+    for (what, bytes, compression) in [
+        ("plain", inflated[..cut].to_vec(), "bzip2-blocks"),
+        ("gzipped", gzipped(&inflated[..cut]), "gzip-bzip2-blocks"),
+    ] {
+        let volume = read_volume_from_bytes(&bytes).unwrap();
+        assert_eq!(
+            volume.provenance.compression.as_deref(),
+            Some(compression),
+            "{what}"
+        );
+        assert_eq!(
+            volume.provenance.decode.decoded_ray_count,
+            expected.provenance.decode.decoded_ray_count,
+            "{what}"
+        );
+        assert!(
+            volume.provenance.decode.decoded_ray_count < full.provenance.decode.decoded_ray_count
+        );
+        assert!(volume.sweeps == expected.sweeps, "{what}: sweeps differ");
+        for (index, (sweep, full_sweep)) in volume.sweeps.iter().zip(&full.sweeps).enumerate() {
+            assert_eq!(
+                sweep.rays.azimuth_deg,
+                full_sweep.rays.azimuth_deg[..sweep.nrays()],
+                "{what} sweep {index}"
+            );
+        }
+    }
 }

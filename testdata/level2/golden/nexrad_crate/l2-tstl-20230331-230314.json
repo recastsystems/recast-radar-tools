@@ -1,0 +1,8 @@
+{
+ "id": "l2-tstl-20230331-230314",
+ "sha256": "fca0348eda86a3c3e6f156e6e5a7a35577e836dda46c7cb72b7916d66d305850",
+ "generator": "tools/nexrad_crate_golden.py",
+ "nexrad_rev": "1591b64f7b34b14a88b1f020384c252052c8255f",
+ "message_3": null,
+ "message_18": null
+}

@@ -694,6 +694,34 @@ findings, all in code stream F wrote:
   helper. No corpus volume carries DBZH, DBZ and DBZV together, and renaming variables in a real
   file keeps their `standard_name`, which classification reads first. Needs user review.
 
+metadata-complete added two exceptions, built on real bytes because no real file has the input: in
+io-nexrad, `limits_real.rs` `rda_log_frame` and `rda_log_data_is_limited_per_volume` (message 33 compression
+bombs inserted into the real KIWA chunks, a limit test; no message 33 in 560 real files).
+
+It also added ten pending entries: feature tests on edited or rearranged real bytes, for features no real
+file exercises. They are not corruption or limit tests, so the exception rule does not cover them; the owner
+decides whether to allow them as exceptions or remove them (and leave the features untested). Their helpers
+are named `fabricate*` so the scanner flags them and their tests.
+
+- io-nexrad, `radial_extras_real.rs`: `fabricated_differing_radials` edits values inside the committed KTLX
+  2024 trim (radial 5's ELV atmospheric attenuation minus 3, radial 7's VOL calibration constant plus 0.5 dB,
+  radial 9's radar identifier KTLX to XTLX, radial 11's REF TOVER plus 7, radial 13's VOL latitude plus 0.01
+  degree), and `radials_that_differ_keep_their_own_values` checks the per-ray fallback on it. No real file
+  has a sweep whose radials differ in these values: a scan of 96 real Level II volumes (the corpus, the
+  testdata cache and the committed fixtures, 2026-09-25) found none.
+- io-nexrad, `metadata_carried_real.rs`: `fabricate_frames_after_metadata` inserts the non-empty frames of a
+  real metadata record (KTLX 2024's, or KIWA 2026's own) after KIWA 2026's, for
+  `a_later_different_message_is_carried_as_a_copy` and `a_repeated_message_is_counted_not_copied`, because
+  no real Level II file has two messages of one type; `fabricate_relabelled_frame` relabels a real message 2
+  frame as messages 6, 9, 11 and 12 for `relabelled_real_frames_carry_messages_6_9_11_and_12`, because no
+  real file has any of them (they go from the RPG to the RDA or test the wideband link). The values are
+  compared with the inserted bytes and with what the source volume carries alone.
+- io-formats, `grib2_sections_real.rs`: `tar_of` repacks the two committed RS47773 members into one tar and
+  `with_local_use` gives each a GRIB2 section 2, for `merged_members_keep_each_members_values`. No real tar
+  holds two members of one station, no real JMA message has a section 2 and no real station's members
+  differ in sections 0 and 1 (the committed RS47773 tars and the 2026-09-24 21Z national N5 and N6 tars, 40
+  messages of 20 stations, were checked).
+
 ### `crates/recast-radar-core/tests/real_model.rs`
 
 | test | real input | assertion source |
