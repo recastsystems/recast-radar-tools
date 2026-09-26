@@ -1060,7 +1060,10 @@ fn source_message_times(sweep: &Sweep) -> Vec<NexradTime> {
 /// the sweep attribute of that name. Empty when the sweep has neither.
 fn source_channels(sweep: &Sweep) -> Vec<u8> {
     const NAME: &str = "nexrad_message_channels";
-    if let Some(variable) = sweep.extra_vars.iter().find(|variable| &*variable.name == NAME)
+    if let Some(variable) = sweep
+        .extra_vars
+        .iter()
+        .find(|variable| &*variable.name == NAME)
         && let ArrayBuf::U8(values) = &variable.values
         && values.len() == sweep.nrays()
     {
@@ -1077,7 +1080,8 @@ fn source_channels(sweep: &Sweep) -> Vec<u8> {
 /// the radar wrongly for every reader.
 fn check_location(volume: &Volume) -> Result<(), WriteError> {
     let location = volume.location;
-    let within = |value: Option<f64>, limit: f64| value.is_some_and(|v| v.is_finite() && v.abs() <= limit);
+    let within =
+        |value: Option<f64>, limit: f64| value.is_some_and(|v| v.is_finite() && v.abs() <= limit);
     if !within(location.latitude_deg, 90.0) {
         return Err(WriteError::MissingLocation("latitude"));
     }

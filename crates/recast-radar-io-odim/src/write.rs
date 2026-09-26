@@ -221,7 +221,11 @@ fn check_size(volume: &Volume, options: &OdimWriteOptions) -> Result<(), OdimWri
 fn check_linear(volume: &Volume) -> Result<(), OdimWriteError> {
     for (index, sweep) in volume.sweeps.iter().enumerate() {
         for field in &sweep.fields {
-            if field.data.transform().is_some_and(|transform| !transform.is_linear()) {
+            if field
+                .data
+                .transform()
+                .is_some_and(|transform| !transform.is_linear())
+            {
                 return Err(unrepresentable(format!(
                     "sweep {index} field {}: a level-table coding (NEXRAD Level III), which gain and offset cannot state",
                     field.name.as_str()

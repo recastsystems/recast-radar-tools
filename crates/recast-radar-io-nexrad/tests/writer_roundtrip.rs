@@ -156,20 +156,35 @@ fn assert_same_sweep_items(label: &str, index: usize, a: &Sweep, b: &Sweep, angl
     assert_eq!(*platform_track, b.platform_track, "{at}");
     let differing: Vec<&str> = extra_vars
         .iter()
-        .filter(|variable| b.extra_vars.iter().find(|other| other.name == variable.name) != Some(*variable))
+        .filter(|variable| {
+            b.extra_vars
+                .iter()
+                .find(|other| other.name == variable.name)
+                != Some(*variable)
+        })
         .map(|variable| &*variable.name)
         .collect();
     let names = |vars: &[recast_radar_core::model::ExtraVariable]| {
         vars.iter().map(|v| v.name.clone()).collect::<Vec<_>>()
     };
-    assert_eq!(names(extra_vars), names(&b.extra_vars), "{at}: extra variables");
-    assert!(differing.is_empty(), "{at}: extra variables differ: {differing:?}");
+    assert_eq!(
+        names(extra_vars),
+        names(&b.extra_vars),
+        "{at}: extra variables"
+    );
+    assert!(
+        differing.is_empty(),
+        "{at}: extra variables differ: {differing:?}"
+    );
     let other_differing: Vec<String> = other
         .iter()
         .filter(|item| !b.other.contains(item))
         .map(|item| format!("{item:?}").chars().take(80).collect())
         .collect();
-    assert!(other_differing.is_empty(), "{at}: other differ: {other_differing:?}");
+    assert!(
+        other_differing.is_empty(),
+        "{at}: other differ: {other_differing:?}"
+    );
     assert_eq!(*other, b.other, "{at}");
     assert_eq!(
         *elevation_number, b.elevation_number,
@@ -349,7 +364,10 @@ fn assert_same_volume_items(label: &str, a: &Volume, b: &Volume) {
         "{label}"
     );
     assert_eq!(*extra_vars, b.extra_vars, "{label}");
-    assert_eq!(*variable_attrs, b.variable_attrs, "{label}: variable attributes");
+    assert_eq!(
+        *variable_attrs, b.variable_attrs,
+        "{label}: variable attributes"
+    );
     assert_eq!(*simulation, b.simulation, "{label}");
     assert_eq!(a.sweeps.len(), b.sweeps.len(), "{label}: sweeps");
 }

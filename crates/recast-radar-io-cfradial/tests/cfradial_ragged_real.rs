@@ -105,8 +105,16 @@ fn check(id: &str) {
                 ),
                 other => panic!("{context} {name}: storage {}", other.dtype()),
             };
-            assert_eq!(dtype, field_golden["dtype"].as_str().unwrap(), "{context} {name}: dtype");
-            assert_eq!(fill, field_golden["fill"].as_i64(), "{context} {name}: fill");
+            assert_eq!(
+                dtype,
+                field_golden["dtype"].as_str().unwrap(),
+                "{context} {name}: dtype"
+            );
+            assert_eq!(
+                fill,
+                field_golden["fill"].as_i64(),
+                "{context} {name}: fill"
+            );
             assert_eq!(
                 f64::from(scale.unwrap() as f32),
                 field_golden["scale_factor"].as_f64().unwrap(),

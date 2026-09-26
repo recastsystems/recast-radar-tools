@@ -784,7 +784,6 @@ impl Sweep {
             .min_by_key(|field| rank(field.polarization))
     }
 
-
     /// Append absent rows for rays at the end that a field never received, grow
     /// a uniform range to cover every field, then check the invariants
     /// (section 3). Decoders call it once per sweep.
