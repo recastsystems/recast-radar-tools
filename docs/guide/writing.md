@@ -115,8 +115,9 @@ position, and each moment coded from the source's values (the `WriteSummary`
 reports each moment's coding and any value error). It refuses a volume
 without a site position, an RHI, more than 32 sweeps and geometry Level II
 cannot hold (`WriteError`); nothing is written when it refuses. The LDM records are
-compressed with `recast-radar-bzip2`'s encoder, which writes libbzip2's
-streams. For a Level II source, `write_volume_with_source` reuses its
+compressed with `recast-radar-bzip2`'s encoder, which writes libbzip2
+1.0.8's streams byte for byte, except which identical row `origPtr` names in
+a block that repeats a shorter string (the stream decodes the same). For a Level II source, `write_volume_with_source` reuses its
 metadata messages and constant blocks, and `rewrite_level2` re-encodes Level
 II bytes. The writer is the `write` feature (off by default).
 

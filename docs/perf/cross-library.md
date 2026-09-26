@@ -158,7 +158,7 @@ both ratios for every case; the commands are in `docs/perf/data/perf-p1/README.m
 - **This pass's optimisations** (interleaved before/after, one pinned core, output identical):
   JMA decode 0.36-0.37x the time; decode plus float32 conversion of every field 0.45-0.72x; the
   xradar-default FM301 view materialized 0.77x; gzip Level II 0.81-0.86x with peak RSS 95.5 to
-  53.8 MiB on KTLX 2013; uncompressed Level II 0.43x; DORADE 0.79-0.84x; the render raster stage
+  53.8 MiB on KTLX 2013; DORADE 0.79-0.84x; the render raster stage
   0.82-0.84x; the metadata record of a whole-file bzip2 volume 0.55x the instructions; a
   whole-file bzip2 volume parsed while it is decoded block by block, peak RSS 98.3 to 59.0 MiB
   on KTLX 2013 for 4.1% more instructions; opt-in in-place ray ordering that makes 76 of KTLX
