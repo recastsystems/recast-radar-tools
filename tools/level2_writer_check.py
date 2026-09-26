@@ -597,15 +597,10 @@ def radx_reference(label, entry, directory):
         if "antenna_transition" not in nc.variables:
             return sweeps
         transition = np.asarray(nc["antenna_transition"][:]).astype(bool)
-        starts = np.asarray(nc["sweep_start_ray_index"][:])
-        ends = np.asarray(nc["sweep_end_ray_index"][:])
     if transition.any():
-        # The DORADE decoder leaves out rays flagged in transition (the
-        # RYIB ray status); RadxConvert keeps and flags them.
-        note(f"{label}: RadxConvert keeps {int(transition.sum())} transition rays the decoder leaves out; left out of the reference too")
-        for sweep, start, end in zip(sweeps, starts, ends):
-            keep = ~transition[start:end + 1]
-            sweep["fields"] = {name: values[keep] for name, values in sweep["fields"].items()}
+        # The DORADE decoder keeps the rays flagged in transition (the RYIB
+        # ray status, carried as `antenna_transition`), as RadxConvert does.
+        note(f"{label}: {int(transition.sum())} rays flagged in transition, kept by RadxConvert and the decoder alike")
     return sweeps
 
 

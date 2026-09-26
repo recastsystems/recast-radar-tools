@@ -79,8 +79,12 @@ share one version. Nothing has been published yet, so every entry is under
   2620002 (uncompressed or bzip2 LDM records, optionally gzip), real-time
   chunks (`realtime::write_realtime_chunks`, `ChunkWriter`) and a
   GR2Analyst polling directory that follows the GRLevelX polling
-  conventions (`polling::PollingDirectory`), with typed refusals and a
-  `WriteSummary`. `recast-radar-io-cfradial`: `write_cfradial1` (CfRadial
+  conventions (`polling::PollingDirectory`: NWS archive names, LF lines,
+  `ListFile: dir.list` in `config.cfg`, as the captured polling servers
+  have them), with typed refusals and a `WriteSummary`. No path clips a
+  value: a value outside its moment's coding (under `ChunkWriter`, the
+  coding its planned volume fixed) is refused as
+  `WriteError::ValueOutsideCoding`. `recast-radar-io-cfradial`: `write_cfradial1` (CfRadial
   1.4, classic netCDF) and `write_cfradial2` (CfRadial 2 / FM301,
   netCDF-4). `recast-radar-io-odim`: `write_odim_h5_volume` (ODIM_H5 PVOL).
   Guide page `docs/guide/writing.md` and the `write_formats` example.
@@ -108,7 +112,13 @@ share one version. Nothing has been published yet, so every entry is under
 - `recast-radar-cli`: the `recast-radar` command (info, dump, render,
   validate, bench, fetch, convert, publish, serve). `recast-radar-py`: the
   Python package `recast_radar` (FM301 DataTrees, Py-ART radars, writers,
-  fetchers), built with maturin and not published.
+  fetchers), built with maturin and not published. `convert`, `publish`
+  and the Python writers select sweeps (`--sweeps`, `sweeps=`), set the
+  site position (`--position`, `--position-from`, `position=`), take the
+  Level II value coding, Nyquist velocity, unambiguous range and dropping
+  of gates before the radar, and report what a writer left out or coded
+  more coarsely (standard error; `WriteWarning` in Python), refusing it
+  with `--strict` (`strict=True`).
 - A user guide (`docs/guide/`) and runnable examples for reading any
   format, physical values, downloading from AWS, dealiasing, composites and
   rendering (`crates/recast-radar-tools/examples/`).

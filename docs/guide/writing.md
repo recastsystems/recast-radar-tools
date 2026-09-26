@@ -113,8 +113,9 @@ The Level II writer follows ICD 2620010 (Archive II) and ICD 2620002
 RDA status at the frames NOAA's files use), Message 31 radials, the radar's
 position, and each moment coded from the source's values (the `WriteSummary`
 reports each moment's coding and any value error). It refuses a volume
-without a site position, an RHI, more than 32 sweeps and geometry Level II
-cannot hold (`WriteError`); nothing is written when it refuses. The LDM records are
+without a site position, an RHI, more than 32 sweeps, geometry Level II
+cannot hold and a value its moment's coding cannot hold (`WriteError`); it
+never clips a value, and nothing is written when it refuses. The LDM records are
 compressed with `recast-radar-bzip2`'s encoder, which writes libbzip2
 1.0.8's streams byte for byte, except which identical row `origPtr` names in
 a block that repeats a shorter string (the stream decodes the same). For a Level II source, `write_volume_with_source` reuses its

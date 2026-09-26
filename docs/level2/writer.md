@@ -489,7 +489,9 @@ are known to carry:
 A volume should hold one scan: the writer writes the sweeps it is given, in order, and cannot
 tell scan cycles apart. JMA's 10-minute files hold two 5-minute cycles (the 2026 ITOK members have
 35 reflectivity sweeps, more than the 32 cuts Level II numbers, and the writer refuses them as
-`TooManySweeps`); write one cycle's sweeps at a time (`level2_convert --sweeps-starting-at`).
+`TooManySweeps`); write one cycle's sweeps at a time (`recast-radar convert --sweeps LIST
+--sweeps-in-time-order`, the Python writers' `sweeps=` and `sweeps_in_time_order=`, or the
+`level2_convert` example's `--sweeps-starting-at`).
 
 ## Verification
 
@@ -539,20 +541,24 @@ DORADE), once under the default policy (`Precise`) and once under `Compatible`: 
 both. That run predates the integration changes (the site-position refusal, the pulse width, the
 non-clipping `Standard`) and included three Level II sources that are no longer in the corpus.
 
-**Rerun on the integration branch** (2026-09-26, with the site-position refusal, the pulse width,
-the non-clipping `Standard` and the `recast-radar-bzip2` encoder; Py-ART 2.3.0, MetPy 1.7.1,
-xradar 0.12.0, h5py 3.16.0, netCDF4 1.7.4; the `nexrad` crate, RSL and LROSE not rerun): 30 files
-under the default policy (KTLX 2024, KILX 2026 and KIWA 2026 whole volumes, the KTLX, KDVN and
-TSTL trims, KVWX 2008, five ODIM_H5 volumes, two CfRadial 1, two DORADE and the JMA N5, N6 and
-merged volumes, in the variants the example writes), **0 failures** and 116 notes, all of the
-kinds listed below. The KLIX 2005 Message 1 trim, which carries no site position, is refused
-(`MissingLocation`) and not written. Every
-source but the merged JMA volume is now compared with an independent reading of it: DORADE COW2
-and NOXP with RadxConvert's (it keeps COW2's 3 rays flagged in transition, which the decoder
-leaves out; the reference leaves them out too), JMA N5 and N6 with the GRIB2 walker. KVWX 2008's
-re-encoding, whose radials now keep their blank radar identifier, reads in every reader as its
-source does. The notes (212 and 137) are reader limitations; where a limitation is the reader's
-handling of what the writer wrote, the script checks that it is exactly that, and fails otherwise:
+**Rerun on the integration branch** (2026-09-26, the writer at `aa162f5`: the site-position
+refusal, the pulse width, the non-clipping `Standard`, the refusal of values outside a coding and
+the `recast-radar-bzip2` encoder; Py-ART 2.3.0, MetPy 1.7.1, xradar 0.12.0, h5py 3.16.0, netCDF4
+1.7.4, the `nexrad` crate 1.0.0-rc.4 at `1591b64`, RSL 1.50 and LROSE RadxConvert in nexbench):
+32 files under each policy, `Precise` and `Compatible` (KTLX 2024, KILX 2026 and KIWA 2026 whole
+volumes, the KTLX, KDVN, TSTL and KLIX 2005 trims, KVWX 2008, five ODIM_H5 volumes, two CfRadial
+1, two DORADE and the JMA N5, N6 and merged volumes, in the variants the example writes), read by
+all six readers: **0 failures** in both runs, with 189 and 114 notes, all of the kinds listed
+below. The KLIX 2005 Message 1 trim, which carries no site position, is given the position of the
+KLIX 2021 Message 31 trim (as `recast-radar convert --position-from` gives it) and written with
+its gates before the radar dropped. Every source but the merged JMA volume is compared with an
+independent reading of it: DORADE COW2 and NOXP with RadxConvert's (the decoder keeps COW2's 3
+rays flagged in transition, as RadxConvert does), JMA N5 and N6 with the GRIB2 walker. KVWX 2008's
+re-encoding, whose radials keep their blank radar identifier, reads in every reader as its source
+does. RSL reads every file but the gzip-wrapped LDM records (it crashes on BEJAB's and reads the
+unwrapped file) and the DORADE sources; RadxConvert every file but the gzip-wrapped ones and the
+KVWX 2008 source. The notes are reader limitations; where a limitation is the reader's handling of
+what the writer wrote, the script checks that it is exactly that, and fails otherwise:
 
 - xradar 0.12 keeps only the low 8 bits of 16-bit moments other than ZDR and PHI (and 11 and 10
   bits of those): for the 16-bit moments `Precise` writes for float and 16-bit sources (X-SAPR
