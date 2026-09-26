@@ -422,18 +422,29 @@ a volume that has every moment the radar sends (a Doppler volume, not a reflecti
 ## Polling directory
 
 `polling::PollingDirectory` publishes files the way GRLevelX polling clients (GR2Analyst's
-polling mode) read a polling directory:
+polling mode) read a polling directory: the directory a client's polling URL names holds
+`grlevel2.cfg`, and each site's directory its listing. The GRLevelX manual names only that file;
+the layout and the defaults below follow the GRLevelX-style servers captured in the corpus
+(`testdata/feeds/manifest.toml`): the Iowa Environmental Mesonet's `config.cfg` (`ListFile:
+dir.list`, then 220 `Site:` lines in the order the sites were added), the North Dakota State
+Water Commission's `dir.list` of KXWA (1,161 LF lines such as `31040
+KXWA20260921_105810_V06.ar2v`) and the Laredo feed's `grlevel2.cfg` (`Site: LARE`):
 
 ```text
-<root>/config.cfg         "Site: XXXX" lines, one per site, sorted without regard to case
-<root>/grlevel2.cfg       the same list
-<root>/<SITE>/dir.list    "<size> <filename>" lines, oldest first, CRLF line ends
-<root>/<SITE>/<SITE>_YYYYMMDDHHMMSS.ar2v[.gz]
+<root>/config.cfg         "ListFile: dir.list", then "Site: XXXX" lines, one per site
+<root>/grlevel2.cfg       "Site: XXXX" lines
+<root>/<SITE>/dir.list    "<size> <filename>" lines, oldest first
+<root>/<SITE>/<SITE>YYYYMMDD_HHMMSS_V06.ar2v[.gz]
 ```
 
+Every line ends in LF. A publish appends its site to each site list that lacks it and keeps the
+rest of the file as it is, so a list kept by hand keeps its lines and order; a new `config.cfg`
+starts with `ListFile: dir.list`.
+
 A file name is a name format and a suffix. The format (`with_name_format`) has `{site}` for the
-site and chrono's strftime specifiers for the volume time; the default, `{site}_%Y%m%d%H%M%S`,
-gives `SITE_YYYYMMDDHHMMSS` (the site padded with `_` to 4). The suffix is `.ar2v`, or `.ar2v.gz`
+site and chrono's strftime specifiers for the volume time; the default, `{site}%Y%m%d_%H%M%S_V06`,
+gives the NWS archive's `SITEYYYYMMDD_HHMMSS_V06` (the site padded with `_` to 4). The suffix is
+`.ar2v`, or `.ar2v.gz`
 when the bytes are gzip, unless `with_suffix` fixes one (MetPy picks gzip by the `.gz` suffix of a
 path, so only gzip bytes should be named `.gz`). `publish_named` publishes under a name the caller
 chooses. Every name must be a plain file name that every platform can hold, because a polling
@@ -447,10 +458,11 @@ format that has an unknown `%` specifier or renders such a name (`%H:%M`; `Inval
 year to second. A lower-case site in the names and in the files comes from a lower-case
 `WriteOptions::icao`; the site derived from an ODIM node is upper case (`DKROM` to `DROM`).
 
-The listed size is the stored file's. Each file and `dir.list` is written to a temporary name and
-renamed into place, so a polling client never reads a partial file or listing. At most
-`DEFAULT_MAX_FILES` (320, a little over a day of 5-minute volumes) are kept per site; older ones
-are deleted and unlisted. Each publish lists its site in `config.cfg` and `grlevel2.cfg` unless
+The listed size is the stored file's, in bytes. Each file and `dir.list` is written to a
+temporary name and renamed into place, so a polling client never reads a partial file or listing.
+At most `DEFAULT_MAX_FILES` (30, as `recast-radar publish` and the Python package keep: two and a
+half hours of 5-minute volumes) are kept per site unless `with_max_files` sets another limit;
+older ones are deleted and unlisted. Each publish lists its site in `config.cfg` and `grlevel2.cfg` unless
 `with_site_lists(false)` leaves them as they are. One publisher per root is assumed.
 
 ## ICD compliance

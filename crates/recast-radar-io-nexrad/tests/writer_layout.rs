@@ -518,8 +518,23 @@ fn ldm_records_without_header(bytes: &[u8]) -> usize {
     count
 }
 
+/// A committed capture of a GRLevelX-style polling server (manifest
+/// `testdata/feeds/manifest.toml`).
+fn polling_capture(id: &str) -> String {
+    let bytes = recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{id}: {err}"));
+    String::from_utf8(bytes).unwrap_or_else(|err| panic!("{id}: {err}"))
+}
+
+/// The polling directory follows the GRLevelX-style servers captured in the
+/// corpus: NWS archive names with `.ar2v` and LF `dir.list` lines as the
+/// North Dakota State Water Commission serves KXWA, a `config.cfg` that
+/// names its listing file and lists its sites in the order they were added
+/// as the Iowa Environmental Mesonet's does, and a `grlevel2.cfg` of
+/// `Site:` lines as the Laredo feed's.
 #[test]
 fn polling_directory_follows_the_grlevelx_conventions() {
+    use recast_radar_io_nexrad::write::polling::{LIST_FILE_LINE, PublishError};
+
     let (Some(first), Some(second)) = (decoded(KTLX_2024), decoded(KDVN_2020)) else {
         return;
     };
@@ -527,12 +542,31 @@ fn polling_directory_follows_the_grlevelx_conventions() {
     let _ = std::fs::remove_dir_all(&root);
     let directory = PollingDirectory::new(&root).with_max_files(1);
 
+    // The captured KXWA listing: every name is the one the default name
+    // format gives for its site and time, and the listing reads back as
+    // written, LF line ends.
+    let kxwa = polling_capture("polling-ndswc-kxwa-dir-list-20260925");
+    let entries = parse_dir_list(&kxwa);
+    assert_eq!(entries.len(), 1161);
+    assert_eq!(format_dir_list(&entries), kxwa);
+    for entry in &entries {
+        let stamp = entry
+            .name
+            .strip_prefix("KXWA")
+            .and_then(|rest| rest.strip_suffix("_V06.ar2v"))
+            .unwrap_or_else(|| panic!("{}", entry.name));
+        let time = chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%d_%H%M%S")
+            .unwrap_or_else(|err| panic!("{}: {err}", entry.name))
+            .and_utc();
+        assert_eq!(directory.file_name("KXWA", time, b"AR2V0006."), entry.name);
+    }
+
     let published = directory
         .publish_volume(&first, &WriteOptions::default())
         .unwrap();
     let summary = published.summary.as_ref().unwrap();
     let time = summary.volume_time.unwrap();
-    let name = format!("KTLX_{}.ar2v", time.format("%Y%m%d%H%M%S"));
+    let name = format!("KTLX{}_V06.ar2v", time.format("%Y%m%d_%H%M%S"));
     assert_eq!(published.entry.name, name);
     let written = std::fs::read(root.join("KTLX").join(&name)).unwrap();
     assert_eq!(published.entry.size, written.len() as u64);
@@ -541,12 +575,11 @@ fn polling_directory_follows_the_grlevelx_conventions() {
         first.sweeps.len()
     );
     let listing = std::fs::read_to_string(root.join("KTLX").join("dir.list")).unwrap();
-    assert_eq!(listing, format!("{} {name}\r\n", written.len()));
+    assert_eq!(listing, format!("{} {name}\n", written.len()));
     assert_eq!(
         parse_dir_list(&listing),
         std::slice::from_ref(&published.entry)
     );
-    assert_eq!(format_dir_list(&parse_dir_list(&listing)), listing);
 
     // A later volume replaces the older one under a one-file limit.
     let later = time + chrono::TimeDelta::minutes(5);
@@ -558,79 +591,88 @@ fn polling_directory_follows_the_grlevelx_conventions() {
         std::slice::from_ref(&again.entry)
     );
 
-    // Every site is listed once in both site files, sorted without regard
-    // to case.
+    // Every site is listed once, in the order added; config.cfg names the
+    // listing file first.
     directory
         .publish_volume(&second, &WriteOptions::default())
         .unwrap();
-    directory.list_site("dbor").unwrap();
-    for file in ["config.cfg", "grlevel2.cfg"] {
-        let text = std::fs::read_to_string(root.join(file)).unwrap();
-        assert_eq!(text, "Site: dbor\r\nSite: KDVN\r\nSite: KTLX\r\n", "{file}");
-    }
+    directory.list_site("KABR").unwrap();
+    directory.list_site("KTLX").unwrap();
+    let sites = "Site: KTLX\nSite: KDVN\nSite: KABR\n";
+    assert_eq!(
+        std::fs::read_to_string(root.join("config.cfg")).unwrap(),
+        format!("{LIST_FILE_LINE}\n{sites}")
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("grlevel2.cfg")).unwrap(),
+        sites
+    );
     assert!(matches!(
         directory.publish_bytes("../x", later, &written),
-        Err(recast_radar_io_nexrad::write::polling::PublishError::InvalidSite(_))
+        Err(PublishError::InvalidSite(_))
     ));
+
+    // The captured site lists as a root's own: a site already listed leaves
+    // them byte for byte; a new one is added at the end.
+    let iem = polling_capture("polling-iem-config-cfg-20260926");
+    let laredo = polling_capture("polling-ewr-laredo-grlevel2-cfg-20260925");
+    assert!(iem.starts_with(&format!("{LIST_FILE_LINE}\n")));
+    let captured = root.join("captured");
+    std::fs::create_dir_all(&captured).unwrap();
+    std::fs::write(captured.join("config.cfg"), &iem).unwrap();
+    std::fs::write(captured.join("grlevel2.cfg"), &laredo).unwrap();
+    let hand_kept = PollingDirectory::new(&captured);
+    hand_kept.list_site("KTLX").unwrap();
+    hand_kept.list_site("LARE").unwrap();
+    assert!(iem.contains("\nSite: KTLX\n") && !iem.contains("LARE"));
+    assert_eq!(
+        std::fs::read_to_string(captured.join("config.cfg")).unwrap(),
+        format!("{iem}Site: LARE\n")
+    );
+    assert_eq!(
+        std::fs::read_to_string(captured.join("grlevel2.cfg")).unwrap(),
+        format!("{laredo}Site: KTLX\n")
+    );
 
     // gzip bytes are named .ar2v.gz; a fixed suffix names every file so.
     let mut gzip = WriteOptions::default();
     gzip.gzip = true;
     let wrapped = directory.publish_volume(&first, &gzip).unwrap();
     assert!(
-        wrapped.entry.name.ends_with(".ar2v.gz"),
+        wrapped.entry.name.ends_with("_V06.ar2v.gz"),
         "{}",
         wrapped.entry.name
     );
     let fixed = PollingDirectory::new(root.join("fixed")).with_suffix(".ar2v.gz");
-    let named = fixed.publish_bytes("DROM", later, &written).unwrap();
+    let named = fixed.publish_bytes("KDVN", later, &written).unwrap();
     assert_eq!(
         named.entry.name,
-        format!("DROM_{}.ar2v.gz", later.format("%Y%m%d%H%M%S"))
+        format!("KDVN{}_V06.ar2v.gz", later.format("%Y%m%d_%H%M%S"))
     );
 
-    // Other name formats: the date and time apart, a lower-case site
-    // written without a separator (the ICAO in the file lower case too),
-    // and two volumes a time under names the caller chooses.
+    // Other name formats, and names the caller chooses.
     let time = chrono::DateTime::parse_from_rfc3339("2026-09-24T21:05:00Z")
         .unwrap()
         .to_utc();
-    let france = PollingDirectory::new(root.join("mf"))
-        .with_name_format("{site}_%Y%m%d_%H%M%S")
+    let underscored = PollingDirectory::new(root.join("underscored"))
+        .with_name_format("{site}_%Y%m%d%H%M%S")
         .unwrap();
     assert_eq!(
-        france.file_name("MF36", time, &written),
-        "MF36_20260924_210500.ar2v"
+        underscored.file_name("KTLX", time, &written),
+        "KTLX_20260924210500.ar2v"
     );
-    let compact = PollingDirectory::new(root.join("dk"))
-        .with_name_format("{site}%Y%m%d%H%M%S")
+    let chosen = PollingDirectory::new(root.join("chosen"));
+    let one = chosen
+        .publish_named("KTLX", "KTLX20260924_210500_V06.ar2v", &written)
         .unwrap();
-    let mut danish = WriteOptions::default();
-    danish.icao = Some("dbor".to_owned());
-    let published = compact.publish_volume(&first, &danish).unwrap();
-    assert_eq!(
-        published.entry.name,
-        format!(
-            "dbor{}.ar2v",
-            summary.volume_time.unwrap().format("%Y%m%d%H%M%S")
-        )
-    );
-    assert_eq!(&std::fs::read(&published.path).unwrap()[20..24], b"dbor");
-    let jma = PollingDirectory::new(root.join("jma"))
-        .with_name_format("{site}%Y%m%d_%H%M%S_1")
-        .unwrap()
-        .with_suffix(".msg31.gz");
-    let one = jma.publish_bytes("ITOK", time, &written).unwrap();
-    assert_eq!(one.entry.name, "ITOK20260924_210500_1.msg31.gz");
-    let two = jma
-        .publish_named("ITOK", "ITOK20260924_210500_2.msg31.gz", &written)
+    let two = chosen
+        .publish_named("KTLX", "KTLX20260924_211000_V06.ar2v", &written)
         .unwrap();
-    assert_eq!(jma.entries("ITOK").unwrap(), [one.entry, two.entry]);
+    assert_eq!(chosen.entries("KTLX").unwrap(), [one.entry, two.entry]);
 
     // Formats and names that are not plain file names every platform can
     // hold are refused: path separators and control characters, and what
     // Windows refuses (a `:` would write an NTFS alternate data stream).
-    use recast_radar_io_nexrad::write::polling::PublishError;
     for format in [
         "",
         "{site}%Q",
@@ -677,7 +719,7 @@ fn polling_directory_follows_the_grlevelx_conventions() {
     ] {
         assert!(
             matches!(
-                jma.publish_named("ITOK", name, &written),
+                chosen.publish_named("KTLX", name, &written),
                 Err(PublishError::InvalidFileName(_))
             ),
             "{name:?}"
@@ -694,7 +736,8 @@ fn polling_directory_follows_the_grlevelx_conventions() {
     }
     // Names that only start like a device name are plain names.
     for name in ["CONUS_1.ar2v", "COM10.ar2v", "NULL.ar2v"] {
-        jma.publish_named("ITOK", name, &written)
+        chosen
+            .publish_named("KTLX", name, &written)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
     }
     std::fs::remove_dir_all(&root).unwrap();

@@ -795,16 +795,20 @@ fn convert_writes_every_format_and_publish_a_polling_directory() {
         ]);
         assert!(output.status.success(), "{}", stderr(&output));
     }
-    for file in ["config.cfg", "grlevel2.cfg"] {
+    for (file, expected) in [
+        ("config.cfg", "ListFile: dir.list\nSite: SPDG\n"),
+        ("grlevel2.cfg", "Site: SPDG\n"),
+    ] {
         let text = fs::read_to_string(root.join(file)).expect("site list");
-        assert_eq!(text, "Site: SPDG\r\n", "{file}");
+        assert_eq!(text, expected, "{file}");
     }
     let listing = fs::read_to_string(root.join("SPDG/dir.list")).expect("dir.list");
-    let lines: Vec<&str> = listing.split_terminator("\r\n").collect();
+    assert!(!listing.contains('\r'), "{listing:?}");
+    let lines: Vec<&str> = listing.split_terminator('\n').collect();
     assert_eq!(lines.len(), 1, "{listing:?}");
     let (size, name) = lines[0].split_once(' ').expect("<size> <name>");
     assert!(
-        name.starts_with("SPDG_2026") && name.ends_with(".ar2v"),
+        name.starts_with("SPDG2026") && name.ends_with("_V06.ar2v"),
         "{name}"
     );
     let published = root.join("SPDG").join(name);

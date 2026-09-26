@@ -54,13 +54,13 @@ def test_publish_writes_a_polling_directory(ktlx_trim, tmp_path):
     volume = recast_radar.read(ktlx_trim)
     result = volume.publish(tmp_path, site="KTLX")
     listing = (tmp_path / "KTLX" / "dir.list").read_bytes()
-    assert listing.endswith(b"\r\n")
+    assert listing.endswith(b"\n") and b"\r" not in listing
     size, name = listing.decode().split()
     assert result["path"].name == name
     assert int(size) == result["path"].stat().st_size
-    assert name.startswith("KTLX_20240315") and name.endswith(".ar2v")
-    for site_list in ("config.cfg", "grlevel2.cfg"):
-        assert (tmp_path / site_list).read_text() == "Site: KTLX\n"
+    assert name.startswith("KTLX20240315_") and name.endswith("_V06.ar2v")
+    assert (tmp_path / "config.cfg").read_bytes() == b"ListFile: dir.list\nSite: KTLX\n"
+    assert (tmp_path / "grlevel2.cfg").read_bytes() == b"Site: KTLX\n"
     assert recast_radar.read(result["path"]).nsweeps == volume.nsweeps
 
 

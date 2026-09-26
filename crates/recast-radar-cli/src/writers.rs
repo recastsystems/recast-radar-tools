@@ -237,8 +237,8 @@ impl VolumeWriter for Fm301Writer {
 
 /// A GR2Analyst polling directory, following the GRLevelX polling
 /// conventions (`recast_radar_io_nexrad::write::polling`): one folder per
-/// site with `SITE_YYYYMMDDHHMMSS.ar2v` files (`.ar2v.gz` for gzip bytes)
-/// and a `dir.list`, and the site in the root's `config.cfg` and
+/// site with `SITEYYYYMMDD_HHMMSS_V06.ar2v` files (`.ar2v.gz` for gzip
+/// bytes) and a `dir.list`, and the site in the root's `config.cfg` and
 /// `grlevel2.cfg`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PollingDirectoryPublisher;

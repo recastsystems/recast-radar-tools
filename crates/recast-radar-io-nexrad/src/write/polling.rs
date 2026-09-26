@@ -1,17 +1,23 @@
 //! GR2Analyst polling directory publisher, following the GRLevelX polling
-//! conventions:
+//! conventions: a root directory holding `grlevel2.cfg` (the directory a
+//! GRLevelX client's polling URL names) and one directory per site with its
+//! file listing. The layout and defaults follow the GRLevelX-style polling
+//! servers captured in the test corpus (`docs/testdata/corpus.md`: the
+//! Iowa Environmental Mesonet's `config.cfg`, the North Dakota State Water
+//! Commission's `dir.list` of KXWA, the Laredo feed's `grlevel2.cfg`):
 //!
 //! ```text
-//! <root>/config.cfg         "Site: XXXX" lines, one per site
-//! <root>/grlevel2.cfg       the same list
+//! <root>/config.cfg         "ListFile: dir.list", then "Site: XXXX" lines, one per site
+//! <root>/grlevel2.cfg       "Site: XXXX" lines
 //! <root>/<SITE>/dir.list    "<size> <filename>" lines, oldest first
-//! <root>/<SITE>/<SITE>_YYYYMMDDHHMMSS.ar2v
+//! <root>/<SITE>/<SITE>YYYYMMDD_HHMMSS_V06.ar2v
 //! ```
 //!
-//! Lines end in CRLF. File names are the site and the volume
-//! time by a name format ([`DEFAULT_NAME_FORMAT`], `SITE_YYYYMMDDHHMMSS`,
-//! unless [`PollingDirectory::with_name_format`] sets another), then a
-//! suffix: `.ar2v`, or `.ar2v.gz` when the bytes are gzip, unless
+//! Lines end in LF; a site is added at the end of the site lists. File names are the
+//! site and the volume time by a name format ([`DEFAULT_NAME_FORMAT`], the
+//! NWS archive's `SITEYYYYMMDD_HHMMSS_V06`, unless
+//! [`PollingDirectory::with_name_format`] sets another), then a suffix:
+//! `.ar2v`, or `.ar2v.gz` when the bytes are gzip, unless
 //! [`PollingDirectory::with_suffix`] fixes one;
 //! [`PollingDirectory::publish_named`] takes any name
 //! (`docs/level2/writer.md`, "Polling directory"). MetPy picks gzip by a
@@ -31,18 +37,23 @@ use thiserror::Error;
 
 use super::{WriteError, WriteOptions, WriteSummary};
 
-/// Default number of files kept per site (a little over a day of 5-minute
-/// volumes).
-pub const DEFAULT_MAX_FILES: usize = 320;
+/// Default number of files kept per site: 30, as the `recast-radar publish`
+/// command and the Python package keep (two and a half hours of 5-minute
+/// volumes). A server keeps what its clients loop over; the North Dakota
+/// server captured in the corpus lists about 3.6 days.
+pub const DEFAULT_MAX_FILES: usize = 30;
 /// File name suffix of Archive II bytes that are not gzip.
 pub const ARCHIVE_SUFFIX: &str = ".ar2v";
 /// File name suffix of gzip-wrapped Archive II bytes.
 pub const GZIP_SUFFIX: &str = ".ar2v.gz";
 /// The site list files at the root.
 pub const SITE_LIST_FILES: [&str; 2] = ["config.cfg", "grlevel2.cfg"];
-/// Default file name format (before the suffix): the site, `_`, the volume
-/// time as `YYYYMMDDHHMMSS`.
-pub const DEFAULT_NAME_FORMAT: &str = "{site}_%Y%m%d%H%M%S";
+/// The line that names the site listing file, first in a new `config.cfg`.
+pub const LIST_FILE_LINE: &str = "ListFile: dir.list";
+/// Default file name format (before the suffix): the NWS archive's name,
+/// the site, the volume date, `_`, its time and `_V06` (the `AR2V0006`
+/// format the writer writes), as in `KXWA20260921_105810_V06`.
+pub const DEFAULT_NAME_FORMAT: &str = "{site}%Y%m%d_%H%M%S_V06";
 /// Longest file name accepted.
 const MAX_NAME_LEN: usize = 255;
 
@@ -71,11 +82,11 @@ pub fn parse_dir_list(text: &str) -> Vec<DirListEntry> {
         .collect()
 }
 
-/// `dir.list` text for `entries`, CRLF line ends.
+/// `dir.list` text for `entries`, LF line ends.
 pub fn format_dir_list(entries: &[DirListEntry]) -> String {
     entries
         .iter()
-        .map(|entry| format!("{} {}\r\n", entry.size, entry.name))
+        .map(|entry| format!("{} {}\n", entry.size, entry.name))
         .collect()
 }
 
@@ -160,8 +171,8 @@ impl PollingDirectory {
     /// Name files by `format` (before the suffix): `{site}` stands for the
     /// site and chrono's strftime specifiers (`%Y`, `%m`, `%d`, `%H`, `%M`,
     /// `%S`, ...) for the volume time; anything else is literal. For
-    /// example `"{site}_%Y%m%d%H%M%S"` (the default),
-    /// `"{site}_%Y%m%d_%H%M%S"` or `"{site}%Y%m%d%H%M%S"` (with a lower-case
+    /// example `"{site}%Y%m%d_%H%M%S_V06"` (the default),
+    /// `"{site}_%Y%m%d%H%M%S"` or `"{site}%Y%m%d%H%M%S"` (with a lower-case
     /// site given as `WriteOptions::icao` for a lower-case name); names that
     /// follow no format go through [`Self::publish_named`]. `dir.list` and the retention
     /// limit order files by name, so the time should run from year to
@@ -214,7 +225,7 @@ impl PollingDirectory {
         self
     }
 
-    /// Use `suffix` after `SITE_YYYYMMDDHHMMSS` in every file name, whatever
+    /// Use `suffix` after the formatted name in every file name, whatever
     /// the bytes.
     pub fn with_suffix(mut self, suffix: impl Into<String>) -> Self {
         self.suffix = Some(suffix.into());
@@ -246,7 +257,7 @@ impl PollingDirectory {
             // Not reached: the format was checked when it was set, and a
             // site holds no `%`.
             stem = format!(
-                "{site}_{:04}{:02}{:02}{:02}{:02}{:02}",
+                "{site}{:04}{:02}{:02}_{:02}{:02}{:02}_V06",
                 time.year(),
                 time.month(),
                 time.day(),
@@ -346,34 +357,42 @@ impl PollingDirectory {
         }
     }
 
-    /// Add `site` to the root's site lists (`config.cfg`, `grlevel2.cfg`),
-    /// sorted without regard to case.
+    /// Add `site` to the root's site lists (`config.cfg`, `grlevel2.cfg`):
+    /// a `Site:` line appended to each list that lacks it, the rest of the
+    /// file kept as it is (a hand-kept list keeps its order, as the captured
+    /// servers' lists are in the order their sites were added). A new
+    /// `config.cfg` starts with [`LIST_FILE_LINE`].
     pub fn list_site(&self, site: &str) -> Result<(), PublishError> {
         check_site(site)?;
         fs::create_dir_all(&self.root).map_err(|source| io_error(&self.root, source))?;
         for file in SITE_LIST_FILES {
             let path = self.root.join(file);
-            let text = match fs::read_to_string(&path) {
+            let mut text = match fs::read_to_string(&path) {
                 Ok(text) => text,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    if file == "config.cfg" {
+                        format!("{LIST_FILE_LINE}\n")
+                    } else {
+                        String::new()
+                    }
+                }
                 Err(source) => return Err(io_error(&path, source)),
             };
-            let mut sites: Vec<String> = text
-                .lines()
-                .filter_map(|line| line.trim().strip_prefix("Site:"))
-                .map(|name| name.trim().to_owned())
-                .filter(|name| !name.is_empty())
-                .collect();
-            if sites.iter().any(|name| name == site) {
+            let listed = text.lines().any(|line| {
+                line.trim()
+                    .strip_prefix("Site:")
+                    .is_some_and(|name| name.trim() == site)
+            });
+            if listed {
                 continue;
             }
-            sites.push(site.to_owned());
-            sites.sort_by_key(|name| name.to_ascii_uppercase());
-            let listing: String = sites
-                .iter()
-                .map(|name| format!("Site: {name}\r\n"))
-                .collect();
-            write_atomic(&path, listing.as_bytes())?;
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+            }
+            text.push_str("Site: ");
+            text.push_str(site);
+            text.push('\n');
+            write_atomic(&path, text.as_bytes())?;
         }
         Ok(())
     }

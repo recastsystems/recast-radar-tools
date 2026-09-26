@@ -322,8 +322,8 @@ writer with chunk output (`VolumeWriter::write_chunks`).
 `publish` writes each input volume as a Level II file into a polling
 directory (see below), keeps the newest `--keep` in each site's `dir.list`,
 and adds the site to `config.cfg` and `grlevel2.cfg` unless
-`--no-site-config`. A file is named `SITE_YYYYMMDDHHMMSS.ar2v` after the
-site and the volume time, and every file and `dir.list` is written to a
+`--no-site-config`. A file is named `SITEYYYYMMDD_HHMMSS_V06.ar2v` after the
+site and the volume time, as the NWS archive names its files, and every file and `dir.list` is written to a
 temporary name and renamed into place, so a polling client never reads a
 partial file.
 
@@ -366,13 +366,16 @@ GR2Analyst polls a directory over HTTP:
 
 ```none
 polling/
-  config.cfg          Site: KTLX        one line per site
-  grlevel2.cfg        (the same lines)
+  config.cfg          ListFile: dir.list, then Site: KTLX, one line per site
+  grlevel2.cfg        Site: KTLX, one line per site
   KTLX/
-    dir.list          <size> KTLX_20240315000217.ar2v      "<size> <file name>", oldest first, CRLF
-    KTLX_20240315000217.ar2v
+    dir.list          <size> KTLX20240315_000217_V06.ar2v   "<size> <file name>", oldest first
+    KTLX20240315_000217_V06.ar2v
     ...
 ```
+
+Lines end in LF, as the servers below write them. `publish` appends a new
+site to the site lists and keeps the rest of an existing list as it is.
 
 The Iowa Environmental Mesonet (<https://mesonet-nexrad.agron.iastate.edu/level2/raw/>)
 serves the NEXRAD network and several research radars this way, and North

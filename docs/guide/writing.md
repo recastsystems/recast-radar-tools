@@ -123,9 +123,11 @@ II bytes. The writer is the `write` feature (off by default).
 `nexrad::write::realtime` cuts the same records into the `S`, `I` and `E`
 chunks of the `unidata-nexrad-level2-chunks` bucket, and
 `nexrad::write::polling::PollingDirectory` publishes files the way GRLevelX
-polling clients read a polling directory: `config.cfg` and `grlevel2.cfg`
-listing the sites, and per site `SITE_YYYYMMDDHHMMSS.ar2v` files with a
-`dir.list` of `<size> <file name>` lines, oldest first. Every file is written
+polling clients read a polling directory: `config.cfg` (`ListFile:
+dir.list`, then the sites) and `grlevel2.cfg` listing the sites, and per site
+`SITEYYYYMMDD_HHMMSS_V06.ar2v` files (the NWS archive's names) with a
+`dir.list` of `<size> <file name>` lines, oldest first, every line ending in
+LF. Every file is written
 to a temporary name and renamed into place.
 
 ## CfRadial and ODIM_H5
