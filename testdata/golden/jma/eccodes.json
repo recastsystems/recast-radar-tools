@@ -2,6 +2,7 @@
  "eccodes": "2.48.0",
  "generator": "tools/jma_eccodes_golden.py",
  "placeholder_templates": ["grib2/local/rjtd/template.3.50120.def","grib2/local/rjtd/template.4.51022.def"],
+ "wmo_grid_template_3_120_octets": {"15":"numberOfDataBinsAlongRadials","19":"numberOfRadials","23":"latitudeOfCentrePoint","27":"longitudeOfCentrePoint","31":"spacingOfBinsAlongRadials","35":"offsetFromOriginToInnerBound","39":"scanningMode"},
  "files": {
   "jma-n5-20191012-090000-rs47773": {
    "member": "Z__C_RJTD_20191012090000_RDR_JMAGPV_RS47773_Gar0p5km0p7deg_Pze_ANAL_grib2.bin",

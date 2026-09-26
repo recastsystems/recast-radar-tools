@@ -1684,7 +1684,7 @@ treat it uniformly (`first_gate_m + g * spacing`, nearest gate by `round`):
 | io-odim | `where/rstart` × 1000 (500 for dkrom) | **start** of the first bin; xradar reports the centre, 750 |
 | io-cfradial | `round(range[0] - spacing/2)` | **start**, rounded (IRENE centre 0 m becomes -38) |
 | io-dorade | first cell + range delay, rounded | DORADE cell distance |
-| io-jma | `range_start_m`, rounded | per GRIB2 template |
+| io-jma | `range_start_m`, rounded | **start** of the first bin (template 3.50120 octets 35-38 are WMO template 3.120's offset from the origin to the inner bound); the model puts the first centre half a spacing beyond it (item 9) |
 
 Every value is also rounded to whole metres. DOW8's first centre is 62.456 m and its spacing
 124.913 m. Stored as 125 m, the spacing error puts gate 949 83 m off.
@@ -3020,9 +3020,14 @@ above, the code is authoritative and the difference is listed here.
 
 **Choices the text left open**
 
-9. JMA legacy `first_gate_m` (GRIB2 template 3.50120 "range start") is treated as a gate
-   centre, like NEXRAD, DORADE and generic volumes. Round trips are exact either way; F.3
-   confirms the meaning when io-jma decodes natively.
+9. JMA legacy `first_gate_m` (GRIB2 template 3.50120 "range start") was treated as a gate
+   centre, like NEXRAD, DORADE and generic volumes, until the meaning was confirmed: octets
+   15 to 39 of JMA's local template follow the WMO azimuth-range template 3.120 (WMO-No. 306)
+   octet for octet, and ecCodes' own definition of 3.120 names octets 35-38
+   `offsetFromOriginToInnerBound`, the start of the first bin
+   (`crates/recast-radar-io-jma/tests/eccodes_real.rs`). io-jma now puts the first gate's
+   centre half a spacing beyond it: 250 m for the 500 m gates from 0 m of every JMA tar in
+   the corpus.
 10. A sweep with an explicit range has no legacy form: `cut_from_sweep` and
     `legacy_from_volume` return `ExplicitRange`; `grid_from_field` approximates the gate range
     from the first two centres.

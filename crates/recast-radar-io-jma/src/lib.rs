@@ -67,9 +67,16 @@
 //! physical `f32` planes (NaN = missing), exactly as the run-length level
 //! table dictates — the level table is a lookup, not an affine
 //! raw-to-physical mapping, so compact u8/u16 storage does not apply. The
-//! `range` coordinate treats the template 3.50120 range start as the centre
-//! of the first gate (the pre-FM301 convention; design note 17.9). Ray
-//! azimuths follow the grid's start azimuth and scan direction. The format
+//! template 3.50120 range start is the distance to the inner bound of the
+//! first gate: octets 15 to 39 of the template are those of the WMO
+//! azimuth-range grid template 3.120 (bins along radials, radials, centre
+//! latitude and longitude, bin spacing, then octets 35-38, which WMO-No. 306
+//! and ecCodes name "offset from origin to inner bound", then the scanning
+//! mode), so the `range` coordinate puts the first gate's centre half a gate
+//! spacing beyond it (250 m for the 500 m gates from 0 m of every tar in the
+//! corpus), as CfRadial and FM301 place gates; `tests/eccodes_real.rs` checks
+//! ecCodes' names for those octets. Ray azimuths follow the grid's start
+//! azimuth and scan direction. The format
 //! has no per-ray times: each sweep's template 4.51022 gives the start and
 //! end of its observation, in seconds from the GRIB reference time (octets
 //! 51-52 and 53-54), so every ray of a sweep carries its sweep's
@@ -843,13 +850,16 @@ fn push_sweep(
         elevation_deg,
     );
     sweep.follow_mode = Some(FollowMode::None);
+    let spacing_m = if grid.gate_spacing_m > 0.0 && grid.gate_spacing_m.is_finite() {
+        f64::from(grid.gate_spacing_m)
+    } else {
+        1.0
+    };
+    // The range start is the first gate's inner bound (WMO template 3.120,
+    // octets 35-38); the coordinate holds gate centres.
     sweep.range = RangeCoord::Uniform {
-        first_center_m: f64::from(grid.range_start_m),
-        spacing_m: if grid.gate_spacing_m > 0.0 && grid.gate_spacing_m.is_finite() {
-            f64::from(grid.gate_spacing_m)
-        } else {
-            1.0
-        },
+        first_center_m: f64::from(grid.range_start_m) + spacing_m / 2.0,
+        spacing_m,
         ngates,
     };
     sweep
@@ -2183,10 +2193,12 @@ mod tests {
         let lowest = &volume.sweeps[0];
         assert_eq!(lowest.fixed_angle_deg, 0.0);
         assert_eq!(lowest.nrays(), 512);
+        // 500 m gates from the antenna (range start 0): the first centred at
+        // 250 m.
         assert_eq!(
             lowest.range,
             RangeCoord::Uniform {
-                first_center_m: 0.0,
+                first_center_m: 250.0,
                 spacing_m: 500.0,
                 ngates: 800
             }

@@ -23,7 +23,7 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use recast_radar_core::fm301::{
     self, FirstDim, Flavor, Passthrough, Values, ViewOptions, VolumeView,
 };
-use recast_radar_core::model::{ArrayBuf, AttrValue, Scalar, Sweep, Volume};
+use recast_radar_core::model::{ArrayBuf, AttrValue, RangeCoord, Scalar, Sweep, Volume};
 use recast_radar_io_jma::read_jma_tar_volumes;
 
 const ALL: ViewOptions = ViewOptions {
@@ -408,6 +408,20 @@ fn check_tar(id: &str) -> (usize, usize) {
                     |name| group.attr(name).cloned(),
                     &expected,
                     &["jma_"],
+                );
+                // Octets 31-34 and 35-38: the bin spacing and the offset
+                // from the origin to the first bin's inner bound (the WMO
+                // template 3.120 octets, `eccodes_real.rs`), in mm: gate
+                // centres from half a spacing beyond it.
+                let spacing_m = f64::from(be32(g, 30)) / 1000.0;
+                assert_eq!(
+                    sweep.range,
+                    RangeCoord::Uniform {
+                        first_center_m: f64::from(be32(g, 34)) / 1000.0 + spacing_m / 2.0,
+                        spacing_m,
+                        ngates: be32(g, 14),
+                    },
+                    "{what}: range"
                 );
                 let field = &sweep.fields[0];
                 let expected_field = field_expected(p, representation.unwrap(), bitmap.unwrap());

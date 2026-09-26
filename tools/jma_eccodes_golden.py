@@ -18,6 +18,13 @@ transcribed here, and the template bodies are not compared. ecCodes prints
 "Unable to get isGridded" once per field, because the grid type is then
 unknown; the keys read here do not depend on it.
 
+The golden also lists the key ecCodes' own definitions give each octet of
+the WMO azimuth-range grid definition template 3.120 (octets 15 to 39, read
+from a GRIB2 sample whose template number is set to 120), which JMA's local
+template 3.50120 follows octet for octet: octets 35-38 are the offset from
+the origin to the inner bound of the first bin, the JMA decoder's range
+start, so the first gate's centre lies half a bin spacing beyond it.
+
 The data values are summarised per field, not copied: the number of
 missing points, a histogram of the stored level values and the sum over
 points of (point index + 1) times the stored level value, where the stored
@@ -168,6 +175,32 @@ def field(eccodes, gid):
     return record
 
 
+def template_3_120_octets(eccodes):
+    """ecCodes' key at each octet 15 to 39 of grid definition template 3.120
+    (the first key in its iteration order where several share an octet)."""
+    gid = eccodes.codes_grib_new_from_samples("GRIB2")
+    try:
+        eccodes.codes_set(gid, "gridDefinitionTemplateNumber", 120)
+        start = eccodes.codes_get_offset(gid, "section3Length")
+        names = {}
+        iterator = eccodes.codes_keys_iterator_new(gid)
+        try:
+            while eccodes.codes_keys_iterator_next(iterator):
+                key = eccodes.codes_keys_iterator_get_name(iterator)
+                try:
+                    octet = eccodes.codes_get_offset(gid, key) - start + 1
+                except eccodes.CodesInternalError:
+                    continue
+                if 15 <= octet <= 39 and not key.endswith("InDegrees") and key not in (
+                        "gridDefinitionDescription", "isGridded"):
+                    names.setdefault(str(octet), key)
+        finally:
+            eccodes.codes_keys_iterator_delete(iterator)
+        return names
+    finally:
+        eccodes.codes_release(gid)
+
+
 def build():
     os.environ["ECCODES_EXTRA_DEFINITION_PATH"] = str(definitions_dir())
     import eccodes  # noqa: E402  (the definition path must be set first)
@@ -179,6 +212,7 @@ def build():
         "generator": "tools/jma_eccodes_golden.py",
         "eccodes": version,
         "placeholder_templates": sorted(PLACEHOLDERS),
+        "wmo_grid_template_3_120_octets": template_3_120_octets(eccodes),
         "files": {},
     }
     for entry_id, (_, sha256) in FIXTURES.items():

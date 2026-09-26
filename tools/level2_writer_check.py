@@ -529,9 +529,12 @@ def jma_reference(path):
     """Sweeps of a JMA polar GRIB2 tar (its first member) read with the
     standard-library GRIB2 walker and run-length decoder of
     tools/golden_io_formats.py: {DBZH or VRADH: values} per GRIB2 message
-    (level 0 and levels whose table value is missing as NaN), the range
-    start and gate spacing, sorted by elevation with the scan order kept
-    among equal elevations (the order the decoder numbers them in)."""
+    (level 0 and levels whose table value is missing as NaN), the first gate
+    centre and gate spacing, sorted by elevation with the scan order kept
+    among equal elevations (the order the decoder numbers them in). The
+    grid template's octets 35-38 are those of WMO template 3.120, the
+    offset from the origin to the first bin's inner bound: the first gate's
+    centre is half a spacing beyond."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import golden_io_formats as walker
 
@@ -576,7 +579,7 @@ def jma_reference(path):
             values = levels["table"][np.asarray(codes)].reshape(grid["radials"], grid["gates"])
             sweeps.append({
                 "fields": {product["name"]: values},
-                "geometry": (grid["start"], grid["spacing"]),
+                "geometry": (grid["start"] + grid["spacing"] / 2.0, grid["spacing"]),
                 "elevation": product["elevation"],
             })
         pos += length

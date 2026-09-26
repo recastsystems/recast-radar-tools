@@ -282,3 +282,31 @@ fn every_field_matches_eccodes() {
     }
     assert_eq!(fields_checked, 26 + 13);
 }
+
+/// JMA's local grid template 3.50120 follows the WMO azimuth-range template
+/// 3.120 octet for octet up to the scanning mode, and the decoder reads the
+/// octets ecCodes' own definitions name here: bins along radials (15),
+/// radials (19), bin spacing (31) and, at octets 35-38, the offset from the
+/// origin to the inner bound of the first bin, so the decoder places the
+/// first gate's centre half a spacing beyond it (`grib2_sections_real.rs`
+/// checks every sweep's range against the octets).
+#[test]
+fn grid_octets_are_those_of_wmo_template_3_120() {
+    let golden = golden();
+    let octets = golden["wmo_grid_template_3_120_octets"]
+        .as_object()
+        .unwrap();
+    let expected = [
+        ("15", "numberOfDataBinsAlongRadials"),
+        ("19", "numberOfRadials"),
+        ("23", "latitudeOfCentrePoint"),
+        ("27", "longitudeOfCentrePoint"),
+        ("31", "spacingOfBinsAlongRadials"),
+        ("35", "offsetFromOriginToInnerBound"),
+        ("39", "scanningMode"),
+    ];
+    assert_eq!(octets.len(), expected.len());
+    for (octet, key) in expected {
+        assert_eq!(octets[octet].as_str(), Some(key), "octet {octet}");
+    }
+}
