@@ -279,9 +279,8 @@ pub struct VolumeEdits {
     /// Put the sweeps in the order their first rays were collected (a JMA
     /// cycle is collected from its top sweep down).
     pub sweeps_in_time_order: bool,
-    /// Make one volume of each scan cycle
-    /// ([`split_scan_cycles`](recast_radar_core::model::split_scan_cycles))
-    /// after the other edits: [`VolumeEdits::apply_each`].
+    /// Make one volume of each scan cycle ([`split_scan_cycles`]) after the
+    /// other edits: [`VolumeEdits::apply_each`].
     pub split_scan_cycles: bool,
     /// Site position to set (a Message 1 volume has none).
     pub position: Option<SitePosition>,
