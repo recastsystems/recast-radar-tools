@@ -294,6 +294,10 @@ def moments_by_sweep(summary):
 
 
 def written_sweeps(summary, nsource):
+    """The source sweep of each written cut, in cut order: the writer writes a
+    foreign volume's cuts in the order their sweeps were collected."""
+    if "written_sweeps" in summary:
+        return list(summary["written_sweeps"])
     skipped = set(summary["skipped_sweeps"])
     return [index for index in range(nsource) if index not in skipped]
 

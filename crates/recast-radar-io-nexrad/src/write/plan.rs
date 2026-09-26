@@ -5,8 +5,8 @@
 
 use recast_radar_core::bounded_read::MAX_GATES_PER_RADIAL;
 use recast_radar_core::model::{
-    ArrayBuf, AttrValue, Field, FieldName, Polarization, Quantity, RangeCoord, Scalar,
-    SourceFormat, Sweep, SweepMode, Volume,
+    ArrayBuf, AttrValue, CycleTracker, Field, FieldName, Polarization, Quantity, RangeCoord,
+    Scalar, SourceFormat, Sweep, SweepMode, Volume, collection_order,
 };
 
 use super::quantize::{self, FieldEncoding};
@@ -379,7 +379,7 @@ pub(crate) fn plan_with_codings<'a>(
     let tape = tape_name(volume, &mut summary);
     let vcp = options.vcp.or(volume.scan.vcp_pattern).unwrap_or(0);
 
-    let written: Vec<(usize, &Sweep)> = volume
+    let mut written: Vec<(usize, &Sweep)> = volume
         .sweeps
         .iter()
         .enumerate()
@@ -400,8 +400,20 @@ pub(crate) fn plan_with_codings<'a>(
         .metadata
         .and_then(|metadata| metadata.per_sweep_elevation_data.as_deref())
         .unwrap_or_default();
-    // Level II stores radials in the order they were collected.
+    // Level II stores radials in the order they were collected: a foreign
+    // volume's cuts in the order their sweeps were collected, each from its
+    // earliest ray. A Level II source keeps the order it is given (its own,
+    // or the one a caller chose for its cuts).
     let keep_order = volume.provenance.source_format == SourceFormat::NexradLevel2;
+    if !keep_order {
+        let mut rank = vec![0; volume.sweeps.len()];
+        for (position, index) in collection_order(volume).into_iter().enumerate() {
+            if let Some(slot) = rank.get_mut(index) {
+                *slot = position;
+            }
+        }
+        written.sort_by_key(|(index, _)| rank.get(*index).copied().unwrap_or(usize::MAX));
+    }
     let mut sweeps = Vec::with_capacity(written.len());
     for (index, sweep) in written {
         check_sweep_mode(index, sweep)?;
@@ -487,6 +499,25 @@ pub(crate) fn plan_with_codings<'a>(
     if sweeps.is_empty() {
         return Err(WriteError::NoMoments);
     }
+    summary.written_sweeps = sweeps.iter().map(|sweep| sweep.index).collect();
+    if summary
+        .written_sweeps
+        .windows(2)
+        .any(|pair| pair[0] > pair[1])
+        && !keep_order
+    {
+        summary.notes.push(format!(
+            "cuts written in the order their sweeps were collected, as Level II holds radials: \
+             sweeps {}",
+            summary
+                .written_sweeps
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    check_one_scan_cycle(volume, &sweeps)?;
     if sweeps.len() > MAX_ELEVATION_CUTS {
         return Err(WriteError::TooManySweeps {
             count: sweeps.len(),
@@ -533,6 +564,7 @@ pub(crate) fn plan_with_codings<'a>(
     } else {
         nyquist_note(&sweeps, &mut summary);
     }
+    pyart_spacing_note(&sweeps, &mut summary);
     let metadata_record = match source.metadata_record {
         Some(record) => checked_metadata_record(record, &mut summary)?,
         None => None,
@@ -1569,12 +1601,82 @@ fn header_time(
     {
         return Ok(time);
     }
+    // The volume scan starts with its earliest radial.
     sweeps
         .iter()
         .flat_map(|sweep| sweep.order.iter().filter_map(|ray| sweep.times.get(*ray)))
-        .next()
         .copied()
+        .min_by_key(|time| time.epoch_ms())
         .ok_or(WriteError::EmptyVolume)
+}
+
+/// A Level II file holds one volume scan: the written sweeps, taken in the
+/// order they were collected, must be one scan cycle
+/// ([`recast_radar_core::model::scan_cycles`]); sweeps of another cycle are
+/// refused, never written beside this one's.
+fn check_one_scan_cycle(volume: &Volume, sweeps: &[SweepPlan<'_>]) -> Result<(), WriteError> {
+    let mut tracker = CycleTracker::new();
+    for index in collection_order(volume)
+        .into_iter()
+        .filter(|index| sweeps.iter().any(|sweep| sweep.index == *index))
+    {
+        if let Some(begins) = tracker.check(volume, index, index) {
+            return Err(WriteError::MixedScanCycles { begins });
+        }
+        tracker.add(volume, index, index);
+    }
+    Ok(())
+}
+
+/// A note when Py-ART cannot open the file: it takes the smallest first gate
+/// and gate spacing of all moments as the volume's range and reads a moment
+/// on another first gate or spacing only when its spacing is 2 or 4 times
+/// the smallest (`pyart.io.nexrad_archive._find_scans_to_interp`, Py-ART
+/// 2.3: "Gate spacing is neither 1/4 or 1/2"), as NEXRAD's 1 km and 250 m
+/// gates are. A 30 m vertically pointing sweep beside 250 m sweeps is not.
+fn pyart_spacing_note(sweeps: &[SweepPlan<'_>], summary: &mut WriteSummary) {
+    let moments = || {
+        sweeps
+            .iter()
+            .flat_map(|sweep| sweep.moments.iter().map(move |moment| (sweep, moment)))
+    };
+    let (Some(first), Some(spacing)) = (
+        moments().map(|(_, moment)| moment.first_gate_m).min(),
+        moments().map(|(_, moment)| moment.gate_spacing_m).min(),
+    ) else {
+        return;
+    };
+    let mut finest = Vec::new();
+    let mut other = Vec::new();
+    for (sweep, moment) in moments() {
+        let own = u32::from(moment.gate_spacing_m);
+        let smallest = u32::from(spacing);
+        if moment.gate_spacing_m == spacing && !finest.contains(&sweep.index) {
+            finest.push(sweep.index);
+        }
+        let differs = moment.first_gate_m != first || moment.gate_spacing_m != spacing;
+        if differs && own != 2 * smallest && own != 4 * smallest && !other.contains(&sweep.index) {
+            other.push(sweep.index);
+        }
+    }
+    if other.is_empty() {
+        return;
+    }
+    let list = |indices: &[usize]| {
+        indices
+            .iter()
+            .map(usize::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    summary.notes.push(format!(
+        "Py-ART 2.3 cannot open this file: it reads every moment on the smallest gate spacing \
+         ({spacing} m, sweeps {}) from the smallest first gate ({first} m), and a moment on \
+         another only when its gates are 2 or 4 times as long (\"Gate spacing is neither 1/4 or \
+         1/2\"), which those of sweeps {} are not; leave out one kind for Py-ART",
+        list(&finest),
+        list(&other)
+    ));
 }
 
 /// VOL, ELV and RAD blocks of a sweep: the source's own blocks when given,

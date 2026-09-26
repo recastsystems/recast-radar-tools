@@ -18,7 +18,7 @@
 //!   sweep as it arrives, the end chunk when the volume is finished.
 
 use chrono::{DateTime, Utc};
-use recast_radar_core::model::Volume;
+use recast_radar_core::model::{CycleTracker, Volume, collection_order};
 
 use super::encode::{self, RadialContext, RadialRecord};
 use super::plan::{self, PinnedCoding};
@@ -218,6 +218,8 @@ pub struct ChunkWriter<'a> {
     written_sweeps: usize,
     /// Sweeps of the parts pushed so far, empty ones included.
     pushed_sweeps: usize,
+    /// The scan cycle the pushed sweeps make up.
+    cycle: CycleTracker,
     sequence: u32,
     chunks: usize,
     /// The last record so far, held back: it becomes the end chunk if the
@@ -254,6 +256,7 @@ impl<'a> ChunkWriter<'a> {
             volume_time: None,
             written_sweeps: 0,
             pushed_sweeps: 0,
+            cycle: CycleTracker::new(),
             sequence: encode::FIRST_RADIAL_SEQUENCE,
             chunks: 0,
             held: None,
@@ -272,7 +275,7 @@ impl<'a> ChunkWriter<'a> {
         self.volume_number
     }
 
-    /// Volume header time: the first pushed sweep's first radial, `None`
+    /// Volume header time: the first pushed part's earliest radial, `None`
     /// before the first push.
     pub fn volume_time(&self) -> Option<DateTime<Utc>> {
         self.volume_time
@@ -306,6 +309,16 @@ impl<'a> ChunkWriter<'a> {
                 count,
                 max: self.planned_cuts,
             });
+        }
+        // The pushed sweeps continue the scan cycle of the ones before
+        // (numbered across the parts pushed).
+        let mut cycle = self.cycle.clone();
+        for index in collection_order(part) {
+            let label = self.pushed_sweeps + index;
+            if let Some(begins) = cycle.check(part, index, label) {
+                return Err(WriteError::MixedScanCycles { begins });
+            }
+            cycle.add(part, index, label);
         }
         for (offset, sweep) in plan.sweeps.iter_mut().enumerate() {
             sweep.elevation_number =
@@ -382,6 +395,7 @@ impl<'a> ChunkWriter<'a> {
         }
         self.held = held;
         self.sequence = sequence;
+        self.cycle = cycle;
         self.written_sweeps = count;
         self.absorb(plan.summary, part.sweeps.len());
         let chunks: Vec<Chunk> = stored

@@ -13,6 +13,10 @@
 //! <root>/<SITE>/<SITE>YYYYMMDD_HHMMSS_V06.ar2v
 //! ```
 //!
+//! Sizes are listed in bytes, which departs from the captured North Dakota
+//! listing: its sizes are not bytes (40288 for a 20,616,906-byte file, about
+//! its size in 512-byte blocks), and the GRLevelX manual names no unit.
+//!
 //! Lines end in LF; a site is added at the end of the site lists. File names are the
 //! site and the volume time by a name format ([`DEFAULT_NAME_FORMAT`], the
 //! NWS archive's `SITEYYYYMMDD_HHMMSS_V06`, unless

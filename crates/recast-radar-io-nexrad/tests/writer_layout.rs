@@ -8,7 +8,7 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use recast_radar_core::model::{FieldData, SweepMode, Volume};
+use recast_radar_core::model::{CycleBreak, FieldData, SweepMode, Volume};
 use recast_radar_io_nexrad::messages::msg31_blocks::AzimuthResolution;
 use recast_radar_io_nexrad::messages::rda_status::RdaStatus;
 use recast_radar_io_nexrad::messages::{self, MessageBody, MessageWalker};
@@ -498,6 +498,17 @@ fn chunk_writer_sends_chunks_as_sweeps_arrive() {
     ));
     let writer = ChunkWriter::new(&planned, &options).unwrap();
     assert!(matches!(writer.finish(), Err(WriteError::EmptyVolume)));
+
+    // A sweep pushed again, its first radial beginning a volume scan once
+    // more, is another scan cycle: refused, nothing sent.
+    let mut writer = ChunkWriter::new(&volume, &options).unwrap();
+    writer.push(&part(0)).unwrap();
+    assert!(matches!(
+        writer.push(&part(0)),
+        Err(WriteError::MixedScanCycles {
+            begins: CycleBreak::VolumeStart { sweep: 1 }
+        })
+    ));
     let mut plain = WriteOptions::default();
     plain.gzip = true;
     assert!(matches!(
@@ -891,14 +902,25 @@ fn unwritable_volumes_are_refused_before_any_byte() {
         WriteError::UnsupportedSweepMode { sweep: 1, ref mode } if mode == "rhi"
     ));
 
+    // Copies of the Doppler cut: more cuts than Level II numbers.
     let mut many = volume.clone();
     while many.sweeps.len() < 33 {
-        let copy = many.sweeps[0].clone();
+        let copy = many.sweeps[1].clone();
         many.sweeps.push(copy);
     }
     assert!(matches!(
         refused(&many, &options),
         WriteError::TooManySweeps { count: 33, max: 32 }
+    ));
+    // A copy of the first cut, whose first radial begins a volume scan:
+    // another scan cycle.
+    let mut again = volume.clone();
+    again.sweeps.push(volume.sweeps[0].clone());
+    assert!(matches!(
+        refused(&again, &options),
+        WriteError::MixedScanCycles {
+            begins: CycleBreak::VolumeStart { sweep: 2 }
+        }
     ));
 
     let mut empty = volume.clone();

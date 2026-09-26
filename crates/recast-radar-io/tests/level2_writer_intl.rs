@@ -3,6 +3,10 @@
 //! DORADE (COW2, NOXP) and JMA GRIB2 (Takayasu reflectivity and velocity),
 //! each decoded, written as Level II and decoded again.
 //!
+//! The cuts are written in the order their sweeps were collected
+//! (`WriteSummary::written_sweeps`); a volume of more than one scan cycle
+//! (JMA's 10-minute tars) is refused whole and written one cycle at a time.
+//!
 //! What must come back:
 //! - geometry identical: the same rays (from the earliest when a sweep
 //!   stores them from another azimuth, as ODIM does) with bit-identical
@@ -26,7 +30,8 @@
 //! RHI volumes are refused with a typed error.
 
 use recast_radar_core::model::{
-    Field, FieldData, FieldName, Gate, LinearTransform, Sweep, Volume, merge_volumes,
+    CycleBreak, Field, FieldData, FieldName, Gate, LinearTransform, Sweep, Volume,
+    collection_order, merge_volumes, split_scan_cycles,
 };
 use recast_radar_io::read_supported_volume_bytes;
 use recast_radar_io_nexrad::write::{
@@ -255,8 +260,32 @@ fn assert_round_trip(
         "{id}: range error {}",
         summary.max_range_error_m
     );
-    let written: Vec<&Sweep> = source.sweeps.iter().filter(|s| s.nrays() > 0).collect();
+    // Every sweep with rays, as a cut, in the order the sweeps were
+    // collected: each cut's first radial no earlier than the one before.
+    let written: Vec<usize> = collection_order(source)
+        .into_iter()
+        .filter(|index| source.sweeps[*index].nrays() > 0)
+        .collect();
+    assert_eq!(summary.written_sweeps, written, "{id}: cut order");
     assert_eq!(again.sweeps.len(), written.len(), "{id}: sweeps");
+    let first_ms = |sweep: &Sweep| {
+        (0..sweep.nrays())
+            .map(|ray| ray_ms(&again, sweep, ray))
+            .min()
+    };
+    assert!(
+        again
+            .sweeps
+            .windows(2)
+            .all(|pair| first_ms(&pair[0]) <= first_ms(&pair[1])),
+        "{id}: cuts in the order collected"
+    );
+    let earliest = again.sweeps.iter().filter_map(first_ms).min();
+    assert_eq!(
+        summary.volume_time.map(|time| time.timestamp_millis()),
+        earliest,
+        "{id}: volume time is the earliest radial's"
+    );
 
     let location = source.location;
     assert_eq!(
@@ -281,15 +310,9 @@ fn assert_round_trip(
         "{id}: frequency"
     );
 
-    for (index, (sa, sb)) in written.iter().zip(&again.sweeps).enumerate() {
+    for (index, (&source_index, sb)) in written.iter().zip(&again.sweeps).enumerate() {
         let at = format!("{id}: sweep {index}");
-        let Some(source_index) = source
-            .sweeps
-            .iter()
-            .position(|sweep| std::ptr::eq(sweep, *sa))
-        else {
-            panic!("{at}: source sweep");
-        };
+        let sa = &source.sweeps[source_index];
         // Every ray of these sources has data: the written radials are the
         // source's rays, from the earliest when the sweep stores them from
         // another azimuth.
@@ -375,35 +398,63 @@ fn odim_volumes_come_back_within_the_quantisation_step() {
         ("odim-nohur-20260612-1445-dbzh", "NHUR"),
         ("odim-nohur-20260612-1446-vradh", "NHUR"),
     ] {
-        let volume = decoded(id);
-        let summary = assert_round_trip(id, &volume, &compatible(), site);
-        assert!(!summary.moments.is_empty(), "{id}");
-        // 8-bit ODIM data fits 8-bit codes exactly when every sweep of the
-        // moment has the same gain and offset, under both policies. The
-        // Norwegian vertical scan's velocities have a quarter of the other
-        // sweeps' step: no one 8-bit grid holds both, so Compatible's shared
-        // coding rounds, where the default stays within half the finest
-        // step.
-        let default = assert_round_trip(id, &volume, &default_options(), site);
-        assert_no_coarser_than_source(id, &volume, &default);
-        for (compatible, finer) in summary.moments.iter().zip(&default.moments) {
-            if finer.word_size == 8 {
-                assert_eq!(
-                    (compatible.scale, compatible.offset),
-                    (finer.scale, finer.offset),
-                    "{id}: 8-bit codings differ between the policies"
-                );
-            }
-        }
-        // ODIM reflectivity in 0.5 dB steps from -32 dBZ lies on the
-        // typical REF coding.
-        for report in summary.moments.iter().filter(|m| m.moment == Moment::Ref) {
-            assert_eq!(
-                (report.word_size, report.scale, report.offset),
-                (8, 2.0, 66.0),
-                "{id}: REF coding"
+        let decoded = decoded(id);
+        let cycles = split_scan_cycles(decoded.clone());
+        let parts = if id == "odim-nohur-20260612-1446-vradh" {
+            // Its 90 deg sweep was collected at 14:38:53 (h5py dataset8
+            // starttime), in the scan before, 442 s before its other sweeps
+            // began: refused as one volume, written as two.
+            let refused =
+                write_volume_with_source(&decoded, SourceMetadata::default(), &compatible());
+            assert!(
+                matches!(
+                    refused,
+                    Err(WriteError::MixedScanCycles {
+                        begins: CycleBreak::Pause { .. }
+                    })
+                ),
+                "{id}: {:?}",
+                refused.map(|(_, summary)| summary)
             );
-            assert!(report.exact, "{id}");
+            assert_eq!(
+                cycles.iter().map(|c| c.sweeps.len()).collect::<Vec<_>>(),
+                [1, 7]
+            );
+            cycles
+        } else {
+            assert_eq!(cycles.len(), 1, "{id}");
+            vec![decoded]
+        };
+        for volume in &parts {
+            let summary = assert_round_trip(id, volume, &compatible(), site);
+            assert!(!summary.moments.is_empty(), "{id}");
+            // 8-bit ODIM data fits 8-bit codes exactly when every sweep of the
+            // moment has the same gain and offset, under both policies. The
+            // Norwegian vertical scan's velocities have a quarter of the other
+            // sweeps' step: no one 8-bit grid holds both, so Compatible's shared
+            // coding rounds, where the default stays within half the finest
+            // step.
+            let default = assert_round_trip(id, volume, &default_options(), site);
+            assert_no_coarser_than_source(id, volume, &default);
+            for (compatible, finer) in summary.moments.iter().zip(&default.moments) {
+                if finer.word_size == 8 {
+                    assert_eq!(
+                        (compatible.scale, compatible.offset),
+                        (finer.scale, finer.offset),
+                        "{id}: 8-bit codings differ between the policies"
+                    );
+                }
+            }
+            // ODIM reflectivity in 0.5 dB steps from -32 dBZ lies on the
+            // typical REF coding.
+            for report in summary.moments.iter().filter(|m| m.moment == Moment::Ref) {
+                assert_eq!(
+                    (report.word_size, report.scale, report.offset),
+                    (8, 2.0, 66.0),
+                    "{id}: REF coding"
+                );
+                assert!(report.exact, "{id}");
+            }
         }
     }
     // Total power, LDR and the other quantities without a Message 31 moment
@@ -480,25 +531,56 @@ fn dorade_sweeps_come_back_within_the_quantisation_step() {
     }
 }
 
+/// A JMA 10-minute tar holds two 5-minute cycles (every cut of the first
+/// collected again 281 s later): refused whole, as one Level II file holds
+/// one volume scan, and written one cycle at a time.
+fn assert_refused_as_mixed(what: &str, volume: &Volume) {
+    match write_volume_with_source(volume, SourceMetadata::default(), &default_options()) {
+        Err(error @ WriteError::MixedScanCycles { .. }) => {
+            let WriteError::MixedScanCycles { begins } = &error else {
+                unreachable!()
+            };
+            assert!(
+                matches!(begins, CycleBreak::RepeatedCut { .. }),
+                "{what}: {begins:?}"
+            );
+            assert!(
+                error.to_string().contains("split_scan_cycles"),
+                "{what}: {error}"
+            );
+        }
+        other => panic!("{what}: {:?}", other.map(|(_, summary)| summary)),
+    }
+}
+
 #[test]
 fn jma_volumes_come_back_within_the_quantisation_step() {
     let reflectivity = decoded("jma-n5-20191012-090000-rs47773");
-    let summary = assert_round_trip("jma n5", &reflectivity, &default_options(), "TAKA");
-    // Every sweep written: 512 radials per cut.
-    assert_eq!(summary.sweeps, reflectivity.sweeps.len());
-    assert_no_coarser_than_source("jma n5", &reflectivity, &summary);
-    assert_round_trip("jma n5", &reflectivity, &compatible(), "TAKA");
     let velocity = decoded("jma-n6-20191012-090000-rs47773");
-    let summary = assert_round_trip("jma n6", &velocity, &default_options(), "TAKA");
-    assert_no_coarser_than_source("jma n6", &velocity, &summary);
-    assert_round_trip("jma n6", &velocity, &compatible(), "TAKA");
-
-    // Reflectivity and velocity merged by elevation into one volume.
-    let (merged, _) = merge_volumes(vec![reflectivity, velocity]).unwrap();
-    let summary = assert_round_trip("jma merged", &merged, &default_options(), "TAKA");
-    assert_no_coarser_than_source("jma merged", &merged, &summary);
-    assert!(summary.moments.iter().any(|m| m.moment == Moment::Vel));
-    assert!(summary.moments.iter().any(|m| m.moment == Moment::Ref));
+    // Reflectivity and velocity merged by elevation and collection time.
+    let (merged, _) = merge_volumes(vec![reflectivity.clone(), velocity.clone()]).unwrap();
+    for (what, volume) in [
+        ("jma n5", reflectivity),
+        ("jma n6", velocity),
+        ("jma merged", merged),
+    ] {
+        assert_refused_as_mixed(what, &volume);
+        let cycles = split_scan_cycles(volume);
+        assert_eq!(cycles.len(), 2, "{what}");
+        let mut moments = Vec::new();
+        for (number, cycle) in cycles.iter().enumerate() {
+            let at = format!("{what} cycle {number}");
+            let summary = assert_round_trip(&at, cycle, &default_options(), "TAKA");
+            // Every sweep of the cycle written: 512 radials per cut.
+            assert_eq!(summary.sweeps, cycle.sweeps.len(), "{at}");
+            assert_no_coarser_than_source(&at, cycle, &summary);
+            assert_round_trip(&at, cycle, &compatible(), "TAKA");
+            moments.extend(summary.moments.iter().map(|m| m.moment));
+        }
+        if what == "jma merged" {
+            assert!(moments.contains(&Moment::Vel) && moments.contains(&Moment::Ref));
+        }
+    }
 }
 
 /// `Quantization::Standard` writes NOAA's current codings (KTLX 2024,
@@ -587,7 +669,9 @@ fn record_layouts_and_streamed_chunks() {
     use recast_radar_io_nexrad::write::RecordLayout;
     use recast_radar_io_nexrad::write::realtime::{ChunkWriter, write_realtime_chunks};
 
-    let volume = decoded("jma-n6-20191012-090000-rs47773");
+    // The first 5-minute cycle of the tar: 9 cuts of 512 radials.
+    let volume = split_scan_cycles(decoded("jma-n6-20191012-090000-rs47773")).remove(0);
+    assert_eq!(volume.sweeps.len(), 9);
     assert!(volume.sweeps.iter().all(|sweep| sweep.nrays() == 512));
     // Elevation number of every radial of each radial chunk.
     let cuts_per_chunk = |chunks: &[recast_radar_io_nexrad::write::realtime::Chunk]| {
@@ -619,14 +703,14 @@ fn record_layouts_and_streamed_chunks() {
     };
 
     // Default: 120 radials a record whatever the cut; only the last holds
-    // fewer (13 x 512 = 6656 = 55 x 120 + 56).
+    // fewer (9 x 512 = 4608 = 38 x 120 + 48).
     let options = WriteOptions::default();
     assert_eq!(options.record_layout, RecordLayout::Continuous);
     let whole = write_realtime_chunks(&volume, &options).unwrap();
     let counts: Vec<usize> = cuts_per_chunk(&whole.chunks).iter().map(Vec::len).collect();
     let (last, full) = counts.split_last().unwrap();
     assert!(full.iter().all(|count| *count == 120), "{counts:?}");
-    assert_eq!((full.len(), *last), (55, 56));
+    assert_eq!((full.len(), *last), (38, 48));
     assert!(
         cuts_per_chunk(&whole.chunks)
             .iter()
@@ -686,7 +770,8 @@ fn radial_dumps(bytes: &[u8]) -> Vec<RadialDump> {
 #[test]
 fn missing_nyquist_velocities_are_noted_or_supplied() {
     let id = "jma-n6-20191012-090000-rs47773";
-    let volume = decoded(id);
+    // The first 5-minute cycle of the tar.
+    let volume = split_scan_cycles(decoded(id)).remove(0);
     assert!(
         volume
             .sweeps
@@ -717,7 +802,7 @@ fn missing_nyquist_velocities_are_noted_or_supplied() {
         write_volume_with_source(&volume, SourceMetadata::default(), &options).unwrap();
     assert!(summary.notes.is_empty(), "{:?}", summary.notes);
     let radials = radial_dumps(&bytes);
-    assert_eq!(radials.len(), 13 * 512);
+    assert_eq!(radials.len(), 9 * 512);
     assert!(
         radials
             .iter()
@@ -749,35 +834,6 @@ fn missing_nyquist_velocities_are_noted_or_supplied() {
     }
 }
 
-/// The sweeps of one scan cycle of a JMA 10-minute tar, in the order they
-/// were collected: the tar holds two 5-minute cycles, each starting with its
-/// 25-degree sweep (JMA collects from the top down, then up again).
-fn jma_cycle(volume: &Volume, cycle: usize) -> Volume {
-    let start = |sweep: &Sweep| sweep.rays.time_s.first().copied().unwrap_or(f64::NAN);
-    let mut tops: Vec<f64> = volume
-        .sweeps
-        .iter()
-        .filter(|sweep| (sweep.fixed_angle_deg - 25.0).abs() < 0.01)
-        .map(start)
-        .collect();
-    tops.sort_by(f64::total_cmp);
-    assert_eq!(tops.len(), 2, "two cycles");
-    let (from, until) = match cycle {
-        0 => (f64::NEG_INFINITY, tops[1]),
-        _ => (tops[1], f64::INFINITY),
-    };
-    let mut sweeps: Vec<Sweep> = volume
-        .sweeps
-        .iter()
-        .filter(|sweep| (from..until).contains(&start(sweep)))
-        .cloned()
-        .collect();
-    sweeps.sort_by(|a, b| start(a).total_cmp(&start(b)));
-    let mut part = volume.clone();
-    part.sweeps = sweeps;
-    part
-}
-
 /// The real-time chunk writer never clips. Planned from the first 5-minute
 /// cycle of JMA Okinawa's 2026-09-24 21:00Z tar (the previous volume of the
 /// radar) under `Compatible`, whose 8-bit REF coding spans that cycle's
@@ -792,10 +848,14 @@ fn jma_cycle(volume: &Volume, cycle: usize) -> Volume {
 fn chunk_writer_refuses_values_outside_the_planned_coding() {
     use recast_radar_io_nexrad::write::realtime::ChunkWriter;
 
+    // The tar's two 5-minute cycles, each from its 25 deg sweep (JMA
+    // collects from the top down, then up again), in the order collected.
     let volume = decoded("jma-n5-20260924-210000-rs47937");
-    let first = jma_cycle(&volume, 0);
-    let second = jma_cycle(&volume, 1);
+    let [first, second]: [Volume; 2] = split_scan_cycles(volume).try_into().unwrap();
     assert_eq!((first.sweeps.len(), second.sweeps.len()), (17, 18));
+    for cycle in [&first, &second] {
+        assert!((cycle.sweeps[0].fixed_angle_deg - 25.0).abs() < 0.01);
+    }
     let single = |sweep: &Sweep| {
         let mut part = second.clone();
         part.sweeps = vec![sweep.clone()];

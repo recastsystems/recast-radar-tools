@@ -46,6 +46,17 @@
 //! (a volume changed without
 //! [`Sweep::seal`](recast_radar_core::model::Sweep::seal)).
 //!
+//! A Level II file holds one volume scan. A volume whose sweeps come from
+//! more than one scan cycle ([`scan_cycles`](recast_radar_core::model::scan_cycles):
+//! a cut collected again, a pause of minutes, or a second start of a Level
+//! II volume) is refused ([`WriteError::MixedScanCycles`]);
+//! [`split_scan_cycles`](recast_radar_core::model::split_scan_cycles) gives
+//! one volume per cycle to write on its own. A foreign volume's cuts are
+//! written in the order their sweeps were collected
+//! ([`WriteSummary::written_sweeps`]), as Level II holds radials; a Level II
+//! source keeps the order it is given. The volume header time is the
+//! earliest written radial's.
+//!
 //! Every radial carries at least one moment: Py-ART and xradar take a cut's
 //! moments from its first radial and fail on one without any. A ray on which
 //! no written moment has data is left out, and a sweep left without rays (no
@@ -64,7 +75,7 @@ pub mod realtime;
 use std::io::Write;
 
 use chrono::{DateTime, Utc};
-use recast_radar_core::model::{FieldName, Volume};
+use recast_radar_core::model::{CycleBreak, FieldName, Volume};
 use thiserror::Error;
 
 use crate::metadata::NexradMetadata;
@@ -445,6 +456,21 @@ pub enum WriteError {
         /// Radial length.
         bytes: usize,
     },
+    /// The volume holds sweeps of more than one scan cycle, which one Level
+    /// II file cannot hold: a cut collected again, a pause of minutes, or a
+    /// second start of a Level II volume
+    /// ([`scan_cycles`](recast_radar_core::model::scan_cycles)). Write each
+    /// cycle on its own
+    /// ([`split_scan_cycles`](recast_radar_core::model::split_scan_cycles)).
+    #[error(
+        "the volume holds more than one scan cycle ({begins}); a Level II file holds one volume \
+         scan: write each cycle on its own (split_scan_cycles), or keep one cycle's sweeps"
+    )]
+    MixedScanCycles {
+        /// Where the second cycle begins (sweep indices of the volume, or of
+        /// the pushed sweeps for a [`realtime::ChunkWriter`]).
+        begins: CycleBreak,
+    },
     /// An option value is out of range.
     #[error("invalid option: {0}")]
     InvalidOption(String),
@@ -541,10 +567,15 @@ pub struct WriteSummary {
     pub bytes: usize,
     /// Site identifier written.
     pub icao: String,
-    /// Volume header time.
+    /// Volume header time: the earliest written radial's (a Level II
+    /// source's own header time when its metadata is carried over).
     pub volume_time: Option<DateTime<Utc>>,
     /// Elevation cuts written.
     pub sweeps: usize,
+    /// The source sweep of each written cut, in cut order (elevation number
+    /// 1 first): a foreign volume's in the order they were collected, a
+    /// Level II source's as given.
+    pub written_sweeps: Vec<usize>,
     /// Message 31 radials written.
     pub radials: usize,
     /// Records written (the metadata record included).

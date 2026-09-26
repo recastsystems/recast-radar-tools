@@ -164,8 +164,14 @@ then written byte for byte, padded with empty frames to 134 when shorter, except
 
 ### Message 31 radial
 
-One message per written ray, in sweep order and within a cut in the order the rays were
-collected (below), each sized to its content (no padding after the last block):
+One message per written ray, cut by cut and within a cut in the order the rays were collected
+(below), each sized to its content (no padding after the last block). A foreign volume's cuts
+are written in the order their sweeps were collected (each sweep's earliest ray; a sweep without
+ray times keeps its place after the one stored before it), as Level II holds radials: a scan
+collected from the top down (BEJAB, JMA) is written with its top cut first, and a note lists the
+order when it differs from the storage order (`WriteSummary::written_sweeps` gives the source
+sweep of every cut). A Level II source keeps the order it is given, its own or the one a caller
+chose for its cuts.
 
 | Block | Content |
 |---|---|
@@ -327,9 +333,11 @@ gives up is in `max_abs_error`. Which one is the default is an owner decision (O
   JMA's Takayasu becomes `TAKA` and Py-ART 2.3.0 cannot open that file. Set `options.icao` to
   another identifier where Py-ART must read the file.
 - **VCP**: `options.vcp`, else `volume.scan.vcp_pattern`, else 0 (no pattern).
-- **Volume time**: a Level II source's volume header time, else the first written radial's (the
-  one that opens the volume; the earliest in a volume whose sweeps run in collection order, as
-  NEXRAD's do), as the real-time start chunk has it.
+- **Volume time**: a Level II source's volume header time, else the earliest written radial's:
+  the start of the scan, which the polling directory's file names carry
+  (`BJAB20190606_000022_V06.ar2v` for BEJAB's scan from 25 degrees at 00:00:22 down to
+  0.3 degrees at 00:04:19). The real-time start chunk has the first pushed part's earliest
+  radial.
 - **Location**: latitude and longitude from `volume.location` into the VOL block and Message 18,
   altitude into the VOL block's site height. A volume without a finite latitude, longitude and
   height is refused (`MissingLocation`): the writer never writes a made-up position such as 0, 0.
@@ -405,7 +413,9 @@ its sweeps are the cuts the start chunk's Message 5 lists, and each moment's cod
 its fields, because every sweep of a moment must share one coding and the start chunk goes out
 before the data. `push(part)` takes the next sweeps (for example one decoded ODIM scan) and returns
 the chunks they complete: the start chunk with the first push, whose volume header time is that
-sweep's first radial, then one chunk per complete record. The last record so far is held back
+part's earliest radial, then one chunk per complete record. The pushed sweeps must stay one scan
+cycle: a sweep that collects a cut again, begins after a pause of minutes or begins a Level II
+volume again is refused (`MixedScanCycles`), with nothing sent. The last record so far is held back
 until the next push or `finish`, because the volume's last record must end it (radial status 4,
 negated control word); under `Continuous` the next push first fills it to 120 radials, so the tail
 of a cut that is not a multiple of 120 goes out with the next cut's first radials, while under
@@ -458,7 +468,11 @@ format that has an unknown `%` specifier or renders such a name (`%H:%M`; `Inval
 year to second. A lower-case site in the names and in the files comes from a lower-case
 `WriteOptions::icao`; the site derived from an ODIM node is upper case (`DKROM` to `DROM`).
 
-The listed size is the stored file's, in bytes. Each file and `dir.list` is written to a
+The listed size is the stored file's, in bytes. That departs from the one captured listing:
+the North Dakota server's sizes are not bytes (it lists `KXWA20260924_214316_V06.ar2v` as 40288
+while the pinned file is 20,616,906 bytes, about its size in 512-byte blocks), and the GRLevelX
+manual does not say which unit clients expect; which one to write is an open decision (Open
+items). Each file and `dir.list` is written to a
 temporary name and renamed into place, so a polling client never reads a partial file or listing.
 At most `DEFAULT_MAX_FILES` (30, as `recast-radar publish` and the Python package keep: two and a
 half hours of 5-minute volumes) are kept per site unless `with_max_files` sets another limit;
@@ -479,19 +493,43 @@ are known to carry:
 | Records | LDM records of `radials_per_record` whole radials (120 by default), one bzip2 stream each, the last control word negated | fixed-size pieces of one frame stream, with messages split across records |
 | Uncompressed radials | Message 31 radials back to back, each sized to its content | radials padded into, or running over, fixed 2432-byte frames |
 | Message 18 | the full Table XV body (9468 bytes in 4 segments) on the Open RDA channel, with the site name, position, frequency, antenna gain and beam width | an all-zero body on the legacy channel |
-| First gate | the range to the centre of the first gate (Table XVII-B), where Py-ART, MetPy and xradar place it | the range to the start of the first bin |
+| First gate | the range to the centre of the first gate (Table XVII-B), where Py-ART, MetPy and xradar place it; for JMA the grid's range start (the first bin's inner bound, WMO template 3.120 octets 35-38) plus half a gate: 250 m for 500 m gates | the range to the start of the first bin |
 | Site position | the volume's latitude, longitude and height; a volume without one is refused (`MissingLocation`) | a zero position |
 | Nyquist velocity, unambiguous range | the ray's own, else the radar's value the caller gives (`nyquist_velocity_mps`, `unambiguous_range_m`), else 0, which readers take as unknown, with a note | a constant placeholder |
 | Codings | per policy, never clipping or dropping a source value ("Quantisation") | a fixed coding that clips or drops values outside it |
-| Moments of a cut | the fields of one sweep of the volume in its cut; nothing is taken from another sweep | moments of different scan cycles in one cut or volume |
+| Moments of a cut | the fields of one sweep in its cut, and the sweeps of one scan cycle in the volume: a volume of more than one cycle is refused (`MixedScanCycles`, below), and `merge_volumes` pairs sweeps only when they were collected together | moments of different scan cycles in one cut or volume |
+| Cut order and volume time | cuts in the order their sweeps were collected; the header at the scan's first radial | cuts out of collection order, a header at the last-collected sweep |
 | Pulse width | Message 5's pulse width from the radar's own pulse width ("Metadata record") | one pulse width code for every radar |
 
-A volume should hold one scan: the writer writes the sweeps it is given, in order, and cannot
-tell scan cycles apart. JMA's 10-minute files hold two 5-minute cycles (the 2026 ITOK members have
-35 reflectivity sweeps, more than the 32 cuts Level II numbers, and the writer refuses them as
-`TooManySweeps`); write one cycle's sweeps at a time (`recast-radar convert --sweeps LIST
---sweeps-in-time-order`, the Python writers' `sweeps=` and `sweeps_in_time_order=`, or the
-`level2_convert` example's `--sweeps-starting-at`).
+A Level II file holds one volume scan. Before writing, the writer takes the sweeps it would write
+in the order they were collected and refuses the volume (`WriteError::MixedScanCycles`, nothing
+written) when they are more than one scan cycle
+(`recast_radar_core::model::scan_cycles`):
+
+- a sweep collects a cut the cycle already collected: the same sweep mode, a fixed angle within
+  0.05 degrees, the same gates and the same field names. A long-range surveillance cut and a
+  Doppler cut at one angle have other gates or moments and stay in one cycle; JMA's 10-minute
+  tars collect every cut of their first 5-minute cycle again 281 s (Takayasu 2019) or 284 s
+  (Okinawa 2026) later;
+- a sweep begins more than 240 s after every sweep of the cycle ended. Operational scans run their
+  cuts back to back; the longest pause within a cycle in the corpus is 129 s (Takayasu's velocity
+  file, which leaves out the reflectivity-only cuts collected in between, its rays carrying only
+  each sweep's observation start). Hurum's 2026-06-12 14:46 velocity file carries a 90 degree
+  sweep collected at 14:38:53, in the scan before, 442 s before its other sweeps began;
+- for a Level II source, a radial begins a volume scan again (radial status 3). A Level II
+  volume coverage pattern collects cuts again within one volume by design (SAILS and MESO-SAILS
+  rescans of the lowest cut, MRLE), so the repeated-cut rule does not apply to it: KOAX 2014 and
+  KEWX 2016 (SAILS) and KDVN 2020 (MESO-SAILS 2) are one cycle.
+
+Every committed volume of the corpus but the JMA tars and that Hurum file is one cycle
+(`recast-radar-io/tests/scan_cycles_corpus.rs`). `split_scan_cycles` gives one volume per
+cycle, its sweeps in collection order and its time reference at its first ray, to write one at a
+time: `recast-radar convert --split-scan-cycles` (cycle N written to the output name with `_N`
+before its extension), `recast-radar publish --split-scan-cycles`, `recast_radar.split_scan_cycles`
+in Python, or one cycle's sweeps chosen with `--sweeps` / `sweeps=`. `merge_volumes` pairs sweeps
+of parts only when their first rays are at most 60 s apart, so a part's sweep of another cycle is
+kept as a sweep of its own, never merged into this cycle's cut; the merged volume then shows it
+as another cycle.
 
 ## Verification
 
@@ -503,15 +541,16 @@ they are not cached and the network is off.
 | Test | What it checks |
 |---|---|
 | `recast-radar-io-nexrad/tests/writer_roundtrip.rs` | every Level II file of the manifests (WSR-88D and TDWR, 1991 to 2026): decode with metadata, write, decode again, for uncompressed records and LDM records, and for files under 1.5 MB both again with gzip. Message 31 volumes come back with every gate code, ray and sweep value and the volume-level model identical; with the source's metadata record carried over, the NEXRAD metadata too (Messages 2, 3, 5, 13, 15, 18, 32 and every radial's VOL, ELV and RAD blocks and Data Header items, radar identifier and azimuth resolution code included), the radial statuses that place a radial in the written volume aside; and the data records' non-radial messages (mid-volume Message 2 updates) come back at their places among the radials. KVWX 2008's blank radial identifiers come back blank, and become the site `options.icao` names. Message 1 volumes, which carry no site position, are refused (`MissingLocation`) and then, with the position of a Message 31 file of the same radar, keep every written gate (the ones before the radar dropped). `Standard` quantisation still copies NEXRAD codes. A volume that leaves out or reorders KTLX 2024's sweeps keeps each sweep's Message 5 cut, fixed angle and constant blocks; VCP and site overrides reach Messages 2, 5 and 18 of the carried-over record, each noted. |
-| `recast-radar-io/tests/level2_writer_intl.rs` | real ODIM_H5 (Belgium, Denmark, Ireland, Norway, Spain), CfRadial 1 (ARM X-SAPR, the SMART-R2 in Irene), DORADE (COW2, NOXP) and JMA GRIB2 (Takayasu, reflectivity and velocity, and both merged) volumes written and decoded again under the default policy and `Compatible`: every ray once, in the order `written_rays` reports (ODIM's and X-SAPR's sweeps written from their earliest ray, their times then running forward; NOXP's kept as stored), with azimuths and elevations bit for bit, times to the millisecond, gate geometry to the metre, fixed angles within half an angle code, every value within the reported quantisation step, location and frequency; under the default, no value coarser than its source stores it; JMA's 512-radial cuts in 120-radial records across cuts by default and in records of one cut under `WithinCuts`, with `ChunkWriter`'s chunks equal to the whole volume's under both; `ChunkWriter` planned from the first 5-minute cycle of JMA Okinawa's 2026 tar refusing, under `Compatible`, the second cycle's 0.2-degree sweep, whose 3 gates above 47.2 dBZ its planned REF coding cannot hold (`ValueOutsideCoding`, nothing sent), while the whole-file writer holds them and `Precise`'s plan takes the whole cycle; `Standard` giving DKROM NOAA's codings where they hold its values and `Compatible`'s where not (RHOHV), no value clipped; a JMA velocity volume's radials without a Nyquist velocity noted, and filled by the options (out-of-range values refused); RHI volumes refused |
-| `recast-radar-io-nexrad/tests/writer_layout.rs` | the bytes: header, LDM control words, the 134-frame metadata record with Messages 18, 5 and 2 where real files have them, every radial's blocks; real-time chunks concatenating to the file, and `ChunkWriter` (the start chunk with the first sweep, the held-back last record, a volume ended early, pushes past the planned cuts refused, and a Doppler cut pushed after a plan of KTLX's surveillance cut refused as `UnplannedMoment` with nothing sent); `write_volume_to` streaming KDVN 2020 in records of 10 radials from a two-thread pool (many batches) to the bytes of the whole-file writer under every compression, the real-time chunks' for LDM records, only the last control word negated, a gzip wrapper holding exactly the unwrapped file, and a sink that fails part way returning its error; sweeps without fields or with every row absent left out, rays without data left out, every radial carrying a moment, a volume with no data refused; the polling directory (names and name formats, `publish_named`, `dir.list`, site lists, retention, and the names, formats and sites refused, Windows' included); every refusal leaving the sink empty, per-ray arrays and field rows that do not match the ray count included |
+| `recast-radar-core/tests/real_cycles.rs`, `recast-radar-io/tests/scan_cycles_corpus.rs` | `scan_cycles` against a reference implementation of its rules over the sweep times and geometry h5py and a GRIB2 section walker read (`tools/core_golden.py`): JMA Takayasu 2019 and Okinawa 2026 reflectivity and velocity tars two cycles each, the second beginning where the first cut is collected again; Hurum's velocity file two, its 90 degree sweep of the scan before alone; the other ODIM files one; SAILS and MESO-SAILS Level II volumes one; `split_scan_cycles` giving volumes that seal, in collection order, their time reference at their first ray; every committed volume of the corpus one cycle but those |
+| `recast-radar-io/tests/level2_writer_intl.rs` | real ODIM_H5 (Belgium, Denmark, Ireland, Norway, Spain), CfRadial 1 (ARM X-SAPR, the SMART-R2 in Irene), DORADE (COW2, NOXP) and JMA GRIB2 (Takayasu, reflectivity and velocity, and both merged, each refused whole as two scan cycles, `MixedScanCycles`, and written one cycle at a time; Hurum's velocity file likewise) volumes written and decoded again under the default policy and `Compatible`: the cuts in the order their sweeps were collected (`written_sweeps`), the volume time the earliest radial's, every ray once, in the order `written_rays` reports (ODIM's and X-SAPR's sweeps written from their earliest ray, their times then running forward; NOXP's kept as stored), with azimuths and elevations bit for bit, times to the millisecond, gate geometry to the metre, fixed angles within half an angle code, every value within the reported quantisation step, location and frequency; under the default, no value coarser than its source stores it; JMA's 512-radial cuts in 120-radial records across cuts by default and in records of one cut under `WithinCuts`, with `ChunkWriter`'s chunks equal to the whole volume's under both; `ChunkWriter` planned from the first 5-minute cycle of JMA Okinawa's 2026 tar refusing, under `Compatible`, the second cycle's 0.2-degree sweep, whose 3 gates above 47.2 dBZ its planned REF coding cannot hold (`ValueOutsideCoding`, nothing sent), while the whole-file writer holds them and `Precise`'s plan takes the whole cycle; `Standard` giving DKROM NOAA's codings where they hold its values and `Compatible`'s where not (RHOHV), no value clipped; a JMA velocity cycle's radials without a Nyquist velocity noted, and filled by the options (out-of-range values refused); RHI volumes refused |
+| `recast-radar-io-nexrad/tests/writer_layout.rs` | the bytes: header, LDM control words, the 134-frame metadata record with Messages 18, 5 and 2 where real files have them, every radial's blocks; real-time chunks concatenating to the file, and `ChunkWriter` (the start chunk with the first sweep, the held-back last record, a volume ended early, pushes past the planned cuts refused, and a Doppler cut pushed after a plan of KTLX's surveillance cut refused as `UnplannedMoment` with nothing sent); `write_volume_to` streaming KDVN 2020 in records of 10 radials from a two-thread pool (many batches) to the bytes of the whole-file writer under every compression, the real-time chunks' for LDM records, only the last control word negated, a gzip wrapper holding exactly the unwrapped file, and a sink that fails part way returning its error; sweeps without fields or with every row absent left out, rays without data left out, every radial carrying a moment, a volume with no data refused; the polling directory (names and name formats, `publish_named`, `dir.list`, site lists, retention, and the names, formats and sites refused, Windows' included); a volume with a copy of its first cut, which begins a volume scan again, refused (`MixedScanCycles`), and a `ChunkWriter` pushed the same sweep twice likewise; every refusal leaving the sink empty, per-ray arrays and field rows that do not match the ray count included |
 
 ### Independent readers (`tools/level2_writer_check.py`)
 
 ```text
 cargo run --release -p recast-radar-io --example level2_writer_check -- [--quantization compatible] OUT
 cargo build --release --manifest-path tools/level2_writer_nexrad_crate/Cargo.toml \
-    --config 'patch.crates-io.nexrad.path="~/nexrad/nexrad"'
+    --config 'patch.crates-io.nexrad.path="<nexrad checkout>/nexrad"'
 RADXCONVERT=/usr/local/lrose/bin/RadxConvert \
     sh tools/level2_writer_external/run.sh EXT OUT/*.ar2v* <NEXRAD and DORADE sources>   # in nexbench
 python tools/level2_writer_check.py OUT/manifest.json --nexrad-crate <exe> --external EXT
@@ -666,15 +705,20 @@ against milliseconds without it), so the router target runs at 16 to 50 inputs a
 - xradar 0.12 cannot read a compressed file whose cuts are not multiples of 120 radials under any
   record layout (Record layout, above); `Compression::None` files read in full. Py-ART cannot
   open a file whose site starts with `T` unless the site is in its table, nor the KLIX 2005
-  Message 1 volume once its gates before the radar are dropped (Independent readers, above).
-  These are the readers' limits, not the files'.
-- JMA (decoder, not writer): the decoder does not read the product definition's observation
-  start and end offsets, so every ray carries the file's reference time and the two 5-minute
-  cycles of a 10-minute file cannot be told apart by time; nor its PRFs, so there is no Nyquist
-  velocity. It reads the reflectivity table's level 1 (0.0) as 0 dBZ and the range start as the
-  first gate's centre (FM301 design note 9 left the meaning open). `merge_volumes` leaves out the
-  N6 sweeps whose first ray is rotated from their N5 sweep's (the two lowest Doppler tilts of the
-  2026 files).
+  Message 1 volume once its gates before the radar are dropped (Independent readers, above),
+  nor a file whose moments are on gates other than 1, 2 or 4 times the smallest spacing (from
+  the smallest first gate): Hurum's scan, whose 90 degree sweep has 30 m gates beside the other
+  sweeps' 250 m, fails with "Gate spacing is neither 1/4 or 1/2". The writer notes such a file
+  and names the sweeps. These are the readers' limits, not the files'.
+- JMA (decoder, not writer): every ray of a sweep carries the sweep's observation start
+  (template 4.51022 octets 51-52), not a time of its own; the decoder does not read the PRFs as
+  a Nyquist velocity, and reads the reflectivity table's level 1 (0.0) as 0 dBZ. The range start
+  is the first bin's inner bound (WMO template 3.120 octets 35-38, which JMA's template follows
+  octet for octet; ecCodes names them `offsetFromOriginToInnerBound`), so the first gate is
+  centred half a spacing beyond it. `merge_volumes` keeps the N6 sweeps whose first ray is
+  rotated from their N5 sweep's (the two lowest Doppler tilts) as sweeps of their own.
+- The polling directory lists sizes in bytes, which the captured North Dakota listing does not
+  (Polling directory, above); GR2Analyst was not run to see which it expects.
 
 **Decisions for the owner.** Each is a default where the ICD leaves a choice. The writer does
 what the list says; each other choice is one option away.
@@ -691,11 +735,20 @@ what the list says; each other choice is one option away.
    of 120 radials; `WithinCuts` ends each record with its cut, as NOAA's chunks happen to (their
    cuts are multiples of 120), and sends a cut's last chunk as soon as the cut is pushed. Neither
    changes what xradar 0.12 reads.
-4. **Ray order.** A foreign sweep stored from another azimuth than the one it started at (ODIM)
-   is written from its earliest ray, keeping the source's times, so each cut runs forward in time
-   from the ray collected first, as Level II does.
-5. **JMA's meaning** (decoder, not writer; Open items): the range start, reflectivity level 1,
-   per-ray times from the observation offsets, and the PRFs. Each changes the decoded volume, its
-   FM301 view and every JMA golden, and belongs to the JMA decoder's stream.
+4. **Ray and cut order.** A foreign sweep stored from another azimuth than the one it started
+   at (ODIM) is written from its earliest ray, keeping the source's times, so each cut runs
+   forward in time from the ray collected first, and a foreign volume's cuts are written in the
+   order their sweeps were collected, as Level II does. A scan collected from the top down is
+   then written with its highest cut first; Py-ART, MetPy and xradar read that order, and
+   whether GR2Analyst lists such cuts as it lists NOAA's (always bottom-up, SAILS aside) has not
+   been checked.
+5. **JMA's meaning** (decoder, not writer; Open items): reflectivity level 1, per-ray times
+   spread between the observation start and end offsets, and the PRFs. Each changes the decoded
+   volume, its FM301 view and every JMA golden. (The range start is settled: the first bin's
+   inner bound.)
+6. **Scan cycles.** A volume of more than one scan cycle is refused rather than split
+   silently; the command and the Python package split only when asked (`--split-scan-cycles`,
+   `split_scan_cycles`). The pause that separates cycles is 240 s, and a Level II source's
+   repeated cuts are never a new cycle (SAILS).
 
 [`Volume`]: ../../crates/recast-radar-core/src/model/volume.rs

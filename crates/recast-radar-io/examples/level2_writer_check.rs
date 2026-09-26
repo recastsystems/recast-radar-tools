@@ -12,11 +12,14 @@
 //! moments with their source field, coding and error as the writer reported
 //! them. Sources that are neither committed nor cached are skipped. The
 //! KLIX 2005 Message 1 volume, which carries no site position, takes the
-//! position of the KLIX 2021 Message 31 trim.
+//! position of the KLIX 2021 Message 31 trim. A source of more than one scan
+//! cycle (JMA's 10-minute tars hold two), which one Level II file cannot
+//! hold, is written one cycle at a time (`<id>.cycle<n>.<variant>.ar2v`),
+//! its summary's sweep numbers those of the source volume.
 
 use std::path::{Path, PathBuf};
 
-use recast_radar_core::model::{FieldName, Volume, merge_volumes};
+use recast_radar_core::model::{FieldName, Volume, merge_volumes, scan_cycles, split_scan_cycles};
 use recast_radar_io_nexrad::write::{
     Compression, Moment, Quantization, SourceMetadata, WriteOptions, WriteSummary, data_messages,
     write_volume_with_source,
@@ -189,6 +192,7 @@ fn summary_json(summary: &WriteSummary) -> Value {
     json!({
         "icao": summary.icao,
         "sweeps": summary.sweeps,
+        "written_sweeps": summary.written_sweeps,
         "radials": summary.radials,
         "skipped_sweeps": summary.skipped_sweeps,
         "written_rays": written_rays,
@@ -218,6 +222,41 @@ fn write_one(
             None
         }
     }
+}
+
+/// The volume's scan cycles, each as a volume with the source sweep of
+/// each of its sweeps; the volume itself (sweeps as they are) when it holds
+/// one cycle.
+fn cycles_of(volume: &Volume) -> Vec<(Volume, Option<Vec<usize>>)> {
+    let cycles = scan_cycles(volume);
+    if cycles.len() < 2 {
+        return vec![(volume.clone(), None)];
+    }
+    split_scan_cycles(volume.clone())
+        .into_iter()
+        .zip(cycles)
+        .map(|(part, cycle)| (part, Some(cycle.sweeps)))
+        .collect()
+}
+
+/// A cycle's summary with its sweep numbers those of the source volume.
+fn remap(summary: &mut WriteSummary, sources: &[usize]) {
+    let map = |index: &mut usize| {
+        if let Some(source) = sources.get(*index) {
+            *index = *source;
+        }
+    };
+    summary.moments.iter_mut().for_each(|m| map(&mut m.sweep));
+    summary
+        .skipped_fields
+        .iter_mut()
+        .for_each(|s| map(&mut s.sweep));
+    summary.skipped_sweeps.iter_mut().for_each(map);
+    summary
+        .written_rays
+        .iter_mut()
+        .for_each(|r| map(&mut r.sweep));
+    summary.written_sweeps.iter_mut().for_each(map);
 }
 
 /// The policy named on the command line.
@@ -306,43 +345,56 @@ fn main() {
         if format.starts_with("jma") {
             jma_parts.push(volume.clone());
         }
-        for variant in *variants {
-            let source = SourceMetadata {
-                metadata: metadata.as_ref(),
-                metadata_record: record.as_deref(),
-                data_messages: &messages,
-            };
-            // MetPy recognises gzip by the `.gz` suffix of a path.
-            let suffix = if variant.ends_with("gzip") { ".gz" } else { "" };
-            let name = format!("{id}.{variant}.ar2v{suffix}");
-            let Some((written, summary)) = write_one(
-                &out,
-                &name,
-                &variant_volume(variant, &volume),
-                source,
-                &options(variant, id, quantization),
-            ) else {
-                continue;
-            };
-            entries.push(json!({
-                "output": written.display().to_string(),
-                "source_id": id,
-                "source_path": path.display().to_string(),
-                "source_format": format,
-                "variant": variant,
-                "quantization": policy,
-                "summary": summary_json(&summary),
-            }));
+        let cycles = cycles_of(&volume);
+        for (number, (cycle, sources)) in cycles.iter().enumerate() {
+            for variant in *variants {
+                let source = SourceMetadata {
+                    metadata: metadata.as_ref(),
+                    metadata_record: record.as_deref(),
+                    data_messages: &messages,
+                };
+                // MetPy recognises gzip by the `.gz` suffix of a path.
+                let suffix = if variant.ends_with("gzip") { ".gz" } else { "" };
+                let name = match sources {
+                    Some(_) => format!("{id}.cycle{}.{variant}.ar2v{suffix}", number + 1),
+                    None => format!("{id}.{variant}.ar2v{suffix}"),
+                };
+                let Some((written, mut summary)) = write_one(
+                    &out,
+                    &name,
+                    &variant_volume(variant, cycle),
+                    source,
+                    &options(variant, id, quantization),
+                ) else {
+                    continue;
+                };
+                if let Some(sources) = sources {
+                    remap(&mut summary, sources);
+                }
+                entries.push(json!({
+                    "output": written.display().to_string(),
+                    "source_id": id,
+                    "source_path": path.display().to_string(),
+                    "source_format": format,
+                    "variant": variant,
+                    "quantization": policy,
+                    "summary": summary_json(&summary),
+                }));
+            }
         }
     }
     if jma_parts.len() == 2
         && let Ok((merged, _)) = merge_volumes(jma_parts)
     {
-        for variant in ["bzip2", "none"] {
+        let cycles = cycles_of(&merged);
+        let outputs = cycles.iter().enumerate().flat_map(|(number, (volume, _))| {
+            ["bzip2", "none"].map(|variant| (number, volume, variant))
+        });
+        for (number, volume, variant) in outputs {
             let Some((written, summary)) = write_one(
                 &out,
-                &format!("jma-rs47773-merged.{variant}.ar2v"),
-                &merged,
+                &format!("jma-rs47773-merged.cycle{}.{variant}.ar2v", number + 1),
+                volume,
                 SourceMetadata::default(),
                 &options(variant, "jma-merged", quantization),
             ) else {
