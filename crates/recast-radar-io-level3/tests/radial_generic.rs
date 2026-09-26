@@ -61,9 +61,10 @@ impl MetpyRelation {
 }
 
 /// Radial and generic products whose physical values MetPy maps, per relation.
-const METPY_EQUAL: [i16; 34] = [
-    19, 20, 25, 27, 28, 30, 32, 56, 78, 79, 80, 94, 99, 134, 135, 153, 154, 155, 159, 161, 163,
-    167, 169, 170, 171, 172, 173, 174, 175, 176, 180, 181, 182, 186,
+const METPY_EQUAL: [i16; 43] = [
+    16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 32, 55, 56, 78, 79, 80, 94, 99, 134,
+    135, 153, 154, 155, 159, 161, 163, 167, 169, 170, 171, 172, 173, 174, 175, 176, 180, 181, 182,
+    186,
 ];
 const METPY_CLASSES: [i16; 4] = [34, 113, 165, 177];
 const METPY_DSP: [i16; 1] = [138];
@@ -116,13 +117,14 @@ fn radial_and_generic_packets_match_golden() {
         counts.files,
         failures.join("\n")
     );
-    // The corpus has 136 radial and 5 generic product files (reference.md section 7).
-    assert_eq!(counts.files, 141);
-    assert_eq!(counts.radial_packets, 136);
+    // The corpus has 151 radial and 5 generic product files (reference.md section 7).
+    assert_eq!(counts.files, 156);
+    assert_eq!(counts.radial_packets, 151);
     assert_eq!(counts.generic_packets, 5);
-    assert_eq!(counts.grids, 138);
-    // Every grid but product 197's (no MetPy mapper) is compared with MetPy.
-    assert_eq!(counts.physical_vs_metpy, 137);
+    assert_eq!(counts.grids, 153);
+    // Every grid but those of product 197 (no MetPy mapper) and 43-46 (MetPy
+    // default metadata) is compared with MetPy.
+    assert_eq!(counts.physical_vs_metpy, 148);
     let relation = |r| counts.metpy_products.get(&r).cloned().unwrap_or_default();
     assert_eq!(relation(MetpyRelation::Equal), BTreeSet::from(METPY_EQUAL));
     assert_eq!(
@@ -140,6 +142,70 @@ fn radial_and_generic_packets_match_golden() {
         counts.physical_vs_metpy,
         counts.icd_checks
     );
+}
+
+/// Products whose radials cover a window around a point (2620001H Table V:
+/// window azimuth and range in halfwords 27 and 28).
+const WINDOW_PRODUCTS: [i16; 5] = [43, 44, 45, 46, 55];
+
+/// Windowed products (43-46, 55): the radials, 0.4-2.0 degrees wide and
+/// taken in scan order (the window's radials from the start of the sweep,
+/// then those from its end, which overlap them by up to two degrees), cover
+/// an arc of 50-100 degrees that holds the window azimuth (halfword 27), and
+/// the bins up to the packet's bin count, at the product's Table III bin
+/// size (the packet's scale factor: pixels of 1/8 km per bin, x1000), hold
+/// the window range (halfword 28).
+fn check_window_geometry(
+    radial: &RadialPacket,
+    product: &Level3Product,
+    problems: &mut Vec<String>,
+) {
+    let d = &product.description;
+    let window_azimuth = f64::from(d.halfword(27).unwrap()) * 0.1;
+    let window_range_km = f64::from(d.halfword(28).unwrap()) * 0.1 * 1.852;
+    let mut arc: Vec<(f64, f64)> = Vec::new();
+    for (i, r) in radial.radials.iter().enumerate() {
+        if !(0..3610).contains(&r.start_angle) || !(4..=20).contains(&r.delta_angle) {
+            problems.push(format!(
+                "packet {} radial {i}: start {} / delta {} out of range",
+                radial.code, r.start_angle, r.delta_angle
+            ));
+            return;
+        }
+        let start = f64::from(r.start_angle) * 0.1;
+        arc.push((start, f64::from(r.delta_angle) * 0.1));
+    }
+    // Azimuths unwrapped around the window azimuth.
+    let unwrap = |a: f64| window_azimuth + (a - window_azimuth + 180.0).rem_euclid(360.0) - 180.0;
+    let low = arc.iter().map(|&(a, _)| unwrap(a)).fold(f64::MAX, f64::min);
+    let high = arc
+        .iter()
+        .map(|&(a, w)| unwrap(a) + w)
+        .fold(f64::MIN, f64::max);
+    if !(50.0..=100.0).contains(&(high - low)) || !(low..high).contains(&window_azimuth) {
+        problems.push(format!(
+            "window radials {low:.1}-{high:.1} deg do not hold the window azimuth {window_azimuth}"
+        ));
+    }
+    let bin_km = match d.product_code {
+        43 => 1.0,
+        44 | 45 => 0.25,
+        _ => 0.5,
+    };
+    let pixels = f64::from(radial.scale_factor) / 1000.0;
+    if (pixels / 8.0 - bin_km).abs() > 0.01 {
+        problems.push(format!(
+            "scale factor {} is not {bin_km} km bins of 1/8 km pixels",
+            radial.scale_factor
+        ));
+    }
+    let first_km = f64::from(radial.first_bin) * bin_km;
+    let last_km = f64::from(radial.num_bins) * bin_km;
+    if !(first_km..last_km).contains(&window_range_km) {
+        problems.push(format!(
+            "bins {first_km}-{last_km} km do not hold the window range {window_range_km:.1} km"
+        ));
+    }
 }
 
 /// Every packet of the product (symbology layers and graphic pages).
@@ -167,7 +233,11 @@ fn check_file(entry: &Entry, golden: &Json, counts: &mut Counts) -> Vec<String> 
             }
             Packet::Radial(radial) => {
                 counts.radial_packets += 1;
-                check_radial_angles(radial, &mut problems);
+                if WINDOW_PRODUCTS.contains(&product.description.product_code) {
+                    check_window_geometry(radial, &product, &mut problems);
+                } else {
+                    check_radial_angles(radial, &mut problems);
+                }
                 counts.icd_checks += 1;
             }
             Packet::Generic(generic) => {
@@ -268,13 +338,16 @@ struct Grid {
 /// Cells between two `level_at` samples (a prime, so every bin column is hit).
 const LEVEL_AT_STRIDE: usize = 97;
 
-/// ICD Figure 3-10/3-11c: angles are tenths of a degree; every corpus sweep is
-/// a full circle of 0.4-2.0 degree radials, each starting where the previous
-/// one ends (start + delta, modulo 360 degrees).
+/// ICD Figure 3-10/3-11c: angles are tenths of a degree; every full-circle
+/// corpus sweep is 0.4-2.0 degree radials, each starting where the previous
+/// one ends (start + delta, modulo 360 degrees). **Observed:** products of
+/// 1994-1995 start their last radials past 360 degrees (up to 3605 tenths).
+/// The windowed products (43-46, 55) are checked by
+/// [`check_window_geometry`] instead.
 fn check_radial_angles(radial: &RadialPacket, problems: &mut Vec<String>) {
     let mut total = 0i64;
     for (i, r) in radial.radials.iter().enumerate() {
-        if !(0..3600).contains(&r.start_angle) || !(4..=20).contains(&r.delta_angle) {
+        if !(0..3610).contains(&r.start_angle) || !(4..=20).contains(&r.delta_angle) {
             problems.push(format!(
                 "packet {} radial {i}: start {} / delta {} tenths of a degree out of range",
                 radial.code, r.start_angle, r.delta_angle
@@ -282,7 +355,7 @@ fn check_radial_angles(radial: &RadialPacket, problems: &mut Vec<String>) {
             return;
         }
         if let Some(next) = radial.radials.get(i + 1)
-            && (r.start_angle + r.delta_angle) % 3600 != next.start_angle
+            && (r.start_angle + r.delta_angle) % 3600 != next.start_angle % 3600
         {
             problems.push(format!(
                 "packet {} radial {i}: start {} + delta {} does not reach the next start {}",
@@ -908,7 +981,11 @@ fn expected_threshold_label(raw: u16) -> String {
 }
 
 /// Product 197 (no MetPy mapper): every level present is a class of the ICD
-/// rain rate table (Note 1) with its displayed code.
+/// rain rate table (Note 1) with its displayed code. Products 43-46 (MetPy
+/// reads them with default metadata and maps no value): every level present
+/// is the value of its threshold halfword `31 + N`, read here per Figure 3-6
+/// sheet 6 Note 1 (low byte; bit 14, 13 or 12 divides by 100, 20 or 10; bit 8
+/// negates), or a flag when bit 15 marks a code.
 fn check_classes_without_metpy(
     product: &Level3Product,
     levels: &DataLevels,
@@ -916,6 +993,41 @@ fn check_classes_without_metpy(
     what: &str,
     problems: &mut Vec<String>,
 ) {
+    if (43..=46).contains(&product.description.product_code) {
+        for (&level, &count) in &histogram(&grid.levels) {
+            let raw = product
+                .description
+                .halfword(31 + usize::from(level))
+                .unwrap();
+            let decoded = levels.level(level);
+            if raw & 0x8000 != 0 {
+                if !matches!(decoded, Level::Flag(_)) {
+                    problems.push(format!(
+                        "{what}: level {level} ({count} bins, code {raw:#06x}) decoded as {decoded:?}"
+                    ));
+                }
+                continue;
+            }
+            let mut expected = f64::from(raw & 0xFF);
+            if raw & 0x4000 != 0 {
+                expected /= 100.0;
+            } else if raw & 0x2000 != 0 {
+                expected /= 20.0;
+            } else if raw & 0x1000 != 0 {
+                expected /= 10.0;
+            }
+            if raw & 0x0100 != 0 {
+                expected = -expected;
+            }
+            if decoded != Level::Value(expected) {
+                problems.push(format!(
+                    "{what}: level {level} ({count} bins, halfword {raw:#06x}) decoded as \
+                     {decoded:?}, expected {expected}"
+                ));
+            }
+        }
+        return;
+    }
     let expected: BTreeMap<u16, &str> = match product.description.product_code {
         197 => [
             (0, "NP"),
@@ -1190,6 +1302,88 @@ fn corrupted_radial_and_generic_packets() {
     bad[xdr..xdr + 4].copy_from_slice(&0x7FFF_FFF0u32.to_be_bytes());
     expect_invalid(&bad, "product name longer than the data");
 
+    // A radial that declares fewer bins than it stores: the field keeps the
+    // declared bins, the volume the values after them.
+    let original = decode_product(&dpr).unwrap();
+    let Packet::Generic(generic) = &original.symbology.as_ref().unwrap().layers[0][0] else {
+        panic!("expected a generic packet");
+    };
+    let Some(GenericComponent::Radial(component)) = generic.components.first() else {
+        panic!("expected a radial component");
+    };
+    let first = &component.radials[0];
+    // The first radial's bin count word sits before its attribute string
+    // (length word and padded characters) and the value count at word 70.
+    let padded = first.attributes.len().div_ceil(4) * 4;
+    let num_bins_at = xdr + 280 - padded - 8;
+    assert_eq!(word(&dpr, num_bins_at), 920);
+    let mut short = dpr.clone();
+    short[num_bins_at..num_bins_at + 4].copy_from_slice(&900u32.to_be_bytes());
+    let volume = decode_product(&short).unwrap().to_volume().unwrap();
+    let sweep = &volume.sweeps[0];
+    let extra = |name: &str| {
+        let variable = sweep.extra_vars.iter().find(|v| &*v.name == name);
+        match variable.map(|v| &v.values) {
+            Some(recast_radar_core::model::ArrayBuf::I32(values)) => values.clone(),
+            other => panic!("{name}: {other:?}"),
+        }
+    };
+    let counts = extra("level3_surplus_count");
+    assert_eq!(counts.len(), 360);
+    assert_eq!(counts[0], 20);
+    assert!(counts[1..].iter().all(|&n| n == 0));
+    assert_eq!(extra("level3_surplus_values"), first.values[900..920]);
+    assert_eq!(extra("level3_bin_count")[0], 900);
+    // The unmodified product has no surplus values.
+    let volume = original.to_volume().unwrap();
+    assert!(
+        volume.sweeps[0]
+            .extra_vars
+            .iter()
+            .all(|v| !v.name.starts_with("level3_surplus"))
+    );
+
+    // Bin data types (ORPG `xdr_RPGP_data_t`): the first radial's `ushort`
+    // replaced by another type of the same length. Other integer types read
+    // the same 4-byte values; `float` and `double` bins are refused, as is a
+    // type ORPG does not serialize.
+    let at = xdr
+        + dpr[xdr..]
+            .windows(13)
+            .position(|w| w == b"type = ushort")
+            .unwrap()
+        + 7;
+    assert!(first.attributes.starts_with("type = ushort"));
+    let mut int = dpr.clone();
+    int[at..at + 6].copy_from_slice(b"short ");
+    let Packet::Generic(retyped) = &decode_product(&int).unwrap().symbology.unwrap().layers[0][0]
+    else {
+        panic!("expected a generic packet");
+    };
+    let Some(GenericComponent::Radial(retyped)) = retyped.components.first() else {
+        panic!("expected a radial component");
+    };
+    assert_eq!(
+        retyped.radials[0].attributes,
+        first.attributes.replacen("ushort", "short ", 1)
+    );
+    assert!(
+        retyped
+            .radials
+            .iter()
+            .zip(&component.radials)
+            .all(|(a, b)| a.values == b.values)
+    );
+    for (kind, what) in [
+        (b"float ", "float radial bins"),
+        (b"double", "double radial bins"),
+        (b"string", "a data type ORPG does not serialize"),
+    ] {
+        let mut bad = dpr.clone();
+        bad[at..at + 6].copy_from_slice(kind);
+        expect_invalid(&bad, what);
+    }
+
     let (asp, asp_xdr) = unpacked("l3-tlx-rsl-20130520-2358");
     let xdr = asp_xdr;
     // Component count and its array length (words 28 and 29), first present flag (30).
@@ -1207,21 +1401,40 @@ fn corrupted_radial_and_generic_packets() {
     let mut bad = asp.clone();
     bad[xdr + 120..xdr + 124].copy_from_slice(&7u32.to_be_bytes());
     expect_invalid(&bad, "component present flag not 0 or 1");
-    // An unknown component type keeps the rest of the data undecoded.
+    // A component type the ICD does not define keeps the rest of the data
+    // undecoded.
     let mut other = asp.clone();
-    other[xdr + 124..xdr + 128].copy_from_slice(&3u32.to_be_bytes());
+    other[xdr + 124..xdr + 128].copy_from_slice(&9u32.to_be_bytes());
     let decoded = decode_product(&other).unwrap();
     let Packet::Generic(generic) = &decoded.symbology.as_ref().unwrap().layers[0][0] else {
         panic!("expected a generic packet");
     };
     match generic.components.as_slice() {
-        [GenericComponent::Undecoded { kind: 3, bytes }] => {
+        [GenericComponent::Undecoded { kind: 9, bytes }] => {
             assert_eq!(bytes.len(), asp.len() - (xdr + 128))
         }
         other => panic!(
             "expected one undecoded component, got {} components",
             other.len()
         ),
+    }
+    // The text component read as another ICD type (grid, area, table,
+    // event) is decoded by that layout or rejected, never left undecoded.
+    for kind in [2u32, 3, 5, 6] {
+        let mut other = asp.clone();
+        other[xdr + 124..xdr + 128].copy_from_slice(&kind.to_be_bytes());
+        if let Ok(decoded) = decode_product(&other) {
+            let Packet::Generic(generic) = &decoded.symbology.as_ref().unwrap().layers[0][0] else {
+                panic!("expected a generic packet");
+            };
+            assert!(
+                !matches!(
+                    generic.components.first(),
+                    Some(GenericComponent::Undecoded { .. })
+                ),
+                "type {kind}"
+            );
+        }
     }
 
     // Every cut of the uncompressed messages inside the packet fails cleanly.

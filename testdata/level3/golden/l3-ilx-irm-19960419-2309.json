@@ -1,0 +1,181 @@
+{
+ "id": "l3-ilx-irm-19960419-2309",
+ "sha256": "781a1731959ff7eaf2ad8857080e54a579b054c23b39586741404b838018dbbc",
+ "size": 4846,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS53 KILX 192309",
+  "awips_id": "IRMILX",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 4816
+ },
+ "message_header": {
+  "code": 83,
+  "date": 0,
+  "time": 0,
+  "length": 4816,
+  "source_id": 549,
+  "destination_id": 0,
+  "num_blocks": 3
+ },
+ "halfwords": [
+  83,
+  0,
+  0,
+  0,
+  0,
+  4816,
+  549,
+  0,
+  3,
+  65535,
+  0,
+  40151,
+  65534,
+  41735,
+  696,
+  83,
+  2,
+  21,
+  0,
+  47,
+  9606,
+  1,
+  17809,
+  9606,
+  1,
+  18173,
+  0,
+  0,
+  0,
+  0,
+  32770,
+  15,
+  30,
+  40,
+  45,
+  50,
+  55,
+  2068,
+  1044,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  0,
+  0,
+  60,
+  60,
+  0,
+  0,
+  0,
+  0,
+  0,
+  60,
+  0,
+  0,
+  0,
+  979
+ ],
+ "product_code": 83,
+ "compression": {
+  "hw51": 0,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 1838,
+   "num_layers": 3,
+   "layers": [
+    {
+     "length": 22,
+     "packets": [
+      30
+     ]
+    },
+    {
+     "length": 244,
+     "packets": [
+      31,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2,
+      15,
+      2
+     ]
+    },
+    {
+     "length": 1544,
+     "packets": [
+      32
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": null,
+  "tabular": {
+   "length": 2858,
+   "message_code": 74,
+   "product_code": 74,
+   "rcm_text_bytes": 2730,
+   "rcm_text_sha256": "c6441cd9c8ed92aaf46ba9451788e40c65e9931a3c189c103fd464c59081e7ea"
+  },
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  2,
+  15,
+  30,
+  31,
+  32
+ ],
+ "data": null,
+ "metpy": "unsupported",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [
+   "l3-ilx-irm-19960419-2309: Unknown symbology packet type 30/1e.",
+   "l3-ilx-irm-19960419-2309: Unknown symbology packet type 31/1f.",
+   "l3-ilx-irm-19960419-2309: Unknown symbology packet type 32/20."
+  ],
+  "error": "AssertionError: ",
+  "crosscheck": null
+ }
+}

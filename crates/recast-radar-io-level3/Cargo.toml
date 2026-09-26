@@ -10,18 +10,16 @@ keywords = ["nexrad", "level3", "tdwr", "radar", "weather"]
 categories = ["science::geo", "parser-implementations", "encoding"]
 
 [dependencies]
-# Versions and features match main's [workspace.dependencies]; switch to
-# `.workspace = true` when this branch merges into main.
 recast-radar-bzip2 = { path = "../recast-radar-bzip2" }
-chrono = { version = "0.4", default-features = false }
+chrono.workspace = true
 # zlib-rs backend (pure Rust): NOAAPort distributions wrap products in zlib frames.
-flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+flate2.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
-thiserror = "2.0"
+thiserror.workspace = true
 
 [dev-dependencies]
 # An independent reference decoder for the differential test in tests/radial_generic.rs.
-bzip2 = "0.6"
+bzip2.workspace = true
 # SHA-256 of decoded levels and text for the golden digests (tests/common).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 

@@ -22,6 +22,7 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | `bzip2` | `recast-radar-bzip2` | `Decoder::decode_stream_into` on the input, then `Decoder::decode_two_into` on the input paired with its own first half, with a 64 MiB output limit |
 | `bzip2_encode` | `recast-radar-bzip2` | Differential: `Encoder::encode_into` at level 1 + (length mod 9) on the input, then on its first quarter appended to the same output; each stream must equal the `bzip2` crate's (libbz2-rs-sys, a port of libbzip2 1.0.8) except in the `origPtr` of a periodic block, and must decode to what was compressed with our decoder, and with the reference decoder when it differs from the reference's stream. The encoders (one per level) and the decoder are reused across inputs, so every stream is written over buffers that earlier calls filled |
 | `writers` | `recast-radar-io-cfradial`, `recast-radar-io-odim`, `recast-radar-hdf5` (writer) | `read_supported_volume_bytes`, then `write_cfradial1` (`RangeLayout` `Auto`, `PerSweep` and `PerRay`), `write_cfradial2` and `write_odim_h5_volume` (with and without `every_quantity`) on the volume; each file a writer returns must read back through the router with the same rays per sweep and, except `every_quantity` output, the same data gate by gate: values (float32 tolerance), missing, undetect and range-folded gates, ray angles and times, compared by the writer tests' `crates/recast-radar-io/tests/common/compare.rs` (included by path). A writer's typed refusal is fine; a file its own readers refuse, or one that reads back different data, panics |
+| `level3` | `recast-radar-io-level3` | `looks_like_level3`, `decode_message`, then for a product its Table V parameters, its display packet records, `to_volume` and the FM301 view of the volume, the VAD wind profile, the radar coded message, and every storm table reader (SCIT-era and 1995-1997 layouts); inputs of length 3 mod 4 also go to `RadarCodedMessage::parse` as text |
 
 The harness bodies live in `src/lib.rs`; each `fuzz_targets/<target>.rs` is a
 one-line libFuzzer wrapper around the function with the same name. A harness
@@ -37,10 +38,9 @@ the checksum before the parser behind it sees the mutated bytes. The `hdf5`,
 `OpenOptions::with_metadata_checksums(false)`, a runtime option, so every
 finding replays on stable with `fuzz-tools` exactly as the fuzzer ran it.
 
-Not covered yet: Level III products (a target belongs with
-`recast-radar-io-level3` once that crate merges), and the mobile-radar
-directory reader, which walks a folder (its zip counterpart has the
-`dorade_archive` target).
+Not covered yet: the mobile-radar directory reader, which walks a folder
+(its zip counterpart has the `dorade_archive` target). `io_router` also
+reaches Level III through the router.
 
 ## Layout
 
@@ -134,7 +134,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All thirteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All fourteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2_volume dorade
@@ -161,6 +161,18 @@ the target compresses one and a quarter times and checks against the
 reference encoder, so at the default `-max_len` it runs about 8 inputs a
 second on one core of the nexbench host; with `-max_len=8192` about 70
 (15-minute campaigns, 2026-09-25; see `docs/perf/bzip2-encoder.md`).
+
+A 2048 MB limit misses allocation bombs below it: a 1,462-byte Level III
+product once allocated 1.9 GB, and a 760-byte product 74 504 MB while its
+radar coded message text was parsed. The Level III decoder now bounds what
+one product allocates and what parsing its radar coded message allocates
+(the largest peak found for the `level3` target's whole path is 187 MB;
+`docs/level3/coverage.md`, Allocation limits), so a `level3` campaign can
+pass `-rss_limit_mb=512` to catch a regression of those bounds. Mutation
+seldom grows an input into megabytes of structured text or packets: six
+campaigns (the sixth with that limit) missed the radar coded message
+probes, so such a campaign needs generated hostile inputs of each shape
+among its seeds.
 
 ### In the nexbench container
 
@@ -249,6 +261,7 @@ input panicked.
 | `fuzz-writers-odim-gate-spacing-below-float` | `writers` (`fuzz-tools mutate`) | a 1.4e-100 m gate spacing: the CfRadial 1 per-ray layout wrote a float `ray_gate_spacing` of 0, which readers take as fill, so the sweep read back on another sweep's gates | `RangeLayout::PerRay` refuses such a sweep (`Unrepresentable`) |
 | `fuzz-writers-dorade-absent-rows-without-fill` | `writers` (`fuzz-tools mutate`) | an integer field without a fill code and with an absent ray: the CfRadial 2 file had no `_FillValue`, so the absent ray read back as values | the CfRadial 2 writer gives such a field a free code as `_FillValue`, as the CfRadial 1 writer did |
 | `fuzz-writers-cfradial1-ray-time-near-float-max` | `writers` (`fuzz-tools mutate`) | a ray time of about -1.8e308 s: the ODIM reader's `(startazT + stopazT) / 2` overflowed to -inf | the reader's means are `a / 2 + b / 2` |
+| `fuzz-level3-rcm-centroid-non-ascii` | `level3` | panic: a radar coded message centroid group with Latin-1 bytes above 0x7F in its motion field was sliced inside a character (`rcm::centroid`) | `c76ed26`: such a group is kept as unparsed |
 
 Regression inputs are mutations (libFuzzer's, or a stable mutator's) of the
 real seeds for their target, so they count as real-file-derived.

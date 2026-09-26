@@ -393,6 +393,65 @@ const SEEDS: &[Seed] = &[
         "dorade-noxp-20090610-003210-heads-zip",
         Verbatim,
     ),
+    // level3: one real product per framing and packet family: WMO heading
+    // (1995 NCEI archive, 2013 KTLX), NOAAPort with zlib frames (KMCI 2016),
+    // bzip2 (N0Q, N0B, EET, DVL, DPR), radial 16 and 0xAF1F, raster 0xBA07
+    // with graphic pages (NCR), packets 17 and 18 (DPA), the stand-alone
+    // rate array (1995 SUP), generic radial and text components (DPR,
+    // RSL), symbols and SCIT (NST, NHI, NTV, NMD, NME), cell trends (NSS),
+    // contours (N0M), VWP, radar coded message, General Status Message, a
+    // free text message, the storm tables of 1996-2003 (legacy STI, hail, TVS
+    // and combined attribute tables, both Mesocyclone layouts), the
+    // unedited Radar Coded Message (packets 30-32), and the 1993-2001
+    // products: cross section (packet 7), weak echo region (eight rasters,
+    // packet 7), velocity azimuth display (packet 9), a window with short
+    // radials (46), combined shear, a composite reflectivity contour with its
+    // attribute table, stand-alone storm tables (101) and a VWP whose tabular
+    // offset names the end of its message.
+    ("level3", "l3-lot-050-19941031-1358", Verbatim),
+    ("level3", "l3-lot-053-19941106-0246", Verbatim),
+    ("level3", "l3-lot-084-19931120-0721", Verbatim),
+    ("level3", "l3-ftg-046-19940930-1849", Verbatim),
+    ("level3", "l3-tlx-087-19940308-1939", Verbatim),
+    ("level3", "l3-grr-039-20011011-0631", Verbatim),
+    ("level3", "l3-lot-101-19930824-0005", Verbatim),
+    ("level3", "l3-tlx-101-20010503-0007", Verbatim),
+    ("level3", "l3-lot-nvw-19931120-0721", Verbatim),
+    ("level3", "l3-fws-n0r-19950517-2304", Verbatim),
+    ("level3", "l3-fws-sup-19950517-2304", Verbatim),
+    ("level3", "l3-fws-dpa-19950517-2304", Verbatim),
+    ("level3", "l3-fws-rcm-19950517-2310", Verbatim),
+    ("level3", "l3-fws-nme-19950517-2316", Verbatim),
+    ("level3", "l3-mci-dpa-20160526-2154", Verbatim),
+    ("level3", "l3-mci-n1p-20160526-2154", Verbatim),
+    ("level3", "l3-tlx-n0v-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-ncr-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-nst-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-nhi-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-ntv-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-nmd-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-nss-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-nvw-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-rcm-20220503-004553", Verbatim),
+    ("level3", "l3-tlx-n0m-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-eet-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-dvl-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-dpr-20130520-2016", Verbatim),
+    ("level3", "l3-tlx-rsl-20130520-2358", Verbatim),
+    ("level3", "l3-tlx-n0q-20220503-005231", Verbatim),
+    ("level3", "l3-tlx-n0b-20260622-080623", Verbatim),
+    ("level3", "l3-ddc-gsm-20200817-1000", Verbatim),
+    ("level3", "l3-abr-ftm-20110428-1331", Verbatim),
+    ("level3", "l3-ilx-nst-19960419-2303", Verbatim),
+    ("level3", "l3-ilx-nhi-19960419-2303", Verbatim),
+    ("level3", "l3-ilx-ntv-19960419-2303", Verbatim),
+    ("level3", "l3-ilx-ncz-19960419-2320", Verbatim),
+    ("level3", "l3-lzk-ncz-19970301-1912", Verbatim),
+    ("level3", "l3-sgf-nme-20030504-2332", Verbatim),
+    ("level3", "l3-ilx-irm-19960419-2309", Verbatim),
+    // io_router: Level III now routes too.
+    ("io_router", "l3-tlx-n0v-20130520-2016", Verbatim),
+    ("io_router", "l3-mci-dpa-20160526-2154", Verbatim),
     // jma: both committed single-station tars.
     ("jma", "jma-n6-20191012-090000-rs47773", Verbatim),
     ("jma", "jma-n5-20191012-090000-rs47773", Verbatim),

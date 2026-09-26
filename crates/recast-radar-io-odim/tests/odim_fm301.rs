@@ -142,8 +142,8 @@ fn iesha_pvol_matches_xradar_ray_coordinates_and_raw_planes() {
     };
     assert_eq!(coding.fill_value, Some(255));
     assert_eq!(coding.undetect, Some(0));
-    assert_eq!(coding.transform.scale_factor(), 0.5);
-    assert_eq!(coding.transform.add_offset(), -32.0);
+    assert_eq!(coding.transform.scale_factor(), Some(0.5));
+    assert_eq!(coding.transform.add_offset(), Some(-32.0));
     assert_eq!(dbzh.shape(), (360, 497));
     assert_eq!(raw_u8_sum(sweep, FieldName::Dbzh), 11_025_028);
     assert_eq!(

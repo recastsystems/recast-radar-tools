@@ -27,23 +27,36 @@
 //! [`messages`] holds the General Status Message and text message types, and
 //! [`vwp::VadWindProfile`] reads the winds of a VAD Wind Profile (product 48).
 //!
-//! [`read_level3_volume`] and [`Level3Product::to_volume`] carry a radial,
-//! raster or generic product's data array as a one-sweep FM301
-//! [`recast_radar_core::model::Volume`] ([`volume`]).
+//! [`read_level3_volume`] and [`Level3Product::to_volume`] carry every radial,
+//! raster and generic data array of a product as one sweep of an FM301
+//! [`recast_radar_core::model::Volume`] ([`volume`]), with the product
+//! dependent halfwords of Table V decoded by name
+//! ([`ProductDescription::parameters`], [`params`]) and the HRAP grid of the
+//! precipitation arrays in [`hrap`].
+//!
+//! Every other display packet is kept as a text record
+//! ([`Level3Product::display_records`], [`records`]) so that the volume
+//! carries every decoded value.
 //!
 //! The format reference with ICD section numbers is `docs/level3/reference.md`.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod blocks;
+mod budget;
 mod decompress;
 mod error;
 mod header;
+pub mod hrap;
 pub mod levels;
 pub mod messages;
 pub mod packets;
+pub mod params;
 mod products;
+pub mod rcm;
 mod read;
+pub mod records;
+pub mod tables;
 pub mod volume;
 pub mod vwp;
 
@@ -51,6 +64,7 @@ pub use blocks::{
     GraphicAlphanumeric, GraphicLayout, GraphicPage, Symbology, TabularAlphanumeric, TabularLayout,
     TextPage,
 };
+pub use budget::MAX_PRODUCT_DECODED_BYTES;
 pub use error::Level3Error;
 pub use header::{
     HEADER_HALFWORDS, MessageHeader, OperationalMode, ProductDescription, TextHeader,
@@ -60,8 +74,10 @@ pub use packets::{
     ContourPacket, DigitalPrecipPacket, GenericPacket, Packet, RadialPacket, RasterPacket,
     SymbolPacket, TextPacket, VectorPacket,
 };
+pub use params::{ParameterValue, ProductParameter};
 pub use products::{ProductInfo, ProductKind, product_info, products};
-pub use volume::read_level3_volume;
+pub use rcm::RadarCodedMessage;
+pub use volume::{DataArray, read_level3_volume};
 
 use std::borrow::Cow;
 
@@ -94,7 +110,7 @@ pub enum Level3Message {
     /// A General Status Message (message code 2).
     GeneralStatus(Box<GeneralStatusMessage>),
     /// A plain-text message (WMO heading `NOUS..`).
-    Text(TextMessage),
+    Text(Box<TextMessage>),
 }
 
 /// Decodes one Level III product file.
@@ -106,9 +122,24 @@ pub enum Level3Message {
 ///   Block, such as the General Status Message (code 2).
 /// - [`Level3Error::Truncated`], [`Level3Error::BadBlockHeader`],
 ///   [`Level3Error::PacketOverrun`] and decompression errors for malformed input.
+/// - [`Level3Error::ProductTooLarge`] when the decoded packets, data levels
+///   and text would take more than [`MAX_PRODUCT_DECODED_BYTES`].
 ///
 /// [`decode_message`] decodes plain-text and General Status Messages instead of
 /// returning the first two errors.
+///
+/// # Limits
+///
+/// Decompressed data (bzip2, and the zlib frames of NOAAPort files) is
+/// capped at 16 MiB. What the decoder allocates for the product decoded from
+/// it is charged, before each allocation, to one budget of
+/// [`MAX_PRODUCT_DECODED_BYTES`] for the whole product; each packet also has
+/// its own limits ([`packets::radial::MAX_RADIAL_CELLS`],
+/// [`packets::raster::MAX_GRID_DIMENSION`],
+/// [`packets::generic::MAX_EVENT_DEPTH`]). What the product's readers
+/// allocate afterwards has limits of its own: the volume
+/// ([`volume::MAX_VOLUME_BYTES`]) and the parse of a radar coded message
+/// ([`rcm::MAX_RCM_PARSED_BYTES`]).
 pub fn decode_product(bytes: &[u8]) -> Result<Level3Product, Level3Error> {
     match header::unwrap_framing(bytes)? {
         Unwrapped::Text { text_header, .. } => Err(Level3Error::TextOnly {
@@ -125,9 +156,13 @@ pub fn decode_product(bytes: &[u8]) -> Result<Level3Product, Level3Error> {
 /// plain-text message.
 ///
 /// A plain-text message is recognized by its WMO heading `NOUS..` (the rule
-/// MetPy uses). Its text is the rest of the file after the heading and AWIPS
-/// identifier lines; the last four bytes are dropped when their first three are
-/// `\r\r\n` (NOAAPort trailer) or `FF FF 0A`, as MetPy does.
+/// MetPy uses), or by a body after any other heading that is plain text and
+/// not a binary message (the Radar Observation bulletins, AWIPS `ROBxxx`,
+/// that the NCEI archive holds beside the products). Its text is the rest of
+/// the file after the heading and AWIPS identifier lines; for `NOUS`
+/// messages the last four bytes are dropped when their first three are
+/// `\r\r\n` (NOAAPort trailer) or `FF FF 0A`, as MetPy does, and other text
+/// loses a NOAAPort `\r\r\n\x03` trailer.
 ///
 /// # Errors
 ///
@@ -138,9 +173,9 @@ pub fn decode_product(bytes: &[u8]) -> Result<Level3Product, Level3Error> {
 /// - The errors of [`decode_product`] for malformed input.
 pub fn decode_message(bytes: &[u8]) -> Result<Level3Message, Level3Error> {
     match header::unwrap_framing(bytes)? {
-        Unwrapped::Text { text_header, text } => {
-            Ok(Level3Message::Text(TextMessage::new(text_header, text)))
-        }
+        Unwrapped::Text { text_header, text } => Ok(Level3Message::Text(Box::new(
+            TextMessage::new(text_header, text),
+        ))),
         Unwrapped::Binary(framed) => {
             let message_header = MessageHeader::parse(&framed.message)?;
             if message_header.code == GENERAL_STATUS_MESSAGE_CODE {
@@ -152,6 +187,23 @@ pub fn decode_message(bytes: &[u8]) -> Result<Level3Message, Level3Error> {
             }
         }
     }
+}
+
+/// True when `bytes` look like a Level III file: a NOAAPort start-of-header
+/// line and sequence number (optional), then a WMO abbreviated heading and
+/// AWIPS identifier followed by a zlib frame, a binary message or plain
+/// text (after a `NOUS` heading, or an `SDUS` heading as the Radar
+/// Observation bulletins have; other WMO text bulletins are not Level
+/// III); or a bare binary message. A binary message is recognised by its
+/// Message Header Block and the block divider (-1) at halfword 10, with the
+/// message code repeated as the product code at halfword 16, or message
+/// code 2 (the General Status Message) with two blocks and a time of day
+/// in halfwords 3-4.
+///
+/// A cheap check on the first bytes, for format routers: it does not
+/// validate the rest of the file.
+pub fn looks_like_level3(bytes: &[u8]) -> bool {
+    header::looks_like_level3(bytes)
 }
 
 /// Message code of the General Status Message (ICD 2620001 Table II).
@@ -183,14 +235,14 @@ fn decode_framed_product(
         Some(rest) if decompress::is_bzip2(rest) => {
             let mut whole = Vec::with_capacity(HEADER_BYTES);
             whole.extend_from_slice(&message[..HEADER_BYTES]);
-            whole.extend(decompress::bunzip2(rest)?);
+            decompress::bunzip2_into(rest, &mut whole)?;
             description.compressed = true;
             Cow::Owned(whole)
         }
         _ => message,
     };
 
-    let blocks = blocks::read_blocks(&data, &description)?;
+    let blocks = blocks::read_blocks(&data, &description, &mut budget::Budget::product())?;
     Ok(Level3Product {
         text_header,
         message_header,

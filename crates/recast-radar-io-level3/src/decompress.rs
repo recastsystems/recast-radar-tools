@@ -5,8 +5,13 @@
 use crate::Level3Error;
 
 /// Upper bound on decompressed output. The largest corpus product decompresses
-/// to under 5 MB; this bounds allocation driven by hostile input.
-pub(crate) const MAX_DECOMPRESSED_BYTES: usize = 64 << 20;
+/// to under 5 MB (the largest ICD product, a 720 x 1840 super resolution
+/// array, holds 1.3 MB of levels); this bounds the decompressed message a few
+/// hundred bytes of bzip2 can produce. What decoding that message allocates
+/// is bounded separately, by the product decode budget
+/// ([`crate::MAX_PRODUCT_DECODED_BYTES`]): run-length packets expand the
+/// decompressed bytes up to 128 times.
+pub(crate) const MAX_DECOMPRESSED_BYTES: usize = 16 << 20;
 
 /// Minimum growth step for output buffers.
 const CHUNK: usize = 1 << 16;
@@ -30,20 +35,20 @@ pub(crate) fn is_bzip2(data: &[u8]) -> bool {
     }
 }
 
-/// Decompresses the single bzip2 stream at the start of `data`. Bytes after the
-/// end of the stream are ignored.
-pub(crate) fn bunzip2(data: &[u8]) -> Result<Vec<u8>, Level3Error> {
+/// Decompresses the single bzip2 stream at the start of `data`, appending at
+/// most [`MAX_DECOMPRESSED_BYTES`] to `out`. Bytes after the end of the
+/// stream are ignored.
+pub(crate) fn bunzip2_into(data: &[u8], out: &mut Vec<u8>) -> Result<(), Level3Error> {
     thread_local! {
         static DECODER: std::cell::RefCell<recast_radar_bzip2::Decoder> =
             std::cell::RefCell::new(recast_radar_bzip2::Decoder::new());
     }
 
-    let mut out = Vec::new();
     DECODER.with(|cell| {
         let mut decoder = cell.borrow_mut();
         decoder.set_max_output(MAX_DECOMPRESSED_BYTES);
         decoder
-            .decode_stream_into(data, &mut out)
+            .decode_stream_into(data, out)
             .map_err(|err| match err {
                 recast_radar_bzip2::Error::OutputLimit => Level3Error::DecompressedTooLarge {
                     format: "bzip2",
@@ -53,8 +58,7 @@ pub(crate) fn bunzip2(data: &[u8]) -> Result<Vec<u8>, Level3Error> {
                     reason: other.to_string(),
                 },
             })
-    })?;
-    Ok(out)
+    })
 }
 
 /// True when `data` starts with a zlib header (RFC 1950: deflate method, header

@@ -588,6 +588,9 @@ fn integer_step(data: &FieldData) -> Option<f64> {
     let step = match data.transform()? {
         LinearTransform::IcdScaleOffset { scale, .. } => 1.0 / f64::from(scale).abs(),
         LinearTransform::CfScaleOffset { scale_factor, .. } => scale_factor.abs(),
+        // A level table (NEXRAD Level III) has no step: its values are
+        // coded from their decoded values, as a float field's are.
+        _ => return None,
     };
     (step > 0.0 && step.is_finite()).then_some(step)
 }

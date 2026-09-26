@@ -18,8 +18,33 @@ from an ICD.
 | 2620003AE | ICD for Product Specification | AE, Build 24.0 (mnemonics, per-product sections) | 19 Aug 2025 | `9a90b8c728d6bd7ce8b0f10969ed128ee4e1f2a6b21fa0d7619522bbbecda9c9` |
 | 2620063E | ICD for SPG to AWIPS Class 1 User | E, SPG Build 12.0 (TDWR products) | 14 Jun 2022 | `5f901097f2e57624e2cda34110808b3c6444c034b31c9f1b626c34023eee29d1` |
 | 2620070C | ICD for the TDWR SPG Product Specification | C, SPG Build 11.0 | 07 Jul 2021 | `9223dd5f5fe17b5c7ff2905054bf2758390b825dcc6fa4d44e5a98367fe626bf` |
+| 2620001G | ICD for the RPG to Class 1 User | G, Open Build 5.0 (spare codes 39, 40, 42, 88 with contour formats) | 30 Jan 2004 | `063b4c15d1839dfe635871d8df0a3bf9dc75c324016b31a4fd5fc9e4cb065be5` |
+| DSI-7000 | NCDC Data Documentation for DSI-7000, NEXRAD Level III | 1990s ICD 2620001 Tables II, IIa, III, V and Figures 3-2 to 3-23, Appendix B, "copied from the NWS Interface Control Document for RPG/Associated PUP #2620001" (codes 39, 40, 42, 49, 52, 53, 68-72, 83, 88, 106; product 83 layers) | 11 Apr 2005 | `45ab9fb843f53bedd807279478c05da9cb75257cc351976b271f0f0b74a65b29` |
 
-All of them are published at <https://www.roc.noaa.gov/interface-control-documents.php>
+Also used: Kitzmiller, Samplatsky and Keller, *Production of a National
+Radar Reflectivity Mosaic and Automated Radar Observations From WSR-88D
+Radar Coded Messages*, NOAA Techniques Development Laboratory, 2002
+(<https://repository.library.noaa.gov/view/noaa/47540>), section 3: the
+national RCM grid (1/16 LFM, 460 x 360 boxes, lower-left corner 119.036W
+23.097N), which confirms the national box alignment of section 4.4.
+
+Also used: the ORPG source in the public edition of the WSR-88D Common
+Operations and Development Environment (CODE,
+<https://www.weather.gov/code88d/code>), read from the mirror
+<https://github.com/likev/CodeOrpgPub> at commit `f22af20` (2015-08-05).
+`files_orpg_sw/src/cpc100/lib007/orpg_xdr.c` (revision 1.5, 2008-01-11;
+SHA-256 `b583cc81e76b8ce9ed7ffda7df6711f3dd87386fde47e7053cda40d845d5bc49`)
+serializes the XDR data of packets 28 and 29, and
+`files_orpg_sw/include/orpg_product.h` (revision 1.10, 2010-01-13) defines
+its structures: `packets::generic` follows them (section 7). The decoders of
+CODE's display tool, `files_orpg_sw/src/code_util/tsk001/packet_5.c`,
+`packet_26.c`, `packet_3501.c` and `symbology_block.c`, are compared with
+packets 5, 26, 0x3501 and 0xBA0F in section 7.
+
+DSI-7000 is published by NCEI at
+<https://www.ncei.noaa.gov/nerms/api/document/0479056a86534978b35e1d42d962da4d/download>;
+its text extraction scrambles multi-column tables (`pdftotext -raw` keeps the
+Table V rows together). The ICDs are published at <https://www.roc.noaa.gov/interface-control-documents.php>
 (`https://www.roc.noaa.gov/public-documents/icds/<number><rev>.pdf`). Product
 mnemonics come from the 2620003AE section titles and the product-size tables in
 Appendix C of 2620001AD and 2620001P. Products 181/183/185/187 (16-level TDWR
@@ -165,7 +190,53 @@ including the TDWR SPG versions of 37, 58, 59, 61 and 141.
 
 Maximum 17 lines per page, 80 characters per line. **Observed** second-header
 message codes: 48->100, 58->101, 59->102, 60->103 (legacy), 61->104, 78->107,
-79->108, 80->109, 141->141, 172->172, and 0 for product 171 (KTLX 2013).
+79->108, 80->109, 141->141, 172->172, and 0 for product 171 (KTLX 2013). The
+block of product 83 (IRM, section 4.4) holds a radar coded message instead of
+pages (second message code 74). **Observed** in the NCEI archive of
+1993-1994 (KLOT, KIND, KCYS; products 48, 58, 60, 78, 79, 80 and 83): the
+tabular offset names the end of the message, whose length (halfwords 5-6)
+confirms it, and no block follows; the decoder reads no tabular block
+(`blocks::read_blocks`).
+
+**Storm attribute table layouts** (`tables`). ICD 2620003AE Appendix C gives
+the tabular formats of the SCIT, HDA, TDA and MDA algorithms. **Observed** in
+the NCEI archive (every table of KILX 1996-04-19, KLZK 1997-03-01, KTLX
+1999-05-03, KFWS 2000-03-28 and KSGF 2003-05-04 parses with no unparsed line,
+`examples/level3_tables.rs`): SCIT (`STORM POSITION/FORECAST`) and HDA
+(`PROBABILITY OF SEVERE HAIL`) from KLZK 1997, TDA (`Tornado Vortex
+Signature` with `Feat Type`) from KTLX 1999. The layouts before them, which
+no ICD obtained describes, read by their column headings:
+
+| Product | Years | Page heading | Row |
+|---|---|---|---|
+| 58 | 1995-1996 | `STORM TRACKING`, `TRACKVAR` | two lines per storm: `ID AZ/RAN DIR/SPD SPEEDX F15X F30X F45X F60X ERR/MEAN TRACKVARX`, then `SPEEDY F15Y F30Y F45Y F60Y TRACKVARY`; forecasts are X/Y positions in nmi, `NO DAT` when none |
+| 59 | 1995-1996 | `HAIL`, `HAIL-WEIGHT` | `ID STATUS POSITIVE PROBABLE CONFIDENCE SCORE`, status `POSITIVE`, `PROBABLE` or `NONE` |
+| 60 | 1995-1997 | `MESOCYCLONE`, `FEAT STOR FEAT TVS` | `FEAT - STORM TYPE [TVS] BASE TOP AZ/RAN HGT RAD AZ SHEAR`, type `MESO`, `3DC SHR` or `UNC SHR`; the TVS ID (0 = none) only on `MESO` rows |
+| 60 | 1999-2008 | `MESOCYCLONE`, `FEATURE STORM FEATURE` | as above without the TVS column |
+| 61 | 1996-1997 | `TORNADO VORTEX SIG`, `MAX SHEAR HGT` | `TVS MESO STORM BASEHGT AZ/RAN MAXSHEARHGT AZ/RAN SHEAR ORI ROT` (ORI orientation, deg; ROT rotation, rad: the ICD acronym list); a product with no TVS has only the adaptation page (`SEARCH PERCENTAGE`) |
+| 37, 38 | 1995-1996 | graphic page `STM ID AZ RAN TVS MESO HAIL DBZM HGT VLOW STM TOP FCST MVMT MW VOL` | `ID AZ RAN YES/NO YES/NO POS/PRO/NEG DBZM HGT VLOW TOP DIR SPEED MWVOL` |
+| 37, 38 | 1997 | graphic page with `TVS MESO` | the later layout with `NO`/`YES` in both columns |
+| 37, 38 | 1999-2003 | graphic page with `TVS MESO` | `MESO` column `NONE`, `MESO`, `3DCO` or `UNCO` (the Mesocyclone algorithm's feature types) |
+
+The stand-alone alphanumeric products 101, 102, 103 and 104 (section 4.4)
+carry the pages of 58, 59, 60 and 61, in the layout of their year (KLOT
+1993-08-24 101: the `TRACKVAR` layout; KFTG 1994-09-30 102 and 104: the
+legacy hail and TVS layouts; KTLX 2001-05-03: SCIT, TDA and the later
+Mesocyclone layout); the composite reflectivity products 35 and 36 (8
+levels) and the composite reflectivity contour 39 carry the combined
+attribute table of 37 and 38 (KIND 1994-10-31 35: the `MW VOL` layout; KTLX
+2013 36 and KGRR 2001-10-11 39: the later ones). `tables` reads them as
+those products.
+
+The legacy STI's `SPEED X/Y` are the east and north components of the
+movement (KFWS 1995-05-17 23:04 storm 12: 254/26 kt, 25 and 7 kt), its
+forecasts X/Y positions east and north of the radar. The 1995 combined
+table's `VLOW` and `STM TOP` equal the Storm Structure product's (62) `LOW V`
+and `TOP` of the same volume (KFWS 1995-05-17 23:04: 28, 72, 52 kt and 38.2,
+48.5, 27.2 kft); `MW VOL` is not identified further. In the legacy TVS
+table the mesocyclone ID is the product 60 feature whose TVS ID is the TVS
+(KILX 1996-04-19 23:03, KLZK 1997-03-01 20:27). Products 61 of the legacy
+algorithm leave Product Description Block halfwords 47 and 48 at 0.
 
 ### 4.4 Stand-alone tabular alphanumeric products (section 3.3.2, Figure 3-16)
 
@@ -173,8 +244,13 @@ Products 62 (SS), 75 (FTM), 77 (PTM) and 82 (SPD) carry no symbology block;
 the "offset to symbology" points at the page block (divider -1, number of
 pages, pages as in 4.3). **Observed** variants:
 
-- Alphanumeric message codes 100-111 distributed on their own (1999 corpus
-  file with code 102) use the same stand-alone layout.
+- Alphanumeric message codes 100-111 distributed on their own (NCEI
+  archive, 1993-2001: 100, 101, 102, 103, 104, 107, 108 and 109 in the
+  corpus) use the same stand-alone layout.
+- **Observed** in the NCEI archive: product 73 (User Alert Message,
+  1993-1994) is stand-alone pages, one alert per group of lines (`ALERT
+  AREA #`, box azimuth and range, category, threshold, exceeding value,
+  storm ID) or `NO NEW ALERTS THIS SCAN`.
 - Product 62: the "offset to graphic" points at cell trend data (packets 22
   then 21, running to the end of the message) and is one halfword too large: the
   packet code 22 is at `2 * (offset - 1)`.
@@ -184,8 +260,98 @@ pages, pages as in 4.3). **Observed** variants:
   -1 at +10 mean a symbology block.
 - Product 74 (Radar Coded Message): the offset points at ASCII text starting
   `1234 ROBUU` with sections `/NEXRAA`, `/NEXRBB`, `/NEXRCC` (legacy 2620001
-  Appendix B, no longer in the ICD).
+  Appendix B, no longer in the ICD; decoded by `rcm`). **Observed** in the
+  corpus messages: the text is a sequence of 70-character records that split
+  groups and pad with spaces; the site identifier is the RDA number
+  (`0345`, `0001`), not four letters; a centroid identifier is two characters
+  (`CK2MNH`, `C NLOK`); `/NI` counts the fine boxes above level 0; and the
+  1/16 LFM sub-boxes `A`-`P` of Figure B-1 (a picture only) run down the
+  columns (`A`-`D` the western column, north to south): only that lettering
+  gives intensity groups in north-to-south, west-to-east order without
+  overlaps, as Appendix B requires (row-major lettering gives 23-35 order
+  inversions per message).
+- **Observed** (Radar Coded Message geometry, `tools/level3_lfm_golden.py`,
+  `testdata/level3/golden-lfm.json`): the local grid's 1/4 LFM boxes (10
+  HRAP units; 1/16 LFM boxes 2.5) have a corner at the HRAP pole (401,
+  1601), and the radar's box is `MM` (row 12, column 12), not `NM` as
+  Appendix B says. At six radars from 71W to 107W (KTLX 2013-05-20 20:16 and
+  2022-05-03 00:45, KBOX and KLWX 2022-05-16, KMLB 2022-05-16, KGGW
+  2022-05-12) the 72 storm centroids and TVSs the messages name, placed from
+  the STI and TVS products of the same volume, lie in the named fine box (68)
+  or within 0.32 km of it (4); of 1600 quarter-HRAP-unit offsets of the grid
+  only this alignment keeps all six messages' features within 0.5 km, and
+  the intensity groups agree best with the same volume's Digital Hybrid Scan
+  Reflectivity under it (at KBOX, 3 of 394 boxes behind a quarter-unit shift).
+  The same national grid places the DPA rate arrays (section 6.1, packet 18).
+  Intensity levels: 1-6 within 124 nmi; beyond 124 nmi Appendix B says level
+  8 at or above a threshold and 9 below it, but real messages use 7 and 8
+  (KTLX 2013-05-20 20:16: Composite Reflectivity box maxima median 35 dBZ
+  in the level 7 boxes, 20 dBZ in the level 8 boxes).
+- **Radar Coded Message (Unedited)** (message and product code 83, AWIPS
+  `IRMxxx`, NCDC's "Interim Radar Message"; `packets::irm`): the pre-edit
+  message the RPG sends to its operator for editing. Spare in every Table III
+  on the ROC site; DSI-7000 (section 1) gives its Table III row, Table V
+  halfwords 49-50 (edit decision time and editing timeout, seconds: 60 or
+  120 in the corpus IRMs) and Figure 3-22 sheets 2-7, its layers. In the
+  NCEI archive of the 1990s, one per volume scan. Three symbology layers and
+  a Tabular Alphanumeric Block:
+  - layer 0: packet 30 ("LFM grid adaptation parameters"), the code and five
+    Real*4 values, constant for a site. DSI-7000 Figure 3-22 sheet 7 names
+    them: angle rotation from north to the LFM grid column axis (degrees,
+    -180 to +180), X and Y offset distances from the radar to the upper right
+    corner of the unrotated `MM` box (the grid box holding the antenna; km,
+    0 to 45), 1/16 LFM grid box size (km, 8.75 to 11.25), and a spare. The
+    stored values are not in those units. Against the national grid of
+    section 4.4 (`hrap`): the box size is twice the 1/16 LFM box at the site
+    latitude, `2 * 11.90625 * (1 + sin(lat)) / (1 + sin 60 deg)` km; the X
+    and Y offsets are close to four times the distances in km from the radar
+    east and north to the edges of its 1/4 LFM box; the spare is 0; the
+    rotation is not the grid convergence (longitude + 105 degrees). The
+    constants of thirteen sites (one IRM per site and day, NCEI archive;
+    residuals `x/4 - east`, `y/4 - north`, `box/2 - 1/16 LFM box`, km):
+
+    | Site, day | Values | X | Y | Box | Convergence (deg) |
+    |---|---|---:|---:|---:|---:|
+    | KAKQ 1994-08-10 | -39.1, 92.0, 147.25, 20.4, 0 | -0.02 | -1.65 | -0.019 | 27.99 |
+    | KBMX 1994-09-14 | -36.65, 118.5, 53.75, 19.8, 0 | -0.00 | +2.51 | +0.028 | 18.23 |
+    | KCAE 1994-06-29 | -38.025, 48.25, 79.5, 19.8, 0 | +3.83 | +0.00 | -0.044 | 23.88 |
+    | KCYS 1994-11-14 | -4.0, 104.0, 63.0, 21.2, 0 | -0.07 | +0.33 | +0.021 | 0.19 |
+    | KFWS 2000-03-28 | -16.0, 107.5, 81.0, 19.6, 0 | -0.01 | +0.03 | -0.016 | 7.70 |
+    | KILX 1996-04-19 | -36.025, 114.0, 117.5, 21.0, 0 | -0.08 | +0.06 | +0.005 | 15.66 |
+    | KIND 1994-09-10 | -36.775, 65.45, 148.5875, 21.0, 0 | -0.01 | -3.95 | +0.043 | 18.72 |
+    | KIWA 1994-05-25 | 14.4, 102.3, 144.06875, 19.8, 0 | +0.04 | +3.93 | +0.017 | -6.67 |
+    | KJAN 1995-10-03 | -30.6, 94.5, 144.375, 19.6, 0 | -0.09 | +3.37 | +0.008 | 14.92 |
+    | KLOT 1994-10-31 | -36.275, 62.75, 59.75, 21.2, 0 | +0.35 | +1.08 | -0.017 | 16.92 |
+    | KLZK 1997-03-01 | -25.8, 51.75, 47.75, 20.0, 0 | +3.05 | +4.07 | -0.025 | 12.74 |
+    | KMLB 1994-11-16 | -38.125, 54.75, 58.5, 18.8, 0 | +2.31 | +1.43 | +0.013 | 24.35 |
+    | KTLX 1994-03-08 | -16.1338, 106.5, 145.3125, 20.1412, 0 | +0.02 | +1.68 | +0.000 | 7.72 |
+    | KTLX 1999-05-03 | -16.2, 106.5, 145.3125, 20.2, 0 | -0.07 | +1.66 | +0.029 | 7.72 |
+
+    The decoder keeps the values as stored and names them
+    (`IrmPacket::PARAMETER_NAMES`); `tests/rcm.rs` checks the three corpus
+    IRMs (KTLX 1994, KILX 1996, KLOT 1994);
+  - layer 1: packet 31 (DSI-7000: "number of centroids"), the code and a
+    count N, then N pairs of packets 15 (storm ID) and 2 (special symbol
+    `"`, 0x2220) at the same position (km/4): the storm centroids of the
+    radar coded message in its order (`/NCEN`), at the STI current positions
+    (KILX 1996-04-19 23:09);
+  - layer 2: packet 32, the code, a row count (100) and per row an `INT*2`
+    byte count and `run << 4 | level` bytes: the message's Part A intensity
+    grid on the 1/16 LFM grid;
+  - Tabular Alphanumeric Block: second Message Header and Product Description
+    Blocks of product 74, then the radar coded message text.
+  In 188 IRM/RCM pairs of the same volume (KILX 1996-04-19, KLZK 1997-03-01,
+  KTLX 1999-05-03, KFWS 2000-03-28) the text after the second headers is the
+  product 74's text byte for byte (its headers differ in halfword 17, the
+  operational mode), and packet 32 equals the Part A grid read independently
+  from that text (`tools/level3_rcm_golden.py`). All 829 IRM products of those
+  days decode, and the 1994 corpus IRM of KTLX (2 storms) matches its
+  message the same way. Some 1994 IRMs (KLOT, KIND, KCYS) carry no tabular
+  block (section 4.3), so no message text.
 - `NOUS` free text messages (FTM) may be plain text with no binary message.
+- **Observed** in the NCEI archive: Radar Observation bulletins (heading
+  `SDUS4x KWBC`, AWIPS `ROBxxx`) are plain text after the heading, starting
+  with the record separator 0x1E; they decode as text messages.
 
 ## 5. Data level encodings (Figure 3-6 sheet 6 Note 1)
 
@@ -204,8 +370,12 @@ color), `hw(n)` the unsigned halfword.
   dBZ, `hw32/10` increment, `hw33` number of levels; level `N >= 2` =
   `hw31/10 + (N - 2) * hw32/10`.
 - **L256-vel** (93, 99, 154; TDWR 182): level 0 below threshold, 1 range
-  folded; same scale in m/s. (2620063E lists TDWR 184 with 256 levels but its
-  sheet 6 note describes only 180, 182 and 186.)
+  folded; same scale in m/s. TDWR 184: 2620063E Table III lists 256 levels,
+  but its sheet 6 Note 1 makes 180, 182 and 186 the only 256-level
+  exceptions ("Except for Products 180, 182, and 186 the Data Level Threshold
+  halfwords are coded as follows"), so the decoder reads 184 as **T16**; no
+  real product 184 exists to confirm it (section 7: NWS does not distribute
+  it).
 - **L256-sw** (155): 0 below threshold, 1 range folded, levels 129-152 =
   `hw31/10 + (N - 129) * hw32/10` m/s.
 - **DPA** (81, packet 17): 0 no accumulation, 255 outside coverage; level
@@ -214,7 +384,8 @@ color), `hw(n)` the unsigned halfword.
   in 0.01 inch, `hw33` levels; level 1 is the first non-zero accumulation.
   **MetPy 1.7.1 maps level 1 to missing and level `N >= 2` to
   `(N - 2) * hw32/100`**, which disagrees with the ICD text; the golden
-  `physical` values for product 138 follow MetPy.
+  `physical` values for product 138 follow MetPy. Py-ART 2.3.0 agrees with
+  the ICD reading, which the decoder follows.
 - **HRVIL** (134): 0 below threshold, 1 flagged, 255 reserved. `hw31` linear
   scale, `hw32` linear offset, `hw34` log scale, `hw35` log offset are 16-bit
   floats (sign 1 bit, exponent 5 bits, fraction 10 bits: `E = 0` ->
@@ -237,11 +408,36 @@ color), `hw(n)` the unsigned halfword.
   80 Z6, 90 Z8, 100 SI.
 - **EDR** (156/157, legacy, per MetPy): `hw31/1000` scale, `hw32/1000` offset,
   `hw33` levels, `hw34` leading flags; value = scale * N + offset.
+- **RATE8** (packet 18, the rate arrays of 81 and 82): no halfword describes
+  them; 2620003AE section 30.2.1 gives an 8-level code, `N` = 0-6 the lower
+  bounds 0.0, 0.1, 0.3, 0.5, 1.0, 2.0, 4.0 in/h and 7 ND.
 - **n/a**: graphic, alphanumeric and contour products.
 
 Product versions (sheet 7 Note 2): 32 v2, 58/59/61/141 v1, 67 v1, 78-80 v1,
 81 v2, 82 v1, 134 v1, 138 v2, 149 v1, 165 v1 (adds LH/GH), 172 v2
 (**observed** v3 in 2026 files).
+
+Halfword 50 of elevation products (Table V Note 24): bits 5-15 the seconds
+from the volume start to the elevation start, bits 0-4 the supplemental scan
+type, 0 none, **observed 1 MRLE and 2 SAILS**: Note 24 gives 1 SAILS and 2
+MRLE, but every extra 0.5 degree cut of the KTLX VCP 212 volumes of
+2026-06-22 08Z (elevation numbers 3, 8 and 13, the MESO-SAILS pattern)
+carries 2, and so does KDDC 2020-08-17 05:03 (elevation 4), whose General
+Status Message lists SAILS and not MRLE enabled. MetPy reads it the same way.
+
+Halfwords 47-48 of 161 and 167 (minimum and maximum correlation coefficient)
+are the value x300 per Table V; MetPy multiplies by 0.00333. Halfword 30 of
+65 is not in any Table V obtained; real products carry the AVSET termination
+angle there as 66 does (KTLX 2013: 19.5, KRAX 2022: 6.4).
+
+**HRAP placement of the DPA arrays** (not in the ICDs; `hrap`): the 131 x 131
+array of packet 17 covers HRAP `x` from `floor(hx) - 65` and `y` down from
+`floor(hy) + 66` (rows from the north), where `(hx, hy)` is the radar's HRAP
+position (polar stereographic, 6371.2 km sphere, true at 60N, 105W,
+4.7625 km mesh, pole at (401, 1601)). Fitted to the "outside coverage" level
+of DPA products from 47 sites (`tools/level3_dpa_golden.py`,
+`testdata/level3/golden-dpa.json`): the best quarter-box offset at 46, two
+boxes from it at KPDT.
 
 ## 6. Display data packets
 
@@ -288,6 +484,20 @@ bytes in row, then pairs of bytes (8-bit run, 8-bit level).
 
 **18 Precipitation Rate Data Array** (Figure 3-11b): code, two spares, boxes
 per row (13), rows (13); per row: bytes in row, bytes `run << 4 | level`.
+**Observed** placement (`tools/level3_dpa_golden.py`, `rate_placement`): 1/4
+LFM boxes of 10 HRAP units with a corner at the HRAP pole, the radar's box at
+row 6, column 6 (the national grid of the Radar Coded Message, section 4.4).
+The "ND" level (7) of 28 real arrays from 26 sites (1995-2026) differs from
+the boxes wholly beyond 230 km in 55 of 4732 boxes under this placement, and
+in 268 when the array starts at the corner of the 131 x 131 accumulation
+array.
+
+**32 Intensity grid** (product 83; DSI-7000 Figure 3-22 sheets 2 and 5, the
+"layer ID" 32; section 4.4): code, number of rows (100); per row: bytes in
+row, bytes `run << 4 | level` (100 fine boxes of the 1/16 LFM grid, rows
+north to south). **30** (code, five Real*4: the LFM grid adaptation
+parameters) and **31** (code, number of centroids) are the other packets of
+product 83.
 
 **33 Digital Raster Data Array** (Figure 3-11d): code, I start, J start (pixels),
 I scale, J scale, number of cells per row, number of rows; per row: bytes in
@@ -362,23 +572,110 @@ volumes (byte), latest pointer (byte), times in minutes after midnight.
 
 ## 7. Products and packets in the corpus
 
-Packet codes present in `testdata/level3/manifest.toml` (file counts): 1 (15),
-2 (9), 3 (1), 4 (5), 6 (9), 8 (31), 10 (30), 11 (1), 12 (3), 13 (1), 14 (1),
-15 (13), 16 (93), 17 (4), 18 (4), 19 (3), 20 (4), 21 (2), 22 (2), 23 (8),
-24 (8), 25 (1), 28 (5), 0x0802 (7), 0x0E03 (7), 0xAF1F (43), 0xBA07 (26).
+Packet codes present in `testdata/level3/manifest.toml` (file counts): 1 (19),
+2 (12), 3 (4), 4 (6), 6 (10), 7 (4), 8 (46), 9 (1), 10 (45), 11 (3), 12 (6),
+13 (2), 14 (2), 15 (23), 16 (93), 17 (4), 18 (4), 19 (3), 20 (4), 21 (2),
+22 (2), 23 (8), 24 (8), 25 (1), 28 (5), 30 (3), 31 (3), 32 (3), 0x0802 (9),
+0x0E03 (9), 0xAF1F (57), 0xBA07 (37). `docs/level3/coverage.md` lists them
+per product and file.
 
-Packet codes from spec section 4.5 with **no real sample found**: 5, 7, 9, 26,
-29, 0xBA0F, 0x3501 (also 33). Searched: the 67 AWS `unidata-nexrad-level3`
-files selected below (one per product ID family), all MetPy test data, every
-product in the NCEI archive tarballs KAMA 1994-05-09, KFWS 1995-05-17,
-KTLX 1999-05-04 and KTLX 2008-05-10, and 1718 non-empty TVS products (NTV,
-2021-2022, TLX/OKC/INX/FWS/LIX) for ETVS packet 26. These packets belong to
-products that are not distributed publicly (e.g. 49, 84, 87, 88, 143) or to
-detections not present in the samples.
+Packet codes from spec section 4.5 with **no real sample found**: 5, 26, 29,
+33, 0xBA0F and 0x3501, and generic components of types 2, 3, 5 and 6.
+Packets 7 and 9 were found in products of 1993-1994 (cross sections 50 and
+51, the Weak Echo Region 53, the Velocity Azimuth Display 84).
 
-Excluded from the corpus: the 1990s `IRM` product (message code 83, "Spare" in
-every Table III revision) uses packet codes 30, 31 and 32, which no ICD revision
-obtained defines.
+Searched: the 67 AWS `unidata-nexrad-level3` files selected below (one per
+product ID family), all MetPy test data, every product in the NCEI archive
+tarballs KAMA 1994-05-09, KFWS 1995-05-17, KTLX 1999-05-04 and KTLX
+2008-05-10, and 1718 non-empty TVS products (NTV, 2021-2022,
+TLX/OKC/INX/FWS/LIX) for ETVS packet 26. On 2026-09-24 every product of 15
+more NCEI day archives (GCP bucket `gcp-public-data-nexrad-l3`: KAMA
+1995-06-08, KILX 1996-04-19, KLZK 1997-03-01, KTLX
+1999-05-03, KFWS 2000-03-28, KTLX 2001-05-03, KSGF 2003-05-04, KICT
+2004-05-30, KPAH 2005-11-15, KNQA 2008-02-05, TOKC 2010-05-10, KBMX
+2011-04-27, TOKC 2013-05-20, TMCI and TOKC 2016-05-26; 103 163 files)
+was decoded with `examples/level3_scan.rs`. Then the product IDs of every
+NCEI day archive of 1992-1994 (5 286 archives) and of 520 random archives of
+1995-2007 were listed (`tools/level3_ncei_survey.py`, streaming each archive
+through `tar -t`). The archive names products without an AWIPS ID by their
+code (`016`, `050`, `084`, `101`): the survey found codes 16-18, 21, 22, 24,
+26, 29, 35, 39, 42-46, 50, 51, 53, 55, 63, 64, 73, 84, 87 and 100-109, and
+the AWIPS IDs of the other products, and no product 40, 49, 85, 86, 88, 93,
+140, 143, 149, 156, 157, 184, 189-192 or 196. 20 archive days of 1992-1995
+holding the codes the corpus lacked (69 010 products of KAKQ, KBMX, KCAE,
+KCYS, KFTG, KIND, KIWA, KJAN, KLOT, KLWX, KMLB and KTLX) were decoded whole
+with `examples/level3_scan.rs`; the corpus took one file per new code from
+them and product 39 from KGRR 2001-10-11. None of them holds packets 5, 26,
+29, 33, 0xBA0F or 0x3501.
+
+These packets belong to products that are not distributed publicly (e.g.
+49, 88, 143) or to detections not present in the samples. Packet 5 (vector
+arrow) is the combined moment product's (49) velocity layer (2620001AD
+section 3.3.1.2), and area components are used by the MIGFA (140) and AMDA
+(196) products (2620003AE sections 60 and 64); neither product is in the AWS
+bucket, the NCEI survey or the NCEI days walked. NWS's own product
+directory (`tgftp.nws.noaa.gov/SL.us008001/DF.of/DC.radar`, 2026-09-24)
+holds the product IDs of the AWS bucket; its three directories without a
+product code (`DS.00hml`, `DS.00rr2`, `DS.00nnn`) hold hydrological XML,
+a comment line and ISC grids, not radar products. The TDWR products it
+distributes are those of the AWS bucket; an NCEI TDWR day of 2024 (TCVG
+2024-05-20, 2026-09-25) holds TZ0-TZ2, TV0-TV2, TZL, NCR, NET, NVL, NST,
+NHI, NMD, NTV and NVW products and General Status and free text messages,
+and no product 184 or 93.
+
+The ORPG source (section 1) settles, without a sample, what the Appendix E
+figures leave open about the generic packets, since `orpg_xdr.c` writes
+every one of them. `packets::generic` follows it: the External Data
+Description (Figure E-1b) is chosen by product type 7 (`RPGP_EXTERNAL`),
+not by the packet code, and holds the compression type and decompressed size
+after its five spares; a radial carries bin data only when its bin count is
+positive, a grid its values only when its dimensions multiply to a positive
+count, and a table its column labels, row labels and entries only for
+positive counts (each an XDR array: its length and the strings, with no
+present flag); only components are XDR pointers with a present flag; binary
+data has one of the eight types ORPG serializes (`string` is not one). The
+source also shows where these packets occur: area components in the DMD
+product 149 (`files_orpg_sw/src/cpc018/tsk001/buildDMD_PSB.c`, one point area
+per detected feature), and packet 29 only in the model grid messages the RPG
+ingests (`files_orpg_sw/src/cpc101/tsk001/create_grid_lb.c`: an external
+product of grid components; the source uses packet 29 nowhere else), not in
+a distributed product. CODE's display
+tool reads packet 5 as five halfwords per arrow, packet 26 as I and J
+halfword pairs and 0xBA0F as 0xBA07, as `packets` does; it skips packet
+0x3501 by its byte length as `packets` does, while its drawing loop counts
+length / 4 vectors of 8 bytes each, twice the packet. A search of the source
+for `packet_33` and "Digital Raster Data Array" (GitHub code search of the
+mirror) finds no producer of packet 33.
+
+Packet 26 (ETVS) does not occur because the TDA detects no elevated TVSs:
+the adaptation page of every TVS product examined sets "Max # of Elevated
+TVSs" to 0 (and "Max # of TVSs" to 15): all 214 NTV products of the KNQA
+2008-02-05 archive (whose tables list "Number of TVS/ETVS ... / 0"), the three
+corpus NTV files (KTLX 2013, 2022, KOKC 2022), and on 2026-09-24 the first
+2022 NTV object of each of the 203 AWS site prefixes that have NTV products
+(`tools/level3_etvs_survey.py`; DJT, HDC and SJU have none). 2620003AE
+section 21 gives a default of 20 ETVSs, but the operational adaptation
+disables them, and no TVS product table in these files has an ETVS row.
+
+The 1990s `IRM` product (message code 83, "Spare" in every Table III
+revision on the ROC site; "Radar Coded Message (Unedited)" in the Table III
+of DSI-7000) uses packet codes 30, 31 and 32, which DSI-7000 Figure 3-22
+defines as layer codes; section 4.4 gives their layout, and the corpus holds
+three (KILX 1996-04-19 23:09 with the product 74 of the same volume, KTLX
+1994-03-08 and KLOT 1994-10-31, the last without its tabular block).
+
+On 2026-09-25 the product IDs of six more NCEI archive days were listed
+(`tar -t`): the TDWR days TLAS 2009-06-15, TOKC 2012-05-20, TDFW 2014-06-15,
+TMCI 2018-06-15 and TEWR 2019-06-15 hold TR0-TR2, TV0-TV2, TZL and the
+NEXRAD-type products (DHR, DPA, DSP, N1P, NCR, NET, NHI, NMD, NST, NTP, NTV,
+NVL, NVW, RSL, SPD, GSM), no spectrum width product (184, 185), and the
+NEXRAD day TJUA 2008-06-15 no product the corpus lacks.
+
+Also searched on 2026-09-24, without finding any of these packets: Unidata's
+THREDDS Level III catalog (the IDD feed; the product IDs of the AWS bucket
+plus `GSM`), the Level III test data of netcdf-java (`cdm/radial/src/test/data/nids`),
+Py-ART, wradlib-data, xradar-data and nexrad-level-3-data, and IEM's
+`mtarchive` (no Level III products).
 
 The AWS bucket (`https://unidata-nexrad-level3.s3.amazonaws.com/`, keys
 `SSS_PPP_YYYY_MM_DD_HH_MM_SS`, three-letter site without the K/P/T prefix) was
@@ -390,8 +687,9 @@ NAB NAC NAF NAG NAH NAK NAM NAQ NAU NAX NBB NBC NBF NBH NBK NBM NBQ NBU NBX NC1
 NC2 NC3 NC4 NC5 NCR NCZ NET NHI NHL NLA NLL NMD NML NRR NSS NST NSW NTP NTV NVL
 NVW NXB NXC NXF NXG NXH NXK NXM NXQ NXU NXX NYB NYC NYF NYG NYH NYK NYM NYQ NYU
 NYX NZB NZC NZF NZG NZH NZK NZM NZQ NZU NZX OHA PTA RCM RSL SPD TR0 TR1 TR2 TV0
-TV1 TV2 TZ0 TZ1 TZ2 TZL. At KTLX these IDs have no keys after 2022: DOD DSD N0F
-N0Q N0R N0U N0V N0Z N1F N1Q N1S N1U N2F N2Q N2S N3F N3P N3Q N3S NAF NAQ NAU NBF
+TV1 TV2 TZ0 TZ1 TZ2 TZL (re-listed on 2026-09-25 for the TLX and OKC prefixes,
+100 and 19 IDs: none outside this list). At KTLX these IDs have no keys after
+2022: DOD DSD N0F N0Q N0R N0U N0V N0Z N1F N1Q N1S N1U N2F N2Q N2S N3F N3P N3Q N3S NAF NAQ NAU NBF
 NBQ NCZ NET NHI NHL NLA NML NSS NSW NTV PTA RCM RSL SPD. From the bucket the
 corpus takes one file per product family (elevation letter 0) from KTLX and TOKC
 at 2026-06-22 08:06Z (mesocyclone detections present); hourly products DPA, DSP,
@@ -400,7 +698,9 @@ stop in 2022 from 2022-05-03 00:52Z (KTLX, TOKC, KGJX NYQ, KSHV NZQ) or the last
 available time (N0R/N0V/N0Z 2022-09-08); plus PTA (2020), NC1 (PAKC 2021), TR0
 (TJFK 2021), NLL (KRAX 2022) and RSL (TOKC 2022). MetPy's `staticdata/nids`
 files (2011-2022) are all included, and legacy products come from the NCEI
-tarballs (KFWS 1995-05-17, KTLX 1999-05-04 message 102).
+tarballs (KFWS 1995-05-17, KTLX 1999-05-04 message 102) and, for the codes
+the AWS bucket lacks, from the NCEI days of 1993-2001 above (one file per
+code, `nexrad-level3` entries dated 1993-2001 in the manifest).
 
 ## 8. Product table
 
@@ -411,86 +711,100 @@ the same document; "xN" means the stored integer is the value times N.
 
 | Code | Mnemonic | Name | Table III format | Packets (corpus) | AWIPS IDs (corpus) | Data levels | Product-dependent halfwords (Table V) | Source |
 |---:|---|---|---|---|---|---|---|---|
-| 16 | R | Base Reflectivity 0.54 nm x 1 deg, 124 nm, 8 levels | Radial Image | — | — | T16 | hw30 elevation x10; hw47 max reflectivity dBZ; hw51-52 calibration constant (Real*4, dB) | 2620001P T.III |
-| 17 | R | Base Reflectivity 1.1 nm x 1 deg, 248 nm, 8 levels | Radial Image | — | — | T16 | as 16 | 2620001P T.III |
-| 18 | R | Base Reflectivity 2.2 nm x 1 deg, 248 nm, 8 levels | Radial Image | — | — | T16 | as 16 | 2620001P T.III |
+| 16 | R | Base Reflectivity 0.54 nm x 1 deg, 124 nm, 8 levels | Radial Image | 0xaf1f | 016 | T16 | hw30 elevation x10; hw47 max reflectivity dBZ; hw51-52 calibration constant (Real*4, dB) | 2620001P T.III |
+| 17 | R | Base Reflectivity 1.1 nm x 1 deg, 248 nm, 8 levels | Radial Image | 0xaf1f | 017 | T16 | as 16 | 2620001P T.III |
+| 18 | R | Base Reflectivity 2.2 nm x 1 deg, 248 nm, 8 levels | Radial Image | 0xaf1f | 018 | T16 | as 16 | 2620001P T.III |
 | 19 | R | Base Reflectivity 0.54 nm x 1 deg, 124 nm, 16 levels | Radial Image | 0xaf1f | N0R | T16 | as 16; hw50 delta time/supplemental scan (later builds) | 2620001P T.III |
 | 20 | R | Base Reflectivity 1.1 nm x 1 deg, 248 nm, 16 levels | Radial Image | 0xaf1f | N0Z | T16 | as 19 | 2620001P T.III |
-| 21 | R | Base Reflectivity 2.2 nm x 2 deg, 248 nm, 16 levels | Radial Image | — | — | T16 | as 16 | 2620001P T.III |
-| 22 | V | Base Velocity 0.13 nm x 1 deg, 32 nm, 8 levels | Radial Image | — | — | T16 | hw30 elevation x10; hw47 max negative velocity kt; hw48 max positive velocity kt | 2620001P T.III |
+| 21 | R | Base Reflectivity 2.2 nm x 2 deg, 248 nm, 16 levels | Radial Image | 0xaf1f | 021 | T16 | as 16 | 2620001P T.III |
+| 22 | V | Base Velocity 0.13 nm x 1 deg, 32 nm, 8 levels | Radial Image | 0xaf1f | 022 | T16 | hw30 elevation x10; hw47 max negative velocity kt; hw48 max positive velocity kt | 2620001P T.III |
 | 23 | V | Base Velocity 0.27 nm x 1 deg, 62 nm, 8 levels | Radial Image | — | — | T16 | as 22 | 2620001P T.III |
-| 24 | V | Base Velocity 0.54 nm x 1 deg, 124 nm, 8 levels | Radial Image | — | — | T16 | as 22 | 2620001P T.III |
+| 24 | V | Base Velocity 0.54 nm x 1 deg, 124 nm, 8 levels | Radial Image | 0xaf1f | 024 | T16 | as 22 | 2620001P T.III |
 | 25 | V | Base Velocity 0.13 nm x 1 deg, 32 nm, 16 levels | Radial Image | 0xaf1f | NOW | T16 | as 22 | 2620001P T.III |
-| 26 | V | Base Velocity 0.27 nm x 1 deg, 62 nm, 16 levels | Radial Image | — | — | T16 | as 22 | 2620001P T.III |
+| 26 | V | Base Velocity 0.27 nm x 1 deg, 62 nm, 16 levels | Radial Image | 0xaf1f | 026 | T16 | as 22 | 2620001P T.III |
 | 27 | V | Base Velocity 0.54 nm x 1 deg, 124 nm, 16 levels | Radial Image | 0xaf1f | N0V | T16 | as 22; hw50 delta time/supplemental scan (later builds) | 2620001P T.III |
 | 28 | SW | Base Spectrum Width 0.13 nm x 1 deg, 32 nm, 8 levels | Radial Image | 0xaf1f | NSP | T16 | hw30 elevation x10; hw47 max spectrum width kt | 2620001P T.III |
-| 29 | SW | Base Spectrum Width 0.27 nm x 1 deg, 62 nm, 8 levels | Radial Image | — | — | T16 | as 28 | 2620001P T.III |
-| 30 | SW | Base Spectrum Width 0.54 nm x 1 deg, 124 nm, 8 levels | Radial Image | 0xaf1f | NSW | T16 | hw30 elevation x10; hw47 max spectrum width kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE) | 2620001AD T.III |
+| 29 | SW | Base Spectrum Width 0.27 nm x 1 deg, 62 nm, 8 levels | Radial Image | 0xaf1f | 029 | T16 | as 28 | 2620001P T.III |
+| 30 | SW | Base Spectrum Width 0.54 nm x 1 deg, 124 nm, 8 levels | Radial Image | 0xaf1f | NSW | T16 | hw30 elevation x10; hw47 max spectrum width kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5) | 2620001AD T.III |
 | 31 | USP | User Selectable Storm Total Precipitation | Radial Image / Geographic Alpha | — | — | T16 | hw27 end hour; hw28 time span h; hw30 null product flag; hw47 max rainfall in x10; hw48-49 begin date/min; hw50-51 end date/min; hw52 bias x100; hw53 G-R pairs x100 | 2620001AD T.III |
 | 32 | DHR | Digital Hybrid Scan Reflectivity | Radial Image | 1, 16 | DHR | L256-dBZ | hw47 max reflectivity dBZ; hw48 date of hybrid scan; hw49 avg time min; hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 33 | HSR | Hybrid Scan Reflectivity | Radial Image | — | — | T16 | hw47 max reflectivity dBZ; hw48-49 date/time | 2620001P T.III |
 | 34 | — | Clutter Filter Control | Radial Image | 0xaf1f | NC1, NC2, NC3, NC4, NC5 | T16 | hw27 channel/segment bit map; hw28 CMD generated bypass map flag; hw48-49 bypass map date/min; hw50-51 notchwidth map date/min | 2620001P T.III |
-| 35 | CR | Composite Reflectivity 0.54 nm, 124 nm, 8 levels | Raster Image / Non-geographic Alpha | — | — | T16 | hw47 max reflectivity dBZ; hw51-52 calibration constant (Real*4, dB) | 2620001P T.III |
+| 35 | CR | Composite Reflectivity 0.54 nm, 124 nm, 8 levels | Raster Image / Non-geographic Alpha | 8, 10, 0xba07 | 035 | T16 | hw47 max reflectivity dBZ; hw51-52 calibration constant (Real*4, dB) | 2620001P T.III |
 | 36 | CR | Composite Reflectivity 2.2 nm, 248 nm, 8 levels | Raster Image / Non-geographic Alpha | 8, 10, 0xba07 | NCO | T16 | as 35 | 2620001P T.III |
 | 37 | CR | Composite Reflectivity 0.54 nm, 124 nm, 16 levels | Raster Image / Non-geographic Alpha | 8, 10, 0xba07 | NCR | T16 | hw30 AVSET termination elevation x10 (else 0); hw47 max reflectivity dBZ; hw51-52 calibration constant (Real*4, dB) | 2620001AD T.III |
 | 38 | CR | Composite Reflectivity 2.2 nm, 248 nm, 16 levels | Raster Image / Non-geographic Alpha | 8, 10, 0xba07 | NCZ | T16 | as 37 | 2620001AD T.III |
+| 39 | — | Composite Reflectivity Contour | Linked Contour Vectors / Set Color / Non-geographic Alpha (DSI-7000; spare in 2620001G) | 8, 10, 0x0802, 0x0e03 | 039 | T16 | hw47 max reflectivity dBZ; hw51-52 calibration constant (Real*4, dB); hw53 contour interval dBZ | DSI-7000 T.III, T.V |
+| 40 | — | Composite Reflectivity Contour | as 39 (2.2 nm boxes; 39: 0.54 nm) | — | — | T16 | as 39 | DSI-7000 T.III, T.V |
 | 41 | ET | Echo Tops | Raster Image | 0xba07 | NET | T16 | hw30 AVSET termination elevation x10; hw47 max echo top kft | 2620001AD T.III |
-| 43 | — | Severe Weather Analysis (Reflectivity) | Radial Image | — | — | T16 | hw27-28 window azimuth/range; hw30 elevation | 2620001H T.III |
-| 44 | — | Severe Weather Analysis (Velocity) | Radial Image | — | — | T16 | as 43 | 2620001H T.III |
-| 45 | — | Severe Weather Analysis (Spectrum Width) | Radial Image | — | — | T16 | as 43 | 2620001H T.III |
-| 46 | — | Severe Weather Analysis (Shear) | Radial Image | — | — | T16 | as 43 | 2620001H T.III |
+| 42 | — | Echo Tops Contour | Linked Contour Vectors / Set Color / Non-geographic Alpha (DSI-7000; spare in 2620001G) | 0x0802, 0x0e03 | 042 | T16 | hw47 max echo top kft (0 = no echoes); hw53 contour interval ft | DSI-7000 T.III, T.V |
+| 43 | — | Severe Weather Analysis (Reflectivity) | Radial Image | 0xaf1f | 043 | T16 | hw27-28 window azimuth/range; hw30 elevation | 2620001H T.III |
+| 44 | — | Severe Weather Analysis (Velocity) | Radial Image | 0xaf1f | 044 | T16 | as 43 | 2620001H T.III |
+| 45 | — | Severe Weather Analysis (Spectrum Width) | Radial Image | 0xaf1f | 045 | T16 | as 43 | 2620001H T.III |
+| 46 | — | Severe Weather Analysis (Shear) | Radial Image | 0xaf1f | 046 | T16 | as 43 | 2620001H T.III |
 | 47 | — | Severe Weather Probability | Geographic Alphanumeric | 8 | NWP | n/a | hw47 max SWP percent; hw48 max SWP box size nm x10 | 2620001H T.III |
 | 48 | VWP | VAD Wind Profile | Non-geographic Alphanumeric | 4, 8, 10 | NVW | T16 (5 levels: RMS) | hw47 max speed kt; hw48 direction of max speed; hw49 altitude of max speed ft/10 | 2620001AD T.III |
-| 50 | RCS | Cross Section (Reflectivity) | Raster Image | — | — | T16 | hw47-50 azimuth/range of points 1 and 2 (x10); hw51-52 calibration constant (Real*4, dB) | 2620001AD T.III |
-| 51 | VCS | Cross Section (Velocity) | Raster Image | — | — | T16 | hw47-50 azimuth/range of points 1 and 2 (x10) | 2620001AD T.III |
-| 55 | SRR | Storm Relative Mean Radial Velocity (Region) | Radial Image | — | — | T16 | hw27-28 window azimuth/range x10; hw30 elevation; hw47-48 max neg/pos velocity kt; hw49 motion source; hw50 height; hw51-52 storm speed/direction x10 | 2620001P T.III |
+| 49 | — | Combined Moment | Raster Image / Non-geographic Alpha (reflectivity image, velocity vector arrows, 2620001G section 3.3.1.2) | — | — | T16 | hw27-28 window azimuth/range x10; hw30 elevation x10; hw47 max reflectivity dBZ; hw48-49 max negative/positive velocity kt; hw50 max spectrum width kt | DSI-7000 T.III, T.V |
+| 50 | RCS | Cross Section (Reflectivity) | Raster Image | 1, 7, 0xba07 | 050 | T16 | hw47-50 azimuth/range of points 1 and 2 (x10); hw51-52 calibration constant (Real*4, dB) | 2620001AD T.III |
+| 51 | VCS | Cross Section (Velocity) | Raster Image | 1, 7, 0xba07 | 051 | T16 | hw47-50 azimuth/range of points 1 and 2 (x10) | 2620001AD T.III |
+| 52 | — | Cross Section (Spectrum Width) | Raster Image | — | — | T16 | hw47-50 azimuth/range of points 1 and 2 (x10) | DSI-7000 T.III, T.V |
+| 53 | — | Weak Echo Region | Raster Image / Non-geographic Alpha (DSI-7000; request parameters in 2620001H Table X) | 1, 7, 0xba07 | 053 | T16 | hw27-28 window azimuth/range x10; hw47 max reflectivity dBZ; hw48 storm ID (2 characters); hw49-50 elevation bit map (bit n from the MSB = cut n) | DSI-7000 T.III, T.V; geometry observed |
+| 55 | SRR | Storm Relative Mean Radial Velocity (Region) | Radial Image | 0xaf1f | 055 | T16 | hw27-28 window azimuth/range x10; hw30 elevation; hw47-48 max neg/pos velocity kt; hw49 motion source; hw50 height; hw51-52 storm speed/direction x10 | 2620001P T.III |
 | 56 | SRM | Storm Relative Mean Radial Velocity (Map) | Radial Image | 0xaf1f | N0S, N1S, N2S, N3S | T16 | hw30 elevation x10; hw47-48 max neg/pos velocity kt; hw49 motion source flag; hw51 avg storm speed kt x10; hw52 avg storm direction x10 | 2620001AD T.III |
 | 57 | VIL | Vertically Integrated Liquid | Raster Image | 0xba07 | NVL | T16 | hw30 AVSET elevation; hw47 max VIL kg/m2 | 2620001AD T.III |
 | 58 | STI | Storm Tracking Information | Geographic and Non-geographic Alpha | 2, 6, 8, 10, 15, 23, 24, 25 | NST | n/a | hw47 total number of storms | 2620001AD T.III |
 | 59 | HI | Hail Index | Geographic and Non-geographic Alpha | 8, 10, 13, 14, 15, 19 | NHI | n/a | none | 2620001AD T.III |
 | 60 | M | Mesocyclone | Geographic and Non-geographic Alpha | 3, 8, 10, 11, 15 | NME | n/a | none | 2620001P T.III |
-| 61 | TVS | Tornado Vortex Signature | Geographic and Non-geographic Alphanumeric | 8, 10, 12, 15 | NTV | n/a | hw47 number of TVS (negative: exceeded max); hw48 number of ETVS | 2620001AD T.III |
+| 61 | TVS | Tornado Vortex Signature | Geographic and Non-geographic Alphanumeric | 8, 10, 12, 15 | NTV | n/a | hw47 number of TVS (negative: exceeded max); hw48 number of ETVS (both 0 in the legacy algorithm's products, 1996-1997, section 4.3) | 2620001AD T.III |
 | 62 | SS | Storm Structure | Alphanumeric (stand-alone) | 21, 22 | NSS | n/a | none | 2620001AD T.III |
-| 63 | LRA | Layer Composite Reflectivity Layer 1 Average | Raster Image | — | — | T16 | hw47 max reflectivity; hw48-49 layer bottom/top; hw51-52 calibration constant (Real*4, dB) | 2620001P T.III |
-| 64 | LRA | Layer Composite Reflectivity Layer 2 Average | Raster Image | — | — | T16 | as 63 | 2620001P T.III |
+| 63 | LRA | Layer Composite Reflectivity Layer 1 Average | Raster Image | 0xba07 | 063 | T16 | hw47 max reflectivity; hw48-49 layer bottom/top; hw51-52 calibration constant (Real*4, dB) | 2620001P T.III |
+| 64 | LRA | Layer Composite Reflectivity Layer 2 Average | Raster Image | 0xba07 | 064 | T16 | as 63 | 2620001P T.III |
 | 65 | LRM | Layer Composite Reflectivity Layer 1 Maximum | Raster Image | 0xba07 | NLL | T16 | hw47 max reflectivity; hw48-49 layer bottom/top kft; hw51-52 calibration constant (Real*4, dB) | 2620001P T.III |
 | 66 | LRM | Layer Composite Reflectivity Layer 2 Maximum | Raster Image | 0xba07 | NML | T16 | hw30 AVSET elevation; hw47 max reflectivity; hw48-49 layer bottom/top kft; hw51-52 calibration constant (Real*4, dB) | 2620001AD T.III |
 | 67 | APR | Layer Composite Reflectivity - AP Removed | Raster Image | 0xba07 | NLA | T16 | as 66 | 2620001AD T.III |
-| 73 | UAM | User Alert Message | Alphanumeric | — | — | n/a | none | 2620001P T.III |
-| 74 | RCM | Radar Coded Message | Alphanumeric | none | RCM | n/a | none (ASCII after PDB, "1234 ROBUU") | 2620001P T.III |
+| 68 | LTA | Layer Composite Turbulence Layer 2 Average | Raster Image | — | — | T16 | hw47 max turbulence x10 (cm^(2/3) s^-1); hw48-49 layer bottom/top kft | DSI-7000 T.III, T.V (67 there is layer 1, now APR) |
+| 69 | LTA | Layer Composite Turbulence Layer 3 Average | Raster Image | — | — | T16 | as 68 | DSI-7000 T.III, T.V |
+| 70 | LTM | Layer Composite Turbulence Layer 1 Maximum | Raster Image | — | — | T16 | as 68 | DSI-7000 T.III, T.V |
+| 71 | LTM | Layer Composite Turbulence Layer 2 Maximum | Raster Image | — | — | T16 | as 68 | DSI-7000 T.III, T.V |
+| 72 | LTM | Layer Composite Turbulence Layer 3 Maximum | Raster Image | — | — | T16 | as 68 | DSI-7000 T.III, T.V |
+| 73 | UAM | User Alert Message | Alphanumeric | none | 073 | n/a | none | 2620001P T.III |
+| 74 | RCM | Radar Coded Message | Alphanumeric | none | RCM | n/a | hw49 edit decision time s; hw50 editing timeout s; hw51 edited indicator (DSI-7000 T.V; 0 in every corpus message) (ASCII after PDB, "1234 ROBUU") | 2620001P T.III |
 | 75 | FTM | Free Text Message | Alphanumeric (stand-alone) | none | FTM | n/a | hw47 RPG ID number | 2620001AD T.III |
-| 77 | PTM | PUP Text Message | Alphanumeric (stand-alone) | — | — | n/a | none | 2620001AD T.III |
+| 77 | PTM | PUP Text Message | Alphanumeric (stand-alone) | — | — | n/a | hw47 PUP ID; hw49 user designation (DSI-7000 T.V) | 2620001AD T.III |
 | 78 | OHP | Surface Rainfall Accumulation (1 hr) | Radial Image | 0xaf1f, 0xba07 | N1P | T16 | hw47 max rainfall in x10; hw48 bias x100; hw49 G-R pairs x100; hw50-51 end date/min | 2620001AD T.III |
 | 79 | THP | Surface Rainfall Accumulation (3 hr) | Radial Image | 0xaf1f | N3P | T16 | as 78 | 2620001AD T.III |
 | 80 | STP | Storm Total Rainfall Accumulation | Radial Image | 0xaf1f, 0xba07 | NTP | T16 | hw47 max rainfall in x10; hw48-49 begin date/min; hw50-51 end date/min; hw52 bias x100; hw53 G-R pairs x100 | 2620001AD T.III |
 | 81 | DPA | Hourly Digital Precipitation Array | Raster Image / Alphanumeric | 1, 17, 18 | DPA | DPA | hw47 max rainfall dBA x1000; hw48 bias x100; hw49 G-R pairs x100; hw50-51 end date/min | 2620001AD T.III |
 | 82 | SPD | Supplemental Precipitation Data | Alphanumeric (stand-alone) | 1, 18 | SPD, SUP | n/a | none | 2620001AD T.III |
-| 84 | VAD | Velocity Azimuth Display | Non-geographic Alphanumeric | — | — | T16 (8 levels) | hw30 wind altitude kft; hw47 wind speed kt; hw48 wind direction; hw49 elevation x10; hw50 slant range nm x10; hw51 RMS error kt | 2620001AD T.III |
+| 83 | IRM | Radar Coded Message (Unedited) | Raster Image / Non-geographic Alpha / Alphanumeric (DSI-7000; spare in later revisions) | 2, 15, 30, 31, 32 | IRM | RCM intensity levels (packet 32) | hw49 edit decision time s; hw50 editing timeout s | DSI-7000 T.III, T.V, Figure 3-22 (section 4.4) |
+| 84 | VAD | Velocity Azimuth Display | Non-geographic Alphanumeric | 8, 9, 10 | 084 | T16 (8 levels) | hw30 wind altitude kft; hw47 wind speed kt; hw48 wind direction; hw49 elevation x10; hw50 slant range nm x10; hw51 RMS error kt | 2620001AD T.III |
 | 85 | RCS | Cross Section Reflectivity (8 levels) | Raster Image | — | — | T16 | as 50 | 2620001P T.III |
 | 86 | VCS | Cross Section Velocity (8 levels) | Raster Image | — | — | T16 | as 51 | 2620001AD T.III |
-| 87 | CS | Combined Shear | Raster Image | — | — | T16 | see 2620001H Table V | 2620001H T.III |
+| 87 | CS | Combined Shear | Raster Image | 0xba07 | 087 | T16 | hw30 elevation x10; hw47 max shear x1000 s^-1; hw48-49 azimuth/range of max shear x10; hw50 resolution nm x100 | 2620001H T.III |
+| 88 | — | Combined Shear Contour | Linked Contour Vectors / Set Color / Non-geographic Alpha | — | — | T16 | as 87 | DSI-7000 T.III, T.V |
 | 89 | LRA | Layer Composite Reflectivity Layer 3 Average | Raster Image | — | — | T16 | as 63 | 2620001P T.III |
 | 90 | LRM | Layer Composite Reflectivity Layer 3 Maximum | Raster Image | 0xba07 | NHL | T16 | as 66 | 2620001AD T.III |
 | 93 | DBV | ITWS Digital Base Velocity | Radial Image | — | — | L256-vel | hw30 elevation x10; hw47-48 max neg/pos velocity kt; hw50 velocity precision code (1 or 2) | 2620001AD T.III |
-| 94 | DR | Base Reflectivity Data Array | Radial Image | 16 | N0Q, N1Q, N2Q, N3Q, NAQ, NBQ, NYQ, NZQ | L256-dBZ | hw30 elevation x10; hw47 max reflectivity dBZ; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 94 | DR | Base Reflectivity Data Array | Radial Image | 16 | N0Q, N1Q, N2Q, N3Q, NAQ, NBQ, NYQ, NZQ | L256-dBZ | hw30 elevation x10; hw47 max reflectivity dBZ; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 95 | CRE | Composite Reflectivity Edited for AP 0.54 nm, 8 levels | Raster Image | — | — | T16 | as 35 | 2620001P T.III |
 | 96 | CRE | Composite Reflectivity Edited for AP 2.2 nm, 8 levels | Raster Image | — | — | T16 | as 35 | 2620001P T.III |
 | 97 | CRE | Composite Reflectivity Edited for AP 0.54 nm, 16 levels | Raster Image / Non-geographic Alpha | — | — | T16 | as 37 | 2620001AD T.III |
 | 98 | CRE | Composite Reflectivity Edited for AP 2.2 nm, 16 levels | Raster Image | — | — | T16 | as 35 | 2620001P T.III |
-| 99 | DV | Base Velocity Data Array | Radial Image | 16 | N0U, N1U, N2U, N3U, NAU, NBU | L256-vel | hw30 elevation x10; hw47-48 max neg/pos velocity kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
-| 100 | — | Site Adaptable Parameters for VAD Wind Profile (product 48) | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
-| 101 | — | Storm Track Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
+| 99 | DV | Base Velocity Data Array | Radial Image | 16 | N0U, N1U, N2U, N3U, NAU, NBU | L256-vel | hw30 elevation x10; hw47-48 max neg/pos velocity kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 100 | — | Site Adaptable Parameters for VAD Wind Profile (product 48) | Alphanumeric block | none | 100 | n/a | none | 2620001AD T.III |
+| 101 | — | Storm Track Alphanumeric Block | Alphanumeric block | none | 101 | n/a | none | 2620001AD T.III |
 | 102 | — | Hail Index Alphanumeric Block | Alphanumeric block | none | 102 | n/a | none | 2620001AD T.III |
-| 103 | — | Mesocyclone Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001P T.III |
-| 104 | — | TVS Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
+| 103 | — | Mesocyclone Alphanumeric Block | Alphanumeric block | none | 103 | n/a | none | 2620001P T.III |
+| 104 | — | TVS Alphanumeric Block | Alphanumeric block | none | 104 | n/a | none | 2620001AD T.III |
 | 105 | — | Site Adaptable Parameters for Combined Shear | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
-| 107 | — | Surface Rainfall (1 hr) Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
-| 108 | — | Surface Rainfall (3 hr) Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
-| 109 | — | Storm Total Rainfall Accumulation Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
+| 106 | — | Site Adaptable Parameters for Combined Shear Contour | Alphanumeric block | — | — | n/a | none | DSI-7000 T.III |
+| 107 | — | Surface Rainfall (1 hr) Alphanumeric Block | Alphanumeric block | none | 107 | n/a | none | 2620001AD T.III |
+| 108 | — | Surface Rainfall (3 hr) Alphanumeric Block | Alphanumeric block | none | 108 | n/a | none | 2620001AD T.III |
+| 109 | — | Storm Total Rainfall Accumulation Alphanumeric Block | Alphanumeric block | none | 109 | n/a | none | 2620001AD T.III |
 | 110 | — | Clutter Likelihood Reflectivity Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
 | 111 | — | Clutter Likelihood Doppler Alphanumeric Block | Alphanumeric block | — | — | n/a | none | 2620001AD T.III |
 | 113 | PRC | Power Removed Control | Radial Image | 0xaf1f | N0F, NAF, NBF, NXF, NYF | T16 (13 levels) | hw27 RPG cut number; hw28 CMD generated flag; hw30 elevation x10; hw47 clutter map time min; hw48 clutter map date; hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
-| 132 | CLR | Clutter Likelihood Reflectivity | Radial Image | — | — | T16 (11 levels) | hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE) | 2620001AD T.III |
+| 132 | CLR | Clutter Likelihood Reflectivity | Radial Image | — | — | T16 (11 levels) | hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5) | 2620001AD T.III |
 | 133 | CLD | Clutter Likelihood Doppler | Radial Image | — | — | T16 (12 levels) | hw30 elevation x10 | 2620001P T.III |
 | 134 | DVL | High Resolution VIL | Radial Image | 16 | DVL | HRVIL | hw30 AVSET elevation; hw47 max digital VIL; hw48 number of artifact-edited radials; hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 135 | EET | Enhanced Echo Tops | Radial Image | 16 | EET | HREET | hw30 AVSET elevation; hw47 max echo top kft; hw48 edited radials; hw49 reflectivity threshold dBZ; hw50 spurious points removed; hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
@@ -500,31 +814,31 @@ the same document; "xN" means the stored integer is the value times N.
 | 139 | MRU | Mesocyclone Rapid Update | Geographic and Non-geographic Alpha | — | — | n/a | hw30 elevation | 2620001P T.III |
 | 140 | GFM | Gust Front MIGFA | Generic Data Format | — | — | n/a | hw49 detection count | 2620001AD T.III |
 | 141 | MD | Mesocyclone Detection | Geographic and Non-geographic Alpha | 2, 6, 8, 10, 20, 23, 24 | NMD | n/a | hw27 min reflectivity threshold dBZ; hw28 overlap display filter; hw30 min display filter strength rank | 2620001AD T.III |
-| 143 | TRU | Tornado Vortex Signature Rapid Update | Geographic and Non-geographic Alphanumeric | — | — | n/a | hw30 elevation x10; hw47 number of TVS; hw48 number of ETVS; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE) | 2620001AD T.III |
+| 143 | TRU | Tornado Vortex Signature Rapid Update | Geographic and Non-geographic Alphanumeric | — | — | n/a | hw30 elevation x10; hw47 number of TVS; hw48 number of ETVS; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5) | 2620001AD T.III |
 | 144 | OSW | One-hour Snow Water Equivalent | Radial Image | — | — | T16 | hw27 missing period min; hw30 use RCA flag; hw47 max in x1000; hw48-51 start/end date and min; hw52-53 azimuth/range of max | 2620001AD T.III |
 | 145 | OSD | One-hour Snow Depth | Radial Image | — | — | T16 | as 144 (hw47 max in x100) | 2620001AD T.III |
 | 146 | SSW | Storm Total Snow Water Equivalent | Radial Image | — | — | T16 | as 145 | 2620001AD T.III |
 | 147 | SSD | Storm Total Snow Depth | Radial Image | — | — | T16 | as 144 (hw47 max in x10) | 2620001AD T.III |
-| 149 | DMD | Digital Mesocyclone Detection | Generic Data Format | — | — | n/a | hw27 min reflectivity threshold; hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 149 | DMD | Digital Mesocyclone Detection | Generic Data Format | — | — | n/a | hw27 min reflectivity threshold; hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 150 | USW | User Selectable Snow Water Equivalent | Radial Image | — | — | T16 | hw27 end hour; hw28 span h; hw30 high-scale/RCA flags; hw47 max; hw48-51 start/end date and hour; hw52-53 azimuth/range of max | 2620001AD T.III |
 | 151 | USD | User Selectable Snow Depth | Radial Image | — | — | T16 | as 150 | 2620001AD T.III |
 | 152 | ASP | Archive III Status Product | Generic Data Format | 28 | RSL | n/a | hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
-| 153 | SDR | Super Resolution Reflectivity Data Array | Radial Image | 16 | H0Z, N0B | L256-dBZ | hw30 elevation x10; hw47 max reflectivity dBZ; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
-| 154 | SDV | Super Resolution Velocity Data Array | Radial Image | 16 | H0V, N0G | L256-vel | hw30 elevation x10; hw47-48 max neg/pos velocity kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
-| 155 | SDW | Super Resolution Spectrum Width Data Array | Radial Image | 16 | H0W | L256-sw | hw30 elevation x10; hw47 max spectrum width kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 153 | SDR | Super Resolution Reflectivity Data Array | Radial Image | 16 | H0Z, N0B | L256-dBZ | hw30 elevation x10; hw47 max reflectivity dBZ; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 154 | SDV | Super Resolution Velocity Data Array | Radial Image | 16 | H0V, N0G | L256-vel | hw30 elevation x10; hw47-48 max neg/pos velocity kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 155 | SDW | Super Resolution Spectrum Width Data Array | Radial Image | 16 | H0W | L256-sw | hw30 elevation x10; hw47 max spectrum width kt; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 156 | — | Eddy Dissipation Rate | Digital Radial Data Array | — | — | EDR | see 2620001P Table V | 2620001P T.III |
 | 157 | — | Eddy Dissipation Rate Confidence | Digital Radial Data Array | — | — | EDR | see 2620001P Table V | 2620001P T.III |
 | 158 | — | Differential Reflectivity (16 levels) | Radial Image | — | — | T16 | hw30 elevation; hw47-48 min/max ZDR x10 | 2620001P T.III |
-| 159 | DZD | Digital Differential Reflectivity | Radial Image | 16 | N0X, N1X, N2X, N3X, NAX, NBX | GEN | hw30 elevation x10; hw47-48 min/max ZDR dB x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 159 | DZD | Digital Differential Reflectivity | Radial Image | 16 | N0X, N1X, N2X, N3X, NAX, NBX | GEN | hw30 elevation x10; hw47-48 min/max ZDR dB x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 160 | — | Correlation Coefficient (16 levels) | Radial Image | — | — | T16 | hw30 elevation; hw47-48 min/max CC | 2620001P T.III |
-| 161 | DCC | Digital Correlation Coefficient | Radial Image | 16 | N0C, N1C, N2C, N3C, NAC, NBC | GEN | hw30 elevation x10; hw47-48 min/max CC x300; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 161 | DCC | Digital Correlation Coefficient | Radial Image | 16 | N0C, N1C, N2C, N3C, NAC, NBC | GEN | hw30 elevation x10; hw47-48 min/max CC x300; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 162 | — | Specific Differential Phase (16 levels) | Radial Image | — | — | T16 | hw30 elevation; hw47-48 min/max KDP | 2620001P T.III |
-| 163 | DKD | Digital Specific Differential Phase | Radial Image | 16 | N0K, N1K, N2K, N3K, NAK, NBK | GEN | hw30 elevation x10; hw47-48 min/max KDP x20; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 163 | DKD | Digital Specific Differential Phase | Radial Image | 16 | N0K, N1K, N2K, N3K, NAK, NBK | GEN | hw30 elevation x10; hw47-48 min/max KDP x20; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 164 | — | Hydrometeor Classification (16 levels) | Radial Image | — | — | T16 | hw30 elevation | 2620001P T.III |
-| 165 | DHC | Digital Hydrometeor Classification | Radial Image | 16 | N0H, N1H, N2H, N3H, NAH, NBH | CAT-HC | hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
-| 166 | ML | Melting Layer | Linked Contour Vectors / Set Color Level | 0x0802, 0x0e03 | N0M, N1M, N2M, N3M, NAM, NBM | n/a | hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE) | 2620001AD T.III |
-| 167 | SDC | Super Res Digital Correlation Coefficient | Radial Image | 16 | H0C | GEN | hw30 elevation x10; hw47-48 min/max CC x300; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
-| 168 | SDP | Super Res Digital Phi | Radial Image | — | — | GEN | hw30 elevation x10; hw47-48 min/max PhiDP deg; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 165 | DHC | Digital Hydrometeor Classification | Radial Image | 16 | N0H, N1H, N2H, N3H, NAH, NBH | CAT-HC | hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 166 | ML | Melting Layer | Linked Contour Vectors / Set Color Level | 0x0802, 0x0e03 | N0M, N1M, N2M, N3M, NAM, NBM | n/a | hw30 elevation x10; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5) | 2620001AD T.III |
+| 167 | SDC | Super Res Digital Correlation Coefficient | Radial Image | 16 | H0C | GEN | hw30 elevation x10; hw47-48 min/max CC x300; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
+| 168 | SDP | Super Res Digital Phi | Radial Image | — | — | GEN | hw30 elevation x10; hw47-48 min/max PhiDP deg; hw50 delta time (bits 5-15, s) / supplemental scan (bits 0-4: 0 none, 1 SAILS, 2 MRLE per ICD; observed reversed, section 5); hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 169 | OHA | One Hour Accumulation | Radial Image | 0xaf1f | OHA | T16 | hw30 null product flag (low byte); hw47 max accum in x10; hw48-49 end date/min; hw50 bias x100; hw51 G-R pairs x100 | 2620001AD T.III |
 | 170 | DAA | Digital Accumulation Array | Radial Image | 16 | DAA | GEN | hw27 threshold min time in hour; hw28 total time in hour; hw30 null product flag; hw47 max accum in x10; hw48-49 end date/min; hw50 bias x100; hw51 compression (0 none, 1 bzip2); hw52-53 uncompressed size (bytes, after PDB) | 2620001AD T.III |
 | 171 | STA | Storm Total Accumulation | Radial Image | 1, 0xaf1f | PTA | T16 | hw27-28 start date/min; hw30 null product flag; hw47 max accum in x10; hw48-49 end date/min; hw50 bias x100; hw51 G-R pairs x100 | 2620001AD T.III |

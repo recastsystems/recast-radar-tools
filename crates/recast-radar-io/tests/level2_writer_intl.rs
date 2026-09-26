@@ -226,7 +226,7 @@ fn assert_no_coarser_than_source(id: &str, volume: &Volume, summary: &WriteSumma
         let finest = transforms
             .iter()
             .flatten()
-            .map(|t| t.scale_factor().abs())
+            .filter_map(|t| t.scale_factor().map(f64::abs))
             .fold(f64::INFINITY, f64::min);
         assert!(
             f64::from(report.max_abs_error) <= finest / 2.0 * (1.0 + 1e-4),

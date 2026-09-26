@@ -12,8 +12,9 @@
 //! same layer. Coordinates are 1/4 km from the radar.
 
 use super::Packet;
-use super::vectors::{self, Vectors};
+use super::vectors::{self, Point, Vectors};
 use crate::Level3Error;
+use crate::budget::Budget;
 
 /// Contour packet (0x0802, 0x0E03 or 0x3501).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +34,7 @@ impl ContourPacket {
 
 /// Contents of a [`ContourPacket`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Contour {
     /// 0x0802: color level (0-15) of the contour vectors that follow.
     ColorLevel(u16),
@@ -49,7 +51,7 @@ const INITIAL_POINT_INDICATOR: u16 = 0x8000;
 /// Decodes one contour packet (0x0802, 0x0E03, 0x3501). `bytes` is the complete
 /// packet, starting with its 2-byte code, as sized by the dispatcher (6 bytes
 /// for 0x0802, the length halfword for the others).
-pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
+pub(crate) fn decode(code: u16, bytes: &[u8], budget: &mut Budget) -> Result<Packet, Level3Error> {
     let halfword = |at: usize| {
         bytes
             .get(at..)
@@ -85,13 +87,17 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
             // The length of vectors at byte 8 ends the 10-byte header; the
             // dispatcher sized the packet as the header plus that length.
             halfword(8)?;
-            let mut points = vectors::points(code, &bytes[4..8])?;
-            points.extend(vectors::points(code, &bytes[10..])?);
+            let mut points = vectors::points(code, &bytes[4..8], budget)?;
+            let rest = vectors::points(code, &bytes[10..], budget)?;
+            // `points` grows by the rest: charged again.
+            budget.charge::<Point>(rest.len(), "contour points")?;
+            points.extend(rest);
             Contour::Vectors(Vectors::Linked(points))
         }
         0x3501 => Contour::Vectors(Vectors::Unlinked(vectors::segments(
             code,
             bytes.get(4..).unwrap_or_default(),
+            budget,
         )?)),
         _ => return Err(Level3Error::UnsupportedPacket(code)),
     };

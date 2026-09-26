@@ -12,7 +12,15 @@
 //!   does not record. [`METPY_PACKETS`] lists, per file, how many top-level
 //!   family packets MetPy decodes and the SHA-256 of their canonical rendering
 //!   (format in [`render`]). The script that produced it is at the end of this
-//!   file. MetPy does not decode packets 7, 9 or 0x3501 (none are in the corpus).
+//!   file. MetPy does not decode packets 7, 9 or 0x3501, and stops reading a
+//!   symbology layer at the first packet it does not know.
+//! - **A separate reading of the bytes** by the decoder's author (Figures
+//!   3-7, 3-8 and 3-8a; no third-party reader decodes these packets; the
+//!   second script at the end of this file) for the files MetPy cannot read
+//!   whole: [`SEPARATE_READING_PACKETS`], the products of 1993-1994 with packets 7
+//!   (cross sections 50 and 51, weak echo region 53) and 9 (velocity azimuth
+//!   display 84), and the 1993 product 48 whose tabular offset names the end
+//!   of the message.
 //! - **The file's own headers** for what MetPy cannot read (the 1995 product 82
 //!   and the 1999 stand-alone message 102) and for the radar coded message
 //!   record stamps, which MetPy does not check.
@@ -39,7 +47,9 @@ use recast_radar_io_level3::{
 const FAMILY: [u16; 10] = [1, 2, 8, 6, 7, 9, 10, 0x0802, 0x0E03, 0x3501];
 
 /// Corpus files whose family packets MetPy cannot decode, checked instead by
-/// `metpy_unsupported_files_match_their_headers`.
+/// `metpy_unsupported_files_match_their_headers`. The special symbol packets
+/// 2 of the unedited Radar Coded Message (product 83), which mark the
+/// storms of its radar coded message, are checked by `tests/rcm.rs`.
 const HEADER_CHECKED: [&str; 2] = ["l3-fws-sup-19950517-2304", "l3-tlx-102-19990504-0052"];
 
 /// Per file: number of top-level packets 1, 2, 6, 8, 10, 0x0802 and 0x0E03
@@ -53,6 +63,17 @@ const METPY_PACKETS: &[(&str, usize, &str)] = &[
     ("l3-fws-nst-19950517-2304", 37, "85b7d85ca50eaeba7dd555081892d7648221e6b8ab5dd92bba75ec4b0756ce4f"),
     ("l3-fws-nvw-19950517-2322", 277, "57c83590a33f3d485a7a0d7dcbbebe66cd99199f3577631dc511b4e62e289b23"),
     ("l3-fws-nwp-19950517-2304", 10, "86d57ddc5c3efbcb65ed3435d6b3145c0103a66da3bfd4b8d280d764a9686736"),
+    ("l3-grr-039-20011011-0631", 66, "8faff4e4630051f3e1c9b0f56c07786028043fc3139ff1ab8289eeedcf49e314"),
+    ("l3-ilx-ncz-19960419-2320", 28, "47148dbebe901fcebab040bf0120e3bdb9152fc382e061115a7e2d99122c713f"),
+    ("l3-ilx-nhi-19960419-2303", 21, "352cdadde7bb73170116502e2802be14224461d9bc9e2332bc20f2a0975ee7fc"),
+    ("l3-ilx-nme-19960419-2303", 19, "7fb3085666635b3193e38512d4f67f2c65672c524094d18c52da44f0f0d929f4"),
+    ("l3-ilx-nst-19960419-2303", 125, "f37012c410357df13f8f7d84fd8e4b9a44db2a5c70e91d69cd16aec8475e0cfe"),
+    ("l3-ilx-ntv-19960419-2303", 7, "454a64c0e64a7f8bbe7b1451beb9eee65de3ac3452919f24762c60947d4b2f8b"),
+    ("l3-ind-035-19941031-2138", 7, "b8d7d0d104f44bcb1b48463c3b4f3c93dede0cb3496f2988ce0226fd1e525bf3"),
+    ("l3-ind-042-19940910-1642", 6, "8935a69e1b94201f438c5d89009657215ca81f5a62d80a79082d1df1d4c91560"),
+    ("l3-lzk-ncz-19970301-1912", 56, "4f0de25ca592b75c10a6e3aeca89e94849efcbb379d3da08e57dc824d1efd6cb"),
+    ("l3-lzk-nme-19970301-2027", 7, "cc69b0f91e2c9aae2b2ddf4fdc28d472d2ee8327e8c461546050055328396df9"),
+    ("l3-lzk-ntv-19970301-2027", 7, "45b57350a621cb2591b7dd0d86dd526ffc44615d7798258a1707c1b61c941286"),
     ("l3-mci-dhr-20160526-2154", 1, "16371df5ccc9be39b07bdf11aa187e53a84c15ceeaf67356b200f70ab0192fff"),
     ("l3-mci-dpa-20160526-2154", 1, "2cf562cf0788462fca59aad3e74c6d49cfc1efae21ba64dff8ade3fa9173a52d"),
     ("l3-mci-dsp-20160526-2154", 1, "16371df5ccc9be39b07bdf11aa187e53a84c15ceeaf67356b200f70ab0192fff"),
@@ -67,6 +88,8 @@ const METPY_PACKETS: &[(&str, usize, &str)] = &[
     ("l3-okc-ntv-20220503-005210", 7, "eb19ea71ffde8bbfbc98d59a81502d9aa460a9a79a144ab2ba6b9a57e0102b35"),
     ("l3-okc-nvw-20260622-080623", 63, "a54749db5b328e4a4f8abf84642717d92fb162197591e27f86844eb98919cc9b"),
     ("l3-rax-dta-20200818-0454", 8, "0e6e087be858a65556da630f029473f784c3134760eb5ec978e299219d3674c8"),
+    ("l3-sgf-nme-20030504-2332", 19, "fde21bbaa035d37052a15f45e638690c7be3f3db038334083b8529cd667e6d7a"),
+    ("l3-sgf-ntv-20030504-2352", 7, "b2d235ec244b6fdbbf337738686481dc83be13fbc073f0dbe9c86025988d7166"),
     ("l3-tlx-dhr-20130520-2016", 1, "061e99c23270bc46f35946200b26c18240c1e1353ca07547bb92754f49251da3"),
     ("l3-tlx-dhr-20260622-080623", 1, "7f1893c3a9cdeb8e829d3c35da50c3dada5a4e8e7e338df3a824d65a794ff21e"),
     ("l3-tlx-dpa-20130520-2016", 1, "2c1e3e6c60810efe29d7bf22dff1a47e4598cc5781d1254af34d6e1d04bc4496"),
@@ -85,6 +108,7 @@ const METPY_PACKETS: &[(&str, usize, &str)] = &[
     ("l3-tlx-nco-20130520-1816", 7, "12f0fabe33b01c5fcd49037a4152fee663fed595d561ffe010b542cc1a3ed403"),
     ("l3-tlx-ncr-20130520-2016", 42, "c6485c3abb2d501926be411b3fe597b2b5536c15d05a21d06245bf7eef22d041"),
     ("l3-tlx-ncr-20260622-080623", 56, "25da1ded59894a5e6f3afc300b65042d7a3b04fc3d48d74319fb2facf31f4b25"),
+    ("l3-tlx-ncz-19990503-2316", 21, "7754fae176d9a02682b5df36579187a40e5fcc19ee3dfc659dfc5669007e69f9"),
     ("l3-tlx-ncz-20130520-2016", 42, "c6485c3abb2d501926be411b3fe597b2b5536c15d05a21d06245bf7eef22d041"),
     ("l3-tlx-ncz-20220503-005231", 42, "128852e17d85682731b014b931991dd7badb8a9493a19895bd5b19b0835e282c"),
     ("l3-tlx-nhi-20130520-2016", 28, "f9cfad9c83ba493f61589aa4bceba5d8d3565d63c71cafdfbefca12dbf50660c"),
@@ -98,6 +122,19 @@ const METPY_PACKETS: &[(&str, usize, &str)] = &[
     ("l3-tlx-nvw-20130520-2016", 66, "941262abfa844b943b46152566ccdde509f66c91b735f73334edace670235c1e"),
     ("l3-tlx-nvw-20260622-080623", 77, "af4bcf377908abdaa9d0b17635df7dfb58af924d7f97735b719b36a518c846b5"),
     ("l3-tlx-pta-20200501-000023", 3, "5ec0aecd2a2e03ab6e12339f21031ce75a137acca3e2ac02e0bd3107e77073e8"),
+];
+
+/// Per file MetPy cannot read whole: number of top-level family packets and
+/// SHA-256 of their canonical rendering ([`render`]), read from the bytes by
+/// the second script at the end of this file.
+#[rustfmt::skip]
+const SEPARATE_READING_PACKETS: &[(&str, usize, &str)] = &[
+    ("l3-cae-053-19940629-1906", 44, "322adb825825e5f491834750d553cd79a3e3255f37ca974e12617c4cd40a3202"),
+    ("l3-lot-050-19941031-1358", 22, "ebcfe5cc712e51af4bdcb2f5836f32d4121cf559691babdd28f23ae043b17f1a"),
+    ("l3-lot-053-19941106-0246", 44, "77968cdcd8372d3fb2db8cd6f3a6b91754de789fc5ed130f7d18ef3fbafcc2ac"),
+    ("l3-lot-084-19931120-0721", 84, "c5835875cfb2236609b28fdc34f84c3beb2dc89b88c2b35879101f32f1a9eece"),
+    ("l3-lot-nvw-19931120-0721", 311, "e82c7ebc2f899fcf379c5bf15de2289b4b429915bc2888def08b6a734ceed19f"),
+    ("l3-mlb-051-19941116-0335", 24, "5ec6392b2f6b35b94f08b38bb7e0dee0faa543ac1ee2e3924f7d8c097945340b"),
 ];
 
 /// Records a mismatch between a decoded value and its expected value.
@@ -174,8 +211,10 @@ fn symbol_name(symbol: SpecialSymbol) -> &'static str {
 /// - `<loc> symbol <i> <j> <sorted distinct symbol names>`; MetPy keeps only
 ///   the set of symbols with one position, so a packet without symbols renders
 ///   as `<loc> symbol - - `
-/// - `<loc> linked6 <color|-> <i,j;...>` (starting point first)
-/// - `<loc> unlinked10 <color> <ib,jb,ie,je;...>`
+/// - `<loc> linked6 <color|-> <i,j;...>` (starting point first), and
+///   `linked9` for packet 9
+/// - `<loc> unlinked10 <color> <ib,jb,ie,je;...>`, and `unlinked7 -` for
+///   packet 7
 /// - `<loc> color <level>` (0x0802) and `<loc> contour <i,j;...>` (0x0E03)
 ///
 /// `None` for packets outside that set.
@@ -200,11 +239,15 @@ fn render(loc: &str, packet: &Packet) -> Option<String> {
             }
         }
         Packet::Vectors(v) => match (&v.vectors, v.code) {
-            (Vectors::Linked(p), 6) => {
-                format!("{loc} linked6 {} {}", color(v.color_level), points(p))
+            (Vectors::Linked(p), code @ (6 | 9)) => {
+                format!("{loc} linked{code} {} {}", color(v.color_level), points(p))
             }
-            (Vectors::Unlinked(s), 10) => {
-                format!("{loc} unlinked10 {} {}", color(v.color_level), segments(s))
+            (Vectors::Unlinked(s), code @ (7 | 10)) => {
+                format!(
+                    "{loc} unlinked{code} {} {}",
+                    color(v.color_level),
+                    segments(s)
+                )
             }
             _ => return None,
         },
@@ -285,6 +328,7 @@ fn icd_problems(loc: &str, packet: &Packet) -> Vec<String> {
 fn family_packets_match_golden_and_metpy() {
     let mut failures = Vec::new();
     let mut matched_metpy = Vec::new();
+    let mut matched_separate = Vec::new();
     let mut decoded: BTreeMap<u16, usize> = BTreeMap::new();
     for entry in common::level3_manifest() {
         let golden = entry.golden();
@@ -318,21 +362,40 @@ fn family_packets_match_golden_and_metpy() {
             .filter_map(|(loc, packet)| render(loc, packet))
             .collect();
         let text: String = rendered.iter().map(|line| format!("{line}\n")).collect();
-        match METPY_PACKETS.iter().find(|(id, ..)| *id == entry.id) {
+        let separate = SEPARATE_READING_PACKETS
+            .iter()
+            .find(|(id, ..)| *id == entry.id);
+        match METPY_PACKETS
+            .iter()
+            .find(|(id, ..)| *id == entry.id)
+            .or(separate)
+        {
             Some((id, count, digest)) => {
-                matched_metpy.push(*id);
-                check_eq!(problems, "packets decoded by MetPy", rendered.len(), *count);
+                let source = if separate.is_some() {
+                    matched_separate.push(*id);
+                    "the separate reading"
+                } else {
+                    matched_metpy.push(*id);
+                    "MetPy"
+                };
+                check_eq!(
+                    problems,
+                    format!("packets decoded by {source}"),
+                    rendered.len(),
+                    *count
+                );
                 if common::sha256_hex(text.as_bytes()) != *digest {
                     let head: Vec<&str> = text.lines().take(6).collect();
                     problems.push(format!(
-                        "rendering differs from MetPy's; first lines:\n      {}",
+                        "rendering differs from {source}'s; first lines:\n      {}",
                         head.join("\n      ")
                     ));
                 }
             }
             None if rendered.is_empty() => {}
             None if golden.get("metpy").as_str() == Some("unsupported")
-                && HEADER_CHECKED.contains(&entry.id.as_str()) => {}
+                && (HEADER_CHECKED.contains(&entry.id.as_str())
+                    || product.description.product_code == 83) => {}
             None => problems.push(format!(
                 "{} family packets but no METPY_PACKETS row",
                 rendered.len()
@@ -345,23 +408,26 @@ fn family_packets_match_golden_and_metpy() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     let missing: Vec<&str> = METPY_PACKETS
         .iter()
+        .chain(SEPARATE_READING_PACKETS)
         .map(|(id, ..)| *id)
-        .filter(|id| !matched_metpy.contains(id))
+        .filter(|id| !matched_metpy.contains(id) && !matched_separate.contains(id))
         .collect();
     assert!(
         missing.is_empty(),
-        "METPY_PACKETS rows without a corpus file: {missing:?}"
+        "METPY_PACKETS or SEPARATE_READING_PACKETS rows without a corpus file: {missing:?}"
     );
     // The corpus exercises every family packet code it holds (reference.md section 7).
-    for code in [1, 2, 6, 8, 10, 0x0802, 0x0E03] {
+    for code in [1, 2, 6, 7, 8, 9, 10, 0x0802, 0x0E03] {
         assert!(
             decoded.get(&code).is_some_and(|&n| n > 0),
             "no top-level packet {code} decoded"
         );
     }
     eprintln!(
-        "decoded top-level family packets {decoded:?}; {} files matched MetPy",
-        matched_metpy.len()
+        "decoded top-level family packets {decoded:?}; {} files matched MetPy, {} the \
+         separate reading",
+        matched_metpy.len(),
+        matched_separate.len()
     );
 }
 
@@ -384,9 +450,11 @@ fn tabular_pages_match_golden() {
         let blocks = golden.get("blocks");
         let mut problems = Vec::new();
         let tab = product.tabular.as_ref();
+        // Product 83 (IRM) holds a radar coded message, not pages, in its
+        // Tabular Alphanumeric Block.
         let paged_golden = [blocks.get("tabular"), blocks.get("standalone_tabular")]
             .into_iter()
-            .find(|g| !g.is_null());
+            .find(|g| !g.is_null() && g.get("rcm_text_bytes").is_null());
         if let Some(g) = paged_golden {
             paged += 1;
             let Some(tab) = tab else {
@@ -439,8 +507,13 @@ fn tabular_pages_match_golden() {
                 }
             }
         }
-        let rcm_golden = blocks.get("rcm");
-        if !rcm_golden.is_null() {
+        let rcm_sha256 = [
+            blocks.get("rcm").get("text_sha256"),
+            blocks.get("tabular").get("rcm_text_sha256"),
+        ]
+        .into_iter()
+        .find_map(|g| g.as_str().map(str::to_owned));
+        if let Some(rcm_sha256) = rcm_sha256 {
             rcm += 1;
             match tab {
                 Some(tab) if tab.layout == TabularLayout::RadarCodedMessage => {
@@ -456,7 +529,7 @@ fn tabular_pages_match_golden() {
                         problems,
                         "radar coded message sha256",
                         common::sha256_hex(&bytes),
-                        rcm_golden.get("text_sha256").as_str().unwrap()
+                        rcm_sha256
                     );
                     let lines = &tab.pages[0].lines;
                     if let Some(short) = lines.iter().find(|l| l.len() != 70) {
@@ -541,7 +614,7 @@ fn radar_coded_messages_match_their_headers() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 3);
+    assert_eq!(checked, 4);
 }
 
 /// Files MetPy 1.7.1 cannot read, checked against values from their own headers.
@@ -921,6 +994,8 @@ fn corrupted_family_fields_are_errors() {
 //         blocks = golden['blocks']
 //         if not blocks or golden['metpy'] == 'unsupported':
 //             continue
+//         if {7, 9} & set(golden['packet_codes']):
+//             continue  # MetPy skips the rest of a layer at packets 7 and 9
 //         with warnings.catch_warnings():
 //             warnings.simplefilter('ignore')
 //             f = Level3File(io.BytesIO(lg.committed_path(entry).read_bytes()))
@@ -937,3 +1012,75 @@ fn corrupted_family_fields_are_errors() {
 //             text = ''.join(line + '\n' for line in lines)
 //             digest = hashlib.sha256(text.encode('ascii')).hexdigest()
 //             print(f'    ("{entry["id"]}", {len(lines)}, "{digest}"),')
+//
+// Script that produced SEPARATE_READING_PACKETS (run from the workspace root with
+// the file ids as arguments; reads every field from the bytes, Figures 3-7,
+// 3-8 and 3-8a):
+//
+//     import hashlib, struct, sys, tomllib
+//     from pathlib import Path
+//     sys.path.insert(0, 'tools')
+//     import level3_golden as lg
+//
+//     def packets(d, p, end, loc, out):
+//         while p < end:
+//             code = struct.unpack_from('>H', d, p)[0]
+//             if code in (16, 0xAF1F, 0xBA07, 0xBA0F):
+//                 return  # an image packet: the only packet of its layer in these files
+//             if code == 0x0802:
+//                 out.append(f'{loc} color {struct.unpack_from(">h", d, p + 4)[0]}')
+//                 p += 6
+//                 continue
+//             if code == 0x0E03:
+//                 i, j, n = struct.unpack_from('>hhH', d, p + 4)
+//                 pts = [(i, j)] + [struct.unpack_from('>hh', d, p + 10 + 4 * k) for k in range(n // 4)]
+//                 out.append(f'{loc} contour ' + ';'.join(f'{a},{b}' for a, b in pts))
+//                 p += 10 + n
+//                 continue
+//             n = struct.unpack_from('>H', d, p + 2)[0]
+//             body = d[p + 4:p + 4 + n]
+//             if code in (1, 8):
+//                 off = 2 if code == 8 else 0
+//                 color = str(struct.unpack_from('>h', body, 0)[0]) if code == 8 else '-'
+//                 i, j = struct.unpack_from('>hh', body, off)
+//                 out.append(f'{loc} text{code} {color} {i} {j} {body[off + 4:].hex()}')
+//             elif code in (6, 9):
+//                 off = 2 if code == 9 else 0
+//                 color = str(struct.unpack_from('>h', body, 0)[0]) if code == 9 else '-'
+//                 pts = [struct.unpack_from('>hh', body, off + 4 * k) for k in range((n - off) // 4)]
+//                 out.append(f'{loc} linked{code} {color} ' + ';'.join(f'{a},{b}' for a, b in pts))
+//             elif code in (7, 10):
+//                 off = 2 if code == 10 else 0
+//                 color = str(struct.unpack_from('>h', body, 0)[0]) if code == 10 else '-'
+//                 segs = [struct.unpack_from('>hhhh', body, off + 8 * k) for k in range((n - off) // 8)]
+//                 out.append(f'{loc} unlinked{code} {color} ' + ';'.join(','.join(map(str, s)) for s in segs))
+//             elif code == 2:
+//                 raise SystemExit('packet 2 not rendered by this script')
+//             p += 4 + n
+//
+//     manifest = tomllib.loads(Path('testdata/level3/manifest.toml').read_text(encoding='utf-8'))
+//     for entry in manifest['file']:
+//         if entry['id'] not in sys.argv[1:]:
+//             continue
+//         _, msg = lg.unwrap(lg.committed_path(entry).read_bytes())
+//         sym, gra = struct.unpack_from('>II', msg, 108)
+//         lines = []
+//         if sym:
+//             o = 2 * sym
+//             nlayers = struct.unpack_from('>H', msg, o + 8)[0]
+//             q = o + 10
+//             for li in range(nlayers):
+//                 length = struct.unpack_from('>I', msg, q + 2)[0]
+//                 packets(msg, q + 6, q + 6 + length, f's{li}', lines)
+//                 q += 6 + length
+//         if gra:
+//             o = 2 * gra
+//             npages = struct.unpack_from('>H', msg, o + 8)[0]
+//             q = o + 10
+//             for _ in range(npages):
+//                 page, length = struct.unpack_from('>HH', msg, q)
+//                 packets(msg, q + 4, q + 4 + length, f'g{page}', lines)
+//                 q += 4 + length
+//         text = ''.join(line + '\n' for line in lines)
+//         digest = hashlib.sha256(text.encode('ascii')).hexdigest()
+//         print(f'    ("{entry["id"]}", {len(lines)}, "{digest}"),')

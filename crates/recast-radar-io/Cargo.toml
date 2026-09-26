@@ -15,6 +15,7 @@ recast-radar-core = { path = "../recast-radar-core" }
 recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
 recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
 recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+recast-radar-io-level3 = { path = "../recast-radar-io-level3" }
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-io-odim = { path = "../recast-radar-io-odim" }
 thiserror.workspace = true

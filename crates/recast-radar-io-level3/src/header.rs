@@ -49,8 +49,19 @@ pub struct TextHeader {
     pub awips_id: Option<String>,
     /// Number of zlib frames removed (0 when the message was not zlib-wrapped).
     /// When nonzero the heading above is the outer one; the copy repeated
-    /// inside the zlib data is only used if there is no outer heading.
+    /// inside the zlib data is only used if there is no outer heading, and
+    /// is kept in [`zlib_wmo_heading`](Self::zlib_wmo_heading) and
+    /// [`zlib_awips_id`](Self::zlib_awips_id) either way.
     pub zlib_frames: u32,
+    /// The NOAAPort communications control block at the start of the zlib
+    /// data (first byte `0x40`, second byte its length in halfwords), as
+    /// stored; `None` when the data has none. Observed: 24 bytes.
+    pub communications_control_block: Option<Vec<u8>>,
+    /// The WMO abbreviated heading repeated inside the zlib data (after the
+    /// communications control block), without its line ending.
+    pub zlib_wmo_heading: Option<String>,
+    /// The AWIPS identifier repeated inside the zlib data.
+    pub zlib_awips_id: Option<String>,
 }
 
 /// Message Header Block (ICD 2620001 Figure 3-3), the first 18 bytes of every message.
@@ -150,6 +161,8 @@ pub struct ProductDescription {
     /// Offset to the graphic alphanumeric block in halfwords (halfwords 57-58); 0 when absent.
     pub graphic_offset: u32,
     /// Offset to the tabular alphanumeric block in halfwords (halfwords 59-60); 0 when absent.
+    /// Some products of 1993-1994 give the end of the message here and carry
+    /// no block (observed; the product then has no tabular block).
     pub tabular_offset: u32,
     /// True when the data after the Product Description Block was a bzip2
     /// stream (the product's halfword 51 is then 1); block offsets refer to the
@@ -209,6 +222,7 @@ impl ProductDescription {
 /// Operational (weather) mode: Product Description Block halfword 17 and
 /// General Status Message halfword 12 (ICD 2620001 Figures 3-6 and 3-17).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum OperationalMode {
     /// 0: maintenance mode.
     Maintenance,
@@ -318,17 +332,25 @@ pub(crate) fn unwrap_framing(bytes: &[u8]) -> Result<Unwrapped<'_>, Level3Error>
     if let Some(stripped) = body.strip_suffix(ETX_TRAILER) {
         body = stripped;
     }
+    if let Some(heading) = outer.as_ref().filter(|_| is_plain_text(body)) {
+        return Ok(Unwrapped::Text {
+            text_header: heading.to_text_header(noaaport_sequence, 0),
+            text: body,
+        });
+    }
 
     let mut zlib_frames = 0;
     let mut inner = None;
+    let mut ccb = None;
     let message = if decompress::looks_like_zlib(body) {
         let (mut out, frames) = decompress::inflate_zlib_frames(body)?;
         zlib_frames = frames;
         let mut start = 0;
         if let [0x40, halfwords, ..] = out.as_slice() {
-            let ccb = 2 * usize::from(*halfwords);
-            if ccb <= out.len() {
-                start = ccb;
+            let len = 2 * usize::from(*halfwords);
+            if len <= out.len() {
+                start = len;
+                ccb = Some(out[..len].to_vec());
             }
         }
         if let Some(heading) = parse_heading(&out, start) {
@@ -341,13 +363,79 @@ pub(crate) fn unwrap_framing(bytes: &[u8]) -> Result<Unwrapped<'_>, Level3Error>
         Cow::Borrowed(body)
     };
 
-    let text_header = outer
-        .or(inner)
-        .map(|h| h.to_text_header(noaaport_sequence, zlib_frames));
+    let text_header = outer.as_ref().or(inner.as_ref()).map(|h| {
+        let mut header = h.to_text_header(noaaport_sequence, zlib_frames);
+        header.communications_control_block = ccb;
+        header.zlib_wmo_heading = inner.as_ref().map(|i| i.wmo_heading.clone());
+        header.zlib_awips_id = inner.as_ref().and_then(|i| i.awips_id.clone());
+        header
+    });
     Ok(Unwrapped::Binary(Framed {
         text_header,
         message,
     }))
+}
+
+/// True when `bytes` start the way a Level III file does (see
+/// [`crate::looks_like_level3`]).
+pub(crate) fn looks_like_level3(bytes: &[u8]) -> bool {
+    let mut pos = 0;
+    if bytes.starts_with(SOH_LINE) {
+        pos = SOH_LINE.len();
+        if let Some((_, end)) = parse_sequence(bytes, pos) {
+            pos = end;
+        }
+    }
+    match parse_heading(bytes, pos) {
+        Some(heading) if heading.data_designator.starts_with("NOUS") => true,
+        Some(heading) => {
+            let body = bytes.get(heading.end..).unwrap_or_default();
+            decompress::looks_like_zlib(body)
+                || looks_like_message(body)
+                || (heading.data_designator.starts_with("SDUS") && is_plain_text(body))
+        }
+        None => pos == 0 && looks_like_message(bytes),
+    }
+}
+
+/// A body of plain text after a WMO heading that is not `NOUS`: not a
+/// Message Header Block and every byte printable ASCII, a line ending, a tab
+/// or the record separator 0x1E. Observed: the Radar Observation bulletins
+/// (AWIPS `ROBxxx`, heading `SDUS4x`) the NCEI Level III archive holds
+/// beside the products, text starting with 0x1E.
+fn is_plain_text(body: &[u8]) -> bool {
+    !body.is_empty()
+        && !looks_like_message(body)
+        && body
+            .iter()
+            .all(|&b| matches!(b, b' '..=b'~' | b'\r' | b'\n' | b'\t' | 0x1E))
+}
+
+/// A Message Header Block followed by a block divider (-1) at halfword 10:
+/// a General Status Message (code 2) of two blocks sent at a time of day
+/// (halfwords 3-4, seconds after midnight), or a product whose Product
+/// Description Block repeats the message code as its product code (halfword
+/// 16), as every product and stand-alone alphanumeric message in the corpus
+/// does.
+///
+/// The block count and time keep a headerless Level II LDM record out: its
+/// 4-byte size is `00 02 xx xx` for a record of 128-192 KiB and its bzip2
+/// stream starts `BZh` at byte 4, which as a time is past 10^9 seconds.
+fn looks_like_message(message: &[u8]) -> bool {
+    let halfword = |offset: usize| {
+        message
+            .get(offset..offset + 2)
+            .map(|b| i16::from_be_bytes([b[0], b[1]]))
+    };
+    let time_of_day = message
+        .get(4..8)
+        .map(|b| i32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+        .is_some_and(|seconds| (0..=86_400).contains(&seconds));
+    match (halfword(0), halfword(MESSAGE_HEADER_BYTES)) {
+        (Some(2), Some(-1)) => time_of_day && halfword(16) == Some(2),
+        (Some(code), Some(-1)) if code > 2 => halfword(30) == Some(code),
+        _ => false,
+    }
 }
 
 struct Heading {
@@ -372,6 +460,9 @@ impl Heading {
             indicator: self.indicator.clone(),
             awips_id: self.awips_id.clone(),
             zlib_frames,
+            communications_control_block: None,
+            zlib_wmo_heading: None,
+            zlib_awips_id: None,
         }
     }
 }

@@ -20,6 +20,7 @@ use recast_radar_hdf5::{H5File, ObjectKind, OpenOptions};
 use recast_radar_io_cfradial as cfradial_io;
 use recast_radar_io_dorade as dorade_io;
 use recast_radar_io_jma as jma_io;
+use recast_radar_io_level3 as level3_io;
 use recast_radar_io_nexrad as nexrad;
 use recast_radar_io_odim as odim_io;
 
@@ -69,6 +70,7 @@ pub const TARGETS: &[(&str, Harness)] = &[
     ("bzip2", bzip2),
     ("bzip2_encode", bzip2_encode),
     ("writers", writers),
+    ("level3", level3),
 ];
 
 /// Look up a harness by target name.
@@ -828,4 +830,45 @@ pub fn writers(data: &[u8]) -> bool {
         }
     }
     written
+}
+
+/// NEXRAD / TDWR Level III products (`recast-radar-io-level3`): framing
+/// sniff and every message type (products, General Status Messages, text
+/// messages); for a product, its Table V parameters, the volume conversion
+/// and its FM301 view (the level-table decode path), the VAD wind profile,
+/// the radar coded message and the storm attribute tables. Inputs of length
+/// 3 mod 4 also go to the radar coded message text parser directly.
+pub fn level3(data: &[u8]) -> bool {
+    let _ = level3_io::looks_like_level3(data);
+    if data.len() % 4 == 3 {
+        let text: String = data.iter().map(|&b| char::from(b)).collect();
+        let _ = level3_io::RadarCodedMessage::parse(&text);
+    }
+    let product = match level3_io::decode_message(data) {
+        Ok(level3_io::Level3Message::Product(product)) => product,
+        Ok(_) => return true,
+        Err(_) => return false,
+    };
+    let _ = product.description.parameters();
+    let _ = product.display_records();
+    if let Ok(volume) = product.to_volume() {
+        let _ = recast_radar_core::fm301::volume_view(
+            &volume,
+            recast_radar_core::fm301::ViewOptions::XRADAR,
+            None,
+        );
+    }
+    let _ = level3_io::vwp::VadWindProfile::from_product(&product);
+    let _ = product.radar_coded_message();
+    let _ = product.storm_tracking();
+    let _ = product.hail_index();
+    let _ = product.tvs_table();
+    let _ = product.mesocyclone_detections();
+    let _ = product.cell_attributes();
+    let _ = product.legacy_storm_tracking();
+    let _ = product.legacy_hail_index();
+    let _ = product.mesocyclone_table();
+    let _ = product.legacy_tvs_table();
+    let _ = product.legacy_cell_attributes();
+    true
 }

@@ -14,6 +14,7 @@
 
 use super::Packet;
 use crate::Level3Error;
+use crate::budget::Budget;
 
 /// A point in packet coordinates (1/4 km or screen pixels).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -35,6 +36,7 @@ pub struct Segment {
 
 /// The vectors of a vector or contour packet.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Vectors {
     /// Linked vectors: a line through the points in order. The first point is
     /// the starting point; each further point ends one vector.
@@ -80,7 +82,7 @@ impl VectorPacket {
 /// Decodes one vector packet (6, 7, 9, 10). `bytes` is the complete packet,
 /// starting with its 2-byte code, as sized by the dispatcher from its length
 /// halfword.
-pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
+pub(crate) fn decode(code: u16, bytes: &[u8], budget: &mut Budget) -> Result<Packet, Level3Error> {
     let (linked, with_color) = match code {
         6 => (true, false),
         9 => (true, true),
@@ -107,9 +109,9 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
                 reason: "linked vectors without a starting point".into(),
             });
         }
-        Vectors::Linked(points(code, data)?)
+        Vectors::Linked(points(code, data, budget)?)
     } else {
-        Vectors::Unlinked(segments(code, data)?)
+        Vectors::Unlinked(segments(code, data, budget)?)
     };
     Ok(Packet::Vectors(VectorPacket {
         code,
@@ -119,7 +121,11 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
 }
 
 /// `(I, J)` halfword pairs filling `data` (4 bytes each).
-pub(crate) fn points(code: u16, data: &[u8]) -> Result<Vec<Point>, Level3Error> {
+pub(crate) fn points(
+    code: u16,
+    data: &[u8],
+    budget: &mut Budget,
+) -> Result<Vec<Point>, Level3Error> {
     let chunks = data.chunks_exact(4);
     if !chunks.remainder().is_empty() {
         return Err(Level3Error::InvalidPacket {
@@ -127,11 +133,16 @@ pub(crate) fn points(code: u16, data: &[u8]) -> Result<Vec<Point>, Level3Error> 
             reason: format!("{} bytes of points is not a multiple of 4", data.len()),
         });
     }
+    budget.charge::<Point>(chunks.len(), "vector points")?;
     Ok(chunks.map(|c| point([c[0], c[1], c[2], c[3]])).collect())
 }
 
 /// `(I begin, J begin, I end, J end)` halfword groups filling `data` (8 bytes each).
-pub(crate) fn segments(code: u16, data: &[u8]) -> Result<Vec<Segment>, Level3Error> {
+pub(crate) fn segments(
+    code: u16,
+    data: &[u8],
+    budget: &mut Budget,
+) -> Result<Vec<Segment>, Level3Error> {
     let chunks = data.chunks_exact(8);
     if !chunks.remainder().is_empty() {
         return Err(Level3Error::InvalidPacket {
@@ -139,6 +150,7 @@ pub(crate) fn segments(code: u16, data: &[u8]) -> Result<Vec<Segment>, Level3Err
             reason: format!("{} bytes of vectors is not a multiple of 8", data.len()),
         });
     }
+    budget.charge::<Segment>(chunks.len(), "vector segments")?;
     Ok(chunks
         .map(|c| Segment {
             begin: point([c[0], c[1], c[2], c[3]]),

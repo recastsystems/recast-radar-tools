@@ -931,3 +931,29 @@ fn json_eq(a: &Json, b: &Json) -> bool {
 //             print(n, None); continue
 //         d = add._asdict(); d.pop('spare')
 //         print(n, json.dumps(d))
+
+/// KNQA 2008 Radar Observation bulletin (heading `SDUS44 KWBC`, AWIPS
+/// `ROBNQA`): plain text after a non-`NOUS` heading decodes as a text
+/// message whose text is the file's bytes after the heading lines.
+#[test]
+fn radar_observation_bulletin_is_a_text_message() {
+    let bytes =
+        std::fs::read(recast_radar_testdata::path("l3-knqa-20080205-0018-rob").unwrap()).unwrap();
+    // `SDUS44 KWBC 050018\r\r\nROBNQA\r\r\n` is 30 bytes.
+    assert_eq!(&bytes[..30], b"SDUS44 KWBC 050018\r\r\nROBNQA\r\r\n");
+    assert!(recast_radar_io_level3::looks_like_level3(&bytes));
+    match decode_message(&bytes).unwrap() {
+        Level3Message::Text(text) => {
+            assert_eq!(text.text_header.wmo_heading, "SDUS44 KWBC 050018");
+            assert_eq!(text.text_header.awips_id.as_deref(), Some("ROBNQA"));
+            let expected: String = bytes[30..].iter().map(|&b| char::from(b)).collect();
+            assert_eq!(text.text, expected);
+            assert!(text.text.starts_with("\u{1e}NQA 0035 AREA 4RW++"));
+        }
+        other => panic!("expected a text message, got {other:?}"),
+    }
+    assert!(matches!(
+        decode_product(&bytes),
+        Err(Level3Error::TextOnly { .. })
+    ));
+}

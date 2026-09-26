@@ -1,7 +1,10 @@
 //! VAD Wind Profile (product 48): [`VadWindProfile`] against every product 48
-//! file of the real corpora, the five of `testdata/level3/manifest.toml` and
-//! the KBMX file of `testdata/other/manifest.toml` (carried over from BowEcho
-//! with `recast_radar_io_nexrad::level3_vwp`).
+//! file of the real corpora, the five of `testdata/level3/manifest.toml` with
+//! a Tabular Alphanumeric Block and the KBMX file of
+//! `testdata/other/manifest.toml` (carried over from BowEcho with
+//! `recast_radar_io_nexrad::level3_vwp`); the KLOT 1993 product, which names a
+//! tabular block at the end of its message and carries none, is checked by
+//! [`vwp_without_its_tabular_block`].
 //!
 //! Expected values come from:
 //!
@@ -54,6 +57,10 @@ const KBMX_ID: &str = "l3-kbmx-19980416-0006-nvw";
 /// The file whose zlib frames `level3_vwp` read only in part.
 const FIRST_ZLIB_FRAME_ONLY: &str = "l3-mci-nvw-20160526-2154";
 
+/// The product 48 whose tabular offset names the end of its message
+/// (`blocks::read_blocks`): display winds only.
+const WITHOUT_TABULAR_BLOCK: &str = "l3-lot-nvw-19931120-0721";
+
 /// Winds of the newest display column in the four files with tabular winds.
 const TABLE_CHECKED_DISPLAY_WINDS: usize = 10 + 29 + 27 + 29;
 
@@ -66,7 +73,7 @@ struct VwpFile {
 fn vwp_files() -> Vec<VwpFile> {
     let mut files: Vec<VwpFile> = common::level3_manifest()
         .into_iter()
-        .filter(|entry| entry.tag("product") == Some("48"))
+        .filter(|entry| entry.tag("product") == Some("48") && entry.id != WITHOUT_TABULAR_BLOCK)
         .map(|entry| VwpFile {
             bytes: entry.bytes(),
             id: entry.id,
@@ -233,6 +240,7 @@ fn render_new_as_old(product: &Level3Product, vwp: &VadWindProfile, view: OldVie
     let profiles = match view.source {
         VwpSource::Tabular => &vwp.tabular,
         VwpSource::Symbology => &vwp.display,
+        other => panic!("VWP source {other:?}"),
     };
     for profile in profiles {
         lines.push(format!(
@@ -319,6 +327,7 @@ fn matches_level3_vwp_output_on_every_product_48_file() {
         let profiles = match view.source {
             VwpSource::Tabular => &vwp.tabular,
             VwpSource::Symbology => &vwp.display,
+            other => panic!("VWP source {other:?}"),
         };
         let old_heights: Vec<f64> = snapshot
             .lines()
@@ -649,6 +658,49 @@ fn parameters_match_the_parameter_pages() {
         assert_eq!(p.data_points_threshold, Some(25), "{id}");
         assert_eq!(&p.altitudes_selected_ft, altitudes, "{id}");
     }
+}
+
+/// KLOT 1993-11-20 07:21Z: its Product Description Block names a Tabular
+/// Alphanumeric Block at the end of the message (halfwords 59-60 x 2 equals
+/// the message length of halfwords 5-6), so the product has display winds
+/// and no table or parameter pages. Every wind barb is a display wind, and
+/// halfwords 47-49 are the speed, direction and altitude of the fastest wind
+/// of the newest column.
+#[test]
+fn vwp_without_its_tabular_block() {
+    let entry = common::entry(WITHOUT_TABULAR_BLOCK);
+    let bytes = entry.bytes();
+    let product = decode_product(&bytes).unwrap();
+    let d = &product.description;
+    let message_length = u64::from(product.message_header.length);
+    assert_eq!(u64::from(d.tabular_offset) * 2, message_length);
+    assert!(product.tabular.is_none());
+    let vwp = VadWindProfile::from_product(&product).unwrap();
+    assert!(vwp.tabular.is_empty());
+    assert_eq!(vwp.source(), Some(VwpSource::Symbology));
+    assert_eq!(vwp.parameters.rms_threshold_kt, None);
+    let barbs: usize = product
+        .symbology
+        .as_ref()
+        .unwrap()
+        .layers
+        .iter()
+        .flatten()
+        .map(|packet| match packet {
+            Packet::Symbol(SymbolPacket::WindBarbs(barbs)) => barbs.len(),
+            _ => 0,
+        })
+        .sum();
+    let winds: usize = vwp.display.iter().map(|p| p.winds.len()).sum();
+    assert!(barbs > 0);
+    assert_eq!(winds, barbs);
+    let newest = &vwp.display[0];
+    let max_speed = newest.winds.iter().map(|w| w.speed_kt).fold(0.0, f64::max);
+    let hw = |n| d.halfword(n).unwrap();
+    assert_eq!(max_speed, f64::from(hw(47)));
+    assert!(newest.winds.iter().any(|w| w.speed_kt == max_speed
+        && w.direction_deg % 360.0 == f64::from(hw(48)) % 360.0
+        && w.altitude_ft_msl == i32::from(hw(49)) * 10));
 }
 
 /// Only product 48 is read; ported from `level3_vwp`'s rejection test with a

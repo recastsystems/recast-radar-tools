@@ -1,0 +1,576 @@
+SRUS55 KSLC 120424
+HMLSLC
+<?xml version="1.0" standalone="yes"?>
+<site xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      name="BEAVER DAM WASH 2 SW BEAVER DAM WASH"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      originator="SLC"
+      generationtime="2025-10-12T04:24:09+00:00"
+      timezone="MST7MDT"
+      id="BDWU1">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed pedts="HGIRG"
+            primaryName="Stage"
+            secondaryName="Flow"
+            secondaryUnits="kcfs"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T03:15:00-00:00</valid>
+      <primary>2.58</primary>
+      <secondary>-999</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>2.49</primary>
+      <secondary>-999</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>2.42</primary>
+      <secondary>-999</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>2.22</primary>
+      <secondary>-999</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Blacks Fork  AT Robertson"
+      originator="SLC"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      id="BNRU1"
+      timezone="MST7MDT"
+      generationtime="2025-10-12T04:24:10+00:00">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed secondaryUnits="kcfs"
+            secondaryName="Flow"
+            primaryName="Stage"
+            pedts="HGIRG"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T03:15:00-00:00</valid>
+      <primary>2.02</primary>
+      <secondary>0.0646</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>2.02</primary>
+      <secondary>0.0646</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>2.02</primary>
+      <secondary>0.0646</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>2.03</primary>
+      <secondary>0.066</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site originator="SLC"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Spanish Fork River 3 W Castilla"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      id="CASU1"
+      timezone="MST7MDT"
+      generationtime="2025-10-12T04:24:10+00:00">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed secondaryName="Flow"
+            secondaryUnits="kcfs"
+            primaryName="Stage"
+            pedts="HGIRG"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>2.66</primary>
+      <secondary>0.0951</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>2.67</primary>
+      <secondary>0.0972</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>2.67</primary>
+      <secondary>0.0972</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:15:00-00:00</valid>
+      <primary>2.68</primary>
+      <secondary>0.0993</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site originator="SLC"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Coal Creek 2 E Cedar City"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      id="COAU1"
+      timezone="MST7MDT"
+      generationtime="2025-10-12T04:24:12+00:00">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed pedts="HGIRG"
+            primaryName="Stage"
+            secondaryUnits="kcfs"
+            secondaryName="Flow"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>4.46</primary>
+      <secondary>0.013</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:05:00-00:00</valid>
+      <primary>4.46</primary>
+      <secondary>0.013</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:10:00-00:00</valid>
+      <primary>4.46</primary>
+      <secondary>0.013</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site generationtime="2025-10-12T04:24:13+00:00"
+      timezone="MST7MDT"
+      id="ECAU1"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      name="East Canyon Creek 7 SW Jeremy Ranch downstream to East Canyon Reservoir"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      originator="SLC">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed primaryUnits="ft"
+            timezone="UTC"
+            secondaryUnits="kcfs"
+            secondaryName="Flow"
+            pedts="HGIRG"
+            primaryName="Stage">
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>4.68</primary>
+      <secondary>0.0245</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>4.73</primary>
+      <secondary>0.0274</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>4.77</primary>
+      <secondary>0.0299</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:15:00-00:00</valid>
+      <primary>4.8</primary>
+      <secondary>0.032</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Weber 1 SE WEBER RIVER AT ECHO"
+      originator="SLC"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      id="ECWU1"
+      timezone="MST7MDT"
+      generationtime="2025-10-12T04:24:13+00:00">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed pedts="HGIRG"
+            primaryName="Stage"
+            secondaryUnits="kcfs"
+            secondaryName="Flow"
+            timezone="UTC"
+            primaryUnits="ft">
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>2.03</primary>
+      <secondary>0.099</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>2.03</primary>
+      <secondary>0.099</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>2.03</primary>
+      <secondary>0.099</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:15:00-00:00</valid>
+      <primary>2.03</primary>
+      <secondary>0.099</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site originator="SLC"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Virgin River 4 W Hurricane"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      id="HURU1"
+      generationtime="2025-10-12T04:24:16+00:00"
+      timezone="MST7MDT">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed secondaryUnits="kcfs"
+            secondaryName="Flow"
+            pedts="HGIRG"
+            primaryName="Stage"
+            timezone="UTC"
+            primaryUnits="ft">
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>8.6</primary>
+      <secondary>0.399</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>8.6</primary>
+      <secondary>0.399</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>8.59</primary>
+      <secondary>0.396</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:15:00-00:00</valid>
+      <primary>8.59</primary>
+      <secondary>0.396</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Nf Virgin 0 N Springdale"
+      originator="SLC"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      id="NFVU1"
+      timezone="MST7MDT"
+      generationtime="2025-10-12T04:24:20+00:00">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed secondaryUnits="kcfs"
+            secondaryName="Flow"
+            primaryName="Stage"
+            pedts="HGIRG"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T03:55:00-00:00</valid>
+      <primary>7.63</primary>
+      <secondary>0.0817</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>7.63</primary>
+      <secondary>0.0817</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:05:00-00:00</valid>
+      <primary>7.62</primary>
+      <secondary>0.0805</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site timezone="MST7MDT"
+      generationtime="2025-10-12T04:24:21+00:00"
+      id="PAKU1"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      originator="SLC"
+      name="PARIA RIVER 1 W PARIA RIVER NEAR KANAB">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed pedts="HGIRG"
+            primaryName="Stage"
+            secondaryUnits="kcfs"
+            secondaryName="Flow"
+            timezone="UTC"
+            primaryUnits="ft">
+    <datum>
+      <valid>2025-10-12T03:15:00-00:00</valid>
+      <primary>9.6</primary>
+      <secondary>0.669</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:20:00-00:00</valid>
+      <primary>9.61</primary>
+      <secondary>0.676</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:25:00-00:00</valid>
+      <primary>9.47</primary>
+      <secondary>0.573</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>9.33</primary>
+      <secondary>0.482</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:35:00-00:00</valid>
+      <primary>9.29</primary>
+      <secondary>0.458</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:40:00-00:00</valid>
+      <primary>9.18</primary>
+      <secondary>0.397</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>9.06</primary>
+      <secondary>0.337</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:50:00-00:00</valid>
+      <primary>9.01</primary>
+      <secondary>0.315</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:55:00-00:00</valid>
+      <primary>9.1</primary>
+      <secondary>0.356</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>8.98</primary>
+      <secondary>0.305</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:05:00-00:00</valid>
+      <primary>8.72</primary>
+      <secondary>0.248</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:10:00-00:00</valid>
+      <primary>8.58</primary>
+      <secondary>0.224</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      originator="SLC"
+      name="Jordan River Surplus Canal 0 AT Jordan Surplus Canal"
+      timezone="MST7MDT"
+      generationtime="2025-10-12T04:24:23+00:00"
+      id="SCSU1">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed timezone="UTC"
+            primaryUnits="ft"
+            pedts="HGIRG"
+            primaryName="Stage"
+            secondaryUnits="kcfs"
+            secondaryName="Flow">
+    <datum>
+      <valid>2025-10-12T03:15:00-00:00</valid>
+      <primary>12.03</primary>
+      <secondary>0.731</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>12.12</primary>
+      <secondary>0.739</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>12.21</primary>
+      <secondary>0.748</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>12.27</primary>
+      <secondary>0.754</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Smiths Fork 1 N EAST FORK OF SMITHS FORK"
+      originator="SLC"
+      generationtime="2025-10-12T04:24:24+00:00"
+      timezone="MST7MDT"
+      id="SFRW4">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed pedts="HGIRG"
+            primaryName="Stage"
+            secondaryName="Flow"
+            secondaryUnits="kcfs"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>3.67</primary>
+      <secondary>0.0158</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>3.68</primary>
+      <secondary>0.0162</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>3.68</primary>
+      <secondary>0.0162</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:15:00-00:00</valid>
+      <primary>3.68</primary>
+      <secondary>0.0162</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site generationtime="2025-10-12T04:24:25+00:00"
+      timezone="MST7MDT"
+      id="SRSU1"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      originator="SLC"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Santa Clara River 1 N SANTA CLARA AT ST GEORGE">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed primaryName="Stage"
+            pedts="HGIRG"
+            secondaryUnits="kcfs"
+            secondaryName="Flow"
+            timezone="UTC"
+            primaryUnits="ft">
+    <datum>
+      <valid>2025-10-12T03:15:00-00:00</valid>
+      <primary>7.02</primary>
+      <secondary>0.0083</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:30:00-00:00</valid>
+      <primary>7.04</primary>
+      <secondary>0.0087</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T03:45:00-00:00</valid>
+      <primary>7.02</primary>
+      <secondary>0.0083</secondary>
+    </datum>
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>6.99</primary>
+      <secondary>0.0078</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site id="STCU1"
+      generationtime="2025-10-12T04:24:25+00:00"
+      timezone="MST7MDT"
+      name="SANTA CLARA RIVER 3 NNE SANTA CLARA RIVER NEAR PINE VALLEY"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      originator="SLC"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed secondaryUnits="kcfs"
+            secondaryName="Flow"
+            primaryName="Stage"
+            pedts="HGIRG"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>4.8</primary>
+      <secondary>-999</secondary>
+    </datum>
+  </observed>
+</site>    
+<?xml version="1.0" standalone="yes"?>
+<site xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      name="Virgin River 2 N Virgin"
+      originator="SLC"
+      xsi:noNamespaceSchemaLocation="http://weather.gov/ohd/hydroxc/schemas/hydrogen/HydData.xsd"
+      id="VIRU1"
+      generationtime="2025-10-12T04:24:26+00:00"
+      timezone="MST7MDT">
+  <disclaimers>
+    <AHPSXMLversion>2.0</AHPSXMLversion>
+    <status>Experimental</status>
+    <quality trace="observed">not manually quality-controlled</quality>
+  </disclaimers>
+  <observed secondaryUnits="kcfs"
+            secondaryName="Flow"
+            pedts="HGIRG"
+            primaryName="Stage"
+            primaryUnits="ft"
+            timezone="UTC">
+    <datum>
+      <valid>2025-10-12T04:00:00-00:00</valid>
+      <primary>8.12</primary>
+      <secondary>0.18</secondary>
+    </datum>
+  </observed>
+</site>    

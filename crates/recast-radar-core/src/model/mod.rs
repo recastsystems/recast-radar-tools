@@ -24,7 +24,7 @@ mod volume;
 
 pub use field::{
     Coding, Field, FieldAttrs, FieldData, FieldError, FieldParts, FloatCoding, FloatWidth, Gate,
-    GateMapping, IntCoding, LinearTransform, PackedInt, RowRef,
+    GateMapping, IntCoding, LevelTable, LinearTransform, PackedInt, RowRef,
 };
 pub use merge::{ANGLE_MATCH_TOLERANCE_DEG, MergeError, MergeReport, merge_volumes};
 pub use names::{FieldName, NameInfo, Polarization, PyartNames, Quantity, XradarAttrs};

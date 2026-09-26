@@ -10,12 +10,25 @@
 
 use super::Packet;
 use crate::Level3Error;
+use crate::budget::Budget;
 use crate::levels::{DataLevels, Level};
 
 /// Largest radials x bins grid a radial packet may declare. The largest ICD
 /// products hold 720 x 1840 bins; packets declaring more than 2^24 cells are
 /// rejected with [`Level3Error::InvalidPacket`] instead of allocated.
+///
+/// A packet must also be able to hold its grid: 0xAF1F encodes at most 15
+/// bins per byte (two 4-bit runs of up to 15 in a halfword) and packet 16 one,
+/// so a packet declaring more than [`BINS_PER_PACKET_BYTE`] bins per packet
+/// byte (plus a 4096-bin allowance) is rejected too. That bounds the grid a
+/// packet allocates by its own size, whatever it declares. The grids of all
+/// packets of a product share the product decode budget
+/// ([`crate::MAX_PRODUCT_DECODED_BYTES`], one byte per bin).
 pub const MAX_RADIAL_CELLS: usize = 1 << 24;
+
+/// Declared bins allowed per byte of a radial packet (see
+/// [`MAX_RADIAL_CELLS`]).
+pub const BINS_PER_PACKET_BYTE: usize = 16;
 
 /// Radial data packet (16 or 0xAF1F).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,7 +57,10 @@ pub struct RadialPacket {
     /// radials carry runs expanded here (4-bit run, 4-bit level). Data beyond
     /// `num_bins` in a radial (such as the pad byte) is dropped; a radial whose
     /// data covers fewer bins is filled with level 0. In the corpus every
-    /// radial covers exactly `num_bins` bins.
+    /// radial covers exactly `num_bins` bins but those of the KFTG 1994
+    /// product 46, whose 63 radials cover 140 bins of the 188 it declares
+    /// from bin 50: they end at bin 190, where the other three products of
+    /// the same window end (94 km).
     pub levels: Vec<u8>,
 }
 
@@ -58,14 +74,16 @@ pub struct Radial {
 }
 
 impl Radial {
-    /// Start angle in degrees.
+    /// Start angle in degrees: the `f32` nearest to the tenths divided by
+    /// 10 (as Py-ART's `float32(angle_start * 0.1)`).
     pub fn start_angle_deg(&self) -> f32 {
-        f32::from(self.start_angle) * 0.1
+        f32::from(self.start_angle) / 10.0
     }
 
-    /// Angle delta in degrees.
+    /// Angle delta in degrees, rounded like
+    /// [`start_angle_deg`](Self::start_angle_deg).
     pub fn delta_angle_deg(&self) -> f32 {
-        f32::from(self.delta_angle) * 0.1
+        f32::from(self.delta_angle) / 10.0
     }
 }
 
@@ -111,7 +129,7 @@ impl RadialPacket {
 
 /// Decodes one radial packet (16, 0xAF1F). `bytes` is the complete packet, starting
 /// with its 2-byte code, as sized by the dispatcher.
-pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
+pub(crate) fn decode(code: u16, bytes: &[u8], budget: &mut Budget) -> Result<Packet, Level3Error> {
     let u16_at = |offset: usize, what: &str| match bytes.get(offset..offset + 2) {
         Some(&[hi, lo]) => Ok(u16::from_be_bytes([hi, lo])),
         _ => Err(Level3Error::InvalidPacket {
@@ -128,16 +146,24 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
 
     let bins = usize::from(num_bins);
     let cells = usize::from(num_radials) * bins;
-    if cells > MAX_RADIAL_CELLS {
+    let limit = bytes
+        .len()
+        .saturating_mul(BINS_PER_PACKET_BYTE)
+        .saturating_add(4096)
+        .min(MAX_RADIAL_CELLS);
+    if cells > limit {
         return Err(Level3Error::InvalidPacket {
             code,
             reason: format!(
-                "{num_radials} radials of {num_bins} bins exceed the {MAX_RADIAL_CELLS}-cell limit"
+                "{num_radials} radials of {num_bins} bins exceed the {limit}-cell limit \
+                 of a {}-byte packet",
+                bytes.len()
             ),
         });
     }
 
-    let mut radials = Vec::with_capacity(usize::from(num_radials));
+    budget.charge_bytes(cells, "radial packet levels")?;
+    let mut radials = budget.vec(usize::from(num_radials), "radial angles")?;
     let mut levels = vec![0u8; cells];
     let mut p = 14;
     for row in 0..usize::from(num_radials) {

@@ -13,6 +13,7 @@
 
 use super::Packet;
 use crate::Level3Error;
+use crate::budget::Budget;
 
 /// Text or special symbol packet (1, 2 or 8).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +97,7 @@ impl SpecialSymbol {
 
 /// Decodes one text packet (1, 2, 8). `bytes` is the complete packet, starting
 /// with its 2-byte code, as sized by the dispatcher from its length halfword.
-pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
+pub(crate) fn decode(code: u16, bytes: &[u8], budget: &mut Budget) -> Result<Packet, Level3Error> {
     // Byte offset of I: after the code and length, and the color level of packet 8.
     let i_at = match code {
         1 | 2 => 4,
@@ -119,6 +120,6 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
         color_level: (code == 8).then(|| u16::from_be_bytes(halfword(4))),
         i: i16::from_be_bytes(halfword(i_at)),
         j: i16::from_be_bytes(halfword(i_at + 2)),
-        text: characters.iter().copied().map(char::from).collect(),
+        text: budget.latin1(characters, "text packet")?,
     }))
 }

@@ -27,6 +27,26 @@ tags = ["provider:aws-unidata-nexrad-level3", "awips:NC1AKC", "era:2021", "radar
 description = "PAKC NC1 2021-07-30 05:50Z: product 34 Clutter Filter Control; NOAA Open Data AWS bucket unidata-nexrad-level3"
 
 [[file]]
+id = "l3-akq-018-19940810-0835"
+format = "nexrad-level3"
+sha256 = "7aded0b3e03782f65a39bc7e574adfdbb12cab310f6e6d836cc17b9081fa6fb0"
+size = 9078
+committed = "files/level3/l3-akq-018-19940810-0835"
+derivation = "unmodified member KAKQ_SDUS51_018AKQ_199408100835 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/08/10/KAKQ/NWS_NEXRAD_NXL3_KAKQ_19940810000000_19940810235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:018AKQ", "era:1994", "radar:nexrad", "product:18", "mnemonic:R", "vcp:31", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KAKQ 018 1994-08-10 08:35Z: product 18 R Base Reflectivity 2.2 nm x 1 deg, 248 nm, 8 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-bmx-029-19940914-1621"
+format = "nexrad-level3"
+sha256 = "cd1c376d8e24e31bc5e91e94bb13aad09f30ab9eb31e992a9c9c9cffe20af5ea"
+size = 30112
+committed = "files/level3/l3-bmx-029-19940914-1621"
+derivation = "unmodified member KBMX_SDUS54_029BMX_199409141621 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/14/KBMX/NWS_NEXRAD_NXL3_KBMX_19940914000000_19940914235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:029BMX", "era:1994", "radar:nexrad", "product:29", "mnemonic:SW", "vcp:32", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KBMX 029 1994-09-14 16:21Z: product 29 SW Base Spectrum Width 0.27 nm x 1 deg, 62 nm, 8 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
 id = "l3-byx-n0q-20150124-2106"
 format = "nexrad-level3"
 urls = ["https://raw.githubusercontent.com/Unidata/MetPy/03946d6a837f078292ec0c4a21c79422e9c946ef/staticdata/nids/sn.last"]
@@ -35,6 +55,36 @@ size = 10673
 committed = "files/level3/l3-byx-n0q-20150124-2106"
 tags = ["provider:metpy-staticdata", "awips:N0QBYX", "era:2015", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
 description = "KBYX N0Q 2015-01-24 21:06Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/sn.last)"
+
+[[file]]
+id = "l3-cae-053-19940629-1906"
+format = "nexrad-level3"
+sha256 = "c1e298d9c55112af1ba7aa3e96da03f2f214a4d34020752fbf01a31599c25b8c"
+size = 8968
+committed = "files/level3/l3-cae-053-19940629-1906"
+derivation = "unmodified member KCAE_SDUS52_053CAE_199406291906 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/06/29/KCAE/NWS_NEXRAD_NXL3_KCAE_19940629000000_19940629235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:053CAE", "era:1994", "radar:nexrad", "product:53", "vcp:21", "version:0", "block:symbology", "packet:1", "packet:7", "packet:0xba07"]
+description = "KCAE 053 1994-06-29 19:06Z: product 53 Weak Echo Region; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-cae-n0r-19940629-1906"
+format = "nexrad-level3"
+sha256 = "1fcefe28d9e84188e0ccb735233543483a5a34561ff835dc1053ea21f53e33ce"
+size = 22060
+committed = "files/level3/l3-cae-n0r-19940629-1906"
+derivation = "unmodified member KCAE_SDUS52_N0RCAE_199406291906 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/06/29/KCAE/NWS_NEXRAD_NXL3_KCAE_19940629000000_19940629235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:N0RCAE", "era:1994", "radar:nexrad", "product:19", "mnemonic:R", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KCAE N0R 1994-06-29 19:06Z: product 19 R Base Reflectivity 0.54 nm x 1 deg, 124 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-cys-021-19941114-1107"
+format = "nexrad-level3"
+sha256 = "445d81b97e28d718b98c35d2e475aa296582eacb73b45c7d002192e050d9b5fd"
+size = 7628
+committed = "files/level3/l3-cys-021-19941114-1107"
+derivation = "unmodified member KCYS_SDUS55_021CYS_199411141107 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/11/14/KCYS/NWS_NEXRAD_NXL3_KCYS_19941114000000_19941114235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:021CYS", "era:1994", "radar:nexrad", "product:21", "mnemonic:R", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KCYS 021 1994-11-14 11:07Z: product 21 R Base Reflectivity 2.2 nm x 2 deg, 248 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
 
 [[file]]
 id = "l3-ddc-gsm-20200817-1000"
@@ -135,6 +185,116 @@ size = 29142
 committed = "files/level3/l3-ffc-n0q-20140407-1805"
 tags = ["provider:metpy-staticdata", "awips:N0QFFC", "era:2014", "radar:nexrad", "product:94", "mnemonic:DR", "vcp:21", "version:0", "compression:bzip2", "block:symbology", "packet:16", "framing:noaaport"]
 description = "KFFC N0Q 2014-04-07 18:05Z: product 94 DR Base Reflectivity Data Array; MetPy test data (staticdata/nids/Level3_FFC_N0Q_20140407_1805.nids)"
+
+[[file]]
+id = "l3-ftg-022-19940601-1917"
+format = "nexrad-level3"
+sha256 = "22b0f2036a53fad1cb1b357774b477243ef03591713fef2fc4f6f49502b9fa54"
+size = 21912
+committed = "files/level3/l3-ftg-022-19940601-1917"
+derivation = "unmodified member KFTG_SDUS55_022FTG_199406011917 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/06/01/KFTG/NWS_NEXRAD_NXL3_KFTG_19940601000000_19940601235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:022FTG", "era:1994", "radar:nexrad", "product:22", "mnemonic:V", "vcp:32", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFTG 022 1994-06-01 19:17Z: product 22 V Base Velocity 0.13 nm x 1 deg, 32 nm, 8 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-026-19940930-0536"
+format = "nexrad-level3"
+sha256 = "9c351a4433c065ad5a824c9a81a56ad8930ac55cfdca27c6708a9e6aaf23769a"
+size = 39144
+committed = "files/level3/l3-ftg-026-19940930-0536"
+derivation = "unmodified member KFTG_SDUS55_026FTG_199409300536 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:026FTG", "era:1994", "radar:nexrad", "product:26", "mnemonic:V", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFTG 026 1994-09-30 05:36Z: product 26 V Base Velocity 0.27 nm x 1 deg, 62 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-043-19940930-1849"
+format = "nexrad-level3"
+sha256 = "a0c481b5b5e4086493f61fbcbb31080e6258ce50312b47489f291eb053654761"
+size = 1846
+committed = "files/level3/l3-ftg-043-19940930-1849"
+derivation = "unmodified member KFTG_SDUS55_043FTG_199409301849 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:043FTG", "era:1994", "radar:nexrad", "product:43", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFTG 043 1994-09-30 18:49Z: product 43 Severe Weather Analysis (Reflectivity); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-044-19940930-1849"
+format = "nexrad-level3"
+sha256 = "e82af81a5625b97566c3c98ca04b95a813f7e6b3f8d7922766ae2cc5179bb3e9"
+size = 4838
+committed = "files/level3/l3-ftg-044-19940930-1849"
+derivation = "unmodified member KFTG_SDUS55_044FTG_199409301849 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:044FTG", "era:1994", "radar:nexrad", "product:44", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFTG 044 1994-09-30 18:49Z: product 44 Severe Weather Analysis (Velocity); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-045-19940930-1849"
+format = "nexrad-level3"
+sha256 = "f285fd23323c476b8bdf5b5c73b030fad9673c6139cd18a69ca77f2734f3f589"
+size = 5774
+committed = "files/level3/l3-ftg-045-19940930-1849"
+derivation = "unmodified member KFTG_SDUS55_045FTG_199409301849 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:045FTG", "era:1994", "radar:nexrad", "product:45", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFTG 045 1994-09-30 18:49Z: product 45 Severe Weather Analysis (Spectrum Width); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-046-19940930-1849"
+format = "nexrad-level3"
+sha256 = "dc173ef866a58b4db5f238bd2bbcc5731cfd9673c2f83a552a979ba47d27be2c"
+size = 4016
+committed = "files/level3/l3-ftg-046-19940930-1849"
+derivation = "unmodified member KFTG_SDUS55_046FTG_199409301849 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:046FTG", "era:1994", "radar:nexrad", "product:46", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KFTG 046 1994-09-30 18:49Z: product 46 Severe Weather Analysis (Shear); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-100-19940930-0102"
+format = "nexrad-level3"
+sha256 = "67887bcfab7ea6fae25e37ffeac8573aaee13cd030c5306d5fd8af7441e71f22"
+size = 1926
+committed = "files/level3/l3-ftg-100-19940930-0102"
+derivation = "unmodified member KFTG_SDUS55_100FTG_199409300102 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:100FTG", "era:1994", "radar:nexrad", "product:100", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KFTG 100 1994-09-30 01:02Z: product 100 Site Adaptable Parameters for VAD Wind Profile (product 48); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-102-19940930-1932"
+format = "nexrad-level3"
+sha256 = "fc71628724e6177db422ac663f1cff7f2f37bfea3bb9c70635779d0694ab7c08"
+size = 2946
+committed = "files/level3/l3-ftg-102-19940930-1932"
+derivation = "unmodified member KFTG_SDUS55_102FTG_199409301932 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:102FTG", "era:1994", "radar:nexrad", "product:102", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KFTG 102 1994-09-30 19:32Z: product 102 Hail Index Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-104-19940930-0850"
+format = "nexrad-level3"
+sha256 = "d850aedc7257e0b8f9655bb9dd7ea28c8a0ddac01280f08590fb58d7e3b357ec"
+size = 600
+committed = "files/level3/l3-ftg-104-19940930-0850"
+derivation = "unmodified member KFTG_SDUS55_104FTG_199409300850 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:104FTG", "era:1994", "radar:nexrad", "product:104", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KFTG 104 1994-09-30 08:50Z: product 104 TVS Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-107-19940930-0154"
+format = "nexrad-level3"
+sha256 = "7ac6481d43f81bfae77958ecbc9adf870c62e4b337d0f3d09ffda4df325f6d07"
+size = 4182
+committed = "files/level3/l3-ftg-107-19940930-0154"
+derivation = "unmodified member KFTG_SDUS55_107FTG_199409300154 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:107FTG", "era:1994", "radar:nexrad", "product:107", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KFTG 107 1994-09-30 01:54Z: product 107 Surface Rainfall (1 hr) Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ftg-109-19940930-0102"
+format = "nexrad-level3"
+sha256 = "c9fca59f4609276978968eb2e2c180dbbf91b487ef96afe5935aaba30ea71613"
+size = 4182
+committed = "files/level3/l3-ftg-109-19940930-0102"
+derivation = "unmodified member KFTG_SDUS55_109FTG_199409300102 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/30/KFTG/NWS_NEXRAD_NXL3_KFTG_19940930000000_19940930235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:109FTG", "era:1994", "radar:nexrad", "product:109", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KFTG 109 1994-09-30 01:02Z: product 109 Storm Total Rainfall Accumulation Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
 
 [[file]]
 id = "l3-ftg-n0b-20220304-1820"
@@ -337,6 +497,146 @@ tags = ["provider:aws-unidata-nexrad-level3", "awips:NYQGJX", "era:2022", "radar
 description = "KGJX NYQ 2022-05-03 00:53Z: product 94 DR Base Reflectivity Data Array; NOAA Open Data AWS bucket unidata-nexrad-level3"
 
 [[file]]
+id = "l3-grr-039-20011011-0631"
+format = "nexrad-level3"
+sha256 = "1d903f9473be12f5850359353c3eb1f723646366bb53b6ddd02cf3b2c1b7222a"
+size = 7744
+committed = "files/level3/l3-grr-039-20011011-0631"
+derivation = "unmodified member KGRR_SDUS53_039GRR_200110110631 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/2001/10/11/KGRR/NWS_NEXRAD_NXL3_KGRR_20011011000000_20011011235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:039GRR", "era:2001", "radar:nexrad", "product:39", "vcp:21", "version:0", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0x0802", "packet:0x0e03"]
+description = "KGRR 039 2001-10-11 06:31Z: product 39 Composite Reflectivity Contour; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ilx-irm-19960419-2309"
+format = "nexrad-level3"
+sha256 = "781a1731959ff7eaf2ad8857080e54a579b054c23b39586741404b838018dbbc"
+size = 4846
+committed = "files/level3/l3-ilx-irm-19960419-2309"
+derivation = "unmodified member KILX_SDUS53_IRMILX_199604192309 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1996/04/19/KILX/NWS_NEXRAD_NXL3_KILX_19960419000000_19960419235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:IRMILX", "era:1996", "radar:nexrad", "product:83", "mnemonic:IRM", "vcp:21", "version:0", "block:symbology", "block:tabular", "packet:2", "packet:15", "packet:30", "packet:31", "packet:32"]
+description = "KILX IRM 1996-04-19 23:09Z: product 83 IRM Radar Coded Message (Unedited); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ilx-ncz-19960419-2320"
+format = "nexrad-level3"
+sha256 = "7dd075972a9658afb9cbe830f20f980619064cd71a89ebfb14ccb55f55718bc3"
+size = 11206
+committed = "files/level3/l3-ilx-ncz-19960419-2320"
+derivation = "unmodified member KILX_SDUS53_NCZILX_199604192320 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1996/04/19/KILX/NWS_NEXRAD_NXL3_KILX_19960419000000_19960419235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NCZILX", "era:1996", "radar:nexrad", "product:38", "mnemonic:CR", "vcp:21", "version:0", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "KILX NCZ 1996-04-19 23:20Z: product 38 CR Composite Reflectivity 2.2 nm, 248 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ilx-nhi-19960419-2303"
+format = "nexrad-level3"
+sha256 = "c6d12a061c9f5d66cd930e88567354b15f7c65a5814eaa95965847928846c7e0"
+size = 6392
+committed = "files/level3/l3-ilx-nhi-19960419-2303"
+derivation = "unmodified member KILX_SDUS53_NHIILX_199604192303 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1996/04/19/KILX/NWS_NEXRAD_NXL3_KILX_19960419000000_19960419235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NHIILX", "era:1996", "radar:nexrad", "product:59", "mnemonic:HI", "vcp:21", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:13", "packet:14", "packet:15"]
+description = "KILX NHI 1996-04-19 23:03Z: product 59 HI Hail Index; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ilx-nme-19960419-2303"
+format = "nexrad-level3"
+sha256 = "fa2c0d4360932dcff6d83eeb87d5e252209b1c74631106cd8b2ac3e3314dc547"
+size = 5842
+committed = "files/level3/l3-ilx-nme-19960419-2303"
+derivation = "unmodified member KILX_SDUS53_NMEILX_199604192303 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1996/04/19/KILX/NWS_NEXRAD_NXL3_KILX_19960419000000_19960419235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NMEILX", "era:1996", "radar:nexrad", "product:60", "mnemonic:M", "vcp:21", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:3", "packet:8", "packet:10", "packet:11", "packet:15"]
+description = "KILX NME 1996-04-19 23:03Z: product 60 M Mesocyclone; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ilx-nst-19960419-2303"
+format = "nexrad-level3"
+sha256 = "26e428b9b3a719fb6c54f385d62d3c2ba112b5921e8a3438f6d272bcc3b2578a"
+size = 8724
+committed = "files/level3/l3-ilx-nst-19960419-2303"
+derivation = "unmodified member KILX_SDUS53_NSTILX_199604192303 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1996/04/19/KILX/NWS_NEXRAD_NXL3_KILX_19960419000000_19960419235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NSTILX", "era:1996", "radar:nexrad", "product:58", "mnemonic:STI", "vcp:21", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:2", "packet:6", "packet:8", "packet:10", "packet:15"]
+description = "KILX NST 1996-04-19 23:03Z: product 58 STI Storm Tracking Information; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ilx-ntv-19960419-2303"
+format = "nexrad-level3"
+sha256 = "e262188c99e8f4ee6f0616996d0a445b899cacc4623ff5d21e81985af962177f"
+size = 1974
+committed = "files/level3/l3-ilx-ntv-19960419-2303"
+derivation = "unmodified member KILX_SDUS53_NTVILX_199604192303 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1996/04/19/KILX/NWS_NEXRAD_NXL3_KILX_19960419000000_19960419235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NTVILX", "era:1996", "radar:nexrad", "product:61", "mnemonic:TVS", "vcp:21", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:12", "packet:15"]
+description = "KILX NTV 1996-04-19 23:03Z: product 61 TVS Tornado Vortex Signature; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ilx-rcm-19960419-2309"
+format = "nexrad-level3"
+sha256 = "16daf3de3c48e98a22c2e1cf1243ca11b781744ba107fe349b3a0111f2586023"
+size = 2880
+committed = "files/level3/l3-ilx-rcm-19960419-2309"
+derivation = "unmodified member KILX_SDUS43_RCMILX_199604192309 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1996/04/19/KILX/NWS_NEXRAD_NXL3_KILX_19960419000000_19960419235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:RCMILX", "era:1996", "radar:nexrad", "product:74", "mnemonic:RCM", "vcp:21", "version:0", "block:rcm"]
+description = "KILX RCM 1996-04-19 23:09Z: product 74 RCM Radar Coded Message; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ind-016-19940910-0647"
+format = "nexrad-level3"
+sha256 = "270bdb5054a7720e1489b3e57e125c8b19c7d0213a55b5ad188d7f4cb1380abd"
+size = 19492
+committed = "files/level3/l3-ind-016-19940910-0647"
+derivation = "unmodified member KIND_SDUS53_016IND_199409100647 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/10/KIND/NWS_NEXRAD_NXL3_KIND_19940910000000_19940910235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:016IND", "era:1994", "radar:nexrad", "product:16", "mnemonic:R", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KIND 016 1994-09-10 06:47Z: product 16 R Base Reflectivity 0.54 nm x 1 deg, 124 nm, 8 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ind-017-19940910-1104"
+format = "nexrad-level3"
+sha256 = "1bf1b54b81ef038aa74665eaf3f4dab65e58e66796f47c582be7457281b76853"
+size = 15400
+committed = "files/level3/l3-ind-017-19940910-1104"
+derivation = "unmodified member KIND_SDUS53_017IND_199409101104 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/10/KIND/NWS_NEXRAD_NXL3_KIND_19940910000000_19940910235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:017IND", "era:1994", "radar:nexrad", "product:17", "mnemonic:R", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KIND 017 1994-09-10 11:04Z: product 17 R Base Reflectivity 1.1 nm x 1 deg, 248 nm, 8 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ind-035-19941031-2138"
+format = "nexrad-level3"
+sha256 = "5fb1e1759642c2d3a559c5d1ba7ed079c33bb5ff71f3c41529346102a24f5815"
+size = 27950
+committed = "files/level3/l3-ind-035-19941031-2138"
+derivation = "unmodified member KIND_SDUS53_035IND_199410312138 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/10/31/KIND/NWS_NEXRAD_NXL3_KIND_19941031000000_19941031235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:035IND", "era:1994", "radar:nexrad", "product:35", "mnemonic:CR", "vcp:21", "version:0", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "KIND 035 1994-10-31 21:38Z: product 35 CR Composite Reflectivity 0.54 nm, 124 nm, 8 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ind-042-19940910-1642"
+format = "nexrad-level3"
+sha256 = "d25f885d3ac88ea41ee61ab089b0d06f41ff10524768e441098eacb737783ee0"
+size = 646
+committed = "files/level3/l3-ind-042-19940910-1642"
+derivation = "unmodified member KIND_SDUS53_042IND_199409101642 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/10/KIND/NWS_NEXRAD_NXL3_KIND_19940910000000_19940910235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:042IND", "era:1994", "radar:nexrad", "product:42", "vcp:21", "version:0", "block:symbology", "packet:0x0802", "packet:0x0e03"]
+description = "KIND 042 1994-09-10 16:42Z: product 42 Echo Tops Contour; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-ind-073-19940910-1555"
+format = "nexrad-level3"
+sha256 = "c6be72e0495a552211f9eb132604a5512d45b8e9f99610573c646f9c10343163"
+size = 1304
+committed = "files/level3/l3-ind-073-19940910-1555"
+derivation = "unmodified member KIND_SDUS53_073IND_199409101555 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/09/10/KIND/NWS_NEXRAD_NXL3_KIND_19940910000000_19940910235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:073IND", "era:1994", "radar:nexrad", "product:73", "mnemonic:UAM", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KIND 073 1994-09-10 15:55Z: product 73 UAM User Alert Message; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-jan-024-19951003-1312"
+format = "nexrad-level3"
+sha256 = "74660a34b5048ef23c63252a4a6a14e26a3b7de178fbd6bd73867ef24b7d8d7d"
+size = 20186
+committed = "files/level3/l3-jan-024-19951003-1312"
+derivation = "unmodified member KJAN_SDUS54_024JAN_199510031312 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1995/10/03/KJAN/NWS_NEXRAD_NXL3_KJAN_19951003000000_19951003235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:024JAN", "era:1995", "radar:nexrad", "product:24", "mnemonic:V", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KJAN 024 1995-10-03 13:12Z: product 24 V Base Velocity 0.54 nm x 1 deg, 124 nm, 8 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
 id = "l3-jfk-tr0-20210120-154051"
 format = "nexrad-level3"
 urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/JFK_TR0_2021_01_20_15_40_51"]
@@ -345,6 +645,96 @@ size = 19702
 committed = "files/level3/l3-jfk-tr0-20210120-154051"
 tags = ["provider:aws-unidata-nexrad-level3", "awips:TR0JFK", "era:2021", "radar:tdwr", "product:181", "vcp:90", "version:0", "block:symbology", "packet:0xaf1f"]
 description = "TJFK TR0 2021-01-20 15:40Z: product 181 TDWR Base Reflectivity (16 levels); NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-lot-050-19941031-1358"
+format = "nexrad-level3"
+sha256 = "94526146bf818246dd000f058aa36e90b0fc6cf62283b221edc11924b2dc99d7"
+size = 1504
+committed = "files/level3/l3-lot-050-19941031-1358"
+derivation = "unmodified member KLOT_SDUS53_050LOT_199410311358 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/10/31/KLOT/NWS_NEXRAD_NXL3_KLOT_19941031000000_19941031235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:050LOT", "era:1994", "radar:nexrad", "product:50", "mnemonic:RCS", "vcp:21", "version:0", "block:symbology", "packet:1", "packet:7", "packet:0xba07"]
+description = "KLOT 050 1994-10-31 13:58Z: product 50 RCS Cross Section (Reflectivity); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-053-19941106-0246"
+format = "nexrad-level3"
+sha256 = "66e81627756cb96c65a653a562e8196b014c3b431b185d74830e03972895cbed"
+size = 8784
+committed = "files/level3/l3-lot-053-19941106-0246"
+derivation = "unmodified member KLOT_SDUS53_053LOT_199411060246 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/11/06/KLOT/NWS_NEXRAD_NXL3_KLOT_19941106000000_19941106235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:053LOT", "era:1994", "radar:nexrad", "product:53", "vcp:21", "version:0", "block:symbology", "packet:1", "packet:7", "packet:0xba07"]
+description = "KLOT 053 1994-11-06 02:46Z: product 53 Weak Echo Region; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-055-19941031-1137"
+format = "nexrad-level3"
+sha256 = "53e67b005fa0a54915626d63417f4553a625ec8d27053a38530bb73fa15eeca1"
+size = 3294
+committed = "files/level3/l3-lot-055-19941031-1137"
+derivation = "unmodified member KLOT_SDUS53_055LOT_199410311137 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/10/31/KLOT/NWS_NEXRAD_NXL3_KLOT_19941031000000_19941031235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:055LOT", "era:1994", "radar:nexrad", "product:55", "mnemonic:SRR", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KLOT 055 1994-10-31 11:37Z: product 55 SRR Storm Relative Mean Radial Velocity (Region); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-084-19931120-0721"
+format = "nexrad-level3"
+sha256 = "1f7a30ea2c2cfb98c28209ad42de77aff3725e1590e111931b820377af459455"
+size = 6070
+committed = "files/level3/l3-lot-084-19931120-0721"
+derivation = "unmodified member KLOT_SDUS53_084LOT_199311200721 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1993/11/20/KLOT/NWS_NEXRAD_NXL3_KLOT_19931120000000_19931120235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:084LOT", "era:1993", "radar:nexrad", "product:84", "mnemonic:VAD", "vcp:32", "version:0", "block:symbology", "packet:8", "packet:9", "packet:10"]
+description = "KLOT 084 1993-11-20 07:21Z: product 84 VAD Velocity Azimuth Display; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-101-19930824-0005"
+format = "nexrad-level3"
+sha256 = "742d02aa57a576e84e8a19ba66049f4a145b1278edc04ad1526c07915892eebf"
+size = 6478
+committed = "files/level3/l3-lot-101-19930824-0005"
+derivation = "unmodified member KLOT_SDUS53_101LOT_199308240005 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1993/08/24/KLOT/NWS_NEXRAD_NXL3_KLOT_19930824000000_19930824235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:101LOT", "era:1993", "radar:nexrad", "product:101", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KLOT 101 1993-08-24 00:05Z: product 101 Storm Track Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-108-19930824-0005"
+format = "nexrad-level3"
+sha256 = "4398bf2d3c44ba2e2ef47de27ead770ae9afd3d38659d03830cbc61b614b29ba"
+size = 1058
+committed = "files/level3/l3-lot-108-19930824-0005"
+derivation = "unmodified member KLOT_SDUS53_108LOT_199308240005 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1993/08/24/KLOT/NWS_NEXRAD_NXL3_KLOT_19930824000000_19930824235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:108LOT", "era:1993", "radar:nexrad", "product:108", "vcp:21", "version:0", "block:standalone_tabular"]
+description = "KLOT 108 1993-08-24 00:05Z: product 108 Surface Rainfall (3 hr) Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-irm-19941031-0503"
+format = "nexrad-level3"
+sha256 = "bfcd00870dbca5aae751c578ea7eadc8966375412c71d45477afad6d21813fed"
+size = 1416
+committed = "files/level3/l3-lot-irm-19941031-0503"
+derivation = "unmodified member KLOT_SDUS53_IRMLOT_199410310503 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/10/31/KLOT/NWS_NEXRAD_NXL3_KLOT_19941031000000_19941031235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:IRMLOT", "era:1994", "radar:nexrad", "product:83", "mnemonic:IRM", "vcp:21", "version:0", "block:symbology", "packet:30", "packet:31", "packet:32"]
+description = "KLOT IRM 1994-10-31 05:03Z: product 83 IRM Radar Coded Message (Unedited); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-n0r-19941106-0246"
+format = "nexrad-level3"
+sha256 = "073689f5c59a548180cf877fd97a70c807fd73d552ede28249baba02a6347047"
+size = 28222
+committed = "files/level3/l3-lot-n0r-19941106-0246"
+derivation = "unmodified member KLOT_SDUS53_N0RLOT_199411060246 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/11/06/KLOT/NWS_NEXRAD_NXL3_KLOT_19941106000000_19941106235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:N0RLOT", "era:1994", "radar:nexrad", "product:19", "mnemonic:R", "vcp:21", "version:0", "block:symbology", "packet:0xaf1f"]
+description = "KLOT N0R 1994-11-06 02:46Z: product 19 R Base Reflectivity 0.54 nm x 1 deg, 124 nm, 16 levels, the 0.5 degree cut of the volume of the Weak Echo Region l3-lot-053-19941106-0246; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lot-nvw-19931120-0721"
+format = "nexrad-level3"
+sha256 = "cc96b08120e8b811c5da85224a2ee4b16b300fc4051880c94bd390c7a174d76f"
+size = 5196
+committed = "files/level3/l3-lot-nvw-19931120-0721"
+derivation = "unmodified member KLOT_SDUS53_NVWLOT_199311200721 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1993/11/20/KLOT/NWS_NEXRAD_NXL3_KLOT_19931120000000_19931120235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NVWLOT", "era:1993", "radar:nexrad", "product:48", "mnemonic:VWP", "vcp:32", "version:0", "block:symbology", "packet:4", "packet:8", "packet:10"]
+description = "KLOT NVW 1993-11-20 07:21Z: product 48 VWP VAD Wind Profile; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
 
 [[file]]
 id = "l3-lzk-h0c-20200814-0417"
@@ -385,6 +775,36 @@ size = 258527
 committed = "files/level3/l3-lzk-h0z-20200812-1318"
 tags = ["provider:metpy-staticdata", "awips:H0ZLZK", "era:2020", "radar:nexrad", "product:153", "mnemonic:SDR", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
 description = "KLZK H0Z 2020-08-12 13:18Z: product 153 SDR Super Resolution Reflectivity Data Array; MetPy test data (staticdata/nids/KLZK_H0Z_20200812_1318)"
+
+[[file]]
+id = "l3-lzk-ncz-19970301-1912"
+format = "nexrad-level3"
+sha256 = "63287465f1748a5ee8b8297876b57165524a88402d07d1439e5cd9634b67d151"
+size = 14100
+committed = "files/level3/l3-lzk-ncz-19970301-1912"
+derivation = "unmodified member KLZK_SDUS54_NCZLZK_199703011912 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1997/03/01/KLZK/NWS_NEXRAD_NXL3_KLZK_19970301000000_19970301235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NCZLZK", "era:1997", "radar:nexrad", "product:38", "mnemonic:CR", "vcp:21", "version:0", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "KLZK NCZ 1997-03-01 19:12Z: product 38 CR Composite Reflectivity 2.2 nm, 248 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lzk-nme-19970301-2027"
+format = "nexrad-level3"
+sha256 = "e2d3b590d6ef0ac48a37b8d540367542807fcd5472fa81716f68e4f25ce7dc55"
+size = 3656
+committed = "files/level3/l3-lzk-nme-19970301-2027"
+derivation = "unmodified member KLZK_SDUS54_NMELZK_199703012027 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1997/03/01/KLZK/NWS_NEXRAD_NXL3_KLZK_19970301000000_19970301235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NMELZK", "era:1997", "radar:nexrad", "product:60", "mnemonic:M", "vcp:11", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:3", "packet:8", "packet:10", "packet:15"]
+description = "KLZK NME 1997-03-01 20:27Z: product 60 M Mesocyclone; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-lzk-ntv-19970301-2027"
+format = "nexrad-level3"
+sha256 = "a45dd4ec31f059f0831430f61ab0ad91812e73ced82929405546413ceddf6ae9"
+size = 1974
+committed = "files/level3/l3-lzk-ntv-19970301-2027"
+derivation = "unmodified member KLZK_SDUS54_NTVLZK_199703012027 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1997/03/01/KLZK/NWS_NEXRAD_NXL3_KLZK_19970301000000_19970301235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NTVLZK", "era:1997", "radar:nexrad", "product:61", "mnemonic:TVS", "vcp:11", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:12", "packet:15"]
+description = "KLZK NTV 1997-03-01 20:27Z: product 61 TVS Tornado Vortex Signature; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
 
 [[file]]
 id = "l3-mci-dhr-20160526-2154"
@@ -567,6 +987,16 @@ tags = ["provider:metpy-staticdata", "awips:TZLMCI", "era:2016", "radar:tdwr", "
 description = "TMCI TZL 2016-05-26 21:54Z: product 186 DR TDWR Long Range Base Reflectivity 0.16 nm x 1 deg, 225 nm; MetPy test data (staticdata/nids/Level3_MCI_TZL_20160526_2154.nids)"
 
 [[file]]
+id = "l3-mlb-051-19941116-0335"
+format = "nexrad-level3"
+sha256 = "6dee62f1c0bbf8322f45f9377bab2ba704821b84f1f9f6d289c78532e83534f7"
+size = 944
+committed = "files/level3/l3-mlb-051-19941116-0335"
+derivation = "unmodified member KMLB_SDUS52_051MLB_199411160335 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/11/16/KMLB/NWS_NEXRAD_NXL3_KMLB_19941116000000_19941116235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:051MLB", "era:1994", "radar:nexrad", "product:51", "mnemonic:VCS", "vcp:11", "version:0", "block:symbology", "packet:1", "packet:7", "packet:0xba07"]
+description = "KMLB 051 1994-11-16 03:35Z: product 51 VCS Cross Section (Velocity); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
 id = "l3-okc-ncr-20260622-080623"
 format = "nexrad-level3"
 urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/OKC_NCR_2026_06_22_08_06_23"]
@@ -717,6 +1147,26 @@ tags = ["provider:metpy-staticdata", "awips:NYFRAX", "era:2020", "radar:nexrad",
 description = "KRAX NYF 2020-08-18 00:01Z: product 113 PRC Power Removed Control; MetPy test data (staticdata/nids/KRAX_NYF_20200818_0001.nids)"
 
 [[file]]
+id = "l3-sgf-nme-20030504-2332"
+format = "nexrad-level3"
+sha256 = "702f00343b89b86cb99ef2acdc2eeec53fb27c7ef3c435a81814d9081c7f29bd"
+size = 5868
+committed = "files/level3/l3-sgf-nme-20030504-2332"
+derivation = "unmodified member KSGF_SDUS63_NMESGF_200305042332 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/2003/05/04/KSGF/NWS_NEXRAD_NXL3_KSGF_20030504000000_20030504235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NMESGF", "era:2003", "radar:nexrad", "product:60", "mnemonic:M", "vcp:11", "version:0", "block:symbology", "block:graphic", "block:tabular", "packet:3", "packet:8", "packet:10", "packet:11", "packet:15"]
+description = "KSGF NME 2003-05-04 23:32Z: product 60 M Mesocyclone; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-sgf-ntv-20030504-2352"
+format = "nexrad-level3"
+sha256 = "cb9520f49dee733c9fc704938526a6f043f80a470c4828485e5adf0f73c8f04c"
+size = 3358
+committed = "files/level3/l3-sgf-ntv-20030504-2352"
+derivation = "unmodified member KSGF_SDUS63_NTVSGF_200305042352 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/2003/05/04/KSGF/NWS_NEXRAD_NXL3_KSGF_20030504000000_20030504235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NTVSGF", "era:2003", "radar:nexrad", "product:61", "mnemonic:TVS", "vcp:11", "version:1", "block:symbology", "block:graphic", "block:tabular", "packet:8", "packet:10", "packet:12", "packet:15"]
+description = "KSGF NTV 2003-05-04 23:52Z: product 61 TVS Tornado Vortex Signature; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
 id = "l3-shv-nzq-20220503-005452"
 format = "nexrad-level3"
 urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/SHV_NZQ_2022_05_03_00_54_52"]
@@ -737,6 +1187,46 @@ tags = ["provider:metpy-staticdata", "awips:TV0SLC", "era:2016", "radar:tdwr", "
 description = "TSLC TV0 2016-05-16 23:59Z: product 182 DV TDWR Base Velocity 0.08 nm x 1 deg, 48 nm; MetPy test data (staticdata/nids/Level3_SLC_TV0_20160516_2359.nids)"
 
 [[file]]
+id = "l3-tlx-063-19940308-1930"
+format = "nexrad-level3"
+sha256 = "34ff59c49a3cdc0f5e7135d34bb2f559e591642866b6996ea9d154e4fccf1375"
+size = 3136
+committed = "files/level3/l3-tlx-063-19940308-1930"
+derivation = "unmodified member KTLX_SDUS54_063TLX_199403081930 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/03/08/KTLX/NWS_NEXRAD_NXL3_KTLX_19940308000000_19940308235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:063TLX", "era:1994", "radar:nexrad", "product:63", "mnemonic:LRA", "vcp:21", "version:0", "block:symbology", "packet:0xba07"]
+description = "KTLX 063 1994-03-08 19:30Z: product 63 LRA Layer Composite Reflectivity Layer 1 Average; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-tlx-064-19940308-1930"
+format = "nexrad-level3"
+sha256 = "e785dcbf8b080ff5d215432990def8714f8917798b971c97e15fbf7acb9f4759"
+size = 2892
+committed = "files/level3/l3-tlx-064-19940308-1930"
+derivation = "unmodified member KTLX_SDUS54_064TLX_199403081930 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/03/08/KTLX/NWS_NEXRAD_NXL3_KTLX_19940308000000_19940308235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:064TLX", "era:1994", "radar:nexrad", "product:64", "mnemonic:LRA", "vcp:21", "version:0", "block:symbology", "packet:0xba07"]
+description = "KTLX 064 1994-03-08 19:30Z: product 64 LRA Layer Composite Reflectivity Layer 2 Average; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-tlx-087-19940308-1939"
+format = "nexrad-level3"
+sha256 = "3497abf7a3baa7313435ad96918da93f61f940a873177acc7bfd73a81e4e1b0a"
+size = 5504
+committed = "files/level3/l3-tlx-087-19940308-1939"
+derivation = "unmodified member KTLX_SDUS54_087TLX_199403081939 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/03/08/KTLX/NWS_NEXRAD_NXL3_KTLX_19940308000000_19940308235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:087TLX", "era:1994", "radar:nexrad", "product:87", "mnemonic:CS", "vcp:21", "version:0", "block:symbology", "block:tabular", "packet:0xba07"]
+description = "KTLX 087 1994-03-08 19:39Z: product 87 CS Combined Shear; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-tlx-101-20010503-0007"
+format = "nexrad-level3"
+sha256 = "39d5251b16ae00fd6dbde588c065ab8b0b9cfd3577a82d8aa53d1e1cff79a5d0"
+size = 1962
+committed = "files/level3/l3-tlx-101-20010503-0007"
+derivation = "unmodified member KTLX_SDUS54_101TLX_200105030007 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/2001/05/03/KTLX/NWS_NEXRAD_NXL3_KTLX_20010503000000_20010503235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:101TLX", "era:2001", "radar:nexrad", "product:101", "vcp:11", "version:1", "block:standalone_tabular"]
+description = "KTLX 101 2001-05-03 00:07Z: product 101 Storm Track Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
 id = "l3-tlx-102-19990504-0052"
 format = "nexrad-level3"
 sha256 = "0241069ccf8e5f16a42771d977fa00a38165d5958a6c79e0c02fcb582f16db37"
@@ -745,6 +1235,26 @@ committed = "files/level3/l3-tlx-102-19990504-0052"
 derivation = "unmodified member KTLX_SDUS54_102TLX_199905040052 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1999/05/04/KTLX/NWS_NEXRAD_NXL3_KTLX_19990504000000_19990504235959.tar.Z (compress .Z; extract with gzip -d and tar)"
 tags = ["provider:ncei-nexrad-l3-gcp", "awips:102TLX", "era:1999", "radar:nexrad", "product:102", "vcp:11", "version:1", "block:standalone_tabular"]
 description = "KTLX 102 1999-05-04 00:52Z: product 102 Hail Index Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-tlx-103-20010503-0007"
+format = "nexrad-level3"
+sha256 = "41dcffb5069f2319bc6fd6ea24ed7d757e1d0d072ddec78b19a691596a0d8cea"
+size = 1550
+committed = "files/level3/l3-tlx-103-20010503-0007"
+derivation = "unmodified member KTLX_SDUS54_103TLX_200105030007 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/2001/05/03/KTLX/NWS_NEXRAD_NXL3_KTLX_20010503000000_20010503235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:103TLX", "era:2001", "radar:nexrad", "product:103", "vcp:11", "version:0", "block:standalone_tabular"]
+description = "KTLX 103 2001-05-03 00:07Z: product 103 Mesocyclone Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
+
+[[file]]
+id = "l3-tlx-104-20010503-2355"
+format = "nexrad-level3"
+sha256 = "0184fa05f2581ff5daa087cfee067f7037941eaeb3f384639b3ed84ddaca986a"
+size = 1550
+committed = "files/level3/l3-tlx-104-20010503-2355"
+derivation = "unmodified member KTLX_SDUS54_104TLX_200105032355 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/2001/05/03/KTLX/NWS_NEXRAD_NXL3_KTLX_20010503000000_20010503235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:104TLX", "era:2001", "radar:nexrad", "product:104", "vcp:11", "version:1", "block:standalone_tabular"]
+description = "KTLX 104 2001-05-03 23:55Z: product 104 TVS Alphanumeric Block; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
 
 [[file]]
 id = "l3-tlx-daa-20130520-2016"
@@ -1005,6 +1515,16 @@ size = 12659
 committed = "files/level3/l3-tlx-hhc-20260622-080623"
 tags = ["provider:aws-unidata-nexrad-level3", "awips:HHCTLX", "era:2026", "radar:nexrad", "product:177", "mnemonic:HHC", "vcp:212", "version:0", "compression:bzip2", "block:symbology", "packet:16"]
 description = "KTLX HHC 2026-06-22 08:06Z: product 177 HHC Hybrid Hydrometeor Classification; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-irm-19940308-1115"
+format = "nexrad-level3"
+sha256 = "c072313e22eccfd01dd5fee8e8d08a7bf6276092720284a0d93f9782047f2f28"
+size = 3894
+committed = "files/level3/l3-tlx-irm-19940308-1115"
+derivation = "unmodified member KTLX_SDUS54_IRMTLX_199403081115 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1994/03/08/KTLX/NWS_NEXRAD_NXL3_KTLX_19940308000000_19940308235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:IRMTLX", "era:1994", "radar:nexrad", "product:83", "mnemonic:IRM", "vcp:21", "version:0", "block:symbology", "block:tabular", "packet:2", "packet:15", "packet:30", "packet:31", "packet:32"]
+description = "KTLX IRM 1994-03-08 11:15Z: product 83 IRM Radar Coded Message (Unedited); NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
 
 [[file]]
 id = "l3-tlx-n0b-20260622-080623"
@@ -1755,6 +2275,16 @@ size = 45300
 committed = "files/level3/l3-tlx-ncr-20260622-080623"
 tags = ["provider:aws-unidata-nexrad-level3", "awips:NCRTLX", "era:2026", "radar:nexrad", "product:37", "mnemonic:CR", "vcp:212", "version:1", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
 description = "KTLX NCR 2026-06-22 08:06Z: product 37 CR Composite Reflectivity 0.54 nm, 124 nm, 16 levels; NOAA Open Data AWS bucket unidata-nexrad-level3"
+
+[[file]]
+id = "l3-tlx-ncz-19990503-2316"
+format = "nexrad-level3"
+sha256 = "48e84c3306955a77de2fae4fb4906bb5e117963f15c315dee72606abe3932706"
+size = 7072
+committed = "files/level3/l3-tlx-ncz-19990503-2316"
+derivation = "unmodified member KTLX_SDUS54_NCZTLX_199905032316 of the NCEI Level III archive tarball https://storage.googleapis.com/gcp-public-data-nexrad-l3/1999/05/03/KTLX/NWS_NEXRAD_NXL3_KTLX_19990503000000_19990503235959.tar.Z (compress .Z; extract with gzip -d and tar)"
+tags = ["provider:ncei-nexrad-l3-gcp", "awips:NCZTLX", "era:1999", "radar:nexrad", "product:38", "mnemonic:CR", "vcp:11", "version:0", "block:symbology", "block:graphic", "packet:8", "packet:10", "packet:0xba07"]
+description = "KTLX NCZ 1999-05-03 23:16Z: product 38 CR Composite Reflectivity 2.2 nm, 248 nm, 16 levels; NCEI Level III archive (Google Cloud gcp-public-data-nexrad-l3)"
 
 [[file]]
 id = "l3-tlx-ncz-20130520-2016"

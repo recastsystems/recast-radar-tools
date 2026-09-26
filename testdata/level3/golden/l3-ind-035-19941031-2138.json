@@ -1,0 +1,295 @@
+{
+ "id": "l3-ind-035-19941031-2138",
+ "sha256": "5fb1e1759642c2d3a559c5d1ba7ed079c33bb5ff71f3c41529346102a24f5815",
+ "size": 27950,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS53 KIND 312138",
+  "awips_id": "035IND",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 27920
+ },
+ "message_header": {
+  "code": 35,
+  "date": 9070,
+  "time": 78512,
+  "length": 27920,
+  "source_id": 381,
+  "destination_id": 109,
+  "num_blocks": 4
+ },
+ "halfwords": [
+  35,
+  9070,
+  1,
+  12976,
+  0,
+  27920,
+  381,
+  109,
+  4,
+  65535,
+  0,
+  39708,
+  65534,
+  44792,
+  887,
+  35,
+  2,
+  21,
+  835,
+  47,
+  9070,
+  1,
+  12400,
+  9070,
+  1,
+  12964,
+  0,
+  0,
+  0,
+  0,
+  32770,
+  5,
+  18,
+  30,
+  41,
+  46,
+  50,
+  57,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  57,
+  0,
+  0,
+  0,
+  16781,
+  60548,
+  0,
+  0,
+  0,
+  60,
+  0,
+  13684,
+  0,
+  0
+ ],
+ "product_code": 35,
+ "compression": {
+  "hw51": 16781,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 3968073728
+ },
+ "blocks": {
+  "symbology": {
+   "length": 27248,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 27232,
+     "packets": [
+      47623
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": {
+   "length": 552,
+   "num_pages": 1,
+   "pages": [
+    {
+     "page": 1,
+     "length": 538,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": null,
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  8,
+  10,
+  47623
+ ],
+ "data": [
+  {
+   "layer": 0,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 1,
+    "j_start": 1,
+    "x_scale_int": 1,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 464,
+    "packing": 2
+   },
+   "rows": 464,
+   "cols": 464,
+   "dtype": "u8",
+   "raw_sha256": "04f712dfed3c78dc07ea7645f055d821f86e7b177f3ec888cbc933f23050f094",
+   "histogram": {
+    "0": 143288,
+    "1": 41027,
+    "2": 19259,
+    "3": 10475,
+    "4": 926,
+    "5": 214,
+    "6": 107
+   },
+   "physical": {
+    "finite": 72008,
+    "masked": 143288,
+    "min": 5.0,
+    "max": 50.0,
+    "mean": 12.765345517164759
+   }
+  }
+ ],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Composite Reflectivity",
+  "max_range": 230.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 35,
+   "date": 9070,
+   "time": 78512,
+   "msg_len": 27920,
+   "src_id": 381,
+   "dest_id": 109,
+   "num_blks": 4
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 39708,
+   "lon": -86280,
+   "height": 887,
+   "prod_code": 35,
+   "op_mode": 2,
+   "vcp": 21,
+   "seq_num": 835,
+   "vol_num": 47,
+   "vol_date": 9070,
+   "vol_start_time": 77936,
+   "prod_gen_date": 9070,
+   "prod_gen_time": 78500,
+   "dep1": 0,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 0,
+   "thr1": -32766,
+   "thr2": 5,
+   "thr3": 18,
+   "thr4": 30,
+   "thr5": 41,
+   "thr6": 46,
+   "thr7": 50,
+   "thr8": 57,
+   "thr9": -32768,
+   "thr10": -32768,
+   "thr11": -32768,
+   "thr12": -32768,
+   "thr13": -32768,
+   "thr14": -32768,
+   "thr15": -32768,
+   "thr16": -32768,
+   "dep4": 57,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": 16781,
+   "dep9": -4988,
+   "dep10": 0,
+   "version": 0,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 13684,
+   "tab_off": 0
+  },
+  "thresholds": [
+   -32766,
+   5,
+   18,
+   30,
+   41,
+   46,
+   50,
+   57,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768
+  ],
+  "dep_vals": [
+   0,
+   0,
+   0,
+   57,
+   0,
+   0,
+   0,
+   16781,
+   -4988,
+   0
+  ],
+  "metadata": {
+   "msg_time": "1994-10-31T21:48:32.000000Z",
+   "vol_time": "1994-10-31T21:38:56.000000Z",
+   "prod_time": "1994-10-31T21:48:20.000000Z",
+   "el_angle": 0.0,
+   "max": 57,
+   "calib_const": 17.74048614501953
+  },
+  "sym_layer_packet_counts": [
+   1
+  ],
+  "graph_page_packet_counts": [
+   7
+  ],
+  "tab_pages": null,
+  "crosscheck": true
+ }
+}

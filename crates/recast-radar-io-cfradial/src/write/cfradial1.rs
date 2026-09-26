@@ -839,6 +839,21 @@ pub fn write_cfradial1(
             "sweep {index}: a sweep without rays"
         )));
     }
+    // A NEXRAD Level III level table is not a linear coding, which
+    // `scale_factor` / `add_offset` alone would misstate. (The CfRadial 2 /
+    // FM301 writer writes such a field decoded.)
+    for (index, sweep) in volume.sweeps.iter().enumerate() {
+        if let Some(field) = sweep
+            .fields
+            .iter()
+            .find(|field| field.data.transform().is_some_and(|t| !t.is_linear()))
+        {
+            return Err(CfWriteError::Unrepresentable(format!(
+                "sweep {index} field {}: a level-table coding (NEXRAD Level III), which scale_factor and add_offset cannot state",
+                field.name.as_str()
+            )));
+        }
+    }
     let grid = Grid::new(volume, options.range_layout)?;
     if grid.ngates() == 0 {
         return Err(CfWriteError::Unrepresentable(
@@ -2922,7 +2937,11 @@ fn concat(parts: Vec<ArrayBuf>) -> ArrayBuf {
 
 /// `scale_factor` and `add_offset` in the width the source wrote them.
 fn scale_attrs(transform: LinearTransform) -> Vec<(String, Nc3Values)> {
-    let (scale, offset) = (transform.scale_factor(), transform.add_offset());
+    // `write_cfradial1` refuses the transforms without a scale and offset.
+    let (scale, offset) = (
+        transform.scale_factor().unwrap_or(1.0),
+        transform.add_offset().unwrap_or(0.0),
+    );
     let (scale, offset) = match transform.attr_width() {
         FloatWidth::F32 => (
             Nc3Values::Float(vec![scale as f32]),

@@ -8,6 +8,7 @@
 //! ([`TextPage`]).
 
 use crate::Level3Error;
+use crate::budget::Budget;
 use crate::header::{HEADER_BYTES, MESSAGE_HEADER_BYTES, MessageHeader, ProductDescription};
 use crate::packets::{self, Packet};
 use crate::read::{be_i16, be_u16, be_u32, expect_i16, slice};
@@ -30,6 +31,7 @@ pub struct GraphicAlphanumeric {
 
 /// Source layout of a [`GraphicAlphanumeric`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GraphicLayout {
     /// Graphic Alphanumeric Block (block ID 2) with numbered pages.
     Pages,
@@ -56,11 +58,14 @@ pub struct GraphicPage {
 pub struct TabularAlphanumeric {
     /// Where the data came from.
     pub layout: TabularLayout,
-    /// Second Message Header Block ([`TabularLayout::Block`] only). Its message
-    /// code is the alphanumeric product code (e.g. 101 for product 58).
+    /// Second Message Header Block ([`TabularLayout::Block`], and
+    /// [`TabularLayout::RadarCodedMessage`] in a Tabular Alphanumeric Block).
+    /// Its message code is the alphanumeric product code (e.g. 101 for
+    /// product 58; 74 for the radar coded message of product 83).
     pub message_header: Option<MessageHeader>,
-    /// Second Product Description Block ([`TabularLayout::Block`] only, when its
-    /// divider is present).
+    /// Second Product Description Block (as for
+    /// [`message_header`](Self::message_header), when its divider is
+    /// present).
     pub description: Option<ProductDescription>,
     /// Raw data. [`TabularLayout::Block`] and [`TabularLayout::StandAlone`]:
     /// from the page block divider (-1) and page count to the end of the block
@@ -96,6 +101,7 @@ pub struct TextPage {
 
 /// Source layout of a [`TabularAlphanumeric`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TabularLayout {
     /// Tabular Alphanumeric Block (block ID 3) at the tabular offset, with a
     /// second message header and product description block.
@@ -103,7 +109,11 @@ pub enum TabularLayout {
     /// Stand-alone tabular product (62, 73, 75, 77, 82, or an alphanumeric
     /// message 100-111 on its own): the page block is at the symbology offset.
     StandAlone,
-    /// Product 74 radar coded message: ASCII text at the symbology offset.
+    /// Radar coded message text: at the symbology offset of product 74, or
+    /// (observed) after the second headers of the Tabular Alphanumeric Block
+    /// of the unedited Radar Coded Message (product 83,
+    /// [`crate::packets::irm`]), where it is the product 74 of the same
+    /// volume.
     RadarCodedMessage,
 }
 
@@ -121,9 +131,17 @@ fn is_standalone_candidate(product_code: i16) -> bool {
 }
 
 /// Walks the blocks of `data` (the whole message, decompressed) named by `description`.
+///
+/// **Observed:** products of 1993-1994 in the NCEI archive (KLOT, KIND,
+/// KCYS: products 48, 58, 60, 78, 79, 80 and 83) name a Tabular
+/// Alphanumeric Block at the offset where the message ends, and their
+/// message length (halfwords 5-6) is that end: the block was not sent. Such
+/// an offset reads as no block; [`ProductDescription::tabular_offset`] keeps
+/// the value.
 pub(crate) fn read_blocks(
     data: &[u8],
     description: &ProductDescription,
+    budget: &mut Budget,
 ) -> Result<Blocks, Level3Error> {
     let sym = byte_offset(description.symbology_offset);
     let gra = byte_offset(description.graphic_offset);
@@ -144,8 +162,8 @@ pub(crate) fn read_blocks(
             layout: TabularLayout::RadarCodedMessage,
             message_header: None,
             description: None,
-            data: text.to_vec(),
-            pages: vec![radar_coded_message_page(text)],
+            data: budget.bytes(text, "radar coded message")?,
+            pages: vec![radar_coded_message_page(text, budget)?],
         });
     } else if let Some(o) = sym
         && is_standalone_candidate(product_code)
@@ -161,27 +179,29 @@ pub(crate) fn read_blocks(
             layout: TabularLayout::StandAlone,
             message_header: None,
             description: None,
-            data: data[o..end].to_vec(),
-            pages: read_pages(&data[..end], o)?,
+            data: budget.bytes(&data[o..end], "tabular data")?,
+            pages: read_pages(&data[..end], o, budget)?,
         });
         if let Some(start) = trend {
             blocks.graphic = Some(GraphicAlphanumeric {
                 layout: GraphicLayout::CellTrend,
                 pages: vec![GraphicPage {
                     number: 0,
-                    packets: packets::decode_packets(&data[start..], start)?,
+                    packets: packets::decode_packets(&data[start..], start, budget)?,
                 }],
             });
         }
     } else {
         if let Some(o) = sym {
-            blocks.symbology = Some(read_symbology(data, o)?);
+            blocks.symbology = Some(read_symbology(data, o, budget)?);
         }
         if let Some(o) = gra {
-            blocks.graphic = Some(read_graphic(data, o)?);
+            blocks.graphic = Some(read_graphic(data, o, budget)?);
         }
-        if let Some(o) = tab {
-            blocks.tabular = Some(read_tabular(data, o)?);
+        if let Some(o) = tab
+            && o != data.len()
+        {
+            blocks.tabular = Some(read_tabular(data, o, budget)?);
         }
     }
     Ok(blocks)
@@ -212,7 +232,7 @@ fn symbology_header_plausible(data: &[u8], o: usize) -> Result<bool, Level3Error
 }
 
 /// Product Symbology Block (Figure 3-6 sheets 3 and 8).
-fn read_symbology(data: &[u8], o: usize) -> Result<Symbology, Level3Error> {
+fn read_symbology(data: &[u8], o: usize, budget: &mut Budget) -> Result<Symbology, Level3Error> {
     expect_i16(data, o, -1, "symbology block divider")?;
     expect_i16(data, o + 2, 1, "symbology block ID")?;
     let num_layers = be_u16(data, o + 8, "symbology block header")?;
@@ -223,7 +243,8 @@ fn read_symbology(data: &[u8], o: usize) -> Result<Symbology, Level3Error> {
         let length = to_usize(be_u32(data, q + 2, "symbology layer header")?);
         let start = q + 6;
         let layer = slice(data, start, length, "symbology layer")?;
-        layers.push(packets::decode_packets(layer, start)?);
+        let packets = packets::decode_packets(layer, start, budget)?;
+        budget.push(&mut layers, packets, "symbology layers")?;
         q = start + length;
     }
     Ok(Symbology { layers })
@@ -238,7 +259,11 @@ fn read_symbology(data: &[u8], o: usize) -> Result<Symbology, Level3Error> {
 /// pages hold only the storm attribute table of Table VII, drawn with text
 /// packets 8 and unlinked vector packets 10 in screen pixels; symbol packets
 /// occur in the symbology block and in product 62 cell trend data.
-fn read_graphic(data: &[u8], o: usize) -> Result<GraphicAlphanumeric, Level3Error> {
+fn read_graphic(
+    data: &[u8],
+    o: usize,
+    budget: &mut Budget,
+) -> Result<GraphicAlphanumeric, Level3Error> {
     expect_i16(data, o, -1, "graphic block divider")?;
     expect_i16(data, o + 2, 2, "graphic block ID")?;
     let num_pages = be_u16(data, o + 8, "graphic block header")?;
@@ -249,10 +274,8 @@ fn read_graphic(data: &[u8], o: usize) -> Result<GraphicAlphanumeric, Level3Erro
         let length = usize::from(be_u16(data, q + 2, "graphic page header")?);
         let start = q + 4;
         let page = slice(data, start, length, "graphic page")?;
-        pages.push(GraphicPage {
-            number,
-            packets: packets::decode_packets(page, start)?,
-        });
+        let packets = packets::decode_packets(page, start, budget)?;
+        budget.push(&mut pages, GraphicPage { number, packets }, "graphic pages")?;
         q = start + length;
     }
     Ok(GraphicAlphanumeric {
@@ -262,7 +285,11 @@ fn read_graphic(data: &[u8], o: usize) -> Result<GraphicAlphanumeric, Level3Erro
 }
 
 /// Tabular Alphanumeric Block (Figure 3-6 sheets 5 and 10).
-fn read_tabular(data: &[u8], o: usize) -> Result<TabularAlphanumeric, Level3Error> {
+fn read_tabular(
+    data: &[u8],
+    o: usize,
+    budget: &mut Budget,
+) -> Result<TabularAlphanumeric, Level3Error> {
     expect_i16(data, o, -1, "tabular block divider")?;
     expect_i16(data, o + 2, 3, "tabular block ID")?;
     let length = to_usize(be_u32(data, o + 4, "tabular block header")?);
@@ -275,12 +302,24 @@ fn read_tabular(data: &[u8], o: usize) -> Result<TabularAlphanumeric, Level3Erro
     };
     let start = o + 8 + HEADER_BYTES;
     let end = o.saturating_add(length).clamp(start, data.len());
+    if message_header.code == 74
+        && let Some(text) = data.get(start..end)
+        && text.starts_with(b"1234 ROBUU")
+    {
+        return Ok(TabularAlphanumeric {
+            layout: TabularLayout::RadarCodedMessage,
+            message_header: Some(message_header),
+            description,
+            data: budget.bytes(text, "radar coded message")?,
+            pages: vec![radar_coded_message_page(text, budget)?],
+        });
+    }
     Ok(TabularAlphanumeric {
         layout: TabularLayout::Block,
         message_header: Some(message_header),
         description,
-        data: data[start..end].to_vec(),
-        pages: read_pages(&data[..end], start)?,
+        data: budget.bytes(&data[start..end], "tabular data")?,
+        pages: read_pages(&data[..end], start, budget)?,
     })
 }
 
@@ -291,7 +330,11 @@ const RADAR_CODED_MESSAGE_RECORD: usize = 70;
 /// the block ends (ICD Figure 3-16 and Figure 3-6 sheet 10): divider -1, number
 /// of pages, then for each page lines of `INT*2` character count and
 /// characters, closed by the end of page flag -1.
-fn read_pages(data: &[u8], start: usize) -> Result<Vec<TextPage>, Level3Error> {
+fn read_pages(
+    data: &[u8],
+    start: usize,
+    budget: &mut Budget,
+) -> Result<Vec<TextPage>, Level3Error> {
     expect_i16(data, start, -1, "tabular page block divider")?;
     // INT*2 1-48; read unsigned so a corrupt negative count runs out of data
     // instead of being mistaken for zero pages.
@@ -308,27 +351,23 @@ fn read_pages(data: &[u8], start: usize) -> Result<Vec<TextPage>, Level3Error> {
                 q += 2;
                 break;
             };
-            lines.push(latin1(slice(data, q + 2, len, "tabular line")?));
+            let line = budget.latin1(slice(data, q + 2, len, "tabular line")?, "tabular line")?;
+            budget.push(&mut lines, line, "tabular lines")?;
             q += 2 + len;
         }
-        pages.push(TextPage { lines });
+        budget.push(&mut pages, TextPage { lines }, "tabular pages")?;
     }
     Ok(pages)
 }
 
 /// Radar coded message text as one page of 70-character records.
-fn radar_coded_message_page(text: &[u8]) -> TextPage {
-    TextPage {
-        lines: text
-            .chunks(RADAR_CODED_MESSAGE_RECORD)
-            .map(latin1)
-            .collect(),
+fn radar_coded_message_page(text: &[u8], budget: &mut Budget) -> Result<TextPage, Level3Error> {
+    let records = text.chunks(RADAR_CODED_MESSAGE_RECORD);
+    let mut lines = budget.vec(records.len(), "radar coded message records")?;
+    for record in records {
+        lines.push(budget.latin1(record, "radar coded message record")?);
     }
-}
-
-/// One `char` per byte (ISO 8859-1).
-fn latin1(bytes: &[u8]) -> String {
-    bytes.iter().copied().map(char::from).collect()
+    Ok(TextPage { lines })
 }
 
 fn to_usize(value: u32) -> usize {

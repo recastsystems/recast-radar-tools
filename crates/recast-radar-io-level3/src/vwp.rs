@@ -55,6 +55,7 @@ const KM_PER_FT: f64 = 0.000_304_8;
 
 /// Where a set of winds comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum VwpSource {
     /// The VAD Algorithm Output pages of the Tabular Alphanumeric Block.
     Tabular,

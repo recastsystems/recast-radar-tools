@@ -723,3 +723,52 @@ committed = "files/other/cfradial/radx/cfrad1.radx.fianj.20260924_2130.sweeps1-2
 derivation = "the FMI Anjalankoski (FI44) PVOL 2026-09-24 21:30Z https://fmi-opendata-radar-volume-hdf5.s3.amazonaws.com/2026/09/24/fianj/202609242130_fianj_PVOL.h5 (27817728 bytes, sha256 6d29d23a2c90a6a3bc1136aedd775f5896593b07a3a52f7ffa3f0e77df6ace29), subset by tools/derive_odim_subset.py (h5py 3.16.0 / HDF5 2.0.0, 2026-09-25) to dataset1, dataset2 and dataset7 with their planes data1 TH, data2 DBZH and data3 VRADH (0.3 deg and 0.7 deg with 500 m gates, 0.7 deg with 250 m gates, 360 rays each), dataset7 renamed dataset3 (LROSE Radx's ODIM reader stops at the first missing datasetN), then converted by LROSE Radx (RadxConvert in the nexbench container, lrose-core 2025 build) with -preserve_sweeps -field DBZH -field VRADH -finest_geom (netCDF-4 output). Radx remaps every sweep to the finest geometry (250 m gates from 0 m): n_gates_vary = true, fields int16 over n_points, ray_n_gates 1000/1000/748, a one-dimensional range. Goldens: tools/cfradial_ragged_golden.py (netCDF4-python, checked against Py-ART read_cfradial and xradar open_cfradial1_datatree)."
 tags = ["provider:fmi", "license:CC-BY-4.0", "era:2026", "site:fianj", "country:FI", "producer:lrose-radx", "netcdf:netcdf4", "cfradial:1.4", "cfradial:n-gates-vary", "moments:dbzh-vradh", "scan:ppi", "derived", "subset"]
 description = "LROSE Radx CfRadial 1 (netCDF-4) of three sweeps of the FMI Anjalankoski PVOL remapped to their finest gate geometry: 3 sweeps x 360 rays, DBZH and VRADH, n_gates_vary storage with 1000, 1000 and 748 gates per sweep"
+
+# Level III files added by stream level3-complete: a mid-volume SAILS cut
+# (supplemental scan code 2 in halfword 50) and a Radar Observation text
+# bulletin (AWIPS ROB) from an NCEI day archive.
+
+[[file]]
+id = "l3-ktlx-20260622-080806-n0b-sails"
+format = "nexrad-level3"
+urls = ["https://unidata-nexrad-level3.s3.amazonaws.com/TLX_N0B_2026_06_22_08_08_06"]
+sha256 = "ded99c066122e5157d103b2bce871c2834ca0bd45f43623c7dc24c36c70cc93b"
+size = 322812
+committed = "files/other/nexrad-level3/TLX_N0B_2026_06_22_08_08_06"
+tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2026", "site:ktlx", "product:153", "product:N0B", "vcp:212", "scan:sails", "compression:bzip2"]
+description = "KTLX Product 153 N0B 2026-06-22 08:08:06Z: the first of three mid-volume 0.5 deg SAILS cuts of the VCP 212 volume (elevation number 3, 118 s after the volume start, halfword 50 supplemental scan code 2). Unmodified AWS object TLX_N0B_2026_06_22_08_08_06."
+
+[[file]]
+id = "l3-knqa-20080205-archive-tarz"
+format = "tar-z"
+urls = ["https://storage.googleapis.com/gcp-public-data-nexrad-l3/2008/02/05/KNQA/NWS_NEXRAD_NXL3_KNQA_20080205000000_20080205235959.tar.Z"]
+sha256 = "d0232c2973037ff76e2ea8dd59cfdc0059bf48a8027eed265adb8c8fa9524a2c"
+size = 52026567
+tags = ["archive", "contains:nexrad-level3", "provider:gcp-nexrad-l3", "license:public-domain", "era:2008", "site:knqa"]
+description = "NOAA/NCEI NEXRAD Level III day archive NWS_NEXRAD_NXL3_KNQA_20080205000000_20080205235959.tar.Z (Unix compress), Google Cloud public bucket gcp-public-data-nexrad-l3"
+
+[[file]]
+id = "l3-knqa-20080205-0018-rob"
+format = "nexrad-level3"
+sha256 = "1c65a3881a7fd15d5459266c02303c10a1b23f7fbf759f52962277b36eba9022"
+size = 142
+committed = "files/other/nexrad-level3/KWBC_SDUS44_ROBNQA_200802050018"
+derived_from = "l3-knqa-20080205-archive-tarz"
+derivation = "unmodified archive member KWBC_SDUS44_ROBNQA_200802050018"
+tags = ["provider:gcp-nexrad-l3", "license:public-domain", "era:2008", "site:knqa", "awips:ROBNQA", "framing:text-only", "derived", "derivation:archive-member"]
+description = "KNQA Radar Observation bulletin 2008-02-05 00:18Z (heading SDUS44 KWBC, AWIPS ROBNQA): plain text starting with the record separator 0x1E (AREA groups, AUTO, digitized ^ groups), no binary message; 24 of the day's archive members are these bulletins"
+
+# A WMO text bulletin that is not Level III, for the router's sniff (added by
+# stream level3-complete): the NWS radar product directory also holds
+# hydrological XML under SRUS headings.
+
+[[file]]
+id = "wmo-text-kslc-20251012-0424-hmlslc"
+format = "wmo-text"
+urls = ["https://tgftp.nws.noaa.gov/SL.us008001/DF.of/DC.radar/DS.00hml/SI.tslc/sn.0001"]
+sha256 = "bb7f43a9ff850d767bcb98ea74a1725bfadc54a8608ad5dfe4d0dcc0d3873774"
+size = 19398
+committed = "files/other/wmo-text/SRUS55_KSLC_HMLSLC_202510120424"
+ephemeral = true
+tags = ["provider:nws-tgftp", "license:public-domain", "era:2025", "site:kslc", "awips:HMLSLC", "framing:text-only"]
+description = "NWS hydrological XML bulletin (WMO heading SRUS55 KSLC 120424, AWIPS HMLSLC, generated 2025-10-12 04:24Z for gauge BDWU1), fetched 2026-09-24 from the NWS radar product directory (DC.radar/DS.00hml, rotating sn.0001, so the URL now serves another bulletin): WMO/AWIPS lines ending CR CR LF, then plain-text XML. Not a Level III file; the router must not sniff it as one."

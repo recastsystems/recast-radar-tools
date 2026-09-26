@@ -33,7 +33,7 @@ fn coding_bits(field: &Field) -> Option<(u32, u32)> {
         LinearTransform::IcdScaleOffset { scale, offset } => {
             Some((scale.to_bits(), offset.to_bits()))
         }
-        LinearTransform::CfScaleOffset { .. } => None,
+        _ => None,
     }
 }
 

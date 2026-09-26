@@ -1,6 +1,8 @@
 //! Raster image packets: Raster Data Packet (0xBA07, 0xBA0F, ICD 2620001 Figure 3-11),
 //! Digital Precipitation Data Array (17, Figure 3-11a), Precipitation Rate Data
-//! Array (18, Figure 3-11b) and Digital Raster Data Array (33, Figure 3-11d).
+//! Array (18, Figure 3-11b), Digital Raster Data Array (33, Figure 3-11d) and
+//! packet 32 of the unedited Radar Coded Message (product 83, DSI-7000
+//! Figure 3-22 sheets 2 and 5, [`crate::packets::irm`]).
 //!
 //! Each packet decodes into its header fields and a [`RasterGrid`] of raw data
 //! levels, rows in file order. What a level means depends on the product
@@ -15,6 +17,7 @@
 //! |---|---|---|
 //! | 0xBA07, 0xBA0F | `run << 4 \| level` (4-bit run, 4-bit level) | sum of runs; all rows must be equal |
 //! | 18 | `run << 4 \| level` | number of LFM boxes in row (header) |
+//! | 32 | `run << 4 \| level` | sum of runs; all rows must be equal (observed 100) |
 //! | 17 | 8-bit run, 8-bit level pairs | number of LFM boxes in row (header) |
 //! | 33 | one level byte per cell, then at most one pad byte | number of cells (header) |
 //!
@@ -28,13 +31,17 @@
 
 use super::Packet;
 use crate::Level3Error;
+use crate::budget::Budget;
 use crate::levels::{DataLevels, Level};
 
 /// Largest number of rows, and of cells per row, accepted in a raster packet.
 ///
 /// The ICD maxima are 464 rows (0xBA07, 0xBA0F, 33), 1840 cells per row (33),
 /// 131 x 131 boxes (17) and 13 x 13 boxes (18). The limit bounds the memory a
-/// corrupt row count or run-length stream can make the decoder allocate.
+/// corrupt row count or run-length stream can make the decoder allocate. The
+/// grids of all packets of a product share the product decode budget
+/// ([`crate::MAX_PRODUCT_DECODED_BYTES`], one byte per cell): run-length rows
+/// expand up to 15 cells per byte (4-bit runs) or 128 (packet 17 byte pairs).
 pub const MAX_GRID_DIMENSION: usize = 4096;
 
 /// A rectangular grid of raw data levels, stored row-major.
@@ -113,11 +120,11 @@ impl RasterGrid {
     }
 }
 
-/// Raster data packet (0xBA07, 0xBA0F), precipitation rate data array (18) or
-/// digital raster data array (33).
+/// Raster data packet (0xBA07, 0xBA0F), precipitation rate data array (18),
+/// digital raster data array (33) or intensity grid (32).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RasterPacket {
-    /// Packet code: 0xBA07, 0xBA0F, 18 or 33.
+    /// Packet code: 0xBA07, 0xBA0F, 18, 32 or 33.
     pub code: u16,
     /// Header fields other than the grid dimensions, by packet layout.
     pub header: RasterHeader,
@@ -135,6 +142,7 @@ impl RasterPacket {
 
 /// Header fields of a [`RasterPacket`], by packet layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RasterHeader {
     /// Raster Data Packet, 0xBA07 or 0xBA0F (Figure 3-11).
     RasterData {
@@ -160,6 +168,13 @@ pub enum RasterHeader {
         /// The two spare halfwords after the packet code.
         spares: [u16; 2],
     },
+    /// Packet 32 of the unedited Radar Coded Message (product 83): the
+    /// code, the row count and the rows, with no other header field
+    /// (DSI-7000 Figure 3-22 sheets 2 and 5, where 32 is the "layer ID", and
+    /// observed; [`crate::packets::irm`]). The grid is the radar coded
+    /// message's 100 x 100 Part A intensity grid, rows from north to south
+    /// on the 1/16 LFM grid ([`crate::hrap::LocalGrid::radar_coded_message`]).
+    IntensityGrid,
     /// Digital Raster Data Array, packet 33 (Figure 3-11d).
     DigitalRaster {
         /// I coordinate of the upper left corner, pixels.
@@ -193,9 +208,9 @@ impl DigitalPrecipPacket {
     }
 }
 
-/// Decodes one raster packet (0xBA07, 0xBA0F, 17, 18, 33). `bytes` is the complete packet, starting
+/// Decodes one raster packet (0xBA07, 0xBA0F, 17, 18, 32, 33). `bytes` is the complete packet, starting
 /// with its 2-byte code, as sized by the dispatcher.
-pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
+pub(crate) fn decode(code: u16, bytes: &[u8], budget: &mut Budget) -> Result<Packet, Level3Error> {
     match code {
         0xBA07 | 0xBA0F => {
             let packing = halfword(code, bytes, 20)?;
@@ -216,7 +231,7 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
                 packing,
             };
             let rows = halfword(code, bytes, 18)?;
-            let grid = read_rows(code, bytes, 22, rows, None, RowCoding::Nibbles)?;
+            let grid = read_rows(code, bytes, 22, rows, None, RowCoding::Nibbles, budget)?;
             Ok(Packet::Raster(RasterPacket { code, header, grid }))
         }
         17 | 18 => {
@@ -224,17 +239,42 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
             let boxes = usize::from(halfword(code, bytes, 6)?);
             let rows = halfword(code, bytes, 8)?;
             if code == 17 {
-                let grid = read_rows(code, bytes, 10, rows, Some(boxes), RowCoding::BytePairs)?;
+                let grid = read_rows(
+                    code,
+                    bytes,
+                    10,
+                    rows,
+                    Some(boxes),
+                    RowCoding::BytePairs,
+                    budget,
+                )?;
                 Ok(Packet::DigitalPrecip(DigitalPrecipPacket {
                     code,
                     spares,
                     grid,
                 }))
             } else {
-                let grid = read_rows(code, bytes, 10, rows, Some(boxes), RowCoding::Nibbles)?;
+                let grid = read_rows(
+                    code,
+                    bytes,
+                    10,
+                    rows,
+                    Some(boxes),
+                    RowCoding::Nibbles,
+                    budget,
+                )?;
                 let header = RasterHeader::PrecipitationRate { spares };
                 Ok(Packet::Raster(RasterPacket { code, header, grid }))
             }
+        }
+        32 => {
+            let rows = halfword(code, bytes, 2)?;
+            let grid = read_rows(code, bytes, 4, rows, None, RowCoding::Nibbles, budget)?;
+            Ok(Packet::Raster(RasterPacket {
+                code,
+                header: RasterHeader::IntensityGrid,
+                grid,
+            }))
         }
         33 => {
             let header = RasterHeader::DigitalRaster {
@@ -245,7 +285,15 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
             };
             let cells = usize::from(halfword(code, bytes, 10)?);
             let rows = halfword(code, bytes, 12)?;
-            let grid = read_rows(code, bytes, 14, rows, Some(cells), RowCoding::Levels)?;
+            let grid = read_rows(
+                code,
+                bytes,
+                14,
+                rows,
+                Some(cells),
+                RowCoding::Levels,
+                budget,
+            )?;
             Ok(Packet::Raster(RasterPacket { code, header, grid }))
         }
         _ => Err(Level3Error::UnsupportedPacket(code)),
@@ -255,7 +303,7 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
 /// How the bytes of one row encode its levels.
 #[derive(Debug, Clone, Copy)]
 enum RowCoding {
-    /// Bytes `run << 4 | level` (0xBA07, 0xBA0F, 18).
+    /// Bytes `run << 4 | level` (0xBA07, 0xBA0F, 18, 32).
     Nibbles,
     /// Byte pairs: 8-bit run, 8-bit level (17).
     BytePairs,
@@ -277,6 +325,10 @@ impl RowCoding {
 /// Reads `rows` rows starting at packet byte `start`, each an `INT*2` byte count
 /// and its bytes. `width` is the row width from the header; `None` takes the
 /// first row's width and requires every other row to match it.
+///
+/// The grid (rows x width, one byte per cell) is charged to `budget` before it
+/// is allocated; without a header width, once the first row (at most
+/// [`MAX_GRID_DIMENSION`] cells) gives the width.
 fn read_rows(
     code: u16,
     bytes: &[u8],
@@ -284,6 +336,7 @@ fn read_rows(
     rows: u16,
     width: Option<usize>,
     coding: RowCoding,
+    budget: &mut Budget,
 ) -> Result<RasterGrid, Level3Error> {
     let rows = usize::from(rows);
     check_dimension(code, "number of rows", rows)?;
@@ -303,6 +356,7 @@ fn read_rows(
     let mut columns = width;
     let mut offset = start;
     if let Some(columns) = columns {
+        budget.charge_bytes(columns.saturating_mul(rows), "raster levels")?;
         reserve(&mut levels, columns, rows, offset);
     }
     for row in 0..rows {
@@ -372,6 +426,7 @@ fn read_rows(
             Some(_) => {}
             None => {
                 columns = Some(filled);
+                budget.charge_bytes(filled.saturating_mul(rows), "raster levels")?;
                 reserve(&mut levels, filled, rows - row - 1, offset);
             }
         }

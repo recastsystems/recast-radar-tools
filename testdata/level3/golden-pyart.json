@@ -1,0 +1,4132 @@
+{
+ "files": [
+  {
+   "error": "no field",
+   "id": "l3-akc-nc1-20210730-055033",
+   "product": 34
+  },
+  {
+   "altitude": 27.127200000000002,
+   "azimuth": [
+    278.0,
+    279.0,
+    279.8999938964844,
+    281.0,
+    277.0
+   ],
+   "azimuth_sha256": "33bceda6e37f877829d43e0d3c1398ec990525398d4501a86a2df3a5ea0a148b",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-byx-n0q-20150124-2106",
+   "latitude": 24.597,
+   "longitude": -81.703,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2015-01-24T21:05:59Z",
+   "values": {
+    "count": 9700,
+    "max": 43.5,
+    "mean": -2.9047938144329897,
+    "min": -23.5,
+    "sha256": "e46f565f63a1681c5ca3a567769b40e85f6dd4618a822f94b5a5d8bb3d309698"
+   }
+  },
+  {
+   "altitude": 104.8512,
+   "azimuth": [
+    288.6000061035156,
+    289.6000061035156,
+    290.6000061035156,
+    291.5,
+    289.8999938964844
+   ],
+   "azimuth_sha256": "c4e78535f9151114251832e4fc333c46f7debcba5c44ca26117f5fd370c73513",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-cae-n0r-19940629-1906",
+   "latitude": 33.949,
+   "longitude": -81.119,
+   "ngates": 230,
+   "nrays": 367,
+   "product": 19,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 1994-06-29T19:06:19Z",
+   "values": {
+    "count": 22082,
+    "max": 55.0,
+    "mean": 21.146408839779006,
+    "min": 5.0,
+    "sha256": "65fa4a9217a3a9ef72703d305cd5395b1036121fe7fe733670f65fcddea586a0"
+   }
+  },
+  {
+   "altitude": 814.1208,
+   "azimuth": [
+    84.0,
+    85.0,
+    86.0,
+    87.0,
+    83.0
+   ],
+   "azimuth_sha256": "3a848e7bee6cebb1c2027fe6d6582aaf51c0e798b90a39a647e7678695c77860",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-ddc-n0q-20200817-0501",
+   "latitude": 37.761,
+   "longitude": -99.96900000000001,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-17T05:01:11Z",
+   "values": {
+    "count": 61834,
+    "max": 61.5,
+    "mean": 13.62503638774784,
+    "min": -5.5,
+    "sha256": "1064fe9b90c3bb742cb801908e7367bf3c37772b49d80ec0a35094a2ad35d3a2"
+   }
+  },
+  {
+   "altitude": 814.1208,
+   "azimuth": [
+    213.0,
+    214.0,
+    215.0,
+    216.0,
+    212.0
+   ],
+   "azimuth_sha256": "62dcbf11d0c43c8b853f29cf02d8a45959c3741804f2c581e5f6dfae3ca2e7de",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-ddc-n0q-20200817-0503",
+   "latitude": 37.761,
+   "longitude": -99.96900000000001,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-17T05:03:18Z",
+   "values": {
+    "count": 61108,
+    "max": 63.0,
+    "mean": 13.464153629639327,
+    "min": -6.5,
+    "sha256": "e38f203911114d8d73320e9baf865d3a2b61e509c7d70120b5bbdc5f3294550f"
+   }
+  },
+  {
+   "altitude": 332.8416,
+   "azimuth": [
+    67.0,
+    68.0,
+    69.0,
+    70.0,
+    66.0
+   ],
+   "azimuth_sha256": "d4786935de746c0785cadcaf85a6b68dfb8b26f287aa3850140d9459063e4023",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-eax-n0q-20200817-0401",
+   "latitude": 38.81,
+   "longitude": -94.264,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-17T04:01:20Z",
+   "values": {
+    "count": 81079,
+    "max": 55.5,
+    "mean": 11.040546874036433,
+    "min": -19.5,
+    "sha256": "fb4aaf26484ed423c40017e29c2a1ebbc775657ce8b159fc9e67188e78ef5456"
+   }
+  },
+  {
+   "altitude": 332.8416,
+   "azimuth": [
+    32.0,
+    33.0,
+    34.0,
+    35.0,
+    31.0
+   ],
+   "azimuth_sha256": "bbfc89a101c3c9ab12a61ae8021028a607fbb48ffbecf583a2f71b3116bb5057",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-eax-n0q-20200817-0405",
+   "latitude": 38.81,
+   "longitude": -94.264,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-17T04:05:02Z",
+   "values": {
+    "count": 82076,
+    "max": 57.5,
+    "mean": 11.092255957892684,
+    "min": -17.0,
+    "sha256": "b6a40b03c1988b153aaa5d6976919f053d3f70ec0d8604f8273eedd7ab285280"
+   }
+  },
+  {
+   "altitude": 296.2656,
+   "azimuth": [
+    201.0,
+    202.0,
+    203.0,
+    204.0,
+    200.0
+   ],
+   "azimuth_sha256": "5c7e0cc09b7a72491a379032322c151733c87b12a176c53eea1d9ff8e4cb4095",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-ffc-n0q-20140407-1805",
+   "latitude": 33.363,
+   "longitude": -84.566,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2014-04-07T18:05:38Z",
+   "values": {
+    "count": 37417,
+    "max": 54.5,
+    "mean": 22.21181548494,
+    "min": -29.5,
+    "sha256": "50fa2de78950d02e7eb3aca75392a9a622e54735b2e73d307da1b2375457e834"
+   }
+  },
+  {
+   "altitude": 1709.928,
+   "azimuth": [
+    266.0,
+    266.5,
+    267.0,
+    267.5,
+    265.5
+   ],
+   "azimuth_sha256": "bcf764a147acffe6e90b3648b122facf4b7dfe4508fa8564dcc85b5ca5c29e90",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-ftg-n0b-20220304-1820",
+   "latitude": 39.786,
+   "longitude": -104.546,
+   "ngates": 1840,
+   "nrays": 720,
+   "product": 153,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-03-04T18:20:20Z",
+   "values": {
+    "count": 173286,
+    "max": 72.5,
+    "mean": -0.7087041076601688,
+    "min": -32.0,
+    "sha256": "2904e9d0b134c59aa56520dd9a63407b0d6baada361c8f97d032f7b99e2cdebf"
+   }
+  },
+  {
+   "altitude": 232.86720000000003,
+   "azimuth": [
+    357.6000061035156,
+    358.6000061035156,
+    359.5,
+    0.5,
+    358.8999938964844
+   ],
+   "azimuth_sha256": "d6551d2a686fbf843439c1d9be6be4df1c4135b845abaeea23cfab5ed4f1c22f",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-fws-n0r-19950517-2304",
+   "latitude": 32.573,
+   "longitude": -97.303,
+   "ngates": 230,
+   "nrays": 367,
+   "product": 19,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 1995-05-17T23:04:45Z",
+   "values": {
+    "count": 14121,
+    "max": 60.0,
+    "mean": 13.750796685787126,
+    "min": 5.0,
+    "sha256": "95894ec2972200ea7ea6df45f5a935e4ea5579fd668b1fecdffd582af16bf7b0"
+   }
+  },
+  {
+   "error": "AssertionError: ",
+   "id": "l3-fws-n1p-19950517-2304",
+   "product": 78
+  },
+  {
+   "altitude": 232.86720000000003,
+   "azimuth": [
+    5.0,
+    6.0,
+    6.900000095367432,
+    7.900000095367432,
+    6.400000095367432
+   ],
+   "azimuth_sha256": "36498fe157331b780dda96f3238c697fd969242c489b005d4fc709c4e442b47a",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-fws-now-19950517-2304",
+   "latitude": 32.573,
+   "longitude": -97.303,
+   "ngates": 240,
+   "nrays": 368,
+   "product": 25,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 1995-05-17T23:04:45Z",
+   "values": {
+    "count": 68689,
+    "max": 64.0,
+    "mean": -0.02744253082735227,
+    "min": -50.0,
+    "sha256": "b6870838ba5d4e06d54d3013c5213f5e46ce4f51b0e5f3130718301099c4dbac"
+   }
+  },
+  {
+   "error": "AssertionError: ",
+   "id": "l3-fws-ntp-19950517-2304",
+   "product": 80
+  },
+  {
+   "altitude": 3078.48,
+   "azimuth": [
+    267.0,
+    268.0,
+    269.0,
+    270.0,
+    266.0
+   ],
+   "azimuth_sha256": "b02e67e483d22dfd2c2d37457fb560c3b4d8e05f3b60b9d8e6573c0f79cc50ca",
+   "elevation": 0.0,
+   "field": "reflectivity",
+   "fixed_angle": 0.0,
+   "id": "l3-gjx-nyq-20220503-005356",
+   "latitude": 39.062,
+   "longitude": -108.214,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    1000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T00:53:56Z",
+   "values": {
+    "count": 9316,
+    "max": 34.5,
+    "mean": -8.946436238729069,
+    "min": -32.0,
+    "sha256": "bfba00558a6d96dec2b0df77abd578f4a748955f99e1dd6e4828a517d2c3989e"
+   }
+  },
+  {
+   "altitude": 34.1376,
+   "azimuth": [
+    5.699999809265137,
+    6.699999809265137,
+    7.699999809265137,
+    8.699999809265137,
+    4.699999809265137
+   ],
+   "azimuth_sha256": "6fc8c1bfed1381a122e464b4f7229d00fff9c896577e93e40864372f8629b0f9",
+   "elevation": 0.0,
+   "field": "reflectivity",
+   "fixed_angle": 0.0,
+   "id": "l3-jfk-tr0-20210120-154051",
+   "latitude": 40.589,
+   "longitude": -73.881,
+   "ngates": 592,
+   "nrays": 360,
+   "product": 181,
+   "range": [
+    0.0,
+    150.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2021-01-20T15:40:51Z",
+   "values": {
+    "count": 4858,
+    "max": 35.0,
+    "mean": 11.182585426101276,
+    "min": 5.0,
+    "sha256": "094e4eb12663235d2c284c68dc230300cca36a1f54eeaed61637d14f6c42e413"
+   }
+  },
+  {
+   "altitude": 231.64800000000002,
+   "azimuth": [
+    272.29998779296875,
+    273.29998779296875,
+    274.20001220703125,
+    275.20001220703125,
+    273.6000061035156
+   ],
+   "azimuth_sha256": "93c6a66ccc866cc4beb87102414f080569f402ae8e0a122f9a6d31f7b8a4aa97",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-lot-n0r-19941106-0246",
+   "latitude": 41.604,
+   "longitude": -88.08500000000001,
+   "ngates": 230,
+   "nrays": 367,
+   "product": 19,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 1994-11-06T02:46:44Z",
+   "values": {
+    "count": 41102,
+    "max": 50.0,
+    "mean": 20.348279889056492,
+    "min": 5.0,
+    "sha256": "44ce5846a6ccfba092e93c4001072fc7271635151c0a63d4b3917cfb1afb68f6"
+   }
+  },
+  {
+   "altitude": 197.8152,
+   "azimuth": [
+    251.89999389648438,
+    252.39999389648438,
+    252.89999389648438,
+    253.5,
+    251.39999389648438
+   ],
+   "azimuth_sha256": "f32c8a4a175c99359c4bcf314bcc9a0a50ef10857d8c61384fc2e8d1a67b058c",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-lzk-h0v-20200812-1309",
+   "latitude": 34.836,
+   "longitude": -92.262,
+   "ngates": 1200,
+   "nrays": 720,
+   "product": 154,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-12T13:09:38Z",
+   "values": {
+    "count": 223828,
+    "max": 44.5,
+    "mean": -2.2005155744589597,
+    "min": -43.0,
+    "sha256": "ff7f8e9ba83361cf0be194a3b7d0020882e8b21b63c9e309dbd0d5a29104e0ef"
+   }
+  },
+  {
+   "altitude": 197.8152,
+   "azimuth": [
+    251.89999389648438,
+    252.39999389648438,
+    253.0,
+    253.5,
+    251.39999389648438
+   ],
+   "azimuth_sha256": "b6cf09b9795a3670e733ca931faac410a2187f95d3c9dfdd99972360a05e9804",
+   "elevation": 0.5,
+   "field": "spectrum_width",
+   "fixed_angle": 0.5,
+   "id": "l3-lzk-h0w-20200812-1305",
+   "latitude": 34.836,
+   "longitude": -92.262,
+   "ngates": 1200,
+   "nrays": 720,
+   "product": 155,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-12T13:05:01Z",
+   "values": {
+    "count": 242232,
+    "max": 78.5,
+    "mean": 66.10567555071171,
+    "min": 63.5,
+    "sha256": "73fec3867d3c7f482cb0cb78d48dcc55e61950a5626bc0e697cf070941921bd4"
+   }
+  },
+  {
+   "altitude": 197.8152,
+   "azimuth": [
+    195.0,
+    195.5,
+    196.0,
+    196.5,
+    194.5
+   ],
+   "azimuth_sha256": "c2bd276a50bd1723b98e08dda4cf9e96993770a6f0304616d4996b7c1f292cde",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-lzk-h0z-20200812-1318",
+   "latitude": 34.836,
+   "longitude": -92.262,
+   "ngates": 1840,
+   "nrays": 720,
+   "product": 153,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-12T13:18:20Z",
+   "values": {
+    "count": 340761,
+    "max": 59.0,
+    "mean": 14.903059622433318,
+    "min": -32.0,
+    "sha256": "94e8b5c9ec9dfd4f7c87c2975bdb694366ad4a685a9cac03cf59e19fc928869c"
+   }
+  },
+  {
+   "altitude": 332.232,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "reflectivity",
+   "fixed_angle": 0.0,
+   "id": "l3-mci-dhr-20160526-2154",
+   "latitude": 39.498,
+   "longitude": -94.742,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 32,
+   "range": [
+    0.0,
+    1000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2016-05-26T21:54:08Z",
+   "values": {
+    "count": 61875,
+    "max": 54.5,
+    "mean": 19.490028282828284,
+    "min": -30.5,
+    "sha256": "5e737e96c9f371670ab8f1b762a3972c0c06c8a2d476ca4802ac5bfdeb28c9d9"
+   }
+  },
+  {
+   "error": "NotImplementedError: Level3 product with code 30938 is not supported",
+   "id": "l3-mci-dsp-20160526-2154",
+   "product": 138
+  },
+  {
+   "error": "NotImplementedError: Level3 product with code 30938 is not supported",
+   "id": "l3-mci-n1p-20160526-2154",
+   "product": 78
+  },
+  {
+   "error": "NotImplementedError: Level3 product with code 30938 is not supported",
+   "id": "l3-mci-ntp-20160526-2154",
+   "product": 80
+  },
+  {
+   "error": "NotImplementedError: Level3 product with code 30938 is not supported",
+   "id": "l3-mci-tr0-20160526-2154",
+   "product": 181
+  },
+  {
+   "error": "NotImplementedError: Level3 product with code 30938 is not supported",
+   "id": "l3-mci-tr1-20160526-2154",
+   "product": 181
+  },
+  {
+   "error": "NotImplementedError: Level3 product with code 30938 is not supported",
+   "id": "l3-mci-tr2-20160526-2154",
+   "product": 181
+  },
+  {
+   "altitude": 332.232,
+   "azimuth": [
+    26.700000762939453,
+    27.700000762939453,
+    28.700000762939453,
+    29.700000762939453,
+    25.700000762939453
+   ],
+   "azimuth_sha256": "3f1b65aae5f1b03dbbbe49e4476bdb843194166def4d7370d19932c1fd99baab",
+   "elevation": 0.0,
+   "field": "velocity",
+   "fixed_angle": 0.0,
+   "id": "l3-mci-tv0-20160526-2154",
+   "latitude": 39.498,
+   "longitude": -94.742,
+   "ngates": 600,
+   "nrays": 360,
+   "product": 182,
+   "range": [
+    0.0,
+    150.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2016-05-26T21:54:42Z",
+   "values": {
+    "count": 137282,
+    "max": 54.5,
+    "mean": 4.731097303360965,
+    "min": -55.0,
+    "sha256": "a5104602a946abb59d85e8f9aa683b6a0d9479807558c191c4adc749c4d8770d"
+   }
+  },
+  {
+   "altitude": 332.232,
+   "azimuth": [
+    41.70000076293945,
+    42.70000076293945,
+    43.70000076293945,
+    44.70000076293945,
+    40.70000076293945
+   ],
+   "azimuth_sha256": "e6014d5555ca4e8e489854de2a55050a85778cf30345713623f81da3f7211513",
+   "elevation": 0.0,
+   "field": "velocity",
+   "fixed_angle": 0.0,
+   "id": "l3-mci-tv1-20160526-2154",
+   "latitude": 39.498,
+   "longitude": -94.742,
+   "ngates": 594,
+   "nrays": 360,
+   "product": 182,
+   "range": [
+    0.0,
+    150.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2016-05-26T21:54:42Z",
+   "values": {
+    "count": 147579,
+    "max": 36.5,
+    "mean": -17.585987843798915,
+    "min": -63.5,
+    "sha256": "bcc1ecaa72c65671210b4ed92c5fffb28936a42d891019c3a2f79b575fecfa0e"
+   }
+  },
+  {
+   "altitude": 332.232,
+   "azimuth": [
+    90.69999694824219,
+    91.69999694824219,
+    92.69999694824219,
+    93.69999694824219,
+    89.69999694824219
+   ],
+   "azimuth_sha256": "c8a00ebafda1eca5e1243bc83ad12875f1680f6233bf977de7f17e8952158d3c",
+   "elevation": 0.0,
+   "field": "velocity",
+   "fixed_angle": 0.0,
+   "id": "l3-mci-tv2-20160526-2154",
+   "latitude": 39.498,
+   "longitude": -94.742,
+   "ngates": 594,
+   "nrays": 360,
+   "product": 182,
+   "range": [
+    0.0,
+    150.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2016-05-26T21:54:42Z",
+   "values": {
+    "count": 140373,
+    "max": 31.0,
+    "mean": -3.740316870053358,
+    "min": -46.0,
+    "sha256": "54bc9704aedf14a2ea5171ea1deb7cc006ac6aad05d1d6995ea4b20ae797ef2a"
+   }
+  },
+  {
+   "altitude": 332.232,
+   "azimuth": [
+    4.699999809265137,
+    5.699999809265137,
+    6.699999809265137,
+    7.699999809265137,
+    3.700000047683716
+   ],
+   "azimuth_sha256": "d7543839062f780a1c47e7098301853c4b7aae18f04ffb2920b47b2bd6741c1b",
+   "elevation": 0.0,
+   "field": "reflectivity",
+   "fixed_angle": 0.0,
+   "id": "l3-mci-tzl-20160526-2154",
+   "latitude": 39.498,
+   "longitude": -94.742,
+   "ngates": 1390,
+   "nrays": 360,
+   "product": 186,
+   "range": [
+    0.0,
+    300.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2016-05-26T21:54:08Z",
+   "values": {
+    "count": 244316,
+    "max": 57.0,
+    "mean": 18.85751444850112,
+    "min": -21.5,
+    "sha256": "a1ac9a45b6b7745767ec3e282eb07f8930ae89ba6dc49436cc8223c1ccae5805"
+   }
+  },
+  {
+   "altitude": 398.6784,
+   "azimuth": [
+    199.6999969482422,
+    200.6999969482422,
+    201.6999969482422,
+    202.6999969482422,
+    198.6999969482422
+   ],
+   "azimuth_sha256": "67dcebc954b55447ccac0ea7655c84f9d061ad4bab896d332b70778f24814fbb",
+   "elevation": 0.0,
+   "field": "velocity",
+   "fixed_angle": 0.0,
+   "id": "l3-okc-tv0-20260622-080547",
+   "latitude": 35.276,
+   "longitude": -97.51,
+   "ngates": 592,
+   "nrays": 360,
+   "product": 182,
+   "range": [
+    0.0,
+    150.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:05:47Z",
+   "values": {
+    "count": 187171,
+    "max": 38.5,
+    "mean": 2.50007479791207,
+    "min": -44.0,
+    "sha256": "0f19f0d9dfb93163fefcdbe395905d41544955eb67bdba4bfc9f2e978517fc77"
+   }
+  },
+  {
+   "altitude": 398.6784,
+   "azimuth": [
+    4.699999809265137,
+    5.699999809265137,
+    6.699999809265137,
+    7.699999809265137,
+    3.700000047683716
+   ],
+   "azimuth_sha256": "d7543839062f780a1c47e7098301853c4b7aae18f04ffb2920b47b2bd6741c1b",
+   "elevation": 0.0,
+   "field": "reflectivity",
+   "fixed_angle": 0.0,
+   "id": "l3-okc-tzl-20260622-080623",
+   "latitude": 35.276,
+   "longitude": -97.51,
+   "ngates": 1390,
+   "nrays": 360,
+   "product": 186,
+   "range": [
+    0.0,
+    300.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 185232,
+    "max": 54.0,
+    "mean": 17.69001036537963,
+    "min": -25.0,
+    "sha256": "a27a72e10afaa54f7ef26e58f1343c58a8d50281c13beee70c2c239665fe91db"
+   }
+  },
+  {
+   "altitude": 140.5128,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-rax-dta-20200818-0454",
+   "latitude": 35.665,
+   "longitude": -78.49,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 172,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2020-08-18T04:54:22Z",
+   "values": {
+    "count": 214254,
+    "max": 2.379999876022339,
+    "mean": 0.3368637152048503,
+    "min": 0.009999999776482582,
+    "sha256": "13866a52165f07217b3bfd01d83b23d0f41d694f28e36afe3e6c385db9d40c75"
+   }
+  },
+  {
+   "altitude": 117.6528,
+   "azimuth": [
+    220.0,
+    221.0,
+    222.0,
+    223.0,
+    219.0
+   ],
+   "azimuth_sha256": "87016b29c225cc53dc702edf35a68d4cdecd9b7d1b24698aaa3f70d35656e686",
+   "elevation": 0.30000001192092896,
+   "field": "reflectivity",
+   "fixed_angle": 0.30000001192092896,
+   "id": "l3-shv-nzq-20220503-005452",
+   "latitude": 32.451,
+   "longitude": -93.84100000000001,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T00:54:52Z",
+   "values": {
+    "count": 49694,
+    "max": 54.5,
+    "mean": 6.5750996096108185,
+    "min": -14.5,
+    "sha256": "bc3f4f0271fba2bea411e192a7c98b82bfbb33ee3b3603b6f34cb7e8fa4baaad"
+   }
+  },
+  {
+   "altitude": 1309.116,
+   "azimuth": [
+    152.1999969482422,
+    153.1999969482422,
+    154.1999969482422,
+    155.1999969482422,
+    151.1999969482422
+   ],
+   "azimuth_sha256": "f5a69a2c658c130c637e5f68efb9bbb1a9cf0136a8353eb82b7c97f2837526eb",
+   "elevation": 0.0,
+   "field": "velocity",
+   "fixed_angle": 0.0,
+   "id": "l3-slc-tv0-20160516-2359",
+   "latitude": 40.967,
+   "longitude": -111.93,
+   "ngates": 600,
+   "nrays": 360,
+   "product": 182,
+   "range": [
+    0.0,
+    150.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2016-05-16T23:59:08Z",
+   "values": {
+    "count": 46527,
+    "max": 42.0,
+    "mean": -1.235250499709846,
+    "min": -37.5,
+    "sha256": "bfd3e97d46485a549c072fa489deccbd0eb3b4a4f23be1f717b2e8a25fac5d9d"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-daa-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 170,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 67725,
+    "max": 2.8550000190734863,
+    "mean": 0.18771451931063124,
+    "min": 0.0010000000474974513,
+    "sha256": "8ff8785aa577a2bb3459984964e907b39007dd59593c946ddd1f0d3e27d70af3"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-daa-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 170,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 237709,
+    "max": 2.9110000133514404,
+    "mean": 0.48631572637131953,
+    "min": 0.0010000000474974513,
+    "sha256": "d9337969d753e3fb88bd29536c4d795e2369285b691197a6df524b6474d518ad"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "reflectivity",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dhr-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 32,
+   "range": [
+    0.0,
+    1000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 23907,
+    "max": 69.0,
+    "mean": 16.69916760781361,
+    "min": -19.0,
+    "sha256": "0a0354d7c360e744506046d26f5f6909eee9619f678a4564a28b27c479d6e46a"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "reflectivity",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dhr-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 32,
+   "range": [
+    0.0,
+    1000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 51414,
+    "max": 61.0,
+    "mean": 30.401943050530985,
+    "min": -6.0,
+    "sha256": "165c67be2681fc89f28b51f891250182af1e6b117a9c644006cb7f7c81ff2612"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dod-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 174,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 331200,
+    "max": 0.8405433297157288,
+    "mean": -0.016401072331672706,
+    "min": -1.2269999980926514,
+    "sha256": "1248bde86b91caa6488f68c256c100ec14dc933c03fa3e0797394735d716c026"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dod-20220503-005231",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 174,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T00:52:31Z",
+   "values": {
+    "count": 331200,
+    "max": 1.221346378326416,
+    "mean": -0.004572673926606846,
+    "min": -2.628999948501587,
+    "sha256": "be2127326eeb5dc40c3e7672f5cc5912712ec0bdae49ceeaae9e5e3732bcc42e"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dpr-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 176,
+   "range": [
+    125.0,
+    375.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 55545,
+    "max": 7.874000072479248,
+    "mean": 0.3542405088216761,
+    "min": 0.0010000000474974513,
+    "sha256": "abba181270de80060b48b027f4cc98391f7149e490ced95e8e050c7587543969"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dpr-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 176,
+   "range": [
+    125.0,
+    375.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 192322,
+    "max": 6.868000030517578,
+    "mean": 0.4851703783238527,
+    "min": 0.0010000000474974513,
+    "sha256": "82842d673875cceb5096860a1513392d3f25c6ee2a8637f3e4f7d642b39d3418"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dsd-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 175,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 331200,
+    "max": 0.8277480006217957,
+    "mean": -0.01773143086456446,
+    "min": -1.281999945640564,
+    "sha256": "6fc2cdc8e3c470363bcfb42580b3bb16463ee89436f3c354a73695f90845fe61"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dsd-20220503-005231",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 175,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T00:52:31Z",
+   "values": {
+    "count": 331200,
+    "max": 1.4708268642425537,
+    "mean": -0.13757558923988528,
+    "min": -5.336999893188477,
+    "sha256": "7964609b9855dd80a1b961acc41cad1036c8906d2f3500a0fd3e0dc052f22d7e"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dsp-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 116,
+   "nrays": 360,
+   "product": 138,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 41760,
+    "max": 2.9000000953674316,
+    "mean": 0.05949569121003151,
+    "min": 0.0,
+    "sha256": "3ba41b2f9af1a57e540a78b845741b9ed587e9283a9c3b42afe2da2bef9e347a"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dsp-20260629-173638",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 116,
+   "nrays": 360,
+   "product": 138,
+   "range": [
+    0.0,
+    1000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-29T17:36:38Z",
+   "values": {
+    "count": 41760,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0,
+    "sha256": "660cd8bca48f2f672b9b82fb46894764c4dc89c9af5670406c30d5b69ae4b5c6"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dta-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 172,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 72075,
+    "max": 2.879999876022339,
+    "mean": 0.19263405632154007,
+    "min": 0.019999999552965164,
+    "sha256": "c93d7377f3e33a169cf6a23b99727e0792d1d7dac8fcd3180af695517694d82b"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-dta-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 172,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 255050,
+    "max": 4.619999885559082,
+    "mean": 0.930582851401686,
+    "min": 0.019999999552965164,
+    "sha256": "464caade136c20972b01117c02989f6d49f630924b9b9243f4775b557fe7c6da"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-du3-20130520-2008",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 173,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:08:11Z",
+   "values": {
+    "count": 57925,
+    "max": 2.1419999599456787,
+    "mean": 0.13650059343979284,
+    "min": 0.0009999998146668077,
+    "sha256": "f97674eacaed5d67920afd8962f66051b3161548be70571d0b220c0f94ecd0e9"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-du3-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 173,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 242329,
+    "max": 4.514999866485596,
+    "mean": 0.8573934480602817,
+    "min": 0.0010000003967434168,
+    "sha256": "b20eecdb1f91c89028b014c708c8a5adae5599eec9b607473fd5691aba9ad2a9"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-du6-20260622-120608",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 173,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T12:06:08Z",
+   "values": {
+    "count": 319737,
+    "max": 6.198999881744385,
+    "mean": 1.3405781548585243,
+    "min": 0.0009999993490055203,
+    "sha256": "22f6da102fc48516f481e2377c18aa34ad38aadadfcaa3dd072044e565629708"
+   }
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-dvl-20130520-2016",
+   "product": 134
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-dvl-20260622-080623",
+   "product": 134
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-eet-20130520-2016",
+   "product": 135
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-eet-20260622-080623",
+   "product": 135
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_echo_classification",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-hhc-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 177,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 84411,
+    "max": 140.0,
+    "mean": 46.940446150383245,
+    "min": 10.0,
+    "sha256": "ed7662fab19dc4a76e7c5cfed87a6b3442bcc76aebdfe8219ea13f9bab65e462"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "8b7fa4ce6480583961b9de4008d992a664c104c0360aab41a58f4099df63de3b",
+   "elevation": 0.0,
+   "field": "radar_echo_classification",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-hhc-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 920,
+   "nrays": 360,
+   "product": 177,
+   "range": [
+    0.0,
+    250.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 200419,
+    "max": 100.0,
+    "mean": 59.151327967907235,
+    "min": 10.0,
+    "sha256": "8133291d17836e9f762c926f12d11151d92f0acaf327aa68731849dfa0e79925"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    319.0,
+    319.5,
+    320.0,
+    320.5,
+    318.5
+   ],
+   "azimuth_sha256": "4a962efc700f4dcb940eceac04b97759f075bef104a4dbde0d4ef4e01c61fe97",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0b-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1840,
+   "nrays": 720,
+   "product": 153,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 486283,
+    "max": 64.0,
+    "mean": 27.36788043176504,
+    "min": -10.5,
+    "sha256": "625c294723ed83754d93d59eeeb0b08313ed2fb2ac911d201fe7ce7c7981dc67"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "cross_correlation_ratio",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0c-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 161,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 100784,
+    "max": 1.0516666173934937,
+    "mean": 0.9013447074932529,
+    "min": 0.2083333283662796,
+    "sha256": "de445be4edab535dde3b472da0857aed4059ce297aef231b265db75da49c4232"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    341.0,
+    342.0,
+    343.0,
+    344.0,
+    339.8999938964844
+   ],
+   "azimuth_sha256": "f66e6dc8da1afb19f083a0c394d07b300f8dba6b24ebbb9793fcfe0437a6b808",
+   "elevation": 0.5,
+   "field": "cross_correlation_ratio",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0c-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 161,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 236629,
+    "max": 1.0516666173934937,
+    "mean": 0.977946490075181,
+    "min": 0.31833332777023315,
+    "sha256": "523424dec93d0b1e76ea710c08151feb9161d3b4ca2973d943597764d48d67c1"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    341.0,
+    341.5,
+    342.0,
+    342.5,
+    340.5
+   ],
+   "azimuth_sha256": "ffa56ee6625007ff8e79fed90327f342729e91bbd8aef77d438b79058e51a763",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0g-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 720,
+   "product": 154,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 436110,
+    "max": 63.0,
+    "mean": -2.8132695879479948,
+    "min": -63.5,
+    "sha256": "c20f1259f634a0f3bd70cd3301d6bf3d2ebc8470d4031adf6521e8e8986d9329"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "radar_echo_classification",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0h-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 165,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 90945,
+    "max": 140.0,
+    "mean": 56.799604156358235,
+    "min": 10.0,
+    "sha256": "486c084fb2dc442cb44ac37743c417788f4482035d6968954bd0b09b401739de"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    341.0,
+    342.0,
+    343.0,
+    344.0,
+    339.8999938964844
+   ],
+   "azimuth_sha256": "f66e6dc8da1afb19f083a0c394d07b300f8dba6b24ebbb9793fcfe0437a6b808",
+   "elevation": 0.5,
+   "field": "radar_echo_classification",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0h-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 165,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 223093,
+    "max": 140.0,
+    "mean": 59.638670868202944,
+    "min": 10.0,
+    "sha256": "2a40b7076b70480a9abe7154e1024893c2d144ff6fe3eef1c31120b8e687d8d5"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "specific_differential_phase",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0k-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 163,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 70737,
+    "max": 6.349999904632568,
+    "mean": 0.2079569252786731,
+    "min": -2.049999952316284,
+    "sha256": "ee6efbcb1085af701e1a0f511c5224abdab3d88079da96b22c99779e7c4e0541"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    341.0,
+    342.0,
+    343.0,
+    344.0,
+    339.8999938964844
+   ],
+   "azimuth_sha256": "f66e6dc8da1afb19f083a0c394d07b300f8dba6b24ebbb9793fcfe0437a6b808",
+   "elevation": 0.5,
+   "field": "specific_differential_phase",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0k-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 163,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 228898,
+    "max": 5.199999809265137,
+    "mean": 0.16118379556614737,
+    "min": -2.049999952316284,
+    "sha256": "721904bd4e6c8217edc24e0210d2ed16ab6b8d5973a8053215b0d1e404092f8c"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    123.0,
+    124.0,
+    125.0,
+    126.0,
+    122.0
+   ],
+   "azimuth_sha256": "79f4b4bd78fe23aeaa3e07e3bde446c9f56e75fdf125055d4d8f6ad99e6b542c",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0q-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 25610,
+    "max": 68.0,
+    "mean": 16.235493947676687,
+    "min": -20.0,
+    "sha256": "b8cb6b65d7b3f954730a8ae204a7aa01048420fc65466a635ad54f29262522d7"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    224.0,
+    225.0,
+    226.0,
+    227.0,
+    223.0
+   ],
+   "azimuth_sha256": "2f7ab2d19a58e1a93183869ac024b7c36dada21fb4bcf2918c953789e7385dbc",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0q-20220503-005231",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T00:52:31Z",
+   "values": {
+    "count": 33697,
+    "max": 59.5,
+    "mean": 17.741920645754814,
+    "min": -28.5,
+    "sha256": "47b54f989096dddabc05ba2e4037bacee5c39baa19a7a6d47d0945a56cc4b9a0"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    123.0,
+    124.0,
+    125.0,
+    126.0,
+    122.0
+   ],
+   "azimuth_sha256": "79f4b4bd78fe23aeaa3e07e3bde446c9f56e75fdf125055d4d8f6ad99e6b542c",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0r-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 19,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 15586,
+    "max": 65.0,
+    "mean": 22.684460413191324,
+    "min": 5.0,
+    "sha256": "f04b4828e3e3b24160218f820c9be31338c5bb801ff0bfee947c70fbbc2fd4d1"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    223.0,
+    224.0,
+    225.0,
+    226.0,
+    222.0
+   ],
+   "azimuth_sha256": "7bb3be7d25975db33bac68169f4ee1d7f0517e2383a05362053367dccfe79135",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0r-20220908-131957",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 19,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-09-08T13:19:57Z",
+   "values": {
+    "count": 48266,
+    "max": 28.0,
+    "mean": 1.5252144366634899,
+    "min": -24.0,
+    "sha256": "6ba9202f1135b45bef09db2a9152b00d5a75c7dbe75290548ff95db97ce88a58"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0s-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 56,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 22535,
+    "max": 64.0,
+    "mean": 0.03110716662968715,
+    "min": -64.0,
+    "sha256": "b32f95bff73193d7439abc98934b6ec77b1068f900f7be4727fa4dc1a77efed9"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    341.0,
+    342.0,
+    343.0,
+    344.0,
+    339.8999938964844
+   ],
+   "azimuth_sha256": "f66e6dc8da1afb19f083a0c394d07b300f8dba6b24ebbb9793fcfe0437a6b808",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0s-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 56,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 50646,
+    "max": 64.0,
+    "mean": -3.813825376140268,
+    "min": -64.0,
+    "sha256": "01e9b509f960e7d23f7d4310ce9b4bfc2d71893d73339919b0df102c0b66226a"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0u-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 99,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 81075,
+    "max": 46.5,
+    "mean": -1.4330434782608696,
+    "min": -45.0,
+    "sha256": "72b9c1384cf15ee9dbea2a7c7680b115b48b71356bf00fa07779838476eacea3"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    246.0,
+    247.0,
+    248.0,
+    249.0,
+    245.0
+   ],
+   "azimuth_sha256": "61bddb87d0d064e01e4301433758b9a878b558e5d626e157b69dcd1cf9e25237",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0u-20220503-005231",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 99,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T00:52:31Z",
+   "values": {
+    "count": 105022,
+    "max": 63.0,
+    "mean": 8.158300165679572,
+    "min": -51.0,
+    "sha256": "7baab4ab4c680d82b699b914ace9968a98a059b85c0d18fb8ef6ebe76c3647c3"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0v-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 27,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 20007,
+    "max": 64.0,
+    "mean": -3.2076773129404708,
+    "min": -64.0,
+    "sha256": "60d3c09edb891a33b3fe19c65b787e392d8820816b0253ddbea434612bec04d4"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    233.0,
+    234.0,
+    235.0,
+    235.89999389648438,
+    232.0
+   ],
+   "azimuth_sha256": "19d0449d91d3abe162c567d2ce7eb6fde74bf0c61f439e2ea85ab1ef1e2777c3",
+   "elevation": 0.5,
+   "field": "velocity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0v-20220908-131957",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 27,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-09-08T13:19:57Z",
+   "values": {
+    "count": 38531,
+    "max": 64.0,
+    "mean": 1.0757312293997041,
+    "min": -64.0,
+    "sha256": "05afd0fb4e237856f27e57b11e004fd887ef7c1d4941e5d574c70b1fa43e6955"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "differential_reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0x-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 159,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 100784,
+    "max": 7.9375,
+    "mean": 1.1040970044848388,
+    "min": -7.875,
+    "sha256": "52038d2efdad9d5047cb0ede7f0db9158f3a79792989799d5f83ff88ef4e888f"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    341.0,
+    342.0,
+    343.0,
+    344.0,
+    339.8999938964844
+   ],
+   "azimuth_sha256": "f66e6dc8da1afb19f083a0c394d07b300f8dba6b24ebbb9793fcfe0437a6b808",
+   "elevation": 0.5,
+   "field": "differential_reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0x-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 159,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 236629,
+    "max": 7.9375,
+    "mean": 0.9013902036521305,
+    "min": -7.6875,
+    "sha256": "83720700c2612aae8f7ed8f6348d0c5835563b24d77582e6590502c321112a04"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    123.0,
+    124.0,
+    125.0,
+    126.0,
+    122.0
+   ],
+   "azimuth_sha256": "79f4b4bd78fe23aeaa3e07e3bde446c9f56e75fdf125055d4d8f6ad99e6b542c",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0z-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 20,
+   "range": [
+    0.0,
+    1998.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 9401,
+    "max": 65.0,
+    "mean": 22.775768535262205,
+    "min": 5.0,
+    "sha256": "b54c825172100f28bc9134c41941b2b9c302f9e88665020d178c6b76d3fcb034"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    223.0,
+    224.0,
+    225.0,
+    226.0,
+    222.0
+   ],
+   "azimuth_sha256": "7bb3be7d25975db33bac68169f4ee1d7f0517e2383a05362053367dccfe79135",
+   "elevation": 0.5,
+   "field": "reflectivity",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-n0z-20220908-131957",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 20,
+   "range": [
+    0.0,
+    1998.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-09-08T13:19:57Z",
+   "values": {
+    "count": 25622,
+    "max": 28.0,
+    "mean": 2.599640933572711,
+    "min": -16.0,
+    "sha256": "3a122064d11ae3fffd36d4de817046e62c5a28a675060668b52496d004315ee5"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    195.0,
+    196.0,
+    197.0,
+    198.0,
+    194.0
+   ],
+   "azimuth_sha256": "9d8c3b960d5a85979483087bbb33c0df3b622aa84d00d90239d901ff02862433",
+   "elevation": 1.2999999523162842,
+   "field": "cross_correlation_ratio",
+   "fixed_angle": 1.2999999523162842,
+   "id": "l3-tlx-n1c-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 161,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 95617,
+    "max": 1.0516666173934937,
+    "mean": 0.9316911807000847,
+    "min": 0.2083333283662796,
+    "sha256": "fdf90eb5a0a8c62943ffba4b42abf7d813f068feb2f29c910348c18b629a31d7"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    195.0,
+    196.0,
+    197.0,
+    198.0,
+    194.0
+   ],
+   "azimuth_sha256": "9d8c3b960d5a85979483087bbb33c0df3b622aa84d00d90239d901ff02862433",
+   "elevation": 1.2999999523162842,
+   "field": "radar_echo_classification",
+   "fixed_angle": 1.2999999523162842,
+   "id": "l3-tlx-n1h-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 165,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 86061,
+    "max": 140.0,
+    "mean": 61.278395556640056,
+    "min": 10.0,
+    "sha256": "865d6fb92921d3c594cbd4ab40a1d208807847f056fea1337b31ee4bdbf91193"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    195.0,
+    196.0,
+    197.0,
+    198.0,
+    194.0
+   ],
+   "azimuth_sha256": "9d8c3b960d5a85979483087bbb33c0df3b622aa84d00d90239d901ff02862433",
+   "elevation": 1.2999999523162842,
+   "field": "specific_differential_phase",
+   "fixed_angle": 1.2999999523162842,
+   "id": "l3-tlx-n1k-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 163,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 76708,
+    "max": 5.849999904632568,
+    "mean": 0.1911612945968804,
+    "min": -2.049999952316284,
+    "sha256": "911cd83960e0cc1c274a47804ec1c35ac4ddeac328a1ab1e411026e3882a4ff6"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-n1p-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 78,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 9055,
+    "max": 2.5,
+    "mean": 0.19239646873705826,
+    "min": 0.0,
+    "sha256": "1442490397a3dfd7106c8c7ba8cd380719bcecfeb95cac0fa481e716762a2ad5"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-n1p-20260629-173638",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 78,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-29T17:36:38Z",
+   "values": {
+    "count": 0,
+    "max": null,
+    "mean": null,
+    "min": null,
+    "sha256": "0a3cce61880766e4063d7f882faa6e150eb5152ea753267b79b1e93e5f1510ec"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    182.0,
+    183.0,
+    184.0,
+    185.0,
+    181.0
+   ],
+   "azimuth_sha256": "add5d3b333b7941c78ade762d1b5b9f3d3f4d834e5d0dd51d014291433f436f7",
+   "elevation": 1.2999999523162842,
+   "field": "reflectivity",
+   "fixed_angle": 1.2999999523162842,
+   "id": "l3-tlx-n1q-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 422,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 23188,
+    "max": 65.0,
+    "mean": 15.450362256339487,
+    "min": -21.0,
+    "sha256": "15bbb4c31d615319c754bed2990ebb21cc12eddee8bc7681db6dc14e8db39089"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    195.0,
+    196.0,
+    197.0,
+    198.0,
+    194.0
+   ],
+   "azimuth_sha256": "9d8c3b960d5a85979483087bbb33c0df3b622aa84d00d90239d901ff02862433",
+   "elevation": 1.2999999523162842,
+   "field": "velocity",
+   "fixed_angle": 1.2999999523162842,
+   "id": "l3-tlx-n1s-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 56,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 20749,
+    "max": 64.0,
+    "mean": -1.8502096486577666,
+    "min": -64.0,
+    "sha256": "100ca0fd15642bec0daf377ff9d7ca11704d0afe7e8a2284b7cf9dab962ceb7a"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    195.0,
+    196.0,
+    197.0,
+    198.0,
+    194.0
+   ],
+   "azimuth_sha256": "9d8c3b960d5a85979483087bbb33c0df3b622aa84d00d90239d901ff02862433",
+   "elevation": 1.2999999523162842,
+   "field": "velocity",
+   "fixed_angle": 1.2999999523162842,
+   "id": "l3-tlx-n1u-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 99,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 77610,
+    "max": 51.5,
+    "mean": -1.3758987243911867,
+    "min": -38.5,
+    "sha256": "f2887a919b49752a08ee622011ab53f3f42508e42a63d633a3b289462e97fef7"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    195.0,
+    196.0,
+    197.0,
+    198.0,
+    194.0
+   ],
+   "azimuth_sha256": "9d8c3b960d5a85979483087bbb33c0df3b622aa84d00d90239d901ff02862433",
+   "elevation": 1.2999999523162842,
+   "field": "differential_reflectivity",
+   "fixed_angle": 1.2999999523162842,
+   "id": "l3-tlx-n1x-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 159,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 95617,
+    "max": 7.9375,
+    "mean": 0.8354071451729295,
+    "min": -7.8125,
+    "sha256": "e2e61a0434663404418e032af56051cfa0d3a9184d27d9c7f3d4a65ca3b168fd"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    244.0,
+    245.0,
+    245.89999389648438,
+    247.0,
+    242.89999389648438
+   ],
+   "azimuth_sha256": "a100d7f9d558527a36d197e2edb156f65dd320439aacdfab74bbddc4e7bf2339",
+   "elevation": 2.4000000953674316,
+   "field": "cross_correlation_ratio",
+   "fixed_angle": 2.4000000953674316,
+   "id": "l3-tlx-n2c-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 161,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 81772,
+    "max": 1.0516666173934937,
+    "mean": 0.9371079036834125,
+    "min": 0.2083333283662796,
+    "sha256": "7125b2ab430e74c851a72289a40917fed5128bb379b9606d2989bc24abab579d"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    244.0,
+    245.0,
+    245.89999389648438,
+    247.0,
+    242.89999389648438
+   ],
+   "azimuth_sha256": "a100d7f9d558527a36d197e2edb156f65dd320439aacdfab74bbddc4e7bf2339",
+   "elevation": 2.4000000953674316,
+   "field": "radar_echo_classification",
+   "fixed_angle": 2.4000000953674316,
+   "id": "l3-tlx-n2h-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 165,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 89742,
+    "max": 140.0,
+    "mean": 69.77134452096008,
+    "min": 10.0,
+    "sha256": "0525cf8635d98ed3af306832a214283c2e50d68f39943911656d762a96b3d94a"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    244.0,
+    245.0,
+    245.89999389648438,
+    247.0,
+    242.89999389648438
+   ],
+   "azimuth_sha256": "a100d7f9d558527a36d197e2edb156f65dd320439aacdfab74bbddc4e7bf2339",
+   "elevation": 2.4000000953674316,
+   "field": "specific_differential_phase",
+   "fixed_angle": 2.4000000953674316,
+   "id": "l3-tlx-n2k-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 163,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 67893,
+    "max": 10.0,
+    "mean": 0.18961895636792453,
+    "min": -2.049999952316284,
+    "sha256": "7b7e7703df98346501ce8963e2694d2236c3d1e8a057e924b79f148dfe91c744"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    244.0,
+    245.0,
+    245.89999389648438,
+    247.0,
+    242.89999389648438
+   ],
+   "azimuth_sha256": "a100d7f9d558527a36d197e2edb156f65dd320439aacdfab74bbddc4e7bf2339",
+   "elevation": 2.4000000953674316,
+   "field": "reflectivity",
+   "fixed_angle": 2.4000000953674316,
+   "id": "l3-tlx-n2q-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 334,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 24645,
+    "max": 64.0,
+    "mean": 15.331791438425643,
+    "min": -28.5,
+    "sha256": "1f77a3a0954c29565d5d72abe26064be59708c520bcdaf0e0ce10958387d4c57"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    244.0,
+    245.0,
+    245.89999389648438,
+    247.0,
+    242.89999389648438
+   ],
+   "azimuth_sha256": "a100d7f9d558527a36d197e2edb156f65dd320439aacdfab74bbddc4e7bf2339",
+   "elevation": 2.4000000953674316,
+   "field": "velocity",
+   "fixed_angle": 2.4000000953674316,
+   "id": "l3-tlx-n2s-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 56,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 20908,
+    "max": 64.0,
+    "mean": -2.7864932083413048,
+    "min": -64.0,
+    "sha256": "71a5c450c19148753205e4fcb1fd9a04208acf96599e4269b0bc83a7bbbe13c5"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    244.0,
+    245.0,
+    245.89999389648438,
+    247.0,
+    242.89999389648438
+   ],
+   "azimuth_sha256": "a100d7f9d558527a36d197e2edb156f65dd320439aacdfab74bbddc4e7bf2339",
+   "elevation": 2.4000000953674316,
+   "field": "velocity",
+   "fixed_angle": 2.4000000953674316,
+   "id": "l3-tlx-n2u-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 99,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 78662,
+    "max": 45.5,
+    "mean": -2.1629185629656,
+    "min": -57.0,
+    "sha256": "e50d365bc8052353e0cbacd140986ea051e6e781f6c14b224201afaefb80472e"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    244.0,
+    245.0,
+    245.89999389648438,
+    247.0,
+    242.89999389648438
+   ],
+   "azimuth_sha256": "a100d7f9d558527a36d197e2edb156f65dd320439aacdfab74bbddc4e7bf2339",
+   "elevation": 2.4000000953674316,
+   "field": "differential_reflectivity",
+   "fixed_angle": 2.4000000953674316,
+   "id": "l3-tlx-n2x-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 159,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 81772,
+    "max": 7.9375,
+    "mean": 0.5672257924472924,
+    "min": -7.875,
+    "sha256": "f182d954299c2ccd95d500ef6cbbc18b9eb1b76e0c5dc3b9003ca53a82933f93"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    264.8999938964844,
+    265.8999938964844,
+    267.0,
+    268.0,
+    264.0
+   ],
+   "azimuth_sha256": "1a6de595be4fa8c0defe2a5ddd0afb608718ab295560a95810db282658609eba",
+   "elevation": 3.0999999046325684,
+   "field": "cross_correlation_ratio",
+   "fixed_angle": 3.0999999046325684,
+   "id": "l3-tlx-n3c-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1168,
+   "nrays": 360,
+   "product": 161,
+   "range": [
+    0.0,
+    249.5
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 89353,
+    "max": 1.0516666173934937,
+    "mean": 0.9426540658959408,
+    "min": 0.2083333283662796,
+    "sha256": "86b0c74eecbfd997f4887ad5bfacecd0698b3d73533c6642275bf3aa811f17c1"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    264.8999938964844,
+    265.8999938964844,
+    267.0,
+    268.0,
+    264.0
+   ],
+   "azimuth_sha256": "1a6de595be4fa8c0defe2a5ddd0afb608718ab295560a95810db282658609eba",
+   "elevation": 3.0999999046325684,
+   "field": "radar_echo_classification",
+   "fixed_angle": 3.0999999046325684,
+   "id": "l3-tlx-n3h-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1168,
+   "nrays": 360,
+   "product": 165,
+   "range": [
+    0.0,
+    249.5
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 102601,
+    "max": 140.0,
+    "mean": 69.41033713121705,
+    "min": 10.0,
+    "sha256": "6dc119a7fe956775f692cbf04ca7d6045456aff6c62ce25f486f8de6ebcea1fe"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    264.8999938964844,
+    265.8999938964844,
+    267.0,
+    268.0,
+    264.0
+   ],
+   "azimuth_sha256": "1a6de595be4fa8c0defe2a5ddd0afb608718ab295560a95810db282658609eba",
+   "elevation": 3.0999999046325684,
+   "field": "specific_differential_phase",
+   "fixed_angle": 3.0999999046325684,
+   "id": "l3-tlx-n3k-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1168,
+   "nrays": 360,
+   "product": 163,
+   "range": [
+    0.0,
+    249.5
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 75932,
+    "max": 10.0,
+    "mean": 0.1691197335691803,
+    "min": -2.049999952316284,
+    "sha256": "0edb2ed028de3d37801f165651cbbd17f62e7c4cb369b6814f08276adf5b2126"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-n3p-20130520-2012",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 79,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:12:29Z",
+   "values": {
+    "count": 8184,
+    "max": 2.0,
+    "mean": 0.13354105870162053,
+    "min": 0.0,
+    "sha256": "f5fefdefbb1c9b7dc41093b791c629fbd41d92fa5c4258df97e0b4f65d89fda8"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-n3p-20220503-011226",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 79,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T01:12:26Z",
+   "values": {
+    "count": 22088,
+    "max": 4.0,
+    "mean": 0.46478857298080406,
+    "min": 0.0,
+    "sha256": "df79c609d6842ab5a703e08efd87246edeb7492b039f3487913a4c9d4bf2f075"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    264.8999938964844,
+    265.8999938964844,
+    267.0,
+    268.0,
+    264.0
+   ],
+   "azimuth_sha256": "1a6de595be4fa8c0defe2a5ddd0afb608718ab295560a95810db282658609eba",
+   "elevation": 3.0999999046325684,
+   "field": "reflectivity",
+   "fixed_angle": 3.0999999046325684,
+   "id": "l3-tlx-n3q-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 290,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    998.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 26692,
+    "max": 63.5,
+    "mean": 15.169601378690244,
+    "min": -27.0,
+    "sha256": "3b33ab869c85fb1cfecb646a39c308296fbc30ff68f045942055a1faa2dca95e"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    264.8999938964844,
+    265.8999938964844,
+    267.0,
+    268.0,
+    264.0
+   ],
+   "azimuth_sha256": "1a6de595be4fa8c0defe2a5ddd0afb608718ab295560a95810db282658609eba",
+   "elevation": 3.0999999046325684,
+   "field": "velocity",
+   "fixed_angle": 3.0999999046325684,
+   "id": "l3-tlx-n3s-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 56,
+   "range": [
+    0.0,
+    998.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 22918,
+    "max": 64.0,
+    "mean": -1.0477790383104983,
+    "min": -64.0,
+    "sha256": "94515e50e89b29bc2b88aa8a7f6c6d3e1b5435620a401bef7c39f0abc2804a42"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    264.8999938964844,
+    265.8999938964844,
+    267.0,
+    268.0,
+    264.0
+   ],
+   "azimuth_sha256": "1a6de595be4fa8c0defe2a5ddd0afb608718ab295560a95810db282658609eba",
+   "elevation": 3.0999999046325684,
+   "field": "velocity",
+   "fixed_angle": 3.0999999046325684,
+   "id": "l3-tlx-n3u-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1162,
+   "nrays": 360,
+   "product": 99,
+   "range": [
+    0.0,
+    249.5
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 85836,
+    "max": 48.0,
+    "mean": -0.2583531385432686,
+    "min": -55.0,
+    "sha256": "72b74c3c7815b9e94a5f6a6e90b2ab47362d9d48e2fe4dc50641d3c4298ee6f4"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    264.8999938964844,
+    265.8999938964844,
+    267.0,
+    268.0,
+    264.0
+   ],
+   "azimuth_sha256": "1a6de595be4fa8c0defe2a5ddd0afb608718ab295560a95810db282658609eba",
+   "elevation": 3.0999999046325684,
+   "field": "differential_reflectivity",
+   "fixed_angle": 3.0999999046325684,
+   "id": "l3-tlx-n3x-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1168,
+   "nrays": 360,
+   "product": 159,
+   "range": [
+    0.0,
+    249.5
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 89353,
+    "max": 7.9375,
+    "mean": 0.4124231978780791,
+    "min": -7.875,
+    "sha256": "21b26e0fd5ec314ec9a31f4faa571b1d9fc90edef01e6d28362fa17a46a104da"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    164.0,
+    165.0,
+    166.0,
+    167.0,
+    164.0
+   ],
+   "azimuth_sha256": "b5b7f1427988bd2e23dc6a3b33668483fae5935415369162b1d02aa4cd3fdace",
+   "elevation": 0.8999999761581421,
+   "field": "cross_correlation_ratio",
+   "fixed_angle": 0.8999999761581421,
+   "id": "l3-tlx-nac-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 361,
+   "product": 161,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 98909,
+    "max": 1.0516666173934937,
+    "mean": 0.922614473910362,
+    "min": 0.2083333283662796,
+    "sha256": "9d1a6f61103115c3f4fff3bc7af5790c8698cfc4d1ff09bdb72d94711dafd57c"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    164.0,
+    165.0,
+    166.0,
+    167.0,
+    164.0
+   ],
+   "azimuth_sha256": "b5b7f1427988bd2e23dc6a3b33668483fae5935415369162b1d02aa4cd3fdace",
+   "elevation": 0.8999999761581421,
+   "field": "radar_echo_classification",
+   "fixed_angle": 0.8999999761581421,
+   "id": "l3-tlx-nah-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 361,
+   "product": 165,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 89714,
+    "max": 140.0,
+    "mean": 59.45114474886863,
+    "min": 10.0,
+    "sha256": "a379a7396d412a24fa16c89bc91154f10ce3e8ee4e32d2f4572b9154de2b485c"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    164.0,
+    165.0,
+    166.0,
+    167.0,
+    164.0
+   ],
+   "azimuth_sha256": "b5b7f1427988bd2e23dc6a3b33668483fae5935415369162b1d02aa4cd3fdace",
+   "elevation": 0.8999999761581421,
+   "field": "specific_differential_phase",
+   "fixed_angle": 0.8999999761581421,
+   "id": "l3-tlx-nak-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 361,
+   "product": 163,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 75680,
+    "max": 6.349999904632568,
+    "mean": 0.1979750264270613,
+    "min": -2.049999952316284,
+    "sha256": "203cd762c0352733e870abbc4bea7cb33bc09b8e9a7b440506ae8cb8717da8ed"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    153.0,
+    154.0,
+    155.0,
+    156.0,
+    152.0
+   ],
+   "azimuth_sha256": "3e8c82dbc2b0fd0a0df336a7b0d9fd6d24f25965ed79283c01b6593c2637590f",
+   "elevation": 0.8999999761581421,
+   "field": "reflectivity",
+   "fixed_angle": 0.8999999761581421,
+   "id": "l3-tlx-naq-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 460,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 24483,
+    "max": 66.5,
+    "mean": 15.705591635012048,
+    "min": -20.0,
+    "sha256": "17b087c4d6214c5221a723a5b53910b7bd1bbd953871dbae3b8ccb0a525b27ca"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    164.0,
+    165.0,
+    166.0,
+    167.0,
+    163.0
+   ],
+   "azimuth_sha256": "13ad4978f4143af674f062d21d0b26829870e02df432b1c0b5afd85a65cb0c70",
+   "elevation": 0.8999999761581421,
+   "field": "velocity",
+   "fixed_angle": 0.8999999761581421,
+   "id": "l3-tlx-nau-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 99,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 80699,
+    "max": 49.0,
+    "mean": -1.5059418332321342,
+    "min": -45.0,
+    "sha256": "350ba6c6a758875cee8360a10e7e7769394af7d250e932d8b27cbdb3596c3cc5"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    164.0,
+    165.0,
+    166.0,
+    167.0,
+    164.0
+   ],
+   "azimuth_sha256": "b5b7f1427988bd2e23dc6a3b33668483fae5935415369162b1d02aa4cd3fdace",
+   "elevation": 0.8999999761581421,
+   "field": "differential_reflectivity",
+   "fixed_angle": 0.8999999761581421,
+   "id": "l3-tlx-nax-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 361,
+   "product": 159,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 98909,
+    "max": 7.9375,
+    "mean": 1.0199166658241414,
+    "min": -7.875,
+    "sha256": "fcc6ca9191971febdbbce04753f47d2d5681f4fafe6b94660cd51f3b69b7dddb"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    225.0,
+    226.0,
+    227.0,
+    227.89999389648438,
+    224.0
+   ],
+   "azimuth_sha256": "2d911b16b96965d5f8469f784607e3998c3a20bba5618065b75cffbef2817714",
+   "elevation": 1.7999999523162842,
+   "field": "cross_correlation_ratio",
+   "fixed_angle": 1.7999999523162842,
+   "id": "l3-tlx-nbc-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 161,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 76876,
+    "max": 1.0516666173934937,
+    "mean": 0.9315842232946563,
+    "min": 0.2083333283662796,
+    "sha256": "3941e93fc43c4d3a40e35093ee63c3290254a097928c5973c19f238c3a2a3349"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    225.0,
+    226.0,
+    227.0,
+    227.89999389648438,
+    224.0
+   ],
+   "azimuth_sha256": "2d911b16b96965d5f8469f784607e3998c3a20bba5618065b75cffbef2817714",
+   "elevation": 1.7999999523162842,
+   "field": "radar_echo_classification",
+   "fixed_angle": 1.7999999523162842,
+   "id": "l3-tlx-nbh-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 165,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 84338,
+    "max": 140.0,
+    "mean": 70.64775071735161,
+    "min": 10.0,
+    "sha256": "9756a94e8f0b7ac854455b76d486eca2e12b6fb5a2a3bd5ea102160d495454bc"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    225.0,
+    226.0,
+    227.0,
+    227.89999389648438,
+    224.0
+   ],
+   "azimuth_sha256": "2d911b16b96965d5f8469f784607e3998c3a20bba5618065b75cffbef2817714",
+   "elevation": 1.7999999523162842,
+   "field": "specific_differential_phase",
+   "fixed_angle": 1.7999999523162842,
+   "id": "l3-tlx-nbk-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 163,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 62628,
+    "max": 7.849999904632568,
+    "mean": 0.21712651240259948,
+    "min": -2.049999952316284,
+    "sha256": "7be2897735c944faada87f41c5292868cc20d8953a5658c5c0172978d0e8cc00"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    225.0,
+    226.0,
+    227.0,
+    227.89999389648438,
+    224.0
+   ],
+   "azimuth_sha256": "2d911b16b96965d5f8469f784607e3998c3a20bba5618065b75cffbef2817714",
+   "elevation": 1.7999999523162842,
+   "field": "reflectivity",
+   "fixed_angle": 1.7999999523162842,
+   "id": "l3-tlx-nbq-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 378,
+   "nrays": 360,
+   "product": 94,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 23289,
+    "max": 67.0,
+    "mean": 15.67952681523466,
+    "min": -31.5,
+    "sha256": "f0b5e11eedd39153d551f73677c2ce147bc0f9c37587adcff0463f848048ece9"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    225.0,
+    226.0,
+    227.0,
+    227.89999389648438,
+    224.0
+   ],
+   "azimuth_sha256": "2d911b16b96965d5f8469f784607e3998c3a20bba5618065b75cffbef2817714",
+   "elevation": 1.7999999523162842,
+   "field": "velocity",
+   "fixed_angle": 1.7999999523162842,
+   "id": "l3-tlx-nbu-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 99,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 74524,
+    "max": 51.0,
+    "mean": -1.8862782459341958,
+    "min": -57.5,
+    "sha256": "07f5edf171fb91b14d5cf9acd9fb20c567656e630a2f3a6558e4a71feab9104e"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    225.0,
+    226.0,
+    227.0,
+    227.89999389648438,
+    224.0
+   ],
+   "azimuth_sha256": "2d911b16b96965d5f8469f784607e3998c3a20bba5618065b75cffbef2817714",
+   "elevation": 1.7999999523162842,
+   "field": "differential_reflectivity",
+   "fixed_angle": 1.7999999523162842,
+   "id": "l3-tlx-nbx-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 1200,
+   "nrays": 360,
+   "product": 159,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 76876,
+    "max": 7.9375,
+    "mean": 0.7203694911285707,
+    "min": -7.875,
+    "sha256": "0539e2a6e32e938523fee9da9cf377b1164413668924f1b9cc3c77c4690c0bfb"
+   }
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-nc1-20130520-2354",
+   "product": 34
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-nc2-20130520-2354",
+   "product": 34
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-nc3-20130520-2354",
+   "product": 34
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-nc4-20130520-2354",
+   "product": 34
+  },
+  {
+   "error": "no field",
+   "id": "l3-tlx-nc5-20130520-2354",
+   "product": 34
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "spectrum_width",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-nsp-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 240,
+   "nrays": 360,
+   "product": 28,
+   "range": [
+    0.0,
+    249.75
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 60405,
+    "max": 16.0,
+    "mean": 3.0893469083685123,
+    "min": 0.0,
+    "sha256": "1b7fecfbb39ff59a83150211c6d9b253744dbeedc2f786659a08b97e5503522b"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    135.10000610351562,
+    136.10000610351562,
+    137.0,
+    138.0,
+    134.0
+   ],
+   "azimuth_sha256": "77b6b9a1ff8ff8c486953c4677a7350a76ebd3e280e43a2089c9b88e1ff129fe",
+   "elevation": 0.5,
+   "field": "spectrum_width",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-nsw-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 30,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 20007,
+    "max": 16.0,
+    "mean": 3.3532263707702303,
+    "min": 0.0,
+    "sha256": "2c3331f7878bcb2ac0b49ec0c62ca458457f858663ec404ad99ba16ac128c93a"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    246.0,
+    247.0,
+    248.0,
+    249.0,
+    245.0
+   ],
+   "azimuth_sha256": "61bddb87d0d064e01e4301433758b9a878b558e5d626e157b69dcd1cf9e25237",
+   "elevation": 0.5,
+   "field": "spectrum_width",
+   "fixed_angle": 0.5,
+   "id": "l3-tlx-nsw-20220503-005231",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 230,
+   "nrays": 360,
+   "product": 30,
+   "range": [
+    0.0,
+    999.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2022-05-03T00:52:31Z",
+   "values": {
+    "count": 23615,
+    "max": 16.0,
+    "mean": 3.7208553885242432,
+    "min": 0.0,
+    "sha256": "b206cf80c1768c448ca81d17d2db6d8daab46bbd987ed2efa38b870ad9d6bd6a"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-ntp-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 80,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 8495,
+    "max": 2.5,
+    "mean": 0.1894290845488155,
+    "min": 0.0,
+    "sha256": "29bec857b8c45274ad0703eaa1b417d948d98acd75d1a97094398f9c579b2a7f"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-ntp-20260629-173638",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 80,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-29T17:36:38Z",
+   "values": {
+    "count": 0,
+    "max": null,
+    "mean": null,
+    "min": null,
+    "sha256": "0a3cce61880766e4063d7f882faa6e150eb5152ea753267b79b1e93e5f1510ec"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-oha-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 169,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 9251,
+    "max": 2.5,
+    "mean": 0.11458761742818344,
+    "min": 0.0,
+    "sha256": "6243c8b3773473b3aa943dc65d36f499d21bd08282a77bc2dc4a40ea186ba132"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-oha-20260622-080623",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 169,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2026-06-22T08:06:23Z",
+   "values": {
+    "count": 30228,
+    "max": 2.5,
+    "mean": 0.374450853203156,
+    "min": 0.0,
+    "sha256": "a94e70cde009c247d8c8fd4dd5c991dda6759717ada8cad71ad9acc7c0f75468"
+   }
+  },
+  {
+   "altitude": 389.2296,
+   "azimuth": [
+    359.0,
+    1.0,
+    2.0,
+    3.0,
+    359.0
+   ],
+   "azimuth_sha256": "6e42289e3518c2de016892555f2a2de0c4461694120bbaaeb7cf102672197dbb",
+   "elevation": 0.0,
+   "field": "radar_estimated_rain_rate",
+   "fixed_angle": 0.0,
+   "id": "l3-tlx-pta-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "ngates": 115,
+   "nrays": 360,
+   "product": 171,
+   "range": [
+    0.0,
+    2000.0
+   ],
+   "time": [
+    0.0,
+    0.0
+   ],
+   "time_units": "seconds since 2013-05-20T20:16:43Z",
+   "values": {
+    "count": 9877,
+    "max": 2.5,
+    "mean": 0.08291991495393337,
+    "min": 0.0,
+    "sha256": "542b3160b43ddeccc84c36d6d48e82c8d5436e6ffe0ce27b3a65a12858f011cf"
+   }
+  },
+  {
+   "error": "NotImplementedError: Level3 product with code 30938 is not supported",
+   "id": "l3-tlx-pta-20200501-000023",
+   "product": 171
+  }
+ ],
+ "pyart": "2.3.0"
+}

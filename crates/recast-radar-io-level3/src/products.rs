@@ -1,11 +1,32 @@
 //! Product table: code, mnemonic, name and kind for every product code in
 //! `docs/level3/reference.md` section 8 (ICD 2620001AD Table III, legacy codes
 //! from 2620001P/2620001H, TDWR codes from 2620063E; 181/183/185/187 from MetPy).
+//!
+//! Legacy codes that Table III of 2620001G/H lists as spare (39, 40, 42, 49,
+//! 52, 53, 68-72, 83, 88, 106) come from the 1990s Table III that NCDC
+//! reproduces in its Level III data documentation (DSI-7000, 11 April 2005,
+//! "copied from the NWS Interface Control Document for RPG/Associated PUP
+//! #2620001"): 39 and 40 Composite Reflectivity Contour, 42 Echo Tops
+//! Contour, 49 Combined Moment, 52 Cross Section (Spectrum Width), 53 Weak
+//! Echo Region, 68-72 Layer Composite Turbulence (layers 1-3, average and
+//! maximum; there 67 is the layer 1 average, a code 2620001AD gives to the
+//! AP-removed layer composite reflectivity), 83 Radar Coded Message
+//! (Unedited) (`IRM`, the pre-edit message sent to the RPG operator), 88
+//! Combined Shear Contour and 106 Site Adaptable Parameters for Combined
+//! Shear Contour. The corpus products of 39, 42 and 53 (NCEI archive,
+//! 1994-2001) agree with those names: 39 contours the composite reflectivity
+//! (thresholds `20+` to `70+` dBZ, the composite reflectivity attribute
+//! table on its graphic pages; KGRR 2001-10-11) and 42 the echo tops
+//! (thresholds `25+` to `70+`; at KIND 1994-09-10 16:42 its contours run
+//! along the matching level boundaries of the Echo Tops product 41 of the
+//! same volume, not along those of VIL or composite reflectivity).
+//! Mnemonics LTA and LTM (68-72) are 2620003AE's.
 
 use ProductKind::{Generic, Graphic, Radial, Raster, Tabular, Text};
 
 /// What a product's symbology carries (from its Table III format).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ProductKind {
     /// Radial image (packets 16 or 0xAF1F).
     Radial,
@@ -62,7 +83,7 @@ const fn p(
 }
 
 #[rustfmt::skip]
-static PRODUCTS: [ProductInfo; 142] = [
+static PRODUCTS: [ProductInfo; 156] = [
     p(16, "R", "Base Reflectivity 0.54 nm x 1 deg, 124 nm, 8 levels", Radial),
     p(17, "R", "Base Reflectivity 1.1 nm x 1 deg, 248 nm, 8 levels", Radial),
     p(18, "R", "Base Reflectivity 2.2 nm x 1 deg, 248 nm, 8 levels", Radial),
@@ -86,15 +107,21 @@ static PRODUCTS: [ProductInfo; 142] = [
     p(36, "CR", "Composite Reflectivity 2.2 nm, 248 nm, 8 levels", Raster),
     p(37, "CR", "Composite Reflectivity 0.54 nm, 124 nm, 16 levels", Raster),
     p(38, "CR", "Composite Reflectivity 2.2 nm, 248 nm, 16 levels", Raster),
+    p(39, "", "Composite Reflectivity Contour", Graphic),
+    p(40, "", "Composite Reflectivity Contour", Graphic),
     p(41, "ET", "Echo Tops", Raster),
+    p(42, "", "Echo Tops Contour", Graphic),
     p(43, "", "Severe Weather Analysis (Reflectivity)", Radial),
     p(44, "", "Severe Weather Analysis (Velocity)", Radial),
     p(45, "", "Severe Weather Analysis (Spectrum Width)", Radial),
     p(46, "", "Severe Weather Analysis (Shear)", Radial),
     p(47, "", "Severe Weather Probability", Graphic),
     p(48, "VWP", "VAD Wind Profile", Graphic),
+    p(49, "", "Combined Moment", Raster),
     p(50, "RCS", "Cross Section (Reflectivity)", Raster),
     p(51, "VCS", "Cross Section (Velocity)", Raster),
+    p(52, "", "Cross Section (Spectrum Width)", Raster),
+    p(53, "", "Weak Echo Region", Raster),
     p(55, "SRR", "Storm Relative Mean Radial Velocity (Region)", Radial),
     p(56, "SRM", "Storm Relative Mean Radial Velocity (Map)", Radial),
     p(57, "VIL", "Vertically Integrated Liquid", Raster),
@@ -108,6 +135,11 @@ static PRODUCTS: [ProductInfo; 142] = [
     p(65, "LRM", "Layer Composite Reflectivity Layer 1 Maximum", Raster),
     p(66, "LRM", "Layer Composite Reflectivity Layer 2 Maximum", Raster),
     p(67, "APR", "Layer Composite Reflectivity - AP Removed", Raster),
+    p(68, "LTA", "Layer Composite Turbulence Layer 2 Average", Raster),
+    p(69, "LTA", "Layer Composite Turbulence Layer 3 Average", Raster),
+    p(70, "LTM", "Layer Composite Turbulence Layer 1 Maximum", Raster),
+    p(71, "LTM", "Layer Composite Turbulence Layer 2 Maximum", Raster),
+    p(72, "LTM", "Layer Composite Turbulence Layer 3 Maximum", Raster),
     p(73, "UAM", "User Alert Message", Text),
     p(74, "RCM", "Radar Coded Message", Text),
     p(75, "FTM", "Free Text Message", Text),
@@ -117,10 +149,12 @@ static PRODUCTS: [ProductInfo; 142] = [
     p(80, "STP", "Storm Total Rainfall Accumulation", Radial),
     p(81, "DPA", "Hourly Digital Precipitation Array", Raster),
     p(82, "SPD", "Supplemental Precipitation Data", Tabular),
+    p(83, "IRM", "Radar Coded Message (Unedited)", Raster),
     p(84, "VAD", "Velocity Azimuth Display", Graphic),
     p(85, "RCS", "Cross Section Reflectivity (8 levels)", Raster),
     p(86, "VCS", "Cross Section Velocity (8 levels)", Raster),
     p(87, "CS", "Combined Shear", Raster),
+    p(88, "", "Combined Shear Contour", Graphic),
     p(89, "LRA", "Layer Composite Reflectivity Layer 3 Average", Raster),
     p(90, "LRM", "Layer Composite Reflectivity Layer 3 Maximum", Raster),
     p(93, "DBV", "ITWS Digital Base Velocity", Radial),
@@ -136,6 +170,7 @@ static PRODUCTS: [ProductInfo; 142] = [
     p(103, "", "Mesocyclone Alphanumeric Block", Tabular),
     p(104, "", "TVS Alphanumeric Block", Tabular),
     p(105, "", "Site Adaptable Parameters for Combined Shear", Tabular),
+    p(106, "", "Site Adaptable Parameters for Combined Shear Contour", Tabular),
     p(107, "", "Surface Rainfall (1 hr) Alphanumeric Block", Tabular),
     p(108, "", "Surface Rainfall (3 hr) Alphanumeric Block", Tabular),
     p(109, "", "Storm Total Rainfall Accumulation Alphanumeric Block", Tabular),

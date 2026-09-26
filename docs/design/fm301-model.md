@@ -1172,6 +1172,42 @@ pub enum LinearTransform {
     /// in that type, because xarray derives the decoded dtype from it (DOW8 `scale_factor` is
     /// float32 and decodes to float32 in xradar and Py-ART).
     CfScaleOffset { scale_factor: f64, add_offset: f64, attr_width: FloatWidth },
+    /// physical = table.value(raw): a NEXRAD Level III data level encoding that is not
+    /// linear (section 7.5). NaN where a level has no value. Not a CF packing:
+    /// `scale_factor()` and `add_offset()` return `None` and `is_linear()` false.
+    Levels(LevelTable),
+}
+
+impl LinearTransform {
+    pub fn apply(self, raw: f64) -> f32;
+    /// false for `Levels` only.
+    pub fn is_linear(self) -> bool;
+    /// CF `scale_factor` / `add_offset`: `Some` for the two linear forms, `None` for
+    /// `Levels`. They returned `f64` before Level III added `Levels` (section 7.5).
+    pub fn scale_factor(self) -> Option<f64>;
+    pub fn add_offset(self) -> Option<f64>;
+    /// F32 for `Levels`, which writes neither attribute.
+    pub fn attr_width(self) -> FloatWidth;
+}
+
+/// Level III encodings that are not linear (ICD 2620001 Figure 3-6 sheet 6 Note 1), each
+/// evaluated in f64 and rounded to f32 once. Callers use `value`, not a `match`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum LevelTable {
+    /// 16-level products: level n (0-15) is values[n], NaN for a level without a value
+    /// and for levels from 16.
+    Sixteen([f32; 16]),
+    /// (raw & mask) / scale - offset; the bits outside `mask` are flags (enhanced echo
+    /// tops, product 135: mask 0x7F, "topped" bit 0x80 in the field's `flag_masks`).
+    Masked { mask: u16, scale: f32, offset: f32 },
+    /// High resolution VIL (product 134): linear below `log_start`, exponential from it.
+    LinearLog { linear_scale: f32, linear_offset: f32, log_start: u16, log_scale: f32, log_offset: f32 },
+}
+
+impl LevelTable {
+    /// NaN when the level has no value or the result is not finite.
+    pub fn value(self, raw: f64) -> f32;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1797,6 +1833,35 @@ variables and no `ray_n_gates`.
 
 Algorithms write `F32` with `FloatCoding::default()`, so NaN means missing. Quantised outputs
 such as classifications may use `U8` with `flag_values` and `flag_meanings`.
+
+### 7.5 NEXRAD Level III level tables
+
+Most Level III data levels are linear (`IcdScaleOffset` or `CfScaleOffset`), but three
+encodings are not: the 16-level threshold tables, the high resolution VIL of product 134 and
+the enhanced echo tops of product 135 (ICD 2620001 Figure 3-6 sheet 6 Note 1). Expanding them
+to f32 would lose the range-folded code and the topped bit, so the Level III decoder keeps the
+packed codes in their stored width with `LinearTransform::Levels(LevelTable)`, and puts the flags in
+the coding (`range_folded`, `fill_value`, `undetect`) and in `flag_values` / `flag_masks` /
+`flag_meanings` (product 135: mask 0x7F for the height, flag mask 0x80 "topped"). The full
+Level III mapping is the `recast_radar_io_level3::volume` module documentation.
+
+Rules that follow for every consumer of the model:
+
+- `IntCoding::resolve` (and `Field::gate`) report a code the transform maps to NaN as
+  `Gate::Missing`, after the sentinel checks, so a 16-level table's levels without a value
+  read as missing.
+- `LinearTransform::scale_factor()` and `add_offset()` return `Option<f64>` (`None` for
+  `Levels`), and `is_linear()` tells the two cases apart. This changed the signature of both
+  functions (they returned `f64`): a writer must not pack a `Levels` field with a scale
+  factor. It writes the field decoded, or its codes together with the level table.
+- The FM301 view writes a `Levels` field twice: `<name>` holds the decoded float32 values
+  (NaN for every sentinel, `_FillValue = NaN`, no `scale_factor` / `add_offset`), which is
+  what xarray, xradar and Py-ART read; `<name>_level` holds the stored codes with the coding
+  and flag attributes (`long_name` "... data level", `_FillValue`, `_Undetect`,
+  `valid_range`, `flag_values`, `flag_masks`, `flag_meanings`, `is_discrete`) and is named in
+  `<name>`'s `ancillary_variables`.
+- `LevelTable` is `#[non_exhaustive]`; later encodings may add variants, and code that only
+  decodes calls `LevelTable::value`.
 
 ---
 

@@ -7,20 +7,26 @@
 //! | Module | Codes |
 //! |---|---|
 //! | [`radial`] | 16, 0xAF1F |
-//! | [`raster`] | 0xBA07, 0xBA0F, 17, 18, 33 |
+//! | [`raster`] | 0xBA07, 0xBA0F, 17, 18, 32, 33 |
 //! | [`generic`] | 28, 29 |
 //! | [`text`] | 1, 2, 8 |
 //! | [`vectors`] | 6, 7, 9, 10 |
 //! | [`contour`] | 0x0802, 0x0E03, 0x3501 |
 //! | [`symbols`] | 3, 4, 5, 11-15, 19-26 (including cell trend 21/22 and SCIT 23/24) |
+//! | [`irm`] | 30, 31 (the unedited Radar Coded Message, product 83; DSI-7000 Figure 3-22) |
 //!
 //! A family decoder returning [`Level3Error::UnsupportedPacket`] for the code
 //! it was given leaves the packet as [`Packet::Unknown`]. A packet code the
 //! walker cannot size ends the walk: the rest of the layer or page becomes one
 //! [`Packet::Unknown`].
+//!
+//! Each packet the walker keeps, and what its decoder allocates for it, is
+//! charged to the decode budget of the whole product
+//! ([`crate::MAX_PRODUCT_DECODED_BYTES`]) before it is allocated.
 
 pub mod contour;
 pub mod generic;
+pub mod irm;
 pub mod radial;
 pub mod raster;
 pub mod symbols;
@@ -29,6 +35,7 @@ pub mod vectors;
 
 pub use contour::ContourPacket;
 pub use generic::GenericPacket;
+pub use irm::IrmPacket;
 pub use radial::RadialPacket;
 pub use raster::{DigitalPrecipPacket, RasterPacket};
 pub use symbols::SymbolPacket;
@@ -36,6 +43,7 @@ pub use text::TextPacket;
 pub use vectors::VectorPacket;
 
 use crate::Level3Error;
+use crate::budget::Budget;
 
 /// One display data packet.
 #[derive(Debug, Clone, PartialEq)]
@@ -43,7 +51,9 @@ use crate::Level3Error;
 pub enum Packet {
     /// Digital radial data array (16) or run-length radial data (0xAF1F).
     Radial(RadialPacket),
-    /// Raster data (0xBA07, 0xBA0F), precipitation rate array (18) or digital raster array (33).
+    /// Raster data (0xBA07, 0xBA0F), precipitation rate array (18), digital
+    /// raster array (33) or the intensity grid of an unedited Radar Coded
+    /// Message (32).
     Raster(RasterPacket),
     /// Digital precipitation data array (17).
     DigitalPrecip(DigitalPrecipPacket),
@@ -57,6 +67,8 @@ pub enum Packet {
     Vectors(VectorPacket),
     /// Contour packets (0x0802, 0x0E03, 0x3501).
     Contour(ContourPacket),
+    /// Packets 30 and 31 of the unedited Radar Coded Message.
+    Irm(IrmPacket),
     /// A packet not decoded (yet). `bytes` is the complete packet starting with
     /// its 2-byte code; for a code the walker cannot size, it runs to the end of
     /// the layer or page.
@@ -80,6 +92,7 @@ impl Packet {
             Self::Symbol(p) => p.code(),
             Self::Vectors(p) => p.code(),
             Self::Contour(p) => p.code(),
+            Self::Irm(p) => p.code(),
             Self::Unknown { code, .. } => *code,
         }
     }
@@ -87,7 +100,12 @@ impl Packet {
 
 /// Decodes the packets filling `bytes` (one layer, page, or the contents of a
 /// nesting packet). `base` is the message byte offset of `bytes[0]`, used in errors.
-pub(crate) fn decode_packets(bytes: &[u8], base: usize) -> Result<Vec<Packet>, Level3Error> {
+/// Every packet, and what its decoder allocates, is charged to `budget`.
+pub(crate) fn decode_packets(
+    bytes: &[u8],
+    base: usize,
+    budget: &mut Budget,
+) -> Result<Vec<Packet>, Level3Error> {
     let mut packets = Vec::new();
     let mut p = 0;
     while let Some(rest) = bytes.get(p..).filter(|rest| !rest.is_empty()) {
@@ -102,14 +120,13 @@ pub(crate) fn decode_packets(bytes: &[u8], base: usize) -> Result<Vec<Packet>, L
         let code = u16::from_be_bytes([hi, lo]);
         match packet_size(code, rest) {
             Ok(Some(size)) => {
-                packets.push(dispatch(code, &rest[..size])?);
+                let packet = dispatch(code, &rest[..size], budget)?;
+                budget.push(&mut packets, packet, "packets")?;
                 p += size;
             }
             Ok(None) => {
-                packets.push(Packet::Unknown {
-                    code,
-                    bytes: rest.to_vec(),
-                });
+                let bytes = budget.bytes(rest, "unknown packet")?;
+                budget.push(&mut packets, Packet::Unknown { code, bytes }, "packets")?;
                 break;
             }
             Err(Overrun) => {
@@ -125,22 +142,23 @@ pub(crate) fn decode_packets(bytes: &[u8], base: usize) -> Result<Vec<Packet>, L
 }
 
 /// Hands one sized packet to its family decoder.
-fn dispatch(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
+fn dispatch(code: u16, bytes: &[u8], budget: &mut Budget) -> Result<Packet, Level3Error> {
     let decoded = match code {
-        16 | 0xAF1F => radial::decode(code, bytes),
-        17 | 18 | 33 | 0xBA07 | 0xBA0F => raster::decode(code, bytes),
-        28 | 29 => generic::decode(code, bytes),
-        1 | 2 | 8 => text::decode(code, bytes),
-        6 | 7 | 9 | 10 => vectors::decode(code, bytes),
-        0x0802 | 0x0E03 | 0x3501 => contour::decode(code, bytes),
-        3..=5 | 11..=15 | 19..=26 => symbols::decode(code, bytes),
+        16 | 0xAF1F => radial::decode(code, bytes, budget),
+        17 | 18 | 32 | 33 | 0xBA07 | 0xBA0F => raster::decode(code, bytes, budget),
+        30 | 31 => irm::decode(code, bytes),
+        28 | 29 => generic::decode(code, bytes, budget),
+        1 | 2 | 8 => text::decode(code, bytes, budget),
+        6 | 7 | 9 | 10 => vectors::decode(code, bytes, budget),
+        0x0802 | 0x0E03 | 0x3501 => contour::decode(code, bytes, budget),
+        3..=5 | 11..=15 | 19..=26 => symbols::decode(code, bytes, budget),
         _ => Err(Level3Error::UnsupportedPacket(code)),
     };
     match decoded {
         Err(Level3Error::UnsupportedPacket(unsupported)) if unsupported == code => {
             Ok(Packet::Unknown {
                 code,
-                bytes: bytes.to_vec(),
+                bytes: budget.bytes(bytes, "unknown packet")?,
             })
         }
         other => other,
@@ -179,6 +197,11 @@ fn packet_size(code: u16, b: &[u8]) -> Result<Option<usize>, Overrun> {
         17 | 18 => rows_size(b, 8, 10)?,
         // Rows count at 12, 14-byte header (Figure 3-11d).
         33 => rows_size(b, 12, 14)?,
+        // Product 83 (DSI-7000 Figure 3-22, and observed): code and five
+        // Real*4 values; code and count; code, rows count at 2, then rows.
+        30 => irm::PARAMETERS_BYTES,
+        31 => irm::STORM_COUNT_BYTES,
+        32 => rows_size(b, 2, 4)?,
         // code, reserved, INT*4 length, XDR data (Figure 3-15c).
         28 | 29 => usize::try_from(u32_at(b, 4)?)
             .ok()

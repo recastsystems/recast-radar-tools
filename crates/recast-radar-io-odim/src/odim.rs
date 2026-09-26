@@ -1140,6 +1140,7 @@ const VELOCITY_OFFSET_EPS: f32 = 1.0e-6;
 
 /// The `nodata` / `undetect` sentinels and physical offset a field's coding
 /// declares, in physical units: the values the plane's `what` group wrote.
+/// The offset is 0 for a transform without one ([`LinearTransform::add_offset`]).
 fn plane_sentinels(field: &Field) -> (Option<f64>, Option<f64>, f64) {
     fn packed<T: Copy + Into<f64>>(code: Option<T>, transform: LinearTransform) -> Option<f64> {
         code.map(|code| f64::from(transform.apply(code.into())))
@@ -1148,30 +1149,33 @@ fn plane_sentinels(field: &Field) -> (Option<f64>, Option<f64>, f64) {
         FieldData::U8 { coding, .. } => (
             packed(coding.fill_value, coding.transform),
             packed(coding.undetect, coding.transform),
-            coding.transform.add_offset(),
+            coding.transform.add_offset().unwrap_or(0.0),
         ),
         FieldData::U16 { coding, .. } => (
             packed(coding.fill_value, coding.transform),
             packed(coding.undetect, coding.transform),
-            coding.transform.add_offset(),
+            coding.transform.add_offset().unwrap_or(0.0),
         ),
         FieldData::I8 { coding, .. } => (
             packed(coding.fill_value, coding.transform),
             packed(coding.undetect, coding.transform),
-            coding.transform.add_offset(),
+            coding.transform.add_offset().unwrap_or(0.0),
         ),
         FieldData::I16 { coding, .. } => (
             packed(coding.fill_value, coding.transform),
             packed(coding.undetect, coding.transform),
-            coding.transform.add_offset(),
+            coding.transform.add_offset().unwrap_or(0.0),
         ),
         FieldData::I32 { coding, .. } => (
             packed(coding.fill_value, coding.transform),
             packed(coding.undetect, coding.transform),
-            coding.transform.add_offset(),
+            coding.transform.add_offset().unwrap_or(0.0),
         ),
         FieldData::F32 { coding, .. } => {
-            let offset = coding.transform.map_or(0.0, LinearTransform::add_offset);
+            let offset = coding
+                .transform
+                .and_then(LinearTransform::add_offset)
+                .unwrap_or(0.0);
             (
                 coding.fill_value.map(f64::from),
                 coding.undetect.map(f64::from),
@@ -1179,7 +1183,10 @@ fn plane_sentinels(field: &Field) -> (Option<f64>, Option<f64>, f64) {
             )
         }
         FieldData::F64 { coding, .. } => {
-            let offset = coding.transform.map_or(0.0, LinearTransform::add_offset);
+            let offset = coding
+                .transform
+                .and_then(LinearTransform::add_offset)
+                .unwrap_or(0.0);
             (coding.fill_value, coding.undetect, offset)
         }
     }

@@ -8,16 +8,18 @@
 //! Golden raster values come from MetPy 1.7.1 `Level3File`: the level grid of
 //! each packet (`raw_sha256` of the row-major `u8` levels, `histogram`, `rows` x
 //! `cols`) and, for products MetPy maps, a summary of `map_data` physical values.
-//! Packet header fields come from the independent ICD walker in the golden tool.
+//! Packet header fields come from the ICD walker in the golden tool (a second
+//! reading by the decoder's author).
 //!
 //! Physical values come from the public API: [`DataLevels::for_packet`] and
 //! [`RasterGrid::values`] (`f32`, NaN without a value). Their finite/masked
 //! counts and min/max/mean equal MetPy's for every raster product MetPy maps
 //! ([`METPY_MAPPED_PRODUCTS`]: threshold-coded products and product 81's
-//! packet 17). Packet 18 levels have no mapping in the ICD; `for_packet`
-//! returns `None` for them and MetPy maps none either.
+//! packet 17). MetPy maps no packet 18 levels; `for_packet` gives them the
+//! 8-level rate code of ICD 2620003AE section 30.2.1, which the test checks
+//! level by level.
 //!
-//! Corpus coverage: 0xBA07 in 26 files, 17 in 4, 18 in 4. No real sample of
+//! Corpus coverage: 0xBA07 in 29 files, 17 in 4, 18 in 4. No real sample of
 //! 0xBA0F or 33 exists (reference section 7), so those codes are decoded by the
 //! same code paths but have no corpus check. MetPy cannot read one raster file,
 //! `l3-fws-sup-19950517-2304` (product 82); it is checked against an ICD
@@ -30,7 +32,7 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use common::{Entry, Json, PhysicalSummary};
-use recast_radar_io_level3::levels::DataLevels;
+use recast_radar_io_level3::levels::{DataLevels, Level};
 use recast_radar_io_level3::packets::raster::{RasterGrid, RasterHeader};
 use recast_radar_io_level3::{Level3Error, Level3Product, Packet, decode_product};
 
@@ -39,7 +41,9 @@ const FAMILY_CODES: [u16; 5] = [0xBA07, 0xBA0F, 17, 18, 33];
 
 /// Products whose raster packets MetPy maps to physical values, all compared:
 /// 16-level threshold products (0xBA07) and product 81 (packet 17).
-const METPY_MAPPED_PRODUCTS: [i16; 12] = [36, 37, 38, 41, 57, 65, 66, 67, 78, 80, 81, 90];
+const METPY_MAPPED_PRODUCTS: [i16; 17] = [
+    35, 36, 37, 38, 41, 50, 51, 57, 63, 64, 65, 66, 67, 78, 80, 81, 90,
+];
 
 /// Files MetPy cannot read that contain raster packets; each is checked by its
 /// own ICD-based test below.
@@ -70,8 +74,8 @@ struct Counts {
     physical_checked: usize,
     /// Product codes of those packets.
     physical_products: BTreeSet<i16>,
-    /// Packets MetPy maps no physical values for, where the decoder has no
-    /// mapping either (packet 18).
+    /// Packets MetPy maps no physical values for, checked against the ICD
+    /// 2620003AE 8-level rate code instead (packet 18).
     unmapped_checked: usize,
 }
 
@@ -101,17 +105,19 @@ fn raster_packets_match_golden() {
     );
     eprintln!("{counts:?}");
     // Every raster packet code with a real sample was decoded and compared.
-    assert_eq!(counts.files.get(&0xBA07), Some(&26));
+    assert_eq!(counts.files.get(&0xBA07), Some(&37));
     assert_eq!(counts.files.get(&17), Some(&4));
     assert_eq!(counts.files.get(&18), Some(&4));
-    // Packet 18: 40 layers of the three DPA files MetPy reads, plus product 82.
+    // Packet 18: 40 layers of the three DPA files MetPy reads, plus product 82;
+    // 0xBA07: one per raster product, eight in each Weak Echo Region (53).
     let packets: Vec<(u16, usize)> = counts.packets.iter().map(|(c, n)| (*c, *n)).collect();
-    assert_eq!(packets, [(17, 4), (18, 41), (0xBA07, 26)]);
-    // Every packet in a file MetPy reads: 26 + 4 + 40 level grids, and physical
-    // values for the 0xBA07 and 17 packets (MetPy maps no packet 18).
-    assert_eq!(counts.grids_checked, 70);
-    assert_eq!(counts.physical_checked, 30);
-    assert_eq!(counts.unmapped_checked, 40);
+    assert_eq!(packets, [(17, 4), (18, 41), (0xBA07, 51)]);
+    // Every packet in a file MetPy reads: 51 + 4 + 40 level grids, physical
+    // values for the 0xBA07 and 17 packets (MetPy maps no packet 18, nor the
+    // rasters of products 53 and 87, which are checked against the ICD).
+    assert_eq!(counts.grids_checked, 95);
+    assert_eq!(counts.physical_checked, 38);
+    assert_eq!(counts.unmapped_checked, 57);
     assert_eq!(
         counts.physical_products,
         BTreeSet::from(METPY_MAPPED_PRODUCTS)
@@ -656,16 +662,75 @@ fn check_packet(
     let physical = item.get("physical");
     let levels = DataLevels::for_packet(&product.description, code);
     let Some(levels) = levels else {
-        // Packet 18 levels have no mapping; MetPy maps none either.
-        if code == 18 && physical.is_null() {
-            counts.unmapped_checked += 1;
-        } else {
-            problems.push(format!(
-                "{place}: no data level mapping, MetPy physical {physical:?}"
-            ));
-        }
+        problems.push(format!(
+            "{place}: no data level mapping, MetPy physical {physical:?}"
+        ));
         return;
     };
+    if code == 18 && physical.is_null() {
+        // MetPy maps no packet 18 levels. The decoder uses the 8-level rate
+        // code of ICD 2620003AE section 30.2.1: codes 0-6 are the lower
+        // bounds 0.0, 0.1, 0.3, 0.5, 1.0, 2.0, 4.0 in/h and code 7 is ND.
+        let values = grid.values(&levels);
+        if let Err(e) = check_values_accessors(grid, &levels, &values) {
+            problems.push(format!("{place}: {e}"));
+        }
+        const RATES: [f32; 7] = [0.0, 0.1, 0.3, 0.5, 1.0, 2.0, 4.0];
+        for (&level, &value) in grid.levels().iter().zip(&values) {
+            let expected = RATES.get(usize::from(level)).copied();
+            let ok = match expected {
+                Some(rate) => value == rate,
+                None => level == 7 && value.is_nan(),
+            };
+            if !ok {
+                problems.push(format!("{place}: level {level} maps to {value}"));
+                break;
+            }
+        }
+        if levels.units() != Some("in h-1") {
+            problems.push(format!("{place}: units {:?}", levels.units()));
+        }
+        counts.unmapped_checked += 1;
+        return;
+    }
+    if physical.is_null() && matches!(product.description.product_code, 53 | 87) {
+        // Weak Echo Region and combined shear (MetPy reads them with default
+        // metadata): every level present is the value of its threshold
+        // halfword `31 + N`, read here
+        // per Figure 3-6 sheet 6 Note 1 (low byte; bit 14, 13 or 12 divides by
+        // 100, 20 or 10; bit 8 negates), or a flag where bit 15 marks a code.
+        let desc = &product.description;
+        let mut present: Vec<u8> = grid.levels().to_vec();
+        present.sort_unstable();
+        present.dedup();
+        for level in present {
+            let raw = desc.halfword(31 + usize::from(level)).unwrap();
+            let decoded = levels.level(u16::from(level));
+            let ok = if raw & 0x8000 != 0 {
+                matches!(decoded, Level::Flag(_))
+            } else {
+                let mut value = f64::from(raw & 0xFF);
+                if raw & 0x4000 != 0 {
+                    value /= 100.0;
+                } else if raw & 0x2000 != 0 {
+                    value /= 20.0;
+                } else if raw & 0x1000 != 0 {
+                    value /= 10.0;
+                }
+                if raw & 0x0100 != 0 {
+                    value = -value;
+                }
+                decoded == Level::Value(value)
+            };
+            if !ok {
+                problems.push(format!(
+                    "{place}: level {level} (halfword {raw:#06x}) decoded as {decoded:?}"
+                ));
+            }
+        }
+        counts.unmapped_checked += 1;
+        return;
+    }
     if physical.is_null() {
         problems.push(format!(
             "{place}: MetPy maps no physical values, decoder maps {:?}",

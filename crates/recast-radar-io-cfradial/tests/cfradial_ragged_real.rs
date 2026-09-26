@@ -108,12 +108,12 @@ fn check(id: &str) {
             assert_eq!(dtype, field_golden["dtype"].as_str().unwrap(), "{context} {name}: dtype");
             assert_eq!(fill, field_golden["fill"].as_i64(), "{context} {name}: fill");
             assert_eq!(
-                f64::from(scale as f32),
+                f64::from(scale.unwrap() as f32),
                 field_golden["scale_factor"].as_f64().unwrap(),
                 "{context} {name}: scale"
             );
             assert_eq!(
-                f64::from(offset as f32),
+                f64::from(offset.unwrap() as f32),
                 field_golden["add_offset"].as_f64().unwrap(),
                 "{context} {name}: offset"
             );

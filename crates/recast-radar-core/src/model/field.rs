@@ -152,7 +152,9 @@ impl<T: PackedInt> IntCoding<T> {
         self.fill_value.unwrap_or(T::from_u8(0))
     }
 
-    /// Resolve one raw code (section 4, `Field::gate` rules 2 to 6).
+    /// Resolve one raw code (section 4, `Field::gate` rules 2 to 6). A code
+    /// the transform gives no value for (a [`LevelTable`] level without a
+    /// value) is `Missing`.
     pub fn resolve(&self, raw: T) -> Gate {
         if self.undetect == Some(raw) {
             Gate::Undetect
@@ -163,13 +165,26 @@ impl<T: PackedInt> IntCoding<T> {
         } else if matches!(self.valid_range, Some([lo, hi]) if raw < lo || raw > hi) {
             Gate::Missing
         } else {
-            Gate::Value(self.transform.apply(raw.as_f64()))
+            let value = self.transform.apply(raw.as_f64());
+            if value.is_nan() {
+                Gate::Missing
+            } else {
+                Gate::Value(value)
+            }
         }
     }
 }
 
-/// A linear transform from packed to physical values.
+/// The transform from packed codes to physical values.
+///
+/// Every variant but [`LinearTransform::Levels`] is linear and has CF
+/// `scale_factor` / `add_offset` equivalents ([`LinearTransform::is_linear`]).
+/// `Levels` covers the NEXRAD Level III data level encodings that are not a
+/// linear function of the code (16-level threshold tables, high resolution
+/// VIL, enhanced echo tops); CF has no attribute for them, so the FM301 view
+/// writes such fields decoded, with the codes beside them (`crate::fm301`).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum LinearTransform {
     /// `physical = (raw - offset) / scale`, evaluated in f32. NEXRAD ICD form;
     /// Py-ART evaluates exactly this expression. The
@@ -184,6 +199,10 @@ pub enum LinearTransform {
         add_offset: f64,
         attr_width: FloatWidth,
     },
+    /// `physical = table.value(raw)`: a data level encoding that is not
+    /// linear (NEXRAD Level III). NaN where a level has no value, which
+    /// [`IntCoding::resolve`] reports as `Missing`.
+    Levels(LevelTable),
 }
 
 impl LinearTransform {
@@ -197,30 +216,125 @@ impl LinearTransform {
                 add_offset,
                 ..
             } => (raw * scale_factor + add_offset) as f32,
+            Self::Levels(table) => table.value(raw),
         }
     }
 
-    /// CF `scale_factor`.
-    pub fn scale_factor(self) -> f64 {
+    /// `true` for the transforms CF `scale_factor` / `add_offset` express
+    /// exactly; `false` for [`LinearTransform::Levels`].
+    pub fn is_linear(self) -> bool {
+        !matches!(self, Self::Levels(_))
+    }
+
+    /// CF `scale_factor`, or `None` for [`LinearTransform::Levels`], which
+    /// has none: a writer must store such a field decoded (or its codes with
+    /// the level table), never packed with a scale factor.
+    pub fn scale_factor(self) -> Option<f64> {
         match self {
-            Self::IcdScaleOffset { scale, .. } => 1.0 / f64::from(scale),
-            Self::CfScaleOffset { scale_factor, .. } => scale_factor,
+            Self::IcdScaleOffset { scale, .. } => Some(1.0 / f64::from(scale)),
+            Self::CfScaleOffset { scale_factor, .. } => Some(scale_factor),
+            Self::Levels(_) => None,
         }
     }
 
-    /// CF `add_offset`.
-    pub fn add_offset(self) -> f64 {
+    /// CF `add_offset`, or `None` for [`LinearTransform::Levels`], which has
+    /// none (see [`scale_factor`](Self::scale_factor)).
+    pub fn add_offset(self) -> Option<f64> {
         match self {
-            Self::IcdScaleOffset { scale, offset } => -f64::from(offset) / f64::from(scale),
-            Self::CfScaleOffset { add_offset, .. } => add_offset,
+            Self::IcdScaleOffset { scale, offset } => Some(-f64::from(offset) / f64::from(scale)),
+            Self::CfScaleOffset { add_offset, .. } => Some(add_offset),
+            Self::Levels(_) => None,
         }
     }
 
-    /// The type CF `scale_factor` / `add_offset` attributes are written in.
+    /// The type CF `scale_factor` / `add_offset` attributes are written in
+    /// (F32 for [`LinearTransform::Levels`], which writes none).
     pub fn attr_width(self) -> FloatWidth {
         match self {
             Self::IcdScaleOffset { .. } => FloatWidth::F64,
             Self::CfScaleOffset { attr_width, .. } => attr_width,
+            Self::Levels(_) => FloatWidth::F32,
+        }
+    }
+}
+
+/// A NEXRAD Level III data level encoding that is not a linear function of
+/// the level (ICD 2620001 Figure 3-6 sheet 6 Note 1). Every variant is
+/// evaluated in f64 and rounded to f32 once. Code that only decodes needs
+/// [`LevelTable::value`], not a `match`; later encodings may add variants.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum LevelTable {
+    /// A 16-level product: level `n` (0-15) is `values[n]` (the threshold
+    /// value its halfword gives), NaN for a level without a value. Levels
+    /// from 16 have no value.
+    Sixteen([f32; 16]),
+    /// `(raw & mask) / scale - offset`: the bits outside `mask` are flags
+    /// (enhanced echo tops, product 135: mask 0x7F, bit 0x80 "topped",
+    /// described by the field's `flag_masks`).
+    Masked {
+        /// Data bits.
+        mask: u16,
+        /// Divisor.
+        scale: f32,
+        /// Offset subtracted after dividing.
+        offset: f32,
+    },
+    /// High resolution VIL (product 134): `(raw - linear_offset) /
+    /// linear_scale` below `log_start`, `exp((raw - log_offset) /
+    /// log_scale)` from it.
+    LinearLog {
+        /// Linear scale.
+        linear_scale: f32,
+        /// Linear offset.
+        linear_offset: f32,
+        /// First level of the logarithmic part.
+        log_start: u16,
+        /// Log scale.
+        log_scale: f32,
+        /// Log offset.
+        log_offset: f32,
+    },
+}
+
+impl LevelTable {
+    /// The value of level `raw`; NaN when the level has none or the result
+    /// is not finite.
+    pub fn value(self, raw: f64) -> f32 {
+        let value = match self {
+            Self::Sixteen(values) => {
+                return if (0.0..16.0).contains(&raw) {
+                    values[raw as usize]
+                } else {
+                    f32::NAN
+                };
+            }
+            Self::Masked {
+                mask,
+                scale,
+                offset,
+            } => {
+                let data = (raw as u32) & u32::from(mask);
+                f64::from(data) / f64::from(scale) - f64::from(offset)
+            }
+            Self::LinearLog {
+                linear_scale,
+                linear_offset,
+                log_start,
+                log_scale,
+                log_offset,
+            } => {
+                if raw < f64::from(log_start) {
+                    (raw - f64::from(linear_offset)) / f64::from(linear_scale)
+                } else {
+                    ((raw - f64::from(log_offset)) / f64::from(log_scale)).exp()
+                }
+            }
+        };
+        if value.is_finite() {
+            value as f32
+        } else {
+            f32::NAN
         }
     }
 }

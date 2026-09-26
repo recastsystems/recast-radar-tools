@@ -214,6 +214,24 @@ fn check_size(volume: &Volume, options: &OdimWriteOptions) -> Result<(), OdimWri
     Ok(())
 }
 
+/// Refuse a field whose codes decode through a NEXRAD Level III level table
+/// ([`LinearTransform::Levels`]): ODIM `gain` and `offset` state only a
+/// linear coding. (The CfRadial 2 / FM301 writer writes such a field
+/// decoded.)
+fn check_linear(volume: &Volume) -> Result<(), OdimWriteError> {
+    for (index, sweep) in volume.sweeps.iter().enumerate() {
+        for field in &sweep.fields {
+            if field.data.transform().is_some_and(|transform| !transform.is_linear()) {
+                return Err(unrepresentable(format!(
+                    "sweep {index} field {}: a level-table coding (NEXRAD Level III), which gain and offset cannot state",
+                    field.name.as_str()
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn unrepresentable(what: impl Into<String>) -> OdimWriteError {
     OdimWriteError::Unrepresentable { what: what.into() }
 }
@@ -563,6 +581,7 @@ pub fn write_odim_h5_volume(
         return Err(unrepresentable("a volume without sweeps"));
     }
     check_size(volume, options)?;
+    check_linear(volume)?;
     let odim = volume.provenance.source_format == SourceFormat::OdimH5;
     let mut writer = Writer::new();
     let root = writer.root();
@@ -1342,8 +1361,13 @@ fn plane_data(
     })
 }
 
+/// ODIM `gain` and `offset` of a linear transform ([`check_linear`] refuses
+/// the others before any plane is written).
 fn gain_offset(transform: LinearTransform) -> (f64, f64) {
-    (transform.scale_factor(), transform.add_offset())
+    (
+        transform.scale_factor().unwrap_or(1.0),
+        transform.add_offset().unwrap_or(0.0),
+    )
 }
 
 fn float_coding<T: Copy>(coding: &FloatCoding<T>, widen: impl Fn(T) -> f64) -> PlaneCoding {

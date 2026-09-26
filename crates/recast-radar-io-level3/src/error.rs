@@ -129,6 +129,23 @@ pub enum Level3Error {
         limit: usize,
     },
 
+    /// Decoding the product would allocate more than
+    /// [`crate::MAX_PRODUCT_DECODED_BYTES`] for its packets, data levels and
+    /// text together, or parsing its radar coded message more than
+    /// [`crate::rcm::MAX_RCM_PARSED_BYTES`] (`limit` says which). Checked
+    /// before each allocation, so the excess is never allocated.
+    #[error("{what} needs {needed} more decoded bytes with {used} of the {limit}-byte limit used")]
+    ProductTooLarge {
+        /// What was about to be allocated.
+        what: &'static str,
+        /// Bytes it needs.
+        needed: usize,
+        /// Bytes the decode or parse had already allocated.
+        used: usize,
+        /// The limit in bytes.
+        limit: usize,
+    },
+
     /// The product has no radial, raster or generic data array to convert
     /// into a volume ([`crate::Level3Product::to_volume`]).
     #[error("product {code} has no radial, raster or generic data array")]

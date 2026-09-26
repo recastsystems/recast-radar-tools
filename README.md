@@ -93,10 +93,15 @@ sweep  2:  0.88 deg, 720 rays, DBZH ZDR PHIDP RHOHV CCORH
 For bytes of unknown format, `io::read_supported_volume_bytes(&bytes)`
 (feature `io`) sniffs the format and calls the matching decoder: DORADE,
 an HDF5 container by content (ODIM_H5, netCDF-4 CfRadial 1 or CfRadial 2),
-classic-netCDF CfRadial 1, JMA GRIB2 tar, or Level II. It also unwraps gzip and
-single-file ZIP archives. Level III products are not radar volumes and the
-router does not read them: use `level3::decode_product(&bytes)` (feature
-`level3`, part of `io`).
+classic-netCDF CfRadial 1, JMA GRIB2 tar, NEXRAD Level III, or Level II. It
+also unwraps gzip and single-file ZIP archives. A Level III product becomes
+one sweep per data array; `io::read_supported_volume_with_metadata` also
+returns the decoded product. `level3::decode_message(&bytes)` (feature
+`level3`, part of `io`) decodes any Level III file: a product, including the
+graphic and tabular products that have no data array, a General Status
+Message or a plain-text message (`NOUS` headings);
+`level3::decode_product(&bytes)` decodes products only and returns
+`Level3Error::TextOnly` or `Level3Error::NotAProduct` for the other two.
 
 ### Dealias velocity
 
@@ -291,9 +296,7 @@ keywords, categories and a readme.
 - In the Default column, "yes" means the feature is listed in `default`, and
   "via `io`" means `io` turns it on.
 - A feature also enables the features of the member crates its crate depends
-  on, so the types a module's API uses can be named through the facade. There
-  is one exception: `io` enables `level3` although the router does not depend
-  on it, so that `io` turns on every format decoder.
+  on, so the types a module's API uses can be named through the facade.
 - `nexrad` alone gives the Level II decoder without the other formats or the
   router.
 - `net` (also part of `full`) is the only feature that makes HTTPS requests

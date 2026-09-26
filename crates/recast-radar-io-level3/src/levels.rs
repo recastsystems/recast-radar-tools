@@ -52,7 +52,7 @@
 //!
 //! | Encoding ([`LevelEncoding`]) | Products |
 //! |---|---|
-//! | [`Thresholds`](LevelEncoding::Thresholds) (16 threshold halfwords) | 16-31, 33, 35-38, 41, 43-46, 48, 50, 51, 55-57, 63-67, 78-80, 84-87, 89, 90, 95-98, 132, 133, 137, 144-147, 150, 151, 158, 160, 162, 164, 169, 171, 181, 183, 185, 187 |
+//! | [`Thresholds`](LevelEncoding::Thresholds) (16 threshold halfwords) | 16-31, 33, 35-46, 48-53, 55-57, 63-72, 78-80, 84-90, 95-98, 132, 133, 137, 144-147, 150, 151, 158, 160, 162, 164, 169, 171, 181, 183-185, 187; the rate arrays (packet 18) of 81 and 82 |
 //! | [`Linear`](LevelEncoding::Linear) (minimum and increment) | 32, 81, 93, 94, 99, 138, 153-155, 180, 182, 186, 193, 195 |
 //! | [`ScaleOffset`](LevelEncoding::ScaleOffset) (`REAL*4` scale and offset) | 159, 161, 163, 167, 168, 170, 172-176, 189-192 |
 //! | [`Vil`](LevelEncoding::Vil) | 134 |
@@ -60,8 +60,19 @@
 //! | [`Classes`](LevelEncoding::Classes) | 34, 113, 165, 177, 197 |
 //! | [`Edr`](LevelEncoding::Edr) | 156, 157 |
 //!
-//! Graphic, alphanumeric and generic products without data levels, and TDWR
-//! product 184 (its 256-level encoding is not given in 2620063E), have no mapping.
+//! Graphic, alphanumeric and generic products without data levels have no
+//! mapping.
+//!
+//! TDWR product 184 (Base Spectrum Width) is a threshold product: 2620063E
+//! Figure 3-6 sheet 6 Note 1 makes 180, 182 and 186 the only 256-level
+//! exceptions ("Except for Products 180, 182, and 186 the Data Level Threshold
+//! halfwords are coded as follows"), although its Table III row lists 256
+//! data levels. No real product 184 has been found (`docs/level3/reference.md`
+//! section 7), so this reading of the ICD is not checked against data.
+//!
+//! Packet 18 (the precipitation rate arrays of products 81 and 82) has no
+//! halfword describing its levels; [`DataLevels::precipitation_rate`] gives
+//! the 8-level code of ICD 2620003AE section 30.2.1.
 //!
 //! # Differences from MetPy
 //!
@@ -87,6 +98,7 @@ use crate::header::ProductDescription;
 
 /// What one data level of a product means.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum Level {
     /// A physical value in the product's [`units`](DataLevels::units).
     Value(f64),
@@ -438,6 +450,26 @@ const HYDROMETEOR_V1: &[(u16, Level)] = &[
     flag(150, LevelFlag::RangeFolded),
 ];
 
+/// Product 74: the intensity levels of the Radar Coded Message's Part A
+/// (ICD 2620001P Appendix B). Levels 1-6 are the reflectivity categories
+/// within 124 nmi (Hybrid Scan Reflectivity). Beyond 124 nmi Appendix B
+/// labels Composite Reflectivity at or above a threshold level eight and
+/// below it level nine; real messages use 7 and 8 (KTLX 2013-05-20 20:16:
+/// Composite Reflectivity median 35 dBZ in the level 7 boxes, 15 dBZ in the
+/// level 8 boxes, `tools/level3_lfm_golden.py`). Level 0 is a box with no
+/// reported intensity (missing or below the lowest threshold).
+const RADAR_CODED_MESSAGE: &[(u16, Level)] = &[
+    flag(0, LevelFlag::BelowThreshold),
+    class(1, "1", "Intensity level 1 within 124 nmi"),
+    class(2, "2", "Intensity level 2 within 124 nmi"),
+    class(3, "3", "Intensity level 3 within 124 nmi"),
+    class(4, "4", "Intensity level 4 within 124 nmi"),
+    class(5, "5", "Intensity level 5 within 124 nmi"),
+    class(6, "6", "Intensity level 6 within 124 nmi"),
+    class(7, "7", "Beyond 124 nmi, at or above the threshold"),
+    class(8, "8", "Beyond 124 nmi, below the threshold"),
+];
+
 /// Product 197: rain rate classes (Note 1 table).
 const RAIN_RATE: &[(u16, Level)] = &[
     class(0, "NP", "No precipitation (biota or no echo)"),
@@ -542,18 +574,12 @@ impl DataLevels {
         let (encoding, units) = match code {
             16..=31
             | 33
-            | 35..=38
-            | 41
-            | 43..=46
-            | 48
-            | 50
-            | 51
+            | 35..=46
+            | 48..=53
             | 55..=57
-            | 63..=67
+            | 63..=72
             | 78..=80
-            | 84..=87
-            | 89
-            | 90
+            | 84..=90
             | 95..=98
             | 132
             | 133
@@ -569,6 +595,7 @@ impl DataLevels {
             | 171
             | 181
             | 183
+            | 184
             | 185
             | 187 => {
                 let mut thresholds = [Threshold { raw: 0 }; 16];
@@ -667,15 +694,51 @@ impl DataLevels {
     /// The Product Description Block describes the data levels of radial
     /// (16, 0xAF1F), raster (0xBA07, 0xBA0F), digital raster (33), digital
     /// precipitation (17) and generic (28) packets: for those this is
-    /// [`from_description`](Self::from_description). It returns `None` for
-    /// every other packet code, including packet 18 (precipitation rate data
-    /// array of products 81 and 82): no halfword describes its 4-bit levels
-    /// (ICD 2620001AD Figure 3-11b gives only the layout), and product 81's
-    /// halfwords 31-33 describe its packet 17 levels.
+    /// [`from_description`](Self::from_description). Packet 18 (precipitation
+    /// rate data array of products 81 and 82) has no halfword describing its
+    /// 4-bit levels (ICD 2620001AD Figure 3-11b gives only the layout, and
+    /// product 81's halfwords 31-33 describe its packet 17 levels): for it
+    /// this is [`precipitation_rate`](Self::precipitation_rate). Packet 32
+    /// (the intensity grid of product 83) holds the levels of the radar coded
+    /// message ([`radar_coded_message`](Self::radar_coded_message)). It
+    /// returns `None` for every other packet code.
     pub fn for_packet(desc: &ProductDescription, packet_code: u16) -> Option<Self> {
         match packet_code {
             16 | 0xAF1F | 0xBA07 | 0xBA0F | 17 | 28 | 33 => Self::from_description(desc),
+            18 => Some(Self::precipitation_rate(desc.product_code)),
+            32 => Some(Self::radar_coded_message()),
             _ => None,
+        }
+    }
+
+    /// The intensity levels of a Radar Coded Message's Part A grid (product
+    /// 74, [`crate::rcm::PartA::intensity_grid`], and packet 32 of product
+    /// 83, which holds the same grid): 0 no reported intensity,
+    /// 1-6 the categories within 124 nmi, 7 and 8 at or above and below the
+    /// threshold beyond 124 nmi (observed; Appendix B numbers these 8 and 9).
+    pub fn radar_coded_message() -> Self {
+        Self {
+            product_code: 74,
+            units: None,
+            encoding: LevelEncoding::Classes(RADAR_CODED_MESSAGE),
+        }
+    }
+
+    /// The 8-level precipitation rate code of packet 18 (the rate arrays of
+    /// products 81 and 82): ICD 2620003AE section 30.2.1 gives code `N` (0-6)
+    /// as the lower bound of a rate range, 0.0, 0.1, 0.3, 0.5, 1.0, 2.0 and
+    /// 4.0 in/h, and code 7 as "ND". The table is carried as threshold
+    /// halfwords (value 0; 0.1, 0.3, 0.5, 1.0 as tenths; 2, 4; code ND),
+    /// levels 8-15 blank. `product_code` is the product the packet belongs to.
+    pub fn precipitation_rate(product_code: i16) -> Self {
+        const RATE: [u16; 16] = [
+            0x0000, 0x1001, 0x1003, 0x1005, 0x100A, 0x0002, 0x0004, 0x8002, 0x8000, 0x8000, 0x8000,
+            0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
+        ];
+        Self {
+            product_code,
+            units: Some("in h-1"),
+            encoding: LevelEncoding::Thresholds(RATE.map(|raw| Threshold { raw })),
         }
     }
 

@@ -1,0 +1,345 @@
+{
+ "id": "l3-ilx-ncz-19960419-2320",
+ "sha256": "7dd075972a9658afb9cbe830f20f980619064cd71a89ebfb14ccb55f55718bc3",
+ "size": 11206,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS53 KILX 192320",
+  "awips_id": "NCZILX",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 11176
+ },
+ "message_header": {
+  "code": 38,
+  "date": 0,
+  "time": 0,
+  "length": 11176,
+  "source_id": 549,
+  "destination_id": 0,
+  "num_blocks": 4
+ },
+ "halfwords": [
+  38,
+  0,
+  0,
+  0,
+  0,
+  11176,
+  549,
+  0,
+  4,
+  65535,
+  0,
+  40151,
+  65534,
+  41735,
+  696,
+  38,
+  2,
+  21,
+  0,
+  49,
+  9606,
+  1,
+  18511,
+  9606,
+  1,
+  18874,
+  0,
+  0,
+  0,
+  0,
+  32770,
+  5,
+  10,
+  15,
+  20,
+  25,
+  30,
+  35,
+  40,
+  45,
+  50,
+  55,
+  60,
+  65,
+  70,
+  75,
+  72,
+  0,
+  0,
+  0,
+  16807,
+  18828,
+  0,
+  0,
+  0,
+  60,
+  0,
+  4499,
+  0,
+  0
+ ],
+ "product_code": 38,
+ "compression": {
+  "hw51": 16807,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 1233911808
+ },
+ "blocks": {
+  "symbology": {
+   "length": 8878,
+   "num_layers": 1,
+   "layers": [
+    {
+     "length": 8862,
+     "packets": [
+      47623
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": {
+   "length": 2178,
+   "num_pages": 4,
+   "pages": [
+    {
+     "page": 1,
+     "length": 538,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 2,
+     "length": 538,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 3,
+     "length": 538,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    },
+    {
+     "page": 4,
+     "length": 538,
+     "packets": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      10,
+      10
+     ]
+    }
+   ]
+  },
+  "tabular": null,
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  8,
+  10,
+  47623
+ ],
+ "data": [
+  {
+   "layer": 0,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 1,
+    "j_start": 1,
+    "x_scale_int": 2,
+    "x_scale_frac": 0,
+    "y_scale_int": 2,
+    "y_scale_frac": 0,
+    "num_rows": 232,
+    "packing": 2
+   },
+   "rows": 232,
+   "cols": 232,
+   "dtype": "u8",
+   "raw_sha256": "279606060783c18aab62d0b8e6fb3eb9115486b71ae5612dd761c0682f4e2ea4",
+   "histogram": {
+    "0": 42110,
+    "1": 565,
+    "2": 1540,
+    "3": 2374,
+    "4": 3136,
+    "5": 1714,
+    "6": 786,
+    "7": 495,
+    "8": 380,
+    "9": 307,
+    "10": 199,
+    "11": 127,
+    "12": 66,
+    "13": 22,
+    "14": 3
+   },
+   "physical": {
+    "finite": 11714,
+    "masked": 42110,
+    "min": 5.0,
+    "max": 70.0,
+    "mean": 21.50076831142223
+   }
+  }
+ ],
+ "metpy": "ok",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [],
+  "error": null,
+  "product_name": "Composite Reflectivity",
+  "max_range": 460.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 38,
+   "date": 0,
+   "time": 0,
+   "msg_len": 11176,
+   "src_id": 549,
+   "dest_id": 0,
+   "num_blks": 4
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 40151,
+   "lon": -89337,
+   "height": 696,
+   "prod_code": 38,
+   "op_mode": 2,
+   "vcp": 21,
+   "seq_num": 0,
+   "vol_num": 49,
+   "vol_date": 9606,
+   "vol_start_time": 84047,
+   "prod_gen_date": 9606,
+   "prod_gen_time": 84410,
+   "dep1": 0,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 0,
+   "thr1": -32766,
+   "thr2": 5,
+   "thr3": 10,
+   "thr4": 15,
+   "thr5": 20,
+   "thr6": 25,
+   "thr7": 30,
+   "thr8": 35,
+   "thr9": 40,
+   "thr10": 45,
+   "thr11": 50,
+   "thr12": 55,
+   "thr13": 60,
+   "thr14": 65,
+   "thr15": 70,
+   "thr16": 75,
+   "dep4": 72,
+   "dep5": 0,
+   "dep6": 0,
+   "dep7": 0,
+   "dep8": 16807,
+   "dep9": 18828,
+   "dep10": 0,
+   "version": 0,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 4499,
+   "tab_off": 0
+  },
+  "thresholds": [
+   -32766,
+   5,
+   10,
+   15,
+   20,
+   25,
+   30,
+   35,
+   40,
+   45,
+   50,
+   55,
+   60,
+   65,
+   70,
+   75
+  ],
+  "dep_vals": [
+   0,
+   0,
+   0,
+   72,
+   0,
+   0,
+   0,
+   16807,
+   18828,
+   0
+  ],
+  "metadata": {
+   "msg_time": "1969-12-31T00:00:00.000000Z",
+   "vol_time": "1996-04-19T23:20:47.000000Z",
+   "prod_time": "1996-04-19T23:26:50.000000Z",
+   "el_angle": 0.0,
+   "max": 72,
+   "calib_const": 20.910911560058594
+  },
+  "sym_layer_packet_counts": [
+   1
+  ],
+  "graph_page_packet_counts": [
+   7,
+   7,
+   7,
+   7
+  ],
+  "tab_pages": null,
+  "crosscheck": true
+ }
+}

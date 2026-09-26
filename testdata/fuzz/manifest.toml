@@ -145,3 +145,14 @@ derived_from = "cfrad1-xsapr-sgp-20110520-ppi-classic"
 derivation = "fuzz-tools mutate writers 30000 2 (stable mutator, hdf5-netcdf branch, 2026-09-25), run 28855 from the seed as committed, committed as found: 11 of its 13624 bytes differ from the seed at the same offsets. Ray 1 decodes with a time of about -1.8e308 s. The ODIM writer wrote it in startazT and stopazT, and the ODIM reader's mean (startazT + stopazT) / 2 overflowed to -inf"
 tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "container:netcdf3-classic"]
 description = "Writers fuzz crash: a CfRadial 1 ray time near the double range, whose ODIM round trip overflowed the reader's start/stop mean to -inf"
+
+[[file]]
+id = "fuzz-level3-rcm-centroid-non-ascii"
+format = "nexrad-level3"
+sha256 = "2234f045d5b827fab5836af7d5a4684a167350014cc426edc1d30e46f2a2951b"
+size = 23
+committed = "files/fuzz/level3/crash-rcm-centroid-non-ascii"
+derived_from = "l3-fws-rcm-19950517-2310"
+derivation = "libFuzzer mutation of the seed (cargo-fuzz, target level3, 40-minute run in nexbench over decoders at cac3cd0): artifact crash-20497ef8dd9b1080642c84945195bb2b4128cd0b (7601 bytes, sha256 2fb0010125426623647d2faff1612978cc0d4712971e6248ce2fe91fabc2f2e0; the seed with its centroid group bytes changed to 0xBF/0xC3), minimized with libFuzzer `-minimize_crash=1 -max_total_time=120` to 23 bytes, which the harness passes to the radar coded message text parser (length 3 mod 4). A Part A centroid group whose motion field held Latin-1 bytes above 0x7F (two UTF-8 bytes each once decoded) was sliced at byte 3 of the motion text inside a character ('end byte index 3 is not a char boundary') in rcm::centroid; two more artifacts of the run hit the same line"
+tags = ["fuzz-regression", "fuzz-target:level3", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "product:74"]
+description = "Minimized level3 fuzz crash: radar coded message centroid group with non-ASCII motion characters"

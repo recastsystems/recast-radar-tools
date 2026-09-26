@@ -6,7 +6,7 @@
 //! 1. **ICD walker golden JSON** (`testdata/level3/golden/<id>.json`): which
 //!    packet codes each file holds, and the codes nested in SCIT packets 23/24.
 //! 2. **MetPy 1.7.1** `Level3File`, which reads every corpus file holding symbol
-//!    packets. The golden JSON carries no symbol values, so [`METPY`] records,
+//!    packets but the product 83 (`tests/rcm.rs`). The golden JSON carries no symbol values, so [`METPY`] records,
 //!    per file and packet code, the packet count, item count and FNV-1a 64 hash
 //!    of a canonical text (format at [`canonical`]) built from MetPy's decoded
 //!    packets by the script at the end of this file. [`decoded_values_match_metpy_spot_checks`]
@@ -16,8 +16,8 @@
 //!    (products 48, 58, 61), cell trend times against the volume scan time
 //!    (product 62), and value ranges from Figures 3-13 to 3-15a.
 //!
-//! Corpus coverage: 24 files (products 48, 58, 59, 60, 61, 62 and 141, 1995 to
-//! 2026) hold packets 3, 4, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24 and 25.
+//! Corpus coverage: 33 files (products 48, 58, 59, 60, 61, 62, 83 and 141, 1995
+//! to 2026) hold packets 3, 4, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24 and 25.
 //! No real sample was found for packets 5 and 26 (`docs/level3/reference.md`
 //! section 7); their decoders are not exercised here.
 
@@ -41,7 +41,14 @@ const FAMILY: [u16; 16] = [3, 4, 5, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24, 
 const CORPUS_CODES: [u16; 14] = [3, 4, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24, 25];
 
 /// Number of corpus files holding packets of this family.
-const CORPUS_FILES: usize = 24;
+const CORPUS_FILES: usize = 35;
+
+/// Number of those MetPy reads: all but the unedited Radar Coded Messages
+/// (product 83, storm IDs in packet 15), whose packets `tests/rcm.rs` checks
+/// against the radar coded message of the same volume, and the KLOT 1993 VAD
+/// Wind Profile, whose tabular offset names the end of its message (MetPy
+/// raises; `tests/vwp.rs` checks its wind barbs).
+const METPY_FILES: usize = 32;
 
 fn is_family(code: u16) -> bool {
     FAMILY.contains(&code)
@@ -106,13 +113,16 @@ fn golden_family_codes(golden: &Json) -> Vec<u16> {
         .collect()
 }
 
-/// Corpus files holding symbol packets, decoded, with their golden JSON.
+/// Corpus files holding symbol packets that MetPy reads, decoded, with their
+/// golden JSON.
 fn symbol_files() -> Vec<(Entry, Json, Level3Product)> {
     let files: Vec<_> = common::level3_manifest()
         .into_iter()
         .filter_map(|entry| {
             let golden = entry.golden();
-            if golden_family_codes(&golden).is_empty() {
+            if golden_family_codes(&golden).is_empty()
+                || golden.get("metpy").as_str() == Some("unsupported")
+            {
                 return None;
             }
             let product = common::decode_golden_product(&entry, &golden).unwrap();
@@ -121,8 +131,8 @@ fn symbol_files() -> Vec<(Entry, Json, Level3Product)> {
         .collect();
     assert_eq!(
         files.len(),
-        CORPUS_FILES,
-        "corpus files holding symbol packets"
+        METPY_FILES,
+        "corpus files holding symbol packets that MetPy reads"
     );
     files
 }
@@ -357,6 +367,12 @@ const METPY: &[(&str, &[CodeSummary])] = &[
     ("l3-fws-nme-19950517-2316", &[(3, 1, 1, 0x1e84143bc2783014), (11, 1, 1, 0x1ad19b53447a0c5c), (15, 1, 1, 0xd7d1bf36f0bd19c8)]),
     ("l3-fws-nst-19950517-2304", &[(15, 3, 3, 0x97615f6289b2883f)]),
     ("l3-fws-nvw-19950517-2322", &[(4, 99, 99, 0xe13af5e1fc6aae71)]),
+    ("l3-ilx-nhi-19960419-2303", &[(13, 8, 8, 0x3df7052542bc4eaa), (14, 1, 1, 0x1ff7389f74714f09), (15, 9, 9, 0x0307fa01936b9f73)]),
+    ("l3-ilx-nme-19960419-2303", &[(3, 7, 7, 0x8eafdf2b7c0db64d), (11, 1, 1, 0x30982746cc3a13d3), (15, 7, 7, 0xca51e6fc47cc1d20)]),
+    ("l3-ilx-nst-19960419-2303", &[(15, 15, 15, 0x88cf74d5ada3e76c)]),
+    ("l3-ilx-ntv-19960419-2303", &[(12, 1, 1, 0x207c45f96b7c2083), (15, 1, 1, 0xa006838b37f15b9a)]),
+    ("l3-lzk-nme-19970301-2027", &[(3, 3, 3, 0xf1b0b06575538441), (15, 3, 3, 0x41b8d0f80f95ddb4)]),
+    ("l3-lzk-ntv-19970301-2027", &[(12, 1, 1, 0x0d8ca59220fb3686), (15, 1, 1, 0xd771ba2a7e664818)]),
     ("l3-mci-nmd-20160526-2154", &[(20, 10, 10, 0x588177e5581d61db), (23, 8, 0, 0xaa9baea93a2db7ad), (24, 8, 0, 0x6de40e17f3d2fdb5)]),
     ("l3-mci-nst-20160526-2154", &[(15, 44, 44, 0x4e36225b49b9b03d), (23, 37, 0, 0x9326e2f9481acc99), (24, 32, 0, 0x73acb7cbc1b2c06d)]),
     ("l3-mci-nvw-20160526-2154", &[(4, 119, 119, 0x31d41d4a18273500)]),
@@ -365,6 +381,8 @@ const METPY: &[(&str, &[CodeSummary])] = &[
     ("l3-okc-nst-20260622-080640", &[(15, 43, 43, 0x0b82d22f78625d01), (23, 27, 0, 0x0fbff79bcb834c81), (24, 20, 0, 0xc7d0d415c9bea051)]),
     ("l3-okc-ntv-20220503-005210", &[(12, 6, 6, 0xd451964a14fa2e38), (15, 6, 6, 0x53d714eac2577c2c)]),
     ("l3-okc-nvw-20260622-080623", &[(4, 301, 301, 0x830b8dcdf3ba2cdf)]),
+    ("l3-sgf-nme-20030504-2332", &[(3, 8, 8, 0x37632f37af015058), (11, 1, 2, 0x7ae7a8e4374e2716), (15, 8, 8, 0xd059097cb1925e6d)]),
+    ("l3-sgf-ntv-20030504-2352", &[(12, 5, 5, 0x9f8f944790edc004), (15, 5, 5, 0x0c7c413d4a27c53f)]),
     ("l3-tlx-nhi-20130520-2016", &[(15, 11, 11, 0xb72904dfbef2c4be), (19, 22, 22, 0x0641a140b850e5d9)]),
     ("l3-tlx-nhi-20220503-005231", &[(15, 12, 12, 0x6faa358c4ac6b393), (19, 22, 22, 0xd492ca24aac9fc8f)]),
     ("l3-tlx-nmd-20130520-2016", &[(20, 6, 6, 0xfb3188e12efde0cd), (23, 4, 0, 0x9505ecd6c6451a7d), (24, 4, 0, 0x0719764f11f9d9e1)]),
@@ -634,11 +652,20 @@ fn symbols_agree_with_product_description_halfwords() {
         match code {
             // STI: hw47 = total number of storms; one storm ID per storm.
             58 => assert_eq!(count(15), halfword(product, 47) as usize, "{}", entry.id),
-            // TVS: hw47 = number of TVS, hw48 = number of ETVS.
-            61 => {
-                assert_eq!(count(12), halfword(product, 47) as usize, "{}", entry.id);
-                assert_eq!(count(26), halfword(product, 48) as usize, "{}", entry.id);
-            }
+            // TVS: hw47 = number of TVS, hw48 = number of ETVS. Observed: the
+            // products of the legacy TVS algorithm (1996-1997) leave both 0;
+            // their TVS count is the legacy table's.
+            61 => match product.legacy_tvs_table() {
+                Some(table) => {
+                    assert_eq!(count(12), table.features.len(), "{}", entry.id);
+                    assert_eq!(halfword(product, 47), 0, "{}", entry.id);
+                    assert_eq!(halfword(product, 48), 0, "{}", entry.id);
+                }
+                None => {
+                    assert_eq!(count(12), halfword(product, 47) as usize, "{}", entry.id);
+                    assert_eq!(count(26), halfword(product, 48) as usize, "{}", entry.id);
+                }
+            },
             // VWP: hw47 = maximum wind speed (kt). Observed: of the latest profile,
             // the rightmost barb column.
             48 => {
@@ -662,7 +689,8 @@ fn symbols_agree_with_product_description_halfwords() {
         }
         *checked.entry(code).or_default() += 1;
     }
-    assert_eq!(checked, BTreeMap::from([(48, 5), (58, 5), (61, 3)]));
+    // Two of the six TVS products are of the legacy algorithm (1996, 1997).
+    assert_eq!(checked, BTreeMap::from([(48, 5), (58, 6), (61, 6)]));
 }
 
 /// Product 62 cell trend data (Figures 3-15, 3-15a): circular lists with
@@ -750,6 +778,7 @@ fn cell_trend_data_follows_the_icd() {
                     TrendKind::ProbabilityOfHail | TrendKind::ProbabilityOfSevereHail => 0..=100,
                     TrendKind::CellVil => 0..=100,
                     TrendKind::MaxReflectivity => 0..=75,
+                    other => panic!("{what}: trend kind {other:?}"),
                 };
                 for &v in &volumes.values {
                     assert!(
@@ -772,7 +801,9 @@ fn symbol_values_are_within_icd_ranges() {
     let mut records = 0;
     for (entry, _, product) in &files {
         let id = &entry.id;
-        let modern = !entry.id.contains("-1995");
+        // Storm IDs before the SCIT algorithm (1995-1996) are digits or
+        // letters, not A0-Z9.
+        let modern = !(entry.id.contains("-1995") || entry.id.contains("-1996"));
         for code in FAMILY {
             for symbol in symbols(product, code) {
                 match symbol {
@@ -845,10 +876,10 @@ fn symbol_values_are_within_icd_ranges() {
             }
         }
     }
-    // 1104 wind barbs, 239 storm IDs, 61 HDA hail, 32 point features, 17 TVS,
-    // 2 STI circles and one each of mesocyclone, correlated shear, hail positive
-    // and hail probable.
-    assert_eq!(records, 1459, "records checked");
+    // 1104 wind barbs, 288 storm IDs, 61 HDA hail, 32 point features, 24 TVS,
+    // 19 mesocyclones, 9 hail positive, 4 correlated shear, 2 STI circles and
+    // 2 hail probable.
+    assert_eq!(records, 1545, "records checked");
 }
 
 /* Generator for METPY (MetPy 1.7.1, Python 3.11+). Save between the markers as

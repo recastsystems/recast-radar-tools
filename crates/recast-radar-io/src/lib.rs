@@ -2,9 +2,10 @@
 //!
 //! [`read_supported_volume_bytes`] takes a byte buffer of unknown
 //! provenance, unwraps a single-member ZIP local record or a whole-file gzip
-//! wrapper, sniffs the container by magic bytes (and an HDF5 container by
-//! content: ODIM_H5, CfRadial 1 in netCDF-4, or CfRadial 2), and hands it to
-//! the matching decoder crate, returning the FM301
+//! wrapper, sniffs the container by magic bytes (an HDF5 container by
+//! content: ODIM_H5, CfRadial 1 in netCDF-4, or CfRadial 2; NEXRAD Level III
+//! by its NOAAPort/WMO framing or Message Header Block), and hands it to the
+//! matching decoder crate, returning the FM301
 //! [`recast_radar_core::model::Volume`] with the format's typed metadata
 //! beside it ([`Decoded`], [`FormatMetadata`]; design note
 //! `docs/design/fm301-model.md` section 2). [`read_mobile_archive_from_path`]
@@ -35,11 +36,33 @@ use recast_radar_io_cfradial::CfRadialError;
 use recast_radar_io_dorade::mobile_archive::{self, MobileVolume};
 use recast_radar_io_dorade::{DoradeError, dorade};
 use recast_radar_io_jma::JmaError;
+use recast_radar_io_level3::{Level3Error, Level3Message, Level3Product};
 use recast_radar_io_nexrad::{ArchiveCompression, NexradError, NexradMetadata};
 use recast_radar_io_odim::{OdimError, hdf5, odim};
 use thiserror::Error;
 
 const ZIP_LOCAL_FILE_HEADER_LEN: usize = 30;
+
+/// The error [`recast_radar_io_level3::read_level3_volume`] gives for a
+/// decoded message that is not a volume, for the message of
+/// [`IoError::Level3WithoutVolume`].
+fn without_volume(message: &Level3Message) -> String {
+    match message {
+        Level3Message::Product(product) => Level3Error::NoDataArray {
+            code: product.description.product_code,
+        }
+        .to_string(),
+        Level3Message::GeneralStatus(status) => Level3Error::NotAProduct {
+            code: status.message_header.code,
+        }
+        .to_string(),
+        Level3Message::Text(text) => Level3Error::TextOnly {
+            heading: text.text_header.wmo_heading.clone(),
+        }
+        .to_string(),
+        _ => "NEXRAD Level III message without a data array".to_owned(),
+    }
+}
 
 /// Error from [`read_supported_volume_bytes`] and the mobile-archive
 /// wrappers.
@@ -47,6 +70,7 @@ const ZIP_LOCAL_FILE_HEADER_LEN: usize = 30;
 /// Decoder errors are transparent: `to_string()` yields exactly the
 /// dispatched decoder's message.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum IoError {
     /// NEXRAD Archive II / Level II decode failure.
     #[error(transparent)]
@@ -64,6 +88,20 @@ pub enum IoError {
     /// JMA radar GRIB2 tar decode failure.
     #[error(transparent)]
     Jma(#[from] JmaError),
+    /// NEXRAD / TDWR Level III decode failure.
+    #[error(transparent)]
+    Level3(#[from] Level3Error),
+    /// A NEXRAD / TDWR Level III file that decoded but has no radial,
+    /// raster or generic data array to make a volume of: a graphic or
+    /// tabular product (storm tracking, VAD wind profile, melting layer),
+    /// a General Status Message or a plain-text message. The decoded
+    /// message is attached ([`recast_radar_io_level3::decode_message`]),
+    /// every block and packet typed; the error message is the one
+    /// [`recast_radar_io_level3::read_level3_volume`] gives
+    /// ([`Level3Error::NoDataArray`], [`Level3Error::NotAProduct`] or
+    /// [`Level3Error::TextOnly`]).
+    #[error("{}", without_volume(.0))]
+    Level3WithoutVolume(Box<Level3Message>),
     /// The outer ZIP local record or gzip wrapper could not be expanded.
     #[error("unsupported or corrupt compression wrapper: {0}")]
     Compression(String),
@@ -101,6 +139,11 @@ pub enum SupportedVolumeFormat {
     /// ustar magic at byte 257, JMA GRIB2 templates 3.50120/4.51022/5.200
     /// per the JMA technical format documentation).
     JmaGrib2Tar,
+    /// NEXRAD / TDWR Level III product: NOAAPort or WMO/AWIPS framing, or a
+    /// bare message (Message Header Block with the block divider at halfword
+    /// 10 and the product code repeated at halfword 16), per
+    /// [`recast_radar_io_level3::looks_like_level3`].
+    NexradLevel3,
     /// Everything else: NEXRAD Archive II / Level II (AR2V, gzip, bzip2,
     /// LDM block-bzip, GR2-style msg31 exports).
     NexradLevel2,
@@ -147,6 +190,8 @@ pub fn sniff_supported_volume_format(head: &[u8]) -> SupportedVolumeFormat {
         SupportedVolumeFormat::CfRadial
     } else if recast_radar_io_jma::looks_like_jma_tar_bytes(head) {
         SupportedVolumeFormat::JmaGrib2Tar
+    } else if recast_radar_io_level3::looks_like_level3(head) {
+        SupportedVolumeFormat::NexradLevel3
     } else {
         SupportedVolumeFormat::NexradLevel2
     }
@@ -194,6 +239,10 @@ pub enum FormatMetadata {
     None,
     /// NEXRAD Level II metadata messages and per-sweep constant blocks.
     Nexrad(Box<NexradMetadata>),
+    /// The decoded NEXRAD / TDWR Level III product the volume was converted
+    /// from: every block and display packet, including the ones the FM301
+    /// model has no slot for (symbols, text, graphic and tabular pages).
+    Level3(Box<Level3Product>),
 }
 
 /// A routed decode: the FM301 volume plus its format metadata.
@@ -205,8 +254,8 @@ pub struct Decoded {
 
 /// Decode any supported single-buffer radar container by magic bytes:
 /// DORADE → HDF5 (ODIM_H5, or netCDF-4 CfRadial 1.x or 2 by content) →
-/// CfRadial 1.x (classic netCDF) → JMA GRIB2 tar → NEXRAD Archive II
-/// fallback.
+/// CfRadial 1.x (classic netCDF) → JMA GRIB2 tar → NEXRAD Level III → NEXRAD
+/// Archive II fallback.
 ///
 /// This is the one shared router for bytes of unknown provenance (local
 /// file open, custom URL polling, international feed downloads). Errors are
@@ -226,7 +275,8 @@ pub fn read_supported_volume_bytes(raw: &[u8]) -> Result<Volume, IoError> {
 }
 
 /// [`read_supported_volume_bytes`] plus the format's typed metadata (NEXRAD
-/// Level II metadata messages; nothing for the other formats yet).
+/// Level II metadata messages, the decoded Level III product; nothing for
+/// the other formats yet).
 pub fn read_supported_volume_with_metadata(raw: &[u8]) -> Result<Decoded, IoError> {
     route(raw, true)
 }
@@ -293,6 +343,27 @@ fn route(original: &[u8], with_metadata: bool) -> Result<Decoded, IoError> {
         }
         SupportedVolumeFormat::JmaGrib2Tar => {
             recast_radar_io_jma::read_jma_tar_first_station(sniff_bytes)?
+        }
+        SupportedVolumeFormat::NexradLevel3 => {
+            let product = match recast_radar_io_level3::decode_message(sniff_bytes)? {
+                Level3Message::Product(product) => product,
+                other => return Err(IoError::Level3WithoutVolume(Box::new(other))),
+            };
+            let volume = match product.to_volume() {
+                Ok(volume) => volume,
+                Err(Level3Error::NoDataArray { .. }) => {
+                    return Err(IoError::Level3WithoutVolume(Box::new(
+                        Level3Message::Product(product),
+                    )));
+                }
+                Err(err) => return Err(err.into()),
+            };
+            let metadata = if with_metadata {
+                FormatMetadata::Level3(product)
+            } else {
+                FormatMetadata::None
+            };
+            return Ok(Decoded { volume, metadata });
         }
         SupportedVolumeFormat::NexradLevel2 => {
             if with_metadata {

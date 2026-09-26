@@ -71,7 +71,7 @@ fn coding(data: &FieldData) -> Coding {
         (packing, coding.fill_value.map(Into::into))
     }
     let float_packing =
-        |transform: Option<LinearTransform>| transform.map(|t| (t.scale_factor(), t.add_offset()));
+        |transform: Option<LinearTransform>| transform.and_then(|t| Some((t.scale_factor()?, t.add_offset()?)));
     match data {
         FieldData::I8 { coding, .. } => {
             let (packing, fill) = int(coding);

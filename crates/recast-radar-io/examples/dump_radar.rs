@@ -65,6 +65,7 @@ fn decode_like_the_app(path: &Path, bytes: &[u8]) -> (&'static str, Result<Volum
         recast_radar_io::SupportedVolumeFormat::CfRadialNetcdf4 => "CfRadialNetcdf4",
         recast_radar_io::SupportedVolumeFormat::CfRadial2 => "CfRadial2",
         recast_radar_io::SupportedVolumeFormat::JmaGrib2Tar => "JmaGrib2Tar",
+        recast_radar_io::SupportedVolumeFormat::NexradLevel3 => "NexradLevel3",
         recast_radar_io::SupportedVolumeFormat::NexradLevel2 => "NexradLevel2",
         // A format added after this example.
         _ => "Other",

@@ -1,0 +1,577 @@
+{
+ "id": "l3-lot-053-19941106-0246",
+ "sha256": "66e81627756cb96c65a653a562e8196b014c3b431b185d74830e03972895cbed",
+ "size": 8784,
+ "framing": {
+  "noaaport_soh": false,
+  "noaaport_sequence": null,
+  "wmo_heading": "SDUS53 KLOT 060246",
+  "awips_id": "053LOT",
+  "trailer": null,
+  "zlib_frames": 0,
+  "zlib_uncompressed_bytes": 0,
+  "ccb_bytes": 0,
+  "inner_wmo_heading": null,
+  "inner_awips_id": null,
+  "text_only": false,
+  "message_offset": 0,
+  "message_bytes": 8754
+ },
+ "message_header": {
+  "code": 53,
+  "date": 9076,
+  "time": 10617,
+  "length": 8754,
+  "source_id": 337,
+  "destination_id": 101,
+  "num_blocks": 3
+ },
+ "halfwords": [
+  53,
+  9076,
+  0,
+  10617,
+  0,
+  8754,
+  337,
+  101,
+  3,
+  65535,
+  0,
+  41604,
+  65534,
+  42987,
+  760,
+  53,
+  2,
+  21,
+  380,
+  4,
+  9076,
+  0,
+  10004,
+  9076,
+  0,
+  10617,
+  0,
+  0,
+  0,
+  0,
+  32770,
+  5,
+  18,
+  30,
+  41,
+  46,
+  50,
+  57,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  32768,
+  53,
+  20051,
+  32640,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  60,
+  0,
+  0,
+  0,
+  0
+ ],
+ "product_code": 53,
+ "compression": {
+  "hw51": 0,
+  "bzip2": false,
+  "compressed_bytes": null,
+  "uncompressed_bytes": null,
+  "hw52_53_uncompressed_size": 0
+ },
+ "blocks": {
+  "symbology": {
+   "length": 8634,
+   "num_layers": 9,
+   "layers": [
+    {
+     "length": 1484,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 618,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 574,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 580,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 594,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 568,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 558,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 538,
+     "packets": [
+      47623
+     ]
+    },
+    {
+     "length": 3056,
+     "packets": [
+      7,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      7,
+      1,
+      1,
+      1,
+      7,
+      1,
+      1,
+      1,
+      7,
+      1,
+      1,
+      1,
+      7,
+      1,
+      1,
+      1,
+      7,
+      1,
+      1,
+      1,
+      7,
+      1,
+      1,
+      1,
+      7,
+      1,
+      1,
+      1
+     ]
+    }
+   ],
+   "nested": []
+  },
+  "graphic": null,
+  "tabular": null,
+  "standalone_tabular": null,
+  "cell_trend": null,
+  "rcm": null,
+  "unknown": []
+ },
+ "packet_codes": [
+  1,
+  7,
+  47623
+ ],
+ "data": [
+  {
+   "layer": 0,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 445,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "b19db93a9f0eba16c9a2343ef82674580bee85d6da95045c748d84cd274871e2",
+   "histogram": {
+    "0": 3792,
+    "1": 542,
+    "2": 355,
+    "3": 267,
+    "4": 66,
+    "5": 20,
+    "6": 8
+   },
+   "physical": null
+  },
+  {
+   "layer": 1,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 383,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "ca679256338ac816d5f286d45aaf4ab67b06113fbd6f27eaef524ea59679057f",
+   "histogram": {
+    "0": 4878,
+    "1": 137,
+    "2": 34,
+    "3": 1
+   },
+   "physical": null
+  },
+  {
+   "layer": 2,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 321,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "1f057fc090747343ece7efc8a5e62d99e88274fc64aa9d0b76ef3ab3f31d63be",
+   "histogram": {
+    "0": 4927,
+    "1": 106,
+    "2": 17
+   },
+   "physical": null
+  },
+  {
+   "layer": 3,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 259,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "93cc3ff572bb47925c33e7b83605880fb328c79cae64857124f196693909be18",
+   "histogram": {
+    "0": 4907,
+    "1": 114,
+    "2": 29
+   },
+   "physical": null
+  },
+  {
+   "layer": 4,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 197,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "71adaebc7ba06757a6b9b94270ae648acd7314694c8bb52240074ef9f2c11783",
+   "histogram": {
+    "0": 4923,
+    "1": 103,
+    "2": 24
+   },
+   "physical": null
+  },
+  {
+   "layer": 5,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 135,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "a67e54538aea81921d77c033ece683d59798f3df26dd87213e5f343410d7c725",
+   "histogram": {
+    "0": 4961,
+    "1": 72,
+    "2": 16,
+    "3": 1
+   },
+   "physical": null
+  },
+  {
+   "layer": 6,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 73,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "79b90a13f3db32b15122fbf599ff99900e23570a55e29ffd8e642e31780e85f8",
+   "histogram": {
+    "0": 4981,
+    "1": 52,
+    "2": 17
+   },
+   "physical": null
+  },
+  {
+   "layer": 7,
+   "index": 0,
+   "packet": 47623,
+   "header": {
+    "op_flags": [
+     32768,
+     192
+    ],
+    "i_start": 136,
+    "j_start": 11,
+    "x_scale_int": 3,
+    "x_scale_frac": 0,
+    "y_scale_int": 1,
+    "y_scale_frac": 0,
+    "num_rows": 50,
+    "packing": 2
+   },
+   "rows": 50,
+   "cols": 101,
+   "dtype": "u8",
+   "raw_sha256": "38a4ef2380b0c28b41ce62ca4e310c003cc72db3a8f85dfae766a866ed34d76b",
+   "histogram": {
+    "0": 5026,
+    "1": 21,
+    "2": 3
+   },
+   "physical": null
+  }
+ ],
+ "metpy": "partial",
+ "metpy_detail": {
+  "version": "1.7.1",
+  "warnings": [
+   "l3-lot-053-19941106-0246: Unknown symbology packet type 7/7.",
+   "l3-lot-053-19941106-0246: Using default metadata for product 53"
+  ],
+  "error": null,
+  "product_name": "Unknown Product",
+  "max_range": 230.0,
+  "mapper": "LegacyMapper",
+  "header": {
+   "code": 53,
+   "date": 9076,
+   "time": 10617,
+   "msg_len": 8754,
+   "src_id": 337,
+   "dest_id": 101,
+   "num_blks": 3
+  },
+  "prod_desc": {
+   "divider": -1,
+   "lat": 41604,
+   "lon": -88085,
+   "height": 760,
+   "prod_code": 53,
+   "op_mode": 2,
+   "vcp": 21,
+   "seq_num": 380,
+   "vol_num": 4,
+   "vol_date": 9076,
+   "vol_start_time": 10004,
+   "prod_gen_date": 9076,
+   "prod_gen_time": 10617,
+   "dep1": 0,
+   "dep2": 0,
+   "el_num": 0,
+   "dep3": 0,
+   "thr1": -32766,
+   "thr2": 5,
+   "thr3": 18,
+   "thr4": 30,
+   "thr5": 41,
+   "thr6": 46,
+   "thr7": 50,
+   "thr8": 57,
+   "thr9": -32768,
+   "thr10": -32768,
+   "thr11": -32768,
+   "thr12": -32768,
+   "thr13": -32768,
+   "thr14": -32768,
+   "thr15": -32768,
+   "thr16": -32768,
+   "dep4": 53,
+   "dep5": 20051,
+   "dep6": 32640,
+   "dep7": 0,
+   "dep8": 0,
+   "dep9": 0,
+   "dep10": 0,
+   "version": 0,
+   "spot_blank": 0,
+   "sym_off": 60,
+   "graph_off": 0,
+   "tab_off": 0
+  },
+  "thresholds": [
+   -32766,
+   5,
+   18,
+   30,
+   41,
+   46,
+   50,
+   57,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768,
+   -32768
+  ],
+  "dep_vals": [
+   0,
+   0,
+   0,
+   53,
+   20051,
+   32640,
+   0,
+   0,
+   0,
+   0
+  ],
+  "metadata": {
+   "msg_time": "1994-11-06T02:56:57.000000Z",
+   "vol_time": "1994-11-06T02:46:44.000000Z",
+   "prod_time": "1994-11-06T02:56:57.000000Z",
+   "el_angle": 0.0,
+   "compression": 0,
+   "uncompressed_size": 0,
+   "defaultVals": 0
+  },
+  "sym_layer_packet_counts": [
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   0
+  ],
+  "graph_page_packet_counts": null,
+  "tab_pages": null,
+  "crosscheck": false
+ }
+}

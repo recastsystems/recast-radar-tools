@@ -11,7 +11,8 @@ Reads ``testdata/level3/manifest.toml``, loads each committed file from
 fails if any golden file on disk differs.  Requires Python 3.11+ (``tomllib``),
 numpy and MetPy 1.7.1 (golden values are specific to that MetPy version).
 
-Two independent readers contribute to each golden file:
+Two readers contribute to each golden file (the walker is a second reading by
+the Rust decoder's author; MetPy is third-party):
 
 * An ICD walker in this script (RPG to Class 1 User ICD 2620001AD, sections
   3.3.1-3.3.2, Figures 3-3, 3-6, 3-7 to 3-15c, 3-16, Appendix D) that
@@ -57,7 +58,9 @@ Golden JSON schema (all keys always present unless noted):
     lists the packets inside SCIT packets 23/24.  ``graphic``: ``{length,
     num_pages, pages:[{page, length, packets:[...]}]}``.  ``tabular``:
     ``{length, message_code, product_code, num_pages, lines_per_page:[...],
-    text_sha256}``.  ``standalone_tabular``: ``{num_pages, lines_per_page,
+    text_sha256}``, or for the radar coded message in the block of product 83
+    (IRM, packets 30-32, no ICD) ``{length, message_code, product_code,
+    rcm_text_bytes, rcm_text_sha256}``.  ``standalone_tabular``: ``{num_pages, lines_per_page,
     text_sha256}``.  ``cell_trend``: ``{offset_halfwords, packets}`` for
     product 62, whose graphic offset points one halfword past the first packet
     code.  ``rcm``: ``{text_bytes, text_sha256}`` for product 74.  Any block
@@ -73,7 +76,10 @@ Golden JSON schema (all keys always present unless noted):
     ``header`` holds the walker's packet header fields.  ``rows`` x ``cols``
     is the raw level grid: radials x bins for radial packets (bins =
     "number of range bins" from the packet header, trailing pad bytes
-    dropped), rows x columns for raster/precipitation arrays.
+    dropped), rows x columns for raster/precipitation arrays.  When radials
+    hold fewer levels than that (observed: product 46 of 1994) they are padded
+    with level 0 and ``short_radials`` (count) and ``max_levels`` (longest
+    radial) are added.
     ``raw_sha256`` is the SHA-256 of the grid in row-major order encoded as
     ``u8`` bytes, or ``u16`` big-endian for generic packets.  ``histogram``
     maps level (decimal string) to count.  ``physical`` is null for packet 18
@@ -278,6 +284,15 @@ class Walk:
                     q = p + 10 + u16(d, p + 8)
                 elif c == 0x3501:
                     q = p + 4 + u16(d, p + 2)
+                elif c == 30:  # IRM (product 83, no ICD): code, five Real*4 values
+                    q = p + 22
+                elif c == 31:  # IRM: code, count of the packet 15/2 pairs that follow
+                    q = p + 4
+                elif c == 32:  # IRM: code, rows, then rows of byte count + run/level bytes
+                    header = {'num_rows': u16(d, p + 2)}
+                    q = p + 4
+                    for _ in range(header['num_rows']):
+                        q += 2 + u16(d, q)
                 else:
                     self.unknown.append({'where': where, 'code': c, 'byte_offset': p})
                     break
@@ -419,16 +434,26 @@ def walk_message(msg):
                 note(codes, nested)
                 q += plen
             blocks['graphic'] = {'length': blen, 'num_pages': npages, 'pages': pages}
-        if tab:
+        # Observed (NCEI 1993-1994): the tabular offset can name the end of the
+        # message (its halfwords 5-6 length) when no block was sent.
+        if tab and 2 * tab != len(data):
             o = 2 * tab
             if i16(data, o) != -1 or i16(data, o + 2) != 3:
                 raise ValueError('tabular block divider/id missing')
             blen = u32(data, o + 4)
             mcode = i16(data, o + 8)
             tpc = i16(data, o + 8 + 18 + 12)
-            pages, _ = read_pages(data, o + 8 + 18 + 102, len(data))
-            blocks['tabular'] = {'length': blen, 'message_code': mcode, 'product_code': tpc,
-                                 **pages_summary(pages)}
+            start = o + 8 + 18 + 102
+            if mcode == 74 and data[start:start + 10] == b'1234 ROBUU':
+                # IRM (product 83): the radar coded message after the second headers.
+                text = data[start:o + blen]
+                blocks['tabular'] = {'length': blen, 'message_code': mcode, 'product_code': tpc,
+                                     'rcm_text_bytes': len(text),
+                                     'rcm_text_sha256': hashlib.sha256(text).hexdigest()}
+            else:
+                pages, _ = read_pages(data, start, len(data))
+                blocks['tabular'] = {'length': blen, 'message_code': mcode, 'product_code': tpc,
+                                     **pages_summary(pages)}
     out['blocks'] = blocks
     out['packet_codes'] = sorted(all_codes)
     out['walker_data'] = w.data_packets
@@ -531,21 +556,28 @@ def read_metpy(raw, file_id):
 # --------------------------------------------------------------------------------------
 
 def grid_from_metpy(packet, code, header):
+    """(array, dtype, notes). Observed: the radials of product 46 of 1994 hold
+    fewer levels than the header's bin count; they are padded with level 0 (the
+    decoder's fill) and ``notes`` records ``short_radials`` and ``max_levels``."""
     if code in RADIAL_PACKETS:
         nbins = header['num_bins']
         rows = []
+        short, longest = 0, 0
         for radial in packet['data']:
             vals = list(radial)[:nbins]
+            longest = max(longest, len(vals))
             if len(vals) < nbins:
-                raise ValueError(f'radial has {len(vals)} levels, header says {nbins}')
+                short += 1
+                vals = vals + [0] * (nbins - len(vals))
             rows.append(vals)
-        return np.array(rows, dtype=np.uint8).reshape(len(rows), nbins), 'u8'
+        notes = {'short_radials': short, 'max_levels': longest} if short else {}
+        return np.array(rows, dtype=np.uint8).reshape(len(rows), nbins), 'u8', notes
     if code in RASTER_PACKETS or code in (17, 18):
         rows = [list(r) for r in packet['data']]
         width = {len(r) for r in rows}
         if len(width) != 1:
             raise ValueError(f'ragged raster rows: {sorted(width)}')
-        return np.array(rows, dtype=np.uint8), 'u8'
+        return np.array(rows, dtype=np.uint8), 'u8', {}
     raise ValueError(f'no grid for packet {code}')
 
 
@@ -623,11 +655,11 @@ def build_data(walk, f):
                     e.update(summarize(arr, 'u16be', f, walk['product_code']))
                     out.append(e)
                 continue
-            arr, dtype = grid_from_metpy(packet, code, header)
+            arr, dtype, notes = grid_from_metpy(packet, code, header)
         except Exception as e:  # noqa: BLE001
             out.append(dict(base, error=f'{type(e).__name__}: {e}'))
             continue
-        e = dict(base)
+        e = dict(base, **notes)
         pc = walk['product_code'] if code != 18 else None  # packet 18 is not map_data's scale
         e.update(summarize(arr, dtype, f, pc))
         out.append(e)

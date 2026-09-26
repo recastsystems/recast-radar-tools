@@ -28,6 +28,7 @@ use std::cell::Cell;
 
 use super::{Packet, decode_packets};
 use crate::Level3Error;
+use crate::budget::Budget;
 
 /// A decoded symbol packet (3, 4, 5, 11-15, 19-26).
 #[derive(Debug, Clone, PartialEq)]
@@ -297,6 +298,7 @@ impl Trend {
 /// the highest (lowest) elevation scan. Probabilities of -999 are unknown (cell
 /// beyond the maximum hail processing range).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum TrendKind {
     /// 1: cell top, hundreds of feet.
     CellTop,
@@ -362,7 +364,7 @@ impl VolumeList {
 
 /// Decodes one symbol packet (3, 4, 5, 11-15, 19-26). `bytes` is the complete
 /// packet, starting with its 2-byte code, as sized by the dispatcher.
-pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
+pub(crate) fn decode(code: u16, bytes: &[u8], budget: &mut Budget) -> Result<Packet, Level3Error> {
     let body = bytes.get(4..).ok_or(Level3Error::Truncated {
         what: "symbol packet header",
         offset: 0,
@@ -370,22 +372,26 @@ pub(crate) fn decode(code: u16, bytes: &[u8]) -> Result<Packet, Level3Error> {
         available: bytes.len(),
     })?;
     let symbol = match code {
-        3 => SymbolPacket::Mesocyclone(records(code, body, circle)?),
-        4 => SymbolPacket::WindBarbs(records(code, body, wind_barb)?),
-        5 => SymbolPacket::VectorArrows(records(code, body, vector_arrow)?),
-        11 => SymbolPacket::CorrelatedShear(records(code, body, circle)?),
-        12 => SymbolPacket::Tvs(records(code, body, position)?),
-        13 => SymbolPacket::HailPositive(records(code, body, position)?),
-        14 => SymbolPacket::HailProbable(records(code, body, position)?),
-        15 => SymbolPacket::StormIds(records(code, body, storm_id)?),
-        19 => SymbolPacket::HdaHail(records(code, body, hda_hail)?),
-        20 => SymbolPacket::PointFeatures(records(code, body, point_feature)?),
-        21 => SymbolPacket::CellTrend(cell_trend(body)?),
-        22 => SymbolPacket::CellTrendTimes(trend_times(body)?),
-        23 => SymbolPacket::ScitPast(scit(code, body)?),
-        24 => SymbolPacket::ScitForecast(scit(code, body)?),
-        25 => SymbolPacket::StiCircles(records(code, body, circle)?),
-        26 => SymbolPacket::Etvs(records(code, body, position)?),
+        3 => SymbolPacket::Mesocyclone(records(code, body, circle, budget)?),
+        4 => SymbolPacket::WindBarbs(records(code, body, wind_barb, budget)?),
+        5 => SymbolPacket::VectorArrows(records(code, body, vector_arrow, budget)?),
+        11 => SymbolPacket::CorrelatedShear(records(code, body, circle, budget)?),
+        12 => SymbolPacket::Tvs(records(code, body, position, budget)?),
+        13 => SymbolPacket::HailPositive(records(code, body, position, budget)?),
+        14 => SymbolPacket::HailProbable(records(code, body, position, budget)?),
+        15 => {
+            // Each ID is a string of two characters, at most 4 bytes.
+            budget.charge_bytes(4 * (body.len() / 6), "storm IDs")?;
+            SymbolPacket::StormIds(records(code, body, storm_id, budget)?)
+        }
+        19 => SymbolPacket::HdaHail(records(code, body, hda_hail, budget)?),
+        20 => SymbolPacket::PointFeatures(records(code, body, point_feature, budget)?),
+        21 => SymbolPacket::CellTrend(cell_trend(body, budget)?),
+        22 => SymbolPacket::CellTrendTimes(trend_times(body, budget)?),
+        23 => SymbolPacket::ScitPast(scit(code, body, budget)?),
+        24 => SymbolPacket::ScitForecast(scit(code, body, budget)?),
+        25 => SymbolPacket::StiCircles(records(code, body, circle, budget)?),
+        26 => SymbolPacket::Etvs(records(code, body, position, budget)?),
         _ => return Err(Level3Error::UnsupportedPacket(code)),
     };
     Ok(Packet::Symbol(symbol))
@@ -395,11 +401,13 @@ fn invalid(code: u16, reason: String) -> Level3Error {
     Level3Error::InvalidPacket { code, reason }
 }
 
-/// Splits `body` into `N`-byte records and converts each with `record`.
+/// Splits `body` into `N`-byte records and converts each with `record`,
+/// charging `budget` for the list.
 fn records<const N: usize, T>(
     code: u16,
     body: &[u8],
     record: fn(&[u8; N]) -> T,
+    budget: &mut Budget,
 ) -> Result<Vec<T>, Level3Error> {
     let (whole, rest) = body.as_chunks::<N>();
     if !rest.is_empty() {
@@ -411,6 +419,7 @@ fn records<const N: usize, T>(
             ),
         ));
     }
+    budget.charge::<T>(whole.len(), "symbol records")?;
     Ok(whole.iter().map(record).collect())
 }
 
@@ -491,7 +500,11 @@ fn point_feature(&[i0, i1, j0, j1, t0, t1, a0, a1]: &[u8; 8]) -> PointFeature {
 /// Figure 3-15a's field table types the two counts as INT*2, but its layout and
 /// its length range (4 to 22 bytes for 1 to 10 times) put both in one halfword,
 /// as Figure 3-15 does for packet 21.
-fn volume_list(code: u16, bytes: &[u8]) -> Result<(VolumeList, &[u8]), Level3Error> {
+fn volume_list<'a>(
+    code: u16,
+    bytes: &'a [u8],
+    budget: &mut Budget,
+) -> Result<(VolumeList, &'a [u8]), Level3Error> {
     let &[count, latest, ref rest @ ..] = bytes else {
         return Err(invalid(
             code,
@@ -509,12 +522,13 @@ fn volume_list(code: u16, bytes: &[u8]) -> Result<(VolumeList, &[u8]), Level3Err
         ));
     };
     let (pairs, _) = values.as_chunks::<2>();
+    budget.charge::<i16>(pairs.len(), "volume list")?;
     let values = pairs.iter().map(|&[hi, lo]| int(hi, lo)).collect();
     Ok((VolumeList { latest, values }, after))
 }
 
 /// Packet 21 body: cell ID, I, J, then trend code + volume list until the end.
-fn cell_trend(body: &[u8]) -> Result<CellTrend, Level3Error> {
+fn cell_trend(body: &[u8], budget: &mut Budget) -> Result<CellTrend, Level3Error> {
     let &[c1, c2, i0, i1, j0, j1, ref series @ ..] = body else {
         return Err(invalid(
             21,
@@ -530,11 +544,12 @@ fn cell_trend(body: &[u8]) -> Result<CellTrend, Level3Error> {
         let &[t0, t1, ref list @ ..] = rest else {
             return Err(invalid(21, "1 byte left, too few for a trend code".into()));
         };
-        let (volumes, after) = volume_list(21, list)?;
-        trends.push(Trend {
+        let (volumes, after) = volume_list(21, list, budget)?;
+        let trend = Trend {
             code: int(t0, t1),
             volumes,
-        });
+        };
+        budget.push(&mut trends, trend, "cell trends")?;
         rest = after;
     }
     Ok(CellTrend {
@@ -546,8 +561,8 @@ fn cell_trend(body: &[u8]) -> Result<CellTrend, Level3Error> {
 }
 
 /// Packet 22 body: one volume list filling the packet.
-fn trend_times(body: &[u8]) -> Result<VolumeList, Level3Error> {
-    let (times, after) = volume_list(22, body)?;
+fn trend_times(body: &[u8], budget: &mut Budget) -> Result<VolumeList, Level3Error> {
+    let (times, after) = volume_list(22, body, budget)?;
     if !after.is_empty() {
         return Err(invalid(
             22,
@@ -583,7 +598,7 @@ impl Drop for ScitScope {
 }
 
 /// Packets 23 and 24: the nested display packets filling the body.
-fn scit(code: u16, body: &[u8]) -> Result<Vec<Packet>, Level3Error> {
+fn scit(code: u16, body: &[u8], budget: &mut Budget) -> Result<Vec<Packet>, Level3Error> {
     let Some(_scope) = ScitScope::enter() else {
         return Err(invalid(
             code,
@@ -591,10 +606,12 @@ fn scit(code: u16, body: &[u8]) -> Result<Vec<Packet>, Level3Error> {
         ));
     };
     // Nested byte offsets are relative to the SCIT packet (its body starts at byte 4).
-    decode_packets(body, 4).map_err(|error| {
-        invalid(
+    // The product limit is not a fault of this packet: passed on as is.
+    decode_packets(body, 4, budget).map_err(|error| match error {
+        Level3Error::ProductTooLarge { .. } => error,
+        error => invalid(
             code,
             format!("nested packet (byte offsets relative to this packet): {error}"),
-        )
+        ),
     })
 }

@@ -13,7 +13,7 @@
 //! | `cfradial` | `cfradial` | `recast-radar-io-cfradial` | CfRadial 1 |
 //! | `dorade` | `dorade` | `recast-radar-io-dorade` | DORADE, mobile-radar archives |
 //! | `jma` | `jma` | `recast-radar-io-jma` | JMA polar GRIB2 tar |
-//! | `io` | `io` | `recast-radar-io` | format-sniffing router (not Level III); enables every format feature |
+//! | `io` | `io` | `recast-radar-io` | format-sniffing router; enables every format feature |
 //! | `net` | `data` | `recast-radar-data` | AWS archive and real-time chunks, feeds |
 //! | `correct` | `correct` | `recast-radar-correct` | velocity dealiasing |
 //! | `filters` | `filters` | `recast-radar-filters` | gate filters, smoothing, interpolation |
@@ -29,9 +29,7 @@
 //!
 //! A feature also enables the features of the member crates its crate
 //! depends on (for example `track` enables `correct`, `map` and `retrieve`),
-//! so every type a module's API names can be named through this crate. One
-//! exception: `io` also enables `level3`, so that `io` means every format
-//! decoder, although the router does not read Level III products.
+//! so every type a module's API names can be named through this crate.
 
 pub use recast_radar_core as core;
 

@@ -40,10 +40,9 @@ const NOT_IMPLIED: &[(&str, &str)] = &[];
 
 /// Facade features that enable a feature whose crate their crate does not
 /// depend on: (feature, feature it also enables). Described in the same places.
-const ALSO_IMPLIED: &[(&str, &str)] = &[
-    // `io` turns on every format decoder; the router does not read Level III.
-    ("io", "level3"),
-];
+/// Empty since the router reads Level III products (stream level3-complete),
+/// which ended the one case (`io` enabling `level3`).
+const ALSO_IMPLIED: &[(&str, &str)] = &[];
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

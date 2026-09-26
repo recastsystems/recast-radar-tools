@@ -179,7 +179,7 @@ fn irene_keeps_int8_packing_time_reference_and_per_ray_variables() {
     // reads as missing.
     let vel = sweep.field(&FieldName::Other("VEL".into())).unwrap();
     assert_eq!(
-        vel.data.transform().map(|t| t.scale_factor()),
+        vel.data.transform().and_then(|t| t.scale_factor()),
         Some(0.3777165412902832)
     );
     let fill_gate = values.iter().position(|v| *v == -128).unwrap();
@@ -259,7 +259,7 @@ fn dow8_rhi_keeps_int16_packing_and_the_moving_platform_track() {
     };
     assert_eq!(coding.fill_value, Some(-32768));
     assert_eq!(coding.transform.attr_width(), FloatWidth::F32);
-    assert_eq!(coding.transform.scale_factor(), 0.009999999776482582);
+    assert_eq!(coding.transform.scale_factor(), Some(0.009999999776482582));
     assert_eq!(
         values.iter().map(|v| i64::from(*v)).sum::<i64>(),
         -2_395_589_720

@@ -1,0 +1,1358 @@
+{
+ "cases": [
+  {
+   "alignments_within_tolerance": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.25
+    ]
+   ],
+   "features": [
+    {
+     "feature": "centroid A1",
+     "match": true,
+     "message_box": "LMF",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LMF"
+     ]
+    },
+    {
+     "feature": "centroid A2",
+     "match": true,
+     "message_box": "NLK",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NLK"
+     ]
+    },
+    {
+     "feature": "centroid D0",
+     "match": true,
+     "message_box": "OLL",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OLL"
+     ]
+    },
+    {
+     "feature": "centroid E2",
+     "match": true,
+     "message_box": "LMM",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LMM"
+     ]
+    },
+    {
+     "feature": "centroid F2",
+     "match": true,
+     "message_box": "MLH",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MLH"
+     ]
+    },
+    {
+     "feature": "centroid G1",
+     "match": true,
+     "message_box": "JNP",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "JNP"
+     ]
+    },
+    {
+     "feature": "centroid M0",
+     "match": true,
+     "message_box": "MMC",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MMC"
+     ]
+    },
+    {
+     "feature": "centroid N1",
+     "match": true,
+     "message_box": "RKA",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "RKA"
+     ]
+    },
+    {
+     "feature": "centroid Q0",
+     "match": true,
+     "message_box": "LMH",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LMH"
+     ]
+    },
+    {
+     "feature": "centroid U0",
+     "match": true,
+     "message_box": "IOA",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "IOA"
+     ]
+    },
+    {
+     "feature": "centroid V0",
+     "match": true,
+     "message_box": "PLB",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "PLB"
+     ]
+    },
+    {
+     "feature": "centroid Y1",
+     "match": true,
+     "message_box": "QKG",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "QKG"
+     ]
+    },
+    {
+     "feature": "tvs",
+     "match": true,
+     "message_box": "MLP",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MLP",
+      "OLD",
+      "PLE",
+      "OLL"
+     ]
+    },
+    {
+     "feature": "tvs",
+     "match": true,
+     "message_box": "OLD",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MLP",
+      "OLD",
+      "PLE",
+      "OLL"
+     ]
+    },
+    {
+     "feature": "tvs",
+     "match": true,
+     "message_box": "PLE",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MLP",
+      "OLD",
+      "PLE",
+      "OLL"
+     ]
+    },
+    {
+     "feature": "tvs",
+     "match": true,
+     "message_box": "OLL",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MLP",
+      "OLD",
+      "PLE",
+      "OLL"
+     ]
+    }
+   ],
+   "features_matching": 16,
+   "hrap_x": 574.3741822194246,
+   "hrap_y": 322.39460299157645,
+   "inputs": {
+    "dhr": {
+     "id": "l3-tlx-dhr-20130520-2016",
+     "sha256": "e9a2609a7ae8b46c309d8f8e31f8cf376124af9630bc861fd75b7eefc16d18a3"
+    },
+    "rcm": {
+     "id": "l3-tlx-rcm-20130520-2016",
+     "sha256": "a7da9ba81cb4a888e7f76f75fcd4c2b18a2da9d6c3d5d483f6567a29eecd3aa7"
+    },
+    "sti": {
+     "id": "l3-tlx-nst-20130520-2016",
+     "sha256": "6093414970436dbae3df3e9f337dd45d4e17d75449d42008b876952e85e6db33"
+    },
+    "tvs": {
+     "id": "l3-tlx-ntv-20130520-2016",
+     "sha256": "c173af3dc03600fc1c9c1fc793e5a5b891a4d6f1f9cb27aeef84608cedb164e4"
+    }
+   },
+   "intensity": {
+    "agree_best": 274,
+    "agree_rule": 274,
+    "best_offsets": [
+     [
+      0.0,
+      0.0
+     ]
+    ],
+    "compared_boxes": 328
+   },
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "max_outside_km": 0.0,
+   "name": "KTLX 2013-05-20 20:16"
+  },
+  {
+   "alignments_within_tolerance": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.25,
+     0.0
+    ],
+    [
+     0.5,
+     0.0
+    ]
+   ],
+   "features": [
+    {
+     "feature": "centroid A4",
+     "match": true,
+     "message_box": "LOI",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LOI"
+     ]
+    },
+    {
+     "feature": "centroid A5",
+     "match": true,
+     "message_box": "OLF",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OLF"
+     ]
+    },
+    {
+     "feature": "centroid K2",
+     "match": false,
+     "message_box": "MNH",
+     "outside_km": 0.105,
+     "rule_boxes": [
+      "NNE"
+     ]
+    },
+    {
+     "feature": "centroid K5",
+     "match": true,
+     "message_box": "LOM",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LOM"
+     ]
+    },
+    {
+     "feature": "centroid N5",
+     "match": true,
+     "message_box": "OKK",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OKK"
+     ]
+    },
+    {
+     "feature": "centroid Q4",
+     "match": true,
+     "message_box": "KPC",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "KPC"
+     ]
+    },
+    {
+     "feature": "centroid Q5",
+     "match": true,
+     "message_box": "MRF",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MRF"
+     ]
+    },
+    {
+     "feature": "centroid R4",
+     "match": true,
+     "message_box": "NMN",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NMN"
+     ]
+    },
+    {
+     "feature": "centroid R5",
+     "match": true,
+     "message_box": "NMD",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NMD"
+     ]
+    },
+    {
+     "feature": "centroid T5",
+     "match": true,
+     "message_box": "OKO",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OKO"
+     ]
+    },
+    {
+     "feature": "centroid V5",
+     "match": true,
+     "message_box": "LNO",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LNO"
+     ]
+    },
+    {
+     "feature": "centroid X4",
+     "match": false,
+     "message_box": "NMG",
+     "outside_km": 0.24,
+     "rule_boxes": [
+      "NMH"
+     ]
+    },
+    {
+     "feature": "tvs",
+     "match": true,
+     "message_box": "OKP",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OKP",
+      "NNE"
+     ]
+    },
+    {
+     "feature": "tvs",
+     "match": true,
+     "message_box": "NNE",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OKP",
+      "NNE"
+     ]
+    }
+   ],
+   "features_matching": 12,
+   "hrap_x": 574.3741822194246,
+   "hrap_y": 322.39460299157645,
+   "inputs": {
+    "dhr": {
+     "sha256": "f67e4becc867d990e57a8c2b15e506220ec9f479989fe00b6fbe5297014d4a28",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/TLX_DHR_2022_05_03_00_45_53"
+    },
+    "rcm": {
+     "id": "l3-tlx-rcm-20220503-004553",
+     "sha256": "aa1c278b93a3dec60c724f3b35f6e51ef95dade7e2ff0db33c2143573b719f2c"
+    },
+    "sti": {
+     "sha256": "3ddb2d49e653a256091e43a723d7d48d79d891c7e59fa3630793b4c72f82cbee",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NST_2022_05_03_00_45_53"
+    },
+    "tvs": {
+     "sha256": "5e6fe62aeea915a3865e50737813e893a1561a65b8d132d6a425889bad6c3df0",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/TLX_NTV_2022_05_03_00_45_53"
+    }
+   },
+   "intensity": {
+    "agree_best": 437,
+    "agree_rule": 437,
+    "best_offsets": [
+     [
+      0.0,
+      0.0
+     ]
+    ],
+    "compared_boxes": 488
+   },
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "max_outside_km": 0.24,
+   "name": "KTLX 2022-05-03 00:45"
+  },
+  {
+   "alignments_within_tolerance": [
+    [
+     0.0,
+     -0.75
+    ],
+    [
+     0.0,
+     -0.5
+    ],
+    [
+     0.0,
+     -0.25
+    ],
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.25,
+     -0.75
+    ],
+    [
+     0.25,
+     -0.5
+    ],
+    [
+     0.25,
+     -0.25
+    ],
+    [
+     0.25,
+     0.0
+    ],
+    [
+     0.5,
+     -0.75
+    ],
+    [
+     0.5,
+     -0.5
+    ],
+    [
+     0.5,
+     -0.25
+    ],
+    [
+     0.5,
+     0.0
+    ]
+   ],
+   "features": [
+    {
+     "feature": "centroid B5",
+     "match": true,
+     "message_box": "OHM",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OHM"
+     ]
+    },
+    {
+     "feature": "centroid D5",
+     "match": true,
+     "message_box": "LLI",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LLI"
+     ]
+    },
+    {
+     "feature": "centroid F5",
+     "match": true,
+     "message_box": "KLG",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "KLG"
+     ]
+    },
+    {
+     "feature": "centroid G6",
+     "match": true,
+     "message_box": "JJK",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "JJK"
+     ]
+    },
+    {
+     "feature": "centroid H6",
+     "match": true,
+     "message_box": "LJN",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LJN"
+     ]
+    },
+    {
+     "feature": "centroid J2",
+     "match": true,
+     "message_box": "LII",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LII"
+     ]
+    },
+    {
+     "feature": "centroid J6",
+     "match": true,
+     "message_box": "KKH",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "KKH"
+     ]
+    },
+    {
+     "feature": "centroid P4",
+     "match": true,
+     "message_box": "JJE",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "JJE"
+     ]
+    },
+    {
+     "feature": "centroid Q5",
+     "match": true,
+     "message_box": "KJP",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "KJP"
+     ]
+    },
+    {
+     "feature": "centroid T5",
+     "match": true,
+     "message_box": "NII",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NII"
+     ]
+    },
+    {
+     "feature": "centroid X5",
+     "match": true,
+     "message_box": "NJA",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NJA"
+     ]
+    },
+    {
+     "feature": "centroid Y4",
+     "match": true,
+     "message_box": "KLO",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "KLO"
+     ]
+    }
+   ],
+   "features_matching": 12,
+   "hrap_x": 1020.9457534732848,
+   "hrap_y": 677.1352038840265,
+   "inputs": {
+    "dhr": {
+     "sha256": "08c50872082b6ff075a4e25093ec595334da257b2984859910a0b1440604b2bb",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/BOX_DHR_2022_05_16_20_16_41"
+    },
+    "rcm": {
+     "sha256": "32c966aa848b11cc396e84ac02191fe997bd58711defaf223a7baa63b3351900",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/BOX_RCM_2022_05_16_20_16_41"
+    },
+    "sti": {
+     "sha256": "ce06948ae33b779fda00552b02c07f5e89cfe9e38929db5d1595f5162aeb90f6",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/BOX_NST_2022_05_16_20_16_41"
+    },
+    "tvs": {
+     "sha256": "6900ed7bdc968913509780cdf0d8aa97d16cbb5585046b2a2e6a11460856c5e2",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/BOX_NTV_2022_05_16_20_16_41"
+    }
+   },
+   "intensity": {
+    "agree_best": 344,
+    "agree_rule": 341,
+    "best_offsets": [
+     [
+      -0.25,
+      0.0
+     ]
+    ],
+    "compared_boxes": 394
+   },
+   "latitude": 41.956,
+   "longitude": -71.137,
+   "max_outside_km": 0.0,
+   "name": "KBOX 2022-05-16 20:16"
+  },
+  {
+   "alignments_within_tolerance": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.25
+    ]
+   ],
+   "features": [
+    {
+     "feature": "centroid D7",
+     "match": true,
+     "message_box": "MON",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MON"
+     ]
+    },
+    {
+     "feature": "centroid E5",
+     "match": true,
+     "message_box": "MPA",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MPA"
+     ]
+    },
+    {
+     "feature": "centroid E9",
+     "match": false,
+     "message_box": "HOD",
+     "outside_km": 0.315,
+     "rule_boxes": [
+      "HOC"
+     ]
+    },
+    {
+     "feature": "centroid F6",
+     "match": true,
+     "message_box": "MOB",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MOB"
+     ]
+    },
+    {
+     "feature": "centroid G4",
+     "match": true,
+     "message_box": "MQB",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MQB"
+     ]
+    },
+    {
+     "feature": "centroid J9",
+     "match": true,
+     "message_box": "LQF",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LQF"
+     ]
+    },
+    {
+     "feature": "centroid M9",
+     "match": true,
+     "message_box": "LOL",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LOL"
+     ]
+    },
+    {
+     "feature": "centroid N8",
+     "match": true,
+     "message_box": "JNK",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "JNK"
+     ]
+    },
+    {
+     "feature": "centroid N9",
+     "match": true,
+     "message_box": "NNI",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NNI"
+     ]
+    },
+    {
+     "feature": "centroid O9",
+     "match": true,
+     "message_box": "KQN",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "KQN"
+     ]
+    },
+    {
+     "feature": "centroid T5",
+     "match": true,
+     "message_box": "INM",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "INM"
+     ]
+    },
+    {
+     "feature": "centroid Z8",
+     "match": true,
+     "message_box": "INP",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "INP"
+     ]
+    }
+   ],
+   "features_matching": 11,
+   "hrap_x": 951.3370917570116,
+   "hrap_y": 544.3976779989127,
+   "inputs": {
+    "dhr": {
+     "sha256": "3b8d15cd40add036e599adfa87995b2b8aeeec6895acee085dfb3c318e873bbb",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/LWX_DHR_2022_05_16_21_46_49"
+    },
+    "rcm": {
+     "sha256": "979c2f8cdc38ca3a894b224025bd37cee84d2511c067680957ada71605a9f7d7",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/LWX_RCM_2022_05_16_21_46_49"
+    },
+    "sti": {
+     "sha256": "5c21ebf86632c068ac7f76cf54f7d2818b450c32a6a907676c53d417ab547dc8",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/LWX_NST_2022_05_16_21_46_49"
+    },
+    "tvs": {
+     "sha256": "aca37a929c4047047b2e4bf9c242994ea7101f83efac1ff25b300b706368615a",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/LWX_NTV_2022_05_16_21_46_49"
+    }
+   },
+   "intensity": {
+    "agree_best": 403,
+    "agree_rule": 403,
+    "best_offsets": [
+     [
+      0.0,
+      0.0
+     ]
+    ],
+    "compared_boxes": 434
+   },
+   "latitude": 38.976,
+   "longitude": -77.487,
+   "max_outside_km": 0.315,
+   "name": "KLWX 2022-05-16 21:46"
+  },
+  {
+   "alignments_within_tolerance": [
+    [
+     -0.25,
+     0.0
+    ],
+    [
+     -0.25,
+     0.25
+    ],
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.25
+    ],
+    [
+     0.25,
+     0.0
+    ],
+    [
+     0.25,
+     0.25
+    ]
+   ],
+   "features": [
+    {
+     "feature": "centroid B6",
+     "match": true,
+     "message_box": "OPO",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OPO"
+     ]
+    },
+    {
+     "feature": "centroid I7",
+     "match": true,
+     "message_box": "NOK",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NOK"
+     ]
+    },
+    {
+     "feature": "centroid L5",
+     "match": true,
+     "message_box": "PPP",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "PPP"
+     ]
+    },
+    {
+     "feature": "centroid L6",
+     "match": true,
+     "message_box": "JJH",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "JJH"
+     ]
+    },
+    {
+     "feature": "centroid U5",
+     "match": true,
+     "message_box": "PPD",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "PPD"
+     ]
+    },
+    {
+     "feature": "centroid W6",
+     "match": false,
+     "message_box": "KKB",
+     "outside_km": 0.016,
+     "rule_boxes": [
+      "KKA"
+     ]
+    }
+   ],
+   "features_matching": 5,
+   "hrap_x": 1017.9690139310198,
+   "hrap_y": 237.48492836582204,
+   "inputs": {
+    "dhr": {
+     "sha256": "156af1b9fcd8d2fc3d396c312d6baa448e13be02f7313269191fbc4e3e8284f6",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/MLB_DHR_2022_05_16_21_45_53"
+    },
+    "rcm": {
+     "sha256": "58d78bbf370005054df3979cd0edee56d945deb35cd42b0c2edf80c0b98c20bd",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/MLB_RCM_2022_05_16_21_45_53"
+    },
+    "sti": {
+     "sha256": "83986eb362ff1044bfbc7cf0f4cef35afd70eee430c2cdb8fd8c944e5a40a5c7",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/MLB_NST_2022_05_16_21_45_53"
+    },
+    "tvs": {
+     "sha256": "f6b8a82a78850df149b7e63a6b0a672c6195d0082ecda3d19e24ed309294f2eb",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/MLB_NTV_2022_05_16_21_45_53"
+    }
+   },
+   "intensity": {
+    "agree_best": 526,
+    "agree_rule": 526,
+    "best_offsets": [
+     [
+      0.0,
+      0.0
+     ]
+    ],
+    "compared_boxes": 585
+   },
+   "latitude": 28.113,
+   "longitude": -80.654,
+   "max_outside_km": 0.016,
+   "name": "KMLB 2022-05-16 21:45"
+  },
+  {
+   "alignments_within_tolerance": [
+    [
+     -0.25,
+     -0.25
+    ],
+    [
+     -0.25,
+     0.0
+    ],
+    [
+     -0.25,
+     0.25
+    ],
+    [
+     0.0,
+     -0.25
+    ],
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.25
+    ],
+    [
+     0.25,
+     -0.25
+    ],
+    [
+     0.25,
+     0.0
+    ],
+    [
+     0.25,
+     0.25
+    ]
+   ],
+   "features": [
+    {
+     "feature": "centroid D4",
+     "match": true,
+     "message_box": "LLL",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LLL"
+     ]
+    },
+    {
+     "feature": "centroid J4",
+     "match": true,
+     "message_box": "LKG",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LKG"
+     ]
+    },
+    {
+     "feature": "centroid K5",
+     "match": true,
+     "message_box": "NLM",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NLM"
+     ]
+    },
+    {
+     "feature": "centroid N3",
+     "match": true,
+     "message_box": "MNC",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MNC"
+     ]
+    },
+    {
+     "feature": "centroid N5",
+     "match": true,
+     "message_box": "NLC",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NLC"
+     ]
+    },
+    {
+     "feature": "centroid O5",
+     "match": true,
+     "message_box": "MKL",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MKL"
+     ]
+    },
+    {
+     "feature": "centroid P4",
+     "match": true,
+     "message_box": "OOB",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "OOB"
+     ]
+    },
+    {
+     "feature": "centroid R5",
+     "match": true,
+     "message_box": "MJO",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MJO"
+     ]
+    },
+    {
+     "feature": "centroid V5",
+     "match": true,
+     "message_box": "LMD",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "LMD"
+     ]
+    },
+    {
+     "feature": "centroid W5",
+     "match": true,
+     "message_box": "MML",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MML"
+     ]
+    },
+    {
+     "feature": "centroid Y5",
+     "match": true,
+     "message_box": "MNB",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "MNB"
+     ]
+    },
+    {
+     "feature": "centroid Z4",
+     "match": true,
+     "message_box": "NMJ",
+     "outside_km": 0.0,
+     "rule_boxes": [
+      "NMJ"
+     ]
+    }
+   ],
+   "features_matching": 12,
+   "hrap_x": 373.9719008951381,
+   "hrap_y": 648.2733756163688,
+   "inputs": {
+    "dhr": {
+     "sha256": "a2234aabbdb0a9ffc67db65e56663e577764e268c216c9e2d3c304e413141a9e",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/GGW_DHR_2022_05_12_20_13_17"
+    },
+    "rcm": {
+     "sha256": "50743839b5d80c7f0b778cd44422b89e87b12342919cb6d7f430e1eeebc9bb2f",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/GGW_RCM_2022_05_12_20_13_17"
+    },
+    "sti": {
+     "sha256": "f475aea73b8d119b1b07fc2402a3408a64fb988092f131aa4f6d82a2c5b8648f",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/GGW_NST_2022_05_12_20_13_17"
+    },
+    "tvs": {
+     "sha256": "1dacc2564848e77edff234d50153a3e8cdfebb52fd07937b2c43b8c2cded60e8",
+     "url": "https://unidata-nexrad-level3.s3.amazonaws.com/GGW_NTV_2022_05_12_20_13_17"
+    }
+   },
+   "intensity": {
+    "agree_best": 970,
+    "agree_rule": 970,
+    "best_offsets": [
+     [
+      0.0,
+      0.0
+     ]
+    ],
+    "compared_boxes": 1117
+   },
+   "latitude": 48.206,
+   "longitude": -106.625,
+   "max_outside_km": 0.0,
+   "name": "KGGW 2022-05-12 20:13"
+  }
+ ],
+ "files": [
+  {
+   "boxes": [
+    {
+     "column": 0,
+     "latitude": 37.43674045730162,
+     "longitude": -102.15210076869532,
+     "row": 0
+    },
+    {
+     "column": 99,
+     "latitude": 36.09398124112697,
+     "longitude": -90.92270391465654,
+     "row": 0
+    },
+    {
+     "column": 49,
+     "latitude": 32.61917164618712,
+     "longitude": -97.27024983780905,
+     "row": 49
+    },
+    {
+     "column": 0,
+     "latitude": 28.67471130700547,
+     "longitude": -102.6281578102108,
+     "row": 99
+    },
+    {
+     "column": 99,
+     "latitude": 27.640282714297808,
+     "longitude": -93.20657031508952,
+     "row": 99
+    }
+   ],
+   "hrap_x": 584.1512708320863,
+   "hrap_y": 245.8495981172423,
+   "id": "l3-fws-rcm-19950517-2310",
+   "latitude": 32.573,
+   "longitude": -97.303,
+   "north": 371.0,
+   "west": 461.0
+  },
+  {
+   "boxes": [
+    {
+     "column": 0,
+     "latitude": 45.96274634222269,
+     "longitude": -94.07963943077823,
+     "row": 0
+    },
+    {
+     "column": 99,
+     "latitude": 43.055196870406206,
+     "longitude": -81.1247191460725,
+     "row": 0
+    },
+    {
+     "column": 49,
+     "latitude": 40.26284457937559,
+     "longitude": -89.26715609742945,
+     "row": 49
+    },
+    {
+     "column": 0,
+     "latitude": 36.67703051281799,
+     "longitude": -96.22342827357853,
+     "row": 99
+    },
+    {
+     "column": 99,
+     "latitude": 34.47243906643036,
+     "longitude": -85.49648124435103,
+     "row": 99
+    }
+   ],
+   "hrap_x": 714.1915921232976,
+   "hrap_y": 484.01701085468517,
+   "id": "l3-ilx-irm-19960419-2309",
+   "latitude": 40.151,
+   "longitude": -89.337,
+   "north": 611.0,
+   "west": 591.0
+  },
+  {
+   "boxes": [
+    {
+     "column": 0,
+     "latitude": 45.96274634222269,
+     "longitude": -94.07963943077823,
+     "row": 0
+    },
+    {
+     "column": 99,
+     "latitude": 43.055196870406206,
+     "longitude": -81.1247191460725,
+     "row": 0
+    },
+    {
+     "column": 49,
+     "latitude": 40.26284457937559,
+     "longitude": -89.26715609742945,
+     "row": 49
+    },
+    {
+     "column": 0,
+     "latitude": 36.67703051281799,
+     "longitude": -96.22342827357853,
+     "row": 99
+    },
+    {
+     "column": 99,
+     "latitude": 34.47243906643036,
+     "longitude": -85.49648124435103,
+     "row": 99
+    }
+   ],
+   "hrap_x": 714.1915921232976,
+   "hrap_y": 484.01701085468517,
+   "id": "l3-ilx-rcm-19960419-2309",
+   "latitude": 40.151,
+   "longitude": -89.337,
+   "north": 611.0,
+   "west": 591.0
+  },
+  {
+   "boxes": [
+    {
+     "column": 0,
+     "latitude": 47.43893029265356,
+     "longitude": -93.0544369474533,
+     "row": 0
+    },
+    {
+     "column": 99,
+     "latitude": 44.305595494521555,
+     "longitude": -79.74451261015227,
+     "row": 0
+    },
+    {
+     "column": 49,
+     "latitude": 41.61542668238686,
+     "longitude": -88.22123781410635,
+     "row": 49
+    },
+    {
+     "column": 0,
+     "latitude": 38.07495620955012,
+     "longitude": -95.46987216740006,
+     "row": 99
+    },
+    {
+     "column": 99,
+     "latitude": 35.70729159234442,
+     "longitude": -84.47669896448065,
+     "row": 99
+    }
+   ],
+   "hrap_x": 727.3892909673011,
+   "hrap_y": 527.7366091871056,
+   "id": "l3-lot-irm-19941031-0503",
+   "latitude": 41.604,
+   "longitude": -88.085,
+   "north": 651.0,
+   "west": 601.0
+  },
+  {
+   "boxes": [
+    {
+     "column": 0,
+     "latitude": 40.440898755928586,
+     "longitude": -102.45105644956924,
+     "row": 0
+    },
+    {
+     "column": 99,
+     "latitude": 39.049069006965205,
+     "longitude": -90.45259184217196,
+     "row": 0
+    },
+    {
+     "column": 49,
+     "latitude": 35.50558482227662,
+     "longitude": -97.23232486051155,
+     "row": 49
+    },
+    {
+     "column": 0,
+     "latitude": 31.441631919750336,
+     "longitude": -102.90162950133885,
+     "row": 99
+    },
+    {
+     "column": 99,
+     "latitude": 30.37820312315801,
+     "longitude": -92.94371289063331,
+     "row": 99
+    }
+   ],
+   "hrap_x": 574.3964980670288,
+   "hrap_y": 322.3976291366366,
+   "id": "l3-tlx-irm-19940308-1115",
+   "latitude": 35.333,
+   "longitude": -97.277,
+   "north": 451.0,
+   "west": 451.0
+  },
+  {
+   "boxes": [
+    {
+     "column": 0,
+     "latitude": 40.440898755928586,
+     "longitude": -102.45105644956924,
+     "row": 0
+    },
+    {
+     "column": 99,
+     "latitude": 39.049069006965205,
+     "longitude": -90.45259184217196,
+     "row": 0
+    },
+    {
+     "column": 49,
+     "latitude": 35.50558482227662,
+     "longitude": -97.23232486051155,
+     "row": 49
+    },
+    {
+     "column": 0,
+     "latitude": 31.441631919750336,
+     "longitude": -102.90162950133885,
+     "row": 99
+    },
+    {
+     "column": 99,
+     "latitude": 30.37820312315801,
+     "longitude": -92.94371289063331,
+     "row": 99
+    }
+   ],
+   "hrap_x": 574.3741822194246,
+   "hrap_y": 322.39460299157645,
+   "id": "l3-tlx-rcm-20130520-2016",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "north": 451.0,
+   "west": 451.0
+  },
+  {
+   "boxes": [
+    {
+     "column": 0,
+     "latitude": 40.440898755928586,
+     "longitude": -102.45105644956924,
+     "row": 0
+    },
+    {
+     "column": 99,
+     "latitude": 39.049069006965205,
+     "longitude": -90.45259184217196,
+     "row": 0
+    },
+    {
+     "column": 49,
+     "latitude": 35.50558482227662,
+     "longitude": -97.23232486051155,
+     "row": 49
+    },
+    {
+     "column": 0,
+     "latitude": 31.441631919750336,
+     "longitude": -102.90162950133885,
+     "row": 99
+    },
+    {
+     "column": 99,
+     "latitude": 30.37820312315801,
+     "longitude": -92.94371289063331,
+     "row": 99
+    }
+   ],
+   "hrap_x": 574.3741822194246,
+   "hrap_y": 322.39460299157645,
+   "id": "l3-tlx-rcm-20220503-004553",
+   "latitude": 35.333,
+   "longitude": -97.278,
+   "north": 451.0,
+   "west": 451.0
+  }
+ ],
+ "levels": {
+  "case": "l3-tlx-rcm-20130520-2016 with l3-tlx-ncz-20130520-2016",
+  "levels": {
+   "7": {
+    "boxes": 75,
+    "median_dbz": 35.0,
+    "with_composite": 66
+   },
+   "8": {
+    "boxes": 90,
+    "median_dbz": 20.0,
+    "with_composite": 77
+   }
+  }
+ }
+}

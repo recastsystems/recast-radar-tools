@@ -1099,14 +1099,15 @@ impl<'a> Builder<'a> {
         }
 
         for (field_index, field) in sweep.fields.iter().enumerate() {
-            variables.push(self.field_variable(
-                index,
-                field_index,
-                field,
-                sweep,
-                ray_dim,
-                &order,
-            )?);
+            let variable =
+                self.field_variable(index, field_index, field, sweep, ray_dim, &order)?;
+            if field.data.transform().is_some_and(|t| !t.is_linear()) {
+                // CF cannot express a level table: the field is written decoded
+                // (float32, NaN fill), with its codes beside it as
+                // `<name>_level` carrying the coding and flag attributes.
+                variables.push(self.decoded_field_variable(index, field, sweep, ray_dim, &order)?);
+            }
+            variables.push(variable);
         }
 
         let mut attrs: Attrs<'a> = Vec::new();
@@ -1336,12 +1337,51 @@ impl<'a> Builder<'a> {
                 rows: order.clone(),
             }
         };
+        let form = if field.data.transform().is_some_and(|t| !t.is_linear()) {
+            FieldForm::Codes
+        } else {
+            FieldForm::Encoded
+        };
+        Ok(Variable {
+            name: match form {
+                FieldForm::Codes => Cow::Owned(level_variable_name(field)),
+                _ => Cow::Borrowed(field.name.as_str()),
+            },
+            dims: vec![Cow::Borrowed(ray_dim), "range".into()],
+            values,
+            attrs: self.field_attrs(sweep_index, field, &sweep.range, form)?,
+            source: Some(source),
+        })
+    }
+
+    /// A field whose transform is not linear ([`LinearTransform::Levels`]),
+    /// decoded to float32 physical values (NaN for every sentinel) in the
+    /// view's ray order and on the sweep's range. Its codes are the
+    /// `<name>_level` variable, named in `ancillary_variables`.
+    fn decoded_field_variable(
+        &self,
+        sweep_index: usize,
+        field: &'a Field,
+        sweep: &'a Sweep,
+        ray_dim: &'static str,
+        order: &RowOrder,
+    ) -> Result<Variable<'a>, ViewError> {
+        let physical = field.to_physical();
+        let values = super::layout::apply_mapping(
+            ArrayRef::F32(&physical),
+            sweep.nrays(),
+            field.ngates as usize,
+            field.gates,
+            sweep.range.ngates(),
+            Scalar::F32(f32::NAN),
+            order,
+        );
         Ok(Variable {
             name: Cow::Borrowed(field.name.as_str()),
             dims: vec![Cow::Borrowed(ray_dim), "range".into()],
-            values,
-            attrs: self.field_attrs(sweep_index, field, &sweep.range)?,
-            source: Some(source),
+            values: Values::Owned(values),
+            attrs: self.field_attrs(sweep_index, field, &sweep.range, FieldForm::Decoded)?,
+            source: None,
         })
     }
 
@@ -1350,10 +1390,15 @@ impl<'a> Builder<'a> {
         sweep_index: usize,
         field: &'a Field,
         range: &RangeCoord,
+        form: FieldForm,
     ) -> Result<Attrs<'a>, ViewError> {
         let path = || format!("sweep_{sweep_index}/{}", field.name);
         let model = &field.attrs;
         let mut attrs: Attrs<'a> = Vec::new();
+
+        if form == FieldForm::Codes {
+            return self.level_attrs(field, range, path);
+        }
 
         let info = field.name.info();
         let (standard_name, long_name, units) = if self.wmo() {
@@ -1381,6 +1426,9 @@ impl<'a> Builder<'a> {
         }
 
         match &field.data {
+            _ if form == FieldForm::Decoded => {
+                attrs.push(("_FillValue".into(), scalar(Scalar::F32(f32::NAN))));
+            }
             FieldData::U8 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
             FieldData::U16 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
             FieldData::I8 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
@@ -1422,12 +1470,18 @@ impl<'a> Builder<'a> {
                 attrs.push((name.into(), scalar(Scalar::F32(value))));
             }
         }
-        for (name, list) in [
-            ("qualified_variables", &model.qualified_variables),
-            ("ancillary_variables", &model.ancillary_variables),
+        let level_name = (form == FieldForm::Decoded).then(|| level_variable_name(field));
+        for (name, list, extra) in [
+            ("qualified_variables", &model.qualified_variables, None),
+            (
+                "ancillary_variables",
+                &model.ancillary_variables,
+                level_name.as_deref(),
+            ),
         ] {
-            if !list.is_empty() {
-                let joined: Vec<&str> = list.iter().map(|name| name.as_str()).collect();
+            let mut joined: Vec<&str> = list.iter().map(|name| name.as_str()).collect();
+            joined.extend(extra);
+            if !joined.is_empty() {
                 attrs.push((name.into(), text(joined.join(" "))));
             }
         }
@@ -1482,6 +1536,82 @@ impl<'a> Builder<'a> {
         }
         Ok(attrs)
     }
+
+    /// Attributes of the `<name>_level` variable of a field with a level
+    /// table: what the codes mean (`long_name`, `_FillValue`, `_Undetect`,
+    /// `valid_range`, `flag_values` / `flag_masks` / `flag_meanings`, the
+    /// model attributes without a slot) and the variable they encode.
+    fn level_attrs(
+        &self,
+        field: &'a Field,
+        range: &RangeCoord,
+        path: impl Fn() -> String,
+    ) -> Result<Attrs<'a>, ViewError> {
+        let model = &field.attrs;
+        let mut attrs: Attrs<'a> = Vec::new();
+        let long_name = model
+            .long_name
+            .as_deref()
+            .or_else(|| field.name.info().map(|info| info.long_name))
+            .unwrap_or(field.name.as_str());
+        attrs.push(("long_name".into(), text(format!("{long_name} data level"))));
+        match &field.data {
+            FieldData::U8 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
+            FieldData::U16 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
+            FieldData::I8 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
+            FieldData::I16 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
+            FieldData::I32 { coding, .. } => int_attrs(&mut attrs, coding, model, path)?,
+            FieldData::F32 { .. } | FieldData::F64 { .. } => {}
+        }
+        if let Some(value) = model.is_discrete {
+            attrs.push(("is_discrete".into(), bool_text(value)));
+        }
+        attrs.push((
+            "comment".into(),
+            text(format!(
+                "data level codes of {}; values through the product's level table",
+                field.name
+            )),
+        ));
+        if field.gates.stride > 1
+            && let RangeCoord::Uniform { spacing_m, .. } = range
+        {
+            attrs.push((
+                "gate_comment".into(),
+                text(format!(
+                    "native gate spacing {} m; values repeated on the {} m range coordinate",
+                    format_metres(spacing_m * f64::from(field.gates.stride)),
+                    format_metres(*spacing_m)
+                )),
+            ));
+        }
+        if self.xradar_items() {
+            for (name, value) in &model.other {
+                if attrs.iter().any(|(key, _)| key == &**name) {
+                    continue;
+                }
+                attrs.push((Cow::Borrowed(&**name), value.clone()));
+            }
+        }
+        Ok(attrs)
+    }
+}
+
+/// The three forms a field is written in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FieldForm {
+    /// The stored codes (or floats) with their CF packing: every field with a
+    /// linear transform.
+    Encoded,
+    /// The codes of a field with a level table, as `<name>_level`.
+    Codes,
+    /// The physical values of a field with a level table, as `<name>`.
+    Decoded,
+}
+
+/// `<name>_level`: the codes variable of a field with a level table.
+fn level_variable_name(field: &Field) -> String {
+    format!("{}_level", field.name.as_str())
 }
 
 /// Add the source's own attributes of slotted variables
@@ -1546,15 +1676,12 @@ fn sort_order(
 }
 
 fn scale_attrs(attrs: &mut Attrs<'_>, transform: LinearTransform) {
+    let (Some(scale), Some(offset)) = (transform.scale_factor(), transform.add_offset()) else {
+        return;
+    };
     let (scale_factor, add_offset) = match transform.attr_width() {
-        FloatWidth::F64 => (
-            Scalar::F64(transform.scale_factor()),
-            Scalar::F64(transform.add_offset()),
-        ),
-        FloatWidth::F32 => (
-            Scalar::F32(transform.scale_factor() as f32),
-            Scalar::F32(transform.add_offset() as f32),
-        ),
+        FloatWidth::F64 => (Scalar::F64(scale), Scalar::F64(offset)),
+        FloatWidth::F32 => (Scalar::F32(scale as f32), Scalar::F32(offset as f32)),
     };
     attrs.push(("scale_factor".into(), scalar(scale_factor)));
     attrs.push(("add_offset".into(), scalar(add_offset)));
@@ -1566,7 +1693,9 @@ fn int_attrs<T: PackedInt>(
     model: &FieldAttrs,
     path: impl Fn() -> String,
 ) -> Result<(), ViewError> {
-    scale_attrs(attrs, coding.transform);
+    if coding.transform.is_linear() {
+        scale_attrs(attrs, coding.transform);
+    }
     if let Some(fill) = coding.fill_value {
         attrs.push(("_FillValue".into(), scalar(fill.to_scalar())));
     }
