@@ -15,6 +15,15 @@
 #   published crate links to the private repository is the owner's decision
 #   (same document).
 # Any other warning fails the check, as does any error.
+#
+# A local rerun after the crates changed can verify against the previous
+# run: cargo takes the workspace crates a package depends on from a
+# temporary registry under the same name and version every run, and keeps
+# both their unpacked sources ($CARGO_HOME/registry/src/-<hash>/, one
+# directory per worktree's registry) and their builds
+# (target/debug/.fingerprint/recast-radar-*). A dependent then fails to
+# build against the old API. Remove this worktree's two before rerunning;
+# CI starts from neither.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
