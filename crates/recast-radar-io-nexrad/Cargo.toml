@@ -23,15 +23,13 @@ exclude = ["tests/", "examples/"]
 # per-thread decoder workspace.
 paired-bzip2 = []
 # The Level II writer (`write` module: Archive II files, real-time chunks,
-# GR2Analyst polling directories). Off by default so that decoding alone
-# does not build the temporary bzip2 encoder; `cargo test` of this crate
-# alone needs `--features write` to run the writer tests.
-write = ["dep:bzip2"]
+# GR2Analyst polling directories), which compresses LDM records with
+# recast-radar-bzip2's encoder on rayon. Off by default so that decoding
+# alone does not build the encoder; `cargo test` of this crate alone needs
+# `--features write` to run the writer tests.
+write = ["recast-radar-bzip2/rayon"]
 
 [dependencies]
-# Level II writer only: bzip2 streams for LDM records until the
-# recast-radar-bzip2 encoder lands (src/write/compress.rs is the one seam).
-bzip2 = { workspace = true, optional = true }
 chrono.workspace = true
 flate2.workspace = true
 rayon.workspace = true
@@ -40,7 +38,9 @@ recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]
-# The unit tests build LDM records to decode.
+# The unit tests build LDM records to decode, and the writer's compression
+# test compares its streams with this reference (libbz2-rs-sys, a port of
+# libbzip2 1.0.8). Never a normal dependency.
 bzip2.workspace = true
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 serde_json.workspace = true

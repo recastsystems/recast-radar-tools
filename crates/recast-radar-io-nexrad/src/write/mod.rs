@@ -618,6 +618,7 @@ fn stream_archive<W: Write>(
     out.write_all(&encode::volume_header(plan))?;
     let mut records = RecordStream {
         compression,
+        compressor: compress::LdmCompressor::new(),
         out,
         pending: Vec::new(),
         batch: rayon::current_num_threads().max(1),
@@ -645,6 +646,8 @@ fn stream_archive<W: Write>(
 /// until [`RecordStream::finish`], because its LDM control word is negated.
 struct RecordStream<'w, W: Write> {
     compression: Compression,
+    /// The encoders of every batch of this file.
+    compressor: compress::LdmCompressor,
     out: &'w mut W,
     pending: Vec<Vec<u8>>,
     batch: usize,
@@ -669,7 +672,7 @@ impl<W: Write> RecordStream<'_, W> {
         let records = std::mem::take(&mut self.pending);
         let stored = match self.compression {
             Compression::None => records,
-            Compression::Bzip2LdmRecords => compress::ldm_batch(&records, ends_file)?,
+            Compression::Bzip2LdmRecords => self.compressor.batch(&records, ends_file)?,
         };
         for record in &stored {
             self.out.write_all(record)?;
@@ -781,7 +784,9 @@ pub(crate) fn build_archive(
     let encoded = encode::encode(&plan)?;
     let stored = match options.compression {
         Compression::None => encoded.records,
-        Compression::Bzip2LdmRecords => compress::ldm_batch(&encoded.records, true)?,
+        Compression::Bzip2LdmRecords => {
+            compress::LdmCompressor::new().batch(&encoded.records, true)?
+        }
     };
     let mut summary = plan.summary;
     summary.records = stored.len();

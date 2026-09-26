@@ -141,6 +141,8 @@ pub struct PollingDirectory {
     suffix: Option<String>,
     /// File name format before the suffix (checked).
     name_format: String,
+    /// Whether a publish lists its site in the root's site lists.
+    list_sites: bool,
 }
 
 impl PollingDirectory {
@@ -151,6 +153,7 @@ impl PollingDirectory {
             max_files: DEFAULT_MAX_FILES,
             suffix: None,
             name_format: DEFAULT_NAME_FORMAT.to_owned(),
+            list_sites: true,
         }
     }
 
@@ -195,6 +198,14 @@ impl PollingDirectory {
             });
         }
         Ok(self)
+    }
+
+    /// Whether each publish adds its site to the root's site lists
+    /// (`config.cfg`, `grlevel2.cfg`; default `true`). With `false` the
+    /// lists are left as they are, for a root whose lists are kept by hand.
+    pub fn with_site_lists(mut self, list_sites: bool) -> Self {
+        self.list_sites = list_sites;
+        self
     }
 
     /// Keep at most `max_files` files per site (at least 1).
@@ -313,7 +324,9 @@ impl PollingDirectory {
             removed.push(old.name);
         }
         write_atomic(&dir.join("dir.list"), format_dir_list(&entries).as_bytes())?;
-        self.list_site(site)?;
+        if self.list_sites {
+            self.list_site(site)?;
+        }
         Ok(Published {
             path,
             entry,

@@ -223,6 +223,8 @@ pub struct ChunkWriter<'a> {
     /// volume ends there.
     held: Option<RadialRecord>,
     summary: WriteSummary,
+    /// The encoders of every chunk of this volume.
+    compressor: compress::LdmCompressor,
 }
 
 impl<'a> ChunkWriter<'a> {
@@ -255,6 +257,7 @@ impl<'a> ChunkWriter<'a> {
             chunks: 0,
             held: None,
             summary,
+            compressor: compress::LdmCompressor::new(),
         })
     }
 
@@ -313,10 +316,11 @@ impl<'a> ChunkWriter<'a> {
             let mut planned = plan::plan(self.planned, SourceMetadata::default(), &self.options)?;
             planned.header_time = plan.header_time;
             let mut bytes = encode::volume_header(&planned).to_vec();
-            bytes.extend_from_slice(&compress::ldm_record(
-                &encode::metadata_record_bytes(&planned),
-                false,
-            )?);
+            bytes.extend_from_slice(
+                &self
+                    .compressor
+                    .record(&encode::metadata_record_bytes(&planned), false)?,
+            );
             stored.push((ChunkKind::Start, bytes));
         }
         let context = RadialContext {
@@ -360,7 +364,7 @@ impl<'a> ChunkWriter<'a> {
         for record in &complete {
             stored.push((
                 ChunkKind::Intermediate,
-                compress::ldm_record(&record.bytes, false)?,
+                self.compressor.record(&record.bytes, false)?,
             ));
         }
         if self.chunks + stored.len() + 1 > usize::from(u16::MAX) {
@@ -409,7 +413,7 @@ impl<'a> ChunkWriter<'a> {
         {
             *status = 4;
         }
-        let bytes = compress::ldm_record(&held.bytes, true)?;
+        let bytes = self.compressor.record(&held.bytes, true)?;
         self.chunks += 1;
         let chunk = Chunk {
             kind: ChunkKind::End,
