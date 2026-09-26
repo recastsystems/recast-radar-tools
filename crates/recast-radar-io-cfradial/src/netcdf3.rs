@@ -12,7 +12,7 @@
 //! variable no-padding special case. netCDF-4/HDF5 files never reach this
 //! module (they carry the HDF5 magic, not `CDF`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{CfRadialError, Result};
 
@@ -37,16 +37,118 @@ pub fn looks_like_netcdf3_bytes(bytes: &[u8]) -> bool {
 
 /// An attribute value (global or per-variable).
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum NcValue {
+    /// Text (`NC_CHAR`, or a one-element `NC_STRING` in netCDF-4).
     Str(String),
+    /// A netCDF-4 `NC_STRING` array of more than one element.
+    Strings(Vec<String>),
     /// `NC_FLOAT` values, kept at their width: xarray derives the decoded
     /// dtype of a packed variable from the width of its `scale_factor`.
     Floats(Vec<f32>),
+    /// `NC_DOUBLE` values (and netCDF-4 `uint64` values above `i64::MAX`).
     Doubles(Vec<f64>),
-    Ints(Vec<i64>),
+    /// Integer values, widened to `i64`, with the stored type.
+    Ints(Vec<i64>, IntKind),
+}
+
+/// Attributes of a variable or a file, in file order (netCDF names are
+/// unique; inserting a name again replaces its value in place). Lookups and
+/// inserts go through a name index, so an object with many attributes (HDF5
+/// allows 65,536) costs linear time, not quadratic.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NcAttrs {
+    entries: Vec<(String, NcValue)>,
+    index: HashMap<String, usize>,
+}
+
+impl NcAttrs {
+    /// The value of attribute `name`.
+    pub fn get(&self, name: &str) -> Option<&NcValue> {
+        let position = *self.index.get(name)?;
+        self.entries.get(position).map(|(_, value)| value)
+    }
+
+    /// Whether attribute `name` exists.
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.index.contains_key(name)
+    }
+
+    /// Add `name` at the end, or replace its value where it is.
+    pub fn insert(&mut self, name: String, value: NcValue) {
+        if let Some(&position) = self.index.get(&name)
+            && let Some(slot) = self.entries.get_mut(position)
+        {
+            slot.1 = value;
+            return;
+        }
+        self.index.insert(name.clone(), self.entries.len());
+        self.entries.push((name, value));
+    }
+
+    /// `(name, value)` pairs in file order.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &NcValue)> {
+        self.entries.iter().map(|(name, value)| (name, value))
+    }
+
+    /// Number of attributes.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// True when there are none.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl<'a> IntoIterator for &'a NcAttrs {
+    type Item = (&'a String, &'a NcValue);
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, (String, NcValue)>,
+        fn(&'a (String, NcValue)) -> (&'a String, &'a NcValue),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter().map(|(name, value)| (name, value))
+    }
+}
+
+impl FromIterator<(String, NcValue)> for NcAttrs {
+    fn from_iter<I: IntoIterator<Item = (String, NcValue)>>(iter: I) -> Self {
+        let mut attrs = Self::default();
+        for (name, value) in iter {
+            attrs.insert(name, value);
+        }
+        attrs
+    }
+}
+
+/// The stored type of an integer attribute (classic `byte`, `short`, `int`;
+/// netCDF-4 also `ubyte`, `ushort`, `uint`, `int64`, `uint64`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IntKind {
+    /// `byte` (int8).
+    I8,
+    /// `ubyte` (uint8).
+    U8,
+    /// `short` (int16).
+    I16,
+    /// `ushort` (uint16).
+    U16,
+    /// `int` (int32).
+    I32,
+    /// `uint` (uint32).
+    U32,
+    /// `int64`.
+    I64,
+    /// `uint64` (values that fit in `i64`; larger ones are `Doubles`).
+    U64,
 }
 
 impl NcValue {
+    /// The text of a `Str` value.
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Str(value) => Some(value),
@@ -54,28 +156,50 @@ impl NcValue {
         }
     }
 
+    /// The first element of a numeric value, widened to f64.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             Self::Floats(values) => values.first().map(|value| f64::from(*value)),
             Self::Doubles(values) => values.first().copied(),
-            Self::Ints(values) => values.first().map(|value| *value as f64),
+            Self::Ints(values, _) => values.first().map(|value| *value as f64),
             _ => None,
         }
     }
 }
 
-/// Variable data, decoded from big-endian storage.
+/// Variable data in its stored type (classic files store big-endian; the
+/// unsigned, 64-bit and string types occur in netCDF-4 files only).
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum NcArray {
+    /// `byte`.
     I8(Vec<i8>),
+    /// `char`: raw bytes.
     Char(Vec<u8>),
+    /// `short`.
     I16(Vec<i16>),
+    /// `int`.
     I32(Vec<i32>),
+    /// `float`.
     F32(Vec<f32>),
+    /// `double`.
     F64(Vec<f64>),
+    /// `ubyte`.
+    U8(Vec<u8>),
+    /// `ushort`.
+    U16(Vec<u16>),
+    /// `uint`.
+    U32(Vec<u32>),
+    /// `int64`.
+    I64(Vec<i64>),
+    /// `uint64`.
+    U64(Vec<u64>),
+    /// `string`: one text per element.
+    Str(Vec<String>),
 }
 
 impl NcArray {
+    /// Number of elements.
     pub fn len(&self) -> usize {
         match self {
             Self::I8(values) => values.len(),
@@ -84,9 +208,16 @@ impl NcArray {
             Self::I32(values) => values.len(),
             Self::F32(values) => values.len(),
             Self::F64(values) => values.len(),
+            Self::U8(values) => values.len(),
+            Self::U16(values) => values.len(),
+            Self::U32(values) => values.len(),
+            Self::I64(values) => values.len(),
+            Self::U64(values) => values.len(),
+            Self::Str(values) => values.len(),
         }
     }
 
+    /// True when there are no elements.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -95,40 +226,96 @@ impl NcArray {
     pub fn get_f64(&self, index: usize) -> Option<f64> {
         match self {
             Self::I8(values) => values.get(index).map(|value| f64::from(*value)),
-            Self::Char(_) => None,
+            Self::Char(_) | Self::Str(_) => None,
             Self::I16(values) => values.get(index).map(|value| f64::from(*value)),
             Self::I32(values) => values.get(index).map(|value| f64::from(*value)),
             Self::F32(values) => values.get(index).map(|value| f64::from(*value)),
             Self::F64(values) => values.get(index).copied(),
+            Self::U8(values) => values.get(index).map(|value| f64::from(*value)),
+            Self::U16(values) => values.get(index).map(|value| f64::from(*value)),
+            Self::U32(values) => values.get(index).map(|value| f64::from(*value)),
+            Self::I64(values) => values.get(index).map(|value| *value as f64),
+            Self::U64(values) => values.get(index).map(|value| *value as f64),
         }
+    }
+
+    /// True for text (`char` or `string`) data.
+    pub fn is_text(&self) -> bool {
+        matches!(self, Self::Char(_) | Self::Str(_))
     }
 }
 
+/// Where a variable's data lives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Location {
+    /// Classic netCDF: the `begin` offset of the data (or first record).
+    Classic(u64),
+    /// netCDF-4: the HDF5 dataset path.
+    Hdf5(String),
+    /// netCDF-4: one member of a compound (user-defined) variable: the
+    /// HDF5 dataset path and the member names down to it.
+    Hdf5Member {
+        /// HDF5 dataset path.
+        path: String,
+        /// Member names, outermost first.
+        members: Vec<String>,
+    },
+    /// netCDF-4: an opaque variable's bytes (the HDF5 dataset path), over
+    /// the variable's dimensions and one of the opaque size.
+    Hdf5Bytes(String),
+    /// netCDF-4: the lengths of a variable-length variable's sequences.
+    Hdf5VlenLengths(String),
+    /// netCDF-4: a variable-length variable's values, back to back.
+    Hdf5VlenValues(String),
+}
+
+/// A variable of a classic file or of one netCDF-4 group.
 #[derive(Clone, Debug)]
 pub struct NcVar {
+    /// Variable name.
     pub name: String,
-    /// Dimension indices into [`Nc3File::dims`].
+    /// Dimension indices into the file's (or group view's) `dims`.
     pub dim_ids: Vec<usize>,
-    pub attrs: BTreeMap<String, NcValue>,
-    /// Position in the file header's variable list (file order).
+    /// Attributes, in file order.
+    pub attrs: NcAttrs,
+    /// Position in the file header's (or group's) variable list.
     pub index: usize,
-    nc_type: u32,
-    begin: u64,
+    pub(crate) nc_type: u32,
+    pub(crate) location: Location,
 }
 
 impl NcVar {
+    /// The classic data offset.
+    fn begin(&self) -> Result<u64> {
+        match &self.location {
+            Location::Classic(begin) => Ok(*begin),
+            _ => Err(invalid(
+                0,
+                format!("netCDF variable '{}' is not in a classic file", self.name),
+            )),
+        }
+    }
+
     /// The netCDF external type code (1 byte, 2 char, 3 short, 4 int, 5
-    /// float, 6 double).
+    /// float, 6 double; netCDF-4 adds 7 ubyte, 8 ushort, 9 uint, 10 int64,
+    /// 11 uint64, 12 string, and 0 here for a user-defined type).
     pub fn nc_type(&self) -> u32 {
         self.nc_type
     }
 
+    /// A text attribute.
     pub fn attr_str(&self, name: &str) -> Option<&str> {
         self.attrs.get(name).and_then(NcValue::as_str)
     }
 
+    /// The first element of a numeric attribute, widened to f64.
     pub fn attr_f64(&self, name: &str) -> Option<f64> {
         self.attrs.get(name).and_then(NcValue::as_f64)
+    }
+
+    /// True for a `char` or `string` variable.
+    pub fn is_text(&self) -> bool {
+        matches!(self.nc_type, 2 | 12)
     }
 }
 
@@ -140,7 +327,7 @@ pub struct Nc3File<'a> {
     pub dims: Vec<(String, usize)>,
     pub record_dim: Option<usize>,
     pub numrecs: usize,
-    pub gattrs: BTreeMap<String, NcValue>,
+    pub gattrs: NcAttrs,
     pub vars: BTreeMap<String, NcVar>,
 }
 
@@ -214,7 +401,7 @@ impl<'a> Cursor<'a> {
         Ok(String::from_utf8_lossy(raw).into_owned())
     }
 
-    fn attrs(&mut self) -> Result<BTreeMap<String, NcValue>> {
+    fn attrs(&mut self) -> Result<NcAttrs> {
         let tag = self.u32()?;
         let count = self.u32()? as usize;
         if tag != NC_ATTRIBUTE && (tag != 0 || count != 0) {
@@ -225,7 +412,7 @@ impl<'a> Cursor<'a> {
                 "netCDF attribute count is {count} (limit {MAX_NC_ATTRIBUTES})"
             )));
         }
-        let mut attrs = BTreeMap::new();
+        let mut attrs = NcAttrs::default();
         for _ in 0..count {
             let name = self.name()?;
             let nc_type = self.u32()?;
@@ -249,7 +436,7 @@ impl<'a> Cursor<'a> {
                 1 => {
                     let mut values = reserve_vec(nelems, "netCDF byte attribute")?;
                     values.extend(raw.iter().map(|byte| i64::from(*byte as i8)));
-                    NcValue::Ints(values)
+                    NcValue::Ints(values, IntKind::I8)
                 }
                 3 => {
                     let mut values = reserve_vec(nelems, "netCDF short attribute")?;
@@ -257,7 +444,7 @@ impl<'a> Cursor<'a> {
                         raw.chunks_exact(2)
                             .map(|pair| i64::from(i16::from_be_bytes([pair[0], pair[1]]))),
                     );
-                    NcValue::Ints(values)
+                    NcValue::Ints(values, IntKind::I16)
                 }
                 4 => {
                     let mut values = reserve_vec(nelems, "netCDF int attribute")?;
@@ -267,7 +454,7 @@ impl<'a> Cursor<'a> {
                             .iter()
                             .map(|quad| i64::from(i32::from_be_bytes(*quad))),
                     );
-                    NcValue::Ints(values)
+                    NcValue::Ints(values, IntKind::I32)
                 }
                 5 => {
                     let mut values = reserve_vec(nelems, "netCDF float attribute")?;
@@ -405,7 +592,7 @@ impl<'a> Nc3File<'a> {
                     attrs,
                     index,
                     nc_type,
-                    begin,
+                    location: Location::Classic(begin),
                 },
             );
         }
@@ -511,7 +698,7 @@ impl<'a> Nc3File<'a> {
                     "netCDF variable '{name}' expands to {total} bytes (limit {MAX_NC_ARRAY_BYTES})"
                 )));
             }
-            let begin = usize::try_from(var.begin)
+            let begin = usize::try_from(var.begin()?)
                 .map_err(|_| invalid(0, "netCDF variable offset overflows usize"))?;
             // Reserve only after proving every record slab lies in the file,
             // so a record count the bytes cannot back allocates nothing.
@@ -548,7 +735,7 @@ impl<'a> Nc3File<'a> {
             }
             raw
         } else {
-            let start = usize::try_from(var.begin)
+            let start = usize::try_from(var.begin()?)
                 .map_err(|_| invalid(0, "netCDF variable offset overflows usize"))?;
             let end = start
                 .checked_add(slab)

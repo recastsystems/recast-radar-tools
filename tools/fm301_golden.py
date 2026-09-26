@@ -235,12 +235,10 @@ class Case:
     categories: tuple
     note: str
     # The file the Rust side decodes, when it is not this case's own file.
-    # Only the netCDF-4 X-SAPR case needs one: the pure-Rust CfRadial reader
-    # opens classic netCDF only and hdf5lite rejects the superblock netCDF-4
-    # writes, so Rust reads the committed classic twin instead. The goldens
-    # below still come from this case's own file. Written into index.json as
-    # `decoded_id` so the substitution is visible beside the goldens and not
-    # only in the test source.
+    # No case needs one since io-cfradial reads netCDF-4 natively (the
+    # netCDF-4 X-SAPR case used to decode its classic twin). Written into
+    # index.json as `decoded_id` so a substitution is visible beside the
+    # goldens and not only in the test source.
     decoded_id: str = None
 
 
@@ -281,12 +279,9 @@ CASES = (
          'scale_factor, georeference variables; xradar uses dimension azimuth (design note A.5).'),
     Case('cfrad1-xsapr-sgp-20110520-ppi-netcdf4', 'cfradial1', ('cfradial1', 'ppi', 'float32'),
          'ARM X-SAPR CfRadial 1.2 PPI (netCDF-4), 1 sweep of 40 rays x 42 gates, float32 '
-         'reflectivity_horizontal with _FillValue -9999 (design note 7.3). These goldens are '
-         'made from the netCDF-4 container; the Rust side decodes the committed classic-netCDF '
-         'twin named in decoded_id (a raw variable-for-variable copy, testdata/other/manifest.toml '
-         'derived_from), because no netCDF-4 file is decoded natively yet (design note, open '
-         'items). It is the one case whose two sides do not read the same container.',
-         decoded_id='cfrad1-xsapr-sgp-20110520-ppi-classic'),
+         'reflectivity_horizontal with _FillValue -9999 (design note 7.3). The Rust side decodes '
+         'this netCDF-4 file natively (io-cfradial over recast-radar-hdf5), the container the '
+         'goldens are made from.'),
 )
 
 XRADAR_OPENERS = {

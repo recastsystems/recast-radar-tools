@@ -283,21 +283,18 @@ struct Decoded {
 }
 
 /// The file the Rust side decodes for a case: the case's own file unless
-/// `index.json` declares a `decoded_id`, which only the netCDF-4 X-SAPR case
-/// does (an HDF5 container the classic netCDF reader cannot open; it decodes
-/// the committed classic-container twin, a raw variable-for-variable copy
-/// with identical data — `testdata/other/manifest.toml`, `derived_from`).
-/// `every_substituted_case_is_declared` pins the list.
+/// `index.json` declares a `decoded_id`. No case does: the netCDF-4 X-SAPR
+/// case, which used to decode its classic-netCDF twin, is read natively now.
+/// `every_case_decodes_its_own_file` pins that.
 fn decoded_id(case: &Case) -> &str {
     &case.decoded_id
 }
 
-/// The goldens of a case are made from the file the Rust side decodes,
-/// except where `index.json` says otherwise — today exactly one case, the
-/// netCDF-4 X-SAPR PPI. A new substitution has to be declared there, beside
-/// the goldens, before this test accepts it.
+/// The goldens of every case are made from the very file the Rust side
+/// decodes; a substitution would have to be declared in `index.json`
+/// (`decoded_id`), beside the goldens, and listed here.
 #[test]
-fn every_substituted_case_is_declared() {
+fn every_case_decodes_its_own_file() {
     let substituted: Vec<(String, String)> = cases()
         .into_iter()
         .filter(|case| case.decoded_id != case.id)
@@ -305,12 +302,20 @@ fn every_substituted_case_is_declared() {
         .collect();
     assert_eq!(
         substituted,
-        vec![(
-            "cfrad1-xsapr-sgp-20110520-ppi-netcdf4".to_owned(),
-            "cfrad1-xsapr-sgp-20110520-ppi-classic".to_owned()
-        )],
+        Vec::<(String, String)>::new(),
         "cases whose Rust side reads a different file than the goldens were made from"
     );
+    // The netCDF-4 case goes through the netCDF-4 reader, not a twin.
+    let netcdf4 = cases()
+        .into_iter()
+        .find(|case| case.id == "cfrad1-xsapr-sgp-20110520-ppi-netcdf4")
+        .expect("the netCDF-4 X-SAPR case");
+    if let Some(decoded) = decode(&netcdf4) {
+        assert_eq!(
+            decoded.volume.provenance.compression.as_deref(),
+            Some("cfradial1-netcdf4")
+        );
+    }
 }
 
 fn decode(case: &Case) -> Option<Decoded> {

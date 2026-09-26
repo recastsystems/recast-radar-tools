@@ -87,10 +87,17 @@ fn trimmed_entries_are_committed_derived_and_small() {
 fn trimming_a_trimmed_fixture_reproduces_it() {
     for (e, options) in trimmed() {
         let fixture = read(&e.id);
-        for (label, opts) in [
-            ("derivation options", options),
-            ("defaults", TrimOptions::default()),
-        ] {
+        // The default sweep count is the split-cut pair, else one sweep: a
+        // fixture of a volume without a split cut keeps its own count.
+        let defaults = if e.tags.iter().any(|tag| tag == "split-cut") {
+            TrimOptions::default()
+        } else {
+            TrimOptions {
+                sweeps: options.sweeps,
+                ..TrimOptions::default()
+            }
+        };
+        for (label, opts) in [("derivation options", options), ("defaults", defaults)] {
             let out = match trim_level2(&fixture, &opts) {
                 Ok(out) => out,
                 Err(error) => panic!("{}: trimming with {label}: {error}", e.id),
@@ -103,7 +110,14 @@ fn trimming_a_trimmed_fixture_reproduces_it() {
                 out.bytes.len()
             );
             assert_eq!(out.report.options.sweeps, options.sweeps, "{}", e.id);
-            assert!(out.report.split_cut, "{}: split cut not detected", e.id);
+            // A fixture tagged `split-cut` keeps its volume's split cut; a
+            // volume without one is tagged without it.
+            let tagged = e.tags.iter().any(|tag| tag == "split-cut");
+            assert_eq!(
+                out.report.split_cut, tagged,
+                "{}: split cut detected {} against the split-cut tag {tagged}",
+                e.id, out.report.split_cut
+            );
         }
     }
 }

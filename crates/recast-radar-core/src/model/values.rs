@@ -276,3 +276,19 @@ impl ExtraVariable {
         self.dims.first().is_some_and(|dim| &**dim == "time")
     }
 }
+
+/// The source's own attributes of one variable whose values the model keeps
+/// in a typed slot (a coordinate, an instrument or calibration variable),
+/// verbatim.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct VariableAttrs {
+    /// The FM301 group the variable belongs to: `""` for the root,
+    /// `sweep_<index>` (the model's sweep index), `sweep_<index>/monitoring`,
+    /// `radar_parameters`, `radar_calibration`, `georeferencing_correction`.
+    /// A CfRadial 1 file keeps every variable at the root.
+    pub group: Box<str>,
+    /// The variable's name in the source.
+    pub name: Box<str>,
+    /// Its attributes, typed and in file order.
+    pub attrs: Vec<(Box<str>, AttrValue)>,
+}

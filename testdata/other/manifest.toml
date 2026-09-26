@@ -114,6 +114,39 @@ tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:dkrom", "co
 description = "DMI Romo dual-pol PVOL 2026-08-20 11:30Z; 10 sweeps 0.47-15 deg x 8 quantities (DBZH TH VRAD WRAD ZDR RHOHV PHIDP LDR, LDR all nodata), 474 gates x 500 m from rstart 0.5 km; unmodified OPERA ORD archive object"
 
 [[file]]
+id = "odim-dkrom-20260820-1130-pvol-h5latest-trim"
+format = "odim-h5"
+sha256 = "5bf27ba08a696083616ba493b5915b76804c5c747f7a4498111802a10b309c72"
+size = 532077
+committed = "files/other/odim/h5latest/dkrom.pvol.20260820T1130.h5latest-trim.h5"
+derived_from = "odim-dkrom-20260820-1130-pvol"
+derivation = "container conversion + range trim: tools/derive_hdf5_latest.py with h5py 3.16.0 / HDF5 2.0.0 (2026-09-24) copies sweeps dataset1 and dataset2 (all 8 quantities) cut to the first 120 of 474 gates into an HDF5 'latest' format file (libver latest/latest, 512-byte user block): superblock v3, v2 object headers, dense links and dense attributes (huge fractal heap objects for the 5.6-7.9 kB dataset1/how strings), creation-order indexes on / and /dataset2, and one version-4 chunk index per dataset1 plane (paged fixed array with shuffle+deflate+Fletcher-32, implicit, fixed array, extensible array on the ray and on the gate dimension, v2 B-tree filtered and unfiltered, single chunk); every attribute keeps its stored datatype and value except where/nbins (474 -> 120), every plane keeps its stored u8 values for the kept gates. Not byte-reproducible: /dataset1 carries object header times. No producer writing superblock v3 or version-4 layouts was found (2026-09-24 probe of DWD, CHMI, SHMU, FMI, SMHI, DMI, GeoSphere, KAIA, Lombardia, Piemonte, MeteoRomania, NCI and every ORD country: all superblock v0/v1)"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:dkrom", "country:DK", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v3", "hdf5:user-block", "hdf5:v2-object-headers", "hdf5:dense-links", "hdf5:dense-attributes", "hdf5:huge-heap-objects", "hdf5:creation-order-index", "hdf5:fixed-array", "hdf5:extensible-array", "hdf5:v2-btree-chunks", "hdf5:implicit-chunks", "hdf5:single-chunk", "hdf5:fletcher32", "moments:dualpol", "scan:ppi", "derived", "derivation:container-conversion"]
+description = "DMI Romo PVOL 2026-08-20 11:30Z, sweeps 1-2 (0.47/0.65 deg) x 8 quantities x 360 rays x 120 gates, in an HDF5 1.10+ 'latest' container covering every version-4 chunk index"
+
+[[file]]
+id = "odim-dkrom-20260820-1130-pvol-h5edge-paged-ea"
+format = "odim-h5"
+sha256 = "825ec8127e27d311c7f3a1f09ca7db2f5de7d8ed1b69ecf889dc07de181ac4a1"
+size = 939586
+committed = "files/other/odim/h5edge/dkrom.pvol.20260820T1130.h5edge-paged-ea.h5"
+derived_from = "odim-dkrom-20260820-1130-pvol"
+derivation = "container conversion: tools/derive_hdf5_edge.py with h5py 3.16.0 / HDF5 2.0.0 (2026-09-25) writes an HDF5 'latest' file with 4-byte addresses and 8-byte lengths: root what/where/how with strings as variable-length strings, a committed float64 datatype /f8 carrying the root how attributes, and sweep 1's DBZH and VRAD planes (360 x 474 u8) each as a 1-D dataset of 170,640 one-element chunks with maxshape unlimited, i.e. an extensible-array chunk index whose last super blocks have paged data blocks (more than 131,060 chunks at the library defaults); DBZH has every chunk written, VRAD only rays 0-9, 180 and 350-359 (fill value = its nodata code), so pages of paged data blocks stay uninitialized; the planes' what gain/offset/nodata/undetect use the committed type. Values and attributes are the source's"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:dkrom", "country:DK", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v3", "hdf5:offset-size-4", "hdf5:extensible-array", "hdf5:paged-extensible-array", "hdf5:committed-datatype", "hdf5:vlen-strings", "hdf5:dense-attributes", "moments:dbzh-vrad", "scan:ppi", "derived", "derivation:container-conversion"]
+description = "DMI Romo PVOL 2026-08-20 11:30Z, sweep 1 DBZH and VRAD as 1-D extensible-array datasets of 170,640 one-element chunks (paged data blocks, VRAD sparsely written), attributes with a committed datatype"
+
+[[file]]
+id = "odim-dkrom-20260820-1130-pvol-h5edge-len4"
+format = "odim-h5"
+sha256 = "f250008f72f7e2e9a07c6fa39908258e8ee3ff71aac1e0a53ef897f35ba11170"
+size = 178575
+committed = "files/other/odim/h5edge/dkrom.pvol.20260820T1130.h5edge-len4.h5"
+derived_from = "odim-dkrom-20260820-1130-pvol"
+derivation = "container conversion + ray trim: tools/derive_hdf5_edge.py with h5py 3.16.0 / HDF5 2.0.0 (2026-09-25) writes an HDF5 'latest' file with 4-byte addresses and 4-byte lengths (global heap collection and object headers padded to 8 bytes): root what/where/how and every group's what/where attributes with strings as variable-length strings, a committed float64 datatype /f8 carrying the root how attributes and used by every plane's what gain/offset/nodata/undetect, and sweeps 1 and 2 with all 8 planes as contiguous datasets cut to the first 20 of 360 rays; /dataset2 stores its links dense in a fractal heap compressed with deflate (group creation property list filter pipeline, set through HDF5's H5Pset_deflate and H5Pset_link_phase_change). Values and attributes are the source's"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:dkrom", "country:DK", "object:pvol", "odim:h5rad-2.0", "hdf5:superblock-v3", "hdf5:offset-size-4", "hdf5:length-size-4", "hdf5:vlen-strings", "hdf5:committed-datatype", "hdf5:dense-links", "hdf5:filtered-fractal-heap", "hdf5:dense-attributes", "moments:dualpol", "scan:ppi", "derived", "derivation:container-conversion"]
+description = "DMI Romo PVOL 2026-08-20 11:30Z, sweeps 1-2 x 8 quantities x 20 rays x 474 gates in an HDF5 file with 4-byte addresses and lengths, vlen string attributes, a committed datatype and a deflated dense-link fractal heap"
+
+[[file]]
 id = "odim-au24-20260610-000300-nci-zip-member"
 format = "zip-local-member"
 urls = ["https://thredds.nci.org.au/thredds/fileServer/rq0/24/2026/vol/24_20260610.pvol.zip/24_20260610_000300.pvol.h5"]
@@ -122,6 +155,51 @@ size = 354749
 committed = "files/other/odim/nci/24_20260610_000300.pvol.h5.nci-response"
 tags = ["contains:odim-h5", "provider:nci-thredds", "license:CC-BY-4.0", "era:2026", "site:au24", "country:AU", "object:pvol", "odim:h5rad-2.4", "quirk:zip-local-member-stream"]
 description = "Unmodified NCI THREDDS response (fetched 2026-09-17, identical on repeat) for the first member of the Bureau of Meteorology Bowen (site 24) daily ODIM zip 2026-06-10: the server returns the first Content-Length bytes of the zip, where Content-Length is the requested member's size, so the body is the member's ZIP local-file record (deflate, 85154 compressed bytes) followed by the start of the next record and no central directory; the member is a 10-sweep PVOL (0.8-32 deg)"
+
+# ---------------------------------------------------------------------------
+# ODIM_H5 structures the decoder keeps (G7): int16 planes, quality groups with
+# legends, nested `how` groups, plane `how` groups. Fetched 2026-09-24 from
+# the providers' open-data services.
+# ---------------------------------------------------------------------------
+
+[[file]]
+id = "odim-seang-20260924-2130-qcvol-dataset1-trim"
+format = "odim-h5"
+sha256 = "84b9cb39bcda4b1d4e92ec0d15ee336aa1dfe1e10ad2441993bbf5d8dc6ede02"
+size = 156364
+committed = "files/other/odim/smhi/seang.qcvol.20260924T2130.dataset1-trim.h5"
+derivation = "subset: tools/derive_odim_subset.py with h5py 3.16.0 / HDF5 2.0.0 (2026-09-24, byte-reproducible) rebuilds the root what/where/how groups and /dataset1 (its what/where/how with the how/process_chain, how/radar_system and how/rsp subgroups, quality1-3, and the planes data1 DBZH, data5 WRADH, data14 VRADH, data15 TH) of the SMHI Angelholm qcvol https://opendata-download-radar.smhi.se/api/version/latest/area/angelholm/product/qcvol/2026/09/24/radar_angelholm_qcvol_202609242130.h5 (16478675 bytes, sha256 21b43804caf3619caa2e7ea6e650cfbb2608b7421faec053ce763209def74092; the service keeps a rolling window); every attribute keeps its storage order, datatype and value, every dataset its datatype, shape, chunking, gzip level and values (checked with h5py against the source)"
+tags = ["provider:smhi", "license:CC-BY-4.0", "era:2026", "site:seang", "country:SE", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "dtype:int16", "odim:quality-groups", "odim:how-subgroups", "moments:dbzh-vradh", "scan:ppi", "derived", "derivation:subset"]
+description = "SMHI Angelholm quality-controlled PVOL 2026-09-24 21:30Z (BALTRAD), sweep 1 (0.5 deg, 360 rays x 480 gates x 500 m): four int16 planes (gain 0.01, nodata -32768, undetect -32767) of the 15, three dataset quality groups (ROPO classification, beam blockage, total QI with how/task and task_args), and dataset how subgroups process_chain, radar_system and rsp (a 360-value TXburstfreq array)"
+
+[[file]]
+id = "odim-fianj-20260924-2130-pvol-dataset1-trim"
+format = "odim-h5"
+sha256 = "45623583e1b157486232a0656a07793d7e4fe79c34e9a7a39ab0b6060f7931fb"
+size = 454704
+committed = "files/other/odim/fmi/fianj.pvol.20260924T2130.dataset1-trim.h5"
+derivation = "subset: tools/derive_odim_subset.py with h5py 3.16.0 / HDF5 2.0.0 (2026-09-24, byte-reproducible) rebuilds the root what/where/how groups and /dataset1 (what/where/how, quality1-3, and the planes data2 DBZH with its quality1/quality2 groups and data10 HCLASS) of the FMI Anjalankoski PVOL https://fmi-opendata-radar-volume-hdf5.s3.amazonaws.com/2026/09/24/fianj/202609242130_fianj_PVOL.h5 (27817728 bytes, sha256 6d29d23a2c90a6a3bc1136aedd775f5896593b07a3a52f7ffa3f0e77df6ace29); every attribute keeps its storage order, datatype and value, every dataset its datatype, shape, chunking, gzip level and values (checked with h5py against the source)"
+tags = ["provider:fmi", "license:CC-BY-4.0", "era:2026", "site:fianj", "country:FI", "object:pvol", "odim:h5rad-2.3", "hdf5:superblock-v0", "hdf5:gzip-chunked", "hdf5:compound-vlen-string", "odim:quality-groups", "odim:legend", "moments:dbzh", "scan:ppi", "derived", "derivation:subset"]
+description = "FMI Anjalankoski PVOL 2026-09-24 21:30Z, sweep 1 (0.3 deg, 360 rays x 500 gates): DBZH with plane quality groups (QIND overall quality; CLASS with an 8-entry code/class legend) and HCLASS, plus the dataset quality groups QIND, CLASS (3-entry legend) and WIND_TURBINE"
+
+[[file]]
+id = "odim-deboo-20260924-2130-sweep-th-00"
+format = "odim-h5"
+sha256 = "491252444c433f40940cc649201d5a9bd2b6bc0a385df79a137fa62195ffaea9"
+size = 166090
+committed = "files/other/odim/dwd/ras07-vol5minng01_sweeph5onem_th_00-2026092421305800-boo-10132-hd5"
+tags = ["provider:dwd", "license:CC-BY-4.0", "era:2026", "site:deboo", "country:DE", "object:scan", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:gzip-chunked", "odim:how-subgroups", "moments:th", "scan:ppi"]
+description = "DWD Boostedt 5-minute volume sweep 00 (5.5 deg), TH, 2026-09-24 21:30Z (sweep start 21:30:35Z): 360 rays x 720 gates uint16, root how subgroups radar_system (per-pulse-width dBZ0 and noise, system offsets) and monitor; unmodified file from the rolling opendata.dwd.de/weather/radar/sites/sweep_vol_z/boo/unfiltered/ directory"
+
+[[file]]
+id = "odim-itdes-20260924-2135-pvol-class"
+format = "odim-h5"
+sha256 = "bd6f7abc30260cc8dda9d0f5e8237459f82df304433e995a6be626bf033a57ee"
+size = 322411
+committed = "files/other/odim/lombardia/Desio.20260924T213500Z_CLASS.h5"
+derivation = "gunzip of the published https://radarlive.arpalombardia.it/Volumi/DES/Desio.20260924T213500Z_CLASS.h5.gz (68052 bytes, sha256 d9a76de7ebdce7364cbbc02e8490f695a94e85d9b6830ecc4e42a7259a0424d6; the service keeps a rolling window)"
+tags = ["provider:arpa-lombardia", "license:unknown", "era:2026", "site:itdes", "country:IT", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:compound-char-array", "odim:legend", "moments:class", "scan:ppi", "derived", "derivation:gunzip"]
+description = "ARPA Lombardia Desio hydrometeor classification PVOL 2026-09-24 21:35Z: 8 sweeps of CLASS (uint16 codes 0-25), each with an ODIM_H5 v2.4 legend dataset (compound of 64- and 32-character key/value strings: class name, code)"
 
 # ---------------------------------------------------------------------------
 # CfRadial 1.x / 2
@@ -136,6 +214,28 @@ size = 75587
 committed = "files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc"
 tags = ["carryover:bowecho", "provider:pyart", "license:BSD-3-Clause", "era:2011", "site:xsapr-sgp", "container:netcdf4", "cfradial:1.2", "scan:ppi"]
 description = "ARM X-SAPR PPI at SGP 2011-05-20 10:54:16Z, CF/Radial 1.2, 40 rays x 42 gates, reflectivity_horizontal; Py-ART example_cfradial_ppi.nc (gate/ray-decimated by Py-ART's make_small_cfradial_ppi.py), unmodified netCDF-4 bytes"
+
+[[file]]
+id = "cfrad1-xsapr-sgp-20110520-ppi-netcdf4-user-types"
+format = "cfradial1"
+sha256 = "f237353534683ccd1a5bf27e7c8b793b842ac525c9bc4f97142017a260f85b0a"
+size = 85569
+committed = "files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.netcdf4.user-types.nc"
+derived_from = "cfrad1-xsapr-sgp-20110520-ppi-netcdf4"
+derivation = "netCDF-4 user-defined types added: tools/derive_cfradial_user_types.py with netCDF4 1.7 and h5py 3.16 / HDF5 2.0 (2026-09-25) copies the file and adds a compound type pair_t {ray: int, angle: double} with variable pairs(sweep) = each sweep's (sweep_start_ray_index, fixed_angle), an enumerated type flag_t (ubyte none=0, echo=1) with variable echo_flag(sweep) = 1 where the sweep has a reflectivity gate of 20 dBZ or more, a variable-length type rays_t (int) with variable echo_rays(sweep) = the rays of the sweep with such a gate (38 of 40), and (through h5py, on committed types) the global compound attribute sweep_pair = the first sweep's (ray count 40, fixed angle 0.4998779296875), the global enumerated attribute echo_state = 1, an opaque type angle_bytes_t (4 bytes) with variable fixed_angle_bytes(sweep) = each fixed_angle as little-endian float32 bytes and the global opaque attribute first_fixed_angle_bytes = 0x00f0ff3e. netCDF4-python reads the compound, enumerated and variable-length ones back and skips the opaque ones (unsupported datatype), which h5py reads back; netCDF-C ncdump (nexbench container) lists all seven with these values. Every other byte-level structure is the source's"
+tags = ["provider:pyart", "license:BSD-3-Clause", "era:2011", "site:xsapr-sgp", "container:netcdf4", "cfradial:1.2", "scan:ppi", "netcdf:user-defined-types", "derived"]
+description = "The X-SAPR netCDF-4 CfRadial 1 PPI with compound, enumerated, variable-length and opaque variables and compound, enumerated and opaque global attributes, all derived from its own values"
+
+[[file]]
+id = "cfrad1-xsapr-sgp-20110520-ppi-netcdf4-szip-lzf"
+format = "cfradial1"
+sha256 = "524c0b38f5abf047b15ec7f41ff95f1fa878a7bb803480ff42113003cebe8c22"
+size = 98074
+committed = "files/other/cfradial/filters/cfrad.xsapr_sgp_ppi_20110520.netcdf4-szip-lzf.nc"
+derived_from = "cfrad1-xsapr-sgp-20110520-ppi-netcdf4"
+derivation = "HDF5 filters no producer uses: tools/derive_hdf5_filters.py with netCDF4 1.7.4 (netCDF-C 4.9.3, HDF5 1.14.6, libaec) and h5py 3.16.0 / HDF5 2.0.0 (2026-09-25) copies the file and adds the stored values and attributes of reflectivity_horizontal (40 x 42 float32) as reflectivity_szip(time, range), one chunk compressed with szip (HDF5 filter 4, nearest-neighbour coding, 8 pixels per block) by netCDF-C, and as reflectivity_lzf, one chunk compressed with LZF (HDF5 filter 32000) by h5py and attached to the time and range dimension scales; both read back equal to reflectivity_horizontal through netCDF4-python and h5py. Every other byte-level structure is the source's"
+tags = ["provider:pyart", "license:BSD-3-Clause", "era:2011", "site:xsapr-sgp", "container:netcdf4", "cfradial:1.2", "scan:ppi", "hdf5:szip", "hdf5:lzf", "derived"]
+description = "The X-SAPR netCDF-4 CfRadial 1 PPI with its reflectivity stored twice more, szip- and LZF-compressed (HDF5 filters recast-radar-hdf5 refuses by type)"
 
 [[file]]
 id = "cfrad1-xsapr-sgp-20110520-ppi-classic"
@@ -195,6 +295,50 @@ sha256 = "91827c51ef21e4d81bea56f935e40c484a6d6fcaae31dd5ff7c2c4e2b51dca11"
 size = 15487749
 tags = ["provider:open-radar-data", "license:MIT", "era:2008", "site:spol", "container:netcdf4", "cfradial:2", "scan:ppi"]
 description = "Same S-Pol volume as cfrad1-spol-20080604-002217-sur in CfRadial 2 group layout (sweep_0..sweep_8 groups), as published in open-radar-data"
+
+[[file]]
+id = "cfrad2-radx-irene-sr2-20110827-120420-sur-r30km"
+format = "cfradial2"
+sha256 = "7fabe64391c6cb81fe46526eb71495d072171aa3c5602fa3f278ae9acabbf98d"
+size = 565495
+committed = "files/other/cfradial/cfrad2.radx.20110827_120420_IRENE_SUR.r30km.nc"
+derived_from = "cfrad1-irene-sr2-20110827-120420-sur-sweeps01"
+derivation = "container conversion + range trim by LROSE Radx (Cf2RadxFile; LROSE release notes through 2025-08-11, netCDF 4.9.2 / HDF5 1.10.10, run 2026-09-24 in the nexbench container): RadxConvert -f <source> -cf2 -max_range 30 (400 of 1107 gates kept); tools/derive_cfradial2.py documents the steps. Not byte-reproducible: Radx writes its run time into the created and history attributes"
+tags = ["provider:zenodo", "license:CC-BY-4.0", "era:2011", "site:smart-r2", "container:netcdf4", "cfradial:2", "writer:radx", "scan:ppi", "dtype:int8-packed", "cfradial2:monitoring-group", "cfradial2:r-calib", "derived", "derivation:container-conversion"]
+description = "SMART-R2 PPI during Hurricane Irene (2 sweeps, 360/359 rays x 400 gates, int8 DBZ/VEL) in Radx's CfRadial 2 layout: sweep_0001/sweep_0002 groups with monitoring subgroups, radar_parameters with frequency, radar_calibration with an r_calib dimension, NC_STRING scalars"
+
+[[file]]
+id = "cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32"
+format = "cfradial2"
+sha256 = "5d0f8f08ab45562b421b753f28208992aab4dda40496b49f95cbf341f654b349"
+size = 612876
+committed = "files/other/cfradial/cfrad2.radx.iesha.20260305_0115.sweeps7-10.int32.nc"
+derived_from = "odim-iesha-20260305-0115-pvol"
+derivation = "sweep subset + container conversion: tools/derive_cfradial2.py iesha-subset copies /, /what, /where, /how and datasets 7-10 (every attribute and plane as stored) into a new ODIM file as dataset1-4 with h5py 3.16.0, then LROSE Radx (LROSE release notes through 2025-08-11, netCDF 4.9.2 / HDF5 1.10.10, run 2026-09-24 in the nexbench container) RadxConvert -f <subset> -cf2 -to_int32 rescales every field to int32 with a per-sweep scale_factor and add_offset. Not byte-reproducible: Radx writes its run time into the created and history attributes"
+tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:iesha", "country:IE", "container:netcdf4", "cfradial:2", "writer:radx", "scan:ppi", "dtype:int32-packed", "quirk:vertical-sweep", "cfradial2:per-sweep-range", "cfradial2:per-sweep-packing", "derived", "derivation:subset", "derivation:container-conversion"]
+description = "Met Eireann Shannon PVOL 2026-03-05 01:15Z sweeps 8.5/10.1/20/90 deg (360 rays x 350/350/240/100 gates) x DBZH/TH/VRADH in Radx's CfRadial 2 layout with int32 packed fields whose scale_factor/add_offset differ per sweep"
+
+[[file]]
+id = "cfrad2-xradar-xsapr-sgp-20110520-ppi"
+format = "cfradial2"
+sha256 = "40fee488d6f41d23a4c0aeea4b93167ae17246a2533aa258f694634c5c58aa76"
+size = 34396
+committed = "files/other/cfradial/cfrad2.xradar.xsapr_sgp_ppi_20110520.nc"
+derived_from = "cfrad1-xsapr-sgp-20110520-ppi-classic"
+derivation = "container conversion by xradar 0.12.0 (netCDF 4.9.3 / HDF5 1.14.6): tools/derive_cfradial2.py xradar (open_cfradial1_datatree, then xradar.io.to_cfradial2); re-running reproduces these bytes exactly"
+tags = ["carryover:bowecho", "provider:pyart", "license:BSD-3-Clause", "era:2011", "site:xsapr-sgp", "container:netcdf4", "cfradial:2", "writer:xradar", "scan:ppi", "cfradial2:azimuth-ray-dim", "derived", "derivation:container-conversion"]
+description = "ARM X-SAPR PPI (40 rays x 42 gates, float32 reflectivity_horizontal) as xradar 0.12 writes CfRadial 2: sweep_0 group whose ray dimension is azimuth, NC_STRING sweep_group_name and sweep_mode"
+
+[[file]]
+id = "cfrad2-xradar-dow8-20211011-223602-rhi-r300"
+format = "cfradial2"
+sha256 = "5918d04a38275a956e724549ccc57cd0da90b907884bff050d8870322072ecde"
+size = 315407
+committed = "files/other/cfradial/cfrad2.xradar.20211011_223602_DOW8_RHI.r300.nc"
+derived_from = "cfrad1-dow8-20211011-223602-rhi-trim3-classic"
+derivation = "range trim + container conversion by xradar 0.12.0 (netCDF 4.9.3 / HDF5 1.14.6): tools/derive_cfradial2.py xradar-trim ... 300 (open_cfradial1_datatree, every node cut to its first 300 of 950 range gates with isel, then xradar.io.to_cfradial2); re-running reproduces these bytes exactly"
+tags = ["provider:open-radar-data", "license:MIT", "era:2021", "site:dow8", "platform:mobile", "container:netcdf4", "cfradial:2", "writer:xradar", "scan:rhi", "dtype:int16-packed", "cfradial2:azimuth-ray-dim", "cfradial2:root-platform-track", "derived", "derivation:subset", "derivation:container-conversion"]
+description = "FARM DOW8 RHI (148 rays x 300 gates, int16 DBZHC/VEL/WIDTH) as xradar 0.12 writes CfRadial 2: ray dimension azimuth in sweep_0, the moving platform's latitude/longitude/altitude(time) at the root"
 
 # ---------------------------------------------------------------------------
 # DORADE
@@ -559,3 +703,23 @@ size = 13158
 committed = "files/other/nexrad-level3/KDVN_SDUS33_NSTDVN_202008101817"
 tags = ["provider:aws", "bucket:unidata-nexrad-level3", "license:public-domain", "era:2020", "site:kdvn", "product:58", "product:NST", "sequence:kdvn-20200810", "regime:derecho"]
 description = "KDVN Product 58 Storm Tracking Information for the 18:17:24Z volume (l2-kdvn-20200810-181724): WMO header SDUS33 KDVN, 33 SCIT storm cells with current, past and forecast positions (symbology packets) and the STORM ID / AZ/RAN / FCST MVT / DBZM HGT tabular pages. Unmodified AWS object DVN_NST_2020_08_10_18_17_24."
+
+[[file]]
+id = "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry"
+format = "cfradial1"
+sha256 = "f0f855f65c9d2dc9eea96873c6de73c4916af9c9062ca5e3d285f4e1ce537a3d"
+size = 1255576
+committed = "files/other/cfradial/radx/cfrad1.radx.fianj.20260924_2130.sweeps1-2-7.per-ray-geometry.nc"
+derivation = "the FMI Anjalankoski (FI44) PVOL 2026-09-24 21:30Z https://fmi-opendata-radar-volume-hdf5.s3.amazonaws.com/2026/09/24/fianj/202609242130_fianj_PVOL.h5 (27817728 bytes, sha256 6d29d23a2c90a6a3bc1136aedd775f5896593b07a3a52f7ffa3f0e77df6ace29), subset by tools/derive_odim_subset.py (h5py 3.16.0 / HDF5 2.0.0, 2026-09-25) to dataset1, dataset2 and dataset7 with their planes data1 TH, data2 DBZH and data3 VRADH (0.3 deg and 0.7 deg with 500 m gates, 0.7 deg with 250 m gates, 360 rays each), dataset7 renamed dataset3 (LROSE Radx's ODIM reader stops at the first missing datasetN), then converted by LROSE Radx (RadxConvert in the nexbench container, lrose-core 2025 build) with -preserve_sweeps -field DBZH -field VRADH -cf_classic -max_range 40. Radx reads ODIM's where/rstart (0, the first bin's start) as the first gate centre and keeps each sweep's own geometry: n_gates_vary = true, fields int16 over n_points, ray_n_gates 80/80/160, and a two-dimensional range(time, range) with ray_start_range / ray_gate_spacing 0/500 m, 0/500 m and 0/250 m, so the 250 m gates do not nest in the 500 m grid. Goldens: tools/cfradial_ragged_golden.py (netCDF4-python; Py-ART and xradar cannot read a two-dimensional range)."
+tags = ["provider:fmi", "license:CC-BY-4.0", "era:2026", "site:fianj", "country:FI", "producer:lrose-radx", "netcdf:classic", "cfradial:1.4", "cfradial:n-gates-vary", "cfradial:range-time-range", "quirk:gate-spacing-varies-by-sweep", "moments:dbzh-vradh", "scan:ppi", "derived", "subset"]
+description = "LROSE Radx CfRadial 1 (classic) of three sweeps of the FMI Anjalankoski PVOL: 3 sweeps x 360 rays, DBZH and VRADH to 40 km, n_gates_vary storage with a range(time, range) coordinate because the sweeps have 500 m and 250 m gates"
+
+[[file]]
+id = "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4"
+format = "cfradial1"
+sha256 = "b557656eedbb322c43ee717445b2466cc1f962860b823da332fcb7c9128a9203"
+size = 987194
+committed = "files/other/cfradial/radx/cfrad1.radx.fianj.20260924_2130.sweeps1-2-7.finest-geometry.netcdf4.nc"
+derivation = "the FMI Anjalankoski (FI44) PVOL 2026-09-24 21:30Z https://fmi-opendata-radar-volume-hdf5.s3.amazonaws.com/2026/09/24/fianj/202609242130_fianj_PVOL.h5 (27817728 bytes, sha256 6d29d23a2c90a6a3bc1136aedd775f5896593b07a3a52f7ffa3f0e77df6ace29), subset by tools/derive_odim_subset.py (h5py 3.16.0 / HDF5 2.0.0, 2026-09-25) to dataset1, dataset2 and dataset7 with their planes data1 TH, data2 DBZH and data3 VRADH (0.3 deg and 0.7 deg with 500 m gates, 0.7 deg with 250 m gates, 360 rays each), dataset7 renamed dataset3 (LROSE Radx's ODIM reader stops at the first missing datasetN), then converted by LROSE Radx (RadxConvert in the nexbench container, lrose-core 2025 build) with -preserve_sweeps -field DBZH -field VRADH -finest_geom (netCDF-4 output). Radx remaps every sweep to the finest geometry (250 m gates from 0 m): n_gates_vary = true, fields int16 over n_points, ray_n_gates 1000/1000/748, a one-dimensional range. Goldens: tools/cfradial_ragged_golden.py (netCDF4-python, checked against Py-ART read_cfradial and xradar open_cfradial1_datatree)."
+tags = ["provider:fmi", "license:CC-BY-4.0", "era:2026", "site:fianj", "country:FI", "producer:lrose-radx", "netcdf:netcdf4", "cfradial:1.4", "cfradial:n-gates-vary", "moments:dbzh-vradh", "scan:ppi", "derived", "subset"]
+description = "LROSE Radx CfRadial 1 (netCDF-4) of three sweeps of the FMI Anjalankoski PVOL remapped to their finest gate geometry: 3 sweeps x 360 rays, DBZH and VRADH, n_gates_vary storage with 1000, 1000 and 748 gates per sweep"

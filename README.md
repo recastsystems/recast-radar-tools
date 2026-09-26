@@ -1,7 +1,7 @@
 # recast-radar-tools
 
 Pure-Rust weather radar libraries. They decode NEXRAD Level II, NEXRAD and
-TDWR Level III, ODIM_H5, CfRadial 1, DORADE and JMA radar GRIB2 files. They download NEXRAD Level II
+TDWR Level III, ODIM_H5, CfRadial 1 and 2 (classic netCDF and netCDF-4), DORADE and JMA radar GRIB2 files. They download NEXRAD Level II
 volumes and real-time chunks from AWS, and data from other public feeds. They
 also dealias Doppler velocity, filter gates, compute derived products, build
 composites and cross sections, track storm cells and render sweeps to PNG.
@@ -92,7 +92,8 @@ sweep  2:  0.88 deg, 720 rays, DBZH ZDR PHIDP RHOHV CCORH
 
 For bytes of unknown format, `io::read_supported_volume_bytes(&bytes)`
 (feature `io`) sniffs the format and calls the matching decoder: DORADE,
-ODIM_H5, CfRadial 1, JMA GRIB2 tar, or Level II. It also unwraps gzip and
+an HDF5 container by content (ODIM_H5, netCDF-4 CfRadial 1 or CfRadial 2),
+classic-netCDF CfRadial 1, JMA GRIB2 tar, or Level II. It also unwraps gzip and
 single-file ZIP archives. Level III products are not radar volumes and the
 router does not read them: use `level3::decode_product(&bytes)` (feature
 `level3`, part of `io`).
@@ -237,8 +238,9 @@ the centre to the edge.
 | `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2; the Level III VAD Wind Profile product; writes any volume as Archive II, real-time chunks or a GR2Analyst polling directory ([docs/level2/writer.md](docs/level2/writer.md)) |
 | `recast-radar-bzip2` | | bzip2 compressor and decompressor without unsafe code or required dependencies (rayon with the `rayon` feature), written for LDM records: the decoder takes about a quarter of the instructions of C libbzip2; the encoder writes libbzip2's exact streams in 0.6 to 0.8 of its time on LDM records, and in less time than it at every input size measured, from 16 bytes up |
 | `recast-radar-io-level3` | `level3` | NEXRAD and TDWR Level III products: NOAAPort/WMO framing, message and product description headers, symbology, graphic and tabular blocks, display packets, data levels |
-| `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through an HDF5 reader written in Rust |
-| `recast-radar-io-cfradial` | `cfradial` | CfRadial 1, through a classic netCDF (CDF-1, CDF-2) reader written in Rust |
+| `recast-radar-hdf5` | | HDF5 reader without unsafe code (superblocks 0-3, old and new-style groups, dense links and attributes, fractal heaps, v2 B-trees, every chunk index, deflate/shuffle/Fletcher-32, the netCDF-4 data model) and an HDF5 / netCDF-4 writer |
+| `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through `recast-radar-hdf5`; an ODIM_H5 polar volume writer |
+| `recast-radar-io-cfradial` | `cfradial` | CfRadial 1 (classic netCDF CDF-1/CDF-2 or netCDF-4) and CfRadial 2 / FM301 (netCDF-4), through readers written in Rust; CfRadial 1 (CDF-2) and CfRadial 2 / FM301 writers |
 | `recast-radar-io-dorade` | `dorade` | DORADE sweepfiles and mobile-radar (DOW, COW, RaXPol) archives |
 | `recast-radar-io-jma` | `jma` | Japan Meteorological Agency polar-coordinate radar GRIB2 tar archives |
 | `recast-radar-io` | `io` | Format sniffing: routes a byte buffer to the matching decoder |
@@ -312,8 +314,9 @@ Without `net`, nothing in the build compiles C or C++, for any target:
   this repository's decoder without unsafe code; Level III bzip2 through the
   `bzip2` crate's Rust backend (`libbz2-rs-sys` is a Rust port, despite its
   name); gzip and zlib through `flate2` with `zlib-rs`.
-- HDF5 (for ODIM_H5) and classic netCDF (for CfRadial) are read by parsers in
-  this repository, not by the C libraries.
+- HDF5 (for ODIM_H5 and netCDF-4, through `recast-radar-hdf5`) and classic
+  netCDF (for CfRadial 1) are read by parsers in this repository, not by the C
+  libraries.
 - chrono is built with its `now` feature instead of `clock`. `clock` would add
   `iana-time-zone`, which compiles C++ when the target is Haiku.
 

@@ -23,7 +23,9 @@ libfuzzer-sys = { version = "0.4", optional = true }
 # crate's default backend, libbz2-rs-sys (a Rust port of libbzip2 1.0.8).
 bzip2 = "0.6"
 recast-radar-bzip2 = { path = "../crates/recast-radar-bzip2" }
+# The model types of the writer comparison (`src/lib.rs`, `compare`).
 recast-radar-core = { path = "../crates/recast-radar-core" }
+recast-radar-hdf5 = { path = "../crates/recast-radar-hdf5" }
 recast-radar-io = { path = "../crates/recast-radar-io" }
 recast-radar-io-cfradial = { path = "../crates/recast-radar-io-cfradial" }
 recast-radar-io-dorade = { path = "../crates/recast-radar-io-dorade" }
@@ -75,6 +77,14 @@ bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
+name = "hdf5"
+path = "fuzz_targets/hdf5.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
 name = "cfradial"
 path = "fuzz_targets/cfradial.rs"
 test = false
@@ -117,6 +127,14 @@ required-features = ["libfuzzer"]
 [[bin]]
 name = "bzip2_encode"
 path = "fuzz_targets/bzip2_encode.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "writers"
+path = "fuzz_targets/writers.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,44 @@
+{
+ "id": "cfrad2-xradar-xsapr-sgp-20110520-ppi",
+ "sha256": "40fee488d6f41d23a4c0aeea4b93167ae17246a2533aa258f694634c5c58aa76",
+ "generator": "tools/cfradial2_golden.py (xradar 0.12.0, netCDF4-python 1.7.4)",
+ "instrument_name": "xsapr-sgp",
+ "volume_number": 0,
+ "platform_type": "fixed",
+ "time_coverage_start": "2011-05-20T10:54:16Z",
+ "sweeps": [
+  {
+   "source_group": "sweep_0",
+   "fixed_angle": 0.4998779296875,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "none",
+   "prt_mode": "fixed",
+   "nrays": 40,
+   "ngates": 42,
+   "ray_dimension": "time",
+   "range_first": 0.0,
+   "range_spacing": 960.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1305888849.0,
+    1305888862.0
+   ],
+   "azimuth_sha256": "e999881ac7738a81f1f13e8a345774ef9af05effc925b073de860b8146cef668",
+   "elevation_sha256": "f28c21915a7a6a575b13d9d7df784c798081fda082db52d1e64868ad81a69c5b",
+   "fields": [
+    {
+     "name": "reflectivity_horizontal",
+     "dtype": "float32",
+     "in_xradar": true,
+     "scale_factor": null,
+     "add_offset": null,
+     "fill_value": -9999.0,
+     "sha256": "d25282cb3fcaf05f4e7b06dd3e8acbcbdc10dcd53cd8219f64459fd5c1fa0b95"
+    }
+   ]
+  }
+ ],
+ "latitude": 36.490833333333335,
+ "longitude": -97.59416666666667,
+ "altitude": 214.0
+}

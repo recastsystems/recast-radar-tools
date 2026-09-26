@@ -1,55 +1,59 @@
-//! ODIM_H5 decoding through a pure-Rust HDF5 subset.
+//! ODIM_H5 decoding over the pure-Rust HDF5 reader [`recast_radar_hdf5`]
+//! (re-exported as [`hdf5`]).
 //!
 //! - [`odim`]: polar `PVOL`/`SCAN` objects into the FM301
 //!   [`recast_radar_core::model::Volume`] ([`odim::read_odim_h5_volume`]).
 //! - [`odim_cartesian`]: Cartesian `IMAGE`/`MAX` products into a gridded
 //!   [`odim_cartesian::OdimCartesianGrid`].
-//! - [`hdf5lite`]: the minimal read-only HDF5 parser both decoders use.
+//! - [`write`](mod@write): any volume of PPI sweeps as an ODIM_H5 polar volume
+//!   ([`write_odim_h5_volume`]) over [`recast_radar_hdf5::write`].
+//!
+//! Any HDF5 layout reads: superblocks v0-v3, old- and new-style groups,
+//! dense attribute storage, every chunk index (see [`recast_radar_hdf5`]).
+//! Every attribute reaches the model whatever its datatype (see [`odim`]):
+//! one ODIM does not use (compound, reference, sequence, a datatype the
+//! HDF5 reader keeps as raw bytes) is kept verbatim instead of failing the
+//! file. [`odim::read_odim_hdf5_volume`] decodes an HDF5 file already
+//! opened (the format router opens a file once to tell ODIM from
+//! netCDF-4).
 //!
 //! # Limits
 //!
-//! The HDF5 reader bounds every structure a file header can inflate:
-//!
-//! | Structure | Limit |
-//! |---|---|
-//! | Group nesting depth | 16 |
-//! | Objects indexed per file (real files: 18-283) | 16,384 |
-//! | B-tree nodes per walk | 65,536 |
-//! | Entries per group | 1,048,576 |
-//! | Messages per object header | 4,096 |
-//! | Message bytes per object header, and per header block | 64 MiB |
-//! | Header continuation blocks per object | 1,024 |
-//! | Dataspace rank / dimension size | 32 / 104,857,600 |
-//! | Dataset bytes, stored and after type conversion | 256 MiB each |
-//! | Chunks per dataset / stored chunk size | 262,144 / 256 MiB |
-//! | Inflated chunk | its declared chunk size |
-//! | Attribute value | 16 MiB |
-//! | Filters per pipeline / client values per filter | 32 / 1,024 |
-//!
-//! Reading a dataset holds its raw bytes and converted elements at the same
-//! time (at most 512 MiB); datasets are read one at a time.
+//! The HDF5 reader bounds every structure a file header can inflate (its
+//! crate documentation lists each limit: group depth 16, 16,384 objects,
+//! 256 MiB per dataset, 16 MiB per attribute, ...). Reading a dataset holds
+//! its raw bytes and converted elements at the same time (at most 512 MiB);
+//! datasets are read one at a time.
 //!
 //! The polar decoder accepts at most `MAX_SWEEPS_PER_VOLUME` (1,024)
 //! `datasetN` groups and `MAX_GATES_PER_RADIAL` (16,384) bins per ray, and
-//! charges each sweep's radial table and moment grids to a `DecodeBudget` of
-//! `MAX_DECODED_VOLUME_BYTES` (1 GiB) before allocating them (constants in
-//! [`recast_radar_core::bounded_read`]). The Cartesian decoder caps its
-//! physical-value grid at the same 1 GiB.
+//! charges each sweep's radial table and moment grids (quality planes
+//! included) to a `DecodeBudget` of `MAX_DECODED_VOLUME_BYTES` (1 GiB) before
+//! allocating them (constants in [`recast_radar_core::bounded_read`]), and
+//! the attributes it keeps verbatim, by the memory they hold, to the same
+//! budget. Nested groups are read 8 deep below a `how` or unknown group.
+//! The Cartesian decoder caps its physical-value grid at the same 1 GiB.
 //!
 //! Every limit violation is an [`OdimError::LimitExceeded`] error.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
-pub mod hdf5lite;
+mod h5;
 pub mod odim;
 pub mod odim_cartesian;
+mod tables;
+pub mod write;
+
+pub use recast_radar_hdf5 as hdf5;
 
 use thiserror::Error;
 
 pub use odim::{
-    looks_like_hdf5_bytes, read_odim_h5_volume, recover_copied_whatgroup_velocity_nodata,
+    looks_like_hdf5_bytes, read_odim_h5_volume, read_odim_hdf5_volume,
+    recover_copied_whatgroup_velocity_nodata,
 };
 pub use odim_cartesian::{OdimCartesianGrid, decode_odim_h5_cartesian_max};
+pub use write::{OdimWriteError, OdimWriteOptions, write_odim_h5_volume};
 
 /// Result type for ODIM_H5 and HDF5 decoding.
 pub type Result<T> = std::result::Result<T, OdimError>;

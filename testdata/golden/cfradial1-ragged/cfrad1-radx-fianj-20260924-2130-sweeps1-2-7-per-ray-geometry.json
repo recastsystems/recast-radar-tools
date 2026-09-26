@@ -1,0 +1,187 @@
+{
+ "id": "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry",
+ "range_dims": [
+  "time",
+  "range"
+ ],
+ "n_gates_vary": "true",
+ "readers": [
+  "netCDF4"
+ ],
+ "sweeps": [
+  {
+   "rays": 360,
+   "ngates": 80,
+   "first_center_m": 0.0,
+   "spacing_m": 500.0,
+   "ray_start_range_m": [
+    0.0
+   ],
+   "ray_gate_spacing_m": [
+    500.0
+   ],
+   "fields": {
+    "DBZH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "961715dfcd26c5dfeccb88b39907460c2d6eeb2be490132108741bc58a19fd99",
+     "not_fill": 28793,
+     "first_ray": [
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      1864,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      957
+     ]
+    },
+    "VRADH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "b8fdb62bc522449885c4f90a4ac3d1dd9e37e3a181295353b218f1cf4b2630fc",
+     "not_fill": 22408,
+     "first_ray": [
+      -710,
+      277,
+      -32768,
+      -32768,
+      180,
+      -258,
+      273,
+      -32768,
+      -32768,
+      -32768,
+      123,
+      134
+     ]
+    }
+   }
+  },
+  {
+   "rays": 360,
+   "ngates": 80,
+   "first_center_m": 0.0,
+   "spacing_m": 500.0,
+   "ray_start_range_m": [
+    0.0
+   ],
+   "ray_gate_spacing_m": [
+    500.0
+   ],
+   "fields": {
+    "DBZH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "e80d52651fd4b440e46ffba8a758a9486303a4fb9d050f7db1f5681a028d7ed6",
+     "not_fill": 28355,
+     "first_ray": [
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      519,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767
+     ]
+    },
+    "VRADH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "b7a73176eccb7fff0119d1f5be0d8991a3d957d5b93fd300f92fa158625b43df",
+     "not_fill": 26390,
+     "first_ray": [
+      316,
+      685,
+      325,
+      99,
+      93,
+      -571,
+      -549,
+      119,
+      611,
+      -662,
+      -745,
+      -725
+     ]
+    }
+   }
+  },
+  {
+   "rays": 360,
+   "ngates": 160,
+   "first_center_m": 0.0,
+   "spacing_m": 250.0,
+   "ray_start_range_m": [
+    0.0
+   ],
+   "ray_gate_spacing_m": [
+    250.0
+   ],
+   "fields": {
+    "DBZH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "9c5818731168a420a1a31bf25e3587158829c6401bf427851ff0c5fc3dd00d33",
+     "not_fill": 39727,
+     "first_ray": [
+      -32768,
+      636,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -947,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768
+     ]
+    },
+    "VRADH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "e68fffaf57fae632678f50219b83732e9bd437f552219e409038c1d0ca25bd4c",
+     "not_fill": 25342,
+     "first_ray": [
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768
+     ]
+    }
+   }
+  }
+ ]
+}

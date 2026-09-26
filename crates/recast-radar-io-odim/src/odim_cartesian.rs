@@ -3,21 +3,30 @@
 //! This is deliberately separate from [`crate::odim`]. Polar `PVOL` and
 //! `SCAN` objects decode into `recast_radar_core::Volume`; a Cartesian maximum
 //! product does not contain rays, tilts, or gate geometry and must not be
-//! disguised as one. The returned [`OdimCartesianGrid`] retains the ODIM
-//! projection, grid geometry, source metadata, physical values, and raw
-//! missing-value encoding for a gridded map-layer consumer.
+//! disguised as one. The returned [`OdimCartesianGrid`] types the ODIM
+//! projection, grid geometry, source metadata and missing-value encoding of
+//! the `MAX` dataset for a gridded map-layer consumer, and keeps everything
+//! else the file holds: every dataset (the `VSP` and `HSP` side projections
+//! beside the maximum) with every plane in its stored type and raw codes
+//! ([`OdimCartesianDataset`], [`OdimCartesianPlane`]), and every attribute of
+//! every group, verbatim ([`OdimCartesianGrid::attrs`]). Physical values are
+//! computed on request ([`OdimCartesianGrid::values`],
+//! [`OdimCartesianGrid::value_at`]).
 //!
 //! IMGW-PIB POLRAD writes the quantity/scaling attributes on
 //! `/datasetN/what` (rather than `/datasetN/data1/what`) and stores the
 //! 2-D maximum in `/datasetN/data1/data`. Files may also contain `VSP` and
-//! `HSP` side projections; this decoder selects exactly one `MAX` dataset
-//! and leaves those side products untouched.
+//! `HSP` side projections; the typed view is the one `MAX` dataset.
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use recast_radar_core::bounded_read::DecodeBudget;
+use recast_radar_core::model::{ArrayBuf, AttrValue};
 
-use crate::hdf5lite::{H5Attr, H5Data, H5File};
+use crate::h5::{H5Attr, H5File};
 use crate::{OdimError, Result};
+
+/// Groups below a dataset or plane (`how` subgroups, ...) are read this deep.
+const MAX_GROUP_DEPTH: usize = 8;
 
 /// Radius used by PROJ's named `+ellps=sphere` ellipsoid.
 ///
@@ -147,6 +156,51 @@ pub struct OdimCartesianEncoding {
     pub undetect: Option<f64>,
 }
 
+/// One `dataM` or `qualityK` group of a Cartesian dataset.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OdimCartesianPlane {
+    /// Group name (`data1`, `quality1`).
+    pub name: String,
+    /// Shape of its `data` dataset, row-major (`[ysize, xsize]`).
+    pub dims: Vec<usize>,
+    /// The stored values as stored (`u8`, `i8`, `u16`, `i16`, `i32`,
+    /// `u32`, `i64`, `f32`, `f64`; `u64` planes widen to `f64`).
+    pub raw: ArrayBuf,
+    /// Every attribute of the group, verbatim: its own under their names,
+    /// those of its members as `<member>.<name>` (`what.gain`,
+    /// `data.CLASS`, `how.<subgroup>.<name>`), an enumerated plane's
+    /// members as `data.enum_values` / `data.enum_names`, a `legend` as
+    /// `legend.values` / `legend.names`.
+    pub attrs: Vec<(Box<str>, AttrValue)>,
+    /// Its `qualityK` groups, by `K`.
+    pub quality: Vec<OdimCartesianPlane>,
+}
+
+/// One `datasetN` of a Cartesian `IMAGE`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OdimCartesianDataset {
+    /// Group name (`dataset1`).
+    pub name: String,
+    /// Every attribute of the group and of its members but the planes,
+    /// verbatim (`what.product`, `where.xsize`, `how.<name>`).
+    pub attrs: Vec<(Box<str>, AttrValue)>,
+    /// Its `dataM` groups, by `M`.
+    pub planes: Vec<OdimCartesianPlane>,
+    /// Its own `qualityK` groups, by `K`.
+    pub quality: Vec<OdimCartesianPlane>,
+}
+
+impl OdimCartesianDataset {
+    /// A `what` attribute of the dataset.
+    pub fn what(&self, name: &str) -> Option<&AttrValue> {
+        let key = format!("what.{name}");
+        self.attrs
+            .iter()
+            .find(|(have, _)| **have == *key)
+            .map(|(_, value)| value)
+    }
+}
+
 /// One decoded Cartesian maximum product.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OdimCartesianGrid {
@@ -166,18 +220,64 @@ pub struct OdimCartesianGrid {
     pub projection: OdimCartesianProjection,
     pub geometry: OdimCartesianGeometry,
     pub encoding: OdimCartesianEncoding,
-    /// Row-major physical values. Both ODIM `nodata` and `undetect` cells
-    /// are represented as `NaN`; their original raw sentinels remain in
-    /// [`Self::encoding`].
-    pub values: Vec<f32>,
+    /// Every root attribute, verbatim: the root group's own
+    /// (`Conventions`) and those of `/what`, `/where`, `/how` and any other
+    /// root member but the datasets, as `<group>.<name>` (`what.object`,
+    /// `how.system`, `how.<subgroup>.<name>`). The typed fields above are
+    /// read from these.
+    pub attrs: Vec<(Box<str>, AttrValue)>,
+    /// Every `datasetN` of the file, by `N`: the `MAX` dataset
+    /// ([`Self::dataset`]) and any others (IMGW's `VSP` and `HSP` side
+    /// projections), each plane in its stored type.
+    pub datasets: Vec<OdimCartesianDataset>,
 }
 
 impl OdimCartesianGrid {
+    /// The `MAX` dataset's plane (its `data1`).
+    pub fn max_plane(&self) -> Option<&OdimCartesianPlane> {
+        self.datasets
+            .iter()
+            .find(|dataset| dataset.name == self.dataset)
+            .and_then(|dataset| dataset.planes.first())
+    }
+
+    /// The stored codes of the maximum, row-major `[y, x]`.
+    pub fn raw(&self) -> Option<&ArrayBuf> {
+        self.max_plane().map(|plane| &plane.raw)
+    }
+
+    /// Physical value of cell `(x, y)` (row zero is north): `NaN` for the
+    /// ODIM `nodata` and `undetect` codes; `None` outside the grid.
     pub fn value_at(&self, x: usize, y: usize) -> Option<f32> {
         if x >= self.geometry.width || y >= self.geometry.height {
             return None;
         }
-        self.values.get(y * self.geometry.width + x).copied()
+        let raw = self.raw()?.get_f64(y * self.geometry.width + x)?;
+        Some(physical(raw, self.encoding))
+    }
+
+    /// Row-major physical values of the maximum: `gain * raw + offset`,
+    /// `NaN` for the `nodata` and `undetect` codes (which stay in
+    /// [`Self::encoding`] and the raw plane).
+    pub fn values(&self) -> Vec<f32> {
+        let Some(raw) = self.raw() else {
+            return Vec::new();
+        };
+        (0..raw.len())
+            .map(|index| {
+                raw.get_f64(index)
+                    .map_or(f32::NAN, |raw| physical(raw, self.encoding))
+            })
+            .collect()
+    }
+}
+
+/// `gain * raw + offset`, `NaN` for the sentinels and non-finite codes.
+fn physical(raw: f64, encoding: OdimCartesianEncoding) -> f32 {
+    if !raw.is_finite() || encoding.nodata == Some(raw) || encoding.undetect == Some(raw) {
+        f32::NAN
+    } else {
+        (raw * encoding.gain + encoding.offset) as f32
     }
 }
 
@@ -217,8 +317,13 @@ pub fn decode_odim_h5_cartesian_max(bytes: &[u8]) -> Result<OdimCartesianGrid> {
         undetect: optional_f64(&file, &what_path, "undetect")?,
     };
 
-    let plane_path = format!("/{dataset}/data1/data");
-    let plane = file.dataset(&plane_path)?;
+    let mut budget = DecodeBudget::volume();
+    let datasets = read_datasets(&file, &mut budget)?;
+    let plane = datasets
+        .iter()
+        .find(|candidate| candidate.name == dataset)
+        .and_then(|candidate| candidate.planes.first())
+        .ok_or_else(|| invalid(format!("ODIM_H5 {dataset} has no data1 plane")))?;
     let expected_dims = [geometry.height, geometry.width];
     if plane.dims.as_slice() != expected_dims {
         return Err(invalid(format!(
@@ -230,16 +335,18 @@ pub fn decode_odim_h5_cartesian_max(bytes: &[u8]) -> Result<OdimCartesianGrid> {
         .width
         .checked_mul(geometry.height)
         .ok_or_else(|| invalid("ODIM_H5 Cartesian grid dimensions overflow"))?;
-    if plane.data.len() != expected_len {
+    if plane.raw.len() != expected_len {
         return Err(invalid(format!(
             "ODIM_H5 {dataset} MAX has {} values, expected {expected_len}",
-            plane.data.len()
+            plane.raw.len()
         )));
     }
-    DecodeBudget::volume()
-        .charge(expected_len, size_of::<f32>(), "ODIM_H5 Cartesian grid")
-        .map_err(OdimError::LimitExceeded)?;
-    let values = decode_physical_values(&plane.data, encoding);
+    let attrs = tree_attrs(
+        &file,
+        "",
+        &|child| is_numbered(child, "dataset"),
+        &mut budget,
+    )?;
 
     Ok(OdimCartesianGrid {
         odim_version: optional_string(&file, "/what", "version"),
@@ -254,7 +361,198 @@ pub fn decode_odim_h5_cartesian_max(bytes: &[u8]) -> Result<OdimCartesianGrid> {
         projection,
         geometry,
         encoding,
-        values,
+        attrs,
+        datasets,
+    })
+}
+
+fn is_numbered(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix)
+        .is_some_and(|rest| rest.parse::<u32>().is_ok())
+}
+
+/// The members of `path` named `<prefix>N`, by `N`.
+fn numbered_children(file: &H5File<'_>, path: &str, prefix: &str) -> Vec<String> {
+    let mut names: Vec<String> = file
+        .child_names(path)
+        .into_iter()
+        .filter(|name| is_numbered(name, prefix))
+        .collect();
+    names.sort_by_key(|name| name[prefix.len()..].parse::<u32>().unwrap_or(u32::MAX));
+    names
+}
+
+/// Every attribute of `path` (bare names) and of its members but those
+/// `skip` names (as `<member>.<name>`, recursively), charged to `budget`.
+fn tree_attrs(
+    file: &H5File<'_>,
+    path: &str,
+    skip: &dyn Fn(&str) -> bool,
+    budget: &mut DecodeBudget,
+) -> Result<Vec<(Box<str>, AttrValue)>> {
+    let mut out = Vec::new();
+    collect_attrs(file, path, "", skip, 0, &mut out);
+    let bytes: usize = out
+        .iter()
+        .map(|(name, value)| name.len() + attr_bytes(value))
+        .sum();
+    budget
+        .charge(bytes, 1, "ODIM_H5 Cartesian attributes")
+        .map_err(OdimError::LimitExceeded)?;
+    Ok(out)
+}
+
+fn collect_attrs(
+    file: &H5File<'_>,
+    path: &str,
+    prefix: &str,
+    skip: &dyn Fn(&str) -> bool,
+    depth: usize,
+    out: &mut Vec<(Box<str>, AttrValue)>,
+) {
+    if depth > MAX_GROUP_DEPTH {
+        return;
+    }
+    let here = if path.is_empty() { "/" } else { path };
+    for (name, value) in file.attr_entries(here) {
+        out.push((format!("{prefix}{name}").into(), value));
+    }
+    for child in file.child_names(here) {
+        if skip(&child) {
+            continue;
+        }
+        let child_path = format!("{path}/{child}");
+        if child == "legend"
+            && let Some(legend) = file.legend(&child_path)
+        {
+            let (values, names): (Vec<i64>, Vec<Box<str>>) = legend
+                .into_iter()
+                .map(|(value, name)| (value, name.into()))
+                .unzip();
+            out.push((
+                format!("{prefix}legend.values").into(),
+                AttrValue::Array(ArrayBuf::I64(values)),
+            ));
+            out.push((
+                format!("{prefix}legend.names").into(),
+                AttrValue::Array(ArrayBuf::Text(names)),
+            ));
+        }
+        collect_attrs(
+            file,
+            &child_path,
+            &format!("{prefix}{child}."),
+            &|_| false,
+            depth + 1,
+            out,
+        );
+    }
+}
+
+/// Approximate heap bytes of an attribute value.
+fn attr_bytes(value: &AttrValue) -> usize {
+    match value {
+        AttrValue::Text(text) => text.len(),
+        AttrValue::Array(ArrayBuf::Text(texts)) => texts.iter().map(|text| text.len() + 16).sum(),
+        AttrValue::Array(array) => array.len() * 8,
+        _ => 8,
+    }
+}
+
+/// Every `datasetN` with its planes and quality groups.
+fn read_datasets(
+    file: &H5File<'_>,
+    budget: &mut DecodeBudget,
+) -> Result<Vec<OdimCartesianDataset>> {
+    let mut out = Vec::new();
+    for name in numbered_children(file, "/", "dataset") {
+        let path = format!("/{name}");
+        let attrs = tree_attrs(
+            file,
+            &path,
+            &|child| is_numbered(child, "data") || is_numbered(child, "quality"),
+            budget,
+        )?;
+        let mut planes = Vec::new();
+        for plane in numbered_children(file, &path, "data") {
+            planes.push(read_plane(
+                file,
+                &format!("{path}/{plane}"),
+                &plane,
+                budget,
+            )?);
+        }
+        let mut quality = Vec::new();
+        for group in numbered_children(file, &path, "quality") {
+            quality.push(read_plane(
+                file,
+                &format!("{path}/{group}"),
+                &group,
+                budget,
+            )?);
+        }
+        out.push(OdimCartesianDataset {
+            name,
+            attrs,
+            planes,
+            quality,
+        });
+    }
+    Ok(out)
+}
+
+/// A `dataM` or `qualityK` group: its `data` dataset as stored, every
+/// attribute, its quality groups.
+fn read_plane(
+    file: &H5File<'_>,
+    path: &str,
+    name: &str,
+    budget: &mut DecodeBudget,
+) -> Result<OdimCartesianPlane> {
+    let (dims, raw, enum_members) = if file.has_object(&format!("{path}/data")) {
+        file.dataset_raw(&format!("{path}/data"))?
+    } else {
+        (Vec::new(), ArrayBuf::U8(Vec::new()), Vec::new())
+    };
+    let word = match &raw {
+        ArrayBuf::I8(_) | ArrayBuf::U8(_) => 1,
+        ArrayBuf::I16(_) | ArrayBuf::U16(_) => 2,
+        ArrayBuf::I32(_) | ArrayBuf::U32(_) | ArrayBuf::F32(_) => 4,
+        _ => 8,
+    };
+    budget
+        .charge(raw.len(), word, "ODIM_H5 Cartesian plane")
+        .map_err(OdimError::LimitExceeded)?;
+    let mut attrs = tree_attrs(file, path, &|child| is_numbered(child, "quality"), budget)?;
+    if !enum_members.is_empty() {
+        let (values, names): (Vec<i64>, Vec<Box<str>>) = enum_members
+            .into_iter()
+            .map(|(value, name)| (value, name.into()))
+            .unzip();
+        attrs.push((
+            "data.enum_values".into(),
+            AttrValue::Array(ArrayBuf::I64(values)),
+        ));
+        attrs.push((
+            "data.enum_names".into(),
+            AttrValue::Array(ArrayBuf::Text(names)),
+        ));
+    }
+    let mut quality = Vec::new();
+    for group in numbered_children(file, path, "quality") {
+        quality.push(read_plane(
+            file,
+            &format!("{path}/{group}"),
+            &group,
+            budget,
+        )?);
+    }
+    Ok(OdimCartesianPlane {
+        name: name.to_owned(),
+        dims,
+        raw,
+        attrs,
+        quality,
     })
 }
 
@@ -468,22 +766,6 @@ fn parse_datetime(
     let time = NaiveTime::parse_from_str(time, "%H%M%S")
         .map_err(|err| invalid(format!("ODIM_H5 {path}/{time_attr} is not HHMMSS: {err}")))?;
     Ok(Utc.from_utc_datetime(&NaiveDateTime::new(date, time)))
-}
-
-fn decode_physical_values(data: &H5Data, encoding: OdimCartesianEncoding) -> Vec<f32> {
-    let physical = |raw: f64| {
-        if !raw.is_finite() || encoding.nodata == Some(raw) || encoding.undetect == Some(raw) {
-            f32::NAN
-        } else {
-            (raw * encoding.gain + encoding.offset) as f32
-        }
-    };
-    match data {
-        H5Data::U8(values) => values.iter().map(|&raw| physical(f64::from(raw))).collect(),
-        H5Data::U16(values) => values.iter().map(|&raw| physical(f64::from(raw))).collect(),
-        H5Data::F32(values) => values.iter().map(|&raw| physical(f64::from(raw))).collect(),
-        H5Data::F64(values) => values.iter().map(|&raw| physical(raw)).collect(),
-    }
 }
 
 fn optional_string(file: &H5File<'_>, path: &str, name: &str) -> Option<String> {

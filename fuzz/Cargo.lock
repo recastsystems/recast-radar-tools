@@ -368,6 +368,7 @@ dependencies = [
  "libfuzzer-sys",
  "recast-radar-bzip2",
  "recast-radar-core",
+ "recast-radar-hdf5",
  "recast-radar-io",
  "recast-radar-io-cfradial",
  "recast-radar-io-dorade",
@@ -384,6 +385,14 @@ dependencies = [
  "recast-radar-fuzz",
  "recast-radar-io-nexrad",
  "recast-radar-testdata",
+]
+
+[[package]]
+name = "recast-radar-hdf5"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "thiserror",
 ]
 
 [[package]]
@@ -406,6 +415,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "recast-radar-core",
+ "recast-radar-hdf5",
  "thiserror",
 ]
 
@@ -447,8 +457,8 @@ name = "recast-radar-io-odim"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "flate2",
  "recast-radar-core",
+ "recast-radar-hdf5",
  "thiserror",
 ]
 

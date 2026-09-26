@@ -180,16 +180,15 @@ cannot be downloaded (the five Level II files are download-only) fails the test 
 `RECAST_RADAR_TESTDATA_OFFLINE` is set, which runs the six committed cases and skips the
 coverage check.
 
-**The netCDF-4 case is not decoded from its own file.** The pure-Rust CfRadial reader opens
-classic netCDF only. The router sends HDF5 containers to `hdf5lite` (io-odim), which reads
-superblock v0 and v1 and rejects later versions. The netCDF-4 files in the corpus use
-superblock v2 (the xsapr file itself, and `cfrad1-spol-20080604-002217-sur`, which fails with
-"HDF5 superblock version 2 ... unsupported"). The xsapr case therefore decodes its committed
-classic twin `cfrad1-xsapr-sgp-20110520-ppi-classic`, a raw variable-for-variable copy
-(`testdata/other/manifest.toml`, `derived_from`), and compares it with the golden that xradar
-and Py-ART produced from the netCDF-4 file. No CfRadial netCDF-4 file is decoded natively by
-any test. Reading netCDF-4 needs superblock v2/v3, v2 object headers throughout, fractal heaps
-and v2 B-trees in `hdf5lite` (open item below).
+**The netCDF-4 case is decoded from its own file** (wave 3, stream hdf5-netcdf). Until then
+the pure-Rust CfRadial reader opened classic netCDF only and `hdf5lite` rejected superblock
+v2, so the xsapr case decoded its committed classic twin
+`cfrad1-xsapr-sgp-20110520-ppi-classic` and compared it with the golden xradar and Py-ART made
+from the netCDF-4 file. Now the router opens the HDF5 container with `recast-radar-hdf5`, sees
+a netCDF-4 file with the CfRadial 1 layout and hands it to io-cfradial; `index.json` has no
+`decoded_id` any more, and `fm301_conformance::every_case_decodes_its_own_file` checks that
+every case reads the very file its goldens came from (and that the xsapr case went through the
+netCDF-4 reader).
 
 Fixes found by the comparison (`8bf7f79`):
 
@@ -382,15 +381,12 @@ run 2 shows no cost from the Message 18 read added since then, within that run's
   decision. `testdata/synthetic-allowlist.toml` no longer has a `pending` entry: the
   reflectivity name preference moved to `real_model.rs` on real IESHA gates, and the one
   remaining entry is the `exception` for the 16-bit row API's own checks.
-- No CfRadial netCDF-4 file is decoded natively (F.4 conformance above). Supporting it means
-  extending `hdf5lite` to superblock v2/v3 and the structures netCDF-4 uses. Until then the
-  X-SAPR case decodes the committed classic twin; `index.json` declares that with
-  `decoded_id`, and `fm301_conformance::every_substituted_case_is_declared` fails if another
-  case starts reading a file its goldens did not come from.
-- `hdf5lite` fails a whole ODIM file on dense attribute storage or an attribute datatype it
-  cannot parse, rather than reading it partially (section 16, ODIM). No corpus file trips it;
-  a producer using HDF5's latest-format object headers would be rejected with a message naming
-  the object.
+- ~~No CfRadial netCDF-4 file is decoded natively~~ Done in wave 3 (stream hdf5-netcdf):
+  io-cfradial reads netCDF-4 CfRadial 1 and CfRadial 2, and the X-SAPR conformance case
+  decodes its own netCDF-4 file.
+- ~~The ODIM decoder fails a whole file on an attribute whose value it cannot express~~ Done in
+  wave 3: every attribute is kept whatever its datatype (io-odim module docs), and
+  `odim_every_value` checks every attribute and plane of the ODIM corpus against h5py.
 - `l2-ktlx-19990504-002218` compares against Py-ART only: xradar 0.12 raises
   `ValueError: conflicting sizes for dimension 'azimuth' (366 vs 367)` on it, so its xradar
   golden is an error stub (`xradar_status = "error"` in `index.json`). The other four Level II
@@ -458,7 +454,7 @@ resolutions (all in the commit that adds this section):
 | minor: `merge_volumes` does not reconcile `provenance.source_format`, so a volume merged from parts of different formats would read every sweep's `tilt_elevation_deg` under the first part's format | `MergeError::SourceMismatch`: parts whose `provenance.source_format` differs are rejected, as a site mismatch already was, so a volume never mixes sweeps whose tilt elevation follows different rules. `real_merge::merge_rejects_mismatched_source_formats` merges a real Level II volume with a real ODIM volume renamed to the same site, both orders. The accessor keeps its `source` argument (the second verification's fix) |
 | minor: io-odim discarded any per-ray `how` array it does not consume | only the arrays a ray coordinate was actually built from are held back now; everything else is verbatim in `Sweep::other`, whatever its length (section 16, ODIM). No corpus file carries an unconsumed per-ray array, so `odim_real_files::every_dataset_how_attribute_reaches_a_ray_coordinate_a_slot_or_sweep_other` pins the accounting from the other side on ESPDG, BEWID and NORST |
 | minor: two `pending` allowlist entries remained, so stream C's target was unmet | `find_prefers_horizontal_then_unspecified_then_vertical` moved to `real_model.rs`: one real IESHA DBZH field re-spelled DBZ and DBZV through `Quantity::classify`, which is what `Sweep::find` ranks. Both entries are gone; the allowlist holds one `exception` and no `pending` entry |
-| minor: the netCDF-4 X-SAPR golden is compared against the classic twin, and only the Rust source said so | `index.json` declares it with `decoded_id` and says so in the case note; the test reads that field instead of hard-coding the substitution, and `every_substituted_case_is_declared` fails if another case acquires one. The limitation itself is unchanged and stays an open item |
+| minor: the netCDF-4 X-SAPR golden is compared against the classic twin, and only the Rust source said so | `index.json` declares it with `decoded_id` and says so in the case note; the test reads that field instead of hard-coding the substitution, and `every_substituted_case_is_declared` fails if another case acquires one. The limitation itself is unchanged and stays an open item. Resolved in wave 3: the case decodes its own netCDF-4 file (`every_case_decodes_its_own_file`) |
 | minor: `hdf5lite` turns a partial ODIM read into a total failure, with no fallback or opt-out | no code change (it is the second verification's fix for silent attribute loss). Recorded as a deliberate choice in section 16 and in the open items: the error names the object, no corpus file trips it, and no fallback could be tested against a real file |
 | minor: a binding on the xradar 0.12 default gets no zero-copy NEXRAD field | no code change (12.2 is the design). Listed in the open items so it is visible beside the other disclosures |
 | minor: `l2-ktlx-19990504-002218` compares against Py-ART only | unchanged and already in `index.json`; listed in the open items with the xradar error it raises |
@@ -558,6 +554,7 @@ The FM301 view (section 12) builds these groups and variables from the in-memory
 |---|---|---|
 | `/` attributes (Tables 301-1..3, WMO-CF-2) | `Volume::attrs: GlobalAttrs` | section 11; unmodelled source attributes in `GlobalAttrs::other` |
 | `/<name>` root variables without a slot (CfRadial `status_xml`, `grid_mapping`) | `Volume::extra_vars: Vec<ExtraVariable>` | verbatim name, dims, dtype and attributes |
+| the source's own attributes of any variable a typed slot holds (CfRadial `azimuth:comment`, `range:meters_between_gates`, `sweep_mode:options`) | `Volume::variable_attrs: Vec<VariableAttrs>` | by FM301 group (`""`, `sweep_<n>`, `sweep_<n>/monitoring`, `radar_parameters`, ...) and variable name; written only with `Passthrough::All`, where the view's own value of an attribute wins |
 | `/volume_number`, `/time_coverage_start`, `/time_coverage_end` | `Volume::{volume_number, time_coverage}` | |
 | `/latitude`, `/longitude`, `/altitude`, `/altitude_agl` | `Volume::location` | xradar makes these root coordinates, inherited by sweeps |
 | `/platform_type`, `/instrument_type`, `/primary_axis`, `/status_str` | `Volume::{platform_type, instrument_type, primary_axis, status_str}` | |
@@ -628,6 +625,9 @@ pub struct Volume {
     /// Root variables with no slot above (CfRadial `status_xml`, `grid_mapping`), verbatim
     /// and in file order. The Xradar flavor writes them; the WMO flavor drops non-FM301 names.
     pub extra_vars: Vec<ExtraVariable>,
+    /// The source's own attributes of variables whose values a typed slot holds, by group
+    /// and variable. Written only with `Passthrough::All`.
+    pub variable_attrs: Vec<VariableAttrs>,
     /// Source format, container version, decode statistics. Not exported as variables.
     pub provenance: Provenance,
     /// Model / forward-operator provenance for simulated volumes.
@@ -1778,15 +1778,20 @@ Float variables become `F32` or `F64`, keeping their `_FillValue` in the data an
 **Ragged sweeps.** CfRadial `n_gates_vary = "true"` stores each field as 1-D `(n_points)` data
 with `ray_n_gates(time)` and `ray_start_index(time)`. The decoder has to lay those out into
 rows anyway, so it writes each row padded to the sweep's largest `ray_n_gates` with the fill
-code. That is the only pass, and there is no copy beyond the layout. Py-ART's `read_cfradial`
+code (the netCDF default fill, named as the field's `_FillValue`, when the variable has none).
+That is the only pass, and there is no copy beyond the layout. Py-ART's `read_cfradial`
 gives the same shape, with the padding masked. The source's `ray_n_gates` stays in
-`Sweep::extra_vars`. A sweep whose `ray_start_range` or `ray_gate_spacing` varies from ray to
-ray cannot share one `range` coordinate. The decoder returns
-`CfRadialError::PerRayGeometry { sweep }`, a documented limitation. No corpus file exercises
-either path yet. IRENE and DOW8 have `n_gates_vary = "false"` and constant `ray_start_range`
-and `ray_gate_spacing` (checked for this revision), and the two xsapr files have neither
-attribute nor variables and no `ray_n_gates`. A test is added when a real file turns up
-(real-data rule).
+`Sweep::extra_vars`. Each sweep takes its own gate geometry: its row of a `range(sweep, range)`
+(CfRadial 1.4 section 4.4) or of LROSE Radx's `range(time, range)`, else `range(range)`, or
+`ray_start_range` / `ray_gate_spacing` where they give the sweep one geometry that differs
+from `range(range)`. A sweep whose rays state different geometries cannot share one `range`
+coordinate: the decoder returns `CfRadialError::PerRayGeometry { sweep }`, a documented
+limitation. Real files: LROSE Radx's CfRadial 1 of three sweeps of FMI's Anjalankoski PVOL,
+once with a `range(time, range)` (500 m and 250 m sweeps) and once remapped to one `range` in
+netCDF-4 (`cfrad1-radx-fianj-*`, `crates/recast-radar-io-cfradial/tests/cfradial_ragged_real.rs`).
+IRENE and DOW8 have `n_gates_vary = "false"` and constant `ray_start_range` and
+`ray_gate_spacing` equal to `range`, and the two xsapr files have neither attribute nor
+variables and no `ray_n_gates`.
 
 ### 7.4 Derived fields
 
@@ -1969,9 +1974,10 @@ the file's own Message 32 PRF values do (metadata-complete). The legacy `ScanLeg
 
 CfRadial 1 carries per-ray variables that are not FM301. None is dropped:
 
-- `ray_start_range` and `ray_gate_spacing` are checked against `range`. A ray-to-ray variation
-  is a decode error (7.3). Both are also kept verbatim in `Sweep::extra_vars`, because xradar
-  keeps them in the sweep group (DOW8, A.5).
+- `ray_start_range` and `ray_gate_spacing` are checked against `range`: one geometry for a
+  sweep that differs from `range(range)` becomes the sweep's range; a ray-to-ray variation
+  within a sweep is a decode error (7.3). Both are also kept verbatim in `Sweep::extra_vars`,
+  because xradar keeps them in the sweep group (DOW8, A.5).
 - `georefs_applied`, `georef_time`, `georef_unit_num`, `georef_unit_id` and any other variable
   without a slot go to `Sweep::extra_vars` under their source names, as xradar keeps them.
   Attitude variables (`heading`, `roll`, `pitch`, `drift`, `rotation`, `tilt`) and
@@ -2830,14 +2836,14 @@ for every source. What each decoder fills:
     checks, for ESPDG, BEWID and NORST, that the only `how` names missing from `Sweep::other`
     are the ray arrays the decoder read and the names a typed slot took.
   - Still dropped: `what`/`where` attributes the decoder does not read, and `dataM/how` groups.
-    `hdf5lite` widens numeric attributes to 64 bits and reads compact attribute storage only.
-    In the four checked files it reads every attribute h5py reports. Dense attribute storage
-    (an 0x0015 message pointing at a fractal heap) and an attribute datatype `hdf5lite` cannot
-    parse fail the whole file, by choice: a partial read would drop metadata silently, which is
-    what the second verification asked to end, and the error names the object. No corpus file
-    trips it and no fallback path could be tested against a real file, so none was added; an
-    ODIM producer using HDF5's latest-format object headers would be rejected outright and is
-    an open item.
+    The ODIM view widens numeric attributes to 64 bits. Since the HDF5 reader moved to
+    `recast-radar-hdf5` (wave 3, stream hdf5-netcdf) it reads dense attribute storage and
+    every HDF5 layout (superblocks 0-3, every chunk index); `tests/h5py_goldens.rs` there
+    compares every attribute of every corpus file with h5py. An attribute whose value the
+    ODIM view cannot express (compound, reference, variable-length sequence, or a datatype
+    the HDF5 reader keeps as raw bytes) still fails the whole file, by choice: a partial read
+    would drop metadata silently, and the error names the object and the attribute
+    (`io-odim/tests/hdf5_containers.rs`).
   - xradar 0.12 drops all of this beyond `NI`, so `Flavor` views do not write the verbatim
     part.
 - **DORADE:**

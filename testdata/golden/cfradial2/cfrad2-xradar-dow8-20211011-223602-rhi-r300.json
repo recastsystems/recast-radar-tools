@@ -1,0 +1,62 @@
+{
+ "id": "cfrad2-xradar-dow8-20211011-223602-rhi-r300",
+ "sha256": "5918d04a38275a956e724549ccc57cd0da90b907884bff050d8870322072ecde",
+ "generator": "tools/cfradial2_golden.py (xradar 0.12.0, netCDF4-python 1.7.4)",
+ "instrument_name": "DOW8",
+ "volume_number": 255,
+ "platform_type": "fixed",
+ "time_coverage_start": "2021-10-11T22:36:02Z",
+ "sweeps": [
+  {
+   "source_group": "sweep_0",
+   "fixed_angle": 184.00022888183594,
+   "sweep_mode": "rhi",
+   "follow_mode": "none",
+   "prt_mode": "staggered",
+   "nrays": 148,
+   "ngates": 300,
+   "ray_dimension": "azimuth",
+   "range_first": 62.456512451171875,
+   "range_spacing": 124.91302490234375,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1633991762.712,
+    1633991772.091
+   ],
+   "azimuth_sha256": "475a3872b169aedb17cf79cb19eceec71af3348a53acfcd7b038f5d329ce0035",
+   "elevation_sha256": "5a72a6ed06baadfffe5e4e6b1bc2f2495d74258d6a975eb718ae20aba3d6d388",
+   "fields": [
+    {
+     "name": "DBZHC",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "03005ee84427eb18109677586bdac123be33353ccb4c52bbe8a9d224fb9490c8"
+    },
+    {
+     "name": "VEL",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "3889cf51c52c4d30ced98d685b8e152a2108d621891a4448618b54a2ef0ca386"
+    },
+    {
+     "name": "WIDTH",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "878dd25fc406d7998d57eea2f29612cf7f4bfad94ece4666ceacb1df4c8f51a0"
+    }
+   ]
+  }
+ ],
+ "latitude": 40.01481246948242,
+ "longitude": -88.331787109375,
+ "altitude": 214.00000154972076
+}

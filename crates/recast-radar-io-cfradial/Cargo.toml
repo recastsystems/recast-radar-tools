@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Pure-Rust CfRadial 1 weather radar decoder over a classic netCDF reader"
+description = "Pure-Rust CfRadial 1 and CfRadial 2 (FM301) weather radar decoder and writer for classic netCDF and netCDF-4"
 readme.workspace = true
 keywords = ["cfradial", "netcdf", "radar", "weather", "meteorology"]
 categories = ["science::geo", "parser-implementations", "encoding"]
@@ -12,14 +12,17 @@ categories = ["science::geo", "parser-implementations", "encoding"]
 [dependencies]
 chrono.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-hdf5 = { path = "../recast-radar-hdf5" }
 thiserror.workspace = true
 
 [dev-dependencies]
-# Cross-format sniffer and netCDF-4 rejection checks in the integration tests.
+# Cross-format sniffer checks in the integration tests.
 recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
 recast-radar-io-odim = { path = "../recast-radar-io-odim" }
 # Real corpus files (spec section 5).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
+# Golden JSON written by the tools/ reference scripts (exact floats).
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 [lints]
 workspace = true

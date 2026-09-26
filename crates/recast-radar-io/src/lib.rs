@@ -2,8 +2,9 @@
 //!
 //! [`read_supported_volume_bytes`] takes a byte buffer of unknown
 //! provenance, unwraps a single-member ZIP local record or a whole-file gzip
-//! wrapper, sniffs the container by magic bytes, and hands it to the
-//! matching decoder crate, returning the FM301
+//! wrapper, sniffs the container by magic bytes (and an HDF5 container by
+//! content: ODIM_H5, CfRadial 1 in netCDF-4, or CfRadial 2), and hands it to
+//! the matching decoder crate, returning the FM301
 //! [`recast_radar_core::model::Volume`] with the format's typed metadata
 //! beside it ([`Decoded`], [`FormatMetadata`]; design note
 //! `docs/design/fm301-model.md` section 2). [`read_mobile_archive_from_path`]
@@ -35,7 +36,7 @@ use recast_radar_io_dorade::mobile_archive::{self, MobileVolume};
 use recast_radar_io_dorade::{DoradeError, dorade};
 use recast_radar_io_jma::JmaError;
 use recast_radar_io_nexrad::{ArchiveCompression, NexradError, NexradMetadata};
-use recast_radar_io_odim::{OdimError, hdf5lite, odim};
+use recast_radar_io_odim::{OdimError, hdf5, odim};
 use thiserror::Error;
 
 const ZIP_LOCAL_FILE_HEADER_LEN: usize = 30;
@@ -50,11 +51,11 @@ pub enum IoError {
     /// NEXRAD Archive II / Level II decode failure.
     #[error(transparent)]
     Nexrad(#[from] NexradError),
-    /// ODIM_H5 / HDF5 decode failure (including netCDF-4 CfRadial, which is
-    /// an HDF5 container and routes here).
+    /// ODIM_H5 / HDF5 decode failure (an HDF5 container that is not
+    /// netCDF-4, or one that cannot be opened, routes here).
     #[error(transparent)]
     Odim(#[from] OdimError),
-    /// CfRadial 1.x / classic netCDF decode failure.
+    /// CfRadial 1.x / 2 decode failure (classic netCDF or netCDF-4).
     #[error(transparent)]
     CfRadial(#[from] CfRadialError),
     /// DORADE sweepfile or mobile-archive decode failure.
@@ -76,15 +77,26 @@ pub enum IoError {
 /// [`sniff_supported_volume_format`] and [`read_supported_volume_bytes`]
 /// in lockstep with it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SupportedVolumeFormat {
     /// DORADE sweepfile (solo/Radx descriptor blocks: `COMM`/`SSWB`/`VOLD`/`RADD`).
     Dorade,
     /// HDF5 container, decoded as ODIM_H5 PVOL/SCAN (EUMETNET OPERA Data
-    /// Information Model; Michelson et al., OPERA WP 2.1/2.2, v2.2-2.3).
+    /// Information Model; Michelson et al., OPERA WP 2.1/2.2, v2.2-2.3):
+    /// every HDF5 file that is not netCDF-4 CfRadial, and one that cannot be
+    /// opened (the ODIM decoder reports why).
     OdimH5,
     /// Classic netCDF (`CDF\x01`/`CDF\x02`, plus CDF-5 sniffed for a useful
     /// rejection), decoded as CfRadial 1.x.
     CfRadial,
+    /// netCDF-4 (HDF5) with the CfRadial 1.x layout (`time` and `range`
+    /// dimensions in the root group), or any other netCDF-4 file without
+    /// the CfRadial 2 layout (the CfRadial decoder reports why it is not
+    /// CfRadial, or why its dimensions or variables cannot be rebuilt).
+    CfRadialNetcdf4,
+    /// netCDF-4 (HDF5) with the CfRadial 2 / FM301 layout: one group per
+    /// sweep.
+    CfRadial2,
     /// JMA polar-coordinate radar GRIB2 tar (`Z__C_RJTD_*_RDR_JMAGPV*.tar`;
     /// ustar magic at byte 257, JMA GRIB2 templates 3.50120/4.51022/5.200
     /// per the JMA technical format documentation).
@@ -100,15 +112,37 @@ pub enum SupportedVolumeFormat {
 /// reads the first 512-byte tar header block (ustar magic at byte 257), and
 /// the DORADE check also validates the first descriptor block length against
 /// the buffer length — pass the full buffer when you have it; a short head
-/// prefix may sniff DORADE or a JMA tar as Level II. Anything unrecognized
-/// falls through to [`SupportedVolumeFormat::NexradLevel2`] so the error
-/// surfaces from the Archive II decoder, matching the historical routing
-/// chains.
+/// prefix may sniff DORADE or a JMA tar as Level II. An HDF5 container
+/// (signature at 0, or after a 512, 1024, ... byte user block) is told apart
+/// by content, which needs the whole file: it is opened (walking its groups
+/// and attributes), an ODIM `/what` group or a file without netCDF-4
+/// markers is [`SupportedVolumeFormat::OdimH5`], and a netCDF-4 file is
+/// [`SupportedVolumeFormat::CfRadial2`] with that layout
+/// ([`recast_radar_io_cfradial::cfradial_layout`]), else
+/// [`SupportedVolumeFormat::CfRadialNetcdf4`] (a netCDF-4 file with neither
+/// CfRadial layout included: the CfRadial decoder says so). A head too short
+/// to open sniffs as `OdimH5`.
+/// Anything unrecognized falls through to
+/// [`SupportedVolumeFormat::NexradLevel2`] so the error surfaces from the
+/// Archive II decoder, matching the historical routing chains.
 pub fn sniff_supported_volume_format(head: &[u8]) -> SupportedVolumeFormat {
     if dorade::looks_like_dorade_bytes(head) {
         SupportedVolumeFormat::Dorade
-    } else if hdf5lite::looks_like_hdf5_bytes(head) {
-        SupportedVolumeFormat::OdimH5
+    } else if hdf5::looks_like_hdf5_bytes(head) {
+        match hdf5::H5File::open(head) {
+            Ok(file) => match classify_hdf5(file) {
+                Hdf5Route::Odim(_) => SupportedVolumeFormat::OdimH5,
+                Hdf5Route::CfRadial(file) => match recast_radar_io_cfradial::cfradial_layout(&file)
+                {
+                    Some(recast_radar_io_cfradial::CfRadialLayout::CfRadial2) => {
+                        SupportedVolumeFormat::CfRadial2
+                    }
+                    _ => SupportedVolumeFormat::CfRadialNetcdf4,
+                },
+                Hdf5Route::Netcdf4Error(_) => SupportedVolumeFormat::CfRadialNetcdf4,
+            },
+            Err(_) => SupportedVolumeFormat::OdimH5,
+        }
     } else if recast_radar_io_cfradial::looks_like_netcdf3_bytes(head) {
         SupportedVolumeFormat::CfRadial
     } else if recast_radar_io_jma::looks_like_jma_tar_bytes(head) {
@@ -116,6 +150,38 @@ pub fn sniff_supported_volume_format(head: &[u8]) -> SupportedVolumeFormat {
     } else {
         SupportedVolumeFormat::NexradLevel2
     }
+}
+
+/// Where an opened HDF5 file goes.
+enum Hdf5Route<'a> {
+    Odim(hdf5::H5File<'a>),
+    CfRadial(Box<recast_radar_io_cfradial::Netcdf4File<'a>>),
+    Netcdf4Error(CfRadialError),
+}
+
+/// ODIM_H5 when the file has an ODIM `/what` group or no netCDF-4 markers;
+/// CfRadial otherwise, whatever its layout: a netCDF-4 file that is neither
+/// CfRadial 1 nor 2 (a gridded product, say) gets the CfRadial decoder's
+/// "neither CfRadial 1 nor CfRadial 2" error rather than the ODIM decoder's
+/// "no /what group". The file is opened once and handed on.
+fn classify_hdf5(file: hdf5::H5File<'_>) -> Hdf5Route<'_> {
+    if file.has_object("/what") || !hdf5::netcdf4::is_netcdf4(&file) {
+        return Hdf5Route::Odim(file);
+    }
+    match recast_radar_io_cfradial::Netcdf4File::from_hdf5(file) {
+        Ok(netcdf) => Hdf5Route::CfRadial(Box::new(netcdf)),
+        Err(err) => Hdf5Route::Netcdf4Error(err.into()),
+    }
+}
+
+/// Decode an HDF5 container by content (see [`classify_hdf5`]).
+fn decode_hdf5(bytes: &[u8]) -> Result<Volume, IoError> {
+    let file = hdf5::H5File::open(bytes).map_err(OdimError::from)?;
+    Ok(match classify_hdf5(file) {
+        Hdf5Route::Odim(file) => odim::read_odim_hdf5_volume(file)?,
+        Hdf5Route::CfRadial(file) => recast_radar_io_cfradial::read_cfradial_netcdf4(&file)?,
+        Hdf5Route::Netcdf4Error(err) => return Err(IoError::CfRadial(err)),
+    })
 }
 
 /// Format-specific metadata decoded beside a [`Volume`]: typed structs the
@@ -138,8 +204,9 @@ pub struct Decoded {
 }
 
 /// Decode any supported single-buffer radar container by magic bytes:
-/// DORADE → ODIM_H5 (HDF5) → CfRadial 1.x (classic netCDF) → JMA GRIB2 tar
-/// → NEXRAD Archive II fallback.
+/// DORADE → HDF5 (ODIM_H5, or netCDF-4 CfRadial 1.x or 2 by content) →
+/// CfRadial 1.x (classic netCDF) → JMA GRIB2 tar → NEXRAD Archive II
+/// fallback.
 ///
 /// This is the one shared router for bytes of unknown provenance (local
 /// file open, custom URL polling, international feed downloads). Errors are
@@ -207,9 +274,20 @@ fn route(original: &[u8], with_metadata: bool) -> Result<Decoded, IoError> {
     let unwrapped = unwrap_containers(original)?;
     let raw = unwrapped.raw(original);
     let sniff_bytes = unwrapped.sniff(original);
-    let volume = match sniff_supported_volume_format(sniff_bytes) {
+    // HDF5 is classified by content once the file is open; sniffing first
+    // would open it twice.
+    let format = if !dorade::looks_like_dorade_bytes(sniff_bytes)
+        && hdf5::looks_like_hdf5_bytes(sniff_bytes)
+    {
+        SupportedVolumeFormat::OdimH5
+    } else {
+        sniff_supported_volume_format(sniff_bytes)
+    };
+    let volume = match format {
         SupportedVolumeFormat::Dorade => dorade::read_dorade_sweep_volume(sniff_bytes)?,
-        SupportedVolumeFormat::OdimH5 => odim::read_odim_h5_volume(sniff_bytes)?,
+        SupportedVolumeFormat::OdimH5
+        | SupportedVolumeFormat::CfRadialNetcdf4
+        | SupportedVolumeFormat::CfRadial2 => decode_hdf5(sniff_bytes)?,
         SupportedVolumeFormat::CfRadial => {
             recast_radar_io_cfradial::read_cfradial1_volume(sniff_bytes)?
         }
@@ -375,14 +453,29 @@ mod tests {
                 "dorade-noxp-20090501-190244-ppi",
                 SupportedVolumeFormat::Dorade,
             ),
-            // format odim-h5, and netCDF-4 CfRadial (an HDF5 container)
+            // format odim-h5 (HDF5 without netCDF-4 markers; also behind a
+            // 512-byte user block)
             (
                 "odim-bejab-20190606-0000-pvol",
                 SupportedVolumeFormat::OdimH5,
             ),
             (
-                "cfrad1-xsapr-sgp-20110520-ppi-netcdf4",
+                "odim-dkrom-20260820-1130-pvol-h5latest-trim",
                 SupportedVolumeFormat::OdimH5,
+            ),
+            // HDF5 containers told apart by content: netCDF-4 CfRadial 1
+            // (root time/range dimensions) and CfRadial 2 (sweep groups)
+            (
+                "cfrad1-xsapr-sgp-20110520-ppi-netcdf4",
+                SupportedVolumeFormat::CfRadialNetcdf4,
+            ),
+            (
+                "cfrad2-radx-irene-sr2-20110827-120420-sur-r30km",
+                SupportedVolumeFormat::CfRadial2,
+            ),
+            (
+                "cfrad2-xradar-xsapr-sgp-20110520-ppi",
+                SupportedVolumeFormat::CfRadial2,
             ),
             // format cfradial1 (classic netCDF)
             (
@@ -417,6 +510,13 @@ mod tests {
             assert_eq!(sniff_supported_volume_format(&corpus(id)), expected, "{id}");
         }
 
+        // Telling HDF5 containers apart needs the whole file: a netCDF-4
+        // head too short to open sniffs as ODIM (whose decoder reports it).
+        let netcdf4 = corpus("cfrad1-xsapr-sgp-20110520-ppi-netcdf4");
+        assert_eq!(
+            sniff_supported_volume_format(&netcdf4[..4096]),
+            SupportedVolumeFormat::OdimH5
+        );
         // A JMA tar needs its first 512-byte header block.
         let jma = corpus("jma-n5-20191012-090000-rs47773");
         assert_eq!(
@@ -516,7 +616,7 @@ mod tests {
             recast_radar_testdata::sha256_hex(&member),
             "3d5bac474eaefed70d82a6567c26ab93d992e1118c7c5a50888e36e952c2a75a"
         );
-        assert!(hdf5lite::looks_like_hdf5_bytes(&member));
+        assert!(hdf5::looks_like_hdf5_bytes(&member));
 
         // The router decodes the unwrapped ODIM PVOL exactly like the direct
         // decoder. h5py: source RAD:AU24,PLC:Bowen; 10 sweeps, stored from
@@ -538,5 +638,42 @@ mod tests {
         assert_eq!(routed.sweeps[9].nrays(), 360);
         assert_eq!(routed.sweeps[9].range.ngates(), 958);
         assert_eq!(routed, direct);
+    }
+
+    /// A netCDF-4 file with neither CfRadial layout (a gridded product, say)
+    /// goes to the CfRadial decoder, whose error says what the file is not.
+    /// It went to the ODIM decoder, whose "no /what group" error told the
+    /// caller to use the router the call had come through.
+    #[test]
+    fn a_netcdf4_file_without_a_cfradial_layout_gets_the_cfradial_error() {
+        use hdf5::write::Data;
+        use hdf5::write::netcdf4::{NcAttr, NcStorage, NcVariable, NcWriter};
+
+        let mut nc = NcWriter::new();
+        let root = nc.root();
+        nc.add_dim(root, "x", 3).expect("dimension");
+        nc.add_variable(
+            root,
+            NcVariable {
+                name: "x".into(),
+                dims: vec!["x".into()],
+                data: Data::F32(vec![-1000.0, 0.0, 1000.0]),
+                attrs: vec![("units".into(), NcAttr::Text("m".into()))],
+                storage: NcStorage::Contiguous,
+            },
+        )
+        .expect("variable");
+        let bytes = nc.finish().expect("netCDF-4 bytes");
+        assert_eq!(
+            sniff_supported_volume_format(&bytes),
+            SupportedVolumeFormat::CfRadialNetcdf4
+        );
+        let err = read_supported_volume_bytes(&bytes).expect_err("not a radar volume");
+        assert!(matches!(err, IoError::CfRadial(_)), "{err}");
+        assert!(
+            err.to_string()
+                .contains("neither CfRadial 1 (root time/range dimensions) nor CfRadial 2"),
+            "{err}"
+        );
     }
 }

@@ -369,8 +369,9 @@ fn iesha_how_constants_per_dataset() {
         per_ray(&sweep.ray_vars.calib_index, rays, entry);
         per_ray(&sweep.ray_vars.pulse_width_s, rays, width);
         assert_eq!(sweep.target_scan_rate_deg_per_s, Some(rate));
-        // The other 25 dataset attributes stay verbatim; startazA/stopazA are
-        // the ray azimuths.
+        // The other 25 how attributes stay verbatim with the dataset's what
+        // group and where/a1gate; startazA/stopazA (the ray azimuths are
+        // their means) stay too.
         assert_eq!(
             names(&sweep.other),
             [
@@ -387,10 +388,13 @@ fn iesha_how_constants_per_dataset() {
                 "TXlossV",
                 "VPRCorr",
                 "Vsamples",
+                "a1gate",
                 "anglesync",
                 "anglesyncRes",
                 "astart",
                 "clutterType",
+                "enddate",
+                "endtime",
                 "highprf",
                 "lowprf",
                 "polmode",
@@ -400,6 +404,10 @@ fn iesha_how_constants_per_dataset() {
                 "radomelossV",
                 "scan_count",
                 "scan_index",
+                "startazA",
+                "startdate",
+                "starttime",
+                "stopazA",
             ],
             "sweep {index}"
         );
@@ -458,7 +466,17 @@ fn dkrom_how_constants_from_the_root() {
         // Per-ray angles and times written as text stay verbatim.
         assert_eq!(
             names(&sweep.other),
-            ["azangels", "aztimes", "elangels", "product"]
+            [
+                "a1gate",
+                "azangels",
+                "aztimes",
+                "elangels",
+                "enddate",
+                "endtime",
+                "product",
+                "startdate",
+                "starttime"
+            ]
         );
     }
     let azangels = attr(&volume.sweeps[0].other, "azangels").as_text().unwrap();
@@ -529,7 +547,34 @@ fn espdg_how_constants_and_unconverted_values() {
         assert_eq!(sweep.ray_vars.pulse_width_s, None);
         assert_eq!(sweep.target_scan_rate_deg_per_s, Some(16.0), "antspeed");
         per_ray(&sweep.ray_vars.nyquist_velocity_mps, rays, 39.9217);
-        assert_eq!(names(&sweep.other), ["product", "scan_index"]);
+        // where/rstart is in metres (200), as ODIM_H5 v2.4 states it: the
+        // range coordinate holds it. The start and stop angle arrays the ray
+        // coordinates are means of stay verbatim.
+        assert_eq!(
+            names(&sweep.other),
+            [
+                "a1gate",
+                "enddate",
+                "endtime",
+                "product",
+                "scan_index",
+                "startazA",
+                "startdate",
+                "startelA",
+                "starttime",
+                "stopazA",
+                "stopelA"
+            ]
+        );
+        let recast_radar_core::model::RangeCoord::Uniform {
+            first_center_m,
+            spacing_m,
+            ..
+        } = sweep.range
+        else {
+            panic!("uniform range");
+        };
+        assert_eq!(first_center_m - spacing_m / 2.0, 200.0);
     }
     let root = &volume.attrs.other;
     assert_eq!(
@@ -590,7 +635,19 @@ fn norst_how_constants_with_older_names() {
     let expected: Vec<Option<f32>> = rpm.iter().map(|rpm| Some((rpm * 6.0) as f32)).collect();
     assert_eq!(rates, expected);
     for sweep in &volume.sweeps {
-        assert_eq!(names(&sweep.other), ["NEZ", "product", "radarconstH"]);
+        assert_eq!(
+            names(&sweep.other),
+            [
+                "NEZ",
+                "a1gate",
+                "enddate",
+                "endtime",
+                "product",
+                "radarconstH",
+                "startdate",
+                "starttime"
+            ]
+        );
         assert_eq!(attr(&sweep.other, "radarconstH"), &f64_attr(10.9826));
         assert_eq!(attr(&sweep.other, "NEZ"), &f64_attr(0.0));
         assert_eq!(sweep.ray_vars.pulse_width_s, None);

@@ -32,7 +32,7 @@ pub use sweep::{
     FollowMode, GeometryError, Monitoring, PlatformTrack, PolarizationMode, PrtMode, PrtSequence,
     RangeCoord, RayVariables, Rays, Sweep, SweepError, SweepMode,
 };
-pub use values::{ArrayBuf, AttrValue, ExtraVariable, Scalar};
+pub use values::{ArrayBuf, AttrValue, ExtraVariable, Scalar, VariableAttrs};
 pub use volume::{
     DecodeStats, GeoreferencingCorrection, GlobalAttrs, InstrumentType, Location, PlatformType,
     PrimaryAxis, Provenance, RadarCalibration, RadarParameters, ScanDefinition, ScanLeg,

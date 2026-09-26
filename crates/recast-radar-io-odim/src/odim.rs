@@ -15,29 +15,52 @@
 //! and 8.1), following what xradar's `open_odim_datatree` returns for the
 //! same file:
 //! - One sweep per `datasetN` in file order; every `dataM` plane is a field
-//!   named by its `what/quantity` verbatim (`DBZH`, `TH`, `VRAD`, ...).
-//! - Planes keep their stored encoding: `u8`/`u16` with the CF packing
-//!   `physical = gain * raw + offset` and `nodata` as `_FillValue`,
-//!   `undetect` as `_Undetect` (kept distinct; Table 301-10); `float32` and
-//!   `float64` planes verbatim with their sentinels as float codings.
-//! - Ray azimuths are `(how/startazA + how/stopazA) / 2` when present, else
-//!   the storage-order centres `(i + 0.5) * 360 / nrays`; ray elevations
+//!   named by its `what/quantity` verbatim (`DBZH`, `TH`, `VRAD`, ...); a
+//!   second plane of the same quantity is kept as `<quantity>_<dataM>`.
+//! - Planes keep their stored encoding: `u8`, `i8`, `u16`, `i16` and `i32`
+//!   with the CF packing `physical = gain * raw + offset` and `nodata` as
+//!   `_FillValue`, `undetect` as `_Undetect` (kept distinct; Table 301-10);
+//!   `float32` and `float64` planes verbatim with their sentinels as float
+//!   codings. `u32`, `i64` and `u64` planes (no writer seen) widen to
+//!   `float64` codes, the model having no wider integer storage.
+//! - Quality groups are quality fields (Table 301-10 `is_quality_field`,
+//!   `qualified_variables`): a plane's `dataM/qualityK` is
+//!   `<quantity>_qualityK` and qualifies that plane, a dataset's
+//!   `qualityK` is `qualityK` and qualifies every plane; each qualified
+//!   field lists them in `ancillary_variables`. Their `what/quantity`
+//!   (QIND, CLASS, ...) and `how/task` stay among their attributes.
+//! - A `legend` dataset (ODIM_H5 v2.4 key/value strings, or FMI's
+//!   code/class compound) and an enumerated plane (h5py's `bool` quality
+//!   flags) become `flag_values`/`flag_meanings`.
+//! - Ray azimuths are `(how/startazA + how/stopazA) / 2` when present
+//!   (wrapped into [0, 360); a non-finite mean is kept as it is; without a
+//!   `stopazA` of one angle per ray, each ray stops where the next starts),
+//!   else the storage-order centres `(i + 0.5) * 360 / nrays`; ray elevations
 //!   `(how/startelA + how/stopelA) / 2`, else `how/elangles`, else
 //!   `where/elangle`; ray times `(how/startazT + how/stopazT) / 2`, else
 //!   spread evenly between `what/starttime` and `endtime` starting at
-//!   `where/a1gate` (all rays at `starttime` when the two are equal).
-//! - The `range` coordinate holds gate centres: `rstart` (km to the start of
-//!   the first bin) plus half a `rscale` (bin spacing in metres). Implausibly
-//!   large `rstart` values are reinterpreted as metres — see
-//!   `first_gate_m_from_rstart` for the writer quirk that requires it.
+//!   `where/a1gate` (all rays at `starttime` when the two are equal). The
+//!   `how` arrays a coordinate is read from also stay verbatim in
+//!   `Sweep::other`: a mean does not give back the start and stop angles.
+//! - The `range` coordinate holds gate centres: `rstart` (the start of the
+//!   first bin: metres in ODIM_H5 v2.4, km before) plus half a `rscale` (bin
+//!   spacing in metres). Implausibly large km values are reinterpreted as
+//!   metres — see `first_gate_m_from_rstart`.
 //! - `nyquist_velocity(time)` broadcasts `how/NI` (dataset, else root).
-//! - Every `how` attribute a coordinate or a typed slot does not take is
-//!   kept verbatim (`Volume::attrs.other` for the root group,
-//!   `Sweep::other` for a dataset group), whatever its length: only the
-//!   arrays a ray coordinate is actually built from are held back, so a
-//!   per-ray array this decoder has no slot for (`TXpower`,
+//! - Every attribute a coordinate or a typed slot does not take is kept
+//!   verbatim, whatever its datatype (string arrays, compound members as
+//!   `name.member`, references as the target path, enums by member name,
+//!   anything else as bytes): the root group's and the root `what`,
+//!   `where` and `how` groups' in `Volume::attrs.other`, a dataset's in
+//!   `Sweep::other`, a plane's or quality group's in `Field::attrs.other`.
+//!   Attributes of a nested group (DWD `how/radar_system`, SMHI
+//!   `how/process_chain`) are `<group>.<name>`, those of any other group
+//!   too, and a name the level already has is written `<what|where|how>.<name>`.
+//!   Only the arrays a ray coordinate is actually built from are held back,
+//!   so a per-ray array this decoder has no slot for (`TXpower`,
 //!   `startelT`/`stopelT`) reaches the model instead of being dropped for
-//!   having one entry per ray.
+//!   having one entry per ray. `tests/odim_every_value.rs` checks every
+//!   attribute and plane of the corpus against h5py.
 //! - Planes are stored verbatim (design note 7.2): no rewrite pass, so the
 //!   raw arrays hash equal to xradar's. Some IRIS exporters (AEMET Spain,
 //!   IRIS 10.3) copy the REFLECTIVITY `what` group onto the velocity plane —
@@ -53,9 +76,9 @@
 //!   distinct velocity sentinels, are untouched.
 //!
 //! Known limitations (explicit, not silent): non-polar objects (ELEV/RHI
-//! cross-section products, CVOL, IMAGE) are rejected with a clear error;
-//! 8/16-bit unsigned and float data planes are supported (the only types
-//! OPERA members emit).
+//! cross-section products, CVOL, IMAGE) are rejected with a clear error; a
+//! plane whose shape differs from the dataset's first plane (malformed per
+//! ODIM_H5) is skipped and counted in `skipped_message_count`.
 
 use std::collections::BTreeSet;
 
@@ -64,23 +87,33 @@ use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_swee
 use recast_radar_core::model::{
     ArrayBuf, AttrValue, Field, FieldData, FieldName, FloatCoding, FloatWidth, FollowMode,
     GateMapping, IntCoding, LinearTransform, PackedInt, Quantity, RadarCalibration,
-    RadarParameters, RangeCoord, Scalar, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
+    RadarParameters, RangeCoord, SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
 };
 
-pub use crate::hdf5lite::looks_like_hdf5_bytes;
-use crate::hdf5lite::{H5Attr, H5Data, H5File};
+use crate::h5::{H5Attr, H5Data, H5Dataset, H5File};
+use crate::tables::Level;
 use crate::{OdimError, Result};
+pub use recast_radar_hdf5::looks_like_hdf5_bytes;
 
 /// Decode an ODIM_H5 PVOL/SCAN byte buffer into the FM301 model.
 pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
-    let file = H5File::open(bytes)?;
+    decode(&H5File::open(bytes)?)
+}
+
+/// [`read_odim_h5_volume`] for an HDF5 file already opened (the format
+/// router opens a file once to tell ODIM from netCDF-4).
+pub fn read_odim_hdf5_volume(file: recast_radar_hdf5::H5File<'_>) -> Result<Volume> {
+    decode(&H5File::from_hdf5(file)?)
+}
+
+fn decode(file: &H5File<'_>) -> Result<Volume> {
     let object = file
         .attr("/what", "object")
         .and_then(|attr| attr.as_str().map(str::to_owned))
         .ok_or_else(|| {
             invalid(
-                "HDF5 file has no /what 'object' attribute — not ODIM_H5 \
-                 (CfRadial2/other HDF5 radar formats are not supported yet)",
+                "HDF5 file has no /what 'object' attribute, so it is not ODIM_H5 \
+                 (netCDF-4 CfRadial decodes with recast_radar_io_cfradial)",
             )
         })?;
     if object != "PVOL" && object != "SCAN" {
@@ -94,7 +127,7 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
         .and_then(|attr| attr.as_str().map(str::to_owned))
         .unwrap_or_default();
     let identity = site_identity_from_source(&source);
-    let nominal_time = parse_datetime(&file, "/what");
+    let nominal_time = parse_datetime(file, "/what");
     let mut volume = Volume::new(
         identity.id,
         nominal_time.unwrap_or(DateTime::<Utc>::UNIX_EPOCH),
@@ -103,9 +136,11 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
     volume.attrs.source = (!source.is_empty()).then_some(source);
     volume.attrs.wmo.id = identity.wmo;
     volume.attrs.wmo.wsi = identity.wigos;
-    volume.location.latitude_deg = attr_f64(&file, "/where", "lat");
-    volume.location.longitude_deg = attr_f64(&file, "/where", "lon");
-    volume.location.altitude_m = attr_f64(&file, "/where", "height");
+    // A NaN location (a writer without one) is no location.
+    let finite = |name: &str| attr_f64(file, "/where", name).filter(|value| value.is_finite());
+    volume.location.latitude_deg = finite("lat");
+    volume.location.longitude_deg = finite("lon");
+    volume.location.altitude_m = finite("height");
     volume.provenance.source_format = SourceFormat::OdimH5;
     volume.provenance.source_version = file
         .attr("/what", "version")
@@ -115,18 +150,15 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
         .attr("/", "Conventions")
         .and_then(|attr| attr.as_str().map(str::to_owned));
     volume.provenance.compression = Some("odim-h5".to_owned());
-    if let Some(mhz) = odim_radar_frequency_mhz(&file) {
+    if let Some(mhz) = odim_radar_frequency_mhz(file) {
         volume.radar_parameters.frequency_hz = vec![mhz * 1e6];
     }
-    let root_how = How::read(&file, "/how");
+    let root_how = How::read(file, "/how");
 
     let mut dataset_names: Vec<String> = file
         .child_names("/")
         .into_iter()
-        .filter(|name| {
-            name.strip_prefix("dataset")
-                .is_some_and(|rest| rest.parse::<u32>().is_ok())
-        })
+        .filter(|name| is_numbered(name, "dataset"))
         .collect();
     dataset_names.sort_by_key(|name| name[7..].parse::<u32>().unwrap_or(u32::MAX));
     if dataset_names.is_empty() {
@@ -134,7 +166,7 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
     }
     check_sweep_count(dataset_names.len(), "ODIM_H5 volume").map_err(OdimError::LimitExceeded)?;
 
-    let first_how = How::read(&file, &format!("/{}/how", dataset_names[0]));
+    let first_how = How::read(file, &format!("/{}/how", dataset_names[0]));
     let mut root_used = describe_volume(&root_how, &first_how, &mut volume);
 
     let mut budget = DecodeBudget::volume();
@@ -144,7 +176,7 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
     let mut skipped_planes = 0usize;
     for (index, name) in dataset_names.iter().enumerate() {
         let (mut sweep, times) = decode_sweep(
-            &file,
+            file,
             name,
             index,
             &root_how,
@@ -160,13 +192,9 @@ pub fn read_odim_h5_volume(bytes: &[u8]) -> Result<Volume> {
         }
         volume.sweeps.push(sweep.sweep);
     }
-    // The root `what/object` (PVOL or SCAN) and the root `how` attributes no
-    // typed slot holds, verbatim. `what/version` is `source_version`.
-    volume.attrs.other = root_how.unused(&root_used);
-    volume.attrs.other.insert(
-        0,
-        ("object".into(), AttrValue::Text(object.as_str().into())),
-    );
+    // Every root attribute no typed slot holds, verbatim.
+    volume.attrs.other = root_passthrough(file, nominal_time.is_some(), &root_how, &root_used);
+    charge_attrs(&mut budget, &volume.attrs.other)?;
 
     // Time reference: the nominal volume time, else the earliest ray.
     if nominal_time.is_none() {
@@ -255,10 +283,7 @@ fn decode_sweep(
     let mut data_names: Vec<String> = file
         .child_names(&format!("/{dataset}"))
         .into_iter()
-        .filter(|name| {
-            name.strip_prefix("data")
-                .is_some_and(|rest| rest.parse::<u32>().is_ok())
-        })
+        .filter(|name| is_numbered(name, "data"))
         .collect();
     data_names.sort_by_key(|name| name[4..].parse::<u32>().unwrap_or(u32::MAX));
     if data_names.is_empty() {
@@ -286,7 +311,7 @@ fn decode_sweep(
     } else {
         1.0
     };
-    let first_center_m = f64::from(first_gate_m_from_rstart(rstart_km)) + spacing_m / 2.0;
+    let first_center_m = first_gate_m_from_rstart(rstart_km, rstart_unit(file)) + spacing_m / 2.0;
 
     let mut sweep = Sweep::new(index as u32, SweepMode::AzimuthSurveillance, elangle);
     sweep.follow_mode = Some(FollowMode::None);
@@ -305,23 +330,17 @@ fn decode_sweep(
         .charge(nrays, 4 * size_of::<f64>(), "ODIM_H5 sweep rays")
         .map_err(OdimError::LimitExceeded)?;
 
-    // Ray coordinates (xradar's rules; module docs). `ray_used` collects the
-    // `how` arrays a coordinate is actually read from, so the rest of the
-    // group - including a per-ray array this decoder has no slot for - still
-    // reaches `sweep.other`.
-    let mut ray_used: BTreeSet<&'static str> = BTreeSet::new();
+    // Ray coordinates (xradar's rules; module docs). The `how` arrays they
+    // are read from stay in `sweep.other` too: a coordinate is a mean (or a
+    // float32) of them, which does not give the arrays back.
     sweep.rays.azimuth_deg = match (
         attr_array(file, &how_path, "startazA"),
         attr_array(file, &how_path, "stopazA"),
     ) {
-        (Some(start), stop)
-            if start.len() == nrays && stop.as_ref().is_none_or(|s| s.len() == nrays) =>
-        {
-            ray_used.insert("startazA");
-            if stop.is_some() {
-                ray_used.insert("stopazA");
-            }
-            let stop = stop.unwrap_or_else(|| {
+        (Some(start), stop) if start.len() == nrays => {
+            // Without a `stopazA` of one angle per ray, each ray stops where
+            // the next starts.
+            let stop = stop.filter(|stop| stop.len() == nrays).unwrap_or_else(|| {
                 let mut next: Vec<f64> = start[1..].to_vec();
                 next.push(start[0] + 360.0);
                 next
@@ -331,11 +350,7 @@ fn decode_sweep(
                 .zip(&stop)
                 .map(|(start, stop)| {
                     let stop = if *stop < *start { stop + 360.0 } else { *stop };
-                    let mut azimuth = (start + stop) / 2.0;
-                    if azimuth >= 360.0 {
-                        azimuth -= 360.0;
-                    }
-                    azimuth as f32
+                    azimuth_f32(mean(*start, stop))
                 })
                 .collect()
         }
@@ -347,18 +362,13 @@ fn decode_sweep(
         attr_array(file, &how_path, "startelA"),
         attr_array(file, &how_path, "stopelA"),
     ) {
-        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => {
-            ray_used.insert("startelA");
-            ray_used.insert("stopelA");
-            start
-                .iter()
-                .zip(&stop)
-                .map(|(start, stop)| ((start + stop) / 2.0) as f32)
-                .collect()
-        }
+        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => start
+            .iter()
+            .zip(&stop)
+            .map(|(start, stop)| mean(*start, *stop) as f32)
+            .collect(),
         _ => match attr_array(file, &how_path, "elangles") {
             Some(angles) if angles.len() == nrays => {
-                ray_used.insert("elangles");
                 angles.iter().map(|angle| *angle as f32).collect()
             }
             _ => vec![elangle; nrays],
@@ -368,32 +378,18 @@ fn decode_sweep(
         attr_array(file, &how_path, "startazT"),
         attr_array(file, &how_path, "stopazT"),
     ) {
-        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => {
-            ray_used.insert("startazT");
-            ray_used.insert("stopazT");
-            start
-                .iter()
-                .zip(&stop)
-                .map(|(start, stop)| (start + stop) / 2.0)
-                .collect()
-        }
+        (Some(start), Some(stop)) if start.len() == nrays && stop.len() == nrays => start
+            .iter()
+            .zip(&stop)
+            .map(|(start, stop)| mean(*start, *stop))
+            .collect(),
         _ => ray_times_from_what(file, &what_path, &where_path, nrays),
     };
 
-    // The dataset's `what/product` (SCAN) and every `how` attribute no typed
-    // slot and no ray coordinate holds, verbatim - a per-ray array this
-    // decoder does not read included.
-    let mut sweep_used = dataset_used;
-    sweep_used.extend(ray_used);
-    sweep.other = how.unused(&sweep_used);
-    if let Some(product) = file
-        .attr(&what_path, "product")
-        .and_then(|attr| attr.as_str().map(str::to_owned))
-    {
-        sweep
-            .other
-            .insert(0, ("product".into(), AttrValue::Text(product.into())));
-    }
+    // Every dataset attribute no typed slot holds, verbatim: the per-ray
+    // `how` arrays included, those the ray coordinates are read from too.
+    sweep.other = dataset_passthrough(file, dataset, (nrays, nbins), &how, &dataset_used);
+    charge_attrs(budget, &sweep.other)?;
     sweep.rays.time_s = vec![0.0; nrays];
     if let Some(nyquist) = nyquist {
         sweep.ray_vars.nyquist_velocity_mps = Some(vec![nyquist; nrays]);
@@ -402,56 +398,222 @@ fn decode_sweep(
         sweep.ray_vars.pulse_width_s = Some(vec![pulse_width_s; nrays]);
     }
 
+    let shape = PlaneShape {
+        nrays,
+        nbins,
+        ngates,
+    };
     let mut skipped_planes = 0usize;
     let mut first_plane = Some(first_plane);
     for (plane_index, plane_name) in data_names.iter().enumerate() {
-        let plane_what = format!("/{dataset}/{plane_name}/what");
+        let plane_path = format!("/{dataset}/{plane_name}");
         let quantity = file
-            .attr(&plane_what, "quantity")
+            .attr(&format!("{plane_path}/what"), "quantity")
             .and_then(|attr| attr.as_str().map(str::to_owned))
             .unwrap_or_else(|| plane_name.to_uppercase());
-        let gain = attr_f64(file, &plane_what, "gain").unwrap_or(1.0);
-        let gain = if gain.abs() > 1.0e-9 { gain } else { 1.0 };
-        let offset = attr_f64(file, &plane_what, "offset").unwrap_or(0.0);
-        let nodata = attr_f64(file, &plane_what, "nodata");
-        let undetect = attr_f64(file, &plane_what, "undetect");
         let plane = match (plane_index, first_plane.take()) {
             (0, Some(plane)) => plane,
-            _ => file.dataset(&format!("/{dataset}/{plane_name}/data"))?,
+            _ => file.dataset(&format!("{plane_path}/data"))?,
         };
-        if plane.dims.as_slice() != [nrays, nbins] {
-            skipped_planes += 1;
-            continue;
-        }
-        let name = FieldName::parse(&quantity);
+        let mut name = FieldName::parse(&quantity);
         if sweep.field(&name).is_some() {
-            // A second plane of the same quantity: malformed; the first wins.
+            // A second plane of the same quantity (malformed): kept under
+            // `<quantity>_<dataM>`; the first plane keeps the name.
+            name = FieldName::parse(&format!("{quantity}_{plane_name}"));
+        }
+        let Some(mut field) = plane_field(file, &plane_path, plane, name, &shape, budget)? else {
             skipped_planes += 1;
             continue;
-        }
-
-        let word_bytes = match &plane.data {
-            H5Data::U8(_) => 1,
-            H5Data::U16(_) => 2,
-            H5Data::F32(_) => 4,
-            H5Data::F64(_) => 8,
         };
-        budget
-            .charge(nrays, nbins.saturating_mul(word_bytes), "ODIM_H5 field")
-            .map_err(OdimError::LimitExceeded)?;
+        if field.name == FieldName::Th {
+            // ODIM TH is logarithmic total power in dBZ (design note 8.2,
+            // note 1), whatever FM301 Table 301-9 says about the spelling.
+            field.quantity = Quantity::TotalPower;
+            field.attrs.units = Some("dBZ".into());
+        }
+        // The plane's own quality groups (`dataM/qualityK`).
+        let mut quality_fields = Vec::new();
+        for quality in quality_names(file, &plane_path) {
+            let quality_name = FieldName::parse(&format!("{}_{quality}", field.name.as_str()));
+            match quality_field(
+                file,
+                &format!("{plane_path}/{quality}"),
+                quality_name,
+                vec![field.name.clone()],
+                &shape,
+                budget,
+            )? {
+                Some(quality) => quality_fields.push(quality),
+                None => skipped_planes += 1,
+            }
+        }
+        field
+            .attrs
+            .ancillary_variables
+            .extend(quality_fields.iter().map(|quality| quality.name.clone()));
+        for field in std::iter::once(field).chain(quality_fields) {
+            if sweep.field(&field.name).is_some() {
+                skipped_planes += 1;
+                continue;
+            }
+            sweep
+                .add_field(field)
+                .map_err(|err| invalid(format!("{dataset}/{plane_name}: {err}")))?;
+        }
+    }
+    // Dataset quality groups (`datasetN/qualityK`) qualify every plane.
+    let data_fields: Vec<FieldName> = sweep
+        .fields
+        .iter()
+        .filter(|field| field.attrs.is_quality_field != Some(true))
+        .map(|field| field.name.clone())
+        .collect();
+    for quality in quality_names(file, &format!("/{dataset}")) {
+        let name = FieldName::parse(&quality);
+        let built = quality_field(
+            file,
+            &format!("/{dataset}/{quality}"),
+            name,
+            data_fields.clone(),
+            &shape,
+            budget,
+        )?;
+        let Some(field) = built.filter(|field| sweep.field(&field.name).is_none()) else {
+            skipped_planes += 1;
+            continue;
+        };
+        for data_field in &data_fields {
+            if let Some(qualified) = sweep.field_mut(data_field) {
+                qualified.attrs.ancillary_variables.push(field.name.clone());
+            }
+        }
+        sweep
+            .add_field(field)
+            .map_err(|err| invalid(format!("{dataset}/{quality}: {err}")))?;
+    }
+    Ok((
+        DecodedSweep {
+            sweep,
+            skipped_planes,
+            calibration,
+            root_used,
+        },
+        times,
+    ))
+}
+
+/// Charge passthrough attributes to the volume's decode budget by the memory
+/// they hold: an HDF5 attribute may be 16 MiB of bytes, and widening or
+/// splitting it into strings multiplies that.
+fn charge_attrs(budget: &mut DecodeBudget, attrs: &[(Box<str>, AttrValue)]) -> Result<()> {
+    let bytes: usize = attrs
+        .iter()
+        .map(|(name, value)| name.len().saturating_add(attr_bytes(value)))
+        .fold(0usize, usize::saturating_add);
+    budget
+        .charge(1, bytes, "ODIM_H5 attributes")
+        .map_err(OdimError::LimitExceeded)
+}
+
+/// Heap bytes an attribute value holds (a text element also costs its box).
+fn attr_bytes(value: &AttrValue) -> usize {
+    const BOX: usize = size_of::<Box<str>>();
+    match value {
+        AttrValue::Text(text) => text.len(),
+        AttrValue::Bool(_) | AttrValue::Scalar(_) => 0,
+        AttrValue::Array(ArrayBuf::Text(texts)) => texts
+            .iter()
+            .map(|text| text.len().saturating_add(BOX))
+            .fold(0usize, usize::saturating_add),
+        AttrValue::Array(array) => {
+            let width = match array {
+                ArrayBuf::I8(_) | ArrayBuf::U8(_) => 1,
+                ArrayBuf::I16(_) | ArrayBuf::U16(_) => 2,
+                ArrayBuf::I32(_) | ArrayBuf::U32(_) | ArrayBuf::F32(_) => 4,
+                _ => 8,
+            };
+            array.len().saturating_mul(width)
+        }
+    }
+}
+
+/// The shape every plane of a dataset shares.
+struct PlaneShape {
+    nrays: usize,
+    nbins: usize,
+    ngates: u32,
+}
+
+/// A plane group's `what` coding: `gain` (0 reads as 1) and `offset`, and
+/// the `nodata` and `undetect` codes.
+struct PlaneCoding {
+    gain: f64,
+    offset: f64,
+    nodata: Option<f64>,
+    undetect: Option<f64>,
+}
+
+impl PlaneCoding {
+    fn read(file: &H5File<'_>, what: &str) -> Self {
+        let gain = attr_f64(file, what, "gain").unwrap_or(1.0);
+        Self {
+            gain: if gain.abs() > 1.0e-9 { gain } else { 1.0 },
+            offset: attr_f64(file, what, "offset").unwrap_or(0.0),
+            nodata: attr_f64(file, what, "nodata"),
+            undetect: attr_f64(file, what, "undetect"),
+        }
+    }
+
+    /// The `what` attributes this coding holds exactly: `gain` unless it
+    /// was 0, `offset`, and `nodata`/`undetect` when the plane's storage
+    /// type represents them (a code the type cannot hold stays verbatim).
+    fn slotted(&self, file: &H5File<'_>, what: &str, data: &H5Data) -> BTreeSet<&'static str> {
+        let mut slotted = BTreeSet::new();
+        if attr_f64(file, what, "offset").is_some() {
+            slotted.insert("offset");
+        }
+        if attr_f64(file, what, "gain").is_some_and(|gain| gain == self.gain) {
+            slotted.insert("gain");
+        }
+        for (name, code) in [("nodata", self.nodata), ("undetect", self.undetect)] {
+            if code.is_some_and(|code| data.holds(code)) {
+                slotted.insert(name);
+            }
+        }
+        slotted
+    }
+
+    /// The field data of `data` with this coding: integer planes with the
+    /// CF packing `physical = gain * raw + offset`, `nodata` as
+    /// `_FillValue` and `undetect` as `_Undetect`; float planes verbatim
+    /// (the packing only when it is not the identity).
+    fn field_data(&self, data: H5Data) -> FieldData {
         let transform = LinearTransform::CfScaleOffset {
-            scale_factor: gain,
-            add_offset: offset,
+            scale_factor: self.gain,
+            add_offset: self.offset,
             attr_width: FloatWidth::F64,
         };
+        let (nodata, undetect) = (self.nodata, self.undetect);
         // Float planes with the identity packing hold physical values.
-        let float_transform = (gain != 1.0 || offset != 0.0).then_some(transform);
-        let data = match plane.data {
+        let float_transform = (self.gain != 1.0 || self.offset != 0.0).then_some(transform);
+        match data {
             H5Data::U8(values) => FieldData::U8 {
                 values,
                 coding: int_coding(transform, nodata, undetect),
             },
+            H5Data::I8(values) => FieldData::I8 {
+                values,
+                coding: int_coding(transform, nodata, undetect),
+            },
             H5Data::U16(values) => FieldData::U16 {
+                values,
+                coding: int_coding(transform, nodata, undetect),
+            },
+            H5Data::I16(values) => FieldData::I16 {
+                values,
+                coding: int_coding(transform, nodata, undetect),
+            },
+            H5Data::I32(values) => FieldData::I32 {
                 values,
                 coding: int_coding(transform, nodata, undetect),
             },
@@ -471,27 +633,337 @@ fn decode_sweep(
                     undetect,
                 },
             },
-        };
-        let mut field = Field::new(name, GateMapping::IDENTITY, ngates, data);
-        if field.name == FieldName::Th {
-            // ODIM TH is logarithmic total power in dBZ (design note 8.2,
-            // note 1), whatever FM301 Table 301-9 says about the spelling.
-            field.quantity = Quantity::TotalPower;
-            field.attrs.units = Some("dBZ".into());
         }
-        sweep
-            .add_field(field)
-            .map_err(|err| invalid(format!("{dataset}/{plane_name}: {err}")))?;
     }
-    Ok((
-        DecodedSweep {
-            sweep,
-            skipped_planes,
-            calibration,
-            root_used,
+}
+
+impl H5Data {
+    /// True when `code` is exactly representable in this storage type.
+    fn holds(&self, code: f64) -> bool {
+        fn exact<T: OdimCode>(code: f64) -> bool {
+            T::from_f64(code).as_f64() == code
+        }
+        match self {
+            Self::U8(_) => exact::<u8>(code),
+            Self::I8(_) => exact::<i8>(code),
+            Self::U16(_) => exact::<u16>(code),
+            Self::I16(_) => exact::<i16>(code),
+            Self::I32(_) => exact::<i32>(code),
+            Self::F32(_) => f64::from(code as f32) == code || code.is_nan(),
+            Self::F64(_) => true,
+        }
+    }
+}
+
+/// One `dataM` (or quality) plane group as a field named `name`: the
+/// `data` plane with its `what` coding, the group's other attributes
+/// verbatim ([`group_passthrough`]), and a `legend` or an enumerated
+/// datatype as `flag_values`/`flag_meanings`. `None` when the plane's shape
+/// is not the dataset's.
+fn plane_field(
+    file: &H5File<'_>,
+    path: &str,
+    plane: H5Dataset,
+    name: FieldName,
+    shape: &PlaneShape,
+    budget: &mut DecodeBudget,
+) -> Result<Option<Field>> {
+    if plane.dims.as_slice() != [shape.nrays, shape.nbins] {
+        return Ok(None);
+    }
+    budget
+        .charge(
+            shape.nrays,
+            shape.nbins.saturating_mul(plane.data.word_bytes()),
+            "ODIM_H5 field",
+        )
+        .map_err(OdimError::LimitExceeded)?;
+    let what = format!("{path}/what");
+    let coding = PlaneCoding::read(file, &what);
+    let mut slotted = coding.slotted(file, &what, &plane.data);
+    slotted.insert("quantity");
+    let other = group_passthrough(file, path, &slotted);
+    charge_attrs(budget, &other)?;
+    let legend = file
+        .legend(&format!("{path}/legend"))
+        .unwrap_or_else(|| plane.enum_members.clone());
+    let mut field = Field::new(
+        name,
+        GateMapping::IDENTITY,
+        shape.ngates,
+        coding.field_data(plane.data),
+    );
+    field.attrs.other = other;
+    for (code, meaning) in legend {
+        field.attrs.flag_values.push(code);
+        // CF flag meanings are blank-separated words.
+        let word = meaning.split_whitespace().collect::<Vec<_>>().join("_");
+        field.attrs.flag_meanings.push(word.into());
+    }
+    Ok(Some(field))
+}
+
+/// A quality group (`qualityK` of a plane or of a dataset) as a quality
+/// field (FM301 Table 301-10 `is_quality_field`, `qualified_variables`)
+/// named `name`; its `what/quantity` (QIND, CLASS, ...) and `how/task`
+/// stay among its attributes. `None` when its plane has another shape or cannot
+/// be read (the caller counts it as skipped).
+fn quality_field(
+    file: &H5File<'_>,
+    path: &str,
+    name: FieldName,
+    qualified: Vec<FieldName>,
+    shape: &PlaneShape,
+    budget: &mut DecodeBudget,
+) -> Result<Option<Field>> {
+    // A quality group without a readable plane is skipped (and counted), not
+    // fatal to the volume; a limit still is.
+    let plane = match file.dataset(&format!("{path}/data")) {
+        Ok(plane) => plane,
+        Err(err @ OdimError::LimitExceeded(_)) => return Err(err),
+        Err(_) => return Ok(None),
+    };
+    let Some(mut field) = plane_field(file, path, plane, name, shape, budget)? else {
+        return Ok(None);
+    };
+    // `quantity` does not name a quality field: keep it.
+    if let Some(quantity) = file
+        .attr(&format!("{path}/what"), "quantity")
+        .and_then(|attr| attr.as_str().map(str::to_owned))
+    {
+        field
+            .attrs
+            .other
+            .insert(0, ("quantity".into(), AttrValue::Text(quantity.into())));
+    }
+    field.quantity = Quantity::Other;
+    field.attrs.is_quality_field = Some(true);
+    field.attrs.qualified_variables = qualified;
+    Ok(Some(field))
+}
+
+/// The `qualityK` groups of `path`, by `K`.
+fn quality_names(file: &H5File<'_>, path: &str) -> Vec<String> {
+    let mut names: Vec<String> = file
+        .child_names(path)
+        .into_iter()
+        .filter(|name| is_numbered(name, "quality"))
+        .collect();
+    names.sort_by_key(|name| name[7..].parse::<u32>().unwrap_or(u32::MAX));
+    names
+}
+
+/// `<prefix><n>`, as in `dataset1`, `data2`, `quality3`.
+fn is_numbered(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix)
+        .is_some_and(|rest| rest.parse::<u32>().is_ok())
+}
+
+/// Model attributes with ODIM's names: `<group>.<name>` for an attribute
+/// whose bare name would not place it back in its group (a `what` or
+/// `where` attribute the ODIM_H5 tables do not list there, a `how` one
+/// named like a table attribute; [`crate::tables`]) or whose bare name is
+/// already taken, else the bare name.
+#[derive(Default)]
+struct Passthrough {
+    attrs: Vec<(Box<str>, AttrValue)>,
+    /// The level whose tables decide which names stay bare (`None`: only a
+    /// taken name gets its group).
+    level: Option<Level>,
+}
+
+impl Passthrough {
+    fn at(level: Level) -> Self {
+        Self {
+            attrs: Vec::new(),
+            level: Some(level),
+        }
+    }
+
+    fn push(&mut self, group: &str, name: &str, value: AttrValue) {
+        let taken = self.attrs.iter().any(|(have, _)| &**have == name);
+        let foreign = self
+            .level
+            .is_some_and(|level| !group.is_empty() && !level.bare_name_places(group, name));
+        let name: Box<str> = if (taken || foreign) && !group.is_empty() {
+            format!("{group}.{name}").into()
+        } else {
+            name.into()
+        };
+        self.attrs.push((name, value));
+    }
+
+    /// Every attribute of every group below `path` (depth first) as
+    /// `<prefix><group>.<name>`, skipping the children of `path` that
+    /// `skip` names.
+    fn push_tree(
+        &mut self,
+        file: &H5File<'_>,
+        path: &str,
+        prefix: &str,
+        skip: &dyn Fn(&str) -> bool,
+        depth: usize,
+    ) {
+        if depth > MAX_GROUP_DEPTH {
+            return;
+        }
+        let parent = if path.is_empty() { "" } else { path };
+        for child in file.child_names(if path.is_empty() { "/" } else { path }) {
+            if skip(&child) {
+                continue;
+            }
+            let child_path = format!("{parent}/{child}");
+            let child_prefix = format!("{prefix}{child}.");
+            for (name, value) in file.attr_entries(&child_path) {
+                self.push("", &format!("{child_prefix}{name}"), value);
+            }
+            self.push_tree(file, &child_path, &child_prefix, &|_| false, depth + 1);
+        }
+    }
+}
+
+/// Groups below a `how` group (DWD `how/radar_system`, SMHI
+/// `how/process_chain`, ...) and other unknown groups are read this deep.
+const MAX_GROUP_DEPTH: usize = 8;
+
+/// The attributes of a plane or quality group no typed slot holds,
+/// verbatim: the group's own, its `what` attributes but `slotted`, its
+/// `how` attributes (those of `how` subgroups as `<sub>.<name>`), and those
+/// of any other member but the quality groups (as `<member>.<name>`: the
+/// `data` dataset's `data.CLASS` and `data.IMAGE_VERSION`, HDF5
+/// image-convention markers; a `legend` dataset's).
+fn group_passthrough(
+    file: &H5File<'_>,
+    path: &str,
+    slotted: &BTreeSet<&str>,
+) -> Vec<(Box<str>, AttrValue)> {
+    let mut out = Passthrough::at(Level::Plane);
+    for (name, value) in file.attr_entries(path) {
+        out.push("", &name, value);
+    }
+    for (name, value) in file.attr_entries(&format!("{path}/what")) {
+        if !slotted.contains(&*name) {
+            out.push("what", &name, value);
+        }
+    }
+    for (name, value) in How::read(file, &format!("{path}/how")).0 {
+        out.push("how", &name, value);
+    }
+    out.push_tree(
+        file,
+        path,
+        "",
+        &|child| matches!(child, "what" | "how") || is_numbered(child, "quality"),
+        0,
+    );
+    out.attrs
+}
+
+/// The dataset attributes no typed slot holds, verbatim: the group's own,
+/// every `what` attribute (the product; the start and end times, from which
+/// ray times are only derived), the `where` attributes but `elangle` (the
+/// fixed angle), `nbins`/`nrays` when they are the plane shape and
+/// `rscale`/`rstart` when the range coordinate holds them (`rstart` read as
+/// metres stays, see [`first_gate_m_from_rstart`]), the `how` attributes
+/// not in `used`, and those of any other group but the planes and quality
+/// groups (as `<group>.<name>`).
+fn dataset_passthrough(
+    file: &H5File<'_>,
+    dataset: &str,
+    (nrays, nbins): (usize, usize),
+    how: &How,
+    used: &BTreeSet<&str>,
+) -> Vec<(Box<str>, AttrValue)> {
+    let path = format!("/{dataset}");
+    let mut out = Passthrough::at(Level::Dataset);
+    for (name, value) in file.attr_entries(&path) {
+        out.push("", &name, value);
+    }
+    for (name, value) in file.attr_entries(&format!("{path}/what")) {
+        out.push("what", &name, value);
+    }
+    let where_path = format!("{path}/where");
+    let number = |name: &str| attr_f64(file, &where_path, name);
+    for (name, value) in file.attr_entries(&where_path) {
+        let slotted = match &*name {
+            "elangle" => number("elangle").is_some(),
+            "nbins" => number("nbins") == Some(nbins as f64),
+            "nrays" => number("nrays") == Some(nrays as f64),
+            "rscale" => number("rscale").is_some_and(|rscale| rscale > 0.0 && rscale.is_finite()),
+            "rstart" => number("rstart").is_some_and(|rstart| {
+                rstart_unit(file) != RstartUnit::KmOrMetres || rstart <= RSTART_SANE_MAX_KM
+            }),
+            _ => false,
+        };
+        if !slotted {
+            out.push("where", &name, value);
+        }
+    }
+    for (name, value) in how.unused(used) {
+        out.push("how", &name, value);
+    }
+    out.push_tree(
+        file,
+        &path,
+        "",
+        &|child| {
+            matches!(child, "what" | "where" | "how")
+                || is_numbered(child, "data")
+                || is_numbered(child, "quality")
         },
-        times,
-    ))
+        0,
+    );
+    out.attrs
+}
+
+/// The root attributes no typed slot holds, verbatim: the root group's own
+/// but `Conventions` (`source_conventions`); the `/what` attributes but
+/// `version` (`source_version`), `source` (`attrs.source`) and
+/// `date`/`time` when they parse (the time reference), so `object` (PVOL or
+/// SCAN) stays; the `/where` attributes but a numeric `lat`, `lon` and
+/// `height` (the location); the `/how` attributes not in `used` (those of
+/// `how` subgroups as `<sub>.<name>`); and those of any other root group
+/// but the datasets (as `<group>.<name>`).
+fn root_passthrough(
+    file: &H5File<'_>,
+    time_parsed: bool,
+    how: &How,
+    used: &BTreeSet<&str>,
+) -> Vec<(Box<str>, AttrValue)> {
+    let mut out = Passthrough::at(Level::Root);
+    for (name, value) in file.attr_entries("/") {
+        if &*name != "Conventions" {
+            out.push("", &name, value);
+        }
+    }
+    for (name, value) in file.attr_entries("/what") {
+        let slotted = match &*name {
+            "version" | "source" => true,
+            "date" | "time" => time_parsed,
+            _ => false,
+        };
+        if !slotted {
+            out.push("what", &name, value);
+        }
+    }
+    for (name, value) in file.attr_entries("/where") {
+        let slotted = matches!(&*name, "lat" | "lon" | "height")
+            && attr_f64(file, "/where", &name).is_some_and(|value| value.is_finite());
+        if !slotted {
+            out.push("where", &name, value);
+        }
+    }
+    for (name, value) in how.unused(used) {
+        out.push("how", &name, value);
+    }
+    out.push_tree(
+        file,
+        "",
+        "",
+        &|child| matches!(child, "what" | "where" | "how") || is_numbered(child, "dataset"),
+        0,
+    );
+    out.attrs
 }
 
 /// Integer types ODIM planes are stored in, with the saturating `as` cast
@@ -501,17 +973,17 @@ trait OdimCode: PackedInt {
     fn from_f64(value: f64) -> Self;
 }
 
-impl OdimCode for u8 {
-    fn from_f64(value: f64) -> Self {
-        value as u8
-    }
+macro_rules! odim_code {
+    ($($ty:ty),*) => {$(
+        impl OdimCode for $ty {
+            fn from_f64(value: f64) -> Self {
+                value as $ty
+            }
+        }
+    )*};
 }
 
-impl OdimCode for u16 {
-    fn from_f64(value: f64) -> Self {
-        value as u16
-    }
-}
+odim_code!(u8, i8, u16, i16, i32);
 
 /// Integer plane coding: `nodata` is `_FillValue`, `undetect` is
 /// `_Undetect`. A plane that declares only `undetect` uses it as the fill
@@ -530,6 +1002,28 @@ fn int_coding<T: OdimCode>(
         range_folded: None,
         valid_range: None,
     }
+}
+
+/// The mean of a start and a stop value, `a / 2 + b / 2`: the same as
+/// `(a + b) / 2` wherever that is finite (halving is exact), and finite for
+/// any two finite values (a corrupt `startazT` of -1.8e308 made the sum
+/// overflow to -inf).
+fn mean(a: f64, b: f64) -> f64 {
+    a / 2.0 + b / 2.0
+}
+
+/// A ray azimuth (degrees, computed in double precision) as the model's
+/// single-precision angle in [0, 360): wrapped before the cast, so a finite
+/// angle beyond the float range still names its direction (cast first, a
+/// corrupt `startazA` of 1.6e185 became an infinite azimuth), and after it
+/// (359.99999999 rounds to 360 in single precision). A non-finite angle
+/// stays what it is.
+fn azimuth_f32(degrees: f64) -> f32 {
+    if !degrees.is_finite() {
+        return degrees as f32;
+    }
+    let wrapped = degrees.rem_euclid(360.0) as f32;
+    if wrapped >= 360.0 { 0.0 } else { wrapped }
 }
 
 /// Ray times from the dataset's `what/startdate,starttime,enddate,endtime`
@@ -574,26 +1068,67 @@ fn ray_times_from_what(
 /// metre-valued writer output (see `first_gate_m_from_rstart`).
 const RSTART_SANE_MAX_KM: f64 = 20.0;
 
-/// Metres to the start of the first bin, from the `where/rstart` attribute.
+/// Metres to the start of the first bin, from the `where/rstart` attribute,
+/// to the millimetre (which drops the float noise of km times 1000, 0.05 km
+/// being 50.00000000000001 m, and keeps a half-metre start: a first bin of
+/// 601 m gates centred at 0 m starts at -300.5 m).
 ///
-/// ODIM_H5 defines `rstart` in km (Table 5, polar "where"), but AEMET Spain
-/// (IRIS 8.13/10.3 exports; all 11 sites surveyed on the OPERA ORD bucket,
-/// 2026-07-07) writes it in METRES: observed 125/167/200 across the network.
-/// Read as km those would start every ray 125–200 km downrange — past the
-/// 150 km extent of the very sweeps they describe (299 bins x 500 m) — while
-/// as metres they are classic IRIS range-start values on the same scale as
-/// the bin spacing. A physical-sanity rule beats sniffing the IRIS source
-/// string: other IRIS exports write conformant km, and any writer whose
-/// first bin "starts" > [`RSTART_SANE_MAX_KM`] out is reporting metres.
-/// (Metre-valued quirk output below the threshold is indistinguishable from
-/// km, but IRIS range starts sit at gate-size scale — hundreds of metres —
-/// and 0 reads identically in either unit.)
-pub(crate) fn first_gate_m_from_rstart(rstart: f64) -> i32 {
-    if rstart > RSTART_SANE_MAX_KM {
-        // Reinterpret as metres (writer quirk documented above).
-        rstart.round() as i32
+/// A file whose `Conventions` is `ODIM_H5/V2_4` states `rstart` in metres
+/// (`metres`): the only v2.4 producer in the corpus, AEMET Spain (IRIS
+/// 8.13/10.3 exports; all 11 sites surveyed on the OPERA ORD bucket,
+/// 2026-07-07), writes 125/167/200, and xradar reads v2.4 `rstart` as metres.
+/// Earlier versions state km. A km value over [`RSTART_SANE_MAX_KM`] is read
+/// as metres too: read as km those would start every ray 125–200 km
+/// downrange, past the 150 km extent of the very sweeps they describe (299
+/// bins x 500 m), so any writer whose first bin "starts" that far out is
+/// reporting metres. (Metre values below the threshold in a pre-v2.4 file
+/// are indistinguishable from km; range starts sit at gate-size scale,
+/// hundreds of metres, and 0 reads identically in either unit.) A file this
+/// crate's writer made (root `how/software`, [`crate::write`]) states km
+/// before v2.4 at any distance: a sweep whose first bin starts 20.48 km out
+/// read back 20 km short (the `writers` fuzz target).
+pub(crate) fn first_gate_m_from_rstart(rstart: f64, unit: RstartUnit) -> f64 {
+    let metres = match unit {
+        RstartUnit::Metres => rstart,
+        RstartUnit::Km => rstart * 1000.0,
+        RstartUnit::KmOrMetres if rstart > RSTART_SANE_MAX_KM => rstart,
+        RstartUnit::KmOrMetres => rstart * 1000.0,
+    };
+    (metres * 1000.0).round() / 1000.0
+}
+
+/// The unit of a file's `where/rstart` values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RstartUnit {
+    /// ODIM_H5 v2.4: metres.
+    Metres,
+    /// Km, by the file's own writer (this crate's, before v2.4).
+    Km,
+    /// Km by the specification, metres beyond [`RSTART_SANE_MAX_KM`].
+    KmOrMetres,
+}
+
+/// How the file states `rstart`: metres when it declares ODIM_H5 v2.4, km
+/// when this crate wrote it (root `how/software`), else km or metres by
+/// size.
+pub(crate) fn rstart_unit(file: &H5File<'_>) -> RstartUnit {
+    let v2_4 = file
+        .attr("/", "Conventions")
+        .and_then(|attr| attr.as_str().map(|text| text.trim() == "ODIM_H5/V2_4"))
+        .unwrap_or(false);
+    let ours = file
+        .attr("/how", "software")
+        .and_then(|attr| {
+            attr.as_str()
+                .map(|software| software == crate::write::SOFTWARE)
+        })
+        .unwrap_or(false);
+    if v2_4 {
+        RstartUnit::Metres
+    } else if ours {
+        RstartUnit::Km
     } else {
-        (rstart * 1000.0).round() as i32
+        RstartUnit::KmOrMetres
     }
 }
 
@@ -938,21 +1473,33 @@ fn attr_array(file: &H5File<'_>, path: &str, name: &str) -> Option<Vec<f64>> {
     }
 }
 
-/// The attributes of one `how` group, in header order (empty when the
-/// group does not exist).
-struct How(Vec<(String, H5Attr)>);
+/// The attributes of one `how` group, in header order, then those of its
+/// subgroups as `<sub>.<name>` (DWD `how/radar_system`, MeteoSwiss
+/// `how/MeteoSwiss`, SMHI `how/process_chain`); empty when the group does
+/// not exist.
+struct How(Vec<(Box<str>, AttrValue)>);
 
 impl How {
     fn read(file: &H5File<'_>, path: &str) -> Self {
-        Self(file.attrs(path))
+        let mut all = Passthrough {
+            attrs: file.attr_entries(path),
+            level: None,
+        };
+        if file.has_object(path) {
+            all.push_tree(file, path, "", &|_| false, 0);
+        }
+        Self(all.attrs)
     }
 
-    /// The finite numeric value of `name`.
+    /// The finite numeric scalar `name`.
     fn number(&self, name: &str) -> Option<f64> {
         self.0
             .iter()
-            .find(|(key, _)| key == name)
-            .and_then(|(_, value)| value.as_f64())
+            .find(|(key, _)| &**key == name)
+            .and_then(|(_, value)| match value {
+                AttrValue::Scalar(scalar) => Some(scalar.as_f64()),
+                _ => None,
+            })
             .filter(|value| value.is_finite())
     }
 
@@ -960,8 +1507,8 @@ impl How {
     fn unused(&self, used: &BTreeSet<&str>) -> Vec<(Box<str>, AttrValue)> {
         self.0
             .iter()
-            .filter(|(name, _)| !used.contains(name.as_str()))
-            .map(|(name, value)| (Box::from(name.as_str()), attr_value(value.clone())))
+            .filter(|(name, _)| !used.contains(&**name))
+            .cloned()
             .collect()
     }
 }
@@ -1130,16 +1677,6 @@ fn calibration_index(calibration: &mut Vec<RadarCalibration>, entry: RadarCalibr
     index
 }
 
-fn attr_value(value: H5Attr) -> AttrValue {
-    match value {
-        H5Attr::Str(text) => AttrValue::Text(text.into()),
-        H5Attr::F64(value) => AttrValue::Scalar(Scalar::F64(value)),
-        H5Attr::I64(value) => AttrValue::Scalar(Scalar::I64(value)),
-        H5Attr::F64Array(values) => AttrValue::Array(ArrayBuf::F64(values)),
-        H5Attr::I64Array(values) => AttrValue::Array(ArrayBuf::I64(values)),
-    }
-}
-
 fn odim_radar_frequency_mhz(file: &H5File<'_>) -> Option<f64> {
     for name in ["frequency", "freq", "radar_frequency", "radar_frequency_hz"] {
         if let Some(value) = attr_f64(file, "/how", name)
@@ -1191,6 +1728,21 @@ pub(crate) fn invalid(reason: impl Into<String>) -> OdimError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `startazA` of 1.6e185 (the `writers` fuzz target, a corrupt FRALE
+    /// scan) gave an infinite azimuth when the mean was cast to f32 before
+    /// wrapping, which the CfRadial reader's wrap then read back as NaN.
+    #[test]
+    fn azimuths_wrap_before_narrowing() {
+        let mean = (1.556e185 + 148.0 + 360.0) / 2.0;
+        assert_eq!(azimuth_f32(mean), mean.rem_euclid(360.0) as f32);
+        assert!(azimuth_f32(mean).is_finite());
+        assert_eq!(azimuth_f32(359.999_999_99), 0.0);
+        assert_eq!(azimuth_f32(-1.0e-300), 0.0);
+        assert_eq!(azimuth_f32(725.0), 5.0);
+        assert_eq!(azimuth_f32(f64::INFINITY), f32::INFINITY);
+        assert!(azimuth_f32(f64::NAN).is_nan());
+    }
 
     #[test]
     fn quantity_codes_map_to_moments() {
@@ -1263,18 +1815,27 @@ mod tests {
 
     #[test]
     fn rstart_beyond_sane_range_reinterprets_as_metres() {
+        use RstartUnit::{Km, KmOrMetres, Metres};
         // Spec-conformant km values pass through unchanged.
-        assert_eq!(first_gate_m_from_rstart(0.0), 0);
-        assert_eq!(first_gate_m_from_rstart(0.05), 50);
-        assert_eq!(first_gate_m_from_rstart(5.0), 5_000);
+        assert_eq!(first_gate_m_from_rstart(0.0, KmOrMetres), 0.0);
+        assert_eq!(first_gate_m_from_rstart(0.05, KmOrMetres), 50.0);
+        assert_eq!(first_gate_m_from_rstart(5.0, KmOrMetres), 5_000.0);
+        // Half a metre survives (601 m gates centred from 0 m).
+        assert_eq!(first_gate_m_from_rstart(-0.3005, KmOrMetres), -300.5);
+        // ODIM_H5 v2.4 states metres.
+        assert_eq!(first_gate_m_from_rstart(5.0, Metres), 5.0);
+        assert_eq!(first_gate_m_from_rstart(2000.0, Metres), 2000.0);
         // Just under the physical-sanity bound: still km.
-        assert_eq!(first_gate_m_from_rstart(19.9), 19_900);
-        assert_eq!(first_gate_m_from_rstart(20.0), 20_000);
+        assert_eq!(first_gate_m_from_rstart(19.9, KmOrMetres), 19_900.0);
+        assert_eq!(first_gate_m_from_rstart(20.0, KmOrMetres), 20_000.0);
         // AEMET metre-valued rstart (125/167/200 observed across the
         // network, 2026-07-07): reinterpreted as metres, not 125+ km.
-        assert_eq!(first_gate_m_from_rstart(125.0), 125);
-        assert_eq!(first_gate_m_from_rstart(167.0), 167);
-        assert_eq!(first_gate_m_from_rstart(200.0), 200);
+        assert_eq!(first_gate_m_from_rstart(125.0, KmOrMetres), 125.0);
+        assert_eq!(first_gate_m_from_rstart(167.0, KmOrMetres), 167.0);
+        assert_eq!(first_gate_m_from_rstart(200.0, KmOrMetres), 200.0);
+        // This crate's writer states km at any distance.
+        assert_eq!(first_gate_m_from_rstart(20.48, Km), 20_480.0);
+        assert_eq!(first_gate_m_from_rstart(125.0, Km), 125_000.0);
     }
 
     #[test]

@@ -960,6 +960,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-radar-hdf5"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "recast-radar-testdata",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "recast-radar-io"
 version = "0.1.0"
 dependencies = [
@@ -982,9 +992,11 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "recast-radar-core",
+ "recast-radar-hdf5",
  "recast-radar-io-dorade",
  "recast-radar-io-odim",
  "recast-radar-testdata",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1046,9 +1058,10 @@ name = "recast-radar-io-odim"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "flate2",
  "recast-radar-core",
+ "recast-radar-hdf5",
  "recast-radar-testdata",
+ "serde_json",
  "thiserror",
 ]
 

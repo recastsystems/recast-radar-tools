@@ -340,13 +340,17 @@ impl<'a> Builder<'a> {
         for (index, sweep) in volume.sweeps.iter().enumerate() {
             children.push(self.sweep(index, sweep)?);
         }
-        Ok(Group {
+        let mut root = Group {
             name: Cow::Borrowed(""),
             dims,
             variables,
             attrs,
             children,
-        })
+        };
+        if self.all() && !volume.variable_attrs.is_empty() {
+            source_variable_attrs(volume, &mut root, "");
+        }
+        Ok(root)
     }
 
     fn location_variables(&self) -> Vec<Variable<'a>> {
@@ -493,9 +497,14 @@ impl<'a> Builder<'a> {
                 ));
             }
             // Not an FM301 attribute: the source format's version, for
-            // lossless output.
+            // lossless output (a volume read from an FM301 file keeps the
+            // file's own among its attributes, which wins).
             if self.all()
                 && let Some(version) = &volume.provenance.source_version
+                && !global
+                    .other
+                    .iter()
+                    .any(|(name, _)| &**name == "source_version")
             {
                 attrs.push(("source_version".into(), text(version.as_str())));
             }
@@ -1458,7 +1467,10 @@ impl<'a> Builder<'a> {
                 )),
             ));
         }
-        if self.xradar_items() {
+        // xradar 0.12 writes no ODIM plane `what`/`how` attributes, as it
+        // writes no ODIM `how` for the root and the sweeps (Passthrough).
+        let odim = self.volume.provenance.source_format == SourceFormat::OdimH5;
+        if self.all() || (self.xradar_items() && !odim) {
             // Source attributes without a slot, verbatim; one the flavor
             // already wrote (a CfRadial `coordinates`) is not repeated.
             for (name, value) in &model.other {
@@ -1469,6 +1481,49 @@ impl<'a> Builder<'a> {
             }
         }
         Ok(attrs)
+    }
+}
+
+/// Add the source's own attributes of slotted variables
+/// ([`Volume::variable_attrs`]) to the variables of `group` (at `path`) and
+/// its children: an attribute the view already wrote keeps the view's value.
+/// A variable of a sweep group without an entry of its own takes the root
+/// entry of the same name (a CfRadial 1 file keeps its per-ray and per-sweep
+/// variables at the root).
+fn source_variable_attrs<'a>(volume: &'a Volume, group: &mut Group<'a>, path: &str) {
+    let in_sweep = path.starts_with("sweep_");
+    for variable in &mut group.variables {
+        let entry = volume
+            .variable_attrs
+            .iter()
+            .find(|entry| &*entry.group == path && *entry.name == *variable.name)
+            .or_else(|| {
+                in_sweep
+                    .then(|| {
+                        volume
+                            .variable_attrs
+                            .iter()
+                            .find(|entry| entry.group.is_empty() && *entry.name == *variable.name)
+                    })
+                    .flatten()
+            });
+        let Some(entry) = entry else {
+            continue;
+        };
+        for (name, value) in &entry.attrs {
+            if variable.attrs.iter().any(|(have, _)| have == &**name) {
+                continue;
+            }
+            variable.attrs.push((Cow::Borrowed(&**name), value.clone()));
+        }
+    }
+    for child in &mut group.children {
+        let child_path = if path.is_empty() {
+            child.name.to_string()
+        } else {
+            format!("{path}/{}", child.name)
+        };
+        source_variable_attrs(volume, child, &child_path);
     }
 }
 

@@ -10,6 +10,8 @@
 //! gain * raw + offset with nodata/undetect masked; xradar
 //! `open_odim_datatree` sweep sizes, range and azimuth coordinates).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use chrono::{TimeZone, Utc};
 use recast_radar_core::model::{Field, FieldName, RangeCoord, SweepMode};
 
@@ -169,7 +171,7 @@ fn decodes_real_iesha_pvol() {
 fn non_odim_hdf5_is_rejected_with_guidance() {
     // The published netCDF-4 CfRadial file is HDF5 with superblock version 2
     // (golden signatures.netcdf4_superblock_version): not ODIM, and the error
-    // tells the user how to convert it.
+    // names the decoder that reads it.
     let netcdf4 = corpus("cfrad1-xsapr-sgp-20110520-ppi-netcdf4");
     assert!(recast_radar_io_odim::odim::looks_like_hdf5_bytes(&netcdf4));
     assert_eq!(netcdf4[8], 2);
@@ -177,7 +179,8 @@ fn non_odim_hdf5_is_rejected_with_guidance() {
         .expect_err("netCDF-4 CfRadial is not an ODIM volume")
         .to_string();
     assert!(
-        message.contains("netCDF-4 CfRadial") && message.contains("nccopy -k classic"),
+        message.contains("netCDF-4 CfRadial")
+            && message.contains("recast_radar_io_cfradial::read_cfradial_volume"),
         "{message}"
     );
 

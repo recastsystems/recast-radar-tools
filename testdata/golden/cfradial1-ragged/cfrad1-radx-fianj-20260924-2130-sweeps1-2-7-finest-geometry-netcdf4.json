@@ -1,0 +1,188 @@
+{
+ "id": "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4",
+ "range_dims": [
+  "range"
+ ],
+ "n_gates_vary": "true",
+ "readers": [
+  "netCDF4",
+  "pyart.io.read_cfradial",
+  "xradar.io.open_cfradial1_datatree"
+ ],
+ "sweeps": [
+  {
+   "rays": 360,
+   "ngates": 1000,
+   "first_center_m": 0.0,
+   "spacing_m": 250.0,
+   "ray_start_range_m": [
+    0.0
+   ],
+   "ray_gate_spacing_m": [
+    250.0
+   ],
+   "fields": {
+    "DBZH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "e2b58bb843eb94b10bea838b85ada55c5eacfc4353c7fb34133c2d09a13551ae",
+     "not_fill": 156874,
+     "first_ray": [
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      1864,
+      1864,
+      32767
+     ]
+    },
+    "VRADH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "1804298e27ca9175784960de8f8c19872f9b859d43facdae23a1a9b4bdb93e2f",
+     "not_fill": 142294,
+     "first_ray": [
+      -710,
+      277,
+      277,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      180,
+      180,
+      -258,
+      -258,
+      273
+     ]
+    }
+   }
+  },
+  {
+   "rays": 360,
+   "ngates": 1000,
+   "first_center_m": 0.0,
+   "spacing_m": 250.0,
+   "ray_start_range_m": [
+    0.0
+   ],
+   "ray_gate_spacing_m": [
+    250.0
+   ],
+   "fields": {
+    "DBZH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "6e1d0e76f180b5b7932efc5b05572b737196e907cad9b57b0173f506e7845851",
+     "not_fill": 134226,
+     "first_ray": [
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      32767,
+      519,
+      519,
+      32767
+     ]
+    },
+    "VRADH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "ce410961831b73556477643e3f1e45715d21303d2c133c798aad871c117c97fd",
+     "not_fill": 128786,
+     "first_ray": [
+      316,
+      685,
+      685,
+      325,
+      325,
+      99,
+      99,
+      93,
+      93,
+      -571,
+      -571,
+      -549
+     ]
+    }
+   }
+  },
+  {
+   "rays": 360,
+   "ngates": 748,
+   "first_center_m": 0.0,
+   "spacing_m": 250.0,
+   "ray_start_range_m": [
+    0.0
+   ],
+   "ray_gate_spacing_m": [
+    250.0
+   ],
+   "fields": {
+    "DBZH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "1aa4e5e3e63b668fa0f85a34b547086571caf58968dd5ea3a0c2b468becb0869",
+     "not_fill": 75005,
+     "first_ray": [
+      -32768,
+      636,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -947,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768
+     ]
+    },
+    "VRADH": {
+     "dtype": "int16",
+     "scale_factor": 0.009999999776482582,
+     "add_offset": 0.0,
+     "fill": -32768,
+     "codes_sha256": "154981c07070cdda72f09bd4957637e7a6bfa73ea8b2e073732c799359f7df0f",
+     "not_fill": 50978,
+     "first_ray": [
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768,
+      -32768
+     ]
+    }
+   }
+  }
+ ]
+}

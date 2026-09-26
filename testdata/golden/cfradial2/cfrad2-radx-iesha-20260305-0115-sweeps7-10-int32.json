@@ -1,0 +1,206 @@
+{
+ "id": "cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32",
+ "sha256": "5d0f8f08ab45562b421b753f28208992aab4dda40496b49f95cbf341f654b349",
+ "generator": "tools/cfradial2_golden.py (xradar 0.12.0, netCDF4-python 1.7.4)",
+ "instrument_name": "unknown",
+ "volume_number": 1,
+ "platform_type": "fixed",
+ "time_coverage_start": "2026-03-05T01:15:04Z",
+ "sweeps": [
+  {
+   "source_group": "sweep_0001",
+   "fixed_angle": 8.5,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "none",
+   "prt_mode": "fixed",
+   "nrays": 360,
+   "ngates": 350,
+   "ray_dimension": "time",
+   "range_first": 0.0,
+   "range_spacing": 500.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1772673395.0,
+    1772673409.0
+   ],
+   "azimuth_sha256": "d10e663f5dad99a8fa855a586acf9dc41f803cbd08afe8b7c68834ada44d1c6d",
+   "elevation_sha256": "09a2676f8906e409e540aefa6eb435396637929db93d36020aec82840463ff4d",
+   "fields": [
+    {
+     "name": "DBZH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.377426084303579e-08,
+     "add_offset": 14.5,
+     "fill_value": -2147483647.0,
+     "sha256": "262e7a5731e60b63947e4569df9f616047c1e60912e3def0c99504811f31e804"
+    },
+    {
+     "name": "TH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.4961697658577577e-08,
+     "add_offset": 16.5,
+     "fill_value": -2147483647.0,
+     "sha256": "7d4ac5f13d5500132bfad88e49ef114e8a181e26214731a1a7781439711277d7"
+    },
+    {
+     "name": "VRADH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 3.7848364442538696e-09,
+     "add_offset": -0.03149604797363281,
+     "fill_value": -2147483647.0,
+     "sha256": "dc3b8397f2570872abbc57597ff82e24ebfa049db9314ec63789b409e2bb3e8f"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_0002",
+   "fixed_angle": 10.100000381469727,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "none",
+   "prt_mode": "fixed",
+   "nrays": 360,
+   "ngates": 350,
+   "ray_dimension": "time",
+   "range_first": 0.0,
+   "range_spacing": 500.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1772673379.0,
+    1772673393.0
+   ],
+   "azimuth_sha256": "3de31aa0603e2b1b82d6f4bdc8128b4130bae6de11e501af690c02f8d757b78c",
+   "elevation_sha256": "bfb093f145ee5ca7ef4730136e3229e3639576db18138d43535ad1b14c2fbcae",
+   "fields": [
+    {
+     "name": "DBZH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.4011748206144148e-08,
+     "add_offset": 13.0,
+     "fill_value": -2147483647.0,
+     "sha256": "b8f3ea914ec1fd912f62703e1917c6670e24356e3fc4430d2e46d2ca3f9d6cd0"
+    },
+    {
+     "name": "TH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.4961697658577577e-08,
+     "add_offset": 15.0,
+     "fill_value": -2147483647.0,
+     "sha256": "d31dbbe7bcded6590c5ca966eeb0c63ea50673c827dd160b7ea64f21881f0073"
+    },
+    {
+     "name": "VRADH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 3.7848364442538696e-09,
+     "add_offset": -0.03149604797363281,
+     "fill_value": -2147483647.0,
+     "sha256": "21d6e25314f0b8ac083ad2d956f7ae8461ca0561e132fcde069542461ba1d98d"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_0003",
+   "fixed_angle": 20.0,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "none",
+   "prt_mode": "fixed",
+   "nrays": 360,
+   "ngates": 240,
+   "ray_dimension": "time",
+   "range_first": 0.0,
+   "range_spacing": 500.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1772673341.0,
+    1772673356.0
+   ],
+   "azimuth_sha256": "3e985d7e4d6036c03956c0458858a2d645bbb0269381440a101ff800d376dae7",
+   "elevation_sha256": "e62889f81ab74521267bb1c8af6b313879d3dd514db2e68df7344596930dbda8",
+   "fields": [
+    {
+     "name": "DBZH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.5436672384794292e-08,
+     "add_offset": 11.0,
+     "fill_value": -2147483647.0,
+     "sha256": "0fb71868eed890a5a3a9b3a48eee618f335fa08a7b06abf12fce5a1a163f66fc"
+    },
+    {
+     "name": "TH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.6386620060870882e-08,
+     "add_offset": 12.0,
+     "fill_value": -2147483647.0,
+     "sha256": "9ecb6f91313d545f9cdd3e194be2f3fd9324dabeee1c1884ca11efdbdf738255"
+    },
+    {
+     "name": "VRADH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 3.7848364442538696e-09,
+     "add_offset": -0.03149604797363281,
+     "fill_value": -2147483647.0,
+     "sha256": "8be71e4897ba7a1147590454ab558a29fb7b4bdc2711a71c07dd99b7a23e5bfa"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_0004",
+   "fixed_angle": 90.0,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "none",
+   "prt_mode": "fixed",
+   "nrays": 360,
+   "ngates": 100,
+   "ray_dimension": "time",
+   "range_first": 0.0,
+   "range_spacing": 500.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1772673304.0,
+    1772673315.0
+   ],
+   "azimuth_sha256": "be4d499d4cd6ca8f48ae4e916a55d9ae8d740846c0a7ba45a6946c283e371e01",
+   "elevation_sha256": "28dbdf955d6bda4ade578262a06043258eb933f94274c178b4d7d2f9438f5452",
+   "fields": [
+    {
+     "name": "DBZH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.0,
+     "add_offset": 0.0,
+     "fill_value": -2147483647.0,
+     "sha256": "911b120a0233130e55e4e4e4c204a818e2776749864c83a75747429aa396a5f2"
+    },
+    {
+     "name": "TH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 7.599592066753758e-09,
+     "add_offset": -10.0,
+     "fill_value": -2147483647.0,
+     "sha256": "54ac21089503f8749c990b3f10d4a2a6a3cc7c2fa4e0b7abb0c5c0b5aa66636b"
+    },
+    {
+     "name": "VRADH",
+     "dtype": "int32",
+     "in_xradar": true,
+     "scale_factor": 1.0,
+     "add_offset": 0.0,
+     "fill_value": -2147483647.0,
+     "sha256": "911b120a0233130e55e4e4e4c204a818e2776749864c83a75747429aa396a5f2"
+    }
+   ]
+  }
+ ],
+ "latitude": 52.692787,
+ "longitude": -8.919994,
+ "altitude": 29.0
+}

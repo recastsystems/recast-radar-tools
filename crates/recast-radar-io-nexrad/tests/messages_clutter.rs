@@ -343,10 +343,17 @@ fn trimmed_fixtures_keep_the_source_clutter_messages() {
     let trimmed: Vec<_> = recast_radar_testdata::manifest()
         .files
         .iter()
-        .filter(|entry| entry.format == Format::NexradLevel2 && !is_fuzz_regression(entry))
+        .filter(|entry| entry.format == Format::NexradLevel2)
+        // Trimmed by the trim tool (not fuzz mutations of a seed).
+        .filter(|entry| {
+            entry
+                .derivation
+                .as_deref()
+                .is_some_and(|derivation| derivation.starts_with("trim-level2"))
+        })
         .filter_map(|entry| Some((entry.id.as_str(), entry.derived_from.as_deref()?)))
         .collect();
-    assert_eq!(trimmed.len(), 16, "trimmed and head Level II fixtures");
+    assert_eq!(trimmed.len(), 16, "trimmed Level II fixtures");
     let mut with_maps = 0;
     let mut checked = 0;
     for &(id, source) in &trimmed {

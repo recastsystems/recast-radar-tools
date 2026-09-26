@@ -241,9 +241,9 @@ fn real_dow8_rhi_decodes_scan_mode_geometry_and_gates() {
 const XSAPR_PPI_NETCDF4: &[u8] = include_bytes!("data/cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc");
 
 #[test]
-fn netcdf4_cfradial_routes_to_hdf5_and_gets_conversion_guidance() {
-    // The HDF5 signature must never sniff as netCDF3 — netCDF-4 CfRadial
-    // routes to the HDF5/ODIM side (same precedence as the app's sniffer).
+fn netcdf4_cfradial_sniffs_as_hdf5_and_decodes_here() {
+    // The HDF5 signature must never sniff as netCDF3: netCDF-4 CfRadial is
+    // an HDF5 container, told apart from ODIM_H5 by content.
     assert!(!recast_radar_io_cfradial::cfradial::looks_like_netcdf3_bytes(XSAPR_PPI_NETCDF4));
     assert!(recast_radar_io_odim::odim::looks_like_hdf5_bytes(
         XSAPR_PPI_NETCDF4
@@ -255,11 +255,17 @@ fn netcdf4_cfradial_routes_to_hdf5_and_gets_conversion_guidance() {
         DOW8_RHI
     ));
 
-    // The explicit error must tell a CfRadial user the fix that works.
+    // This crate decodes it, exactly like its classic twin.
+    let netcdf4 = recast_radar_io_cfradial::read_cfradial_volume(XSAPR_PPI_NETCDF4)
+        .expect("netCDF-4 CfRadial 1 decodes");
+    assert_eq!(netcdf4.sweeps.len(), 1);
+
+    // Handed to the ODIM decoder, the error names the decoder that works.
     let err = recast_radar_io_odim::odim::read_odim_h5_volume(XSAPR_PPI_NETCDF4).unwrap_err();
     let message = err.to_string();
     assert!(
-        message.contains("netCDF-4 CfRadial") && message.contains("nccopy -k classic"),
+        message.contains("netCDF-4 CfRadial")
+            && message.contains("recast_radar_io_cfradial::read_cfradial_volume"),
         "unhelpful netCDF-4 error: {message}"
     );
 }

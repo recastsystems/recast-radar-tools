@@ -1,10 +1,10 @@
 //! Routing-equivalence tests for `read_supported_volume_bytes` against the
 //! format crates' REAL format-validation fixtures.
 //!
-//! The shared magic-byte router (DORADE → ODIM_H5 → CfRadial classic netCDF →
-//! NEXRAD Archive II) must hand every fixture to the same decoder the
-//! format-specific tests call directly, with an identical decoded volume (or
-//! an identical stringified error for the pinned netCDF-4 rejection case).
+//! The shared magic-byte router (DORADE → HDF5 (ODIM_H5 or netCDF-4
+//! CfRadial 1/2 by content) → CfRadial classic netCDF → NEXRAD Archive II)
+//! must hand every fixture to the same decoder the format-specific tests
+//! call directly, with an identical decoded volume.
 //!
 //! Fixtures live in the format crates' `tests/data` directories; provenance
 //! is documented in `recast-radar-io-odim/tests/odim_real_files.rs`,
@@ -17,6 +17,8 @@
 //! (`recast_radar_testdata`, ids in `testdata/**/manifest.toml`); the
 //! Archive II radial counts are Py-ART / MetPy values from
 //! `tools/golden_io_formats.py`, section `router`.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use recast_radar_core::model::{FieldData, Sweep, Volume};
 use recast_radar_io::read_supported_volume_bytes;
@@ -69,12 +71,20 @@ fn assert_routed_matches_direct(
 /// Float planes and per-ray variables carry NaN fills, and `NaN != NaN`
 /// under PartialEq would fail even for byte-identical decodes: compare float
 /// storage bitwise, everything else structurally.
-fn assert_same_volume(routed: Volume, direct: Volume, what: &str) {
+fn assert_same_volume(mut routed: Volume, mut direct: Volume, what: &str) {
     assert_eq!(
         float_plane_bits(&routed),
         float_plane_bits(&direct),
         "{what}: routed float planes != direct decode"
     );
+    // Source attributes carry NaN fill values: compared as text.
+    assert_eq!(
+        format!("{:?}", routed.variable_attrs),
+        format!("{:?}", direct.variable_attrs),
+        "{what}: routed variable attributes != direct decode"
+    );
+    routed.variable_attrs.clear();
+    direct.variable_attrs.clear();
     assert!(
         comparable(routed) == comparable(direct),
         "{what}: routed != direct decode"
@@ -202,17 +212,45 @@ fn router_matches_direct_dorade_decoder_on_real_cow2_sweep() {
 }
 
 #[test]
-fn router_sends_netcdf4_cfradial_to_the_hdf5_side_like_the_app_chains_did() {
-    // netCDF-4 is an HDF5 container: the router must dispatch it to the ODIM
-    // decoder (HDF5 magic outranks netCDF), reproducing the historical app
-    // routing chains and their conversion-guidance error text exactly.
-    let direct_err = recast_radar_io_odim::odim::read_odim_h5_volume(XSAPR_PPI_NETCDF4)
-        .expect_err("netCDF-4 CfRadial must not decode as ODIM")
+fn router_sends_netcdf4_cfradial_to_the_cfradial_decoders_by_content() {
+    // netCDF-4 is an HDF5 container: the router opens it once, sees no ODIM
+    // `/what` group and a CfRadial layout, and hands it to io-cfradial.
+    assert_routed_matches_direct(
+        XSAPR_PPI_NETCDF4,
+        recast_radar_io_cfradial::read_cfradial1_volume(XSAPR_PPI_NETCDF4)
+            .map_err(|err| err.to_string()),
+        "xsapr-sgp",
+        "X-SAPR netCDF-4 CfRadial 1",
+    );
+    for id in [
+        "cfrad2-radx-irene-sr2-20110827-120420-sur-r30km",
+        "cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32",
+        "cfrad2-xradar-xsapr-sgp-20110520-ppi",
+        "cfrad2-xradar-dow8-20211011-223602-rhi-r300",
+    ] {
+        let bytes = corpus(id);
+        let direct = recast_radar_io_cfradial::read_cfradial2_volume(&bytes)
+            .unwrap_or_else(|err| panic!("{id}: {err}"));
+        let routed =
+            read_supported_volume_bytes(&bytes).unwrap_or_else(|err| panic!("{id}: {err}"));
+        assert_same_volume(routed, direct, id);
+    }
+    // The ODIM decoder still explains a netCDF-4 file handed to it directly.
+    let message = recast_radar_io_odim::odim::read_odim_h5_volume(XSAPR_PPI_NETCDF4)
+        .expect_err("netCDF-4 CfRadial is not ODIM")
         .to_string();
-    let routed_err = read_supported_volume_bytes(XSAPR_PPI_NETCDF4)
-        .expect_err("netCDF-4 CfRadial must not decode through the router")
-        .to_string();
-    assert_eq!(routed_err, direct_err);
+    assert!(message.contains("netCDF-4"), "{message}");
+    assert!(message.contains("read_cfradial_volume"), "{message}");
+}
+
+/// An ODIM file behind a 512-byte user block (the h5latest fixture) routes
+/// to the ODIM decoder.
+#[test]
+fn router_finds_hdf5_behind_a_user_block() {
+    let bytes = corpus("odim-dkrom-20260820-1130-pvol-h5latest-trim");
+    let direct = recast_radar_io_odim::odim::read_odim_h5_volume(&bytes).expect("direct");
+    let routed = read_supported_volume_bytes(&bytes).expect("routed");
+    assert_same_volume(routed, direct, "dkrom h5latest");
 }
 
 /// The KLIX 2021-08-29 model-data (`_MDM`) file: an LDM record without an

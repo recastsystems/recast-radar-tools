@@ -24,7 +24,9 @@
 //!   data planes. Fetched 2026-07-07 from the OPERA ORD 24h bucket
 //!   (`.../2026/07/07/ES/espdg/PVOL/espdg@20260707T1927@0.5_1.5@
 //!   DBZH_VRADH.h5`) — the exact object BowEcho's v0.30-RC1 live poll
-//!   failed on before hdf5lite learned the v2 header dialect.
+//!   failed on before the HDF5 reader learned the v2 header dialect.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use chrono::{TimeZone, Utc};
 use recast_radar_core::model::{Field, FieldData, FieldName, RangeCoord, SweepMode, Volume};
@@ -127,7 +129,7 @@ fn real_bewid_pvol_reads_vlen_string_attrs_and_root_nyquist() {
     assert_close(lon, 5.5056, 1e-4, "lon");
     assert_close(height, 592.0, 1e-3, "height");
     // /what date+time are VARIABLE-LENGTH strings in this writer — decoding
-    // them exercises the hdf5lite global-heap path on real bytes.
+    // them exercises the HDF5 reader's global-heap path on real bytes.
     assert_eq!(
         volume.time_reference,
         Utc.with_ymd_and_hms(2013, 4, 29, 4, 30, 0).unwrap()
@@ -357,18 +359,19 @@ fn real_espdg_pvol_decodes_v2_object_headers_end_to_end() {
 /// leaves it verbatim in `Sweep::other`. Nothing is dropped for being one
 /// value per ray.
 ///
-/// The `how` names of each file come from `hdf5lite` (the same bytes the
+/// The `how` names of each file come from `recast_radar_hdf5` (the same bytes the
 /// decoder reads, listed independently of it); the expected splits were
 /// read with h5py. `ray` is the arrays the ray coordinates are built from
-/// (`odim` module docs), `typed` the names a typed slot takes from this
-/// dataset group. Everything else must appear in `Sweep::other`, a per-ray
-/// array included: a producer's `TXpower` or `startelT`/`stopelT` array
-/// reaches the model instead of being filtered out by its length.
+/// (`odim` module docs), which stay in `Sweep::other` too (a mean does not
+/// give them back), `typed` the names a typed slot takes from this dataset
+/// group. Everything else must appear in `Sweep::other`, a per-ray array
+/// included: a producer's `TXpower` or `startelT`/`stopelT` array reaches
+/// the model instead of being filtered out by its length.
 #[test]
 fn every_dataset_how_attribute_reaches_a_ray_coordinate_a_slot_or_sweep_other() {
     use std::collections::BTreeSet;
 
-    use recast_radar_io_odim::hdf5lite::H5File;
+    use recast_radar_io_odim::hdf5::H5File;
 
     let set = |names: &[&str]| -> BTreeSet<String> {
         names.iter().map(|name| (*name).to_owned()).collect()
@@ -397,8 +400,8 @@ fn every_dataset_how_attribute_reaches_a_ray_coordinate_a_slot_or_sweep_other() 
         let file = H5File::open(bytes).unwrap_or_else(|e| panic!("open {label}: {e}"));
         let how: BTreeSet<String> = file
             .attrs(&format!("{dataset}/how"))
-            .into_iter()
-            .map(|(name, _)| name)
+            .iter()
+            .map(|attribute| attribute.name().to_owned())
             .collect();
         assert!(!how.is_empty(), "{label} {dataset}: no `how` attributes");
         let other: BTreeSet<String> = volume.sweeps[sweep_index]
@@ -407,14 +410,18 @@ fn every_dataset_how_attribute_reaches_a_ray_coordinate_a_slot_or_sweep_other() 
             .map(|(name, _)| name.to_string())
             .collect();
 
-        // The names the decoder holds back are exactly the ray arrays it
-        // read plus the typed slots it filled from this group; every other
-        // `how` attribute, whatever its length, is in `Sweep::other`.
+        // The names the decoder holds back are exactly the typed slots it
+        // filled from this group; every other `how` attribute, whatever its
+        // length, is in `Sweep::other`, the ray coordinates' arrays too.
         let held: BTreeSet<String> = how.difference(&other).cloned().collect();
-        let expected: BTreeSet<String> = set(ray).union(&set(typed)).cloned().collect();
         assert_eq!(
-            held, expected,
+            held,
+            set(typed),
             "{label} {dataset}: `how` attributes the decoder does not pass through"
+        );
+        assert!(
+            set(ray).is_subset(&other),
+            "{label} {dataset}: ray arrays {ray:?} not all kept"
         );
     }
 }

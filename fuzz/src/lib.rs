@@ -16,17 +16,40 @@
 use std::cell::RefCell;
 
 use recast_radar_bzip2::{Decoder, Encoder, Level};
+use recast_radar_hdf5::{H5File, ObjectKind, OpenOptions};
 use recast_radar_io_cfradial as cfradial_io;
 use recast_radar_io_dorade as dorade_io;
 use recast_radar_io_jma as jma_io;
 use recast_radar_io_nexrad as nexrad;
 use recast_radar_io_odim as odim_io;
 
+/// The gate-by-gate comparison of the writer tests
+/// (`crates/recast-radar-io/tests/write_real.rs`), shared so the `writers`
+/// harness checks values exactly as they do.
+#[path = "../../crates/recast-radar-io/tests/common/compare.rs"]
+mod compare;
+
+/// HDF5 files read without their lookup3 metadata checksums: nearly every
+/// mutation of a file written by HDF5 1.8 or later breaks a checksum, and
+/// the parsers behind it would never see the mutated bytes.
+fn without_checksums() -> OpenOptions {
+    OpenOptions::default().with_metadata_checksums(false)
+}
+
 /// Output cap for the `bzip2` harness: above the 16 MiB per-record limit the
 /// Level II decoder uses, so a legitimate record always decodes fully, and
 /// far below what a hostile stream of run-only blocks (about 46 MB per block)
 /// could claim.
 const BZIP2_MAX_OUTPUT: usize = 64 << 20;
+
+/// Largest dataset the `hdf5` harness reads: the reader's own limit is
+/// 256 MiB stored plus 256 MiB converted, which would trip libFuzzer's RSS
+/// limit on inputs that are valid, only large.
+const HDF5_MAX_READ_BYTES: usize = 32 << 20;
+
+/// Gate checks per output the `writers` harness makes in full; beyond it,
+/// it compares the gates of every n-th ray.
+const WRITERS_GATE_CHECKS: usize = 1 << 20;
 
 /// A fuzz harness: decode `data`; `true` when any entry point returned `Ok`.
 pub type Harness = fn(&[u8]) -> bool;
@@ -38,12 +61,14 @@ pub const TARGETS: &[(&str, Harness)] = &[
     ("level2_writer_router", level2_writer_router),
     ("io_router", io_router),
     ("odim", odim),
+    ("hdf5", hdf5),
     ("cfradial", cfradial),
     ("dorade", dorade),
     ("dorade_archive", dorade_archive),
     ("jma", jma),
     ("bzip2", bzip2),
     ("bzip2_encode", bzip2_encode),
+    ("writers", writers),
 ];
 
 /// Look up a harness by target name.
@@ -579,18 +604,80 @@ pub fn io_router(data: &[u8]) -> bool {
 }
 
 /// ODIM_H5 polar volumes and Cartesian composites over the pure-Rust HDF5
-/// reader (`recast-radar-io-odim`).
+/// reader (`recast-radar-io-odim`), then the polar decoder again on the
+/// file read without metadata checksums.
 pub fn odim(data: &[u8]) -> bool {
     let _ = odim_io::looks_like_hdf5_bytes(data);
     let polar = odim_io::read_odim_h5_volume(data).is_ok();
     let cartesian = odim_io::decode_odim_h5_cartesian_max(data).is_ok();
-    polar || cartesian
+    let unchecked = H5File::open_with(data, without_checksums())
+        .is_ok_and(|file| odim_io::read_odim_hdf5_volume(file).is_ok());
+    polar || cartesian || unchecked
 }
 
-/// CfRadial 1.x over the classic netCDF reader (`recast-radar-io-cfradial`).
+/// The HDF5 reader (`recast-radar-hdf5`): open with checksums verified,
+/// then without them (group walk, every attribute), for every dataset its
+/// metadata, its chunk index and, up to 32 MiB, its values, and the
+/// netCDF-4 data model of the file (dimension scales, variables, and the
+/// values of variables up to 1 MiB).
+pub fn hdf5(data: &[u8]) -> bool {
+    let _ = recast_radar_hdf5::looks_like_hdf5_bytes(data);
+    let verified = H5File::open(data).is_ok();
+    let Ok(file) = H5File::open_with(data, without_checksums()) else {
+        return verified;
+    };
+    for (path, object) in file.objects() {
+        let _ = object.attributes().len();
+        if object.kind() != ObjectKind::Dataset {
+            continue;
+        }
+        let Ok(info) = file.dataset_info(path) else {
+            continue;
+        };
+        let _ = file.chunk_locations(path);
+        if bytes_of(info.datatype.size(), &info.dims).is_some_and(|b| b <= HDF5_MAX_READ_BYTES) {
+            let _ = file.dataset(path);
+        }
+    }
+    if let Ok(nc) = recast_radar_hdf5::netcdf4::NcFile::from_hdf5(file) {
+        for group in nc.groups() {
+            let _ = nc.visible_dims(&group.path);
+            for variable in &group.variables {
+                let shape = nc.shape(variable);
+                if bytes_of(variable.datatype.size(), &shape).is_some_and(|b| b <= 1 << 20) {
+                    let _ = nc.read(variable);
+                }
+            }
+        }
+    }
+    true
+}
+
+/// `element` bytes times every dimension, when it does not overflow.
+fn bytes_of(element: usize, dims: &[usize]) -> Option<usize> {
+    dims.iter()
+        .try_fold(element, |acc, dim| acc.checked_mul(*dim))
+}
+
+/// CfRadial 1.x and 2 (`recast-radar-io-cfradial`): the classic netCDF
+/// reader, the netCDF-4 data model over `recast-radar-hdf5`
+/// (`Netcdf4File::open`, the layout test), and the decoder the container
+/// and layout pick (`read_cfradial_volume`); then the netCDF-4 decoders
+/// again on the file read without HDF5 metadata checksums.
 pub fn cfradial(data: &[u8]) -> bool {
     let _ = cfradial_io::looks_like_netcdf3_bytes(data);
-    cfradial_io::read_cfradial1_volume(data).is_ok()
+    if let Ok(file) = cfradial_io::Netcdf4File::open(data) {
+        let _ = cfradial_io::cfradial_layout(&file);
+    }
+    let decoded = cfradial_io::read_cfradial_volume(data).is_ok();
+    let unchecked = H5File::open_with(data, without_checksums())
+        .ok()
+        .and_then(|file| cfradial_io::Netcdf4File::from_hdf5(file).ok())
+        .is_some_and(|file| {
+            let _ = cfradial_io::cfradial_layout(&file);
+            cfradial_io::read_cfradial_netcdf4(&file).is_ok()
+        });
+    decoded || unchecked
 }
 
 /// DORADE sweepfiles (`recast-radar-io-dorade`): header peek, then a
@@ -633,4 +720,112 @@ pub fn jma(data: &[u8]) -> bool {
             Err(_) => false,
         },
     }
+}
+
+/// Writer round trips (`recast-radar-io-cfradial`, `recast-radar-io-odim`,
+/// `recast-radar-hdf5`'s writer): the input through the format router, and a
+/// volume it decodes written as CfRadial 1 (classic netCDF, each gate
+/// geometry layout), CfRadial 2 / FM301 (netCDF-4) and ODIM_H5 (with and
+/// without a plane for every quantity). A writer may refuse a volume with
+/// its typed error; a file it does write must read back through the router
+/// with the same number of sweeps and the same rays per sweep and, gate by
+/// gate, the same values (float32 tolerance), missing, undetect and
+/// range-folded gates, ray angles and times, as the writer tests check
+/// (`compare.rs`; ODIM with `every_quantity` adds all-missing planes and is
+/// checked for rays only). Anything else panics: a writer that emits a file
+/// its own readers refuse, or that reads back different data, is a bug.
+pub fn writers(data: &[u8]) -> bool {
+    use cfradial_io::RangeLayout;
+
+    let Ok(volume) = recast_radar_io::read_supported_volume_bytes(data) else {
+        return false;
+    };
+    let cf1 = |layout| {
+        cfradial_io::write_cfradial1(
+            &volume,
+            &cfradial_io::Cfradial1Options::default().with_range_layout(layout),
+        )
+        .ok()
+    };
+    let label = |format: &str| format.to_owned();
+    let outputs = [
+        (
+            cf1(RangeLayout::Auto),
+            Some(compare::cfradial1_expect(
+                label("CfRadial 1"),
+                RangeLayout::Auto,
+            )),
+        ),
+        (
+            cf1(RangeLayout::PerSweep),
+            Some(compare::cfradial1_expect(
+                label("CfRadial 1 (per sweep)"),
+                RangeLayout::PerSweep,
+            )),
+        ),
+        (
+            cf1(RangeLayout::PerRay),
+            Some(compare::cfradial1_expect(
+                label("CfRadial 1 (per ray)"),
+                RangeLayout::PerRay,
+            )),
+        ),
+        (
+            cfradial_io::write_cfradial2(&volume, &cfradial_io::Cfradial2Options::default()).ok(),
+            Some(compare::cfradial2_expect(label("CfRadial 2"))),
+        ),
+        (
+            odim_io::write_odim_h5_volume(&volume, &odim_io::OdimWriteOptions::default()).ok(),
+            Some(compare::odim_expect(label("ODIM_H5"), &volume)),
+        ),
+        (
+            odim_io::write_odim_h5_volume(
+                &volume,
+                &odim_io::OdimWriteOptions::default().with_every_quantity(true),
+            )
+            .ok(),
+            None,
+        ),
+    ];
+    let mut rays: Vec<usize> = volume.sweeps.iter().map(|sweep| sweep.nrays()).collect();
+    rays.sort_unstable();
+    // Gates of every ray while a comparison stays near a million gate
+    // checks; of every n-th ray beyond (a real volume holds ten million:
+    // every gate of every output took about 0.6 s, over libFuzzer's
+    // timeout once instrumented).
+    let cells: usize = volume
+        .sweeps
+        .iter()
+        .map(|sweep| {
+            sweep
+                .nrays()
+                .saturating_mul(sweep.range.ngates())
+                .saturating_mul(sweep.fields.len())
+        })
+        .fold(0, usize::saturating_add);
+    let ray_step = cells.div_ceil(WRITERS_GATE_CHECKS).max(1);
+    let mut written = false;
+    for (bytes, expect) in outputs {
+        let Some(bytes) = bytes else {
+            continue;
+        };
+        written = true;
+        let format = expect
+            .as_ref()
+            .map_or("ODIM_H5 (every quantity)", |expect| expect.what.as_str());
+        let read = match recast_radar_io::read_supported_volume_bytes(&bytes) {
+            Ok(read) => read,
+            Err(err) => panic!("{format} output does not read back: {err}"),
+        };
+        let mut read_rays: Vec<usize> = read.sweeps.iter().map(|sweep| sweep.nrays()).collect();
+        read_rays.sort_unstable();
+        assert_eq!(read_rays, rays, "{format}: rays per sweep read back");
+        if let Some(mut expect) = expect {
+            expect.ray_step = ray_step;
+            if let Err(difference) = compare::compare_volumes(&volume, &read, &expect) {
+                panic!("{difference}");
+            }
+        }
+    }
+    written
 }

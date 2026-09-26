@@ -12,20 +12,30 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | `level2_volume` | `recast-radar-io-nexrad` | `read_volume_from_bytes`, `read_gzip_volume_from_bytes_with_preview`, `read_volume_from_bytes_with_bzip_preview`, `read_gzip_preview_from_bytes`, `read_bzip_block_preview_from_bytes` (one per input, by length mod 4; the preview threshold is the last byte) |
 | `level2_writer` | `recast-radar-io-nexrad` | `read_volume_with_metadata`, then the writer: `write_volume_with_source` without the source metadata (LDM bzip2), with it (uncompressed), with it gzip-wrapped, or `write_realtime_chunks_with_source` with it (mode = input length mod 4; the last two drop gates before the radar and write site KTLX, so Message 1 volumes are written too); the written bytes must decode again with the reported sweeps and radials, the source's rays in their order (a ray left out only when no written moment has data on it), every radial's time (milliseconds since 1970) and angles, and every written moment's codes, gates and absent rays (a refused write is fine) |
 | `level2_writer_router` | `recast-radar-io`, `recast-radar-io-nexrad` | `read_supported_volume_bytes` (ODIM_H5, CfRadial, DORADE, JMA, Level II), then the writer: `write_volume_with_source` (mode = input length mod 8: the Precise (0 and 3), Compatible (1) or Standard (2) policy by length mod 4; lengths with `(len / 4) % 2 == 1` also drop gates before the radar, accept any range rounding, supply a Nyquist velocity and unambiguous range where the source has none and go through `write_realtime_chunks`); the written bytes must decode again with the reported sweeps and radials, each radial the source ray `WriteSummary::written_rays` names (every ray at most once, a ray left out only when no written moment has data on it) with its time (to the millisecond) and angles (bit for bit), and every written moment's gate count, first gate and spacing (to the metre), absent rays and values (each within the reported `max_abs_error`, sentinels as sentinels) |
-| `io_router` | `recast-radar-io` | `sniff_supported_volume_format`, `read_supported_volume_bytes` (zip/gzip unwrapping, then Level II, ODIM, CfRadial, DORADE or JMA) |
-| `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `read_odim_h5_volume`, `decode_odim_h5_cartesian_max` |
-| `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `read_cfradial1_volume` |
+| `io_router` | `recast-radar-io` | `sniff_supported_volume_format`, `read_supported_volume_bytes` (zip/gzip unwrapping, then Level II, HDF5 by content (ODIM, netCDF-4 CfRadial 1 or 2), classic CfRadial, DORADE or JMA) |
+| `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `read_odim_h5_volume`, `decode_odim_h5_cartesian_max`, then `read_odim_hdf5_volume` on the file opened without metadata checksums |
+| `hdf5` | `recast-radar-hdf5` | `looks_like_hdf5_bytes`, `H5File::open`, then `H5File::open_with` without metadata checksums (group walk and every attribute), per dataset `dataset_info`, `chunk_locations` and, up to 32 MiB, `dataset`, and the netCDF-4 model (`NcFile::from_hdf5`, `visible_dims`, `shape`, `read` up to 1 MiB) |
+| `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `Netcdf4File::open` and `cfradial_layout`, `read_cfradial_volume` (classic CfRadial 1, netCDF-4 CfRadial 1 and 2), then `cfradial_layout` and `read_cfradial_netcdf4` on the file opened without metadata checksums |
 | `dorade` | `recast-radar-io-dorade` | `looks_like_dorade_bytes`, `peek_dorade_sweep`, then `read_dorade_sweep_volume` (even lengths) or `read_dorade_volume_from_slices` with the input twice (odd lengths) |
 | `dorade_archive` | `recast-radar-io-dorade` | `looks_like_zip_bytes`, `read_mobile_archive_from_bytes` (zip members inflated within the archive limits, DORADE sweeps grouped into volume runs and decoded, Level II members decoded by `recast-radar-io-nexrad`) |
 | `jma` | `recast-radar-io-jma` | `looks_like_jma_tar_bytes`, then by length mod 3: `read_jma_tar_volumes(None)`, `read_jma_tar_first_station`, or `jma_tar_station_headers` plus a site-filtered `read_jma_tar_volumes` |
 | `bzip2` | `recast-radar-bzip2` | `Decoder::decode_stream_into` on the input, then `Decoder::decode_two_into` on the input paired with its own first half, with a 64 MiB output limit |
 | `bzip2_encode` | `recast-radar-bzip2` | Differential: `Encoder::encode_into` at level 1 + (length mod 9) on the input, then on its first quarter appended to the same output; each stream must equal the `bzip2` crate's (libbz2-rs-sys, a port of libbzip2 1.0.8) except in the `origPtr` of a periodic block, and must decode to what was compressed with our decoder, and with the reference decoder when it differs from the reference's stream. The encoders (one per level) and the decoder are reused across inputs, so every stream is written over buffers that earlier calls filled |
+| `writers` | `recast-radar-io-cfradial`, `recast-radar-io-odim`, `recast-radar-hdf5` (writer) | `read_supported_volume_bytes`, then `write_cfradial1` (`RangeLayout` `Auto`, `PerSweep` and `PerRay`), `write_cfradial2` and `write_odim_h5_volume` (with and without `every_quantity`) on the volume; each file a writer returns must read back through the router with the same rays per sweep and, except `every_quantity` output, the same data gate by gate: values (float32 tolerance), missing, undetect and range-folded gates, ray angles and times, compared by the writer tests' `crates/recast-radar-io/tests/common/compare.rs` (included by path). A writer's typed refusal is fine; a file its own readers refuse, or one that reads back different data, panics |
 
 The harness bodies live in `src/lib.rs`; each `fuzz_targets/<target>.rs` is a
 one-line libFuzzer wrapper around the function with the same name. A harness
 fails only by panicking, aborting, hanging or exhausting memory; decode errors
 are the expected result for most inputs. `bzip2_encode` panics on purpose
 when a round trip or the comparison with the reference fails.
+
+Files written by HDF5 1.8 and later protect every metadata structure with a
+lookup3 checksum (superblock v2/v3, version 2 object headers, v2 B-trees,
+fractal heaps, fixed and extensible arrays), so nearly every mutation fails
+the checksum before the parser behind it sees the mutated bytes. The `hdf5`,
+`odim` and `cfradial` harnesses therefore also open each input with
+`OpenOptions::with_metadata_checksums(false)`, a runtime option, so every
+finding replays on stable with `fuzz-tools` exactly as the fuzzer ran it.
 
 Not covered yet: Level III products (a target belongs with
 `recast-radar-io-level3` once that crate merges), and the mobile-radar
@@ -124,7 +134,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All eleven targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All thirteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2_volume dorade
@@ -164,6 +174,29 @@ MSYS_NO_PATHCONV=1 docker exec nexbench bash -c 'source /root/.cargo/env; /build
 `testdata/` carries the manifests and the committed regression inputs. The
 container shares its CPUs with other work: `run.sh` starts one CPU-heavy
 process per target, so pass fewer targets when cores are scarce.
+
+### Stable mutation, on any platform
+
+Without libFuzzer (on Windows, or for a quick check before a campaign),
+`fuzz-tools mutate` runs a harness on mutated copies of real inputs, on one
+core:
+
+```bash
+RAYON_NUM_THREADS=1 cargo run --release --manifest-path fuzz/tools/Cargo.toml -- mutate writers 30000 2 fuzz/seeds/writers fuzz/seeds/odim
+```
+
+The arguments are the target, the number of runs, the PRNG seed (a run is
+reproducible from it) and the input files or directories. Each run applies
+one to four in-place mutations to one input: bit flips, random bytes, 2- and
+4-byte boundary integers, IEEE special and out-of-range floats and doubles
+in both byte orders, a copy of another stretch of the same file, rarely a
+truncation. Keeping the length keeps the absolute offsets of HDF5, netCDF
+and DORADE containers valid, so the mutations reach the values behind them.
+It has no coverage feedback: it complements libFuzzer rather than replacing
+it. A panicking input is saved as
+`artifacts/<target>/<target>-<rng seed>-<run>` with its message; the
+summary lists each distinct message once. The exit status is 1 when any
+input panicked.
 
 ## Crashes and regressions
 
@@ -208,6 +241,14 @@ process per target, so pass fewer targets when cores are scarce.
 |---|---|---|---|
 | `fuzz-odim-hdf5-local-heap-name-offset-overflow` | `odim` | panic: u64 overflow adding a local heap's data address and a link-name offset (`hdf5lite` `heap_string`) | D.2: checked add, error "HDF5 local heap name offset overflow" |
 | `fuzz-cfradial-overlapping-sweep-ray-ranges` | `cfradial` | OOM (2.44 GB peak from 868 KB): a header claiming 6,146 sweeps read garbage ray indices, and every overlapping sweep copied the whole field | D.2: sweep cap (1,024) and decode budget; D.4 fix: overlapping sweep ray ranges are an error, and ray indices that are not non-negative integers skip the sweep |
+| `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep` | `writers` | a writer's file its own reader refused (docs/design/writers.md, Fuzzing) | the readers and writers of the hdf5-netcdf branch |
+| `fuzz-writers-l2-odim-rstart-beyond-20-km` | `writers` (gate comparison) | the ODIM writer's km `rstart` of a sweep starting 27.6 km out read back as metres (the reader's heuristic for producers writing metres) | the writer names itself in root `how/software`; the reader takes that writer's `rstart` as km |
+| `fuzz-hdf5-chunk-offset-overflow` | `hdf5` (without metadata checksums) | panic: u64 overflow multiplying a v2 B-tree chunk record's scaled offset by the chunk dimension (`H5File::chunk_locations`) | checked multiply, error "HDF5 chunk offset overflows u64" |
+| `fuzz-writers-dorade-ray-without-time` | `writers` (gate comparison; a stable mutator) | one ray without a time: the ODIM writer left out `startazT`/`stopazT` for the whole dataset, so every other ray read back at the whole-second start | the arrays hold NaN for that ray only |
+| `fuzz-writers-l2-empty-field-name` | `writers` (`fuzz-tools mutate`) | a field named U+0001 read back from CfRadial as `_` (the writers make names valid netCDF names), and the comparison looked it up by its own name | the comparison pairs CfRadial fields by the sanitized name |
+| `fuzz-writers-odim-gate-spacing-below-float` | `writers` (`fuzz-tools mutate`) | a 1.4e-100 m gate spacing: the CfRadial 1 per-ray layout wrote a float `ray_gate_spacing` of 0, which readers take as fill, so the sweep read back on another sweep's gates | `RangeLayout::PerRay` refuses such a sweep (`Unrepresentable`) |
+| `fuzz-writers-dorade-absent-rows-without-fill` | `writers` (`fuzz-tools mutate`) | an integer field without a fill code and with an absent ray: the CfRadial 2 file had no `_FillValue`, so the absent ray read back as values | the CfRadial 2 writer gives such a field a free code as `_FillValue`, as the CfRadial 1 writer did |
+| `fuzz-writers-cfradial1-ray-time-near-float-max` | `writers` (`fuzz-tools mutate`) | a ray time of about -1.8e308 s: the ODIM reader's `(startazT + stopazT) / 2` overflowed to -inf | the reader's means are `a / 2 + b / 2` |
 
-Regression inputs are libFuzzer mutations of the real seeds for their target,
-so they count as real-file-derived.
+Regression inputs are mutations (libFuzzer's, or a stable mutator's) of the
+real seeds for their target, so they count as real-file-derived.

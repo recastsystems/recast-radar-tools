@@ -257,6 +257,25 @@ pub struct Monitoring {
 }
 
 impl Monitoring {
+    /// The slot of the Table 301-11 variable `name` (FM301 name, as
+    /// [`Monitoring::variables`] lists them); `None` for another name.
+    pub fn variable_mut(&mut self, name: &str) -> Option<&mut Option<Vec<f32>>> {
+        Some(match name {
+            "radar_measured_transmit_power_h" => &mut self.radar_measured_transmit_power_h_dbm,
+            "radar_measured_transmit_power_v" => &mut self.radar_measured_transmit_power_v_dbm,
+            "radar_measured_sky_noise" => &mut self.radar_measured_sky_noise_dbm,
+            "radar_measured_cold_noise" => &mut self.radar_measured_cold_noise_dbm,
+            "radar_measured_hot_noise" => &mut self.radar_measured_hot_noise_dbm,
+            "phase_difference_transmit_hv" => &mut self.phase_difference_transmit_hv_deg,
+            "antenna_pointing_accuracy_elev" => &mut self.antenna_pointing_accuracy_elev_deg,
+            "antenna_pointing_accuracy_az" => &mut self.antenna_pointing_accuracy_az_deg,
+            "calibration_offset_h" => &mut self.calibration_offset_h_db,
+            "calibration_offset_v" => &mut self.calibration_offset_v_db,
+            "zdr_offset" => &mut self.zdr_offset_db,
+            _ => return None,
+        })
+    }
+
     /// `(FM301 name, values)` for every present variable, in table order.
     pub fn variables(&self) -> Vec<(&'static str, &[f32])> {
         let all: [(&'static str, &Option<Vec<f32>>); 11] = [
@@ -459,6 +478,13 @@ pub enum SweepError {
     DuplicateName { name: String },
     #[error("sweep at index {index} has sweep_number {sweep_number}")]
     SweepNumber { index: usize, sweep_number: u32 },
+    /// [`Sweep::reorder_rays`] was given an order that is not a
+    /// permutation of the sweep's rays.
+    #[error("a ray order that is not a permutation of the sweep's {nrays} rays")]
+    RayOrder {
+        /// Rays in the sweep.
+        nrays: usize,
+    },
     #[error(transparent)]
     Geometry(#[from] GeometryError),
 }
@@ -740,6 +766,134 @@ impl Sweep {
             .iter()
             .filter(|field| field.quantity == quantity)
             .min_by_key(|field| rank(field.polarization))
+    }
+
+    /// Put the rays in `order` (`order[i]` is the current row that becomes
+    /// row `i`; a permutation of `0..nrays`): the ray coordinates, every
+    /// per-ray variable, the monitoring and platform track vectors, the
+    /// per-ray extra variables and every field's rows (absent rows
+    /// included). Returns [`SweepError::RayOrder`] and leaves the sweep
+    /// unchanged when `order` is not a permutation of the rays. The sweep
+    /// must be sealed (every field has a row per ray).
+    pub fn reorder_rays(&mut self, order: &[usize]) -> Result<(), SweepError> {
+        let nrays = self.nrays();
+        let mut seen = vec![false; nrays];
+        if order.len() != nrays
+            || order
+                .iter()
+                .any(|row| *row >= nrays || std::mem::replace(&mut seen[*row], true))
+        {
+            return Err(SweepError::RayOrder { nrays });
+        }
+        if self
+            .fields
+            .iter()
+            .any(|field| field.nrays as usize != nrays)
+        {
+            return Err(SweepError::RayOrder { nrays });
+        }
+        fn take<T: Copy>(values: &mut Vec<T>, order: &[usize]) {
+            if values.len() == order.len() {
+                *values = order.iter().map(|row| values[*row]).collect();
+            }
+        }
+        fn take_opt<T: Copy>(values: &mut Option<Vec<T>>, order: &[usize]) {
+            if let Some(values) = values {
+                take(values, order);
+            }
+        }
+        fn take_rows<T: Copy>(values: &mut Vec<T>, row_len: usize, order: &[usize]) {
+            if row_len == 0 || values.len() != order.len() * row_len {
+                return;
+            }
+            let mut out = Vec::with_capacity(values.len());
+            for row in order {
+                out.extend_from_slice(&values[row * row_len..(row + 1) * row_len]);
+            }
+            *values = out;
+        }
+        take(&mut self.rays.time_s, order);
+        take(&mut self.rays.azimuth_deg, order);
+        take(&mut self.rays.elevation_deg, order);
+        let vars = &mut self.ray_vars;
+        take_opt(&mut vars.nyquist_velocity_mps, order);
+        take_opt(&mut vars.unambiguous_range_m, order);
+        take_opt(&mut vars.prt_s, order);
+        take_opt(&mut vars.prt_ratio, order);
+        take_opt(&mut vars.n_samples, order);
+        take_opt(&mut vars.pulse_width_s, order);
+        take_opt(&mut vars.scan_rate_deg_per_s, order);
+        take_opt(&mut vars.antenna_transition, order);
+        take_opt(&mut vars.calib_index, order);
+        take_opt(&mut vars.rx_range_resolution_m, order);
+        take_opt(&mut vars.independent_samples, order);
+        if let Some(sequence) = &mut vars.prt_sequence_s {
+            take_rows(&mut sequence.values_s, sequence.nprt as usize, order);
+        }
+        if let Some(monitoring) = &mut self.monitoring {
+            for values in [
+                &mut monitoring.radar_measured_transmit_power_h_dbm,
+                &mut monitoring.radar_measured_transmit_power_v_dbm,
+                &mut monitoring.radar_measured_sky_noise_dbm,
+                &mut monitoring.radar_measured_cold_noise_dbm,
+                &mut monitoring.radar_measured_hot_noise_dbm,
+                &mut monitoring.phase_difference_transmit_hv_deg,
+                &mut monitoring.antenna_pointing_accuracy_elev_deg,
+                &mut monitoring.antenna_pointing_accuracy_az_deg,
+                &mut monitoring.calibration_offset_h_db,
+                &mut monitoring.calibration_offset_v_db,
+                &mut monitoring.zdr_offset_db,
+            ] {
+                take_opt(values, order);
+            }
+        }
+        if let Some(track) = &mut self.platform_track {
+            take(&mut track.latitude_deg, order);
+            take(&mut track.longitude_deg, order);
+            take(&mut track.altitude_m, order);
+            take_opt(&mut track.altitude_agl_m, order);
+            for values in [
+                &mut track.heading_deg,
+                &mut track.roll_deg,
+                &mut track.pitch_deg,
+                &mut track.drift_deg,
+                &mut track.rotation_deg,
+                &mut track.tilt_deg,
+            ] {
+                take_opt(values, order);
+            }
+        }
+        let order_u32: Vec<u32> = order.iter().map(|row| *row as u32).collect();
+        for extra in &mut self.extra_vars {
+            if extra.is_per_ray() {
+                let row_len: usize = extra.shape.iter().skip(1).map(|n| *n as usize).product();
+                if let Some(values) = extra.values.take_rows(row_len.max(1), &order_u32) {
+                    extra.values = values;
+                }
+            }
+        }
+        // Where each old row went, for the absent rows.
+        let mut new_row = vec![0u32; nrays];
+        for (to, from) in order.iter().enumerate() {
+            new_row[*from] = to as u32;
+        }
+        for field in &mut self.fields {
+            let row_len = field.ngates as usize;
+            match &mut field.data {
+                super::field::FieldData::U8 { values, .. } => take_rows(values, row_len, order),
+                super::field::FieldData::U16 { values, .. } => take_rows(values, row_len, order),
+                super::field::FieldData::I8 { values, .. } => take_rows(values, row_len, order),
+                super::field::FieldData::I16 { values, .. } => take_rows(values, row_len, order),
+                super::field::FieldData::I32 { values, .. } => take_rows(values, row_len, order),
+                super::field::FieldData::F32 { values, .. } => take_rows(values, row_len, order),
+                super::field::FieldData::F64 { values, .. } => take_rows(values, row_len, order),
+            }
+            for row in &mut field.absent_rows {
+                *row = new_row[*row as usize];
+            }
+            field.absent_rows.sort_unstable();
+        }
+        Ok(())
     }
 
     /// Append absent rows for rays at the end that a field never received, grow

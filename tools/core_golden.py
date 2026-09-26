@@ -28,7 +28,8 @@ renumbering), fed only with the metadata the independent readers produce. The me
 inputs use the FM301 conventions the design note (``docs/design/fm301-model.md``)
 documents for each reader:
 
-- field names: ODIM ``what/quantity`` verbatim; JMA reflectivity and velocity as DBZH
+- field names: ODIM ``what/quantity`` verbatim, and ODIM quality groups as
+  ``<quantity>_qualityK`` (a plane's) or ``qualityK`` (a dataset's); JMA reflectivity and velocity as DBZH
   and VRADH; Level II data blocks through the design note's table (REF -> DBZH,
   VEL -> VRADH, SW -> WRADH, ZDR -> ZDR, PHI -> PHIDP, RHO -> RHOHV, CFP -> CCORH);
 - time references: ODIM ``/what`` date and time; for JMA the earliest sweep observation
@@ -296,6 +297,14 @@ def h5_attr(group, name):
     return value
 
 
+def is_quality(name):
+    return name.startswith("quality") and name[7:].isdigit()
+
+
+def quality_order(name):
+    return int(name[7:]) if is_quality(name) else -1
+
+
 def odim_summary(entry_id, probe_gates=()):
     """Sweeps of an ODIM PVOL: elevation, nrays, nbins, quantities, times, raw probes."""
     h = h5py.File(corpus_path(entry_id), "r")
@@ -306,6 +315,7 @@ def odim_summary(entry_id, probe_gates=()):
         g = h[name]
         where = g["where"]
         quantities = {}
+        quality_fields = []
         for dname in sorted(k for k in g if k.startswith("data")):
             d = g[dname]
             q = h5_attr(d["what"], "quantity")
@@ -316,6 +326,10 @@ def odim_summary(entry_id, probe_gates=()):
                      "raw_probes": [{"ray": r, "gate": c, "raw": int(raw[r, c])} for r, c in probe_gates
                                     if r < raw.shape[0] and c < raw.shape[1]]}
             quantities[q] = entry
+            # Quality groups of a plane are fields `<quantity>_qualityK`.
+            quality_fields += [f"{q}_{k}" for k in sorted(d, key=quality_order) if is_quality(k)]
+        # Quality groups of a dataset are fields `qualityK`.
+        quality_fields += [k for k in sorted(g, key=quality_order) if is_quality(k)]
         nrays = int(h5_attr(where, "nrays"))
         sweeps.append({
             "dataset": name, "elevation_deg": f32(h5_attr(where, "elangle")),
@@ -323,6 +337,7 @@ def odim_summary(entry_id, probe_gates=()):
             "gate_spacing_m": float(h5_attr(where, "rscale")), "first_gate_m": float(h5_attr(where, "rstart")) * 1000.0,
             "start": h5_attr(g["what"], "startdate") + "T" + h5_attr(g["what"], "starttime"),
             "quantities": quantities,
+            "quality_fields": quality_fields,
             # ODIM rays are azimuth bins: centre of bin i is (i + 0.5) * 360 / nrays.
             "azimuth_deg": [f32((F32(i) + F32(0.5)) * F32(360.0) / F32(nrays)) for i in range(nrays)],
         })
@@ -502,10 +517,11 @@ def reference_merge(parts):
 
 
 def odim_part(summary):
-    """Merge part from an ODIM summary: fields are named by their quantity."""
+    """Merge part from an ODIM summary: fields are named by their quantity, then the
+    quality groups (a plane's as `<quantity>_qualityK`, the dataset's as `qualityK`)."""
     return {"site": odim_site_id(summary), "time": summary["time"],
             "sweeps": [{"fixed_angle_deg": s["elevation_deg"], "azimuth_deg": s["azimuth_deg"],
-                        "fields": {q: summary["tag"] for q in s["quantities"]}}
+                        "fields": {q: summary["tag"] for q in [*s["quantities"], *s["quality_fields"]]}}
                        for s in summary["sweeps"]]}
 
 

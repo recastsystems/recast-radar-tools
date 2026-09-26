@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::sweep::{Sweep, SweepError};
-use super::values::{AttrValue, ExtraVariable};
+use super::values::{AttrValue, ExtraVariable, VariableAttrs};
 
 /// FM301 volume: the root group of an FM301 / CfRadial 2 file and the root node
 /// of an xradar `DataTree`.
@@ -41,6 +41,12 @@ pub struct Volume {
     pub georeferencing_correction: Option<Box<GeoreferencingCorrection>>,
     /// Root variables with no slot above, verbatim and in file order.
     pub extra_vars: Vec<ExtraVariable>,
+    /// The source's own attributes of variables whose values a typed slot
+    /// holds (CfRadial `azimuth:comment`, `range:meters_between_gates`), by
+    /// group and variable, verbatim and in file order. The view writes them
+    /// with `Passthrough::All` beside the attributes it derives.
+    #[serde(default)]
+    pub variable_attrs: Vec<VariableAttrs>,
     /// Source format, container version, decode statistics. Not exported as
     /// variables.
     pub provenance: Provenance,
@@ -563,6 +569,7 @@ impl Volume {
             radar_calibration: Vec::new(),
             georeferencing_correction: None,
             extra_vars: Vec::new(),
+            variable_attrs: Vec::new(),
             provenance: Provenance::default(),
             simulation: None,
             sweeps: Vec::new(),

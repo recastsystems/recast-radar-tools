@@ -69,10 +69,11 @@ pub enum FirstDim {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Passthrough {
     /// What the flavor's reference writes. Xradar012: sweep `extra_vars`,
-    /// platform track and calibration `extra` yes (xradar keeps them for
-    /// CfRadial); root `attrs.other` and sweep `other` no (xradar 0.12 writes
-    /// no ODIM `how` or DORADE descriptor attributes). Wmo2022: FM301 names
-    /// only.
+    /// platform track, calibration `extra` and field `attrs.other` yes
+    /// (xradar keeps them for CfRadial); root `attrs.other`, sweep `other`
+    /// and the field `attrs.other` of an ODIM source no (xradar 0.12 writes
+    /// no ODIM `what`/`how` extras or DORADE descriptor attributes).
+    /// Wmo2022: FM301 names only.
     Flavor,
     /// Also every `other`, `extra_vars` and `extra` item, verbatim, for lossless
     /// CfRadial 2 output (the global attributes of a CfRadial file, ODIM

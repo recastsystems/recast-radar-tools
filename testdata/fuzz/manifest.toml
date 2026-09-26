@@ -26,6 +26,17 @@ tags = ["fuzz-regression", "fuzz-target:odim", "fuzz-finding:crash", "derived", 
 description = "Minimized odim fuzz crash: HDF5 v0 superblock and root symbol table whose local heap data address plus name offset overflows u64"
 
 [[file]]
+id = "fuzz-hdf5-chunk-offset-overflow"
+format = "odim-h5"
+sha256 = "c1d08d4c485b1b8c059451437b7d4b3e44d7e39bd3f7b113f6368fc4ce0ac970"
+size = 532077
+committed = "files/fuzz/hdf5/crash-chunk-offset-overflow"
+derived_from = "odim-dkrom-20260820-1130-pvol-h5latest-trim"
+derivation = "libFuzzer mutation of the seed (cargo-fuzz 0.13.2, target hdf5 reading without metadata checksums, 15-minute run in nexbench on the hdf5-netcdf branch, 2026-09-25): artifact crash-f514229a9e646c91b3ec12b969796d3e3ebecbd9, committed as found (532059 of its 532077 bytes equal to the seed at the same offsets; byte deletion breaks the HDF5 addresses). A v2 B-tree chunk record's scaled offset times the chunk dimension overflowed u64 in H5File::chunk_locations ('attempt to multiply with overflow' under overflow checks, a wrapped offset in release)"
+tags = ["fuzz-regression", "fuzz-target:hdf5", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "hdf5:superblock-v3", "hdf5:v2-btree-chunks"]
+description = "hdf5 fuzz crash: the superblock v3 fixture with a v2 B-tree chunk record whose scaled offset overflows when multiplied by the chunk dimension"
+
+[[file]]
 id = "fuzz-cfradial-overlapping-sweep-ray-ranges"
 format = "cfradial1"
 sha256 = "65fe8fec4da87cd57c4d85f798b33a3a58b7518559681a41e3fd9752bb66963c"
@@ -46,3 +57,91 @@ derived_from = "l2-kiwa-20260917-003629"
 derivation = "libFuzzer mutation of the seed's .l2-head derivation (cargo-fuzz 0.13.2, target level2_writer, fuzz and writer at b6d7e80, AddressSanitizer, 20-minute run in nexbench): artifact crash-a6ae43506b94a3be4a383a09add845c30b95b751 (355780 bytes, 96.7% of its bytes equal to the 355780-byte seed at the same offsets), minimized with `cargo fuzz tmin -r 3000 -- -max_total_time=400` to 22157 bytes. A REF moment header with a NaN scale and offset: the writer did not take that for a NEXRAD coding, resolved every gate to NaN and wrote them all below threshold, so the codes did not come back ('sweep 0: DBZH ray 0 codes differ')"
 tags = ["fuzz-regression", "fuzz-target:level2_writer", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
 description = "Minimized level2_writer fuzz crash: KIWA 2026 head whose REF moment carries a NaN scale and offset"
+
+[[file]]
+id = "fuzz-writers-l2-sweep-without-gates"
+format = "nexrad-level2"
+sha256 = "6cc5f41c9bf38452371bf15e00ee7036997e0fbea837029418e9249e020d4c04"
+size = 130
+committed = "files/fuzz/writers/crash-l2-sweep-without-gates"
+derived_from = "l2-kvnx-20110315-000203"
+derivation = "libFuzzer mutation of the seed's .l2-sparse cut (fuzz-tools seeds; cargo-fuzz 0.13.2, target writers, 15-minute run in nexbench on the hdf5-netcdf branch, 2026-09-25): artifact crash-352c7f98babcc625388c87f8c5aad5d2dfa25a13 (18725 bytes, 99.5% of its 12-byte windows found in the 98116-byte seed), minimized with libFuzzer `-minimize_crash=1 -max_total_time=300` (what `cargo fuzz tmin` runs) against the pre-fix build to 130 bytes: an AR2V0006 volume header and one Message 31 radial without moment blocks. The router decodes a sweep of one ray and no gates; write_cfradial2 wrote it (range dimension 0) and read_cfradial_volume refused the file ('CfRadial 2 sweep /sweep_0 has no rays or gates')"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
+description = "Minimized writers fuzz crash: a Level II radial without moments, a sweep of rays and no gates that the FM301 writer wrote and its reader refused"
+
+[[file]]
+id = "fuzz-writers-l2-one-gate-sweep"
+format = "nexrad-level2"
+sha256 = "fffa7144a8fa388364c42541887cd83e610b5ea27843e2201c2eca3ad010b073"
+size = 60461
+committed = "files/fuzz/writers/crash-l2-one-gate-sweep"
+derived_from = "l2-kvnx-20110315-000203"
+derivation = "libFuzzer mutation of the seed's .l2-sparse cut (fuzz-tools seeds; cargo-fuzz 0.13.2, target writers, 15-minute run in nexbench on the hdf5-netcdf branch, 2026-09-25): artifact crash-4b474b02f4519f1091db61dbcebb70e96e8cf50a, committed as found (84% of its bytes equal to the 98116-byte seed at the same offsets): minimizing it turned it into the gate-less case above. The router decodes one-gate sweeps; write_cfradial1 wrote a one-gate range(range) and read_cfradial_volume refused it ('range coordinate needs at least two gates')"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
+description = "Writers fuzz crash: a Level II volume of one-gate radials whose CfRadial 1 file had a one-gate range its reader refused"
+
+[[file]]
+id = "fuzz-writers-l2-odim-rstart-beyond-20-km"
+format = "nexrad-level2"
+sha256 = "cb2617169e2c27741cf2af739c0ba91477b28eab78b61f79fc670f43d14e4bca"
+size = 312
+committed = "files/fuzz/writers/crash-l2-odim-rstart-beyond-20-km"
+derived_from = "l2-kvnx-20110315-000203"
+derivation = "libFuzzer crossover of the seed's .l2-sparse cut and cfrad1-dow8-20211011-223602-rhi-trim3-classic (fuzz-tools seeds; cargo-fuzz 0.13.2, target writers comparing every gate, 10-minute run in nexbench on the hdf5-netcdf branch, 2026-09-25): artifact crash-c61bf3940e22f097189b0ce081ac886575fd40d6 (539897 bytes), minimized with libFuzzer `-minimize_crash=1 -max_total_time=180` against the build before the fix to 312 bytes: an AR2V0006 header and a Message 31 radial whose first gate is centred 27,649 m out. The ODIM writer wrote rstart in km (ODIM_H5/V2_3), and the ODIM reader took a km rstart over 20 as metres (a heuristic for producers writing metres), so the sweep read back 27 km short"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
+description = "Minimized writers fuzz crash: a Level II radial whose first gate lies beyond 20 km, which the ODIM writer wrote in km and the ODIM reader read as metres"
+
+[[file]]
+id = "fuzz-writers-dorade-ray-without-time"
+format = "dorade"
+sha256 = "d985ced534efbc4bb7a38de44806fe9d0bb4f4f3a1fc9fe6c0dd3c132bc4c0eb"
+size = 37380
+committed = "files/fuzz/writers/crash-dorade-ray-without-time"
+derived_from = "dorade-cow2-20260521-225514-sur-head24"
+derivation = "Stable mutation of the seed (the writers harness under catch_unwind with overflow checks, driven by a byte and value mutator during the review of the hdf5-netcdf branch, 2026-09-25), committed as found: 73 of its 37380 bytes differ from the seed at the same offsets. Ray 5 of the sweep decodes without a time (NaN). The ODIM writer then left startazT/stopazT out of the whole dataset and wrote whole-second what/starttime and endtime, so every other ray read back at 22:55:14 instead of 0.280 to 0.609 s later"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "endian:big"]
+description = "Writers fuzz crash: a COW2 DORADE sweep with one ray without a time, whose ODIM output lost the sub-second times of every other ray"
+
+[[file]]
+id = "fuzz-writers-l2-empty-field-name"
+format = "nexrad-level2"
+sha256 = "8719591ad0688ebd3ecddc9e8ce472587f30bbcca0742d762900c7183f47a2c5"
+size = 98116
+committed = "files/fuzz/writers/crash-l2-empty-field-name"
+derived_from = "l2-kvnx-20110315-000203"
+derivation = "fuzz-tools mutate writers 12000 1 (stable mutator, hdf5-netcdf branch, 2026-09-25), run 1565 from the seed's .l2-sparse cut (fuzz-tools seeds), committed as found: 17 of its 98116 bytes differ from the cut at the same offsets. A moment block name ZDR became the bytes 01 00 00, so the volume has a field named U+0001. The CfRadial writers name the variable `_` (a valid netCDF name), and the writers harness looked the field up by its own name"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
+description = "Writers fuzz crash: a Level II moment whose name is a control character, written to CfRadial under the sanitized variable name `_`"
+
+[[file]]
+id = "fuzz-writers-odim-gate-spacing-below-float"
+format = "odim-h5"
+sha256 = "27b10651994f7f9132bba4fde3201ab65b3857e331e5ddfb83fefb262cf39c35"
+size = 322411
+committed = "files/fuzz/writers/crash-odim-gate-spacing-below-float"
+derived_from = "odim-itdes-20260924-2135-pvol-class"
+derivation = "fuzz-tools mutate writers 12000 1 (stable mutator, hdf5-netcdf branch, 2026-09-25), run 3020 from the seed as committed, committed as found: 31 of its 322411 bytes differ from the seed at the same offsets (superblock v0: no metadata checksums). Dataset 2's where/rscale became 1.41e-100 m. With RangeLayout::PerRay the CfRadial 1 writer stated that sweep's geometry in float ray_gate_spacing, where it is 0; readers take a spacing that is not positive as fill, so the sweep read back on range(range) (300 m gates from 300 m) instead of its 416 gates centred at 150 m"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "hdf5:superblock-v0"]
+description = "Writers fuzz crash: an ODIM sweep whose gate spacing is below the float range, which the CfRadial 1 per-ray layout wrote as a spacing of 0"
+
+[[file]]
+id = "fuzz-writers-dorade-absent-rows-without-fill"
+format = "dorade"
+sha256 = "dd0502c2ad4e9d6e4c555b2f34aeef6ff5e839a9ca59e3e8c28c197bf7f94836"
+size = 31428
+committed = "files/fuzz/writers/crash-dorade-absent-rows-without-fill"
+derived_from = "dorade-noxp-20090501-190244-ppi"
+derivation = "fuzz-tools mutate writers 30000 2 (stable mutator, hdf5-netcdf branch, 2026-09-25), run 16069 from the seed's .head8 cut (fuzz-tools seeds), committed as found: the first 31428 bytes of the 149628-byte cut, 15 of them changed. The volume decodes to one sweep of two rays whose KDP field has no fill code its i16 storage can hold and no data for the second ray (an absent row). The FM301 view states `_FillValue` only from the coding, so the CfRadial 2 file had none and the absent row read back as values (-1.2e-40) instead of missing"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "endian:little"]
+description = "Writers fuzz crash: a NOXP DORADE field without a fill code and with an absent ray, whose CfRadial 2 output read the absent ray back as values"
+
+[[file]]
+id = "fuzz-writers-cfradial1-ray-time-near-float-max"
+format = "cfradial1"
+sha256 = "a40761548e8b8cbb6d4798b7692b5b548d1a0c180221febfec175b20a434f1f7"
+size = 13624
+committed = "files/fuzz/writers/crash-cfradial1-ray-time-near-float-max"
+derived_from = "cfrad1-xsapr-sgp-20110520-ppi-classic"
+derivation = "fuzz-tools mutate writers 30000 2 (stable mutator, hdf5-netcdf branch, 2026-09-25), run 28855 from the seed as committed, committed as found: 11 of its 13624 bytes differ from the seed at the same offsets. Ray 1 decodes with a time of about -1.8e308 s. The ODIM writer wrote it in startazT and stopazT, and the ODIM reader's mean (startazT + stopazT) / 2 overflowed to -inf"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "container:netcdf3-classic"]
+description = "Writers fuzz crash: a CfRadial 1 ray time near the double range, whose ODIM round trip overflowed the reader's start/stop mean to -inf"

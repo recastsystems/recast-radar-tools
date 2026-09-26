@@ -1,0 +1,92 @@
+{
+ "id": "cfrad2-radx-irene-sr2-20110827-120420-sur-r30km",
+ "sha256": "7fabe64391c6cb81fe46526eb71495d072171aa3c5602fa3f278ae9acabbf98d",
+ "generator": "tools/cfradial2_golden.py (xradar 0.12.0, netCDF4-python 1.7.4)",
+ "instrument_name": "CPOLRVP",
+ "volume_number": 395,
+ "platform_type": "fixed",
+ "time_coverage_start": "2011-08-27T12:04:20Z",
+ "sweeps": [
+  {
+   "source_group": "sweep_0001",
+   "fixed_angle": 0.802001953125,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "none",
+   "prt_mode": "fixed",
+   "nrays": 360,
+   "ngates": 400,
+   "ray_dimension": "time",
+   "range_first": 0.0,
+   "range_spacing": 75.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1314446660.76,
+    1314446672.76
+   ],
+   "azimuth_sha256": "4cea434f51b546ee8b485df53d04a464a174fd473518d03be17f9c3d32b8f3e8",
+   "elevation_sha256": "9c5fc449a1ba606a408a72e024295a4c84333a34b59e1f3334d582bf7d81e016",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int8",
+     "in_xradar": true,
+     "scale_factor": 0.5,
+     "add_offset": 32.0,
+     "fill_value": -128.0,
+     "sha256": "f2c433afcee1e50d46a7d1c92a5c6d28da7048610159ea66fedc43ce35b96a5f"
+    },
+    {
+     "name": "VEL",
+     "dtype": "int8",
+     "in_xradar": true,
+     "scale_factor": 0.3777165412902832,
+     "add_offset": 0.0,
+     "fill_value": -128.0,
+     "sha256": "1e9039a5e1a3402911b1f039f51e2ed68ab44d8673983e2540feb43018b16232"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_0002",
+   "fixed_angle": 1.4996337890625,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "none",
+   "prt_mode": "fixed",
+   "nrays": 359,
+   "ngates": 400,
+   "ray_dimension": "time",
+   "range_first": 0.0,
+   "range_spacing": 75.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1314446672.811,
+    1314446684.811
+   ],
+   "azimuth_sha256": "d16429d8f5714f5bb64af5c1d5120e5d0eb0d319a0c2557802fe0293b87e0c2f",
+   "elevation_sha256": "26a5d50ec4771d4e4d861b7a743bc0c12ddc67a91051971b2aa1c5875577df27",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int8",
+     "in_xradar": true,
+     "scale_factor": 0.5,
+     "add_offset": 32.0,
+     "fill_value": -128.0,
+     "sha256": "ddb79a24321700c761f71f628747bd8a7a54f2e166ef559ab80dcaabbdfca561"
+    },
+    {
+     "name": "VEL",
+     "dtype": "int8",
+     "in_xradar": true,
+     "scale_factor": 0.3777165412902832,
+     "add_offset": 0.0,
+     "fill_value": -128.0,
+     "sha256": "c1db423f5aed49d08d51bd4ef24165d0df817b2e69543605d3d80b59df3db322"
+    }
+   ]
+  }
+ ],
+ "latitude": 34.73310470581055,
+ "longitude": -76.66191101074219,
+ "altitude": 0.0
+}

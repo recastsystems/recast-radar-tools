@@ -28,7 +28,8 @@ recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad", features = ["writ
 # Real corpus files (spec section 5) and real-file resource-limit tests
 # (tests/limits_real.rs).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
-# Only for examples/level2_writer_check.rs (the manifest of written files).
+# The writer tests' structural diff of two volumes, and
+# examples/level2_writer_check.rs (the manifest of written files).
 serde_json.workspace = true
 
 [lints]

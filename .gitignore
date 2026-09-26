@@ -4,3 +4,4 @@ target/
 /fuzz/corpus/
 /fuzz/coverage/
 .testdata-cache/
+__pycache__/

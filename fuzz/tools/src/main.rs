@@ -6,6 +6,9 @@
 //! fuzz-tools replay <target> <path>.. run inputs (files or directories) through a harness
 //! fuzz-tools regressions              replay the testdata entries tagged fuzz-regression
 //! fuzz-tools smoke <target> <n> [DIR] n seeded mutations of every seed of the target
+//! fuzz-tools mutate <target> <runs> <rng-seed> <path>..
+//!                                     stable mutation fuzzing from those inputs
+//!                                     (crashes to artifacts/<target>/; see `mutate`)
 //! ```
 //!
 //! `smoke` is a repeatable stand-in for a fuzzing campaign on machines
@@ -30,6 +33,8 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use recast_radar_fuzz::{Harness, TARGETS, harness};
+
+mod mutate;
 
 /// Archive II volume header length.
 const L2_VOLUME_HEADER_LEN: usize = 24;
@@ -238,6 +243,11 @@ const SEEDS: &[Seed] = &[
         Verbatim,
     ),
     ("io_router", "jma-n6-20191012-090000-rs47773", Verbatim),
+    (
+        "io_router",
+        "cfrad2-xradar-xsapr-sgp-20110520-ppi",
+        Verbatim,
+    ),
     // odim: every committed ODIM_H5 file (superblock v0/v1, v2 object
     // headers, vlen strings, float64, Cartesian composites) plus the
     // netCDF-4 (HDF5) CfRadial file.
@@ -251,8 +261,55 @@ const SEEDS: &[Seed] = &[
     ("odim", "odim-imgw-ram-20260711-0015-zdr-max", Verbatim),
     ("odim", "odim-iesha-20260305-0115-pvol", Verbatim),
     ("odim", "odim-dkrom-20260820-1130-pvol", Verbatim),
+    (
+        "odim",
+        "odim-dkrom-20260820-1130-pvol-h5latest-trim",
+        Verbatim,
+    ),
     ("odim", "cfrad1-xsapr-sgp-20110520-ppi-netcdf4", Verbatim),
-    // cfradial: every committed CfRadial 1 file.
+    // int16 planes, quality groups with legends, nested how groups.
+    (
+        "odim",
+        "odim-seang-20260924-2130-qcvol-dataset1-trim",
+        Verbatim,
+    ),
+    (
+        "odim",
+        "odim-fianj-20260924-2130-pvol-dataset1-trim",
+        Verbatim,
+    ),
+    ("odim", "odim-deboo-20260924-2130-sweep-th-00", Verbatim),
+    ("odim", "odim-itdes-20260924-2135-pvol-class", Verbatim),
+    // hdf5: one file per HDF5 layout: superblock v0 (old-style groups, v1
+    // B-tree chunks), v0 with vlen strings, v1 with 8-byte sizes, v0 with
+    // AEMET's v2 object headers, v2 netCDF-4 (dense links and attributes,
+    // fractal heaps, v2 B-trees), and the v3 "latest" container with every
+    // version-4 chunk index and huge heap objects.
+    ("hdf5", "odim-bejab-20190606-0000-pvol", Verbatim),
+    ("hdf5", "odim-bewid-20130429-0430-pvol-dbzh-scan1", Verbatim),
+    ("hdf5", "odim-norst-20170421-0908-pvol", Verbatim),
+    ("hdf5", "odim-espdg-20260707-1927-pvol-dbzh-vradh", Verbatim),
+    ("hdf5", "odim-imgw-ram-20260711-0015-kdp-max", Verbatim),
+    ("hdf5", "cfrad1-xsapr-sgp-20110520-ppi-netcdf4", Verbatim),
+    (
+        "hdf5",
+        "odim-dkrom-20260820-1130-pvol-h5latest-trim",
+        Verbatim,
+    ),
+    // Paged extensible-array data blocks, committed datatypes, 4-byte
+    // addresses; 4-byte lengths and a deflated dense-link fractal heap.
+    (
+        "hdf5",
+        "odim-dkrom-20260820-1130-pvol-h5edge-paged-ea",
+        Verbatim,
+    ),
+    (
+        "hdf5",
+        "odim-dkrom-20260820-1130-pvol-h5edge-len4",
+        Verbatim,
+    ),
+    // cfradial: every committed CfRadial 1 and CfRadial 2 file (classic and
+    // netCDF-4; Radx and xradar writers).
     (
         "cfradial",
         "cfrad1-xsapr-sgp-20110520-ppi-classic",
@@ -271,6 +328,40 @@ const SEEDS: &[Seed] = &[
     (
         "cfradial",
         "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
+        Verbatim,
+    ),
+    (
+        "cfradial",
+        "cfrad2-radx-irene-sr2-20110827-120420-sur-r30km",
+        Verbatim,
+    ),
+    (
+        "cfradial",
+        "cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32",
+        Verbatim,
+    ),
+    ("cfradial", "cfrad2-xradar-xsapr-sgp-20110520-ppi", Verbatim),
+    (
+        "cfradial",
+        "cfrad2-xradar-dow8-20211011-223602-rhi-r300",
+        Verbatim,
+    ),
+    // n_gates_vary storage from LROSE Radx: per-ray gate geometry in a
+    // range(time, range), and one range in netCDF-4; netCDF-4 user-defined
+    // types.
+    (
+        "cfradial",
+        "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry",
+        Verbatim,
+    ),
+    (
+        "cfradial",
+        "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4",
+        Verbatim,
+    ),
+    (
+        "cfradial",
+        "cfrad1-xsapr-sgp-20110520-ppi-netcdf4-user-types",
         Verbatim,
     ),
     // dorade: the committed sweepfiles, head-trimmed to a few rays
@@ -329,6 +420,52 @@ const SEEDS: &[Seed] = &[
     ("bzip2_encode", "l2-tstl-20230331-230314", LdmPayload(1)),
     ("bzip2_encode", "l2-tstl-20230331-230314", LdmPayload(69)),
     ("bzip2_encode", KIWA_CHUNK_I2, LdmRecord(0)),
+    // writers: small real volumes of every format the writers take
+    // (Level II message 31 and message 1, CfRadial 1 classic and netCDF-4,
+    // CfRadial 2, DORADE, ODIM_H5 with quality groups and legends, an RHI).
+    ("writers", "l2-ktlx-19990503-230052", Verbatim),
+    ("writers", "l2-kvnx-20110315-000203", L2Sparse),
+    ("writers", "cfrad1-xsapr-sgp-20110520-ppi-classic", Verbatim),
+    ("writers", "cfrad1-xsapr-sgp-20110520-ppi-netcdf4", Verbatim),
+    (
+        "writers",
+        "cfrad1-dow8-20211011-223602-rhi-trim3-classic",
+        Verbatim,
+    ),
+    ("writers", "cfrad2-xradar-xsapr-sgp-20110520-ppi", Verbatim),
+    (
+        "writers",
+        "cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32",
+        Verbatim,
+    ),
+    (
+        "writers",
+        "dorade-cow2-20260521-225514-sur-head24",
+        Verbatim,
+    ),
+    (
+        "writers",
+        "odim-bewid-20130429-0430-pvol-dbzh-scan1",
+        Verbatim,
+    ),
+    (
+        "writers",
+        "odim-espdg-20260707-1927-pvol-dbzh-vradh",
+        Verbatim,
+    ),
+    (
+        "writers",
+        "odim-fianj-20260924-2130-pvol-dataset1-trim",
+        Verbatim,
+    ),
+    // Sweeps of 500 m and 250 m gates, every first gate centred at 0 m
+    // (LROSE Radx's CfRadial 1 of FMI Anjalankoski): per-sweep geometry in
+    // CfRadial 1 from a ragged Radx file.
+    (
+        "writers",
+        "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry",
+        Verbatim,
+    ),
 ];
 
 fn main() -> ExitCode {
@@ -349,9 +486,10 @@ fn main() -> ExitCode {
             ),
             Err(_) => Err(other_error(format!("`{}` is not a count", args[2]))),
         },
+        Some("mutate") if args.len() >= 5 => run_mutate(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!(
-                "usage: fuzz-tools seeds [OUT_DIR]\n       fuzz-tools replay <target> <file-or-dir>...\n       fuzz-tools regressions\n       fuzz-tools smoke <target> <mutations-per-seed> [SEED_DIR]\ntargets: {}",
+                "usage: fuzz-tools seeds [OUT_DIR]\n       fuzz-tools replay <target> <file-or-dir>...\n       fuzz-tools regressions\n       fuzz-tools smoke <target> <mutations-per-seed> [SEED_DIR]\n       fuzz-tools mutate <target> <runs> <rng-seed> <file-or-dir>...\ntargets: {}",
                 TARGETS
                     .iter()
                     .map(|(name, _)| *name)
@@ -644,6 +782,23 @@ fn replay(target: &str, paths: impl Iterator<Item = PathBuf>) -> io::Result<bool
         collect_files(&path, &mut files)?;
     }
     replay_files(target, harness, &files)
+}
+
+fn run_mutate(target: &str, runs: &str, seed: &str, paths: &[String]) -> io::Result<bool> {
+    let harness =
+        harness(target).ok_or_else(|| other_error(format!("unknown target `{target}`")))?;
+    let runs: u64 = runs
+        .parse()
+        .map_err(|_| other_error(format!("runs `{runs}` is not a count")))?;
+    let seed: u64 = seed
+        .parse()
+        .map_err(|_| other_error(format!("rng seed `{seed}` is not a number")))?;
+    let mut files = Vec::new();
+    for path in paths {
+        collect_files(Path::new(path), &mut files)?;
+    }
+    let out = fuzz_dir().join("artifacts").join(target);
+    mutate::mutate(target, harness, &files, runs, seed, &out)
 }
 
 fn collect_files(path: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {

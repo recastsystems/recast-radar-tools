@@ -66,16 +66,16 @@ fn imgw_max_decodes_dataset_level_metadata_geometry_and_missing_values() {
         grid.geometry.corners.upper_left.latitude_deg
             > grid.geometry.corners.lower_left.latitude_deg
     );
-    assert_eq!(grid.values.len(), 250_000);
+    assert_eq!(grid.values().len(), 250_000);
     assert_eq!(grid.encoding.nodata, Some(255.0));
     assert_eq!(grid.encoding.undetect, Some(0.0));
 
-    let (finite, low, high) = finite_range(&grid.values);
+    let (finite, low, high) = finite_range(&grid.values());
     assert_eq!(finite, 1_934);
     assert!((low - -0.719_441_1).abs() < 1.0e-6, "low={low}");
     assert!((high - 0.936_317).abs() < 1.0e-6, "high={high}");
     assert_eq!(
-        grid.values.iter().filter(|value| value.is_nan()).count(),
+        grid.values().iter().filter(|value| value.is_nan()).count(),
         248_066
     );
     assert!((grid.value_at(231, 93).unwrap() - -0.103_838_73).abs() < 1.0e-6);
@@ -124,7 +124,7 @@ fn all_released_imgw_dual_pol_max_quantities_decode_with_physical_units() {
         let grid = decode_odim_h5_cartesian_max(bytes).expect("IMGW MAX decodes");
         assert_eq!(grid.quantity, quantity);
         assert_eq!(grid.units.as_deref(), Some(units));
-        let (finite, low, high) = finite_range(&grid.values);
+        let (finite, low, high) = finite_range(&grid.values());
         assert_eq!(
             finite, expected_finite,
             "{} finite count",
@@ -145,9 +145,133 @@ fn all_released_imgw_dual_pol_max_quantities_decode_with_physical_units() {
 
 #[test]
 fn imgw_dataset_level_what_is_required_not_data_plane_what() {
-    let file = recast_radar_io_odim::hdf5lite::H5File::open(KDP).expect("fixture HDF5 opens");
+    let file = recast_radar_io_odim::hdf5::H5File::open(KDP).expect("fixture HDF5 opens");
     assert!(file.has_object("/dataset1/what"));
     assert!(!file.has_object("/dataset1/data1/what"));
     let grid = decode_odim_h5_cartesian_max(KDP).expect("dataset-level metadata decodes");
     assert_eq!(grid.quantity_code, "KDP");
+}
+
+/// The decode keeps every dataset (IMGW's `VSP` and `HSP` side projections
+/// beside the `MAX`), every plane as stored and every attribute of every
+/// group: checked against h5py's reading of the same file
+/// (`testdata/golden/hdf5/odim-imgw-ram-20260711-0015-kdp-max.json`,
+/// tools/hdf5_golden.py: every attribute, and each plane's shape and SHA-256
+/// of its stored values).
+#[test]
+fn imgw_max_keeps_every_dataset_plane_and_attribute() {
+    use recast_radar_core::model::{ArrayBuf, AttrValue};
+
+    let path = recast_radar_testdata::testdata_dir()
+        .join("golden")
+        .join("hdf5")
+        .join("odim-imgw-ram-20260711-0015-kdp-max.json");
+    let golden: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let objects = golden["objects"].as_object().unwrap();
+    let grid = decode_odim_h5_cartesian_max(KDP).expect("IMGW MAX decodes");
+
+    // Every attribute of the file, by path: the root's under `<group>.`,
+    // each dataset's and plane's under `<member>.`.
+    let mut expected = 0usize;
+    for (object_path, object) in objects {
+        for attribute in object["attributes"].as_array().unwrap() {
+            let name = attribute["name"].as_str().unwrap();
+            let parts: Vec<&str> = object_path.trim_start_matches('/').split('/').collect();
+            let (attrs, key) = match parts.as_slice() {
+                [""] => (&grid.attrs, name.to_owned()),
+                [group] if !group.starts_with("dataset") => {
+                    (&grid.attrs, format!("{group}.{name}"))
+                }
+                [dataset, rest @ ..] => {
+                    let dataset = grid
+                        .datasets
+                        .iter()
+                        .find(|candidate| candidate.name == *dataset)
+                        .unwrap_or_else(|| panic!("{dataset} not kept"));
+                    match rest {
+                        [] => (&dataset.attrs, name.to_owned()),
+                        [plane, member @ ..] if plane.starts_with("data") => {
+                            let plane = dataset
+                                .planes
+                                .iter()
+                                .find(|candidate| candidate.name == *plane)
+                                .unwrap_or_else(|| panic!("{plane} not kept"));
+                            let key = if member.is_empty() {
+                                name.to_owned()
+                            } else {
+                                format!("{}.{name}", member.join("."))
+                            };
+                            (&plane.attrs, key)
+                        }
+                        member => (&dataset.attrs, format!("{}.{name}", member.join("."))),
+                    }
+                }
+                [] => unreachable!(),
+            };
+            let value = attrs
+                .iter()
+                .find(|(have, _)| **have == *key)
+                .map(|(_, value)| value)
+                .unwrap_or_else(|| panic!("{object_path} @{name} not kept as {key}"));
+            let want = &attribute["value"]["values"][0];
+            match (value, want) {
+                (AttrValue::Text(text), serde_json::Value::String(want)) => {
+                    assert_eq!(&**text, want, "{object_path} @{name}");
+                }
+                (value, serde_json::Value::Number(want)) => {
+                    assert_eq!(value.as_f64(), want.as_f64(), "{object_path} @{name}");
+                }
+                (value, want) => panic!("{object_path} @{name}: {value:?} against {want}"),
+            }
+            expected += 1;
+        }
+    }
+    let kept = grid.attrs.len()
+        + grid
+            .datasets
+            .iter()
+            .map(|dataset| {
+                dataset.attrs.len()
+                    + dataset
+                        .planes
+                        .iter()
+                        .map(|plane| plane.attrs.len())
+                        .sum::<usize>()
+            })
+            .sum::<usize>();
+    assert_eq!(kept, expected, "attributes kept against the file's");
+
+    // Every plane in its stored type and codes.
+    let products: Vec<&str> = grid
+        .datasets
+        .iter()
+        .map(|dataset| match dataset.what("product") {
+            Some(AttrValue::Text(product)) => &**product,
+            other => panic!("{}: product {other:?}", dataset.name),
+        })
+        .collect();
+    assert_eq!(products, ["MAX", "VSP", "HSP"]);
+    for dataset in &grid.datasets {
+        for plane in &dataset.planes {
+            let path = format!("/{}/{}/data", dataset.name, plane.name);
+            let want = &objects[&path]["dataset"];
+            let shape: Vec<usize> = want["shape"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n.as_u64().unwrap() as usize)
+                .collect();
+            assert_eq!(plane.dims, shape, "{path}");
+            let ArrayBuf::U8(codes) = &plane.raw else {
+                panic!("{path}: stored as {}", plane.raw.dtype());
+            };
+            assert_eq!(
+                recast_radar_testdata::sha256_hex(codes),
+                want["value"]["sha256"].as_str().unwrap(),
+                "{path}"
+            );
+        }
+    }
+    assert_eq!(grid.raw().map(ArrayBuf::len), Some(250_000));
 }

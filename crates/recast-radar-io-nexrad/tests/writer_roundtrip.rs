@@ -324,6 +324,7 @@ fn assert_same_volume_items(label: &str, a: &Volume, b: &Volume) {
         radar_calibration,
         georeferencing_correction,
         extra_vars,
+        variable_attrs,
         provenance: _,
         simulation,
         sweeps: _,
@@ -348,6 +349,7 @@ fn assert_same_volume_items(label: &str, a: &Volume, b: &Volume) {
         "{label}"
     );
     assert_eq!(*extra_vars, b.extra_vars, "{label}");
+    assert_eq!(*variable_attrs, b.variable_attrs, "{label}: variable attributes");
     assert_eq!(*simulation, b.simulation, "{label}");
     assert_eq!(a.sweeps.len(), b.sweeps.len(), "{label}: sweeps");
 }

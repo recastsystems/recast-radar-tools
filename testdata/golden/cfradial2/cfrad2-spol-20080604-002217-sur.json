@@ -1,0 +1,365 @@
+{
+ "id": "cfrad2-spol-20080604-002217-sur",
+ "sha256": "91827c51ef21e4d81bea56f935e40c484a6d6fcaae31dd5ff7c2c4e2b51dca11",
+ "generator": "tools/cfradial2_golden.py (xradar 0.12.0, netCDF4-python 1.7.4)",
+ "instrument_name": "SPOLRVP8",
+ "volume_number": 36,
+ "platform_type": "fixed",
+ "time_coverage_start": "2008-06-04T00:15:03Z",
+ "sweeps": [
+  {
+   "source_group": "sweep_0",
+   "fixed_angle": 0.4999000132083893,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 483,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538503.0,
+    1212538550.0
+   ],
+   "azimuth_sha256": "1cd92dbca28884240526183e6bb54300de2511c330fb9b0bfa89c828bd17086c",
+   "elevation_sha256": "0449a0dec5adc320017920b37fa80b9bd900b357b3832d62481ec04866f30e75",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "c958e19ade717b563a2bc7a02ae2f247e11915a60d6ac68825ba2a71c8e9215a"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "d8cd224d3c886beee6e1e235beb9e50590c3c230373cf286b57b56f008d3a5ea"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_1",
+   "fixed_angle": 1.0986000299453735,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 483,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538550.0,
+    1212538599.0
+   ],
+   "azimuth_sha256": "6465a2f4ad408d046a377c1f3af02b664f84b9928a741a98fde498842bc11893",
+   "elevation_sha256": "a7a249bb8045ce4abc58612d6f8921a526f088c14077405af15f3a443e7dfadd",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "f3cdf41161ab3758573eaf7c8bcb6a2c844cb96ca7d9a5cd032793d67093f1f2"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "30d6ff681634f3477b36777210822205db49f034e4215850a5ae4ce90340937b"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_2",
+   "fixed_angle": 1.801800012588501,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 482,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538600.0,
+    1212538647.0
+   ],
+   "azimuth_sha256": "a5123b8935f70b3c59e7593eae0967f27a45611dc44a55f381f2baf0d42fbec1",
+   "elevation_sha256": "7149c0a2e247b62daef6f00a788fd0f9423ca46e300a4d4d69720bb1f22edbba",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "bb62036bae0aac0a5013f0ead1167f12df36f12d2c479b35df2167504edb5ee1"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "7a3e46309f8f86d96f04d5040f901a8e1ea32f346c45d92e00fb1808cf8eedf0"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_3",
+   "fixed_angle": 2.598299980163574,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 483,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538647.0,
+    1212538695.0
+   ],
+   "azimuth_sha256": "036d6b112afd796675dfa942dc6f58c82c1fc03e3d2f30e96991f7c0a64fb484",
+   "elevation_sha256": "e6e368d0246d4968e88aa79a22d71a5d5b16e22f603cb5efb2aa876f6f5c0fda",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "84a1f03b84db3ab0ef80ee16c3b8fc0a9b2336dc0dda8b659508802e967684c2"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "229cd551071f7513119dbb71d5ad97f835001c3264e0ba781f7345020fc9b735"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_4",
+   "fixed_angle": 3.5980000495910645,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 481,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538695.0,
+    1212538743.0
+   ],
+   "azimuth_sha256": "71e10ca1afc637af5784edc5da8712f0a89415af83511a72fe9a1d764b148baf",
+   "elevation_sha256": "304f45c404152de997ee3f5e5dbf1027a1d42547f3f1f42380a84fb62883f552",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "768e20d8b6fab56bf017b9a227c73f7b968569abcc9256f69390446ba699f28c"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "b9c893abd2c11ab4b9bf28b3c79926415ff38739768c45d7699f27a338b02c8b"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_5",
+   "fixed_angle": 4.702099800109863,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 482,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538743.0,
+    1212538791.0
+   ],
+   "azimuth_sha256": "b8112b588f23575c79a846ed5782e1705e5fa95af0e12c7046dabcc760853043",
+   "elevation_sha256": "38b9269da2553475ba00fb23ba3a592c857f5fa8d2d617a3947cb6d58aba41d9",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "5b70183a922e25d5fece5672bc907ef717adb4d735eb4da6713ad38c47de2aa8"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "2ed942d3263dd00a3d2cb65405eb58410fc55cd61074459ce5315d92fcb1503b"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_6",
+   "fixed_angle": 6.4984002113342285,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 482,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538791.0,
+    1212538839.0
+   ],
+   "azimuth_sha256": "45886db149fefeff1bf73aa3e7496dd4369aab78b191ef69d7ce6627d4638646",
+   "elevation_sha256": "59941e2adb89ce43f93ec2b4387d863ced5013c37c53fc3166fbe5c93f8199f6",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "b45a02a0c1836b7e3ce1d4923d1c2e8b161025637e9a0cfcccbe355a46ca4a60"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "42971a43827440399fb89cd6822d6feed647a4157b1d8c6dd59fc4966837a623"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_7",
+   "fixed_angle": 9.10219955444336,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 484,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538839.0,
+    1212538888.0
+   ],
+   "azimuth_sha256": "fee2757e6e6729f6f765b534ccdb5c44f8b2c5bd91655ab25e9be5de056cb96b",
+   "elevation_sha256": "bb7b50d6f7777b8285ceed2b926a7cdbfeeb40b625793f5c4a9d1168a58a528a",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "fa198348cc8b44dda111fc3e2c207efcaf8088081249858e081861e895567841"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "f0a7b28e30340e7db8b5b4dc4de480b97e4b44cba0f0e48cd8f69a08842de273"
+    }
+   ]
+  },
+  {
+   "source_group": "sweep_8",
+   "fixed_angle": 12.799099922180176,
+   "sweep_mode": "azimuth_surveillance",
+   "follow_mode": "not_set",
+   "prt_mode": "not_set",
+   "nrays": 483,
+   "ngates": 996,
+   "ray_dimension": "time",
+   "range_first": 150.0,
+   "range_spacing": 150.0,
+   "file_order_is_time_order": true,
+   "unix_time_first_last": [
+    1212538888.0,
+    1212538937.0
+   ],
+   "azimuth_sha256": "3512bd585874a3bdf495896cde701ab93d5a5b3294e78affed57f11477a91faf",
+   "elevation_sha256": "934764ce0f481803bc215c8cd91192b7576de534a45746a7c1dd0f23f6d24f80",
+   "fields": [
+    {
+     "name": "DBZ",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0017766350647434592,
+     "add_offset": 0.07500076293945312,
+     "fill_value": -32768.0,
+     "sha256": "075308d126cbc1901f6792a8e4a2c95c789f71f5ffa0c05596076d2ea4eed336"
+    },
+    {
+     "name": "VR",
+     "dtype": "int16",
+     "in_xradar": true,
+     "scale_factor": 0.0008178960415534675,
+     "add_offset": 0.0,
+     "fill_value": -32768.0,
+     "sha256": "6c8dbb2e5e7b7a5b29860714e14fe2a8dedc8261e4ad9dc83dd2b8f432e39338"
+    }
+   ]
+  }
+ ],
+ "latitude": 22.52669906616211,
+ "longitude": 120.43350219726562,
+ "altitude": 45.00000178813934
+}

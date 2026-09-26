@@ -6013,70 +6013,90 @@
      "sweeps": [
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 0.5,
        "rays": 720
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 1.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 2.5999999046325684,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 5.199999809265137,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 8.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 13.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 18.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 25.799999237060547,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 35.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 90.0,
        "rays": 360
@@ -6172,7 +6192,9 @@
      "elevation_number": 1,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 0.5,
      "rays": 720
@@ -6181,7 +6203,9 @@
      "elevation_number": 2,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 1.0,
      "rays": 360
@@ -6190,7 +6214,9 @@
      "elevation_number": 3,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 2.5999999046325684,
      "rays": 360
@@ -6199,7 +6225,9 @@
      "elevation_number": 4,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 5.199999809265137,
      "rays": 360
@@ -6208,7 +6236,9 @@
      "elevation_number": 5,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 8.600000381469727,
      "rays": 360
@@ -6217,7 +6247,9 @@
      "elevation_number": 6,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 13.0,
      "rays": 360
@@ -6226,7 +6258,9 @@
      "elevation_number": 7,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 18.600000381469727,
      "rays": 360
@@ -6235,7 +6269,9 @@
      "elevation_number": 8,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 25.799999237060547,
      "rays": 360
@@ -6244,7 +6280,9 @@
      "elevation_number": 9,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 35.0,
      "rays": 360
@@ -6253,7 +6291,9 @@
      "elevation_number": 10,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 90.0,
      "rays": 360
@@ -6268,70 +6308,90 @@
      "sweeps": [
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 0.5,
        "rays": 720
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 1.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 2.5999999046325684,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 5.199999809265137,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 8.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 13.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 18.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 25.799999237060547,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 35.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 90.0,
        "rays": 360
@@ -6426,7 +6486,9 @@
     {
      "elevation_number": 1,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 0.5,
      "rays": 720
@@ -6434,7 +6496,9 @@
     {
      "elevation_number": 2,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 1.0,
      "rays": 360
@@ -6442,7 +6506,9 @@
     {
      "elevation_number": 3,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 2.5999999046325684,
      "rays": 360
@@ -6450,7 +6516,9 @@
     {
      "elevation_number": 4,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 5.199999809265137,
      "rays": 360
@@ -6458,7 +6526,9 @@
     {
      "elevation_number": 5,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 8.600000381469727,
      "rays": 360
@@ -6466,7 +6536,9 @@
     {
      "elevation_number": 6,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 13.0,
      "rays": 360
@@ -6474,7 +6546,9 @@
     {
      "elevation_number": 7,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 18.600000381469727,
      "rays": 360
@@ -6482,7 +6556,9 @@
     {
      "elevation_number": 8,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 25.799999237060547,
      "rays": 360
@@ -6490,7 +6566,9 @@
     {
      "elevation_number": 9,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 35.0,
      "rays": 360
@@ -6498,7 +6576,9 @@
     {
      "elevation_number": 10,
      "fields": {
-      "DBZH": "nohur_dbzh"
+      "DBZH": "nohur_dbzh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 90.0,
      "rays": 360
@@ -6513,70 +6593,90 @@
      "sweeps": [
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 0.5,
        "rays": 720
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 1.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 2.5999999046325684,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 5.199999809265137,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 8.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 13.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 18.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 25.799999237060547,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 35.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 90.0,
        "rays": 360
@@ -6734,7 +6834,9 @@
      "elevation_number": 1,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 0.5,
      "rays": 720
@@ -6743,7 +6845,9 @@
      "elevation_number": 2,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 1.0,
      "rays": 360
@@ -6753,7 +6857,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 2.5999999046325684,
      "rays": 360
@@ -6763,7 +6869,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 5.199999809265137,
      "rays": 360
@@ -6773,7 +6881,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 8.600000381469727,
      "rays": 360
@@ -6783,7 +6893,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 13.0,
      "rays": 360
@@ -6793,7 +6905,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 18.600000381469727,
      "rays": 360
@@ -6803,7 +6917,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 25.799999237060547,
      "rays": 360
@@ -6813,7 +6929,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 35.0,
      "rays": 360
@@ -6823,7 +6941,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 90.0,
      "rays": 360
@@ -6976,70 +7096,90 @@
      "sweeps": [
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 0.5,
        "rays": 720
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 1.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 2.5999999046325684,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 5.199999809265137,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 8.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 13.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 18.600000381469727,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 25.799999237060547,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 35.0,
        "rays": 360
       },
       {
        "fields": [
-        "DBZH"
+        "DBZH",
+        "quality1",
+        "quality2"
        ],
        "fixed_angle_deg": 90.0,
        "rays": 360
@@ -7050,7 +7190,7 @@
    ],
    "report": {
     "field_collisions": 0,
-    "merged_fields": 18,
+    "merged_fields": 38,
     "skipped_geometry": 0
    },
    "site": "NOHUR",
@@ -7059,7 +7199,9 @@
      "elevation_number": 1,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 0.5,
      "rays": 720
@@ -7068,7 +7210,9 @@
      "elevation_number": 2,
      "fields": {
       "DBZH": "nohur_dbzh",
-      "TH": "nohur_th"
+      "TH": "nohur_th",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 1.0,
      "rays": 360
@@ -7078,7 +7222,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 2.5999999046325684,
      "rays": 360
@@ -7088,7 +7234,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 5.199999809265137,
      "rays": 360
@@ -7098,7 +7246,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 8.600000381469727,
      "rays": 360
@@ -7108,7 +7258,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 13.0,
      "rays": 360
@@ -7118,7 +7270,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 18.600000381469727,
      "rays": 360
@@ -7128,7 +7282,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 25.799999237060547,
      "rays": 360
@@ -7138,7 +7294,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 35.0,
      "rays": 360
@@ -7148,7 +7306,9 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh"
+      "VRADH": "nohur_vradh",
+      "quality1": "nohur_dbzh",
+      "quality2": "nohur_dbzh"
      },
      "fixed_angle_deg": 90.0,
      "rays": 360
@@ -7229,6 +7389,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7274,6 +7435,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7319,6 +7481,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7364,6 +7527,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7409,6 +7573,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7454,6 +7619,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7499,6 +7665,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7544,6 +7711,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7589,6 +7757,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -7640,6 +7809,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -7685,6 +7855,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -7730,6 +7901,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -7775,6 +7947,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -7820,6 +7993,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -7865,6 +8039,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -7910,6 +8085,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -7955,6 +8131,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -8000,6 +8177,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 500.0,
      "gates": 300,
+     "quality_fields": [],
      "quantities": {
       "VRAD": {
        "dtype": "uint8",
@@ -8051,6 +8229,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 960,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8096,6 +8278,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 960,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8141,6 +8327,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 480,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8186,6 +8376,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 320,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8231,6 +8425,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8271,6 +8469,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8311,6 +8513,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8351,6 +8557,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8391,6 +8601,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8431,6 +8645,10 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 30.0,
      "gates": 832,
+     "quality_fields": [
+      "quality1",
+      "quality2"
+     ],
      "quantities": {
       "DBZH": {
        "dtype": "uint8",
@@ -8482,6 +8700,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 960,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8527,6 +8746,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 960,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8572,6 +8792,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 480,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8617,6 +8838,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 320,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8662,6 +8884,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8702,6 +8925,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8742,6 +8966,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8782,6 +9007,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8822,6 +9048,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8862,6 +9089,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 30.0,
      "gates": 832,
+     "quality_fields": [],
      "quantities": {
       "TH": {
        "dtype": "uint8",
@@ -8913,6 +9141,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 480,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
@@ -8958,6 +9187,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 320,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
@@ -9003,6 +9233,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
@@ -9043,6 +9274,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
@@ -9083,6 +9315,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
@@ -9123,6 +9356,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
@@ -9163,6 +9397,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 250.0,
      "gates": 280,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
@@ -9203,6 +9438,7 @@
      "first_gate_m": 0.0,
      "gate_spacing_m": 30.0,
      "gates": 832,
+     "quality_fields": [],
      "quantities": {
       "VRADH": {
        "dtype": "uint8",
