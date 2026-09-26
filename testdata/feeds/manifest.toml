@@ -1,0 +1,97 @@
+# Real-feed survey fixtures (docs/testdata/feeds-survey.md).
+#
+# A Level II volume published by the North Dakota State Water Commission's
+# GR2Analyst polling server, https://level2.swc.nd.gov/raw/, and the
+# polling-directory captures that recast-radar-data's polling tests read: ND
+# SWC's KXWA dir.list, the Iowa Environmental Mesonet's polling root
+# config.cfg and the Laredo EWR root's grlevel2.cfg. The KXWA volume is a
+# known failure of recast-radar-io's Level II decoder:
+# crates/recast-radar-data/tests/feeds_known_failures.rs checks that every
+# failure named by a `known-failure:*` tag still reproduces. When a fix lands
+# that test fails: drop the tag (and add the decoder's own test).
+#
+# Conventions:
+# - The Level II files use format "nexrad-level2-feed", not "nexrad-level2".
+#   recast-radar-io-nexrad's corpus tests pin the exact lists of
+#   nexrad-level2 entries (tests/messages_clutter.rs) and of trimmed fixtures
+#   (recast-radar-testdata tests/trim.rs); a decoder fix can retype them.
+# - The feeds' URLs roll off (ND SWC keeps about 3.6 days of volumes), so
+#   every entry is marked ephemeral. The committed KXWA head was cut from the
+#   whole volume, which is checksum-pinned but not committed: it is the
+#   head's `derived_from` source, and a check compares the committed head
+#   with it where the shared testdata cache holds it.
+# - One failure has no committed fixture: level2-ldm-block-limit needs a
+#   volume of more than 4,096 LDM records, and the only one the survey found,
+#   North Dakota SWC's KXWA volume, takes 17.8 MB for its first 4,097 records,
+#   over the 2 MB cap for a committed file
+#   (tools/feeds_survey/testdata_budget.py recounts what the 60 MB total cap
+#   leaves, docs/testdata/feeds-survey.md section 4).
+#   Its REF and VEL are nearly empty, but every radial carries SW, ZDR and
+#   RHO noise on all 3,218 gates (about 1.0, 1.6 and 1.4 KB compressed), so
+#   records stay near 4.3 KB. The
+#   volume (20.6 MB) is checksum-pinned; its check runs where the shared
+#   testdata cache holds it and is skipped elsewhere, CI included, like the
+#   check of the committed head against it. Whether to commit it (and raise
+#   the caps) is the owner's decision
+#   (docs/superpowers/plans/wave3-backlog.md).
+# - Licensing: every entry is tagged license:unknown until the review before
+#   publishing. North Dakota SWC's, the Iowa Environmental Mesonet's and the
+#   Laredo EWR host's terms were not checked.
+
+[[file]]
+id = "ndswc-kxwa-20260924-214316"
+format = "nexrad-level2-feed"
+urls = ["https://level2.swc.nd.gov/raw/KXWA/KXWA20260924_214316_V06.ar2v"]
+sha256 = "aa3c02a5c337ad15e86d432b4bbdf97945b87f9a11e87ff0bf29e2dd199a4b80"
+size = 20616906
+ephemeral = true
+tags = ["license:unknown", "provider:nd-swc", "site:kxwa", "country:US", "era:2026", "layout:ldm-one-radial-per-record", "msg:5", "msg:31", "known-failure:level2-ldm-block-limit"]
+description = "North Dakota State Water Commission KXWA Level II (AR2V0006, ICD date layout), 2026-09-24 21:43:16Z, the whole volume as its GR2Analyst polling directory served it (fetched 21:52Z; still served on 2026-09-25 at 10:30Z with Last-Modified 2026-09-24 21:48:37Z; the directory keeps about 3.6 days of volumes, so the URL should roll off around 2026-09-28). 4,760 LDM records: Message 5 alone, then one Message 31 radial per record (9 cuts, 4,759 radials, 6 moments). Known failure: the Level II decoder caps LDM volumes at 4,096 records and refuses it with `block-bzip volume contains more than 4096 blocks`; Py-ART 2.3.0 reads all 9 sweeps. Not committed: the smallest prefix that reproduces the failure (the volume header and 4,097 records) is 17,819,782 bytes, over the 2 MB cap (see the top of this file). The feed survey left it in the shared testdata cache; the check reads it from there and is skipped elsewhere. Format nexrad-level2-feed as explained at the top of this file."
+
+[[file]]
+id = "ndswc-kxwa-20260924-214316-head41"
+format = "nexrad-level2-feed"
+sha256 = "30f83c8ea82473868a2bccc04562cd7d9c814f1b9c25fef93e19f24f6f0e6eda"
+size = 181437
+committed = "files/feeds/ndswc/KXWA20260924_214316_V06.head41.ar2v"
+ephemeral = true
+derived_from = "ndswc-kxwa-20260924-214316"
+derivation = "First 181,437 bytes of ndswc-kxwa-20260924-214316 (https://level2.swc.nd.gov/raw/KXWA/KXWA20260924_214316_V06.ar2v, 20,616,906 bytes), fetched 2026-09-24 21:52Z from the North Dakota State Water Commission's polling directory: the volume header and the first 41 LDM records, cut at a record boundary. No byte changed."
+tags = ["license:unknown", "provider:nd-swc", "site:kxwa", "country:US", "era:2026", "layout:ldm-one-radial-per-record", "msg:5", "msg:31"]
+description = "North Dakota State Water Commission KXWA Level II (AR2V0006, ICD date layout), 2026-09-24 21:43:16Z, first 41 of 4,760 LDM records. Every LDM record holds one message: record 0 is Message 5 alone (132 bytes compressed), then one Message 31 radial per record (22,874 bytes decompressed, 6 moments). The committed sample of the one-radial-per-record layout; the head decodes (40 radials). The full volume, ndswc-kxwa-20260924-214316, is the known failure (more than 4,096 LDM records). Format nexrad-level2-feed as explained at the top of this file."
+
+# Polling-directory captures: the inputs of recast-radar-data's polling tests
+# and of the polling_listing fuzz target's seeds.
+
+[[file]]
+id = "polling-ndswc-kxwa-dir-list-20260925"
+format = "gr2-polling-dir-list"
+urls = ["https://level2.swc.nd.gov/raw/KXWA/dir.list"]
+sha256 = "1dfa85cb168b6ec46cbbfdc2fbd79199cc273a6620efdde8c16dabcefc084e97"
+size = 40635
+committed = "files/other/polling/ndswc-KXWA-dir.list-20260925T0318Z"
+ephemeral = true
+tags = ["license:unknown", "provider:nd-swc", "polling-server", "era:2026", "site:kxwa", "quirk:dir-list-size-not-bytes"]
+description = "North Dakota State Water Commission GR2Analyst polling server, dir.list of site KXWA captured 2026-09-25 03:18Z: 1,161 LF lines `<size> <file name>`, oldest first, KXWA20260921_105810_V06.ar2v to KXWA20260925_031115_V06.ar2v (about 3.6 days of volumes). The sizes are not bytes: 27,392 to 66,880 units, 40,288 for the 20,616,906-byte volume ndswc-kxwa-20260924-214316 (about 512 bytes per unit). Unmodified server response."
+
+[[file]]
+id = "polling-iem-config-cfg-20260926"
+format = "gr2-polling-site-config"
+urls = ["https://mesonet-nexrad.agron.iastate.edu/level2/raw/config.cfg"]
+sha256 = "0249c620cc2446229ea78af5f74f83562f536b42abe5e6e130db2da495c5ae0d"
+size = 2440
+committed = "files/other/polling/iem-config.cfg-20260926T0213Z"
+ephemeral = true
+tags = ["license:unknown", "provider:iem", "polling-server", "era:2026"]
+description = "Iowa Environmental Mesonet GR2Analyst polling root (the recast-radar-data community_feeds host), config.cfg fetched 2026-09-26 02:13:28Z (Last-Modified 2026-07-09 14:33:49Z): the line `ListFile: dir.list`, then 220 lines `Site: <ID>`, FUSA first and WILU last (NEXRAD, TDWR and research radars, KTLX and FOP1 among them), each ending in LF. Unmodified server response."
+
+[[file]]
+id = "polling-ewr-laredo-grlevel2-cfg-20260925"
+format = "gr2-polling-site-config"
+urls = ["http://offsitevpn.ewradar.com/Laredo/archive2.trans/grlevel2.cfg"]
+sha256 = "57d7af9cae96b2c76023c2cb324cafb46ddddd42d4a91efe49a68ff27596ed69"
+size = 11
+committed = "files/other/polling/ewr-Laredo-grlevel2.cfg-20260925T0301Z"
+ephemeral = true
+tags = ["license:unknown", "provider:ewr", "polling-server", "era:2026", "site:lare"]
+description = "The Laredo EWR feed's polling root grlevel2.cfg (the recast-radar-data community_feeds entry), fetched 2026-09-25 03:01Z: the single line `Site: LARE` with an LF line end (Last-Modified 2022-07-27). The root has no dir.list (404), so a client polls the one site it names. Unmodified server response."

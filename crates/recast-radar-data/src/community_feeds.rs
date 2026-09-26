@@ -3,9 +3,11 @@
 //! Non-NEXRAD radars (university X-bands, testbeds, state networks) that
 //! serve raw Level II over the GR2A dir.list convention: the shared
 //! custom-URL poller fetches `{poll_url}/dir.list` (or discovers the one
-//! site named by `{poll_url}/grlevel2.cfg`), downloads the newest entry,
-//! and decodes it through `recast_radar_io`'s magic-byte router. NEXRAD proper
-//! loads natively from S3, so this catalog covers only what S3 can't.
+//! site named by `{poll_url}/grlevel2.cfg`; with `net`,
+//! `polling::latest_volume_or_single_site` does both), downloads the newest
+//! entry, and decodes it through `recast_radar_io`'s magic-byte router.
+//! NEXRAD proper loads natively from S3, so this catalog covers only what S3
+//! can't.
 //!
 //! Coordinates are community-contributed (forwarded by a BowEcho user;
 //! no agency catalog lists these radars). URLs were probed live
@@ -15,9 +17,15 @@
 //! page but had no directory that day; KXWA/KBPP answered on the North
 //! Dakota State Water Commission host while K08D's directory existed but
 //! was empty; the Laredo EWR host answered with `grlevel2.cfg` naming its
-//! single site `LARE` but the site directory was empty. Feeds that are
-//! quiet today still belong here — the poller reports an unreachable
-//! dir.list as a status-line error and keeps the marker clickable.
+//! single site `LARE` but the site directory was empty. The feed survey of
+//! 2026-09-25 (`docs/testdata/feeds-survey.md`) found the same: `LARE/`
+//! empty (last modified 2025-10-14) and no `LARE/dir.list`; the host's
+//! `_READ_ME.txt` says the radar's files arrive under names like
+//! `E70230324160559.RAWLFRP` (Vaisala IRIS's RAW product naming) and are
+//! renamed like `LARE_23032416_0559`.
+//! Feeds that are quiet today still belong here — the poller reports an
+//! unreachable dir.list as a status-line error and keeps the marker
+//! clickable.
 
 use std::sync::OnceLock;
 

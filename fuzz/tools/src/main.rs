@@ -560,6 +560,24 @@ const SEEDS: &[Seed] = &[
         "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry",
         Verbatim,
     ),
+    // polling_listing: a site dir.list (North Dakota SWC's KXWA), a polling
+    // root's multi-site config.cfg (the Iowa Environmental Mesonet's) and a
+    // single-site grlevel2.cfg (Laredo EWR's), as served.
+    (
+        "polling_listing",
+        "polling-ndswc-kxwa-dir-list-20260925",
+        Verbatim,
+    ),
+    (
+        "polling_listing",
+        "polling-iem-config-cfg-20260926",
+        Verbatim,
+    ),
+    (
+        "polling_listing",
+        "polling-ewr-laredo-grlevel2-cfg-20260925",
+        Verbatim,
+    ),
 ];
 
 fn main() -> ExitCode {

@@ -36,15 +36,25 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-# Decode checks in unit tests and examples/intl_probe.rs (live download +
-# decode smoke); the library itself does not use the format router.
+# Volume model types for examples/feeds_survey.rs; the library itself names
+# no model items.
+recast-radar-core = { path = "../recast-radar-core" }
+# Decode checks in unit tests, examples/intl_probe.rs (live download +
+# decode smoke) and examples/feeds_survey.rs; the library itself does not
+# use the format router.
 recast-radar-io = { path = "../recast-radar-io" }
+# ODIM Cartesian IMAGE products (IMGW POLRAD CMAX) in examples/feeds_survey.rs;
+# the volume router does not read them.
+recast-radar-io-odim = { path = "../recast-radar-io-odim" }
 # JMA station headers for the caller-provided JmaCatalogProvider station
 # table tests; the library itself never parses GRIB2.
 recast-radar-io-jma = { path = "../recast-radar-io-jma" }
 # Message 5 from real Start chunks for the timing model tests
 # (tests/timing.rs); the library itself does not decode Level II messages.
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+# Decompresses the LDM records of a Level II volume the decoder refuses
+# (tests/feeds_known_failures.rs counts its radials against Py-ART's).
+recast-radar-bzip2 = { path = "../recast-radar-bzip2" }
 recast-radar-testdata = { path = "../recast-radar-testdata" }
 
 # Drives AsyncReqwestTransport in tests/iterator.rs (already in the lockfile
@@ -52,7 +62,15 @@ recast-radar-testdata = { path = "../recast-radar-testdata" }
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["net", "rt", "time"] }
 
-# Every example talks to live endpoints.
+# Reads local files only, so it needs no feature.
+[[example]]
+name = "feeds_survey"
+
+# Every other example talks to live endpoints.
+[[example]]
+name = "feeds_plans"
+required-features = ["net"]
+
 [[example]]
 name = "intl_probe"
 required-features = ["net"]

@@ -170,8 +170,23 @@ const ORD_ARCHIVE_COUNTRIES: &[(&str, &str, &str)] = &[
 /// the EDR catalog (CH, NO, PL, RO) come from the EUMETNET OPERA radar
 /// database, `OPERA_RADARS_DB.json` (fetched 2026-06-12) from
 /// <https://eumetnet.eu/activities/observations-programme/current-activities/opera/>,
-/// matched by ODIM code; both sources agree on coordinates to the 4
-/// decimals kept here. Listed stations are OPERA status 1 (operational).
+/// matched by ODIM code. For the entries up to 2026-07-07 both sources agree
+/// on coordinates to the 4 decimals kept here, and those stations are OPERA
+/// status 1 (operational).
+///
+/// `frale`, `frlep`, `frmcl`, `frtra`, `hrgol` and `isx2` were added on
+/// 2026-09-24 by the feed survey (`docs/testdata/feeds-survey.md`) from the EDR
+/// catalog alone, fetched that day: they were live in the bucket then, and
+/// their coordinates are the catalog's. Their OPERA status is not all 1:
+/// OPERA's database (fetched 2026-09-24) lists `frlep` and `frtra` with status
+/// 0, and `isx2` is Iceland's mobile X-band radar ("Muninn - mobile", OPERA
+/// `IL44`, status 0, no fixed position; the catalog calls it "Mobile 2" and
+/// its files carry `WMO:00000`): its row holds where it stood that day, which
+/// is listed in [`ORD_MOBILE_SITES`] and so never advertised as the site's
+/// position (see [`fixed_position`]). The frames the survey downloaded
+/// (`isx2`, `hrgol`, `frale`, then `frlep`, `frmcl`, `frtra`) carry the
+/// catalog's coordinates in `where/lat,lon` and the object type (`PVOL` or
+/// `SCAN`) given here.
 const ORD_SITES: &[(&str, &str, f32, f32, bool)] = &[
     ("behel", "Helchteren", 51.0702, 5.4054, true),
     ("bejab", "Jabbeke", 51.1917, 3.0642, true),
@@ -195,6 +210,7 @@ const ORD_SITES: &[(&str, &str, f32, f32, bool)] = &[
     ("estjv", "Torrejon Velasco", 40.1759, -3.7137, true),
     ("frabb", "Abbeville", 50.1360, 1.8347, false),
     ("fraja", "Ajaccio", 41.9531, 8.7005, false),
+    ("frale", "Aléria", 42.1297, 9.4964, false),
     ("frave", "Avesnes", 50.1283, 3.8118, false),
     ("frbla", "Blaisy", 47.3552, 4.7759, false),
     ("frbol", "Bollène", 44.3231, 4.7622, false),
@@ -203,6 +219,8 @@ const ORD_SITES: &[(&str, &str, f32, f32, bool)] = &[
     ("frcae", "Falaise", 48.9272, -0.1495, false),
     ("frcol", "Collobrières", 43.2166, 6.3729, false),
     ("frgre", "Grèzes", 45.1044, 1.3697, false),
+    ("frlep", "Sembadel", 45.2892, 3.7095, false),
+    ("frmcl", "Montclar", 43.9905, 2.6096, false),
     ("frmom", "Momuy", 43.6245, -0.6094, false),
     ("frmtc", "Montancy", 47.3686, 7.0190, false),
     ("frnan", "Nancy", 48.7158, 6.5816, false),
@@ -211,10 +229,12 @@ const ORD_SITES: &[(&str, &str, f32, f32, bool)] = &[
     ("fropo", "Opoul", 42.9184, 2.8650, false),
     ("frpla", "Plabennec", 48.4609, -4.4298, false),
     ("frtou", "Toulouse", 43.5743, 1.3763, false),
+    ("frtra", "Trappes", 48.7746, 2.0083, false),
     ("frtre", "Treillières", 47.3374, -1.6563, false),
     ("frtro", "Arcis-sur-Aube", 48.4621, 4.3093, false),
     ("hrbil", "Bilogora", 45.8835, 17.2005, true),
     ("hrdeb", "Debeljak", 44.0452, 15.3764, true),
+    ("hrgol", "Goli", 45.0205, 14.1223, true),
     ("hrgra", "Gradište", 45.1592, 18.7033, true),
     ("hrpun", "Puntijarka", 45.9078, 15.9684, true),
     ("hrulj", "Uljenje", 42.8944, 17.4783, true),
@@ -223,6 +243,7 @@ const ORD_SITES: &[(&str, &str, f32, f32, bool)] = &[
     ("isbjo", "Bjólfur", 65.2659, -14.0618, true),
     ("iskef", "Keflavík", 64.0257, -22.6354, true),
     ("isska", "Skagi", 66.0557, -20.2680, true),
+    ("isx2", "Mobile 2", 63.8696, -20.2024, true),
     ("ltlau", "Laukuva", 55.6090, 22.2395, false),
     ("ltvil", "Vilnius", 54.6262, 25.1068, false),
     ("mtgud", "Gudja", 35.8528, 14.4747, true),
@@ -262,6 +283,22 @@ const ORD_SITES: &[(&str, &str, f32, f32, bool)] = &[
     ("sipas", "Pasja Ravan", 46.0980, 14.2282, true),
 ];
 
+/// Mobile radars in [`ORD_SITES`]: their rows record where the radar stood
+/// when it was added, which is not a position to advertise, since the radar
+/// moves. They are left out of the static catalog (whose contract is a fixed
+/// position for every site) and listed by `list_sites` without a position; a
+/// decoded file carries the position of the day in `where/lat,lon`. The rows
+/// still give the label and the `PVOL` hint.
+const ORD_MOBILE_SITES: &[&str] = &["isx2"];
+
+/// The advertised position of an [`ORD_SITES`] row: `None` for a mobile
+/// radar ([`ORD_MOBILE_SITES`]).
+fn fixed_position(
+    &(code, _, latitude_deg, longitude_deg, _): &(&str, &str, f32, f32, bool),
+) -> Option<(f32, f32)> {
+    (!ORD_MOBILE_SITES.contains(&code)).then_some((latitude_deg, longitude_deg))
+}
+
 /// Which object directory a site publishes under.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ObjectKind {
@@ -294,15 +331,92 @@ fn preferred_object_kinds(site_id: &str) -> [ObjectKind; 2] {
 
 /// EUMETNET ORD: 15 additional European countries from the OPERA 24-hour
 /// cache bucket, one provider.
+///
+/// By default `IntlProvider::latest` (with `net`) plans the newest cycle as
+/// it stands, so while a country that uploads one `SCAN` file per sweep
+/// (Lithuania) is still uploading a cycle, the plan holds only the sweeps
+/// listed so far (`ltlau` at 21:41Z on 2026-09-24: 2 of 8). The frame
+/// identity counts the parts, so a poller picks up the rest on later ticks.
+/// [`OrdProvider::complete_cycles`] plans the previous cycle instead.
+///
+/// The plan options change what `latest` plans, and chain in any order:
+///
+/// ```
+/// use recast_radar_data::international::OrdProvider;
+///
+/// // Whole cycles only, and for a site that scans reflectivity and velocity
+/// // separately (Belgium's `bejab`), the velocity scan alone.
+/// let provider = OrdProvider::new()
+///     .complete_cycles(true)
+///     .velocity_scan_only(true);
+/// # let _ = provider;
+/// ```
 pub struct OrdProvider {
     sites: SiteCache,
+    policy: OrdPlanPolicy,
+}
+
+/// What `latest` plans beyond the default: [`OrdProvider::complete_cycles`]
+/// and [`OrdProvider::velocity_scan_only`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct OrdPlanPolicy {
+    complete_cycles: bool,
+    velocity_scan_only: bool,
 }
 
 impl OrdProvider {
+    /// The provider with its default plan policy: the newest cycle as listed,
+    /// even while its sweeps are still arriving, and every scan of it.
     pub fn new() -> Self {
         Self {
             sites: SiteCache::new(),
+            policy: OrdPlanPolicy::default(),
         }
+    }
+
+    /// Whether `latest` plans the last complete cycle rather than one still
+    /// arriving. Off in [`OrdProvider::new`].
+    ///
+    /// A `SCAN` cycle is still arriving when its sweep files (each a pair of
+    /// elevation and moment set) are a strict subset of the previous cycle's;
+    /// `latest` then plans the previous cycle, when it is at most 20 minutes
+    /// older (the same bound that keeps the default policy from pinning a
+    /// frame to an hours-old cycle). A scan strategy that drops sweeps for
+    /// good delays the plan by one cycle only, since the next cycle is
+    /// compared with the shorter one. `PVOL` plans, where each file is a
+    /// whole volume, are unchanged.
+    #[must_use]
+    pub fn complete_cycles(mut self, complete: bool) -> Self {
+        self.policy.complete_cycles = complete;
+        self
+    }
+
+    /// Whether `latest` plans only the velocity scan of a site that
+    /// publishes its reflectivity and velocity scans as separate `PVOL`
+    /// volumes. Off in [`OrdProvider::new`].
+    ///
+    /// Belgium's `bejab` publishes two scans per cycle, each as separate
+    /// files: DBZH and TH over 11 elevations (0.3-25 deg), and DBZH and VRAD
+    /// over 9 (0.5-25 deg). By default a cycle's plan is the newest file of
+    /// each moment set, and between two DBZH volumes of one stamp the one
+    /// with more elevations, so the frame is the 11-elevation DBZH and the
+    /// 9-elevation VRAD. With this option the plan keeps the elevation set
+    /// the velocity volumes share, and on it the newest file of each moment
+    /// set: the 9-elevation DBZH and VRAD, one whole Doppler volume. AEMET's
+    /// split volumes
+    /// plan the same way: the 2-elevation DBZH_VRADH volume alone, without
+    /// the long-range DBZH_TH volume.
+    ///
+    /// The plan is the default one when no velocity volume is planned, when
+    /// the velocity volumes span more than one elevation set, or when no
+    /// reflectivity volume of the cycle has the velocity's elevations (as
+    /// for Norway's `nohur`, whose VRADH covers 8 of the DBZH's 10
+    /// elevations): the option never trades reflectivity for velocity.
+    /// `SCAN` plans, one file per sweep, are unchanged.
+    #[must_use]
+    pub fn velocity_scan_only(mut self, only: bool) -> Self {
+        self.policy.velocity_scan_only = only;
+        self
     }
 }
 
@@ -687,7 +801,13 @@ impl IntlProvider for OrdProvider {
                         .map_err(|err| format!("ORD '{site_id}': {err}"))?;
                 all.extend(previous);
                 kind_keys.extend(all.iter().cloned());
-                let candidate = plan_candidate_from_keys(site_id, kind, &all)?;
+                let candidate = plan_candidate_from_keys_with_policy(
+                    BUCKET_BASE,
+                    site_id,
+                    kind,
+                    &all,
+                    self.policy,
+                )?;
                 if ord_candidate_is_better(&candidate, best.as_ref()) {
                     best = Some(candidate);
                 }
@@ -723,11 +843,15 @@ impl IntlProvider for OrdProvider {
     fn static_sites(&self) -> Vec<IntlSite> {
         ORD_SITES
             .iter()
-            .filter_map(|&(code, label, latitude_deg, longitude_deg, _)| {
+            .filter_map(|row| {
+                let &(code, label, ..) = row;
                 if site_superseded_by_native_provider(code) {
                     return None;
                 }
                 let (_, _, country) = country_for_live_code(code)?;
+                // The static catalog promises a position for every site, so
+                // a mobile radar is left to `list_sites`.
+                let (latitude_deg, longitude_deg) = fixed_position(row)?;
                 Some(IntlSite {
                     provider_id: self.id(),
                     site_id: code.to_owned(),
@@ -1016,14 +1140,17 @@ fn sites_from_prefixes(common_prefixes: &[String]) -> Vec<IntlSite> {
                 return None;
             }
             let (_, _, country) = country_for_live_code(code)?;
-            let known = ORD_SITES.iter().find(|(id, ..)| *id == code);
+            let position = ORD_SITES
+                .iter()
+                .find(|(id, ..)| *id == code)
+                .and_then(fixed_position);
             Some(IntlSite {
                 provider_id: "ord",
                 site_id: code.to_owned(),
                 label: site_label(code, country),
                 country,
-                latitude_deg: known.map(|&(_, _, latitude_deg, _, _)| latitude_deg),
-                longitude_deg: known.map(|&(_, _, _, longitude_deg, _)| longitude_deg),
+                latitude_deg: position.map(|(latitude_deg, _)| latitude_deg),
+                longitude_deg: position.map(|(_, longitude_deg)| longitude_deg),
             })
         })
         .collect()
@@ -1174,6 +1301,7 @@ fn plan_from_keys(site_id: &str, kind: ObjectKind, keys: &[String]) -> Result<Fr
     plan_from_keys_with_base(BUCKET_BASE, site_id, kind, keys)
 }
 
+#[cfg(test)]
 fn plan_candidate_from_keys(
     site_id: &str,
     kind: ObjectKind,
@@ -1192,19 +1320,119 @@ fn plan_from_keys_with_base(
     Ok(plan_candidate_from_keys_with_base(bucket_base, site_id, kind, keys)?.frame)
 }
 
+#[cfg(test)]
 fn plan_candidate_from_keys_with_base(
     bucket_base: &str,
     site_id: &str,
     kind: ObjectKind,
     keys: &[String],
 ) -> Result<OrdFrameCandidate, String> {
+    plan_candidate_from_keys_with_policy(bucket_base, site_id, kind, keys, OrdPlanPolicy::default())
+}
+
+/// The newest frame of one site's listed keys, as `plan_candidate_from_keys`
+/// (the tests' shorthand) plans it, under a plan policy: with
+/// `complete_cycles` ([`OrdProvider::complete_cycles`]) a `SCAN` cycle still
+/// arriving gives way to the previous one ([`complete_cycle_anchor`]), and
+/// with `velocity_scan_only` ([`OrdProvider::velocity_scan_only`]) a `PVOL`
+/// plan keeps the velocity scan's volumes ([`velocity_scan_files`]).
+fn plan_candidate_from_keys_with_policy(
+    bucket_base: &str,
+    site_id: &str,
+    kind: ObjectKind,
+    keys: &[String],
+    policy: OrdPlanPolicy,
+) -> Result<OrdFrameCandidate, String> {
     let files: Vec<OrdFile> = keys
         .iter()
         .filter_map(|key| OrdFile::parse(key, site_id))
         .collect();
-    let anchor = select_frame_anchor(&files, kind)
+    let mut anchor = select_frame_anchor(&files, kind)
         .ok_or_else(|| format!("ORD '{site_id}': no parseable volume keys in the listing"))?;
+    if policy.complete_cycles {
+        anchor = complete_cycle_anchor(&files, kind, anchor);
+    }
+    if policy.velocity_scan_only {
+        let chosen = velocity_scan_files(&files, kind, anchor);
+        return plan_candidate_from_chosen_files(bucket_base, site_id, kind, anchor, chosen);
+    }
     plan_candidate_from_files_for_anchor(bucket_base, site_id, kind, &files, anchor)
+}
+
+/// The files of the cycle at `anchor` that [`OrdProvider::velocity_scan_only`]
+/// plans: for `PVOL`, when the default choice ([`choose_files_for_anchor`])
+/// holds velocity volumes that share one elevation set and the cycle has a
+/// reflectivity volume on that set too, the newest file of each moment set
+/// on that elevation set (moment sets with no file there are left out);
+/// otherwise, and for `SCAN`, the default choice.
+fn velocity_scan_files(files: &[OrdFile], kind: ObjectKind, anchor: NaiveDateTime) -> Vec<OrdFile> {
+    let chosen = choose_files_for_anchor(files, kind, anchor);
+    if kind != ObjectKind::Pvol {
+        return chosen;
+    }
+    let velocity_sets: BTreeSet<String> = chosen
+        .iter()
+        .filter(|file| file.has_velocity())
+        .map(|file| file.elevations.clone())
+        .collect();
+    let mut sets = velocity_sets.into_iter();
+    let (Some(elevations), None) = (sets.next(), sets.next()) else {
+        return chosen;
+    };
+    let window_start = anchor - chrono::Duration::minutes(CYCLE_WINDOW_MINUTES);
+    let on_scan: Vec<OrdFile> = files
+        .iter()
+        .filter(|file| {
+            file.stamp > window_start && file.stamp <= anchor && file.elevations == elevations
+        })
+        .cloned()
+        .collect();
+    if !on_scan.iter().any(OrdFile::has_reflectivity) {
+        return chosen;
+    }
+    choose_files_for_anchor(&on_scan, kind, anchor)
+}
+
+/// The anchor of the newest `SCAN` cycle that is not still arriving, given
+/// the newest viable `anchor`. The cycle at `anchor` is still arriving when
+/// its sweep files, each an (elevation set, moment set) pair, are a strict
+/// subset of the previous cycle's: countries that upload one file per sweep
+/// list a cycle's sweeps a few at a time. The previous cycle is returned
+/// when it is at most [`COMPLETE_FRAME_MAX_AGE_MINUTES`] older; otherwise,
+/// and for `PVOL`, `anchor` itself.
+fn complete_cycle_anchor(
+    files: &[OrdFile],
+    kind: ObjectKind,
+    anchor: NaiveDateTime,
+) -> NaiveDateTime {
+    if kind != ObjectKind::Scan {
+        return anchor;
+    }
+    let window_start = anchor - chrono::Duration::minutes(CYCLE_WINDOW_MINUTES);
+    let older: Vec<OrdFile> = files
+        .iter()
+        .filter(|file| file.stamp <= window_start)
+        .cloned()
+        .collect();
+    let Some(previous_anchor) = select_frame_anchor(&older, kind) else {
+        return anchor;
+    };
+    if anchor - previous_anchor > chrono::Duration::minutes(COMPLETE_FRAME_MAX_AGE_MINUTES) {
+        return anchor;
+    }
+    let sweeps = |chosen: Vec<OrdFile>| -> BTreeSet<(String, String)> {
+        chosen
+            .into_iter()
+            .map(|file| (file.elevations, file.moments))
+            .collect()
+    };
+    let newest = sweeps(choose_files_for_anchor(files, kind, anchor));
+    let previous = sweeps(choose_files_for_anchor(&older, kind, previous_anchor));
+    if newest.len() < previous.len() && newest.is_subset(&previous) {
+        previous_anchor
+    } else {
+        anchor
+    }
 }
 
 fn archive_plans_from_keys(
@@ -1880,6 +2108,10 @@ mod tests {
     const FRTOU_HOUR: &str = include_str!("fixtures/ord_frtou_hour.xml");
     const IEDUB_HOUR: &str = include_str!("fixtures/ord_iedub_hour.xml");
     const ESATN_HOUR: &str = include_str!("fixtures/ord_esatn_hour.xml");
+    /// Lithuania's `ltlau` `SCAN` hour-03 listing of 2026-09-25, captured at
+    /// 03:46:39Z while the 03:45 cycle was arriving (1 of its 8 sweeps
+    /// listed), trimmed to its three newest cycles.
+    const LTLAU_HOUR_ARRIVING: &str = include_str!("fixtures/ord_ltlau_hour_arriving.xml");
 
     fn fixture_keys(xml: &str) -> Vec<String> {
         parse_s3_style_listing(xml).expect("fixture parses").keys
@@ -1903,7 +2135,7 @@ mod tests {
         }
         assert_eq!(ORD_LIVE_COUNTRIES.len(), 15);
         assert!(ORD_ARCHIVE_COUNTRIES.iter().any(|(lc, ..)| *lc == "se"));
-        assert_eq!(ORD_SITES.len(), 87);
+        assert_eq!(ORD_SITES.len(), 93);
         let visible = OrdProvider::new().static_sites();
         assert!(visible.iter().any(|site| site.site_id == "behel"
             && site.label == "Helchteren (Belgium)"
@@ -1929,6 +2161,37 @@ mod tests {
             Some(("SE", "Sweden"))
         );
         assert!(country_for_live_code("seatv").is_none());
+    }
+
+    /// Iceland's mobile X-band radar has no advertised position (its row
+    /// holds only where it stood when it was added): it is not in the static
+    /// catalog, and the live listing names it without a position.
+    #[test]
+    fn mobile_radars_are_listed_without_a_position() {
+        for &code in ORD_MOBILE_SITES {
+            assert!(ORD_SITES.iter().any(|(id, ..)| *id == code), "{code}");
+        }
+        let visible = OrdProvider::new().static_sites();
+        assert!(!visible.iter().any(|site| site.site_id == "isx2"));
+        assert!(visible.iter().any(|site| site.site_id == "isska"));
+        let prefixes = [
+            "2026/09/24/IS/isska/".to_owned(),
+            "2026/09/24/IS/isx2/".to_owned(),
+        ];
+        let listed = sites_from_prefixes(&prefixes);
+        let position = |code: &str| {
+            listed
+                .iter()
+                .find(|site| site.site_id == code)
+                .map(|site| (site.latitude_deg, site.longitude_deg))
+        };
+        assert_eq!(position("isx2"), Some((None, None)));
+        assert_eq!(position("isska"), Some((Some(66.0557), Some(-20.2680))));
+        let isx2 = listed.iter().find(|site| site.site_id == "isx2");
+        assert_eq!(
+            isx2.map(|site| site.label.as_str()),
+            Some("Mobile 2 (Iceland)")
+        );
     }
 
     /// Romania follows the Estonia/KAIA precedent: the native ANM provider
@@ -2210,6 +2473,227 @@ mod tests {
                 .any(|part| part.url.contains("frtou@20260612T1457@2.5@"))
         );
         assert!(plan.identity.starts_with("frtou_20260612T1459_p6_h"));
+    }
+
+    fn plan_with_policy(
+        site_id: &str,
+        kind: ObjectKind,
+        keys: &[String],
+        complete_cycles: bool,
+    ) -> FramePlan {
+        let policy = OrdPlanPolicy {
+            complete_cycles,
+            ..OrdPlanPolicy::default()
+        };
+        plan_candidate_from_keys_with_policy(BUCKET_BASE, site_id, kind, keys, policy)
+            .expect("plan")
+            .frame
+    }
+
+    /// The plan `latest` makes from `keys` with only the velocity scan.
+    fn velocity_scan_plan(site_id: &str, kind: ObjectKind, keys: &[String]) -> FramePlan {
+        let policy = OrdPlanPolicy {
+            velocity_scan_only: true,
+            ..OrdPlanPolicy::default()
+        };
+        plan_candidate_from_keys_with_policy(BUCKET_BASE, site_id, kind, keys, policy)
+            .expect("plan")
+            .frame
+    }
+
+    /// The object names of a plan's parts, in merge order.
+    fn part_names(plan: &FramePlan) -> Vec<&str> {
+        plan.parts
+            .iter()
+            .map(|part| part.url.rsplit('/').next().expect("object name"))
+            .collect()
+    }
+
+    #[test]
+    fn velocity_scan_policy_plans_belgiums_doppler_scan() {
+        // The 14:55 cycle holds both scans; the velocity scan is the
+        // 9-elevation Doppler scan, its DBZH and VRAD.
+        let keys = fixture_keys(BEJAB_HOUR);
+        let plan = velocity_scan_plan("bejab", ObjectKind::Pvol, &keys);
+        assert_eq!(
+            part_names(&plan),
+            [
+                "bejab@20260612T1455@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@DBZH.h5",
+                "bejab@20260612T1455@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@VRAD.h5",
+            ]
+        );
+        assert!(plan.merge);
+        assert!(plan.identity.starts_with("bejab_20260612T1455_p2_h"));
+        // A different frame from the default one, which takes the
+        // 11-elevation DBZH.
+        let default = plan_with_policy("bejab", ObjectKind::Pvol, &keys, false);
+        assert_ne!(plan.identity, default.identity);
+        assert_eq!(
+            part_names(&default)[0],
+            "bejab@20260612T1455@0.3_0.9_1.5_2.2_2.9_3.8_4.8_6.5_9.0_13.0_25.0@DBZH.h5"
+        );
+        // Both options together plan the same PVOL frame.
+        let both = OrdPlanPolicy {
+            complete_cycles: true,
+            velocity_scan_only: true,
+        };
+        assert_eq!(
+            plan_candidate_from_keys_with_policy(
+                BUCKET_BASE,
+                "bejab",
+                ObjectKind::Pvol,
+                &keys,
+                both
+            )
+            .expect("plan")
+            .frame,
+            plan
+        );
+    }
+
+    #[test]
+    fn velocity_scan_policy_plans_spains_doppler_volume_alone() {
+        // AEMET's Doppler volume carries DBZH beside VRADH, so it is the
+        // velocity scan whole; the long-range DBZH_TH volume is left out.
+        let plan = velocity_scan_plan("esatn", ObjectKind::Pvol, &fixture_keys(ESATN_HOUR));
+        assert_eq!(
+            part_names(&plan),
+            ["esatn@20260707T1727@0.5_1.5@DBZH_VRADH.h5"]
+        );
+        assert!(!plan.merge);
+        assert!(plan.identity.starts_with("esatn_20260707T1730_p1_h"));
+    }
+
+    #[test]
+    fn velocity_scan_policy_never_trades_reflectivity_away() {
+        // Norway's VRADH covers 8 of the DBZH's 10 elevations and no
+        // reflectivity volume has its elevation set; Dublin's PVOL lane is
+        // velocity only; the per-sweep SCAN feeds are unchanged. Each plans
+        // as by default.
+        for (site, kind, xml) in [
+            ("nohur", ObjectKind::Pvol, NOHUR_HOUR),
+            ("iedub", ObjectKind::Pvol, IEDUB_HOUR),
+            ("nlhrw", ObjectKind::Pvol, NLHRW_HOUR),
+            ("mtgud", ObjectKind::Pvol, MTGUD_HOUR),
+            ("frtou", ObjectKind::Scan, FRTOU_HOUR),
+            ("ltlau", ObjectKind::Scan, LTLAU_HOUR_ARRIVING),
+        ] {
+            let keys = fixture_keys(xml);
+            assert_eq!(
+                velocity_scan_plan(site, kind, &keys),
+                plan_with_policy(site, kind, &keys, false),
+                "{site}"
+            );
+        }
+        let plan = velocity_scan_plan("nohur", ObjectKind::Pvol, &fixture_keys(NOHUR_HOUR));
+        assert!(
+            part_names(&plan)
+                .iter()
+                .any(|name| name.ends_with("@DBZH.h5"))
+        );
+    }
+
+    #[test]
+    fn plan_options_chain_in_any_order() {
+        let policies = [
+            OrdProvider::new()
+                .complete_cycles(true)
+                .velocity_scan_only(true),
+            OrdProvider::new()
+                .velocity_scan_only(true)
+                .complete_cycles(true),
+        ]
+        .map(|provider| provider.policy);
+        assert_eq!(
+            policies,
+            [OrdPlanPolicy {
+                complete_cycles: true,
+                velocity_scan_only: true,
+            }; 2]
+        );
+        assert_eq!(
+            OrdProvider::new()
+                .complete_cycles(true)
+                .complete_cycles(false)
+                .policy,
+            OrdProvider::new().policy
+        );
+        assert_eq!(OrdProvider::default().policy, OrdPlanPolicy::default());
+    }
+
+    #[test]
+    fn default_policy_plans_the_cycle_still_arriving() {
+        let keys = fixture_keys(LTLAU_HOUR_ARRIVING);
+        assert_eq!(keys.len(), 17);
+        let plan = plan_with_policy("ltlau", ObjectKind::Scan, &keys, false);
+        assert!(plan.identity.starts_with("ltlau_20260925T0345_p1_h"));
+        assert_eq!(plan.parts.len(), 1);
+        assert!(
+            plan.parts[0]
+                .url
+                .ends_with("ltlau@20260925T0345@0.5@DBZH_TH_VRADH.h5")
+        );
+    }
+
+    #[test]
+    fn complete_cycle_policy_plans_the_previous_cycle_while_one_arrives() {
+        let keys = fixture_keys(LTLAU_HOUR_ARRIVING);
+        let plan = plan_with_policy("ltlau", ObjectKind::Scan, &keys, true);
+        assert!(plan.identity.starts_with("ltlau_20260925T0340_p8_h"));
+        assert!(plan.merge);
+        let elevations: Vec<&str> = plan
+            .parts
+            .iter()
+            .map(|part| {
+                assert!(part.url.contains("ltlau@20260925T0340@"), "{}", part.url);
+                part.url
+                    .rsplit('/')
+                    .next()
+                    .and_then(|name| name.split('@').nth(2))
+                    .expect("elevation field")
+            })
+            .collect();
+        assert_eq!(
+            elevations,
+            ["0.5", "1.3", "3.0", "5.0", "7.0", "10.0", "15.0", "25.0"]
+        );
+        // The same plan the default policy made once the 03:40 cycle was the
+        // newest: the listing without the arriving sweep.
+        let settled: Vec<String> = keys
+            .iter()
+            .filter(|key| !key.contains("@20260925T0345@"))
+            .cloned()
+            .collect();
+        assert_eq!(
+            plan_with_policy("ltlau", ObjectKind::Scan, &settled, false),
+            plan
+        );
+    }
+
+    #[test]
+    fn complete_cycle_policy_keeps_a_complete_newest_cycle() {
+        let keys: Vec<String> = fixture_keys(LTLAU_HOUR_ARRIVING)
+            .into_iter()
+            .filter(|key| !key.contains("@20260925T0345@"))
+            .collect();
+        assert_eq!(
+            plan_with_policy("ltlau", ObjectKind::Scan, &keys, true),
+            plan_with_policy("ltlau", ObjectKind::Scan, &keys, false)
+        );
+        // Whole volumes (PVOL) and a staggered per-sweep feed whose newest
+        // window is not a subset of the one before plan as by default.
+        for (site, kind, xml) in [
+            ("bejab", ObjectKind::Pvol, BEJAB_HOUR),
+            ("nohur", ObjectKind::Pvol, NOHUR_HOUR),
+            ("frtou", ObjectKind::Scan, FRTOU_HOUR),
+        ] {
+            let keys = fixture_keys(xml);
+            assert_eq!(
+                plan_with_policy(site, kind, &keys, true),
+                plan_with_policy(site, kind, &keys, false),
+                "{site}"
+            );
+        }
     }
 
     #[test]

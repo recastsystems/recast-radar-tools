@@ -72,6 +72,7 @@ pub const TARGETS: &[(&str, Harness)] = &[
     ("bzip2_encode", bzip2_encode),
     ("writers", writers),
     ("level3", level3),
+    ("polling_listing", polling_listing),
 ];
 
 /// Look up a harness by target name.
@@ -891,4 +892,56 @@ pub fn level3(data: &[u8]) -> bool {
     let _ = product.legacy_tvs_table();
     let _ = product.legacy_cell_attributes();
     true
+}
+
+/// GR2Analyst polling-server listings (`recast-radar-data` `polling`): the
+/// same text as a `dir.list` and as a site configuration, through the
+/// parsers a client uses (`parse_dir_list`, `parse_site_config`) and the
+/// ones that keep every line (`DirList::parse`, `SiteConfig::parse`), then
+/// the newest-volume choice and the URL builders on what they return. Also
+/// checks that nothing the client parsers return can leave its directory: a
+/// usable name or site id is a plain file name, and its URL has no path
+/// segment beyond it; and that no two of them name one file on a
+/// case-insensitive file system.
+pub fn polling_listing(data: &[u8]) -> bool {
+    use recast_radar_data::polling;
+    use std::collections::HashSet;
+    const ROOT: &str = "https://example.com/polling";
+    let text = String::from_utf8_lossy(data);
+    let entries = polling::parse_dir_list(&text);
+    let sites = polling::parse_site_config(&text);
+    let mut names = HashSet::new();
+    for entry in &entries {
+        assert!(polling::is_safe_file_name(&entry.name), "{entry:?}");
+        assert!(names.insert(entry.name.to_ascii_lowercase()), "{entry:?}");
+        let url = polling::site_file_url(ROOT, "SITE", &entry.name);
+        assert_eq!(
+            url.rsplit_once('/'),
+            Some((&format!("{ROOT}/SITE")[..], &entry.name[..]))
+        );
+    }
+    let mut ids = HashSet::new();
+    for site in &sites {
+        assert!(polling::is_safe_file_name(site), "{site:?}");
+        assert!(ids.insert(site.to_ascii_lowercase()), "{site:?}");
+    }
+    if let Ok(list) = polling::DirList::parse(&text) {
+        assert!(list.entries.len() + list.skipped.len() <= polling::MAX_DIR_LIST_ENTRIES);
+        if let Some(entry) = polling::newest_volume_entry(&list.entries) {
+            assert!(polling::is_volume_name(&entry.name), "{entry:?}");
+            let url = polling::entry_url(&polling::site_url(ROOT, "SITE"), entry);
+            assert!(url.is_ok(), "{entry:?}");
+        }
+    }
+    if let Ok(config) = polling::SiteConfig::parse(&text) {
+        assert!(config.sites.len() <= polling::MAX_CONFIG_SITES);
+        if let Ok(url) = polling::single_site_url(ROOT, &config.sites) {
+            assert_eq!(
+                url.matches('/').count(),
+                ROOT.matches('/').count() + 1,
+                "{url}"
+            );
+        }
+    }
+    !entries.is_empty() || !sites.is_empty()
 }

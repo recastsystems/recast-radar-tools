@@ -5,3 +5,4 @@ target/
 /fuzz/coverage/
 .testdata-cache/
 __pycache__/
+*.pyc

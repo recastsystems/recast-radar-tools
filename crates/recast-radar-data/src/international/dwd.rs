@@ -64,33 +64,77 @@ struct DwdProduct {
     dir: &'static str,
     quantities: &'static [&'static str],
     required: bool,
+    variant: DwdVariant,
+    option: DwdOption,
 }
 
-const DWD_PRODUCTS: [DwdProduct; 5] = [
+/// Which variant directory below `sites/{product}/{site}/` a product reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DwdVariant {
+    /// `unfiltered/` when present (raw quantities, with LATEST aliases),
+    /// else `hdf5/filter_polarimetric/` over `hdf5/filter_simple/`.
+    UnfilteredFirst,
+    /// `hdf5/filter_polarimetric/` over `hdf5/filter_simple/` (clutter-filtered
+    /// quantities, timestamped files only), even when `unfiltered/` exists.
+    Filtered,
+}
+
+/// The provider option that includes a product in the frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DwdOption {
+    /// Every frame.
+    Always,
+    /// [`DwdProvider::dual_pol`].
+    DualPol,
+    /// [`DwdProvider::filtered_reflectivity`].
+    FilteredReflectivity,
+}
+
+/// Part order is product order: the base products first (so `products[0]` is
+/// the anchoring `sweep_vol_z`), then each option's, so a frame's identity
+/// changes only when an option is on.
+const DWD_PRODUCTS: [DwdProduct; 6] = [
     DwdProduct {
         dir: "sweep_vol_z",
         quantities: &["dbzh", "zh", "th"],
         required: true,
+        variant: DwdVariant::UnfilteredFirst,
+        option: DwdOption::Always,
     },
     DwdProduct {
         dir: "sweep_vol_v",
         quantities: &["vradh", "vradv"],
         required: true,
+        variant: DwdVariant::UnfilteredFirst,
+        option: DwdOption::Always,
+    },
+    DwdProduct {
+        dir: "sweep_vol_z",
+        quantities: &["dbzh"],
+        required: false,
+        variant: DwdVariant::Filtered,
+        option: DwdOption::FilteredReflectivity,
     },
     DwdProduct {
         dir: "sweep_vol_zdr",
         quantities: &["zdr", "uzdr"],
         required: false,
+        variant: DwdVariant::UnfilteredFirst,
+        option: DwdOption::DualPol,
     },
     DwdProduct {
         dir: "sweep_vol_rhohv",
         quantities: &["rhohv", "urhohv"],
         required: false,
+        variant: DwdVariant::UnfilteredFirst,
+        option: DwdOption::DualPol,
     },
     DwdProduct {
         dir: "sweep_vol_phidp",
         quantities: &["phidp", "uphidp"],
         required: false,
+        variant: DwdVariant::UnfilteredFirst,
+        option: DwdOption::DualPol,
     },
 ];
 
@@ -123,33 +167,78 @@ const DWD_STATIONS: [(&str, &str, f32, f32); 17] = [
 ];
 
 /// Germany's DWD open-data sweep feed (one file per sweep per product).
+///
+/// [`DwdProvider::new`] plans unfiltered total power and radial velocity;
+/// the options add products, in any order:
+///
+/// ```
+/// use recast_radar_data::international::DwdProvider;
+///
+/// // The clutter-filtered DBZH beside the unfiltered TH, and the
+/// // polarimetric moments.
+/// let provider = DwdProvider::new()
+///     .filtered_reflectivity(true)
+///     .dual_pol(true);
+/// # let _ = provider;
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct DwdProvider {
     /// Also assemble ZDR/RhoHV/PhiDP. Off by default: each extra product
     /// costs a ~2 MB listing fetch per poll plus ten sweep downloads per
     /// frame, and reflectivity+velocity already make a working display.
     include_dual_pol: bool,
+    /// Also assemble the clutter-filtered DBZH beside the unfiltered TH. Off
+    /// by default for the same reason.
+    include_filtered_reflectivity: bool,
 }
 
 impl DwdProvider {
+    /// Unfiltered total power (TH) and filtered radial velocity (VRADH): ten
+    /// sweeps of each per frame.
     pub fn new() -> Self {
         Self {
             include_dual_pol: false,
+            include_filtered_reflectivity: false,
         }
     }
 
-    /// Assemble ZDR, RhoHV, and PhiDP sweeps too (more bandwidth).
+    /// Assemble ZDR, RhoHV, and PhiDP sweeps too (more bandwidth): the same
+    /// provider as `DwdProvider::new().dual_pol(true)`.
     pub fn with_dual_pol() -> Self {
-        Self {
-            include_dual_pol: true,
-        }
+        Self::new().dual_pol(true)
+    }
+
+    /// Whether to also assemble ZDR, RhoHV and PhiDP: ten more sweeps of
+    /// each per frame, and one more listing of about 2 MB per product per
+    /// poll. Off in [`DwdProvider::new`]; [`DwdProvider::with_dual_pol`] is a
+    /// shorthand for turning it on.
+    #[must_use]
+    pub fn dual_pol(mut self, include: bool) -> Self {
+        self.include_dual_pol = include;
+        self
+    }
+
+    /// Whether to also assemble DWD's clutter-filtered reflectivity, DBZH
+    /// from `sweep_vol_z/{site}/hdf5/filter_polarimetric/` (or
+    /// `filter_simple/`), beside the unfiltered TH: ten more sweeps per frame
+    /// and one more listing of about 2 MB per poll. Off in
+    /// [`DwdProvider::new`]. The product is optional, not required: a cycle
+    /// whose DBZH is incomplete still plans, with the DBZH sweeps it has.
+    #[must_use]
+    pub fn filtered_reflectivity(mut self, include: bool) -> Self {
+        self.include_filtered_reflectivity = include;
+        self
     }
 
     fn included_products(&self) -> impl Iterator<Item = &'static DwdProduct> {
-        let include_dual_pol = self.include_dual_pol;
+        let provider = *self;
         DWD_PRODUCTS
             .iter()
-            .filter(move |product| product.required || include_dual_pol)
+            .filter(move |product| match product.option {
+                DwdOption::Always => true,
+                DwdOption::DualPol => provider.include_dual_pol,
+                DwdOption::FilteredReflectivity => provider.include_filtered_reflectivity,
+            })
     }
 
     /// Fetch and parse the sweep listing of every included product (the
@@ -387,9 +476,23 @@ struct ResolvedProductDir {
     quantity: &'static str,
 }
 
-/// Resolve `sites/{product}/{site}/` to its data directory: `unfiltered/`
-/// when present (LATEST-bearing raw quantities), else `hdf5/` descending
-/// into `filter_polarimetric/` over `filter_simple/` (filtered quantities,
+/// The first directory below `sites/{product}/{site}/` that `variant`
+/// reads: `unfiltered` or `hdf5`, or `None` when the station directory has
+/// neither that it can use.
+fn station_subdir(entries: &[ListingEntry], variant: DwdVariant) -> Option<&'static str> {
+    if variant == DwdVariant::UnfilteredFirst && has_dir(entries, "unfiltered") {
+        Some("unfiltered")
+    } else if has_dir(entries, "hdf5") {
+        Some("hdf5")
+    } else {
+        None
+    }
+}
+
+/// Resolve `sites/{product}/{site}/` to its data directory: for
+/// [`DwdVariant::UnfilteredFirst`], `unfiltered/` when present
+/// (LATEST-bearing raw quantities); otherwise `hdf5/` descending into
+/// `filter_polarimetric/` over `filter_simple/` (filtered quantities,
 /// timestamped files only).
 #[cfg(feature = "net")]
 fn resolve_product_dir(site_id: &str, product: &DwdProduct) -> Result<ResolvedProductDir, String> {
@@ -398,9 +501,10 @@ fn resolve_product_dir(site_id: &str, product: &DwdProduct) -> Result<ResolvedPr
         fetch_text(&station_url).map_err(|err| format!("DWD station dir {station_url}: {err}"))?;
     let station_entries = parse_autoindex(&station_html);
 
-    let dir_url = if has_dir(&station_entries, "unfiltered") {
+    let subdir = station_subdir(&station_entries, product.variant);
+    let dir_url = if subdir == Some("unfiltered") {
         format!("{station_url}unfiltered/")
-    } else if has_dir(&station_entries, "hdf5") {
+    } else if subdir == Some("hdf5") {
         let hdf5_url = format!("{station_url}hdf5/");
         let hdf5_html =
             fetch_text(&hdf5_url).map_err(|err| format!("DWD filter dir {hdf5_url}: {err}"))?;
@@ -410,6 +514,8 @@ fn resolve_product_dir(site_id: &str, product: &DwdProduct) -> Result<ResolvedPr
             .find(|name| has_dir(&hdf5_entries, name))
             .ok_or_else(|| format!("DWD filter dir {hdf5_url}: no filter_* subdirectory"))?;
         format!("{hdf5_url}{filter}/")
+    } else if product.variant == DwdVariant::Filtered {
+        return Err(format!("DWD station dir {station_url}: no hdf5/ present"));
     } else {
         return Err(format!(
             "DWD station dir {station_url}: neither unfiltered/ nor hdf5/ present"
@@ -538,20 +644,61 @@ mod tests {
     const V_FILES: &str =
         include_str!("../../tests/fixtures/dwd_asb_v_filter_polarimetric_files.html");
 
+    /// DWD's Borkum (`boo`) listings, captured together on 2026-09-25 between
+    /// 08:56:15 and 08:56:24Z: the `sweep_vol_z/boo/` station and `hdf5/`
+    /// directories whole, and the three sweep listings a frame with
+    /// [`DwdProvider::filtered_reflectivity`] reads (`unfiltered/` TH,
+    /// `sweep_vol_v/boo/hdf5/filter_polarimetric/` VRADH and
+    /// `sweep_vol_z/boo/hdf5/filter_polarimetric/` DBZH), 1-2 MB each,
+    /// trimmed to the lines of that one quantity from the three newest TH
+    /// cycles (and TH's LATEST aliases), each line's text as served (line
+    /// ends stored as LF). The DBZH listing
+    /// already holds the next cycle's sweep 00 (08:55:58), which the TH
+    /// listing, read 6 s earlier, does not.
+    const BOO_Z_STATION_DIR: &str = include_str!("../../tests/fixtures/dwd_boo_z_station_dir.html");
+    const BOO_Z_HDF5_DIR: &str = include_str!("../../tests/fixtures/dwd_boo_z_hdf5_dir.html");
+    const BOO_Z_UNFILTERED_FILES: &str =
+        include_str!("../../tests/fixtures/dwd_boo_z_unfiltered_files.html");
+    const BOO_V_FILTERED_FILES: &str =
+        include_str!("../../tests/fixtures/dwd_boo_v_filter_polarimetric_files.html");
+    const BOO_Z_FILTERED_FILES: &str =
+        include_str!("../../tests/fixtures/dwd_boo_z_filter_polarimetric_files.html");
+
     fn timestamp(value: &str) -> NaiveDateTime {
         NaiveDateTime::parse_from_str(value, "%Y%m%d%H%M%S").expect("test timestamp")
     }
 
+    /// The 16-digit stamp of a DWD sweep file URL.
+    fn part_stamp(url: &str) -> &str {
+        let after = &url[url.find("_sweeph5onem_").expect("sweep file") + 13..];
+        let after = &after[after.find('-').expect("stamp") + 1..];
+        &after[..16]
+    }
+
     #[test]
     fn station_variant_dirs_match_the_live_layout() {
-        // sweep_vol_z/asb has BOTH unfiltered/ and hdf5/ -> unfiltered wins.
+        // sweep_vol_z/asb has BOTH unfiltered/ and hdf5/ -> unfiltered wins,
+        // unless the product asks for the filtered variant.
         let z_entries = parse_autoindex(Z_STATION_DIR);
         assert!(has_dir(&z_entries, "unfiltered"));
         assert!(has_dir(&z_entries, "hdf5"));
+        assert_eq!(
+            station_subdir(&z_entries, DwdVariant::UnfilteredFirst),
+            Some("unfiltered")
+        );
+        assert_eq!(
+            station_subdir(&z_entries, DwdVariant::Filtered),
+            Some("hdf5")
+        );
         // sweep_vol_v/asb has only hdf5/, which holds the filter variants.
         let v_entries = parse_autoindex(V_STATION_DIR);
         assert!(!has_dir(&v_entries, "unfiltered"));
         assert!(has_dir(&v_entries, "hdf5"));
+        assert_eq!(
+            station_subdir(&v_entries, DwdVariant::UnfilteredFirst),
+            Some("hdf5")
+        );
+        assert_eq!(station_subdir(&[], DwdVariant::Filtered), None);
         let v_hdf5 = parse_autoindex(V_HDF5_DIR);
         assert!(has_dir(&v_hdf5, "filter_polarimetric"));
         assert!(has_dir(&v_hdf5, "filter_simple"));
@@ -759,6 +906,198 @@ mod tests {
                 "sweep_vol_rhohv",
                 "sweep_vol_phidp"
             ]
+        );
+    }
+
+    #[test]
+    fn filtered_reflectivity_is_an_optional_third_product() {
+        let products: Vec<(&str, &[&str], bool, DwdVariant)> = DwdProvider::new()
+            .filtered_reflectivity(true)
+            .included_products()
+            .map(|p| (p.dir, p.quantities, p.required, p.variant))
+            .collect();
+        assert_eq!(
+            products,
+            [
+                (
+                    "sweep_vol_z",
+                    &["dbzh", "zh", "th"][..],
+                    true,
+                    DwdVariant::UnfilteredFirst
+                ),
+                (
+                    "sweep_vol_v",
+                    &["vradh", "vradv"][..],
+                    true,
+                    DwdVariant::UnfilteredFirst
+                ),
+                ("sweep_vol_z", &["dbzh"][..], false, DwdVariant::Filtered),
+            ]
+        );
+        let all: Vec<&str> = DwdProvider::with_dual_pol()
+            .filtered_reflectivity(true)
+            .included_products()
+            .map(|product| product.dir)
+            .collect();
+        assert_eq!(
+            all,
+            [
+                "sweep_vol_z",
+                "sweep_vol_v",
+                "sweep_vol_z",
+                "sweep_vol_zdr",
+                "sweep_vol_rhohv",
+                "sweep_vol_phidp"
+            ]
+        );
+        // The options chain in either order, and each can be turned off.
+        let dirs = |provider: DwdProvider| -> Vec<&'static str> {
+            provider
+                .included_products()
+                .map(|product| product.dir)
+                .collect()
+        };
+        assert_eq!(
+            dirs(
+                DwdProvider::new()
+                    .filtered_reflectivity(true)
+                    .dual_pol(true)
+            ),
+            all
+        );
+        assert_eq!(
+            dirs(
+                DwdProvider::new()
+                    .dual_pol(true)
+                    .filtered_reflectivity(true)
+            ),
+            all
+        );
+        assert_eq!(
+            dirs(DwdProvider::new().dual_pol(true)),
+            dirs(DwdProvider::with_dual_pol())
+        );
+        assert_eq!(
+            dirs(DwdProvider::with_dual_pol().dual_pol(false)),
+            dirs(DwdProvider::new())
+        );
+        assert_eq!(
+            dirs(
+                DwdProvider::new()
+                    .filtered_reflectivity(true)
+                    .filtered_reflectivity(false)
+            ),
+            dirs(DwdProvider::new())
+        );
+    }
+
+    /// With the filtered-reflectivity option, a frame planned from real
+    /// listings of one moment is the default frame (TH then VRADH) followed by
+    /// the ten DBZH sweeps of the same cycle, each with its TH sweep's stamp,
+    /// for every cycle the listings hold; the identity names the same anchor
+    /// and the 30 parts, and differs from the default frame's.
+    #[test]
+    fn filtered_reflectivity_joins_the_th_cycle_in_real_listings() {
+        // Directory resolution as `resolve_product_dir` walks it: TH from
+        // `unfiltered/`, the filtered DBZH from `hdf5/filter_polarimetric/`.
+        let station = parse_autoindex(BOO_Z_STATION_DIR);
+        assert_eq!(
+            station_subdir(&station, DwdVariant::UnfilteredFirst),
+            Some("unfiltered")
+        );
+        assert_eq!(station_subdir(&station, DwdVariant::Filtered), Some("hdf5"));
+        let hdf5 = parse_autoindex(BOO_Z_HDF5_DIR);
+        assert!(has_dir(&hdf5, "filter_polarimetric") && has_dir(&hdf5, "filter_simple"));
+
+        let site = "https://opendata.dwd.de/weather/radar/sites/";
+        let products: Vec<DwdProductSweeps> = DwdProvider::new()
+            .filtered_reflectivity(true)
+            .included_products()
+            .map(|product| {
+                let (dir_url, html) = match (product.dir, product.variant) {
+                    ("sweep_vol_z", DwdVariant::UnfilteredFirst) => (
+                        format!("{site}sweep_vol_z/boo/unfiltered/"),
+                        BOO_Z_UNFILTERED_FILES,
+                    ),
+                    ("sweep_vol_v", _) => (
+                        format!("{site}sweep_vol_v/boo/hdf5/filter_polarimetric/"),
+                        BOO_V_FILTERED_FILES,
+                    ),
+                    ("sweep_vol_z", DwdVariant::Filtered) => (
+                        format!("{site}sweep_vol_z/boo/hdf5/filter_polarimetric/"),
+                        BOO_Z_FILTERED_FILES,
+                    ),
+                    other => panic!("unexpected product {other:?}"),
+                };
+                let entries = parse_autoindex(html);
+                let quantity = product
+                    .quantities
+                    .iter()
+                    .copied()
+                    .find(|quantity| {
+                        entries
+                            .iter()
+                            .any(|entry| entry.name.contains(&quantity_marker(quantity)))
+                    })
+                    .expect("a listed quantity");
+                DwdProductSweeps {
+                    dir: product.dir,
+                    required: product.required,
+                    dir_url,
+                    quantity,
+                    sweeps: parse_dwd_sweeps(&entries, quantity),
+                }
+            })
+            .collect();
+        let quantities: Vec<&str> = products.iter().map(|product| product.quantity).collect();
+        assert_eq!(quantities, ["th", "vradh", "dbzh"]);
+
+        let anchors = cycle_anchors(&products[0].sweeps, 3);
+        assert_eq!(
+            anchors,
+            [
+                timestamp("20260925085403"),
+                timestamp("20260925084903"),
+                timestamp("20260925084403")
+            ]
+        );
+        for anchor in anchors {
+            let with = assemble_cycle("boo", anchor, &products).expect("frame with DBZH");
+            let without = assemble_cycle("boo", anchor, &products[..2]).expect("default frame");
+            assert_eq!(with.parts.len(), 30, "{anchor}");
+            assert_eq!(without.parts.len(), 20, "{anchor}");
+            assert_eq!(with.parts[..20], without.parts[..20], "{anchor}");
+            for sweep in 0..10 {
+                let th = &with.parts[sweep].url;
+                let dbzh = &with.parts[20 + sweep].url;
+                assert!(th.contains(&format!("_th_{sweep:02}-")), "{th}");
+                assert!(
+                    dbzh.contains("/sweep_vol_z/boo/hdf5/filter_polarimetric/")
+                        && dbzh.contains(&format!("_dbzh_{sweep:02}-")),
+                    "{dbzh}"
+                );
+                assert_eq!(
+                    part_stamp(th),
+                    part_stamp(dbzh),
+                    "sweep {sweep} of {anchor}"
+                );
+            }
+            let stamp = anchor.format("%Y%m%d%H%M%S");
+            assert!(with.identity.starts_with(&format!("boo_{stamp}_p30_h")));
+            assert!(without.identity.starts_with(&format!("boo_{stamp}_p20_h")));
+            assert_ne!(with.identity, without.identity);
+            assert_eq!(
+                assemble_cycle("boo", anchor, &products).expect("again"),
+                with
+            );
+        }
+        // The next cycle's DBZH sweep 00 is listed but stays out of the newest
+        // frame: it starts after the anchor.
+        assert!(
+            products[2]
+                .sweeps
+                .iter()
+                .any(|sweep| sweep.time == timestamp("20260925085558"))
         );
     }
 }

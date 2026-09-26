@@ -525,8 +525,8 @@ size = 1761280
 committed = "files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N5_grib2.RS47773.tar"
 derived_from = "jma-n5-20191012-090000"
 derivation = "single-member tar: the ustar header block and data blocks of member Z__C_RJTD_20191012090000_RDR_JMAGPV_RS47773_Gar0p5km0p7deg_Pze_ANAL_grib2.bin (1752093 bytes, sha256 e0b44c0a6f150d7f682b2765b5fc5c939db06759fccaf5b332bfc46402266e2c) copied verbatim from the source tar, then zero blocks to the next 10240-byte record (tarslice.py in docs/testdata/corpus.md)"
-tags = ["provider:nict-jma", "license:unknown", "era:2019", "country:JP", "network:jma", "site:taka", "moments:reflectivity", "regime:typhoon", "quirk:repeated-elevations", "derived", "derivation:archive-member"]
-description = "JMA Osaka/Takayasu (TAKA, RS47773, 34.6164N 135.6564E) reflectivity member of the Hagibis N5 tar: 26 sweeps in four descending elevation ladders (5.0-0.3, 1.8-0.0, 25.0-0.3, 5.0-0.0 deg) with repeated angles, 512 radials x 300 gates"
+tags = ["provider:nict-jma", "license:unknown", "era:2019", "country:JP", "network:jma", "site:taka", "moments:reflectivity", "regime:typhoon", "quirk:repeated-elevations", "derived", "derivation:archive-member", "known-failure:jma-lowest-level-valid"]
+description = "JMA Osaka/Takayasu (TAKA, RS47773, 34.6164N 135.6564E) reflectivity member of the Hagibis N5 tar: 26 sweeps in four descending elevation ladders (5.0-0.3, 1.8-0.0, 25.0-0.3, 5.0-0.0 deg) with repeated angles, 512 radials x 300 gates. Known failure (docs/testdata/feeds-survey.md section 3.2): level 1 of the level table, 0.00 below the 0.32 dB ladder that starts at 0.16 dBZ, decodes as a valid 0.0 dBZ, so no gate is below threshold; crates/recast-radar-data/tests/feeds_known_failures.rs checks it"
 
 [[file]]
 id = "jma-n6-20191012-090000-rs47773"
