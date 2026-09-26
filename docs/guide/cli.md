@@ -341,15 +341,18 @@ format. Level II takes more:
 
 What the writer leaves out and its notes go to standard error:
 
-```text
+```console
+$ recast-radar convert dkrom.pvol.20260820T1130.dualpol.h5 --to level2 -o dkrom.ar2v
 recast-radar: left out: field TH (sweeps 0-9): REF carries DBZH instead
 recast-radar: left out: field LDR (sweeps 0-9): no Message 31 moment for this quantity
-recast-radar: note: VEL from VRADH: 8-bit, scale 1.8880597, offset 134.16418: values within 0.26481938 of the source (sweeps 0-12)
 wrote dkrom.ar2v (NEXRAD Level II, 762853 bytes, 10 sweeps; some fields or sweeps left out, see above)
 ```
 
-A refusal names the option that helps where there is one (`--position`,
-`--sweeps`, `--drop-negative-range-gates`).
+A coding coarser than the source is a note, for example `recast-radar: note:
+VEL from VRADH: 8-bit, scale 1.8880597, offset 134.16418: values within
+0.26481938 of the source (sweeps 0-12)` for JMA's float velocities under
+`--quantization compatible`. A refusal names the option that helps where
+there is one (`--position`, `--sweeps`, `--drop-negative-range-gates`).
 
 `publish` writes each input volume as a Level II file into a polling
 directory (see below), with the sweep, position and Level II options of

@@ -101,8 +101,8 @@ fn range_text(first: usize, last: usize) -> String {
     }
 }
 
-/// The Level II writer's summary as a report. Sweep indices are the written
-/// volume's.
+/// The Level II writer's summary as a report. Sweep indices are those of
+/// the volume given to the writer.
 pub(crate) fn level2_report(summary: &WriteSummary) -> WriteReport {
     // One line per field and reason, with the sweeps it applies to.
     let mut skipped: Vec<(String, &str, Vec<usize>)> = Vec::new();
@@ -187,7 +187,7 @@ fn check_strict(options: &WriteOptions, report: &WriteReport) -> Result<(), Back
         return Err(BackendError::Unrepresentable {
             format: OutputFormat::Level2,
             reason: format!(
-                "--strict: the output would leave out {}",
+                "refused under --strict (Python: strict=True): the output would leave out {}",
                 report.left_out.join("; ")
             ),
         });
