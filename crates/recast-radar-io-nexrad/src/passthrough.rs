@@ -23,7 +23,7 @@
 //! | 11 and 12, Loop Back Test (Table VIII), every one | `nexrad_loopback_<field>`, `nexrad_loopback_time` | `nexrad_loopback`, ragged `nexrad_loopback_byte` |
 //! | 33, RDA Log Data (Table XVIV), every one | `nexrad_rda_log_<field>`, `nexrad_rda_log_time` | `nexrad_rda_log`, ragged `nexrad_rda_log_byte` |
 //! | 3 and 18 of a legacy RDA (layouts not decoded), 29, and types Table I does not define, every one | `nexrad_unparsed_message_<field>`, the frames verbatim (a variable-length message: its header and body) | `nexrad_unparsed_message`, ragged `nexrad_unparsed_message_byte` |
-//! | Every non-radial frame's message header (Table II), as stored | `nexrad_metadata_message_<field>` ([`message_header_table`]) | `nexrad_metadata_message` |
+//! | Every non-radial frame's message header (Table II), as stored | `nexrad_metadata_message_<field>` (`message_header_table`) | `nexrad_metadata_message` |
 //!
 //! Messages 3, 5 or 7, 8, 13, 15, 18 and 32 also get `<prefix>message_time`,
 //! the generation time in their message header, in seconds since the
