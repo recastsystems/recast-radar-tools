@@ -756,8 +756,8 @@ storage-length invariant it served is asserted on every decoded grid.
 | `merge_ignores_malformed_incoming_ray_instrument_metadata` | Irene parts with one sidecar shortened by one entry | the aligned sidecar is kept / replaces the malformed one |
 | `merge_collision_keeps_first_part_grid` | Hurum DBZH + TH (both map to reflectivity) | 10 collisions, DBZH grids kept; h5py raw probes of both planes as physical values |
 | `merge_unions_unmatched_cuts_sorted_by_elevation` | KIWA chunks 026, 002, 014 as parts (1.33, 0.27, 1.01 deg) | reference merge: 3 cuts sorted, numbered |
-| `merge_skips_matched_cut_with_different_radial_count` | KIWA sweep 1 as one chunk (120 radials) vs two chunks (240) | skipped_geometry 1 |
-| `merge_skips_matched_cut_with_shifted_azimuths` | KTLX 2013 + 2024 trims (elevations within 0.05 deg, 480 radials, azimuth grids 44-58 deg apart) | MetPy azimuths: both cuts skipped |
+| `merge_keeps_matched_sweep_with_different_ray_count_apart` | KIWA sweep 1 as one chunk (120 radials) vs two chunks (240) | separate_sweeps 1: both kept |
+| `merge_keeps_sweeps_of_other_collections_apart` | KTLX 2013 + 2024 trims (elevations within 0.05 deg, 480 radials, azimuth grids 44-58 deg apart, collected eleven years apart) | MetPy azimuths and radial times: both cuts kept as sweeps of their own |
 | `merge_accepts_azimuths_equal_across_the_north_wrap` | Jabbeke parts with radial 0 rewritten to 359.99 / 0.01 deg (edit of the real 0.5 deg bin centre) | merged as the unedited parts |
 | `merge_accepts_matched_cut_with_different_gate_layout` | `l2-ktlx-19990504-002218` sweep 5 (REF 356 x 1 km, VEL/SW 920 x 250 m on the same 367 radials) split by moment; KTLX 2024 Doppler cut for the Nyquist fill | Py-ART message header gate geometry; Nyquist velocities restored from the VEL part |
 | `merge_three_product_parts_assembles_one_scan` (was `..._assembles_full_dual_pol_cut`) | Hurum DBZH + VRADH + TH | reference merge: 8 merged, 10 collisions, earliest time |

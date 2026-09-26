@@ -1665,9 +1665,10 @@ Then `stride = k` and `start = m`.
   moment. No file in the corpus has this layout, so the case has no real-data test.
 - Anything else (a finer spacing that does not divide the other, gates shifted by a fraction of
   a gate) returns `GeometryError::Unaligned`.
-- When `merge_volumes` assembles an ODIM multi-file volume, an unaligned incoming field is
-  counted in `MergeReport::skipped_geometry` and dropped, just as mismatched azimuth
-  geometry is today.
+- When `merge_volumes` assembles an ODIM multi-file volume, the unaligned incoming fields
+  are kept together in a sweep of their own with the incoming sweep's coordinates
+  (`MergeReport::separate_fields`), as a sweep whose azimuths or collection time match no
+  sweep is (`MergeReport::separate_sweeps`): nothing parsed is dropped.
 
 An explicit (non-uniform) range accepts only fields with identical centres: `stride = 1`,
 `start = 0`, `ngates <= len`.
@@ -3012,7 +3013,7 @@ above, the code is authoritative and the difference is listed here.
    `LegacyConvention::of_metadata`, `floor_to_second`. A row longer than `ngates` widens the
    field's existing rows (the legacy behaviour); `Sweep::seal` grows a uniform range to cover
    every field.
-8. `model::merge_volumes` / `MergeReport { merged_fields, skipped_geometry,
+8. `model::merge_volumes` / `MergeReport { merged_fields, separate_sweeps, separate_fields,
    field_collisions }` / `MergeError` are the FM301 counterpart of `merge_radar_volumes`
    (6.5), added now so the F.3 sub-worktrees do not both edit core. They are not re-exported
    at the crate root while the legacy `MergeReport` is.

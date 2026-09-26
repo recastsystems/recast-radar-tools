@@ -9,9 +9,10 @@
 //! et al., OPERA WP 2.1/2.2, v2.2-2.3), assembles the parts with
 //! `recast_radar_core::merge_volumes`, and prints the merged volume's site,
 //! sweep count, fields per sweep, and the `MergeReport` counters (including
-//! `skipped_geometry`, which is expected to fire on CHMI's supplemental
-//! 1.5-degree task sweep whose gate spacing differs from the full volume's
-//! same-elevation sweep).
+//! `separate_sweeps` and `separate_fields`, which are expected to count
+//! CHMI's supplemental 1.5-degree task sweep, collected apart from and on
+//! other gates than the full volume's same-elevation sweep, kept as a sweep
+//! of its own).
 //!
 //! Usage:
 //!   cargo run -p recast-radar-io --example intl_assembly_probe -- [shmu|dwd|dwd-full|chmi|all] [site]
@@ -115,8 +116,11 @@ fn probe(provider: &dyn IntlProvider, site: &str) -> Result<(), String> {
         );
     }
     println!(
-        "merge report: merged_fields={} skipped_geometry={} field_collisions={}",
-        report.merged_fields, report.skipped_geometry, report.field_collisions
+        "merge report: merged_fields={} separate_sweeps={} separate_fields={} field_collisions={}",
+        report.merged_fields,
+        report.separate_sweeps,
+        report.separate_fields,
+        report.field_collisions
     );
     Ok(())
 }

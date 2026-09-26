@@ -27,7 +27,8 @@ use serde_json::Value;
 fn report(value: &Value) -> MergeReport {
     MergeReport {
         merged_fields: as_usize(&value["merged_fields"]),
-        skipped_geometry: as_usize(&value["skipped_geometry"]),
+        separate_sweeps: as_usize(&value["separate_sweeps"]),
+        separate_fields: as_usize(&value["separate_fields"]),
         field_collisions: as_usize(&value["field_collisions"]),
     }
 }
@@ -347,7 +348,8 @@ fn merge_unions_fields_of_angle_matched_sweeps() {
         report,
         MergeReport {
             merged_fields: 9,
-            skipped_geometry: 0,
+            separate_sweeps: 0,
+            separate_fields: 0,
             field_collisions: 0,
         }
     );
@@ -390,7 +392,7 @@ fn merge_fills_missing_ray_variables_without_overwriting_source_values() {
 
     let (merged, report) = merge_volumes(vec![dbz, vel]).unwrap();
     assert_eq!(report.merged_fields, 2);
-    assert_eq!(report.skipped_geometry, 0);
+    assert_eq!(report.separate_sweeps, 0);
     let vars = &merged.sweeps[0].ray_vars;
     let rays = as_usize(&irene["sweeps"][0]["rays"]);
     let merged_prt = vars.prt_s.as_ref().unwrap();
@@ -597,14 +599,14 @@ fn merge_unions_unmatched_sweeps_sorted_by_fixed_angle() {
             .all(|pair| pair[0].fixed_angle_deg < pair[1].fixed_angle_deg)
     );
     assert_eq!(report.merged_fields, 0);
-    assert_eq!(report.skipped_geometry, 0);
+    assert_eq!(report.separate_sweeps, 0);
 }
 
 /// The KIWA 0.48 deg sweep as one chunk (120 rays) and as two chunks (240
-/// rays): same site and fixed angle, different ray counts, so the incoming
-/// sweep is skipped and counted.
+/// rays): same site, fixed angle and collection time, different ray counts,
+/// so the incoming sweep is kept as a sweep of its own and counted.
 #[test]
-fn merge_skips_matched_sweep_with_different_ray_count() {
+fn merge_keeps_matched_sweep_with_different_ray_count_apart() {
     let expected = golden();
     let Some(one) = kiwa_part("002") else {
         eprintln!("KIWA chunks unavailable; skipping");
@@ -636,17 +638,20 @@ fn merge_skips_matched_sweep_with_different_ray_count() {
         &expected["merges"]["kiwa_002_vs_002_003"],
         "KIWA 120 vs 240",
     );
-    assert_eq!(merged.sweeps.len(), 1);
+    assert_eq!(merged.sweeps.len(), 2);
     assert_eq!(merged.sweeps[0].nrays(), 120);
-    assert_eq!(report.skipped_geometry, 1);
+    assert_eq!(merged.sweeps[1].nrays(), 240);
+    assert_eq!(report.separate_sweeps, 1);
     assert_eq!(report.merged_fields, 0);
 }
 
 /// KTLX 2013 and 2024 split cuts: same site, the same VCP cut angle (0.48
-/// deg) on all four sweeps, 480 rays each, but the azimuth grids start 44 and
-/// 58 deg apart, so both incoming sweeps are skipped.
+/// deg) on all four sweeps, 480 rays each, but collected eleven years apart
+/// (and their azimuth grids start 44 and 58 deg apart): no sweep takes
+/// moments from the other volume, and both incoming sweeps are kept as
+/// sweeps of their own.
 #[test]
-fn merge_skips_matched_sweep_with_shifted_azimuths() {
+fn merge_keeps_sweeps_of_other_collections_apart() {
     let expected = golden();
     let a = level2(&recast_radar_testdata::require_file!(
         "l2-ktlx-20130520-201643-trim"
@@ -668,12 +673,24 @@ fn merge_skips_matched_sweep_with_shifted_azimuths() {
         &expected["merges"]["ktlx_2013_2024"],
         "KTLX 2013 + 2024",
     );
-    assert_eq!(report.skipped_geometry, 2);
+    assert_eq!(report.separate_sweeps, 2);
     assert_eq!(report.merged_fields, 0);
+    assert_eq!(merged.sweeps.len(), 4);
     assert!(
-        without_nan(&merged).sweeps == without_nan(&a).sweeps,
+        without_nan(&merged).sweeps[..2] == without_nan(&a).sweeps[..],
         "the 2013 sweeps are kept as they are"
     );
+    for (kept, source) in merged.sweeps[2..].iter().zip(&b.sweeps) {
+        assert_eq!(field_names(kept), field_names(source));
+        for field in &source.fields {
+            assert!(fields_identical(common::field(kept, &field.name), field));
+        }
+        assert_eq!(
+            ray_epoch_s(&merged, kept, 0),
+            ray_epoch_s(&b, source, 0),
+            "the 2024 rays keep their times"
+        );
+    }
     // The time coverage is the union of the parts' coverage.
     let (first, second) = (a.time_coverage.unwrap(), b.time_coverage.unwrap());
     let coverage = merged.time_coverage.unwrap();
@@ -711,7 +728,7 @@ fn merge_accepts_azimuths_equal_across_the_north_wrap() {
     );
     assert!(merged.sweeps[0].field(&FieldName::parse("VRAD")).is_some());
     assert_eq!(report.merged_fields, 9);
-    assert_eq!(report.skipped_geometry, 0);
+    assert_eq!(report.separate_sweeps, 0);
     assert_eq!(
         merged.sweeps[0].rays.azimuth_deg[0], 359.99,
         "base ray keeps its azimuth"
@@ -762,7 +779,8 @@ fn merge_accepts_matched_sweep_with_different_gate_layout() {
         report,
         MergeReport {
             merged_fields: 2,
-            skipped_geometry: 0,
+            separate_sweeps: 0,
+            separate_fields: 0,
             field_collisions: 0,
         }
     );
@@ -814,8 +832,12 @@ fn merge_accepts_matched_sweep_with_different_gate_layout() {
 }
 
 /// Hurum's scan as three per-quantity files (DWD/CHMI-style assembly): the
-/// VRADH part adds velocity to the 8 sweeps it covers, the TH part adds TH to
-/// all 10, and the time reference is the earliest part time.
+/// VRADH part adds velocity to the 7 sweeps it covers of this scan, the TH
+/// part adds TH to all 10, and the time reference is the earliest part time.
+/// The VRADH file's 90 deg sweep was collected at 14:38:53 (h5py
+/// `dataset8/what/starttime`), ten minutes before the DBZH part's 90 deg
+/// sweep (14:48:52), in the scan before: it is kept as a sweep of its own
+/// instead of lending its velocity to the later sweep.
 #[test]
 fn merge_three_product_parts_assembles_one_scan() {
     let expected = golden();
@@ -831,6 +853,15 @@ fn merge_three_product_parts_assembles_one_scan() {
     assert_eq!(dbzh.sweeps.len(), 10);
     assert_eq!(vradh.sweeps.len(), 8);
     assert_eq!(th.sweeps.len(), 10);
+    let parts = &expected["odim"];
+    assert_eq!(
+        as_str(&parts["nohur_vradh"]["sweeps"][7]["start"]),
+        "20260612T143853"
+    );
+    assert_eq!(
+        as_str(&parts["nohur_dbzh"]["sweeps"][9]["start"]),
+        "20260612T144852"
+    );
     let (merged, report) = merge_volumes(vec![dbzh.clone(), vradh.clone(), th]).unwrap();
     assert_merge_matches(
         &merged,
@@ -841,12 +872,14 @@ fn merge_three_product_parts_assembles_one_scan() {
     assert_eq!(
         report,
         MergeReport {
-            merged_fields: 18,
-            skipped_geometry: 0,
+            merged_fields: 17,
+            separate_sweeps: 1,
+            separate_fields: 0,
             field_collisions: 0,
         }
     );
     assert_eq!(merged.time_reference, dbzh.time_reference);
+    assert_eq!(merged.sweeps.len(), 11);
     let with_velocity = merged
         .sweeps
         .iter()
@@ -859,7 +892,21 @@ fn merge_three_product_parts_assembles_one_scan() {
             .all(|sweep| sweep.field(&FieldName::Vradh).is_none()),
         "0.5 and 1.0 deg have no velocity part"
     );
-    for (sweep, source) in merged.sweeps[2..].iter().zip(&vradh.sweeps) {
+    // The 90 deg sweeps: this scan's DBZH and TH, then the earlier scan's
+    // VRADH on its own, its rays at their own times.
+    let (this_scan, earlier) = (&merged.sweeps[9], &merged.sweeps[10]);
+    assert!(this_scan.field(&FieldName::Dbzh).is_some());
+    assert!(this_scan.field(&FieldName::parse("TH")).is_some());
+    assert!(this_scan.field(&FieldName::Vradh).is_none());
+    assert_eq!(
+        field(earlier, &FieldName::Vradh).data,
+        field(&vradh.sweeps[7], &FieldName::Vradh).data
+    );
+    assert_eq!(
+        ray_epoch_s(&merged, earlier, 0),
+        ray_epoch_s(&vradh, &vradh.sweeps[7], 0)
+    );
+    for (sweep, source) in merged.sweeps[2..9].iter().zip(&vradh.sweeps[..7]) {
         let moved = field(sweep, &FieldName::Vradh);
         let original = field(source, &FieldName::Vradh);
         assert_eq!(moved.data, original.data);
@@ -873,10 +920,11 @@ fn merge_three_product_parts_assembles_one_scan() {
 /// JMA Osaka: the N5 (reflectivity) member's four ladders repeat the low
 /// tilts and the N6 (velocity) member's two ladders repeat them too, each
 /// member numbering its own sweeps from 1. Merged, each N6 sweep lands on
-/// the N5 repetition whose azimuth grid it shares (the GRIB2 start azimuth),
-/// the two 0.3 deg velocity sweeps whose start azimuths match no
-/// reflectivity sweep are skipped, and the ladder is renumbered 1..=26.
-/// Merging the N6 member twice makes every velocity field collide.
+/// the N5 repetition whose azimuth grid it shares (the GRIB2 start azimuth)
+/// and collection time, the two 0.3 deg velocity sweeps whose start azimuths
+/// match no reflectivity sweep are kept as sweeps of their own, and the
+/// ladder is renumbered 1..=28. Merging the N6 member twice makes every
+/// velocity field collide.
 #[test]
 fn merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber() {
     let expected = golden();
@@ -902,7 +950,8 @@ fn merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber() {
         report,
         MergeReport {
             merged_fields: 11,
-            skipped_geometry: 2,
+            separate_sweeps: 2,
+            separate_fields: 0,
             field_collisions: 0,
         }
     );
@@ -919,14 +968,17 @@ fn merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber() {
                     .is_some_and(|moved| data_identical(&moved.data, &velocity.data))
             })
             .collect();
-        if targets.is_empty() {
+        assert_eq!(targets.len(), 1);
+        if targets[0].field(&FieldName::Dbzh).is_none() {
             assert_eq!(
                 n6_sweep.fixed_angle_deg, 0.3,
-                "only the 0.3 deg velocity sweeps are skipped"
+                "only the 0.3 deg velocity sweeps are kept apart"
             );
-            continue;
+            assert!(fields_identical(
+                field(targets[0], &FieldName::Vradh),
+                velocity
+            ));
         }
-        assert_eq!(targets.len(), 1);
         assert_eq!(targets[0].rays.azimuth_deg[0], n6_sweep.rays.azimuth_deg[0]);
         let moved = field(targets[0], &FieldName::Vradh);
         assert_eq!(
@@ -959,10 +1011,10 @@ fn merge_jma_repeated_tilts_keep_repetition_velocity_and_renumber() {
         "N5 + N6 + N6",
     );
     assert_eq!(
-        report.field_collisions, 11,
-        "the repeated member collides on every landed sweep"
+        report.field_collisions, 13,
+        "the repeated member collides on every sweep that holds its velocity"
     );
-    assert_eq!(report.skipped_geometry, 4);
+    assert_eq!(report.separate_sweeps, 2);
     assert_eq!(merged_twice.sweeps.len(), merged.sweeps.len());
     for (twice, once) in merged_twice.sweeps.iter().zip(&merged.sweeps) {
         assert_eq!(field_names(twice), field_names(once));
@@ -1041,7 +1093,7 @@ fn without_leading_gates(mut part: Volume, gates: u32) -> Volume {
 /// extended to 1424 gates for reflectivity, DBZH on stride 4). A Doppler
 /// file that starts 4 gates later has its range extended back to the
 /// reflectivity's first gate; one shifted by 100 m or on 300 m gates does
-/// not align and its fields are skipped.
+/// not align and its fields are kept in a sweep of their own.
 #[test]
 fn merge_aligns_real_gate_layouts_of_separate_products() {
     let expected = golden();
@@ -1082,7 +1134,8 @@ fn merge_aligns_real_gate_layouts_of_separate_products() {
             report.merged_fields,
             if order == "coarse first" { 2 } else { 1 }
         );
-        assert_eq!(report.skipped_geometry, 0, "{order}");
+        assert_eq!(report.separate_sweeps, 0, "{order}");
+        assert_eq!(report.separate_fields, 0, "{order}");
         let sweep = &merged.sweeps[0];
         assert_eq!(sweep.range, decoded.range, "{order}: range");
         assert_eq!(field_names(sweep), field_names(decoded), "{order}");
@@ -1126,7 +1179,8 @@ fn merge_aligns_real_gate_layouts_of_separate_products() {
         }
     }
 
-    // Misaligned Doppler products: every field is skipped.
+    // Misaligned Doppler products: every field is kept, in a sweep of its
+    // own with the product's range.
     for (what, first, spacing) in [
         ("shifted 100 m", -275.0, 250.0),
         ("300 m gates", -375.0, 300.0),
@@ -1137,20 +1191,32 @@ fn merge_aligns_real_gate_layouts_of_separate_products() {
             spacing_m: spacing,
             ngates: as_usize(&want["vel"]["gates"]) as u32,
         };
-        let (merged, report) = merge_volumes(vec![reflectivity.clone(), misaligned]).unwrap();
+        let (merged, report) =
+            merge_volumes(vec![reflectivity.clone(), misaligned.clone()]).unwrap();
         assert_eq!(
             report,
             MergeReport {
                 merged_fields: 0,
-                skipped_geometry: 2,
+                separate_sweeps: 0,
+                separate_fields: 2,
                 field_collisions: 0,
             },
             "{what}"
         );
+        assert_eq!(merged.sweeps.len(), 2, "{what}");
         assert_eq!(merged.sweeps[0].fields.len(), 1, "{what}");
         assert_eq!(
             merged.sweeps[0].range, reflectivity.sweeps[0].range,
             "{what}"
         );
+        let apart = &merged.sweeps[1];
+        assert_eq!(apart.range, misaligned.sweeps[0].range, "{what}");
+        for field in &misaligned.sweeps[0].fields {
+            assert!(
+                fields_identical(common::field(apart, &field.name), field),
+                "{what}: {}",
+                field.name
+            );
+        }
     }
 }

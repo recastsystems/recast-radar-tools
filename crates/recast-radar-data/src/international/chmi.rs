@@ -31,10 +31,11 @@
 //! tasks are admitted only at exact timestamps shared by those products.
 //! Parts are ordered task-major — full volumes (`Z`) first so the
 //! 12-cut reflectivity PVOL is the merge base, then `B`, then `A`. The
-//! supplemental cuts either union in as new elevations (0.3°) or collide
-//! with a same-elevation full-volume cut of different gate geometry
-//! (1.5°), which `recast_radar_core::model::merge_volumes` reports as
-//! `skipped_geometry` rather than mixing geometries.
+//! supplemental cuts either union in as new elevations (0.3°) or meet a
+//! same-elevation full-volume cut collected at another time on other gates
+//! (1.5°), which `recast_radar_core::model::merge_volumes` keeps as a sweep
+//! of its own (`separate_sweeps` or `separate_fields`) rather than mixing
+//! geometries.
 
 use chrono::NaiveDateTime;
 

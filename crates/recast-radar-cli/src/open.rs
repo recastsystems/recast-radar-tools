@@ -247,10 +247,15 @@ pub fn load_one(
         parts.extend(volumes.into_iter().map(|loaded| loaded.volume));
     }
     let (volume, report) = merge_volumes(parts).map_err(|err| CliError::Failed(err.to_string()))?;
-    if report.skipped_geometry > 0 || report.field_collisions > 0 {
+    if report.separate_sweeps > 0 || report.separate_fields > 0 || report.field_collisions > 0 {
         eprintln!(
-            "note: merge moved {} field(s); dropped {} sweep(s)/field(s) with other geometry and {} duplicate field(s)",
-            report.merged_fields, report.skipped_geometry, report.field_collisions
+            "note: merge moved {} field(s); kept {} sweep(s) of other rays or collection time and \
+             {} field(s) of other gates as sweeps of their own; dropped {} field(s) whose name the \
+             sweep already had",
+            report.merged_fields,
+            report.separate_sweeps,
+            report.separate_fields,
+            report.field_collisions
         );
     }
     Ok(Loaded {

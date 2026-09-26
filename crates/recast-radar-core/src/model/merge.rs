@@ -5,22 +5,32 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::cycles::time_extent;
 use super::sweep::{PrtSequence, RayVariables, Sweep};
 use super::volume::{SourceFormat, TimeCoverage, Volume};
 
 /// Tolerance used to treat two fixed angles or two ray azimuths as the same.
 pub const ANGLE_MATCH_TOLERANCE_DEG: f32 = 0.05;
 
+/// Largest difference, in seconds, between the first ray times of two
+/// sweeps [`merge_volumes`] treats as one collection. The products of one
+/// sweep share its times (ODIM parts to the second; JMA's reflectivity and
+/// velocity of one rotation within 20 s); the same cut of the next scan
+/// cycle comes minutes later.
+pub const MERGE_TIME_TOLERANCE_S: f64 = 60.0;
+
 /// Counters describing what [`merge_volumes`] did.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MergeReport {
-    /// Fields moved from a later part into an angle-matched sweep.
+    /// Fields moved from a later part into a matched sweep.
     pub merged_fields: usize,
-    /// Later-part sweeps that matched a fixed angle but not the ray geometry,
-    /// plus fields whose gates do not align with the matched sweep's range;
-    /// all dropped.
-    pub skipped_geometry: usize,
+    /// Later-part sweeps that matched a fixed angle but not the ray geometry
+    /// or the collection time of any sweep, kept as sweeps of their own.
+    pub separate_sweeps: usize,
+    /// Fields of a matched sweep whose gates do not align with its range,
+    /// kept in a sweep of their own (the incoming sweep's coordinates).
+    pub separate_fields: usize,
     /// Fields dropped because the matched sweep already had that name (first
     /// part wins).
     pub field_collisions: usize,
@@ -62,19 +72,27 @@ pub enum MergeError {
 ///   be taken under the first part's format for every sweep.
 /// - `time_reference` becomes the earliest part's; ray times of the other parts
 ///   are rebased onto it. `time_coverage` is the union.
-/// - Sweeps match by `fixed_angle_deg` within [`ANGLE_MATCH_TOLERANCE_DEG`] and
+/// - Sweeps match by `fixed_angle_deg` within [`ANGLE_MATCH_TOLERANCE_DEG`],
 ///   identical ray geometry (ray count, azimuths within the tolerance,
-///   wrap-aware). An incoming sweep merges into the first matched sweep that has
-///   none of its field names, else the first matched sweep. Fields keep their
-///   native geometry: each is re-attached to the matched sweep's range, and a
-///   field that does not align is dropped and counted in `skipped_geometry`.
+///   wrap-aware) and collection time: first ray times (the earliest of each
+///   sweep, after rebasing) at most [`MERGE_TIME_TOLERANCE_S`] apart, or a
+///   sweep without ray times. A sweep of another scan cycle never matches,
+///   so no sweep takes moments from another cycle. An incoming sweep merges
+///   into the matched sweep nearest in time that has none of its field
+///   names, else the matched sweep nearest in time (the first of equals).
+///   Fields keep their native geometry: each is re-attached to the matched
+///   sweep's range, and the fields that do not align stay together in a
+///   sweep of their own with the incoming sweep's coordinates
+///   (`separate_fields`).
 /// - Missing per-ray instrument values of the matched sweep (NaN, `-9999`
 ///   samples, or an absent variable) are filled from the incoming sweep; values
 ///   the matched sweep has are kept. A matched-sweep variable whose length is
 ///   not the ray count is replaced by the incoming one, and an incoming
 ///   variable whose length is not the ray count is ignored.
-/// - Unmatched sweeps are appended; the result is sorted by fixed angle
-///   (stable) and renumbered: `sweep_number = i`, `elevation_number = i + 1`.
+/// - Unmatched sweeps are appended (`separate_sweeps` counts those that
+///   matched a fixed angle); nothing is dropped but a field whose name the
+///   matched sweep already has. The result is sorted by fixed angle (stable)
+///   and renumbered: `sweep_number = i`, `elevation_number = i + 1`.
 pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeError> {
     let mut parts = parts.into_iter();
     let Some(mut base) = parts.next() else {
@@ -119,8 +137,10 @@ pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeE
                     .iter_mut()
                     .for_each(|time| *time += part_shift);
             }
+            let start = sweep_start(&sweep);
             let mut angle_matched = false;
-            let mut target = None;
+            // (index, time gap, whether a field name collides)
+            let mut target: Option<(usize, f64, bool)> = None;
             for (index, existing) in base.sweeps.iter().enumerate() {
                 if (existing.fixed_angle_deg - sweep.fixed_angle_deg).abs()
                     > ANGLE_MATCH_TOLERANCE_DEG
@@ -128,52 +148,65 @@ pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeE
                     continue;
                 }
                 angle_matched = true;
-                if !rays_match(existing, &sweep) {
+                let gap = match (start, sweep_start(existing)) {
+                    (Some(a), Some(b)) => (a - b).abs(),
+                    _ => MERGE_TIME_TOLERANCE_S,
+                };
+                if gap > MERGE_TIME_TOLERANCE_S || !rays_match(existing, &sweep) {
                     continue;
                 }
-                if target.is_none() {
-                    target = Some(index);
-                }
-                if sweep
+                let collides = sweep
                     .fields
                     .iter()
-                    .all(|field| existing.field(&field.name).is_none())
-                {
-                    target = Some(index);
-                    break;
+                    .any(|field| existing.field(&field.name).is_some());
+                let better = match target {
+                    None => true,
+                    Some((_, best_gap, best_collides)) => {
+                        (collides, gap) < (best_collides, best_gap)
+                    }
+                };
+                if better {
+                    target = Some((index, gap, collides));
                 }
             }
-            let Some(index) = target else {
+            let Some((index, _, _)) = target else {
                 if angle_matched {
-                    report.skipped_geometry += 1;
-                } else {
-                    base.sweeps.push(sweep);
+                    report.separate_sweeps += 1;
                 }
+                base.sweeps.push(sweep);
                 continue;
             };
-            let existing = &mut base.sweeps[index];
-            let nrays = existing.nrays();
-            fill_ray_variables(&mut existing.ray_vars, &sweep.ray_vars, nrays);
-            let incoming_range = sweep.range.clone();
-            for mut field in sweep.fields {
-                if existing.field(&field.name).is_some() {
-                    report.field_collisions += 1;
-                    continue;
-                }
-                let attached =
-                    field
-                        .native_geometry(&incoming_range)
-                        .and_then(|(center, spacing)| {
-                            existing.attach_geometry(center, spacing, field.ngates).ok()
-                        });
-                match attached {
-                    Some(mapping) => {
-                        field.gates = mapping;
-                        existing.fields.push(field);
-                        report.merged_fields += 1;
+            let incoming_fields = std::mem::take(&mut sweep.fields);
+            let mut apart = Vec::new();
+            {
+                let existing = &mut base.sweeps[index];
+                let nrays = existing.nrays();
+                fill_ray_variables(&mut existing.ray_vars, &sweep.ray_vars, nrays);
+                for mut field in incoming_fields {
+                    if existing.field(&field.name).is_some() {
+                        report.field_collisions += 1;
+                        continue;
                     }
-                    None => report.skipped_geometry += 1,
+                    let attached =
+                        field
+                            .native_geometry(&sweep.range)
+                            .and_then(|(center, spacing)| {
+                                existing.attach_geometry(center, spacing, field.ngates).ok()
+                            });
+                    match attached {
+                        Some(mapping) => {
+                            field.gates = mapping;
+                            existing.fields.push(field);
+                            report.merged_fields += 1;
+                        }
+                        None => apart.push(field),
+                    }
                 }
+            }
+            if !apart.is_empty() {
+                report.separate_fields += apart.len();
+                sweep.fields = apart;
+                base.sweeps.push(sweep);
             }
         }
     }
@@ -185,6 +218,11 @@ pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeE
         sweep.elevation_number = u16::try_from(index + 1).ok();
     }
     Ok((base, report))
+}
+
+/// Earliest finite ray time of a sweep.
+fn sweep_start(sweep: &Sweep) -> Option<f64> {
+    time_extent(sweep).map(|(start, _)| start)
 }
 
 fn rays_match(a: &Sweep, b: &Sweep) -> bool {

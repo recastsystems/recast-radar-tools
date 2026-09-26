@@ -4495,7 +4495,8 @@
    "report": {
     "field_collisions": 0,
     "merged_fields": 9,
-    "skipped_geometry": 0
+    "separate_fields": 0,
+    "separate_sweeps": 0
    },
    "site": "BEJAB",
    "sweeps": [
@@ -4874,7 +4875,8 @@
    "report": {
     "field_collisions": 0,
     "merged_fields": 11,
-    "skipped_geometry": 2
+    "separate_fields": 0,
+    "separate_sweeps": 2
    },
    "site": "TAKA",
    "sweeps": [
@@ -4929,26 +4931,25 @@
     {
      "elevation_number": 7,
      "fields": {
-      "DBZH": "n5"
+      "VRADH": "n6"
      },
-     "fixed_angle_deg": 0.7,
+     "fixed_angle_deg": 0.3,
      "rays": 512
     },
     {
      "elevation_number": 8,
      "fields": {
-      "DBZH": "n5"
+      "VRADH": "n6"
      },
-     "fixed_angle_deg": 0.7,
+     "fixed_angle_deg": 0.3,
      "rays": 512
     },
     {
      "elevation_number": 9,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 1.2,
+     "fixed_angle_deg": 0.7,
      "rays": 512
     },
     {
@@ -4956,7 +4957,7 @@
      "fields": {
       "DBZH": "n5"
      },
-     "fixed_angle_deg": 1.2,
+     "fixed_angle_deg": 0.7,
      "rays": 512
     },
     {
@@ -4979,9 +4980,10 @@
     {
      "elevation_number": 13,
      "fields": {
-      "DBZH": "n5"
+      "DBZH": "n5",
+      "VRADH": "n6"
      },
-     "fixed_angle_deg": 1.8,
+     "fixed_angle_deg": 1.2,
      "rays": 512
     },
     {
@@ -4989,31 +4991,30 @@
      "fields": {
       "DBZH": "n5"
      },
-     "fixed_angle_deg": 1.8,
+     "fixed_angle_deg": 1.2,
      "rays": 512
     },
     {
      "elevation_number": 15,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 2.5,
+     "fixed_angle_deg": 1.8,
      "rays": 512
     },
     {
      "elevation_number": 16,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 2.5,
+     "fixed_angle_deg": 1.8,
      "rays": 512
     },
     {
      "elevation_number": 17,
      "fields": {
-      "DBZH": "n5"
+      "DBZH": "n5",
+      "VRADH": "n6"
      },
      "fixed_angle_deg": 2.5,
      "rays": 512
@@ -5021,33 +5022,33 @@
     {
      "elevation_number": 18,
      "fields": {
+      "DBZH": "n5",
+      "VRADH": "n6"
+     },
+     "fixed_angle_deg": 2.5,
+     "rays": 512
+    },
+    {
+     "elevation_number": 19,
+     "fields": {
+      "DBZH": "n5"
+     },
+     "fixed_angle_deg": 2.5,
+     "rays": 512
+    },
+    {
+     "elevation_number": 20,
+     "fields": {
       "DBZH": "n5"
      },
      "fixed_angle_deg": 3.6,
      "rays": 512
     },
     {
-     "elevation_number": 19,
-     "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
-     },
-     "fixed_angle_deg": 5.0,
-     "rays": 512
-    },
-    {
-     "elevation_number": 20,
-     "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
-     },
-     "fixed_angle_deg": 5.0,
-     "rays": 512
-    },
-    {
      "elevation_number": 21,
      "fields": {
-      "DBZH": "n5"
+      "DBZH": "n5",
+      "VRADH": "n6"
      },
      "fixed_angle_deg": 5.0,
      "rays": 512
@@ -5058,16 +5059,15 @@
       "DBZH": "n5",
       "VRADH": "n6"
      },
-     "fixed_angle_deg": 6.9,
+     "fixed_angle_deg": 5.0,
      "rays": 512
     },
     {
      "elevation_number": 23,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 9.5,
+     "fixed_angle_deg": 5.0,
      "rays": 512
     },
     {
@@ -5076,7 +5076,7 @@
       "DBZH": "n5",
       "VRADH": "n6"
      },
-     "fixed_angle_deg": 13.0,
+     "fixed_angle_deg": 6.9,
      "rays": 512
     },
     {
@@ -5085,11 +5085,29 @@
       "DBZH": "n5",
       "VRADH": "n6"
      },
-     "fixed_angle_deg": 18.0,
+     "fixed_angle_deg": 9.5,
      "rays": 512
     },
     {
      "elevation_number": 26,
+     "fields": {
+      "DBZH": "n5",
+      "VRADH": "n6"
+     },
+     "fixed_angle_deg": 13.0,
+     "rays": 512
+    },
+    {
+     "elevation_number": 27,
+     "fields": {
+      "DBZH": "n5",
+      "VRADH": "n6"
+     },
+     "fixed_angle_deg": 18.0,
+     "rays": 512
+    },
+    {
+     "elevation_number": 28,
      "fields": {
       "DBZH": "n5",
       "VRADH": "n6"
@@ -5486,9 +5504,10 @@
     }
    ],
    "report": {
-    "field_collisions": 11,
+    "field_collisions": 13,
     "merged_fields": 11,
-    "skipped_geometry": 4
+    "separate_fields": 0,
+    "separate_sweeps": 2
    },
    "site": "TAKA",
    "sweeps": [
@@ -5543,26 +5562,25 @@
     {
      "elevation_number": 7,
      "fields": {
-      "DBZH": "n5"
+      "VRADH": "n6"
      },
-     "fixed_angle_deg": 0.7,
+     "fixed_angle_deg": 0.3,
      "rays": 512
     },
     {
      "elevation_number": 8,
      "fields": {
-      "DBZH": "n5"
+      "VRADH": "n6"
      },
-     "fixed_angle_deg": 0.7,
+     "fixed_angle_deg": 0.3,
      "rays": 512
     },
     {
      "elevation_number": 9,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 1.2,
+     "fixed_angle_deg": 0.7,
      "rays": 512
     },
     {
@@ -5570,7 +5588,7 @@
      "fields": {
       "DBZH": "n5"
      },
-     "fixed_angle_deg": 1.2,
+     "fixed_angle_deg": 0.7,
      "rays": 512
     },
     {
@@ -5593,9 +5611,10 @@
     {
      "elevation_number": 13,
      "fields": {
-      "DBZH": "n5"
+      "DBZH": "n5",
+      "VRADH": "n6"
      },
-     "fixed_angle_deg": 1.8,
+     "fixed_angle_deg": 1.2,
      "rays": 512
     },
     {
@@ -5603,31 +5622,30 @@
      "fields": {
       "DBZH": "n5"
      },
-     "fixed_angle_deg": 1.8,
+     "fixed_angle_deg": 1.2,
      "rays": 512
     },
     {
      "elevation_number": 15,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 2.5,
+     "fixed_angle_deg": 1.8,
      "rays": 512
     },
     {
      "elevation_number": 16,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 2.5,
+     "fixed_angle_deg": 1.8,
      "rays": 512
     },
     {
      "elevation_number": 17,
      "fields": {
-      "DBZH": "n5"
+      "DBZH": "n5",
+      "VRADH": "n6"
      },
      "fixed_angle_deg": 2.5,
      "rays": 512
@@ -5635,33 +5653,33 @@
     {
      "elevation_number": 18,
      "fields": {
+      "DBZH": "n5",
+      "VRADH": "n6"
+     },
+     "fixed_angle_deg": 2.5,
+     "rays": 512
+    },
+    {
+     "elevation_number": 19,
+     "fields": {
+      "DBZH": "n5"
+     },
+     "fixed_angle_deg": 2.5,
+     "rays": 512
+    },
+    {
+     "elevation_number": 20,
+     "fields": {
       "DBZH": "n5"
      },
      "fixed_angle_deg": 3.6,
      "rays": 512
     },
     {
-     "elevation_number": 19,
-     "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
-     },
-     "fixed_angle_deg": 5.0,
-     "rays": 512
-    },
-    {
-     "elevation_number": 20,
-     "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
-     },
-     "fixed_angle_deg": 5.0,
-     "rays": 512
-    },
-    {
      "elevation_number": 21,
      "fields": {
-      "DBZH": "n5"
+      "DBZH": "n5",
+      "VRADH": "n6"
      },
      "fixed_angle_deg": 5.0,
      "rays": 512
@@ -5672,16 +5690,15 @@
       "DBZH": "n5",
       "VRADH": "n6"
      },
-     "fixed_angle_deg": 6.9,
+     "fixed_angle_deg": 5.0,
      "rays": 512
     },
     {
      "elevation_number": 23,
      "fields": {
-      "DBZH": "n5",
-      "VRADH": "n6"
+      "DBZH": "n5"
      },
-     "fixed_angle_deg": 9.5,
+     "fixed_angle_deg": 5.0,
      "rays": 512
     },
     {
@@ -5690,7 +5707,7 @@
       "DBZH": "n5",
       "VRADH": "n6"
      },
-     "fixed_angle_deg": 13.0,
+     "fixed_angle_deg": 6.9,
      "rays": 512
     },
     {
@@ -5699,11 +5716,29 @@
       "DBZH": "n5",
       "VRADH": "n6"
      },
-     "fixed_angle_deg": 18.0,
+     "fixed_angle_deg": 9.5,
      "rays": 512
     },
     {
      "elevation_number": 26,
+     "fields": {
+      "DBZH": "n5",
+      "VRADH": "n6"
+     },
+     "fixed_angle_deg": 13.0,
+     "rays": 512
+    },
+    {
+     "elevation_number": 27,
+     "fields": {
+      "DBZH": "n5",
+      "VRADH": "n6"
+     },
+     "fixed_angle_deg": 18.0,
+     "rays": 512
+    },
+    {
+     "elevation_number": 28,
      "fields": {
       "DBZH": "n5",
       "VRADH": "n6"
@@ -5754,7 +5789,8 @@
    "report": {
     "field_collisions": 0,
     "merged_fields": 0,
-    "skipped_geometry": 1
+    "separate_fields": 0,
+    "separate_sweeps": 1
    },
    "site": "KIWA",
    "sweeps": [
@@ -5769,6 +5805,18 @@
      },
      "fixed_angle_deg": 0.4833984375,
      "rays": 120
+    },
+    {
+     "elevation_number": 2,
+     "fields": {
+      "CCORH": "002+003",
+      "DBZH": "002+003",
+      "PHIDP": "002+003",
+      "RHOHV": "002+003",
+      "ZDR": "002+003"
+     },
+     "fixed_angle_deg": 0.4833984375,
+     "rays": 240
     }
    ],
    "time": "2026-09-17T00:36:29Z"
@@ -5878,7 +5926,8 @@
    "report": {
     "field_collisions": 0,
     "merged_fields": 0,
-    "skipped_geometry": 0
+    "separate_fields": 0,
+    "separate_sweeps": 0
    },
    "site": "KIWA",
    "sweeps": [
@@ -5978,7 +6027,8 @@
    "report": {
     "field_collisions": 0,
     "merged_fields": 0,
-    "skipped_geometry": 2
+    "separate_fields": 0,
+    "separate_sweeps": 2
    },
    "site": "KTLX",
    "sweeps": [
@@ -5999,6 +6049,28 @@
       "DBZH": "2013",
       "VRADH": "2013",
       "WRADH": "2013"
+     },
+     "fixed_angle_deg": 0.4833984375,
+     "rays": 480
+    },
+    {
+     "elevation_number": 3,
+     "fields": {
+      "CCORH": "2024",
+      "DBZH": "2024",
+      "PHIDP": "2024",
+      "RHOHV": "2024",
+      "ZDR": "2024"
+     },
+     "fixed_angle_deg": 0.4833984375,
+     "rays": 480
+    },
+    {
+     "elevation_number": 4,
+     "fields": {
+      "DBZH": "2024",
+      "VRADH": "2024",
+      "WRADH": "2024"
      },
      "fixed_angle_deg": 0.4833984375,
      "rays": 480
@@ -6184,7 +6256,8 @@
    "report": {
     "field_collisions": 0,
     "merged_fields": 10,
-    "skipped_geometry": 0
+    "separate_fields": 0,
+    "separate_sweeps": 0
    },
    "site": "NOHUR",
    "sweeps": [
@@ -6479,7 +6552,8 @@
    "report": {
     "field_collisions": 10,
     "merged_fields": 0,
-    "skipped_geometry": 0
+    "separate_fields": 0,
+    "separate_sweeps": 0
    },
    "site": "NOHUR",
    "sweeps": [
@@ -6825,8 +6899,9 @@
    ],
    "report": {
     "field_collisions": 0,
-    "merged_fields": 18,
-    "skipped_geometry": 0
+    "merged_fields": 17,
+    "separate_fields": 0,
+    "separate_sweeps": 1
    },
    "site": "NOHUR",
    "sweeps": [
@@ -6941,9 +7016,16 @@
      "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh",
       "quality1": "nohur_dbzh",
       "quality2": "nohur_dbzh"
+     },
+     "fixed_angle_deg": 90.0,
+     "rays": 360
+    },
+    {
+     "elevation_number": 11,
+     "fields": {
+      "VRADH": "nohur_vradh"
      },
      "fixed_angle_deg": 90.0,
      "rays": 360
@@ -7190,8 +7272,9 @@
    ],
    "report": {
     "field_collisions": 0,
-    "merged_fields": 38,
-    "skipped_geometry": 0
+    "merged_fields": 37,
+    "separate_fields": 0,
+    "separate_sweeps": 1
    },
    "site": "NOHUR",
    "sweeps": [
@@ -7304,9 +7387,16 @@
     {
      "elevation_number": 10,
      "fields": {
+      "VRADH": "nohur_vradh"
+     },
+     "fixed_angle_deg": 90.0,
+     "rays": 360
+    },
+    {
+     "elevation_number": 11,
+     "fields": {
       "DBZH": "nohur_dbzh",
       "TH": "nohur_th",
-      "VRADH": "nohur_vradh",
       "quality1": "nohur_dbzh",
       "quality2": "nohur_dbzh"
      },
@@ -7348,7 +7438,8 @@
    "report": {
     "field_collisions": 0,
     "merged_fields": 0,
-    "skipped_geometry": 0
+    "separate_fields": 0,
+    "separate_sweeps": 0
    },
    "site": "KTLX",
    "sweeps": [
@@ -9480,5 +9571,259 @@
    ],
    "time": "20260612T144648Z"
   }
+ },
+ "scan_cycles": {
+  "jma_itok_n5": [
+   {
+    "begins": null,
+    "start": "2026-09-24T20:50:00Z",
+    "sweeps": [
+     32,
+     30,
+     28,
+     26,
+     24,
+     22,
+     20,
+     18,
+     14,
+     10,
+     6,
+     2,
+     0,
+     3,
+     7,
+     11,
+     16
+    ]
+   },
+   {
+    "begins": {
+     "earlier": 32,
+     "kind": "repeated_cut",
+     "seconds_apart": 284.0,
+     "sweep": 33
+    },
+    "start": "2026-09-24T20:54:44Z",
+    "sweeps": [
+     33,
+     31,
+     29,
+     27,
+     25,
+     23,
+     21,
+     19,
+     15,
+     12,
+     8,
+     4,
+     1,
+     5,
+     9,
+     13,
+     17,
+     34
+    ]
+   }
+  ],
+  "jma_itok_n6": [
+   {
+    "begins": null,
+    "start": "2026-09-24T20:50:00Z",
+    "sweeps": [
+     20,
+     18,
+     16,
+     14,
+     12,
+     10,
+     8,
+     0,
+     2,
+     4,
+     6
+    ]
+   },
+   {
+    "begins": {
+     "earlier": 20,
+     "kind": "repeated_cut",
+     "seconds_apart": 284.0,
+     "sweep": 21
+    },
+    "start": "2026-09-24T20:54:44Z",
+    "sweeps": [
+     21,
+     19,
+     17,
+     15,
+     13,
+     11,
+     9,
+     1,
+     3,
+     5,
+     7,
+     22
+    ]
+   }
+  ],
+  "jma_taka_n5": [
+   {
+    "begins": null,
+    "start": "2019-10-12T08:50:05Z",
+    "sweeps": [
+     18,
+     14,
+     8,
+     2,
+     12,
+     9,
+     6,
+     3,
+     0,
+     25,
+     24,
+     23,
+     22,
+     21
+    ]
+   },
+   {
+    "begins": {
+     "earlier": 18,
+     "kind": "repeated_cut",
+     "seconds_apart": 281.0,
+     "sweep": 19
+    },
+    "start": "2019-10-12T08:54:46Z",
+    "sweeps": [
+     19,
+     15,
+     10,
+     4,
+     20,
+     17,
+     16,
+     13,
+     11,
+     7,
+     5,
+     1
+    ]
+   }
+  ],
+  "jma_taka_n6": [
+   {
+    "begins": null,
+    "start": "2019-10-12T08:50:05Z",
+    "sweeps": [
+     6,
+     4,
+     2,
+     0,
+     12,
+     11,
+     10,
+     9,
+     8
+    ]
+   },
+   {
+    "begins": {
+     "earlier": 6,
+     "kind": "repeated_cut",
+     "seconds_apart": 281.0,
+     "sweep": 7
+    },
+    "start": "2019-10-12T08:54:46Z",
+    "sweeps": [
+     7,
+     5,
+     3,
+     1
+    ]
+   }
+  ],
+  "odim_bejab_dbzh": [
+   {
+    "begins": null,
+    "start": "2026-06-12T14:50:05Z",
+    "sweeps": [
+     8,
+     7,
+     6,
+     5,
+     4,
+     3,
+     2,
+     1,
+     0
+    ]
+   }
+  ],
+  "odim_bejab_vrad": [
+   {
+    "begins": null,
+    "start": "2026-06-12T14:50:05Z",
+    "sweeps": [
+     8,
+     7,
+     6,
+     5,
+     4,
+     3,
+     2,
+     1,
+     0
+    ]
+   }
+  ],
+  "odim_nohur_dbzh": [
+   {
+    "begins": null,
+    "start": "2026-06-12T14:44:13Z",
+    "sweeps": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ]
+   }
+  ],
+  "odim_nohur_vradh": [
+   {
+    "begins": null,
+    "start": "2026-06-12T14:38:53Z",
+    "sweeps": [
+     7
+    ]
+   },
+   {
+    "begins": {
+     "kind": "pause",
+     "previous": 7,
+     "seconds": 442.0,
+     "sweep": 0
+    },
+    "start": "2026-06-12T14:46:30Z",
+    "sweeps": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   }
+  ]
  }
 }

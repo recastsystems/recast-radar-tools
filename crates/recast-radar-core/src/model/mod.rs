@@ -15,6 +15,7 @@
 //! ([`crate::fm301`]) applies ray order, padding and gate repetition when a
 //! caller reads a variable.
 
+mod cycles;
 mod field;
 mod merge;
 mod names;
@@ -24,11 +25,17 @@ mod sweep;
 mod values;
 mod volume;
 
+pub use cycles::{
+    CycleBreak, CycleTracker, MAX_SCAN_PAUSE_S, ScanCycle, collection_order, scan_cycles,
+    split_scan_cycles,
+};
 pub use field::{
     Coding, Field, FieldAttrs, FieldData, FieldError, FieldParts, FloatCoding, FloatWidth, Gate,
     GateMapping, IntCoding, LevelTable, LinearTransform, PackedInt, RowRef,
 };
-pub use merge::{ANGLE_MATCH_TOLERANCE_DEG, MergeError, MergeReport, merge_volumes};
+pub use merge::{
+    ANGLE_MATCH_TOLERANCE_DEG, MERGE_TIME_TOLERANCE_S, MergeError, MergeReport, merge_volumes,
+};
 pub use names::{FieldName, NameInfo, Polarization, PyartNames, Quantity, XradarAttrs};
 pub use sweep::{
     FollowMode, GeometryError, Monitoring, PlatformTrack, PolarizationMode, PrtMode, PrtSequence,

@@ -2,10 +2,10 @@
 """Golden values for the real-data model tests of recast-radar-core.
 
 The Rust tests in ``crates/recast-radar-core/tests/real_model.rs`` and
-``real_merge.rs`` decode real corpus files with the workspace readers and compare the
-model values (fields, sweeps, rays, per-ray instrument variables, and the results of
-``merge_volumes``) against ``testdata/golden/core/model.json``, which this script
-writes.
+``real_merge.rs`` and ``real_cycles.rs`` decode real corpus files with the workspace
+readers and compare the model values (fields, sweeps, rays, per-ray instrument
+variables, and the results of ``merge_volumes`` and ``scan_cycles``) against
+``testdata/golden/core/model.json``, which this script writes.
 
 Every expected value comes from a reader that shares no code with the crates:
 
@@ -23,8 +23,19 @@ Every expected value comes from a reader that shares no code with the crates:
 The expected outcomes of ``merge_volumes`` are computed here by a reference
 implementation of the merge rules documented on that function (site check, earliest
 time, fixed-angle match within 0.05 deg, ray-geometry match with wrap-aware azimuths,
+collection-time match within 60 s of the sweeps' first rays, the nearest in time
+without a name collision, unmatched sweeps kept as sweeps of their own,
 first-part-wins collisions by FM301 field name, stable fixed-angle sort and
-renumbering), fed only with the metadata the independent readers produce. The merge
+renumbering), fed only with the metadata the independent readers produce. The gate
+alignment of fields (``separate_fields``) is not modelled: no merge here has fields
+whose gates do not align.
+
+The expected ``scan_cycles`` of single files come from a reference implementation of the
+rules documented on ``recast_radar_core::model::scan_cycles`` (collection order by each
+sweep's first ray; a new cycle where a sweep repeats a cut of the current cycle, the same
+fixed angle within 0.05 deg, gate count, first gate, spacing and field names, or starts
+more than 240 s after every sweep of the cycle ended), fed with the sweep times and
+geometry of the independent readers. The merge
 inputs use the FM301 conventions the design note (``docs/design/fm301-model.md``)
 documents for each reader:
 
@@ -38,7 +49,10 @@ documents for each reader:
   the first radial's collection time floored to the second;
 - fixed angles: ODIM ``where/elangle``; the JMA product elevation; for Level II the
   Message 5 cut angle of the sweep's elevation number (MetPy ``vcp_info``), or the first
-  radial's elevation when the file has no VCP message.
+  radial's elevation when the file has no VCP message;
+- sweep start times: ODIM dataset ``what/startdate`` and ``starttime``; for JMA the
+  reference time plus the sweep's observation start offset; for Level II the earliest
+  radial collection time of the sweep (MetPy radial headers).
 
 Float comparisons use float32 like the Rust code.
 
@@ -82,6 +96,10 @@ OUT = TESTDATA / "golden" / "core" / "model.json"
 
 F32 = np.float32
 ANGLE_TOLERANCE = F32(0.05)
+# recast_radar_core::model::MERGE_TIME_TOLERANCE_S
+MERGE_TIME_TOLERANCE_S = 60.0
+# recast_radar_core::model::MAX_SCAN_PAUSE_S
+MAX_SCAN_PAUSE_S = 240.0
 
 # FM301 names of the Level II data blocks (design note, section 8).
 NEXRAD_FIELD_NAMES = {"REF": "DBZH", "VEL": "VRADH", "SW": "WRADH", "ZDR": "ZDR",
@@ -141,6 +159,11 @@ def f32(x):
     return float(F32(x))
 
 
+def epoch_s(text, fmt):
+    """Seconds since 1970 of a UTC time written as `fmt`."""
+    return datetime.datetime.strptime(text, fmt).replace(tzinfo=datetime.UTC).timestamp()
+
+
 # ------------------------------------------------------------ Level II ---
 
 def level2_bytes(entry_id):
@@ -172,8 +195,11 @@ def metpy_sweep_layout(sweep):
         names = [k.decode() for k in sweep[0][4] if k not in (b"VOL", b"ELV", b"RAD")]
         el = [f32(ray[0].el_angle) for ray in sweep]
         az = [f32(ray[0].az_angle) for ray in sweep]
+    # Earliest radial collection time (date and milliseconds of day), epoch seconds.
+    start_s = min(((int(ray[0].date) - 1) * 86_400_000 + int(ray[0].time_ms)) / 1000 for ray in sweep)
     return {"rays": len(sweep), "elevation_deg": f32(first.el_angle), "moments": names,
-            "azimuth_deg": az, "ray_elevation_deg": el, "elevation_number": int(first.el_num)}
+            "azimuth_deg": az, "ray_elevation_deg": el, "elevation_number": int(first.el_num),
+            "start_s": start_s}
 
 
 def level2_summary(entry_id, data=None, azimuths=True):
@@ -194,7 +220,8 @@ def level2_summary(entry_id, data=None, azimuths=True):
         if vcp is not None and 1 <= layout["elevation_number"] <= len(vcp.els):
             layout["fixed_angle_deg"] = f32(vcp.els[layout["elevation_number"] - 1].el_angle)
         if not azimuths:
-            layout = {k: v for k, v in layout.items() if k not in ("azimuth_deg", "ray_elevation_deg")}
+            layout = {k: v for k, v in layout.items()
+                      if k not in ("azimuth_deg", "ray_elevation_deg", "start_s")}
         sweeps.append(layout)
     header = data[:24]
     icao = header[20:24].decode("ascii", "replace").strip("\0 ")
@@ -336,6 +363,8 @@ def odim_summary(entry_id, probe_gates=()):
             "rays": nrays, "gates": int(h5_attr(where, "nbins")),
             "gate_spacing_m": float(h5_attr(where, "rscale")), "first_gate_m": float(h5_attr(where, "rstart")) * 1000.0,
             "start": h5_attr(g["what"], "startdate") + "T" + h5_attr(g["what"], "starttime"),
+            "start_s": epoch_s(h5_attr(g["what"], "startdate") + h5_attr(g["what"], "starttime"), "%Y%m%d%H%M%S"),
+            "end_s": epoch_s(h5_attr(g["what"], "enddate") + h5_attr(g["what"], "endtime"), "%Y%m%d%H%M%S"),
             "quantities": quantities,
             "quality_fields": quality_fields,
             # ODIM rays are azimuth bins: centre of bin i is (i + 0.5) * 360 / nrays.
@@ -428,6 +457,7 @@ def jma_member_sweeps(data):
         elif number == 3:
             grid = {"gates": struct.unpack(">I", body[14:18])[0], "radials": struct.unpack(">I", body[18:22])[0],
                     "gate_spacing_m": struct.unpack(">I", body[30:34])[0] / 1000.0,
+                    "range_start_m": struct.unpack(">I", body[34:38])[0] / 1000.0,
                     "start_azimuth_deg": struct.unpack(">H", body[39:41])[0] / 100.0}
         elif number == 4:
             product = {"station_id": body[24:28].decode("ascii").strip(),
@@ -446,6 +476,9 @@ def jma_summary(entry_id):
         n = s["radials"]
         step = F32(360.0) / F32(n)
         s["azimuth_deg"] = [f32(F32(F32(s["start_azimuth_deg"]) + step * F32(i)) % F32(360.0)) for i in range(n)]
+    reference_s = epoch_s(reference, "%Y-%m-%dT%H:%M:%SZ")
+    for s in sweeps:
+        s["start_s"] = reference_s + s["observation_start_offset_s"]
     # The reader's time reference: the earliest sweep observation start.
     earliest = min(s.pop("observation_start_offset_s") for s in sweeps)
     time_reference = (datetime.datetime.strptime(reference, "%Y-%m-%dT%H:%M:%SZ")
@@ -470,38 +503,36 @@ def reference_merge(parts):
     """Reference implementation of recast_radar_core::merge_volumes.
 
     A part is {"site", "time", "sweeps": [{"fixed_angle_deg", "azimuth_deg": [...],
-    "fields": {name: tag}}]}; the tag says which part a field came from.
+    "start_s", "fields": {name: tag}}]}; the tag says which part a field came from.
     """
     base = copy.deepcopy(parts[0])
     inputs = [{"site": p["site"], "time": p["time"],
                "sweeps": [{"fixed_angle_deg": c["fixed_angle_deg"], "rays": len(c["azimuth_deg"]),
                            "fields": sorted(c["fields"])} for c in p["sweeps"]]} for p in parts]
-    report = {"merged_fields": 0, "skipped_geometry": 0, "field_collisions": 0}
+    report = {"merged_fields": 0, "separate_sweeps": 0, "separate_fields": 0, "field_collisions": 0}
     for part in parts[1:]:
         if part["site"] != base["site"]:
             return {"error": f"sites {base['site']} vs {part['site']}", "parts": inputs}
         base["time"] = min(base["time"], part["time"])
         for sweep in part["sweeps"]:
             matched = False
-            target = None
+            target = None  # ((collides, gap), index)
             for index, existing in enumerate(base["sweeps"]):
                 if abs(F32(existing["fixed_angle_deg"]) - F32(sweep["fixed_angle_deg"])) > ANGLE_TOLERANCE:
                     continue
                 matched = True
-                if not rays_match(existing, sweep):
+                gap = abs(sweep["start_s"] - existing["start_s"])
+                if gap > MERGE_TIME_TOLERANCE_S or not rays_match(existing, sweep):
                     continue
-                if target is None:
-                    target = index
-                if all(name not in existing["fields"] for name in sweep["fields"]):
-                    target = index
-                    break
+                collides = any(name in existing["fields"] for name in sweep["fields"])
+                if target is None or (collides, gap) < target[0]:
+                    target = ((collides, gap), index)
             if target is None:
                 if matched:
-                    report["skipped_geometry"] += 1
-                else:
-                    base["sweeps"].append(copy.deepcopy(sweep))
+                    report["separate_sweeps"] += 1
+                base["sweeps"].append(copy.deepcopy(sweep))
                 continue
-            existing = base["sweeps"][target]
+            existing = base["sweeps"][target[1]]
             for name, tag in sweep["fields"].items():
                 if name in existing["fields"]:
                     report["field_collisions"] += 1
@@ -516,11 +547,69 @@ def reference_merge(parts):
                         "rays": len(c["azimuth_deg"]), "fields": c["fields"]} for c in base["sweeps"]]}
 
 
+def reference_cycles(sweeps):
+    """Reference implementation of recast_radar_core::model::scan_cycles.
+
+    `sweeps` are in the reader's order: {"fixed_angle_deg", "gates", "first_gate_m",
+    "gate_spacing_m", "fields", "start_s", "end_s"}. Returns the cycles as lists of
+    reader sweep indices in collection order, each with what begins it and the
+    time of its first ray.
+    """
+    order = sorted(range(len(sweeps)), key=lambda i: sweeps[i]["start_s"])  # stable
+    cycles = []
+    current = []
+    latest = None  # (index, end)
+    for i in order:
+        sweep = sweeps[i]
+        begins = None
+        for j in current:
+            earlier = sweeps[j]
+            if (abs(F32(earlier["fixed_angle_deg"]) - F32(sweep["fixed_angle_deg"])) <= ANGLE_TOLERANCE
+                    and earlier["gates"] == sweep["gates"]
+                    and abs(earlier["first_gate_m"] - sweep["first_gate_m"]) <= 0.01
+                    and abs(earlier["gate_spacing_m"] - sweep["gate_spacing_m"]) <= 0.01
+                    and sorted(earlier["fields"]) == sorted(sweep["fields"])):
+                begins = {"kind": "repeated_cut", "sweep": i, "earlier": j,
+                          "seconds_apart": sweep["start_s"] - earlier["start_s"]}
+                break
+        if begins is None and latest is not None and sweep["start_s"] - latest[1] > MAX_SCAN_PAUSE_S:
+            begins = {"kind": "pause", "sweep": i, "previous": latest[0],
+                      "seconds": sweep["start_s"] - latest[1]}
+        if begins is not None or not cycles:
+            cycles.append({"sweeps": [], "begins": begins})
+            current = []
+            latest = None
+        cycles[-1]["sweeps"].append(i)
+        current.append(i)
+        if latest is None or sweep["end_s"] > latest[1]:
+            latest = (i, sweep["end_s"])
+    for cycle in cycles:
+        first = min(sweeps[i]["start_s"] for i in cycle["sweeps"])
+        cycle["start"] = datetime.datetime.fromtimestamp(first, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return cycles
+
+
+def jma_cycle_sweeps(summary, name):
+    # The JMA reader's order (lowest elevation first, stable); every ray of a
+    # sweep carries its observation start.
+    sweeps = sorted(summary["sweeps_scan_order"], key=lambda s: F32(s["elevation_deg"]))
+    return [{"fixed_angle_deg": s["elevation_deg"], "gates": s["gates"], "first_gate_m": s["range_start_m"],
+             "gate_spacing_m": s["gate_spacing_m"], "fields": [name], "start_s": s["start_s"],
+             "end_s": s["start_s"]} for s in sweeps]
+
+
+def odim_cycle_sweeps(summary):
+    return [{"fixed_angle_deg": s["elevation_deg"], "gates": s["gates"], "first_gate_m": s["first_gate_m"],
+             "gate_spacing_m": s["gate_spacing_m"], "fields": [*s["quantities"], *s["quality_fields"]],
+             "start_s": s["start_s"], "end_s": s["end_s"]} for s in summary["sweeps"]]
+
+
 def odim_part(summary):
     """Merge part from an ODIM summary: fields are named by their quantity, then the
     quality groups (a plane's as `<quantity>_qualityK`, the dataset's as `qualityK`)."""
     return {"site": odim_site_id(summary), "time": summary["time"],
             "sweeps": [{"fixed_angle_deg": s["elevation_deg"], "azimuth_deg": s["azimuth_deg"],
+                        "start_s": s["start_s"],
                         "fields": {q: summary["tag"] for q in [*s["quantities"], *s["quality_fields"]]}}
                        for s in summary["sweeps"]]}
 
@@ -528,6 +617,7 @@ def odim_part(summary):
 def level2_part(summary, tag, site=None):
     return {"site": site if site is not None else summary["icao"], "time": summary["time_reference"],
             "sweeps": [{"fixed_angle_deg": s["fixed_angle_deg"], "azimuth_deg": s["azimuth_deg"],
+                        "start_s": s["start_s"],
                         "fields": {NEXRAD_FIELD_NAMES[m]: tag for m in s["moments"]}}
                        for s in summary["sweeps"]]}
 
@@ -538,7 +628,7 @@ def jma_part(summary, name, tag):
     sweeps = sorted(summary["sweeps_scan_order"], key=lambda s: F32(s["elevation_deg"]))
     return {"site": summary["station_id"], "time": summary["time_reference"],
             "sweeps": [{"fixed_angle_deg": s["elevation_deg"], "azimuth_deg": s["azimuth_deg"],
-                        "fields": {name: tag}} for s in sweeps]}
+                        "start_s": s["start_s"], "fields": {name: tag}} for s in sweeps]}
 
 
 # ---------------------------------------------------------------- main ---
@@ -574,7 +664,7 @@ def main():
         summary["tag"] = key
         odim[key] = summary
     golden["odim"] = {key: {"site": odim_site_id(s), "time": s["time"], "sweeps": [
-        {k: v for k, v in sw.items() if k != "azimuth_deg"} | {"azimuth_first": sw["azimuth_deg"][0]}
+        {k: v for k, v in sw.items() if k not in ("azimuth_deg", "start_s", "end_s")} | {"azimuth_first": sw["azimuth_deg"][0]}
         for sw in s["sweeps"]]} for key, s in odim.items()}
 
     # JMA members.
@@ -582,7 +672,8 @@ def main():
            (("n5", "jma-n5-20191012-090000-rs47773"), ("n6", "jma-n6-20191012-090000-rs47773"))}
     golden["jma"] = {key: {"station_id": s["station_id"], "reference_time": s["reference_time"],
                            "time_reference": s["time_reference"],
-                           "sweeps_scan_order": [{k: v for k, v in sw.items() if k != "azimuth_deg"}
+                           "sweeps_scan_order": [{k: v for k, v in sw.items()
+                                                  if k not in ("azimuth_deg", "start_s", "range_start_m")}
                                                  for sw in s["sweeps_scan_order"]]} for key, s in jma.items()}
 
     # KIWA chunk parts: the start chunk plus one intermediate chunk each.
@@ -650,6 +741,17 @@ def main():
     if 2 in kiwa:
         merges["kiwa_002_vs_ktlx_2024"] = reference_merge([level2_part(kiwa[2], "kiwa"), level2_part(ktlx_2024, "ktlx")])
     golden["merges"] = merges
+
+    # Reference scan cycles of single files.
+    cycles = {}
+    for key, entry_id, name in (("jma_taka_n5", "jma-n5-20191012-090000-rs47773", "DBZH"),
+                                ("jma_taka_n6", "jma-n6-20191012-090000-rs47773", "VRADH"),
+                                ("jma_itok_n5", "jma-n5-20260924-210000-rs47937", "DBZH"),
+                                ("jma_itok_n6", "jma-n6-20260924-210000-rs47937", "VRADH")):
+        cycles[key] = reference_cycles(jma_cycle_sweeps(jma_summary(entry_id), name))
+    for key in ("nohur_vradh", "nohur_dbzh", "bejab_dbzh", "bejab_vrad"):
+        cycles[f"odim_{key}"] = reference_cycles(odim_cycle_sweeps(odim[key]))
+    golden["scan_cycles"] = cycles
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT, "w", encoding="utf-8", newline="\n") as fh:

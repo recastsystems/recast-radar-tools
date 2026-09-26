@@ -110,7 +110,8 @@ fn survey_merged(label: &str, files: &[String], jma_site: Option<&str>) -> Value
             "errors": errors,
             "merge": {
                 "merged_fields": report.merged_fields,
-                "skipped_geometry": report.skipped_geometry,
+                "separate_sweeps": report.separate_sweeps,
+                "separate_fields": report.separate_fields,
                 "field_collisions": report.field_collisions,
             },
             "volume": volume_summary(&volume),
