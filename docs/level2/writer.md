@@ -596,7 +596,17 @@ rays flagged in transition, as RadxConvert does), JMA N5 and N6 with the GRIB2 w
 re-encoding, whose radials keep their blank radar identifier, reads in every reader as its source
 does. RSL reads every file but the gzip-wrapped LDM records (it crashes on BEJAB's and reads the
 unwrapped file) and the DORADE sources; RadxConvert every file but the gzip-wrapped ones and the
-KVWX 2008 source. The notes are reader limitations; where a limitation is the reader's handling of
+KVWX 2008 source.
+
+**Rerun after the scan-cycle and JMA range changes** (2026-09-26, the writer at `d2f60e1`, JMA's
+first gate at `d4c650d`; Py-ART 2.3.0, MetPy 1.7.1, xradar 0.12.0, h5py 3.16.0 and netCDF4 1.7.4
+only: the `nexrad` crate, RSL and RadxConvert were not rerun): 38 files under `Precise`, the
+sources as above with every JMA volume (N5, N6 and merged) written one scan cycle per file and
+each cut's source sweep taken from `written_sweeps`: **0 failures**, 139 notes. The JMA cycles
+are compared with the GRIB2 walker's reading, whose first gate is the range start plus half a
+spacing; the ODIM volumes, whose cuts are now in collection order, with h5py's.
+
+The notes are reader limitations; where a limitation is the reader's handling of
 what the writer wrote, the script checks that it is exactly that, and fails otherwise:
 
 - xradar 0.12 keeps only the low 8 bits of 16-bit moments other than ZDR and PHI (and 11 and 10
