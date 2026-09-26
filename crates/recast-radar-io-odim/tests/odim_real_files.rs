@@ -26,8 +26,7 @@
 //!   DBZH_VRADH.h5`) — the exact object BowEcho's v0.30-RC1 live poll
 //!   failed on before the HDF5 reader learned the v2 header dialect.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+// A panic is how a test fails (clippy.toml), in helpers too.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use chrono::{TimeZone, Utc};
