@@ -20,7 +20,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-FEEDS_ROOT = os.environ.get("FEEDS_SURVEY_FEEDS", "~/radar-corpus/feeds")
+FEEDS_ROOT = os.environ.get("FEEDS_SURVEY_FEEDS", os.path.join(os.path.expanduser("~"), "radar-corpus", "feeds"))
 WORK = os.environ.get("FEEDS_SURVEY_WORK", os.path.join(REPO, "target", "feeds-survey"))
 
 os.makedirs(WORK, exist_ok=True)

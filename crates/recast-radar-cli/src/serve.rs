@@ -562,8 +562,8 @@ mod tests {
     #[test]
     fn banner_paths_have_no_verbatim_prefix() {
         assert_eq!(
-            display_path(Path::new(r"\\?\~\polling")),
-            r"~\polling"
+            display_path(Path::new(r"\\?\C:\radar\polling")),
+            r"C:\radar\polling"
         );
         assert_eq!(
             display_path(Path::new(r"\\?\UNC\server\share\polling")),

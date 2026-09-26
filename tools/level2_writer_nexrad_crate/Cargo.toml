@@ -4,7 +4,7 @@
 # the published release:
 #
 #   cargo build --release --manifest-path tools/level2_writer_nexrad_crate/Cargo.toml \
-#     --config 'patch.crates-io.nexrad.path="~/nexrad/nexrad"'
+#     --config 'patch.crates-io.nexrad.path="<nexrad checkout>/nexrad"'
 [package]
 name = "level2-writer-nexrad-crate"
 version = "0.0.0"
