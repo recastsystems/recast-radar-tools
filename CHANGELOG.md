@@ -9,6 +9,29 @@ share one version. Nothing has been published yet, so every entry is under
 
 ### Breaking
 
+- `recast-radar-core`: `LinearTransform` has a `Levels` variant for the
+  NEXRAD Level III data level encodings that are not linear (16-level
+  threshold tables, high resolution VIL, enhanced echo tops), and
+  `scale_factor` and `add_offset` return `Option<f64>` (`None` for a level
+  table, which has no CF equivalent). The FM301 view writes such a field
+  decoded, with its codes beside it as `<name>_level`.
+- `recast-radar-core`: `FieldData::I32` keeps 32-bit integer fields as
+  stored (netCDF-4 CfRadial files) instead of widening them to f32.
+- `recast-radar-core`: `Volume::variable_attrs` holds the source's own
+  attributes of variables whose values a typed slot holds, and the per-ray
+  and metadata values a decoder has no typed slot for are kept in
+  `Sweep::other`, `FieldAttrs::other` and `extra_vars`; Level II carries
+  every metadata message, message header and per-radial value.
+  `Sweep::permute_rays` and `fm301::order_rays_for_view` put a volume's
+  rays in the view's order in storage (`SweepError::UnknownRayAttribute`,
+  `SweepError::RayOrder`).
+- `recast-radar-io`: `SupportedVolumeFormat` gains `CfRadialNetcdf4`,
+  `CfRadial2` and `NexradLevel3`: the router tells HDF5 containers apart by
+  content and reads NEXRAD and TDWR Level III products.
+- `recast-radar-io-odim`: the ODIM decoder reads HDF5 through
+  `recast-radar-hdf5` (the `hdf5lite` module is gone; `odim::hdf5` is the
+  new crate).
+
 - `recast-radar-tools`: the data model module is `model`, not `core`
   (`recast_radar_tools::model::Volume`). A module named `core` shadowed
   Rust's built-in `core` crate in `use` paths.
@@ -51,6 +74,41 @@ share one version. Nothing has been published yet, so every entry is under
 
 ### Added
 
+- Writers. `recast-radar-io-nexrad` (feature `write`; facade feature
+  `write`): any volume as NEXRAD Archive II following ICD 2620010 and ICD
+  2620002 (uncompressed or bzip2 LDM records, optionally gzip), real-time
+  chunks (`realtime::write_realtime_chunks`, `ChunkWriter`) and a
+  GR2Analyst polling directory that follows the GRLevelX polling
+  conventions (`polling::PollingDirectory`), with typed refusals and a
+  `WriteSummary`. `recast-radar-io-cfradial`: `write_cfradial1` (CfRadial
+  1.4, classic netCDF) and `write_cfradial2` (CfRadial 2 / FM301,
+  netCDF-4). `recast-radar-io-odim`: `write_odim_h5_volume` (ODIM_H5 PVOL).
+  Guide page `docs/guide/writing.md` and the `write_formats` example.
+- `recast-radar-bzip2`: `Encoder` and `Level`, a pure-Rust bzip2
+  compressor that writes libbzip2 1.0.8's streams, and, with the `rayon`
+  feature, `EncoderPool` and `encode_many`. The Level II writer compresses
+  its records with it.
+- `recast-radar-hdf5` (facade feature `hdf5`): an HDF5 reader without
+  unsafe code (superblocks 0 to 3, v2 object headers, fractal heaps, v2
+  B-trees, every chunk index, deflate, shuffle and Fletcher-32, dense
+  attributes and links), the netCDF-4 data model, and an HDF5 / netCDF-4
+  writer. `recast-radar-io-cfradial` reads netCDF-4 CfRadial 1 and CfRadial
+  2 / FM301 through it.
+- `recast-radar-io-level3`: every Level III product through the router,
+  with typed storm attribute tables, radar coded messages, generic
+  components, 1993-2001 products, text and status messages, and allocation
+  budgets.
+- `recast-radar-retrieve`: Vulpiani and Maesaka KDP, Z-PHI attenuation
+  correction. `recast-radar-map`: Cartesian gridding of several volumes.
+- `recast-radar-data`: `polling`, a reader for GR2Analyst polling
+  directories (`dir.list`, `config.cfg`, `grlevel2.cfg`) that uses only
+  listed names that are plain file names; `DwdProvider::filtered_reflectivity`,
+  `OrdProvider::complete_cycles` and `OrdProvider::velocity_scan_only`;
+  six ORD site-table entries; the `level3` module.
+- `recast-radar-cli`: the `recast-radar` command (info, dump, render,
+  validate, bench, fetch, convert, publish, serve). `recast-radar-py`: the
+  Python package `recast_radar` (FM301 DataTrees, Py-ART radars, writers,
+  fetchers), built with maturin and not published.
 - A user guide (`docs/guide/`) and runnable examples for reading any
   format, physical values, downloading from AWS, dealiasing, composites and
   rendering (`crates/recast-radar-tools/examples/`).
@@ -76,6 +134,15 @@ share one version. Nothing has been published yet, so every entry is under
 - `recast-radar-testdata`: a `download` feature (on by default). The facade
   uses the crate without it, so `cargo run --example` no longer builds an
   HTTPS client.
+
+### Changed
+
+- Level II decoding parses gzip while inflating, parses uncompressed input
+  in place, decodes whole-file bzip2 block by block, decodes gzip or bzip2
+  copies of LDM files and LDM files cut short, and bounds its decoded-record
+  buffer pool (`docs/perf/cross-library.md`). The renderer's fast azimuth
+  bin keeps its exactness against the plain path, whose angle comes from the
+  crate's own `atan2`. The bench pixel checksums are unchanged.
 
 ### Fixed
 
@@ -120,9 +187,14 @@ For orientation, what the crates do before the first release:
 - Decoders into the FM301 data model: NEXRAD Level II (Message 31 and
   Message 1; uncompressed, gzip, bzip2 and LDM records, with the metadata
   messages), NEXRAD and TDWR Level III, ODIM_H5 (polar volumes and Cartesian
-  products), CfRadial 1 (classic netCDF), DORADE and mobile-radar archives,
-  and JMA radar GRIB2 tar archives; a format-sniffing router.
-- A pure-Rust bzip2 decoder (`recast-radar-bzip2`).
+  products), CfRadial 1 (classic netCDF and netCDF-4) and CfRadial 2 /
+  FM301, DORADE and mobile-radar archives, and JMA radar GRIB2 tar
+  archives; a format-sniffing router.
+- Writers of NEXRAD Level II (files, real-time chunks, polling
+  directories), CfRadial 1, CfRadial 2 / FM301 and ODIM_H5.
+- A pure-Rust bzip2 decoder and encoder (`recast-radar-bzip2`) and HDF5
+  reader and writer (`recast-radar-hdf5`).
+- The `recast-radar` command and the `recast_radar` Python package.
 - Data access: NEXRAD Level II archive and real-time chunks on AWS, site
   catalogs, international and community feeds.
 - Algorithms: velocity dealiasing, gate filters and smoothing, derived

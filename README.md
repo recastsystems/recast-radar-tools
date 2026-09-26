@@ -107,11 +107,14 @@ runnable program from
 | Task | Guide | Example |
 |---|---|---|
 | Read a file of any format, list sweeps and fields | [Reading radar files](docs/guide/reading.md) | `read_any` |
+| Write Level II, CfRadial 1, FM301 and ODIM_H5 | [Writing radar files](docs/guide/writing.md) | `write_formats` |
 | Get physical values, gate positions and heights | [The data model](docs/guide/data-model.md) | `physical_values` |
 | Download Level II from AWS | [Fetching data](docs/guide/fetching.md) | `fetch_aws` |
 | Dealias velocity; composites, echo tops, VIL | [Processing](docs/guide/processing.md) | `dealias_velocity`, `composite` |
 | Render a sweep to PNG | [Rendering](docs/guide/rendering.md) | `render_png` |
 | Features, errors, naming, limits, WebAssembly | [Conventions](docs/guide/conventions.md) | |
+| The `recast-radar` command | [Command-line tool](docs/guide/cli.md) | |
+| The `recast_radar` Python package | [Python](docs/guide/python.md) | |
 
 Run an example with
 `cargo run --release -p recast-radar-tools --features full --example <name> -- <args>`.
