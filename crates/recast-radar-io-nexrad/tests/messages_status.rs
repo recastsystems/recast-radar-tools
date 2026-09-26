@@ -305,6 +305,7 @@ fn check_shared_status_halfwords(id: &str, status: &RdaStatus, message: &Value) 
             s.volume_coverage_pattern,
             s.control_authorization,
         ),
+        other => panic!("{id}: RDA status {other:?} is not handled here"),
     };
     assert_eq!(
         rda_state,
@@ -365,6 +366,7 @@ fn check_shared_status_halfwords(id: &str, status: &RdaStatus, message: &Value) 
             s.alarm_codes,
             s.alarm_summary.0,
         ),
+        other => panic!("{id}: RDA status {other:?} is not handled here"),
     };
     assert_eq!(summary, code(message, "rda_alarm_status"), "{id}");
     assert_eq!(
@@ -555,6 +557,7 @@ fn check_against_metpy(id: &str) {
             assert_eq!(header.channels & 8, 0, "{id}");
             check_legacy_status(id, legacy, message_2);
         }
+        other => panic!("{id}: RDA status {other:?} is not handled here"),
     }
 
     match (&golden["message_3"], &meta.performance) {
@@ -1323,6 +1326,7 @@ fn halfword_positions_pinned_by_nonzero_corpus_values() {
                 legacy_files += 1;
                 legacy_nonzero.extend(assert_legacy_halfwords(id, status, body));
             }
+            other => panic!("{id}: RDA status {other:?} is not handled here"),
         }
     }
     let sources: Vec<Vec<&str>> = ids.iter().map(|id| vec![id.as_str()]).collect();

@@ -9,27 +9,28 @@ Linux. Run them there, or in the `nexbench` container (see below).
 
 | Target | Crate | Entry points |
 |---|---|---|
-| `level2_volume` | `recast-radar-io-nexrad` | `read_volume_from_bytes`, `read_gzip_volume_from_bytes_with_preview`, `read_volume_from_bytes_with_bzip_preview`, `read_gzip_preview_from_bytes`, `read_bzip_block_preview_from_bytes` (one per input, by length mod 4; the preview threshold is the last byte) |
-| `level2_writer` | `recast-radar-io-nexrad` | `read_volume_with_metadata`, then the writer: `write_volume_with_source` without the source metadata (LDM bzip2), with it (uncompressed), with it gzip-wrapped, or `write_realtime_chunks_with_source` with it (mode = input length mod 4; the last two drop gates before the radar and write site KTLX, so Message 1 volumes are written too); the written bytes must decode again with the reported sweeps and radials, the source's rays in their order (a ray left out only when no written moment has data on it), every radial's time (milliseconds since 1970) and angles, and every written moment's codes, gates and absent rays (a refused write is fine) |
-| `level2_writer_router` | `recast-radar-io`, `recast-radar-io-nexrad` | `read_supported_volume_bytes` (ODIM_H5, CfRadial, DORADE, JMA, Level II), then the writer: `write_volume_with_source` (mode = input length mod 8: the Precise (0 and 3), Compatible (1) or Standard (2) policy by length mod 4; lengths with `(len / 4) % 2 == 1` also drop gates before the radar, accept any range rounding, supply a Nyquist velocity and unambiguous range where the source has none and go through `write_realtime_chunks`); the written bytes must decode again with the reported sweeps and radials, each radial the source ray `WriteSummary::written_rays` names (every ray at most once, a ray left out only when no written moment has data on it) with its time (to the millisecond) and angles (bit for bit), and every written moment's gate count, first gate and spacing (to the metre), absent rays and values (each within the reported `max_abs_error`, sentinels as sentinels) |
-| `level2_metadata` | `recast-radar-io-nexrad` | `messages::metadata_record` (a whole-file gzip or bzip2 wrapper expanded only as far as the metadata record: a gzip prefix, or the first bzip2 blocks cut out of the stream) and `NexradMetadata::from_metadata_record` on its result; for even lengths also `read_volume_with_metadata` |
-| `io_router` | `recast-radar-io` | `sniff_supported_volume_format`, `read_supported_volume_bytes` (zip/gzip unwrapping, then Level II, HDF5 by content (ODIM, netCDF-4 CfRadial 1 or 2), classic CfRadial, DORADE or JMA) |
+| `level2-volume` | `recast-radar-io-nexrad` | `read_volume_from_bytes`, `read_gzip_volume_from_bytes_with_preview`, `read_volume_from_bytes_with_bzip_preview`, `read_gzip_preview_from_bytes`, `read_bzip_block_preview_from_bytes` (one per input, by length mod 4; the preview threshold is the last byte) |
+| `level2-writer` | `recast-radar-io-nexrad` | `read_volume_with_metadata`, then the writer: `write_volume_with_source` without the source metadata (LDM bzip2), with it (uncompressed), with it gzip-wrapped, or `write_realtime_chunks_with_source` with it (mode = input length mod 4; the last two drop gates before the radar and write site KTLX, so Message 1 volumes are written too); the written bytes must decode again with the reported sweeps and radials, the source's rays in their order (a ray left out only when no written moment has data on it), every radial's time (milliseconds since 1970) and angles, and every written moment's codes, gates and absent rays (a refused write is fine) |
+| `level2-writer-router` | `recast-radar-io`, `recast-radar-io-nexrad` | `read_supported_volume_bytes` (ODIM_H5, CfRadial, DORADE, JMA, Level II), then the writer: `write_volume_with_source` (mode = input length mod 8: the Precise (0 and 3), Compatible (1) or Standard (2) policy by length mod 4; lengths with `(len / 4) % 2 == 1` also drop gates before the radar, accept any range rounding, supply a Nyquist velocity and unambiguous range where the source has none and go through `write_realtime_chunks`); the written bytes must decode again with the reported sweeps and radials, each radial the source ray `WriteSummary::written_rays` names (every ray at most once, a ray left out only when no written moment has data on it) with its time (to the millisecond) and angles (bit for bit), and every written moment's gate count, first gate and spacing (to the metre), absent rays and values (each within the reported `max_abs_error`, sentinels as sentinels) |
+| `level2-metadata` | `recast-radar-io-nexrad` | `messages::metadata_record` (a whole-file gzip or bzip2 wrapper expanded only as far as the metadata record: a gzip prefix, or the first bzip2 blocks cut out of the stream) and `NexradMetadata::from_metadata_record` on its result; for even lengths also `read_volume_with_metadata` |
+| `io-router` | `recast-radar-io` | `sniff_supported_volume_format`, `read_supported_volume_bytes` (zip/gzip unwrapping, then Level II, HDF5 by content (ODIM, netCDF-4 CfRadial 1 or 2), classic CfRadial, DORADE or JMA) |
 | `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `read_odim_h5_volume`, `decode_odim_h5_cartesian_max`, then `read_odim_hdf5_volume` on the file opened without metadata checksums |
 | `hdf5` | `recast-radar-hdf5` | `looks_like_hdf5_bytes`, `H5File::open`, then `H5File::open_with` without metadata checksums (group walk and every attribute), per dataset `dataset_info`, `chunk_locations` and, up to 32 MiB, `dataset`, and the netCDF-4 model (`NcFile::from_hdf5`, `visible_dims`, `shape`, `read` up to 1 MiB) |
 | `cfradial` | `recast-radar-io-cfradial` | `looks_like_netcdf3_bytes`, `Netcdf4File::open` and `cfradial_layout`, `read_cfradial_volume` (classic CfRadial 1, netCDF-4 CfRadial 1 and 2), then `cfradial_layout` and `read_cfradial_netcdf4` on the file opened without metadata checksums |
 | `dorade` | `recast-radar-io-dorade` | `looks_like_dorade_bytes`, `peek_dorade_sweep`, then `read_dorade_sweep_volume` (even lengths) or `read_dorade_volume_from_slices` with the input twice (odd lengths) |
-| `dorade_archive` | `recast-radar-io-dorade` | `looks_like_zip_bytes`, `read_mobile_archive_from_bytes` (zip members inflated within the archive limits, DORADE sweeps grouped into volume runs and decoded, Level II members decoded by `recast-radar-io-nexrad`) |
+| `dorade-archive` | `recast-radar-io-dorade` | `looks_like_zip_bytes`, `read_mobile_archive_from_bytes` (zip members inflated within the archive limits, DORADE sweeps grouped into volume runs and decoded, Level II members decoded by `recast-radar-io-nexrad`) |
 | `jma` | `recast-radar-io-jma` | `looks_like_jma_tar_bytes`, then by length mod 3: `read_jma_tar_volumes(None)`, `read_jma_tar_first_station`, or `jma_tar_station_headers` plus a site-filtered `read_jma_tar_volumes` |
 | `bzip2` | `recast-radar-bzip2` | `Decoder::decode_stream_into` on the input, then `Decoder::decode_two_into` on the input paired with its own first half, with a 64 MiB output limit |
-| `bzip2_encode` | `recast-radar-bzip2` | Differential: `Encoder::encode_into` at level 1 + (length mod 9) on the input, then on its first quarter appended to the same output; each stream must equal the `bzip2` crate's (libbz2-rs-sys, a port of libbzip2 1.0.8) except in the `origPtr` of a periodic block, and must decode to what was compressed with our decoder, and with the reference decoder when it differs from the reference's stream. The encoders (one per level) and the decoder are reused across inputs, so every stream is written over buffers that earlier calls filled |
+| `bzip2-encode` | `recast-radar-bzip2` | Differential: `Encoder::encode_into` at level 1 + (length mod 9) on the input, then on its first quarter appended to the same output; each stream must equal the `bzip2` crate's (libbz2-rs-sys, a port of libbzip2 1.0.8) except in the `origPtr` of a periodic block, and must decode to what was compressed with our decoder, and with the reference decoder when it differs from the reference's stream. The encoders (one per level) and the decoder are reused across inputs, so every stream is written over buffers that earlier calls filled |
 | `writers` | `recast-radar-io-cfradial`, `recast-radar-io-odim`, `recast-radar-hdf5` (writer) | `read_supported_volume_bytes`, then `write_cfradial1` (`RangeLayout` `Auto`, `PerSweep` and `PerRay`), `write_cfradial2` and `write_odim_h5_volume` (with and without `every_quantity`) on the volume; each file a writer returns must read back through the router with the same rays per sweep and, except `every_quantity` output, the same data gate by gate: values (float32 tolerance), missing, undetect and range-folded gates, ray angles and times, compared by the writer tests' `crates/recast-radar-io/tests/common/compare.rs` (included by path). A writer's typed refusal is fine; a file its own readers refuse, or one that reads back different data, panics |
 | `level3` | `recast-radar-io-level3` | `looks_like_level3`, `decode_message`, then for a product its Table V parameters, its display packet records, `to_volume` and the FM301 view of the volume, the VAD wind profile, the radar coded message, and every storm table reader (SCIT-era and 1995-1997 layouts); inputs of length 3 mod 4 also go to `RadarCodedMessage::parse` as text |
-| `polling_listing` | `recast-radar-data` | `polling::parse_dir_list` and `polling::parse_site_config` on the same text, `DirList::parse` and `SiteConfig::parse`, then `newest_volume_entry`, `entry_url` and `single_site_url` on the results; asserts that every name and site id the client parsers return is a plain file name whose URL stays in its directory |
+| `polling-listing` | `recast-radar-data` | `polling::parse_dir_list` and `polling::parse_site_config` on the same text, `DirList::parse` and `SiteConfig::parse`, then `newest_volume_entry`, `entry_url` and `single_site_url` on the results; asserts that every name and site id the client parsers return is a plain file name whose URL stays in its directory |
 
 The harness bodies live in `src/lib.rs`; each `fuzz_targets/<target>.rs` is a
-one-line libFuzzer wrapper around the function with the same name. A harness
+one-line libFuzzer wrapper around the function with the same name, `_` for
+`-` (cargo wants kebab-case binary names: `io-router` wraps `io_router`). A harness
 fails only by panicking, aborting, hanging or exhausting memory; decode errors
-are the expected result for most inputs. `bzip2_encode` panics on purpose
+are the expected result for most inputs. `bzip2-encode` panics on purpose
 when a round trip or the comparison with the reference fails.
 
 Files written by HDF5 1.8 and later protect every metadata structure with a
@@ -41,7 +42,7 @@ the checksum before the parser behind it sees the mutated bytes. The `hdf5`,
 finding replays on stable with `fuzz-tools` exactly as the fuzzer ran it.
 
 Not covered yet: the mobile-radar directory reader, which walks a folder
-(its zip counterpart has the `dorade_archive` target). `io_router` also
+(its zip counterpart has the `dorade-archive` target). `io-router` also
 reaches Level III through the router.
 
 ## Layout
@@ -83,7 +84,7 @@ these derivations:
 - `.ldm-recordN`: the bzip2 stream of LDM record `N` of a block-bzip2
   Level II file or real-time chunk, without its control word.
 - `.ldm-payloadN`: the decompressed contents of LDM record `N`, the bytes a
-  Level II writer compresses (the `bzip2_encode` seeds).
+  Level II writer compresses (the `bzip2-encode` seeds).
 - `.l2-sparse.bz2-N`: the `.l2-sparse` record stream compressed whole as one bzip2 stream at
   level `N` (the `bzip2` crate's encoder), the wrapper of a whole-file `.bz2` Level II volume.
   No published Level II file in the manifests is whole-file bzip2, so this lossless
@@ -103,16 +104,16 @@ It prints `decoded` when an entry point returned `Ok` for the input's mode, and
 `rejected` otherwise. Some seeds are rejected on purpose:
 
 - The netCDF-4 CfRadial file tests the netCDF-3 reader's rejection path
-  (`cfradial`, `odim` and `io_router`).
+  (`cfradial`, `odim` and `io-router`).
 - Level II seeds whose length is 3 mod 4 go through the preview-only mode.
   That mode reports `rejected` unless a preview cut is completed.
 - A real-time intermediate chunk on its own (`...-002-i`) has no volume
   header.
-- `io_router` rejects the ODIM Cartesian composite, which only the `odim`
+- `io-router` rejects the ODIM Cartesian composite, which only the `odim`
   target decodes.
-- `level2_writer` rejects the real-time start chunk alone: it holds the
+- `level2-writer` rejects the real-time start chunk alone: it holds the
   metadata record but no radial, so there is no volume to write.
-- `level2_writer_router` rejects the DOW6 RHI head: Level II cannot hold RHI
+- `level2-writer-router` rejects the DOW6 RHI head: Level II cannot hold RHI
   sweeps, and the typed refusal is the path it covers.
 
 `l2-kvwx-20080415-235337` (AR2V0001 header with Message 31 radials) was
@@ -133,7 +134,7 @@ substitute for a coverage-guided campaign, but it checks a harness and its
 seeds before one, and on Windows.
 
 ```bash
-cargo run --release --manifest-path fuzz/tools/Cargo.toml -- smoke level2_writer_router 1000
+cargo run --release --manifest-path fuzz/tools/Cargo.toml -- smoke level2-writer-router 1000
 ```
 
 ## Running
@@ -145,9 +146,9 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 # All sixteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
-fuzz/run.sh 120 level2_volume dorade
+fuzz/run.sh 120 level2-volume dorade
 # One target interactively:
-cd fuzz && cargo +nightly fuzz run -s none level2_volume corpus/level2_volume seeds/level2_volume -- -max_len=400000
+cd fuzz && cargo +nightly fuzz run -s none level2-volume corpus/level2-volume seeds/level2-volume -- -max_len=400000
 ```
 
 `run.sh` builds with cargo-fuzz defaults (optimized, with debug assertions
@@ -164,7 +165,7 @@ has none, so the `bzip2` target gains nothing from a sanitizer). `run.sh` also:
   so a run keeps going after the first finding and saves each one under
   `artifacts/<target>/`
 
-`bzip2_encode` seeds are whole LDM record contents (up to 1.2 MB), which
+`bzip2-encode` seeds are whole LDM record contents (up to 1.2 MB), which
 the target compresses one and a quarter times and checks against the
 reference encoder, so at the default `-max_len` it runs about 8 inputs a
 second on one core of the nexbench host; with `-max_len=8192` about 70
@@ -246,7 +247,7 @@ input panicked.
    ```
 
    It replays every manifest entry tagged `fuzz-regression` through its
-   target and through `io_router`. The fuzz release profile turns on
+   target and through `io-router`. The fuzz release profile turns on
    `debug-assertions` and `overflow-checks`, so the stable replay panics
    wherever the fuzz build did. Under libFuzzer, which also catches aborts,
    OOMs and timeouts that the stable replay cannot:
@@ -259,7 +260,7 @@ input panicked.
 
 | Date | Targets | Build | Seeds | Result |
 |---|---|---|---|---|
-| 2026-09-25 (perf-p1 fix pass, `nexbench`) | `level2_metadata`, `level2_volume` | rustc 1.100.0-nightly (215a8af4b 2026-09-15), `cargo fuzz run` defaults (AddressSanitizer), `RAYON_NUM_THREADS=1`, `-max_len=400000 -rss_limit_mb=4096 -timeout=30`, 900 s each | `fuzz-tools seeds` of that commit (the whole-file bzip2 seeds included) | `level2_metadata` 129,413 inputs, `level2_volume` 100,998 inputs; no crash, timeout or OOM; peak RSS 520 and 498 MB |
+| 2026-09-25 (perf-p1 fix pass, `nexbench`) | `level2-metadata`, `level2-volume` | rustc 1.100.0-nightly (215a8af4b 2026-09-15), `cargo fuzz run` defaults (AddressSanitizer), `RAYON_NUM_THREADS=1`, `-max_len=400000 -rss_limit_mb=4096 -timeout=30`, 900 s each | `fuzz-tools seeds` of that commit (the whole-file bzip2 seeds included) | `level2-metadata` 129,413 inputs, `level2-volume` 100,998 inputs; no crash, timeout or OOM; peak RSS 520 and 498 MB |
 
 ## Regression inputs
 

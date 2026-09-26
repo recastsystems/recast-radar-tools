@@ -1,11 +1,11 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-// Reproduction harness for velocity dealias spokes + color-table edge cases.
-// Renders raw velocity and dealiased velocity (current algorithm) to PNGs so
-// the radial spoke artifacts are directly visible.
-//
-// usage: cargo run --release -p recast-radar-render --example velocity_repro -- <level2-file> <out-prefix>
+//! Reproduction harness for velocity dealias spokes + color-table edge cases.
+//! Renders raw velocity and dealiased velocity (current algorithm) to PNGs so
+//! the radial spoke artifacts are directly visible.
+//!
+//! usage: cargo run --release -p recast-radar-render --example velocity_repro -- <level2-file> <out-prefix>
 
 use std::path::PathBuf;
 

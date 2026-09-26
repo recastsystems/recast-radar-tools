@@ -25,6 +25,12 @@ use recast_radar_io_nexrad::read_volume_from_bytes;
 /// recombination code)`, each scaled to thousandths so floats compare exactly.
 type Triple = (i64, i64, i64);
 
+/// The first triple of each `(elevation number, field)`.
+type FirstTriples = BTreeMap<(u8, FieldName), Triple>;
+
+/// Every triple of each field.
+type AllTriples = BTreeMap<FieldName, BTreeSet<Triple>>;
+
 fn triple(tover_db: f32, snr_db: f32, recombination: u8) -> Triple {
     (
         (f64::from(tover_db) * 1000.0).round() as i64,
@@ -57,11 +63,6 @@ fn field_triple(other: &[(Box<str>, AttrValue)]) -> Option<Triple> {
         _ => panic!("a field carries only some of the moment-header attributes"),
     }
 }
-
-/// The first radial's triple per `(elevation number, field name)`.
-type FirstTriples = BTreeMap<(u8, FieldName), Triple>;
-/// Every triple of each field.
-type AllTriples = BTreeMap<FieldName, BTreeSet<Triple>>;
 
 /// From the message stream: the first radial of each elevation number gives
 /// `(elevation number, field name) -> triple`, and every radial contributes to

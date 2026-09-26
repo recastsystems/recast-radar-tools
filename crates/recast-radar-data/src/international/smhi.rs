@@ -56,6 +56,7 @@ pub struct SmhiProvider {
 }
 
 impl SmhiProvider {
+    /// A provider with an empty site cache; nothing is fetched until it is used.
     pub fn new() -> Self {
         Self {
             sites: SiteCache::new(),
@@ -69,6 +70,7 @@ impl Default for SmhiProvider {
     }
 }
 
+/// Plans for every `qcvol` volume SMHI archived for one area (site key) on one UTC day.
 #[cfg(feature = "net")]
 pub fn smhi_archive_plans_for_day(area: &str, date: NaiveDate) -> Result<Vec<FramePlan>, String> {
     validate_area_key(area)?;

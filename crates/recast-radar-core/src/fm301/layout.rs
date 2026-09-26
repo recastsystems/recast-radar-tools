@@ -8,43 +8,67 @@ use crate::model::{ArrayBuf, AttrValue, GateMapping, Scalar};
 /// [`DataRef::Field`], other values are copied (they are small).
 #[derive(Clone, Debug, PartialEq)]
 pub struct VolumeLayout {
+    /// The root group, with every group below it.
     pub root: GroupLayout,
+    /// Non-fatal conditions found while building the view.
     pub warnings: Vec<ViewWarning>,
 }
 
+/// One group of a [`VolumeLayout`], owning its names and small values.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupLayout {
+    /// Group name (`""` for the root, `sweep_0`, `monitoring`, ...).
     pub name: String,
+    /// Dimension names and lengths.
     pub dims: Vec<(String, usize)>,
+    /// The group's variables.
     pub variables: Vec<VariableLayout>,
+    /// The group's attributes, typed.
     pub attrs: Vec<(String, AttrValue)>,
+    /// Child groups.
     pub children: Vec<GroupLayout>,
 }
 
+/// One variable of a [`GroupLayout`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct VariableLayout {
+    /// Variable name.
     pub name: String,
+    /// Dimension names, outermost first.
     pub dims: Vec<String>,
+    /// Where the values come from.
     pub data: DataRef,
+    /// The variable's attributes, typed.
     pub attrs: Vec<(String, AttrValue)>,
 }
 
 /// Where a variable's values come from.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum DataRef {
     /// A model field's buffer, `[nrays × native_gates]` in storage row order,
     /// shown through `rows` and `mapping` on an `out_gates` range.
     Field {
+        /// The model field the values come from.
         source: FieldSource,
+        /// Output rows (the sweep's ray count).
         nrays: usize,
+        /// Gates per row of the field.
         native_gates: usize,
+        /// Where the native gates sit on the range dimension.
         mapping: GateMapping,
+        /// Length of the range dimension.
         out_gates: usize,
+        /// The value that pads gates the field does not cover.
         fill: Scalar,
+        /// Storage row of each output row.
         rows: RowOrder,
     },
+    /// Values computed or copied by the view (coordinates, small variables).
     Array(ArrayBuf),
+    /// A scalar variable.
     Scalar(Scalar),
+    /// A text variable.
     Text(String),
 }
 
@@ -61,10 +85,12 @@ impl DataRef {
 }
 
 impl GroupLayout {
+    /// The child group named `name`.
     pub fn child(&self, name: &str) -> Option<&GroupLayout> {
         self.children.iter().find(|child| child.name == name)
     }
 
+    /// The variable named `name`.
     pub fn variable(&self, name: &str) -> Option<&VariableLayout> {
         self.variables.iter().find(|variable| variable.name == name)
     }

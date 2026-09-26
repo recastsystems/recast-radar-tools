@@ -12,6 +12,10 @@
 //!   JAM 11(8); the operational discretization in Witt et al. 1998, WAF 13(2),
 //!   with the 56 dBZ hail cap). VIL density = VIL / echo-top height.
 //!
+//! The column walk, the cross-sections and the box resampling use tilts
+//! only: a sweep at a fixed azimuth (an RHI) is skipped, as
+//! [`column_base_sweep`] describes.
+//!
 //! Output fields reuse the base sweep's rays and native gate geometry (with
 //! product ids as names: `CREF`, `ET`, `VIL`, `VILD`, `SHI`, `MESH`, `POSH`,
 //! `POH`), so the existing renderer/azimuth lookup draws them unchanged.
@@ -24,7 +28,7 @@ use std::borrow::Cow;
 use rayon::prelude::*;
 use recast_radar_core::{
     Field, FieldAttrs, FieldData, FieldName, FloatCoding, Polarization, Quantity, SourceFormat,
-    Sweep, Volume, beam_ground_range_m, beam_height_above_radar_m,
+    Sweep, SweepMode, Volume, beam_ground_range_m, beam_height_above_radar_m,
 };
 use recast_radar_correct::dealias_velocity;
 pub use recast_radar_filters::InterpPolicy;
@@ -46,10 +50,11 @@ struct CutColumn<'a> {
 
 impl<'a> CutColumn<'a> {
     /// `source` is the volume's source format, which decides the tilt
-    /// elevation ([`Sweep::tilt_elevation_deg`]).
+    /// elevation ([`Sweep::tilt_elevation_deg`]). `None` for a sweep that is
+    /// not a tilt (`is_column_tilt`) and for a field without gates or rays.
     fn new(source: SourceFormat, sweep: &'a Sweep, field: &'a Field) -> Option<Self> {
         let gates = field.ngates as usize;
-        if gates == 0 {
+        if gates == 0 || !is_column_tilt(sweep) {
             return None;
         }
         let (first_m, spacing_m) = field.native_geometry(&sweep.range)?;
@@ -169,19 +174,51 @@ fn ang_dist(a: f32, b: f32) -> f32 {
     d.min(360.0 - d)
 }
 
-/// Lowest sweep ([`Sweep::tilt_elevation_deg`], the first on ties) that
-/// carries reflectivity, and its field.
-fn base_reflectivity_sweep(volume: &Volume) -> Option<(&Sweep, &Field)> {
+/// `true` when `sweep` is a tilt the column walk can use: its rays share one
+/// elevation. A sweep at a fixed azimuth is not: sweep mode `rhi`,
+/// `manual_rhi` or `elevation_surveillance`, whose fixed angle is an azimuth
+/// (FM301 Table 301-15), or a mode outside the table whose rays have the
+/// geometry of an RHI ([`crate::sweep_looks_like_rhi`]).
+fn is_column_tilt(sweep: &Sweep) -> bool {
+    match &sweep.sweep_mode {
+        SweepMode::Rhi | SweepMode::ManualRhi | SweepMode::ElevationSurveillance => false,
+        SweepMode::Other(_) => !crate::sweep_looks_like_rhi(sweep),
+        _ => true,
+    }
+}
+
+/// Index of the sweep the column products are on: the tilt with the lowest
+/// tilt elevation ([`Volume::tilt_elevation_deg`], the first on ties) that
+/// carries reflectivity. `None` when no tilt does.
+///
+/// A tilt is a sweep whose rays share one elevation. Sweeps at a fixed
+/// azimuth are not tilts and no column product uses them: sweep mode `rhi`,
+/// `manual_rhi` or `elevation_surveillance`, and sweeps whose mode is
+/// outside FM301 Table 301-15 ([`SweepMode::Other`]) with the geometry of an
+/// RHI ([`crate::sweep_looks_like_rhi`]). On a volume of RHIs only, this and
+/// every column product return `None`.
+///
+/// [`composite_reflectivity`], [`echo_top`], [`vil`], [`vil_density`],
+/// [`hail`], [`poh`] and [`mehs`] return a field with this sweep's rays and
+/// its reflectivity field's gates: row `r` lies on ray `r` of this sweep,
+/// so the product can be added to it ([`Sweep::add_field`]) and drawn or
+/// located like the sweep's own fields.
+pub fn column_base_sweep(volume: &Volume) -> Option<usize> {
     let source = volume.provenance.source_format;
     volume
         .sweeps
         .iter()
-        .filter_map(|s| {
-            s.find(Quantity::Reflectivity)
-                .map(|f| (s, s.tilt_elevation_deg(source), f))
-        })
+        .enumerate()
+        .filter(|(_, s)| is_column_tilt(s) && s.find(Quantity::Reflectivity).is_some())
+        .map(|(index, s)| (index, s.tilt_elevation_deg(source)))
         .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(s, _, f)| (s, f))
+        .map(|(index, _)| index)
+}
+
+/// The [`column_base_sweep`] and its reflectivity field.
+fn base_reflectivity_sweep(volume: &Volume) -> Option<(&Sweep, &Field)> {
+    let sweep = volume.sweeps.get(column_base_sweep(volume)?)?;
+    Some((sweep, sweep.find(Quantity::Reflectivity)?))
 }
 
 /// All reflectivity-bearing sweeps as column samplers, sorted by elevation.
@@ -255,9 +292,14 @@ struct ProfileSample {
     v: f32,
 }
 
+/// Whether a cross section is cleaned up after sampling.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum CrossSectionSmoothing {
+    /// As sampled: one nearest gate per column and height, gaps left empty.
     Native,
+    /// Gaps of up to two columns filled from their neighbours, then a 3-tap
+    /// horizontal blend, as operational RHI displays do.
     Smoothed,
 }
 
@@ -275,6 +317,24 @@ fn invert_beam(s: f64, h: f64) -> (f64, f64) {
     let sin_theta =
         (((AE_M + h) * (AE_M + h) - AE_M * AE_M - r * r) / (2.0 * AE_M * r)).clamp(-1.0, 1.0);
     (r, sin_theta.asin().to_degrees())
+}
+
+/// Ground distance (km) and azimuth (degrees clockwise from north, in
+/// [0, 360)) of the offset `east`, `north` (km) from the radar.
+///
+/// Both are computed in f64 and rounded to f32. `f32::hypot` and
+/// `f32::atan2` call the platform's `hypotf` and `atan2f`, whose last bit
+/// differs between C libraries, and a one-ulp difference moves a grid cell
+/// that sits on a gate or azimuth boundary into the neighbouring sample. The
+/// f64 functions still come from the platform, but they are accurate to well
+/// under an f32 ulp, so their f32 roundings differ between C libraries only
+/// when the f64 value lies within that error of an f32 rounding boundary:
+/// far rarer, not ruled out.
+fn polar_of_offset_km(east: f32, north: f32) -> (f32, f32) {
+    let (east, north) = (f64::from(east), f64::from(north));
+    let distance_km = east.hypot(north) as f32;
+    let azimuth_rad = east.atan2(north) as f32;
+    (distance_km, azimuth_rad.to_degrees().rem_euclid(360.0))
 }
 
 /// Cross-section column: rich samples across all cuts, ascending height.
@@ -502,13 +562,18 @@ pub fn vil(volume: &Volume) -> Option<Field> {
 ///   CORRIGENDUM COEFFICIENTS (doi:10.1175/JAMC-D-20-0271.1; the 2019 paper
 ///   text printed wrong values): P75 = 15.096*SHI^0.206, P95 = 22.157*SHI^0.212.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum MeshCalibration {
+    /// Witt et al. (1998): MESH = 2.54 SHI^0.5.
     Witt1998,
+    /// Murillo and Homeyer (2019, 2021 corrigendum), 75th percentile: MESH = 15.096 SHI^0.206.
     MurilloHomeyer2019P75,
+    /// Murillo and Homeyer (2019, 2021 corrigendum), 95th percentile: MESH = 22.157 SHI^0.212.
     MurilloHomeyer2019P95,
 }
 
 impl MeshCalibration {
+    /// MESH in millimetres for a severe hail index `shi` (J m⁻¹ s⁻¹).
     #[inline]
     pub fn mesh_mm(self, shi: f64) -> f64 {
         match self {
@@ -532,6 +597,11 @@ pub struct HailFields {
     pub posh_pct: Field,
 }
 
+/// SHI, MESH and POSH of every column (Witt et al. 1998 Hail Detection
+/// Algorithm), on the [`column_base_sweep`]. `freezing_level_m` and
+/// `minus20c_level_m` are the heights of the 0 °C and -20 °C levels above the
+/// radar; `calibration` picks the MESH fit. `None` when no tilt has
+/// reflectivity (sweeps at a fixed azimuth, such as RHIs, are not tilts).
 pub fn hail(
     volume: &Volume,
     freezing_level_m: f32,
@@ -758,10 +828,15 @@ pub fn vil_density(volume: &Volume) -> Option<Field> {
 /// A reconstructed vertical cross-section: `values[y * width + x]` in dBZ
 /// (NaN = no data), with `y = 0` at `top_m` and `x = 0` at the start point.
 pub struct CrossSection {
+    /// Columns (samples along the path).
     pub width: usize,
+    /// Rows (height levels).
     pub height: usize,
+    /// Height of row 0, metres above the radar.
     pub top_m: f32,
+    /// Length of the path, metres.
     pub length_m: f32,
+    /// Row-major `[height × width]` values, NaN for no data.
     pub values: Vec<f32>,
 }
 
@@ -789,6 +864,7 @@ pub fn reflectivity_section(
     )
 }
 
+/// [`reflectivity_section`] with a choice of [`CrossSectionSmoothing`].
 pub fn reflectivity_section_with_smoothing(
     volume: &Volume,
     start_km: (f32, f32),
@@ -886,8 +962,8 @@ fn box_resample_columns(
             let north = center_north_km - half_km + 2.0 * half_km * yi as f32 / (n - 1) as f32;
             for xi in 0..n {
                 let east = center_east_km - half_km + 2.0 * half_km * xi as f32 / (n - 1) as f32;
-                let s = f64::from(east.hypot(north)) * 1000.0;
-                let az = east.atan2(north).to_degrees().rem_euclid(360.0);
+                let (distance_km, az) = polar_of_offset_km(east, north);
+                let s = f64::from(distance_km) * 1000.0;
                 let prof = column_profile_xs(&cols, az, s);
                 if prof.is_empty() {
                     continue;
@@ -939,6 +1015,7 @@ pub fn field_section(
     )
 }
 
+/// [`field_section`] with a choice of [`CrossSectionSmoothing`].
 #[allow(clippy::too_many_arguments)] // section geometry is irreducibly 6 values
 pub fn field_section_with_smoothing(
     volume: &Volume,
@@ -988,6 +1065,7 @@ pub struct VolumeDealiasCache {
 }
 
 impl VolumeDealiasCache {
+    /// An empty memo; the first section fills it.
     pub fn new() -> Self {
         Self {
             volume_ptr: 0,
@@ -1042,6 +1120,7 @@ pub fn velocity_section_cached(
     )
 }
 
+/// [`velocity_section_cached`] with a choice of [`CrossSectionSmoothing`].
 #[allow(clippy::too_many_arguments)] // cache plus section geometry keeps this call site explicit
 pub fn velocity_section_cached_with_smoothing(
     volume: &Volume,
@@ -1088,7 +1167,8 @@ fn cross_section_from_columns(
     if width < 2 || height < 2 || top_m <= 0.0 || cols.is_empty() {
         return None;
     }
-    let length_m = ((end_km.0 - start_km.0).hypot(end_km.1 - start_km.1) * 1000.0).max(0.0);
+    let (length_km, _) = polar_of_offset_km(end_km.0 - start_km.0, end_km.1 - start_km.1);
+    let length_m = (length_km * 1000.0).max(0.0);
     // Columns are independent — compute them in parallel (keeps endpoint
     // drags fluid), then transpose into the row-major grid.
     let columns: Vec<Vec<f32>> = (0..width)
@@ -1097,8 +1177,8 @@ fn cross_section_from_columns(
             let f = x as f32 / (width - 1) as f32;
             let east = start_km.0 + (end_km.0 - start_km.0) * f;
             let north = start_km.1 + (end_km.1 - start_km.1) * f;
-            let s = east.hypot(north) as f64 * 1000.0;
-            let az = east.atan2(north).to_degrees().rem_euclid(360.0);
+            let (distance_km, az) = polar_of_offset_km(east, north);
+            let s = f64::from(distance_km) * 1000.0;
             let prof = column_profile_xs(cols, az, s);
             let mut column = vec![f32::NAN; height];
             if prof.is_empty() {

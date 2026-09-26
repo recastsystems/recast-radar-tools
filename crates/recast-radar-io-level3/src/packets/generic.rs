@@ -54,6 +54,14 @@
 //! ends decoding: it and everything after it are kept as
 //! [`GenericComponent::Undecoded`], since XDR data cannot be skipped without
 //! knowing its layout.
+//!
+//! A radial component's radials may hold different numbers of bins, and
+//! [`GenericRadialComponent::values`] pads them to the longest. A component
+//! whose padded grid (radials x the most bins any radial holds) exceeds
+//! [`MAX_RADIAL_CELLS`], or the bytes the packet holds, is
+//! [`Level3Error::InvalidPacket`], the limit of radial packets: a few short
+//! radials and one long one would otherwise make the grid far larger than
+//! the packet.
 
 use chrono::{DateTime, Utc};
 
@@ -655,8 +663,10 @@ impl Xdr<'_, '_> {
         let cells = radials.len().saturating_mul(longest);
         if cells > MAX_RADIAL_CELLS || cells > self.data.len() {
             return Err(self.invalid(format!(
-                "{} radials padded to {longest} bins exceed the grid limit",
-                radials.len()
+                "{} radials padded to {longest} bins exceed the {MAX_RADIAL_CELLS}-cell limit \
+                 or the packet's {} bytes",
+                radials.len(),
+                self.data.len()
             )));
         }
         Ok(GenericRadialComponent {

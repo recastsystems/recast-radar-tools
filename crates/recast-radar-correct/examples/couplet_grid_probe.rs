@@ -1,10 +1,12 @@
+//! Print raw, default region engine and Py-ART port velocities on an
+//! azimuth/range box of the lowest velocity tilt, or of the given sweep: for
+//! inspecting couplets and fold errors.
+//!
+//! Usage: `couplet_grid_probe <l2-file> <az_lo> <az_hi> <rng_lo_km> <rng_hi_km> [gate_step] [sweep]`
+
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-// Print raw, default region engine and Py-ART port velocities on an
-// azimuth/range box of the lowest velocity tilt, or of the given sweep: for
-// inspecting couplets and fold errors.
-// usage: couplet_grid_probe <l2-file> <az_lo> <az_hi> <rng_lo_km> <rng_hi_km> [gate_step] [sweep]
 use recast_radar_core::Quantity;
 use recast_radar_correct::{dealias_velocity, dealias_velocity_pyart_region};
 

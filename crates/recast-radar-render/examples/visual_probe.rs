@@ -1,3 +1,5 @@
+//! Render the main products of a Level II file through the viewport path, check the images and optionally write them as PNG.
+
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

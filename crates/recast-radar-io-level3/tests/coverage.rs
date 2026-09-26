@@ -376,7 +376,7 @@ fn summarize(product: &Level3Product) -> ProductSummary {
         summary.blocks.insert(match graphic.layout {
             GraphicLayout::Pages => "graphic alphanumeric block",
             GraphicLayout::CellTrend => "cell trend data",
-            other => panic!("graphic layout {other:?}"),
+            other => panic!("graphic layout {other:?} has no summary name"),
         });
         for page in &graphic.pages {
             walk(&page.packets, &mut summary);
@@ -387,7 +387,7 @@ fn summarize(product: &Level3Product) -> ProductSummary {
             TabularLayout::Block => "tabular alphanumeric block",
             TabularLayout::StandAlone => "stand-alone tabular pages",
             TabularLayout::RadarCodedMessage => "radar coded message",
-            other => panic!("tabular layout {other:?}"),
+            other => panic!("tabular layout {other:?} has no summary name"),
         });
     }
     summary
@@ -821,27 +821,27 @@ fn render(outcomes: &[FileOutcome]) -> String {
          4 016 bytes of text and allocate at most 25 KB while they parse; a \
          message reporting each of the 10 000 fine boxes as its own group, \
          the most Appendix B allows, allocates 1.0 MB.",
-        "- **Fuzzing** (`fuzz/`, targets `level3` and `io_router`, \
+        "- **Fuzzing** (`fuzz/`, targets `level3` and `io-router`, \
          `fuzz/README.md`): two AddressSanitizer campaigns in the nexbench \
          container on 2026-09-24, seeded with every Level III corpus file, \
          45 minutes each (`level3` with three workers: 675 434 and 671 000 \
-         inputs; `io_router`: 692 994 and 389 683), the second over the \
+         inputs; `io-router`: 692 994 and 389 683), the second over the \
          decoder with the legacy tables and product 83: no crash, sanitizer \
          report, out-of-memory or timeout. A third, of 40 minutes on \
          2026-09-25 over the decoder with the products of 1993-2001 and the \
          display packet records (`level3` with three workers: 1 103 561 \
-         inputs; `io_router`: 279 843), found no crash, sanitizer report or \
+         inputs; `io-router`: 279 843), found no crash, sanitizer report or \
          out-of-memory; its one timeout input replays in under 70 ms (a \
          load spike in the shared container). A fourth, of 45 minutes on \
          2026-09-25 over the decoder with the DSI-7000 tables and the named \
          IRM grid parameters (`level3` with three workers: 1 260 592 \
-         inputs; `io_router`: 392 505), started from the third's corpus, \
+         inputs; `io-router`: 392 505), started from the third's corpus, \
          found no crash, sanitizer report, out-of-memory or timeout. A \
          fifth, of 30 minutes on 2026-09-25 over the review fixes (Weak \
          Echo Region window, zlib framing values, surplus generic values, \
          sniff and router), started from the fourth's corpus with the SRUS \
          text bulletin and the Level II chunks as router inputs (`level3` \
-         with three workers: 581 455 inputs; `io_router`: 209 252), found \
+         with three workers: 581 455 inputs; `io-router`: 209 252), found \
          no crash, sanitizer report or out-of-memory; its two timeout \
          inputs replay in under 30 ms with AddressSanitizer and in 3 ms on \
          the stable replay (the shared container was loaded, and its clock \
@@ -851,7 +851,7 @@ fn render(outcomes: &[FileOutcome]) -> String {
          fifth's corpus plus seven generated hostile products (not \
          committed), ran `level3` with `-rss_limit_mb=512` \
          (AddressSanitizer quarantine 32 MB; three workers: 616 264 inputs; \
-         `io_router`: 227 467) and found no crash, sanitizer report or \
+         `io-router`: 227 467) and found no crash, sanitizer report or \
          out-of-memory; its two timeout inputs replay in under 160 ms with \
          AddressSanitizer and 9 ms on the stable replay. A seventh, of 20 \
          minutes on 2026-09-25 over the radar coded message parse limit and \
@@ -860,7 +860,7 @@ fn render(outcomes: &[FileOutcome]) -> String {
          (the review's three probes and 16 built the same way: bzip2 \
          products of 275 to 1 527 bytes expanding to 1-14 MB of groups; not \
          committed), ran `level3` with `-rss_limit_mb=512` (three workers: \
-         501 487 inputs; `io_router`: 182 714) and found no crash, \
+         501 487 inputs; `io-router`: 182 714) and found no crash, \
          sanitizer report, out-of-memory or timeout. An earlier run without \
          sanitizer found one crash (regression \
          `fuzz-level3-rcm-centroid-non-ascii`).",

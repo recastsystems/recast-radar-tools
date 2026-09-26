@@ -35,6 +35,7 @@ const MAX_GATES: usize = 4000;
 
 /// How to combine the per-gate samples of one field across frames.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SwathAggregation {
     /// Keep the largest value (peak reflectivity: "max REF").
     Max,

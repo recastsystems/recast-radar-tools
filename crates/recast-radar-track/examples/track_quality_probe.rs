@@ -1,12 +1,12 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-// Objective tracker comparison on a real multi-volume sequence
-// (Lakshmanan & Smith 2010, Wea. Forecasting 25(2), 721–729): identical
-// per-volume cell streams feed (a) the OLD greedy nearest-to-prediction
-// tracker (replicated from the pre-rebuild app logic) and (b) the new
-// StormTracker. Metrics: median track duration, mismatch error mean(σ_Z)
-// over the longest 50%, linearity error mean(e_xy) over the longest 50%.
-// usage: track_quality_probe <l2-file> <l2-file> ...
+//! Objective tracker comparison on a real multi-volume sequence
+//! (Lakshmanan & Smith 2010, Wea. Forecasting 25(2), 721–729): identical
+//! per-volume cell streams feed (a) the OLD greedy nearest-to-prediction
+//! tracker (replicated from the pre-rebuild app logic) and (b) the new
+//! StormTracker. Metrics: median track duration, mismatch error mean(σ_Z)
+//! over the longest 50%, linearity error mean(e_xy) over the longest 50%.
+//! usage: track_quality_probe <l2-file> <l2-file> ...
 
 use chrono::{DateTime, Utc};
 use recast_radar_track::{StormCell, StormTracker, identify_storm_cells};

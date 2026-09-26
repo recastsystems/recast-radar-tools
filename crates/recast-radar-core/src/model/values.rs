@@ -1,6 +1,7 @@
 //! Typed scalar, array and attribute values shared by the model and the FM301
 //! view (`docs/design/fm301-model.md` section 2).
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A numeric scalar that keeps its type.
@@ -12,17 +13,33 @@ use serde::{Deserialize, Serialize};
 /// Equality is structural: floats compare by bit pattern ([`Scalar::bit_eq`]),
 /// so a NaN a source file stores equals itself and two decodes of the same
 /// bytes compare equal.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+///
+/// Not `#[non_exhaustive]`, on purpose: the variants are the numeric types
+/// of the data model, and writers and bindings that convert values must
+/// handle every one (see [`crate::model::FieldData`]). [`ArrayBuf`] is
+/// exhaustive for the same reason.
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Scalar {
+    /// A signed 8-bit value.
     I8(i8),
+    /// An unsigned 8-bit value.
     U8(u8),
+    /// A signed 16-bit value.
     I16(i16),
+    /// An unsigned 16-bit value.
     U16(u16),
+    /// A signed 32-bit value.
     I32(i32),
+    /// An unsigned 32-bit value.
     U32(u32),
+    /// A signed 64-bit value.
     I64(i64),
+    /// An unsigned 64-bit value.
     U64(u64),
+    /// A 32-bit float.
     F32(f32),
+    /// A 64-bit float.
     F64(f64),
 }
 
@@ -87,18 +104,29 @@ impl PartialEq for Scalar {
 ///
 /// Equality is structural: float elements compare by bit pattern, as for
 /// [`Scalar`], so buffers holding a source's NaN values compare equal to
-/// themselves.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// themselves. Exhaustive, like [`Scalar`].
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrayBuf {
+    /// Signed 8-bit values.
     I8(Vec<i8>),
+    /// Unsigned 8-bit values.
     U8(Vec<u8>),
+    /// Signed 16-bit values.
     I16(Vec<i16>),
+    /// Unsigned 16-bit values.
     U16(Vec<u16>),
+    /// Signed 32-bit values.
     I32(Vec<i32>),
+    /// Unsigned 32-bit values.
     U32(Vec<u32>),
+    /// Signed 64-bit values.
     I64(Vec<i64>),
+    /// 32-bit floats.
     F32(Vec<f32>),
+    /// 64-bit floats.
     F64(Vec<f64>),
+    /// Strings (netCDF `string` or `char` arrays).
     Text(Vec<Box<str>>),
 }
 
@@ -124,6 +152,7 @@ impl PartialEq for ArrayBuf {
 }
 
 impl ArrayBuf {
+    /// Number of elements.
     pub fn len(&self) -> usize {
         match self {
             Self::I8(v) => v.len(),
@@ -139,6 +168,7 @@ impl ArrayBuf {
         }
     }
 
+    /// Whether there are no elements.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -177,8 +207,16 @@ impl ArrayBuf {
 
     /// Rows of `self` (row-major, `row_len` elements each) taken in `order`.
     /// Returns `None` when `order` indexes past the end.
+    ///
+    /// Every row is checked before the output is reserved, so a `row_len`
+    /// larger than `self` returns `None` without allocating.
     pub fn take_rows(&self, row_len: usize, order: &[u32]) -> Option<Self> {
         fn take<T: Clone>(values: &[T], row_len: usize, order: &[u32]) -> Option<Vec<T>> {
+            // Rows that exist; with `row_len` 0 every row is empty.
+            let rows = values.len().checked_div(row_len).unwrap_or(usize::MAX);
+            if order.iter().any(|&row| row as usize >= rows) {
+                return None;
+            }
             let mut out = Vec::with_capacity(order.len().saturating_mul(row_len));
             for &row in order {
                 let start = (row as usize).checked_mul(row_len)?;
@@ -206,15 +244,25 @@ impl ArrayBuf {
 /// `Bool` exists because xradar 0.12 writes Python bools for NEXRAD attributes
 /// (`mpda_vcp: False`). netCDF has no bool type, so the WMO flavor and file
 /// writers emit `"true"`/`"false"` text, FM301's convention.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// Exhaustive, like [`Scalar`]: the file writers write every attribute back
+/// in its type, so a new kind of value is a breaking change instead of a case
+/// a wildcard arm would silently drop.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AttrValue {
+    /// A text attribute.
     Text(Box<str>),
+    /// A boolean attribute (xradar writes some NEXRAD attributes as Python booleans).
     Bool(bool),
+    /// A numeric attribute of one value, in its source type.
     Scalar(Scalar),
+    /// A numeric or string attribute of several values.
     Array(ArrayBuf),
 }
 
 impl AttrValue {
+    /// A text attribute.
     pub fn text(value: impl Into<Box<str>>) -> Self {
         Self::Text(value.into())
     }
@@ -350,15 +398,21 @@ impl From<String> for AttrValue {
 
 /// A source variable without a typed slot, kept verbatim with its name, type
 /// and attributes.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ExtraVariable {
     /// Source name (CfRadial `georef_time`, `ray_start_range`, `status_xml`).
     pub name: Box<str>,
     /// Dimension names: `[]`, `["time"]`, `["time", "<source dim>"]`. A `"time"`
     /// dimension has `nrays` entries and follows the view's ray order.
     pub dims: Vec<Box<str>>,
+    /// Length of each dimension, in `dims` order: one entry per dimension
+    /// name, and their product is the number of values (`[]` for one
+    /// value). Deserialization checks both.
     pub shape: Vec<u32>,
+    /// The values, row-major.
     pub values: ArrayBuf,
+    /// The variable's attributes, typed and in source order.
     pub attrs: Vec<(Box<str>, AttrValue)>,
 }
 
@@ -372,7 +426,8 @@ impl ExtraVariable {
 /// The source's own attributes of one variable whose values the model keeps
 /// in a typed slot (a coordinate, an instrument or calibration variable),
 /// verbatim.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct VariableAttrs {
     /// The FM301 group the variable belongs to: `""` for the root,
     /// `sweep_<index>` (the model's sweep index), `sweep_<index>/monitoring`,

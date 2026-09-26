@@ -1,4 +1,8 @@
 # A panic is how a test fails, so tests may unwrap and expect. Library code
 # denies both from each crate root (`#![cfg_attr(not(test), deny(...))]`).
+# These settings exempt `#[test]` functions and `#[cfg(test)]` modules. An
+# integration test crate (`tests/*.rs`) exempts its helper functions too, at
+# its root: `#![allow(clippy::unwrap_used, clippy::expect_used)]`, with a
+# comment saying why. CI runs clippy with `-D warnings`.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true

@@ -41,6 +41,7 @@ fn kind_name(kind: FetchKind) -> &'static str {
         FetchKind::VolumeIds => "volume_ids",
         FetchKind::ChunkListing => "chunk_listing",
         FetchKind::Chunk => "chunk",
+        other => panic!("request kind {other:?} has no cassette name"),
     }
 }
 
@@ -61,6 +62,7 @@ fn error_kind_name(kind: TransportErrorKind) -> String {
         TransportErrorKind::Body => "body".into(),
         TransportErrorKind::TooLarge => "too_large".into(),
         TransportErrorKind::Other => "other".into(),
+        other => panic!("transport error kind {other:?} has no cassette name"),
     }
 }
 
@@ -86,6 +88,7 @@ fn join_name(join: JoinMode) -> String {
         JoinMode::CurrentVolume => "current".into(),
         JoinMode::NextVolume => "next".into(),
         JoinMode::Volume(id) => format!("volume:{id}"),
+        other => panic!("join mode {other:?} has no cassette name"),
     }
 }
 
@@ -611,6 +614,7 @@ fn planner_driven_by_hand_matches_the_iterator() {
                 planner.complete(result);
             }
             PlannerStep::Event(event) => summaries.push(summarize(&event)),
+            other => panic!("planner step {other:?} is not handled here"),
         }
     }
     assert_eq!(summaries, cassette.events);
@@ -1327,6 +1331,7 @@ fn drive_until(
                 }
                 None => return (events, fetched, Some(request)),
             },
+            other => panic!("planner step {other:?} is not handled here"),
         }
     }
     (events, fetched, None)

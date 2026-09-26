@@ -29,6 +29,7 @@ use crate::model::{ArrayBuf, AttrValue, GateMapping, Scalar, SweepError, Volume}
 
 /// Which reference the view reproduces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Flavor {
     /// xradar 0.12 names, attribute strings and attribute types
     /// (`sweep_fixed_angle`, "not_set", "meters per seconds", bool
@@ -47,6 +48,7 @@ pub enum Flavor {
 /// so which choice avoids the permutation depends on the format (design note
 /// 12.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FirstDim {
     /// Dimension `time`; rays in acquisition order (stable sort by `time_s`).
     /// xradar's `first_dim="time"`, and the only choice for
@@ -67,6 +69,7 @@ pub enum FirstDim {
 
 /// Which unmodelled source items the view writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Passthrough {
     /// What the flavor's reference writes. Xradar012: sweep `extra_vars`,
     /// platform track, calibration `extra` and field `attrs.other` yes
@@ -88,10 +91,14 @@ pub enum Passthrough {
     All,
 }
 
+/// How [`volume_view`] names, orders and filters what it presents.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ViewOptions {
+    /// Whose names and attribute conventions the view reproduces.
     pub flavor: Flavor,
+    /// The ray dimension and ray order.
     pub first_dim: FirstDim,
+    /// Which unmodelled source items the view writes.
     pub passthrough: Passthrough,
 }
 
@@ -122,6 +129,7 @@ pub struct VolumeView<'a> {
     /// `georeferencing_correction` (when present) and `sweep_<n>`. A sweep
     /// group's child is `monitoring` (Table 301-11).
     pub root: Group<'a>,
+    /// Non-fatal conditions found while building the view.
     pub warnings: Vec<ViewWarning>,
     volume: &'a Volume,
 }
@@ -133,16 +141,22 @@ pub struct Group<'a> {
     pub name: Cow<'a, str>,
     /// `("time", 720)`, `("range", 1832)`, `("frequency", 1)`.
     pub dims: Vec<(Cow<'a, str>, usize)>,
+    /// The group's variables, coordinates first.
     pub variables: Vec<Variable<'a>>,
+    /// The group's attributes, typed.
     pub attrs: Vec<(Cow<'a, str>, AttrValue)>,
+    /// Child groups (`radar_parameters`, `sweep_0`, `monitoring`, ...).
     pub children: Vec<Group<'a>>,
 }
 
 /// One variable in its encoded form.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Variable<'a> {
+    /// Variable name (`DBZH`, `time`, `sweep_fixed_angle`, ...).
     pub name: Cow<'a, str>,
+    /// Dimension names, outermost first.
     pub dims: Vec<Cow<'a, str>>,
+    /// The variable's values in their encoded form.
     pub values: Values<'a>,
     /// Attributes of the encoded form, typed. Packing, fill and flag attributes
     /// are in the variable's packed type.
@@ -152,6 +166,10 @@ pub struct Variable<'a> {
 }
 
 /// Variable values.
+///
+/// Exhaustive, like [`crate::model::FieldData`]: the file writers write
+/// every form of values, so a new form is a breaking change instead of a
+/// case a wildcard arm would silently mishandle.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Values<'a> {
     /// Contiguous, same shape and ray order as the variable: zero-copy.
@@ -160,26 +178,37 @@ pub enum Values<'a> {
     /// gates padded with `fill` and repeated `mapping.stride` times, starting at
     /// range gate `mapping.start`.
     Mapped {
+        /// The model field the values come from.
         source: FieldSource,
+        /// The field's buffer, `[nrays × native_gates]` in storage row order.
         native: ArrayRef<'a>,
         /// Output rows (the sweep's ray count).
         nrays: usize,
+        /// Gates per row of the field.
         native_gates: usize,
+        /// Where the native gates sit on the range dimension.
         mapping: GateMapping,
+        /// Length of the range dimension.
         out_gates: usize,
+        /// The value that pads gates the field does not cover.
         fill: Scalar,
+        /// Storage row of each output row.
         rows: RowOrder,
     },
     /// Small computed or reordered arrays (range centres, ray coordinates in
     /// sorted order, volume constants broadcast to rays).
     Owned(ArrayBuf),
+    /// A scalar variable.
     Scalar(Scalar),
+    /// A text variable.
     Text(Cow<'a, str>),
 }
 
 /// Ray order of a sweep's variables relative to storage order.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RowOrder {
+    /// Output rows are storage rows.
     Identity,
     /// `permutation[i]` is the storage row shown at position `i`. One `Arc` is
     /// shared by every variable of the sweep.
@@ -199,23 +228,34 @@ impl RowOrder {
 /// A model field: `volume.sweeps[sweep].fields[field]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FieldSource {
+    /// Index of the sweep in `Volume::sweeps`.
     pub sweep: u32,
+    /// Index of the field in `Sweep::fields`.
     pub field: u32,
 }
 
-/// A borrowed contiguous array.
+/// A borrowed contiguous array. Exhaustive, like the
+/// [`ArrayBuf`] it borrows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ArrayRef<'a> {
+    /// Unsigned 8-bit values.
     U8(&'a [u8]),
+    /// Unsigned 16-bit values.
     U16(&'a [u16]),
+    /// Signed 8-bit values.
     I8(&'a [i8]),
+    /// Signed 16-bit values.
     I16(&'a [i16]),
+    /// Signed 32-bit values.
     I32(&'a [i32]),
+    /// 32-bit floats.
     F32(&'a [f32]),
+    /// 64-bit floats.
     F64(&'a [f64]),
 }
 
 impl ArrayRef<'_> {
+    /// Number of elements.
     pub fn len(&self) -> usize {
         match self {
             Self::U8(v) => v.len(),
@@ -228,6 +268,7 @@ impl ArrayRef<'_> {
         }
     }
 
+    /// Whether there are no elements.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -337,23 +378,37 @@ pub struct UnorderedSweep {
 
 /// Non-fatal conditions a CF writer reports.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ViewWarning {
     /// Ray times are not strictly increasing even in acquisition order (the
     /// source has no per-ray times). The `time` coordinate is written anyway,
     /// as xradar writes it.
-    NonMonotonicTime { sweep: u32 },
+    NonMonotonicTime {
+        /// Index of the sweep.
+        sweep: u32,
+    },
 }
 
+/// Why a view could not be built.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum ViewError {
+    /// An attribute's value does not fit the variable's packed type.
     #[error("{path}: attribute {attr} value does not fit the variable's type")]
-    OutOfRange { path: String, attr: &'static str },
+    OutOfRange {
+        /// Path of the variable (`sweep_0/DBZH`).
+        path: String,
+        /// Name of the attribute.
+        attr: &'static str,
+    },
 }
 
 /// Format-specific attributes a decoder crate contributes (for example xradar's
 /// NEXRAD root attributes from `NexradMetadata`).
 pub trait ExtraAttrs {
+    /// Attributes to add to the root group.
     fn root_attrs(&self, flavor: Flavor) -> Vec<(Cow<'static, str>, AttrValue)>;
+    /// Attributes to add to the group of sweep `sweep`.
     fn sweep_attrs(&self, sweep: usize, flavor: Flavor) -> Vec<(Cow<'static, str>, AttrValue)>;
 }
 
@@ -380,14 +435,17 @@ impl<'a> VolumeView<'a> {
 }
 
 impl<'a> Group<'a> {
+    /// The child group named `name`.
     pub fn child(&self, name: &str) -> Option<&Group<'a>> {
         self.children.iter().find(|child| child.name == name)
     }
 
+    /// The variable named `name`.
     pub fn variable(&self, name: &str) -> Option<&Variable<'a>> {
         self.variables.iter().find(|variable| variable.name == name)
     }
 
+    /// The attribute named `name`.
     pub fn attr(&self, name: &str) -> Option<&AttrValue> {
         self.attrs
             .iter()
@@ -395,6 +453,7 @@ impl<'a> Group<'a> {
             .map(|(_, value)| value)
     }
 
+    /// Length of the dimension named `name`.
     pub fn dim(&self, name: &str) -> Option<usize> {
         self.dims
             .iter()
@@ -404,6 +463,7 @@ impl<'a> Group<'a> {
 }
 
 impl Variable<'_> {
+    /// The attribute named `name`.
     pub fn attr(&self, name: &str) -> Option<&AttrValue> {
         self.attrs
             .iter()

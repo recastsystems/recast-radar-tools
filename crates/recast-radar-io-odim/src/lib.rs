@@ -60,6 +60,7 @@ pub type Result<T> = std::result::Result<T, OdimError>;
 
 /// Errors from ODIM_H5 and HDF5 decoding.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum OdimError {
     /// An HDF5 structure ended before its declared length.
     #[error("truncated {what} at offset {offset}: need {needed} bytes, have {available}")]

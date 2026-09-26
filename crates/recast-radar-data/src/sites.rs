@@ -53,14 +53,20 @@ const TDWR_SITES: &[&str] = &[
 /// One radar site anywhere on earth. Strings, never indices: survives
 /// catalog reorder, serializes into settings, Eq/Hash for dedupe keys.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum SiteRef {
     /// Embedded US Level-II catalog id (WSR-88D, TDWR, research feeds),
     /// canonically uppercase: `"KTLX"`, `"TOKC"`, `"KCRI"`.
-    Us { level2_id: String },
+    Us {
+        /// The site identifier, upper case.
+        level2_id: String,
+    },
     /// [`crate::international`] registry site, case-significant:
     /// `{"ord","deess"}`, `{"smhi","angelholm"}`, `{"jma","TAKA"}`.
     Intl {
+        /// The provider (`ord`, `smhi`, `jma`, ...).
         provider_id: String,
+        /// The provider's site key.
         site_id: String,
     },
 }
@@ -79,14 +85,19 @@ pub enum SiteKind {
     /// `community_feed_for_site()` recognizes today).
     Research,
     /// International registry site.
-    Intl { provider_id: String },
+    Intl {
+        /// The provider.
+        provider_id: String,
+    },
 }
 
 /// Resolved site row — what pickers, beam rankings, markers, and engines
 /// consume.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SiteRecord {
+    /// Which site.
     pub site: SiteRef,
+    /// What kind of site it is.
     pub kind: SiteKind,
     /// `"KTLX Norman"` | `"Ängelholm"` — the US grammar is `id name`, the
     /// international grammar is the provider's own picker label.
@@ -95,6 +106,7 @@ pub struct SiteRecord {
     /// (`"SMHI Sweden"`, `"research feed"`); `None` for WSR-88D/TDWR —
     /// `BeamCandidate.origin` (main.rs) anticipated exactly this.
     pub origin: Option<String>,
+    /// `(latitude, longitude)` in degrees, when known.
     pub lat_lon: Option<(f32, f32)>,
     /// The operating network's country ([`IntlSite::country`] for
     /// international rows; `US_NETWORK_COUNTRY` for the US catalog).

@@ -1,9 +1,9 @@
-// Render one field of one sweep of a Level II file to a PNG.
-//
-// usage: cargo run -p recast-radar-render --example render_reflectivity_png -- <level2-file> <out.png> [sweep-index] [field]
-//
-// `field` is an FM301 name (DBZH, VRADH, ZDR, ...) or a NEXRAD block name
-// (REF, VEL, SW, ...); the default is DBZH.
+//! Render one field of one sweep of a Level II file to a PNG.
+//!
+//! usage: cargo run -p recast-radar-render --example render_reflectivity_png -- <level2-file> <out.png> [sweep-index] [field]
+//!
+//! `field` is an FM301 name (DBZH, VRADH, ZDR, ...) or a NEXRAD block name
+//! (REF, VEL, SW, ...); the default is DBZH.
 
 use std::path::{Path, PathBuf};
 

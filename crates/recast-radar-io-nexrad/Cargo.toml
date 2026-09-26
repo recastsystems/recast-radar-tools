@@ -8,6 +8,10 @@ description = "Pure-Rust NEXRAD Archive II (Level II) weather radar decoder and 
 readme.workspace = true
 keywords = ["nexrad", "radar", "weather", "level2", "wsr-88d"]
 categories = ["science::geo", "parser-implementations", "encoding"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate, and the examples are
+# developer probes built on dev-dependencies.
+exclude = ["tests/", "examples/"]
 
 [features]
 # Decode consecutive LDM records two at a time on one thread with
@@ -31,8 +35,8 @@ bzip2 = { workspace = true, optional = true }
 chrono.workspace = true
 flate2.workspace = true
 rayon.workspace = true
-recast-radar-bzip2 = { path = "../recast-radar-bzip2" }
-recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-bzip2 = { version = "0.1.0", path = "../recast-radar-bzip2" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]

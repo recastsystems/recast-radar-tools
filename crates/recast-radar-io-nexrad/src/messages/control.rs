@@ -70,6 +70,7 @@ impl RdaControlCommands {
 
 /// RDA state command (halfword 1).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RdaStateCommand {
     /// 0.
     NoChange,
@@ -110,6 +111,7 @@ impl RdaStateCommand {
 /// No change / enable / disable command. Super resolution, CMD, AVSET and
 /// spot blanking use codes 0, 2, 4; the RDA log command uses 0, 1, 2.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum EnableDisable {
     /// 0.
     NoChange,
@@ -165,6 +167,7 @@ impl EnableDisable {
 
 /// Auxiliary power generator control (halfword 3).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum AuxiliaryPowerCommand {
     /// 0.
     NoChange,
@@ -200,6 +203,7 @@ impl AuxiliaryPowerCommand {
 
 /// RDA control commands and authorization (halfword 4).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ControlAuthorization {
     /// 0.
     NoChange,
@@ -243,6 +247,7 @@ impl ControlAuthorization {
 
 /// Restart VCP or elevation cut (halfword 5).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RestartCommand {
     /// 0.
     None,
@@ -278,6 +283,7 @@ impl RestartCommand {
 
 /// Select local VCP number for the next volume scan (halfword 6).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum LocalVcpSelection {
     /// 0: use the remote pattern.
     UseRemotePattern,
@@ -312,6 +318,7 @@ impl LocalVcpSelection {
 
 /// Channel control command (halfword 12).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ChannelControlCommand {
     /// 0.
     NoChange,
@@ -347,6 +354,7 @@ impl ChannelControlCommand {
 
 /// Performance check control (halfword 13).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PerformanceCheckCommand {
     /// 0.
     NoChange,
@@ -378,6 +386,7 @@ impl PerformanceCheckCommand {
 
 /// ZDR bias estimate weighted mean (halfword 14, Table X note 8).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ZdrBiasEstimate {
     /// 0.
     NotAvailable,

@@ -1,3 +1,5 @@
+//! Load a T-matrix lookup table with its generator config and expected SHA-256, and print its descriptor and axes.
+
 use std::env;
 use std::error::Error;
 use std::fs;

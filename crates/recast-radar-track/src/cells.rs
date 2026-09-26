@@ -41,9 +41,11 @@ const MAX_RANGE_M: f64 = 300_000.0;
 pub struct StormCell {
     /// Mass-weighted centroid (Z^(4/7)·area), km east/north of the radar.
     pub east_km: f64,
+    /// Mass-weighted centroid, km north of the radar.
     pub north_km: f64,
     /// Peak smoothed composite reflectivity in the basin.
     pub max_dbz: f32,
+    /// Area of the cell's basin, km².
     pub area_km2: f64,
     /// √(area/π) — the size term used in association gates/costs
     /// (Han et al. 2009; Lakshmanan & Smith 2010).

@@ -54,6 +54,7 @@ const SHMU_STATIONS: [(&str, &str, f32, f32); 4] = [
 pub struct ShmuProvider;
 
 impl ShmuProvider {
+    /// The provider (it keeps no state).
     pub fn new() -> Self {
         Self
     }

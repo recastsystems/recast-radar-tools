@@ -79,22 +79,29 @@ pub use wind::{gust_proxy, gust_proxy_from_dealiased, marc, marc_from_dealiased}
 
 use recast_radar_core::FieldName;
 
+/// A product a display can offer: its field name, title and where it comes from.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProductDescriptor {
     /// The dataset variable name the product is stored under (a volume or
     /// temporal product's id).
     pub id: FieldName,
+    /// Title for menus and legends.
     pub display_name: &'static str,
+    /// Whether the product is a native field or derived.
     pub source: ProductSource,
 }
 
+/// Where a product's values come from.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ProductSource {
     /// A native field, by its FM301 name.
     BaseField(FieldName),
+    /// Computed by this crate.
     Derived,
 }
 
+/// The native moments a display offers, with their titles.
 pub fn base_products() -> Vec<ProductDescriptor> {
     [
         (FieldName::Dbzh, "Base Reflectivity"),

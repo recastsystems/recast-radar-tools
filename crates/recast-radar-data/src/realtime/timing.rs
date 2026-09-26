@@ -136,25 +136,63 @@ const MAX_ROLLOVER_SECONDS: f64 = 3600.0;
 
 /// Errors from building a timing model or learning from a volume.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum TimingError {
+    /// The plan has no cuts.
     #[error("scan plan has no cuts")]
     EmptyPlan,
+    /// A cut's azimuth rate is not positive and finite.
     #[error("cut {cut_index} has azimuth rate {rate} deg/s; a positive finite rate is required")]
-    InvalidAzimuthRate { cut_index: usize, rate: f32 },
+    InvalidAzimuthRate {
+        /// Index of the cut.
+        cut_index: usize,
+        /// Its azimuth rate, degrees per second.
+        rate: f32,
+    },
+    /// A cut has no radials.
     #[error("cut {cut_index} has no radials")]
-    NoRadials { cut_index: usize },
+    NoRadials {
+        /// Index of the cut.
+        cut_index: usize,
+    },
+    /// The plan needs more chunks than a volume's chunk ids allow.
     #[error("scan plan needs {chunks} chunks but chunk ids stop at {MAX_CHUNK_ID}")]
-    TooManyChunks { chunks: u32 },
+    TooManyChunks {
+        /// Chunks the plan needs.
+        chunks: u32,
+    },
+    /// The volume has no End chunk yet, so it cannot be learned from.
     #[error("volume {volume_id} has no End chunk yet")]
-    IncompleteVolume { volume_id: u16 },
+    IncompleteVolume {
+        /// The volume id.
+        volume_id: u16,
+    },
+    /// The volume's End chunk does not close a cut of the plan (another VCP ran).
     #[error(
         "volume {volume_id} ends at chunk {end_chunk_id}, which does not close a cut of the scan plan"
     )]
-    PlanMismatch { volume_id: u16, end_chunk_id: u16 },
+    PlanMismatch {
+        /// The volume id.
+        volume_id: u16,
+        /// Key id of its End chunk.
+        end_chunk_id: u16,
+    },
+    /// Fewer than 3 radial chunks carry timestamps.
     #[error("volume {volume_id} has {chunks} timestamped radial chunks; at least 3 are needed")]
-    TooFewChunks { volume_id: u16, chunks: usize },
+    TooFewChunks {
+        /// The volume id.
+        volume_id: u16,
+        /// Timestamped radial chunks.
+        chunks: usize,
+    },
+    /// The fitted rotation scale is outside 0.8 to 1.25.
     #[error("volume {volume_id} fits rotation scale {rotation_scale:.3}, outside 0.8..=1.25")]
-    ImplausibleFit { volume_id: u16, rotation_scale: f64 },
+    ImplausibleFit {
+        /// The volume id.
+        volume_id: u16,
+        /// The fitted rotation scale.
+        rotation_scale: f64,
+    },
 }
 
 /// Parses one S3 `ListObjectsV2` response from the chunk bucket into chunk
@@ -184,6 +222,7 @@ pub struct ScanCut {
 }
 
 impl ScanCut {
+    /// A cut at `elevation_deg`, rotating at `azimuth_rate_deg_per_second`, with `radials` radials.
     pub const fn new(elevation_deg: f32, azimuth_rate_deg_per_second: f32, radials: u16) -> Self {
         Self {
             elevation_deg,
@@ -240,11 +279,14 @@ impl ChunkPosition {
 /// The cut sequence of one volume.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScanPlan {
+    /// The VCP number, when known.
     pub vcp: Option<u16>,
+    /// The cuts, in execution order.
     pub cuts: Vec<ScanCut>,
 }
 
 impl ScanPlan {
+    /// A plan from its cuts.
     pub fn new(vcp: Option<u16>, cuts: Vec<ScanCut>) -> Self {
         Self { vcp, cuts }
     }
@@ -398,9 +440,13 @@ impl Default for TimingParameters {
 /// numbers are plan chunk numbers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CutTiming {
+    /// Index into [`ScanPlan::cuts`].
     pub cut_index: usize,
+    /// Elevation angle, degrees.
     pub elevation_deg: f32,
+    /// Plan chunk number of the cut's first chunk.
     pub first_chunk_id: u16,
+    /// Plan chunk number of the cut's last chunk.
     pub last_chunk_id: u16,
     /// When the cut's rotation starts.
     pub start_seconds: f64,
@@ -430,6 +476,7 @@ pub struct ScanTimingModel {
 }
 
 impl ScanTimingModel {
+    /// A model of `plan` with `parameters`; fails on a plan with no cuts, a cut without radials or a non-positive azimuth rate, or more chunks than chunk ids allow.
     pub fn new(plan: ScanPlan, parameters: TimingParameters) -> Result<Self, TimingError> {
         if plan.cuts.is_empty() {
             return Err(TimingError::EmptyPlan);
@@ -471,10 +518,12 @@ impl ScanTimingModel {
         })
     }
 
+    /// The scan plan.
     pub fn plan(&self) -> &ScanPlan {
         &self.plan
     }
 
+    /// The timing parameters.
     pub fn parameters(&self) -> TimingParameters {
         self.parameters
     }
@@ -753,8 +802,11 @@ impl ScanTimingModel {
 /// One listed chunk: id, type, `LastModified` and size.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChunkTimestamp {
+    /// Chunk number within the volume.
     pub chunk_id: u16,
+    /// Chunk type.
     pub chunk_type: RealtimeChunkType,
+    /// When the chunk was published (`LastModified`).
     pub last_modified: DateTime<Utc>,
     /// Object size in bytes, from the listing.
     pub size: u64,
@@ -771,7 +823,9 @@ impl ChunkTimestamp {
 /// The timestamped chunks of one volume, as a listing showed them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VolumeObservation {
+    /// The site.
     pub site: String,
+    /// The volume id.
     pub volume_id: u16,
     /// Volume start from the key (whole seconds).
     pub volume_time: DateTime<Utc>,
@@ -821,6 +875,7 @@ impl VolumeObservation {
         volumes
     }
 
+    /// The chunk with id `chunk_id`, if listed.
     pub fn chunk(&self, chunk_id: u16) -> Option<&ChunkTimestamp> {
         self.chunks
             .binary_search_by_key(&chunk_id, |chunk| chunk.chunk_id)
@@ -937,31 +992,43 @@ pub struct ProjectedChunk {
     pub plan_chunk_number: Option<u16>,
     /// `None` for the Start chunk and status-only chunks.
     pub cut_index: Option<usize>,
+    /// Expected publication time.
     pub expected_last_modified: DateTime<Utc>,
+    /// Observed publication time, once listed.
     pub observed_last_modified: Option<DateTime<Utc>>,
 }
 
 /// One cut in a [`ScanTimingProjection`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProjectedCut {
+    /// Index into the plan's cuts.
     pub cut_index: usize,
+    /// Elevation angle, degrees.
     pub elevation_deg: f32,
     /// Key chunk ids, as in [`ProjectedChunk::chunk_id`].
     pub first_chunk_id: u16,
+    /// Key id of the cut's last chunk.
     pub last_chunk_id: u16,
+    /// Modeled rotation time of the cut, seconds.
     pub sweep_seconds: f64,
     /// Expected `LastModified` of the cut's last chunk.
     pub expected_complete: DateTime<Utc>,
+    /// Observed publication of the cut's last chunk, once listed.
     pub observed_complete: Option<DateTime<Utc>>,
 }
 
 /// The rest of a volume projected from what has been observed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScanTimingProjection {
+    /// The site.
     pub site: String,
+    /// The volume id.
     pub volume_id: u16,
+    /// Volume start time from the key.
     pub volume_time: DateTime<Utc>,
+    /// The VCP number, when known.
     pub vcp: Option<u16>,
+    /// The timing parameters the projection used.
     pub parameters: TimingParameters,
     /// Seconds added to the model from the latest observations.
     pub anchor_correction_seconds: f64,
@@ -986,6 +1053,7 @@ pub struct ScanTimingProjection {
 }
 
 impl ScanTimingProjection {
+    /// The projected chunk with key id `chunk_id`.
     pub fn chunk(&self, chunk_id: u16) -> Option<&ProjectedChunk> {
         self.chunks.iter().find(|chunk| chunk.chunk_id == chunk_id)
     }
@@ -1008,9 +1076,13 @@ impl ScanTimingProjection {
 /// What [`TimingStatistics::observe_volume`] measured on one volume.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VolumeFit {
+    /// The volume id.
     pub volume_id: u16,
+    /// Measured rotation scale (actual over commanded rotation time).
     pub rotation_scale: f64,
+    /// Measured publish offset, seconds.
     pub publish_offset_seconds: f64,
+    /// Measured Start chunk offset, seconds, when the Start chunk was listed.
     pub start_chunk_offset_seconds: Option<f64>,
     /// Present when the previous observed volume at the site came right
     /// before this one (the next volume id, with 999 followed by 1).
@@ -1023,7 +1095,9 @@ pub struct VolumeFit {
     pub status_only_chunks: usize,
     /// Highest elevation collected (the AVSET cutoff when the volume ends early).
     pub top_elevation_deg: f32,
+    /// Radial chunks used in the fit.
     pub radial_chunks: usize,
+    /// Median absolute residual of the fit, seconds.
     pub median_abs_residual_seconds: f64,
 }
 
@@ -1062,8 +1136,10 @@ impl Default for TimingStatistics {
 }
 
 impl TimingStatistics {
+    /// Volumes each learned parameter is the median of, by default.
     pub const DEFAULT_WINDOW: usize = 5;
 
+    /// Statistics that start from `defaults`, over [`TimingStatistics::DEFAULT_WINDOW`] volumes.
     pub fn new(defaults: TimingParameters) -> Self {
         Self::with_window(defaults, Self::DEFAULT_WINDOW)
     }

@@ -90,19 +90,24 @@ const MIN_SYNTH_DELTA_DEG: f32 = 0.01;
 /// sit between them; each ray's time, elevation and Nyquist velocity are its
 /// nearest parent's. Its `range` is the sub-gate range coordinate.
 pub struct UpsampledSweep {
+    /// The upsampled sweep, holding the one upsampled field.
     pub sweep: Sweep,
     /// For each output ray, the source ray whose cell contains it (the
     /// nearest parent), so per-ray lookups on the source sweep stay valid.
     pub parent_rays: Vec<u32>,
 }
 
+/// How many output rows and gates [`upsample_field`] makes per native row and gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UpsampleFactors {
+    /// Output rows per native row (1 to 4).
     pub azimuth: usize,
+    /// Output gates per native gate (1 to 4).
     pub range: usize,
 }
 
 impl UpsampleFactors {
+    /// Whether both factors are 1 (no upsampling).
     pub fn is_identity(self) -> bool {
         self.azimuth <= 1 && self.range <= 1
     }

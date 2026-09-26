@@ -27,3 +27,12 @@ KTLX20130520_201643_V06.gz  pixel checksum 0x19e3735f42cdca4b  deterministic acr
 # 9 0.478 deg, on 0.4834 deg cuts). The default values are the import values
 # again. `default_sweeps_are_the_baseline_sweeps` (bench unit test) checks the
 # selection on the three files.
+#
+# Platforms (2026-09-25). These are the values on every platform checked since
+# the renderer computes pixel azimuths with its own atan2 (4043175,
+# recast-radar-render/src/trig.rs): Windows (MSVC), Linux glibc 2.39 and
+# Linux musl, bench built with thin LTO on Linux. `main` d69f902, which calls
+# `f32::atan2`, prints 0x873d9370fecc4c1f, 0x4a51bbfdae5dfeb5 and
+# 0x62e7ca24c87c43ce on both Linux libcs (the wasm32 values of
+# docs/design/wasm.md): their atan2f and MSVC's differ in the last bit on
+# pixels at azimuth bin edges. docs/perf/render-atan2.md has the details.

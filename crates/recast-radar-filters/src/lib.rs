@@ -28,9 +28,13 @@ use recast_radar_core::{Field, FieldAttrs, FieldData, FloatCoding};
 /// below 0.97 falls back to nearest-gate; velocity guards against blending
 /// across strong shear or residual aliasing.
 #[derive(Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum InterpPolicy {
+    /// Blend linearly (reflectivity, ZDR and the other moments).
     LinearAngle,
+    /// Blend unless a bracketing value is below a correlation of 0.97; take the nearest gate there.
     CcGuard,
+    /// Blend unless the bracketing values span more than 30 m/s; take the nearest gate there.
     VelocityGuard,
 }
 

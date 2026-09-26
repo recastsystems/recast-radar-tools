@@ -185,13 +185,21 @@ impl Endian {
 /// full decode. Parsing stops at the first ray.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DoradeSweepHeader {
+    /// Radar name (the RADD descriptor's radar name, trimmed).
     pub instrument: String,
+    /// Volume number (VOLD).
     pub volume_number: i32,
+    /// Sweep number (SWIB).
     pub sweep_number: i32,
+    /// Fixed angle of the sweep, degrees.
     pub fixed_angle_deg: f32,
+    /// Time of the sweep start, when the file carries a valid one.
     pub start_time: Option<DateTime<Utc>>,
+    /// Radar latitude (RADD, with the CFAC correction), degrees north.
     pub latitude_deg: f32,
+    /// Radar longitude (RADD, with the CFAC correction), degrees east.
     pub longitude_deg: f32,
+    /// Radar altitude (RADD, with the CFAC correction), metres above mean sea level.
     pub altitude_m: f32,
 }
 
@@ -306,6 +314,7 @@ impl Default for DoradeVolumeBuilder {
 }
 
 impl DoradeVolumeBuilder {
+    /// An empty builder.
     pub fn new() -> Self {
         Self {
             volume: Volume::new("", DateTime::<Utc>::UNIX_EPOCH),

@@ -48,6 +48,7 @@ pub struct EnvWindLevel {
 /// harmonic) exactly as if `None` had been passed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EnvironmentalWindProfile {
+    /// Wind levels, strictly increasing in height.
     pub levels: Vec<EnvWindLevel>,
     /// Model valid time of the analysis the profile was extracted from.
     pub valid_time: DateTime<Utc>,

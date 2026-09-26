@@ -47,7 +47,9 @@ use reqwest::header::{ACCEPT, COOKIE, REFERER, SET_COOKIE};
 use serde::Deserialize;
 use thiserror::Error;
 
+/// The public AWS bucket of NEXRAD Level II archive volumes (`YYYY/MM/DD/SITE/`).
 pub const LEVEL2_ARCHIVE_BUCKET: &str = "unidata-nexrad-level2";
+/// The public AWS bucket of NEXRAD Level II real-time chunks (`SITE/VOLUME_ID/`).
 pub const LEVEL2_CHUNKS_BUCKET: &str = "unidata-nexrad-level2-chunks";
 /// TCP connect budget for every feed client (see [`build_http_client`]).
 /// Was 4 s — tuned for the fast S3/CloudFerro feeds — but that dropped ALL
@@ -97,59 +99,94 @@ const LEVEL2_CACHE_MAX_BYTES_PER_SITE: u64 = 4 * 1024 * 1024 * 1024;
 const LEVEL2_CACHE_WALK_MAX_DEPTH: usize = 4;
 const LEVEL2_CACHE_PRUNE_INTERVAL: StdDuration = StdDuration::from_secs(5 * 60);
 
+/// Which kind of Level II data a source provides.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RadarDataLevel {
+    /// Complete archive volumes.
     Level2Archive,
+    /// Real-time chunks of the volume being scanned.
     Level2RealtimeChunks,
 }
 
+/// A kind of place Level II data can come from.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum DataSourceKind {
+    /// A file on disk.
     LocalFile,
+    /// A directory of files on disk.
     LocalDirectory,
+    /// The public archive bucket on AWS.
     PublicLevel2Archive,
+    /// The public real-time chunk bucket on AWS.
     PublicLevel2RealtimeChunks,
+    /// The NCEI archive.
     NceiArchive,
 }
 
+/// The order in which sources are tried.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourcePriority {
+    /// Sources, first tried first.
     pub sources: Vec<DataSourceKind>,
 }
 
+/// A NEXRAD Level II site.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RadarSite {
+    /// The site's four-letter identifier (`KTLX`), upper case.
     pub level2_id: String,
+    /// The site's name, when known.
     pub name: Option<String>,
+    /// Latitude, degrees north, when known.
     pub latitude_deg: Option<f32>,
+    /// Longitude, degrees east, when known.
     pub longitude_deg: Option<f32>,
 }
 
+/// An object of an S3 bucket listing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct S3Object {
+    /// The object key (`2024/03/15/KTLX/KTLX20240315_000217_V06`).
     pub key: String,
+    /// Size in bytes.
     pub size: u64,
+    /// When the object was last modified.
     pub last_modified: Option<DateTime<Utc>>,
 }
 
+/// An object saved to a local cache directory.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DownloadedObject {
+    /// The object.
     pub object: S3Object,
+    /// Where it is on disk.
     pub path: PathBuf,
+    /// The URL it was downloaded from.
     pub url: String,
+    /// Whether the file was already in the cache (nothing was downloaded).
     pub cache_hit: bool,
 }
 
+/// The newest archive object of a site, possibly from a short-lived cache.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LatestObject {
+    /// The object.
     pub object: S3Object,
+    /// Whether the listing came from the cache.
     pub cache_hit: bool,
 }
 
+/// The type of a real-time chunk (the last letter of its key).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RealtimeChunkType {
+    /// `S`: the first chunk of a volume, holding the metadata record.
     Start,
+    /// `I`: a chunk inside the volume.
     Intermediate,
+    /// `E`: the last chunk of the volume.
     End,
 }
 
@@ -175,6 +212,7 @@ impl RealtimeChunkType {
         matches!(self, Self::Intermediate)
     }
 
+    /// `start`, `intermediate` or `end`.
     pub fn label(self) -> &'static str {
         match self {
             Self::Start => "start",
@@ -184,58 +222,93 @@ impl RealtimeChunkType {
     }
 }
 
+/// One real-time chunk and what its key says.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RealtimeChunkObject {
+    /// The S3 object.
     pub object: S3Object,
+    /// The site.
     pub site: String,
+    /// The volume id, 1 to 999, cycling.
     pub volume_id: u16,
+    /// Start time of the volume.
     pub volume_time: DateTime<Utc>,
+    /// Chunk number within the volume, from 1.
     pub chunk_id: u16,
+    /// Chunk type.
     pub chunk_type: RealtimeChunkType,
 }
 
+/// The chunks of one real-time volume, as listed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RealtimeLevel2Volume {
+    /// The site.
     pub site: String,
+    /// The volume id, 1 to 999, cycling.
     pub volume_id: u16,
+    /// Start time of the volume.
     pub volume_time: DateTime<Utc>,
+    /// The chunks, in order, from the first up to the first missing one.
     pub chunks: Vec<RealtimeChunkObject>,
+    /// Whether the list runs from the Start chunk to the End chunk without gaps.
     pub complete: bool,
+    /// Total bytes of the listed chunks.
     pub total_size: u64,
 }
 
+/// Why a data-access call failed.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum DataSourceError {
     // Full cause chain: reqwest's top-level Display hides the source, so
     // field statuses read "error decoding response body" when the actual
     // cause was a mid-body timeout, or "error sending request" when DNS
     // or a reset connection was at fault.
+    /// An HTTP request failed; the message has the full cause chain.
     #[cfg(feature = "net")]
     #[error("HTTP request failed: {}", reqwest_error_chain(.0))]
     Http(#[from] reqwest::Error),
+    /// An S3 listing could not be parsed.
     #[error("S3 XML parse failed: {0}")]
     Xml(#[from] quick_xml::DeError),
+    /// A JSON document could not be parsed.
     #[error("JSON parse failed: {0}")]
     Json(#[from] serde_json::Error),
+    /// A local file operation failed.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// A listing found nothing (also what [`DataSourceError::is_not_found`] reports).
     #[error("no objects found for {bucket}/{prefix}")]
-    NoObjects { bucket: String, prefix: String },
+    NoObjects {
+        /// The bucket.
+        bucket: String,
+        /// The prefix listed, or a description of the window.
+        prefix: String,
+    },
+    /// A download ended with a different size than the listing said.
     #[error("downloaded {url} size mismatch: expected {expected} bytes, got {actual}")]
     DownloadSizeMismatch {
+        /// The URL.
         url: String,
+        /// Bytes expected.
         expected: u64,
+        /// Bytes received.
         actual: u64,
     },
-    // User-initiated stop of a streaming download. Callers match on this
-    // variant (never on message text) to tell a cancel from a failure; the
-    // partial `.download` temp is left in place so a retry Range-resumes.
+    /// The caller stopped a streaming download. Match on this variant (not
+    /// on the message) to tell a cancel from a failure; the partial
+    /// `.download` file stays, so a retry resumes with a range request.
     #[error("download cancelled: {url}")]
-    DownloadCancelled { url: String },
+    DownloadCancelled {
+        /// The URL.
+        url: String,
+    },
+    /// A worker thread of a parallel chunk download panicked.
     #[error("realtime chunk download worker panicked")]
     DownloadWorkerPanic,
 }
 
+/// Result of the data-access calls.
 pub type Result<T> = std::result::Result<T, DataSourceError>;
 
 impl DataSourceError {
@@ -266,6 +339,7 @@ impl Default for SourcePriority {
 }
 
 impl RadarSite {
+    /// A site with no name or location; the identifier is upper-cased.
     pub fn new(level2_id: impl Into<String>) -> Self {
         let level2_id = level2_id.into().to_ascii_uppercase();
         Self {
@@ -276,6 +350,7 @@ impl RadarSite {
         }
     }
 
+    /// The site with a name and location.
     pub fn with_location(
         mut self,
         name: Option<String>,
@@ -289,6 +364,7 @@ impl RadarSite {
     }
 }
 
+/// The compiled-in NEXRAD and TDWR site list, with names and locations (no network).
 pub fn fallback_sites() -> Vec<RadarSite> {
     // The embedded table carries COORDINATES, so offline the map markers,
     // site picker, and right-click beam lookup all still work (field
@@ -306,6 +382,7 @@ fn embedded_site_table() -> Vec<RadarSite> {
         .collect()
 }
 
+/// The sites with archive data on one UTC date (a delimiter listing of the archive bucket).
 #[cfg(feature = "net")]
 pub fn list_level2_sites_for_date(date: NaiveDate) -> Result<Vec<RadarSite>> {
     let prefix = format!("{:04}/{:02}/{:02}/", date.year(), date.month(), date.day());
@@ -329,6 +406,8 @@ pub fn list_level2_sites_for_date(date: NaiveDate) -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+/// The sites with archive data in the last `days_back` days, merged with the
+/// compiled-in list.
 #[cfg(feature = "net")]
 pub fn list_recent_level2_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     let today = Utc::now().date_naive();
@@ -354,6 +433,7 @@ pub fn list_recent_level2_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+/// The radar stations of the api.weather.gov radar endpoint, with names and locations.
 #[cfg(feature = "net")]
 pub fn fetch_weather_gov_radar_sites() -> Result<Vec<RadarSite>> {
     let client = metadata_http_client()?;
@@ -384,6 +464,7 @@ pub fn fetch_weather_gov_radar_sites() -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+/// Download a text resource (at most 16 MiB), retrying once on a failed connection.
 #[cfg(feature = "net")]
 pub fn fetch_text(url: &str) -> Result<String> {
     let response = send_with_retry(&metadata_http_client()?, url)?.error_for_status()?;
@@ -658,6 +739,8 @@ fn reqwest_error_chain(err: &reqwest::Error) -> String {
     text
 }
 
+/// The Level II sites with recent archive data, with names and locations from
+/// the compiled-in list overlaid with api.weather.gov when it answers.
 #[cfg(feature = "net")]
 pub fn fetch_level2_radar_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     // Embedded base FIRST, live API overlay second: site locations must
@@ -683,6 +766,7 @@ pub fn fetch_level2_radar_sites(days_back: i64) -> Result<Vec<RadarSite>> {
     Ok(sites)
 }
 
+/// The newest archive volume of a site, looking back `days_back` days.
 #[cfg(feature = "net")]
 pub fn latest_level2_object(site: &str, days_back: i64) -> Result<S3Object> {
     recent_level2_objects(site, days_back, 1)?
@@ -715,23 +799,35 @@ pub fn level2_objects_for_date(site: &str, date: NaiveDate) -> Result<Vec<S3Obje
     Ok(objects)
 }
 
+/// A time window of archive volumes to select, around an anchor time.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Level2ArchiveWindowRequest {
+    /// Start of the window.
     pub start_utc: DateTime<Utc>,
+    /// End of the window.
     pub end_utc: DateTime<Utc>,
+    /// The time the selection centres on (`selected_index` is the volume nearest it).
     pub anchor_utc: DateTime<Utc>,
+    /// Volumes added on each side of the window.
     pub pad_scans: usize,
+    /// Volumes added before the window, beyond `pad_scans`.
     pub extra_start_scans: usize,
+    /// Volumes added after the window, beyond `pad_scans`.
     pub extra_end_scans: usize,
+    /// The most volumes to select; the newest are kept when there are more.
     pub max_objects: usize,
 }
 
+/// The volumes of a window and the one nearest the anchor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Level2ArchiveWindowSelection {
+    /// The volumes, oldest first.
     pub objects: Vec<S3Object>,
+    /// Index of the volume nearest the anchor time.
     pub selected_index: usize,
 }
 
+/// List a site's archive volumes around a time window ([`select_level2_objects_for_window`] over the dates it spans).
 #[cfg(feature = "net")]
 pub fn level2_objects_for_window(
     site: &str,
@@ -789,6 +885,7 @@ fn level2_window_listing_dates(request: &Level2ArchiveWindowRequest) -> Vec<Naiv
     dates
 }
 
+/// Select a time window's volumes from a listing (no network).
 pub fn select_level2_objects_for_window(
     objects: &[S3Object],
     request: &Level2ArchiveWindowRequest,
@@ -854,6 +951,7 @@ fn object_active_at_or_before(timed: &[(DateTime<Utc>, S3Object)], target: DateT
         .saturating_sub(1)
 }
 
+/// The volume start time encoded in an archive object's file name.
 pub fn level2_object_time_utc(object: &S3Object) -> Option<DateTime<Utc>> {
     parse_level2_object_time_utc(&object.key)
 }
@@ -881,6 +979,7 @@ fn parse_level2_object_time_utc(key: &str) -> Option<DateTime<Utc>> {
     Some(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc))
 }
 
+/// The newest `max_count` archive volumes of a site over the last `days_back` days, newest first.
 #[cfg(feature = "net")]
 pub fn recent_level2_objects(
     site: &str,
@@ -927,6 +1026,7 @@ pub fn recent_level2_objects(
     }
 }
 
+/// [`latest_level2_object`], served from a process-wide cache for up to `max_age`.
 #[cfg(feature = "net")]
 pub fn latest_level2_object_cached(
     site: &str,
@@ -965,6 +1065,7 @@ pub fn latest_level2_object_cached(
     })
 }
 
+/// The newest real-time volume of a site and its chunks.
 #[cfg(feature = "net")]
 pub fn latest_realtime_level2_volume(site: &str) -> Result<RealtimeLevel2Volume> {
     latest_realtime_level2_volume_with_listing_ttl(site, REALTIME_ACTIVE_IDS_LISTING_TTL)
@@ -1272,6 +1373,8 @@ fn validated_realtime_chunk_prefix(
     (prefix, complete)
 }
 
+/// Download the chunks of a real-time volume and join them into one Level II
+/// file in `cache_dir` (kept when it is already there and complete).
 #[cfg(feature = "net")]
 pub fn download_realtime_volume(
     volume: &RealtimeLevel2Volume,
@@ -1462,6 +1565,9 @@ fn finish_realtime_download(
     }
 }
 
+/// Download an archive object into `cache_dir`, named after its key's last
+/// part, unless a file of that name and size is already there. Old files in the
+/// directory are pruned by age and total size.
 #[cfg(feature = "net")]
 pub fn download_object(
     bucket: &str,
@@ -1496,6 +1602,7 @@ pub fn download_object(
     })
 }
 
+/// The newest complete Level II file in a cache directory, by name.
 pub fn newest_cached_level2_path(cache_dir: &Path) -> Result<Option<PathBuf>> {
     if !cache_dir.exists() {
         return Ok(None);

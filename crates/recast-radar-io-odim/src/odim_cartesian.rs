@@ -37,14 +37,23 @@ pub const PROJ_SPHERE_RADIUS_M: f64 = 6_370_997.0;
 
 /// Canonical physical quantity carried by an ODIM Cartesian image.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum OdimCartesianQuantity {
+    /// Reflectivity (`DBZH`, `DBZV`, `DBZ`, `TH`, `TV`), dBZ.
     Reflectivity,
+    /// Differential reflectivity (`ZDR`, `ZDRU`, `UZDR`), dB.
     DifferentialReflectivity,
+    /// Correlation coefficient (`RHOHV`, `RHOHVU`, `URHOHV`).
     CorrelationCoefficient,
+    /// Differential phase (`PHIDP`, `PHIDPU`, `UPHIDP`), degrees.
     DifferentialPhase,
+    /// Specific differential phase (`KDP`, `KDPU`), degrees per km.
     SpecificDifferentialPhase,
+    /// Rain rate (`RATE`), mm/h.
     RainRate,
+    /// Echo top height (`HGHT`), metres.
     EchoTopHeight,
+    /// Any other quantity code, trimmed.
     Other(String),
 }
 
@@ -86,35 +95,49 @@ pub struct OdimCartesianSite {
     pub id: String,
     /// Original ODIM `/what source` string, retained for provenance.
     pub source: String,
+    /// Radar latitude, degrees north.
     pub latitude_deg: f64,
+    /// Radar longitude, degrees east.
     pub longitude_deg: f64,
+    /// Radar height above mean sea level, metres, when the file states it.
     pub height_m: Option<f64>,
 }
 
 /// One geodetic corner from an ODIM Cartesian `where` group.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OdimGeoPoint {
+    /// Latitude, degrees north.
     pub latitude_deg: f64,
+    /// Longitude, degrees east.
     pub longitude_deg: f64,
 }
 
 /// The four named ODIM Cartesian grid corners.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OdimCartesianCorners {
+    /// Corner of the lower-left cell (`LL_lat`, `LL_lon`).
     pub lower_left: OdimGeoPoint,
+    /// Corner of the lower-right cell (`LR_lat`, `LR_lon`).
     pub lower_right: OdimGeoPoint,
+    /// Corner of the upper-left cell (`UL_lat`, `UL_lon`).
     pub upper_left: OdimGeoPoint,
+    /// Corner of the upper-right cell (`UR_lat`, `UR_lon`).
     pub upper_right: OdimGeoPoint,
 }
 
 /// A projection shape the decoder can identify without external PROJ state.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum OdimCartesianProjection {
     /// Spherical azimuthal-equidistant projection centered on one radar.
     AzimuthalEquidistantSphere {
+        /// Latitude of the projection centre, degrees north.
         center_latitude_deg: f64,
+        /// Longitude of the projection centre, degrees east.
         center_longitude_deg: f64,
+        /// Radius of the sphere, metres.
         radius_m: f64,
+        /// The `projdef` PROJ string, as written.
         projdef: String,
     },
 }
@@ -122,12 +145,19 @@ pub enum OdimCartesianProjection {
 /// Cartesian image geometry. Values are stored row-major as `[y, x]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OdimCartesianGeometry {
+    /// Columns (`xsize`).
     pub width: usize,
+    /// Rows (`ysize`).
     pub height: usize,
+    /// Column spacing (`xscale`), metres.
     pub x_spacing_m: f64,
+    /// Row spacing (`yscale`), metres.
     pub y_spacing_m: f64,
+    /// Lowest height the product covers (`minheight`), metres, when stated.
     pub min_height_m: Option<f64>,
+    /// Highest height the product covers (`maxheight`), metres, when stated.
     pub max_height_m: Option<f64>,
+    /// Geodetic corners of the grid.
     pub corners: OdimCartesianCorners,
 }
 
@@ -150,9 +180,13 @@ impl OdimCartesianGeometry {
 /// Raw-to-physical encoding from the selected dataset's `what` group.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OdimCartesianEncoding {
+    /// ODIM `gain`: physical = raw × gain + offset.
     pub gain: f64,
+    /// ODIM `offset`.
     pub offset: f64,
+    /// ODIM `nodata`: the raw value for "not scanned", when stated.
     pub nodata: Option<f64>,
+    /// ODIM `undetect`: the raw value for "scanned, no echo", when stated.
     pub undetect: Option<f64>,
 }
 
@@ -212,13 +246,21 @@ pub struct OdimCartesianGrid {
     pub product: String,
     /// Original ODIM quantity spelling.
     pub quantity_code: String,
+    /// The quantity, classified.
     pub quantity: OdimCartesianQuantity,
+    /// Units of the physical values, when known.
     pub units: Option<String>,
+    /// Start of the product's time window (`startdate`, `starttime`).
     pub start_time: DateTime<Utc>,
+    /// End of the product's time window, when stated.
     pub end_time: Option<DateTime<Utc>>,
+    /// The radar the product belongs to.
     pub site: OdimCartesianSite,
+    /// The grid's map projection.
     pub projection: OdimCartesianProjection,
+    /// Size, spacing and corners of the grid.
     pub geometry: OdimCartesianGeometry,
+    /// How raw values map to physical values.
     pub encoding: OdimCartesianEncoding,
     /// Every root attribute, verbatim: the root group's own
     /// (`Conventions`) and those of `/what`, `/where`, `/how` and any other

@@ -1,5 +1,5 @@
-// Print each sweep's elevation, Nyquist, and near-Nyquist fraction (aliasing
-// pressure) — for understanding cascade-dealias behavior on real volumes.
+//! Print each sweep's elevation, Nyquist, and near-Nyquist fraction (aliasing
+//! pressure) — for understanding cascade-dealias behavior on real volumes.
 
 use recast_radar_core::Quantity;
 

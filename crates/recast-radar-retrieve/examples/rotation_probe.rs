@@ -1,5 +1,5 @@
-// Sanity-check rotation detection on a real volume: prints detected sites.
-// usage: rotation_probe <l2-file>
+//! Sanity-check rotation detection on a real volume: prints detected sites.
+//! usage: rotation_probe <l2-file>
 
 use recast_radar_retrieve::{detect_rotation_sites, rotation_features_per_tilt};
 use std::time::Instant;

@@ -10,6 +10,7 @@
 //! gain * raw + offset with nodata/undetect masked; xradar
 //! `open_odim_datatree` sweep sizes, range and azimuth coordinates).
 
+// A panic is how a test fails (clippy.toml), in helpers too.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use chrono::{TimeZone, Utc};

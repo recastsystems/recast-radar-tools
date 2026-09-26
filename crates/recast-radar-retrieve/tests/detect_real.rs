@@ -7,6 +7,9 @@
 //! from the Py-ART radar position; Py-ART reflectivity statistics for the
 //! clear-air volumes; MetPy sweep counts for the trimmed single-tilt file.
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{array, as_f64, as_str, as_usize, find_case, golden, level2};

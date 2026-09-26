@@ -9,8 +9,8 @@ use recast_radar_core::fm301::{
     ViewWarning,
 };
 use recast_radar_core::model::{
-    ArrayBuf, AttrValue, FieldData, FieldName, GateMapping, RangeCoord, RayAlignment, Scalar,
-    Sweep, SweepError, SweepMode, Volume,
+    ArrayBuf, AttrValue, ExtraVariable, FieldData, FieldName, GateMapping, RangeCoord,
+    RayAlignment, Scalar, Sweep, SweepError, SweepMode, Volume,
 };
 
 /// Decode a corpus file. A file that is neither committed nor cached and
@@ -400,6 +400,53 @@ fn values(group: &fm301::Group<'_>, name: &str) -> ArrayBuf {
         .values
         .materialize()
         .unwrap()
+}
+
+/// A per-ray extra variable follows the view's ray order, and the view does
+/// not trust its `shape`: the model's fields are public, so a caller can set
+/// any shape. Shape `[nrays, u32::MAX]` over `nrays` values made the view
+/// reserve `nrays × u32::MAX` values to reorder the rows, and the process
+/// aborted. The values here are the sweep's own azimuths.
+#[test]
+fn a_per_ray_extra_variable_follows_the_ray_order_whatever_its_shape() {
+    let Some(mut volume) = volume("l2-ktlx-20240315-000217-trim") else {
+        return;
+    };
+    let nrays = u32::try_from(volume.sweeps[0].nrays()).unwrap();
+    let acquired = ArrayBuf::F32(volume.sweeps[0].rays.azimuth_deg.clone());
+    volume.sweeps[0].extra_vars.push(ExtraVariable {
+        name: "azimuth_copy".into(),
+        dims: vec!["time".into()],
+        shape: vec![nrays],
+        values: acquired.clone(),
+        attrs: Vec::new(),
+    });
+    let view = fm301::volume_view(&volume, ViewOptions::XRADAR, None).unwrap();
+    let sweep = view.group("sweep_0").unwrap();
+    let sorted = values(sweep, "azimuth");
+    assert_ne!(sorted, acquired, "the view keeps acquisition order");
+    assert_eq!(values(sweep, "azimuth_copy"), sorted);
+
+    // A shape that does not describe the values: the rows cannot be found,
+    // and the values are kept in source order.
+    for shape in [
+        vec![nrays, u32::MAX],
+        vec![nrays, u32::MAX, u32::MAX, u32::MAX],
+    ] {
+        let Some(extra) = volume.sweeps[0].extra_vars.last_mut() else {
+            panic!("the extra variable is gone");
+        };
+        extra.dims = (0..shape.len())
+            .map(|index| match index {
+                0 => "time".into(),
+                _ => format!("dim_{index}").into(),
+            })
+            .collect();
+        extra.shape = shape;
+        let view = fm301::volume_view(&volume, ViewOptions::XRADAR, None).unwrap();
+        let sweep = view.group("sweep_0").unwrap();
+        assert_eq!(values(sweep, "azimuth_copy"), acquired);
+    }
 }
 
 /// Unmodelled source metadata (`Volume::attrs.other`, `Sweep::other`) is

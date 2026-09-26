@@ -1,5 +1,5 @@
-// Time dealias_velocity on every velocity sweep of a volume.
-// usage: cargo run --release -p recast-radar-correct --example velocity_bench -- <l2-file>
+//! Time dealias_velocity on every velocity sweep of a volume.
+//! usage: cargo run --release -p recast-radar-correct --example velocity_bench -- <l2-file>
 
 use std::path::PathBuf;
 use std::time::Instant;

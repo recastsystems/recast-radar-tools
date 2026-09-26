@@ -113,6 +113,7 @@ impl RdaLogData {
 
 /// Compression type codes (Table XVIV, halfwords 17-18).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RdaLogCompression {
     /// 0.
     #[default]

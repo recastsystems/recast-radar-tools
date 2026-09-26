@@ -8,16 +8,20 @@ description = "Format-sniffing weather radar reader that routes bytes to the rec
 readme.workspace = true
 keywords = ["radar", "weather", "nexrad", "odim", "cfradial"]
 categories = ["science::geo", "parser-implementations"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate, and the examples are
+# developer probes built on dev-dependencies.
+exclude = ["tests/", "examples/"]
 
 [dependencies]
 flate2.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
-recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
-recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
-recast-radar-io-jma = { path = "../recast-radar-io-jma" }
-recast-radar-io-level3 = { path = "../recast-radar-io-level3" }
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
-recast-radar-io-odim = { path = "../recast-radar-io-odim" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
+recast-radar-io-cfradial = { version = "0.1.0", path = "../recast-radar-io-cfradial" }
+recast-radar-io-dorade = { version = "0.1.0", path = "../recast-radar-io-dorade" }
+recast-radar-io-jma = { version = "0.1.0", path = "../recast-radar-io-jma" }
+recast-radar-io-level3 = { version = "0.1.0", path = "../recast-radar-io-level3" }
+recast-radar-io-nexrad = { version = "0.1.0", path = "../recast-radar-io-nexrad" }
+recast-radar-io-odim = { version = "0.1.0", path = "../recast-radar-io-odim" }
 thiserror.workspace = true
 
 [dev-dependencies]
@@ -29,8 +33,10 @@ recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad", features = ["writ
 # Real corpus files (spec section 5) and real-file resource-limit tests
 # (tests/limits_real.rs).
 recast-radar-testdata = { path = "../recast-radar-testdata" }
-# The writer tests' structural diff of two volumes, and
+# The writer tests' structural diff of two volumes (the model serialized to
+# JSON, so the core crate's serde feature), and
 # examples/level2_writer_check.rs (the manifest of written files).
+recast-radar-core = { path = "../recast-radar-core", features = ["serde"] }
 serde_json.workspace = true
 
 [lints]

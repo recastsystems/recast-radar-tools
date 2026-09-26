@@ -49,6 +49,7 @@ const MAX_LISTING_PAGES: usize = 12;
 pub struct GeoSphereProvider;
 
 impl GeoSphereProvider {
+    /// The provider (it keeps no state).
     pub fn new() -> Self {
         Self
     }

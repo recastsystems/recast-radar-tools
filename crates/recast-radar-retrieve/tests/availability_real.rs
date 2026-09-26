@@ -4,6 +4,9 @@
 //! `testdata/golden/retrieve/availability.json` (`tools/retrieve_golden.py
 //! availability`): MetPy's `Level2File` data-block names per sweep.
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{array, as_str, as_usize, find_case, golden, level2};

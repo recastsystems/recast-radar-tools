@@ -26,58 +26,103 @@ const TAIWAN_CWA_HISTORY_API_BASE: &str = "https://opendata.cwa.gov.tw/historyap
 
 /// The product family a gridded source contributes to BowEcho.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum GridProductKind {
+    /// Column-maximum reflectivity.
     MaxReflectivity,
+    /// A reflectivity composite of several radars.
     ReflectivityComposite,
+    /// Instantaneous rain rate.
     RainRate,
+    /// Accumulated precipitation.
     Accumulation,
+    /// Quantitative precipitation estimate.
     Qpe,
+    /// A precipitation nowcast (forecast minutes to hours ahead).
     Nowcast,
+    /// Echo top heights.
     EchoTops,
+    /// A constant-altitude PPI (CAPPI).
     ConstantAltitudePpi,
+    /// Probability of hail.
     HailProbability,
+    /// Storm cell identification and tracking.
     CellTracking,
+    /// Rotation tracks.
     RotationTracks,
+    /// A three-dimensional reflectivity composite.
     ThreeDimensionalComposite,
+    /// Vertically integrated liquid.
     VerticallyIntegratedLiquid,
+    /// Vertical maximum intensity (VMI).
     VerticalMaximumIntensity,
+    /// A composite of the maxima of dual-polarization moments.
     DualPolarizationMaximum,
+    /// Heavy-rain detection.
     HeavyRainDetection,
+    /// Lightning.
     Lightning,
+    /// Status of the radars in the network.
     RadarStatus,
+    /// Cloud cover.
     CloudCover,
+    /// Temperature.
     Temperature,
+    /// Warnings (polygons or regions).
     Warning,
+    /// A discovery or catalog service rather than a product.
     Discovery,
 }
 
 /// Container/transfer format the product is expected to use.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum GridCodec {
+    /// ODIM_H5 Cartesian product.
     OdimH5Grid,
+    /// Cloud-optimized GeoTIFF.
     CloudOptimizedGeoTiff,
+    /// GRIB2.
     Grib2,
+    /// GeoTIFF.
     GeoTiff,
+    /// Another HDF5 grid layout.
     Hdf5Grid,
+    /// netCDF grid.
     NetcdfGrid,
+    /// Zarr store.
     Zarr,
+    /// A georeferenced image (PNG tiles, a world file).
     GeoReferencedImage,
+    /// GeoJSON.
     GeoJson,
+    /// OGC EDR JSON.
     EdrJson,
+    /// JSON from a provider API.
     ApiJson,
+    /// MQTT notifications.
     MqttNotification,
 }
 
 /// How BowEcho should discover or fetch the product once a decoder exists.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum GridAccess {
+    /// An anonymous object-store bucket.
     AnonymousBucket,
+    /// Plain HTTP downloads.
     OpenHttp,
+    /// A REST API.
     RestApi,
+    /// An OGC EDR API.
     EdrApi,
+    /// MQTT.
     Mqtt,
+    /// WebSocket.
     WebSocket,
+    /// OGC WMS or WMTS tiles.
     WmsWmts,
+    /// A download portal (manual or session-based).
     PortalDownload,
 }
 
@@ -85,42 +130,65 @@ pub enum GridAccess {
 /// user-visible ingest: it means the product is known and typed, and still
 /// needs the matching decoder/fetcher before it can be displayed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum GridImplementationStatus {
+    /// Known and typed; no fetcher or decoder yet.
     Catalogued,
+    /// Can be fetched and displayed.
     Fetchable,
+    /// Can be fetched, but needs a decoder that does not exist yet.
     DecoderNeeded,
 }
 
 /// One gridded/composite product available from a provider.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridProduct {
+    /// Stable identifier (`italy-dpc-vmi`).
     pub slug: &'static str,
+    /// Title for menus.
     pub label: &'static str,
+    /// Product family.
     pub kind: GridProductKind,
+    /// Update interval, minutes, when regular.
     pub cadence_minutes: Option<u16>,
+    /// Horizontal resolution, km, when known.
     pub resolution_km: Option<f32>,
+    /// Forecast horizon, hours, for forecast products.
     pub forecast_hours: Option<u16>,
+    /// Formats the product comes in.
     pub codecs: &'static [GridCodec],
+    /// How it is reached.
     pub access: &'static [GridAccess],
+    /// Implementation state.
     pub status: GridImplementationStatus,
+    /// Where the product is published (a short hint).
     pub source_hint: &'static str,
 }
 
 /// Static implementation of the future `GridProductProvider` path.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StaticGridProductProvider {
+    /// Stable identifier of the provider.
     pub id: &'static str,
+    /// Title for menus.
     pub label: &'static str,
+    /// Region covered.
     pub region: &'static str,
+    /// Documentation of the provider's service.
     pub docs_url: &'static str,
+    /// The provider's products.
     pub products: &'static [GridProduct],
 }
 
 /// A source of time-indexed gridded radar products or companion alert layers.
 pub trait GridProductProvider: Send + Sync {
+    /// Stable identifier of the provider.
     fn id(&self) -> &'static str;
+    /// Title for menus.
     fn label(&self) -> &'static str;
+    /// Region covered.
     fn region(&self) -> &'static str;
+    /// The provider's products.
     fn products(&self) -> &'static [GridProduct];
 }
 
@@ -151,17 +219,24 @@ impl GridProductProvider for StaticGridProductProvider {
 /// raw-file endpoint.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ItalyDpcProductSpec {
+    /// The DPC product type (`VMI`, `SRI`, `CUM24`, ...).
     pub product_type: &'static str,
+    /// The matching [`GridProduct`] slug.
     pub slug: &'static str,
 }
 
 /// One Italy DPC WMTS layer available as a Web-Mercator PNG tile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ItalyDpcWmtsLayerSpec {
+    /// Stable key of the layer.
     pub key: &'static str,
+    /// The WMTS layer name.
     pub wmts_layer: &'static str,
+    /// The WMTS style.
     pub style: &'static str,
+    /// The downloadable product type behind the layer, if any.
     pub product_type: Option<&'static str>,
+    /// The matching [`GridProduct`] slug, if any.
     pub product_slug: Option<&'static str>,
 }
 
@@ -396,12 +471,16 @@ fn format_italy_dpc_wmts_time(time: DateTime<Utc>) -> String {
 /// Latest timestamp metadata for one Italy DPC product.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ItalyDpcLatestProduct {
+    /// The DPC product type.
     pub product_type: String,
+    /// Product time, milliseconds since 1970-01-01 UTC.
     pub product_time_millis: i64,
+    /// The product's accumulation period, as DPC writes it.
     pub period: String,
 }
 
 impl ItalyDpcLatestProduct {
+    /// The product time as a date.
     pub fn time_utc(&self) -> Option<DateTime<Utc>> {
         Utc.timestamp_millis_opt(self.product_time_millis).single()
     }
@@ -413,13 +492,21 @@ impl ItalyDpcLatestProduct {
 /// derived from the stable S3 bucket/key and ignores the expiring signature.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ItalyDpcDownloadPlan {
+    /// The DPC product type.
     pub product_type: String,
+    /// Product time, milliseconds since 1970-01-01 UTC.
     pub product_time_millis: i64,
+    /// The product's accumulation period, when there is one.
     pub period: Option<String>,
+    /// S3 bucket of the file.
     pub bucket: String,
+    /// S3 key of the file.
     pub key: String,
+    /// Signed download URL (short-lived).
     pub url: String,
+    /// Seconds until the URL expires, when stated.
     pub expires_seconds: Option<u32>,
+    /// Stable identity of the file (bucket and key), for caches.
     pub identity: String,
 }
 
@@ -592,21 +679,31 @@ struct ItalyDpcDownloadResponse {
 /// west-to-east rows, then south-to-north rows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TaiwanCwaRadarGrid {
+    /// Time of the grid.
     pub time: DateTime<Utc>,
+    /// Columns (west to east).
     pub nx: usize,
+    /// Rows (south to north).
     pub ny: usize,
+    /// Longitude of the lower-left point, degrees east.
     pub start_lon: f32,
+    /// Latitude of the lower-left point, degrees north.
     pub start_lat: f32,
+    /// Grid spacing, degrees.
     pub resolution_deg: f32,
+    /// Units of the values (`dBZ`).
     pub units: String,
+    /// The values, lower-left first, rows west to east, then rows south to north.
     pub values: Vec<f32>,
 }
 
 impl TaiwanCwaRadarGrid {
+    /// The value at column `x`, row `y` (row 0 at the south edge); `None` outside the grid.
     pub fn value_at_source_xy(&self, x: usize, y: usize) -> Option<f32> {
         (x < self.nx && y < self.ny).then(|| self.values[y * self.nx + x])
     }
 
+    /// A stable identity of the grid (dataset and time), for caches.
     pub fn source_identity(&self) -> String {
         format!(
             "taiwan-cwa/{TAIWAN_CWA_DATASET_ID}/{}",
@@ -615,6 +712,7 @@ impl TaiwanCwaRadarGrid {
     }
 }
 
+/// Download and parse the latest Taiwan CWA composite reflectivity grid (dataset O-A0059-001).
 #[cfg(feature = "net")]
 pub fn taiwan_cwa_latest_radar_grid() -> Result<TaiwanCwaRadarGrid, String> {
     let url = taiwan_cwa_latest_json_url();
@@ -623,6 +721,7 @@ pub fn taiwan_cwa_latest_radar_grid() -> Result<TaiwanCwaRadarGrid, String> {
     parse_taiwan_cwa_latest_json(&text)
 }
 
+/// URL of the latest O-A0059-001 grid, as JSON (key from `CWA_AUTHORIZATION`, else the public demo key).
 pub fn taiwan_cwa_latest_json_url() -> String {
     format!(
         "{TAIWAN_CWA_FILE_API_BASE}/{TAIWAN_CWA_DATASET_ID}?Authorization={}&format=JSON",
@@ -630,6 +729,7 @@ pub fn taiwan_cwa_latest_json_url() -> String {
     )
 }
 
+/// URL of the O-A0059-001 history metadata.
 pub fn taiwan_cwa_history_metadata_url() -> String {
     format!(
         "{TAIWAN_CWA_HISTORY_API_BASE}/getMetadata/{TAIWAN_CWA_DATASET_ID}?Authorization={}",
@@ -644,6 +744,7 @@ fn taiwan_cwa_authorization() -> String {
         .unwrap_or_else(|| TAIWAN_CWA_DEFAULT_AUTHORIZATION.to_owned())
 }
 
+/// Parse the latest-grid JSON of dataset O-A0059-001.
 pub fn parse_taiwan_cwa_latest_json(text: &str) -> Result<TaiwanCwaRadarGrid, String> {
     let payload: TaiwanCwaLatestPayload = serde_json::from_str(text)
         .map_err(|err| format!("Taiwan CWA latest radar JSON parse failed: {err}"))?;
@@ -676,6 +777,7 @@ pub fn parse_taiwan_cwa_latest_json(text: &str) -> Result<TaiwanCwaRadarGrid, St
     })
 }
 
+/// The product URLs listed in O-A0059-001 history metadata XML.
 pub fn parse_taiwan_cwa_history_product_urls(text: &str) -> Result<Vec<String>, String> {
     use quick_xml::Reader;
     use quick_xml::events::Event;
@@ -714,6 +816,7 @@ pub fn parse_taiwan_cwa_history_product_urls(text: &str) -> Result<Vec<String>, 
     Ok(urls)
 }
 
+/// Whether a CWA grid value means no data (NaN, -99 or -999).
 pub fn taiwan_cwa_is_nodata(value: f32) -> bool {
     !value.is_finite() || (value + 99.0).abs() < 0.01 || (value + 999.0).abs() < 0.01
 }

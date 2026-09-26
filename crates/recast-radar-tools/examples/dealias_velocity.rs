@@ -1,11 +1,11 @@
-// Dealias (unfold) the Doppler velocity of every sweep in a Level II file.
-//
-// cargo run --release -p recast-radar-tools --example dealias_velocity -- <level2-file>
+//! Dealias (unfold) the Doppler velocity of every sweep in a Level II file.
+//!
+//! cargo run --release -p recast-radar-tools --example dealias_velocity -- <level2-file>
 
 use std::error::Error;
 use std::path::PathBuf;
 
-use recast_radar_tools::core::Quantity;
+use recast_radar_tools::model::Quantity;
 use recast_radar_tools::{correct, nexrad};
 
 fn main() -> Result<(), Box<dyn Error>> {

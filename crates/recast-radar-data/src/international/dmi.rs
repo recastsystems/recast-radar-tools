@@ -63,6 +63,7 @@ pub struct DmiProvider {
 }
 
 impl DmiProvider {
+    /// A provider with an empty site cache; nothing is fetched until it is used.
     pub fn new() -> Self {
         Self {
             sites: SiteCache::new(),

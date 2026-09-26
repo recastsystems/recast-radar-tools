@@ -11,6 +11,7 @@ use recast_radar_core::{Field, FieldName};
 
 use crate::physical_field_like;
 
+/// `newer - older`, gate by gate, named `output`; `None` when the geometries differ.
 pub fn difference(newer: &Field, older: &Field, output: FieldName) -> Option<Field> {
     binary_field(newer, older, output, |new, old| new - old)
 }
@@ -29,14 +30,17 @@ pub fn trend(
     binary_field(newer, older, output, |new, old| (new - old) / hours)
 }
 
+/// The largest value of each gate over `fields`, named `output`; `None` when the geometries differ.
 pub fn maximum_swath(fields: &[&Field], output: FieldName) -> Option<Field> {
     aggregate_field(fields, output, Aggregate::Maximum)
 }
 
+/// The smallest value of each gate over `fields`, named `output`; `None` when the geometries differ.
 pub fn minimum_swath(fields: &[&Field], output: FieldName) -> Option<Field> {
     aggregate_field(fields, output, Aggregate::Minimum)
 }
 
+/// The mean of each gate over `fields`, named `output`; `None` when the geometries differ.
 pub fn mean(fields: &[&Field], output: FieldName) -> Option<Field> {
     aggregate_field(fields, output, Aggregate::Mean)
 }

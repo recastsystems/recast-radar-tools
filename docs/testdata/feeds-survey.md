@@ -38,7 +38,7 @@ part of gap G12. Two questions were asked:
 - **recast-radar-data changes**: a reader for GR2Analyst polling directories (`polling`: `dir.list`,
   `config.cfg`; listed names that are not plain file names are refused; a root whose `grlevel2.cfg` names
   one site stands for that site; the same API as the `frontends` branch's module, so the two merge into
-  this one, and a `polling_listing` fuzz target), six live ORD radars added to the ORD site table
+  this one, and a `polling-listing` fuzz target), six live ORD radars added to the ORD site table
   (Iceland's mobile `isx2`, which gets no advertised position, and five more),
   `DwdProvider::filtered_reflectivity(true)` (DWD's clutter-filtered DBZH; tested on real Borkum
   listings), `OrdProvider::velocity_scan_only(true)` (a site's velocity scan alone: for Belgium's `bejab`
@@ -229,7 +229,7 @@ review before publishing): the KXWA volume, checksum-pinned and not committed, a
 records, committed (181,437 bytes), which are the one `derived_from` prefix; and three polling-directory
 captures, committed (43 KB: ND SWC's KXWA `dir.list`, the Iowa Environmental Mesonet's root `config.cfg`
 and the Laredo EWR root's `grlevel2.cfg`), which recast-radar-data's polling tests and the
-`polling_listing` fuzz seeds read. Known failure 2 is a tag on the TAKA member of
+`polling-listing` fuzz seeds read. Known failure 2 is a tag on the TAKA member of
 `testdata/other/manifest.toml`. `crates/recast-radar-data/tests/feeds_known_failures.rs` checks each
 failure. For KXWA it pins what an independent reader makes of the same bytes (its `golden` module:
 Py-ART 2.3.0's rays per sweep of the whole volume and of the committed head, printed by
@@ -266,7 +266,7 @@ Changes in `recast-radar-data` (this stream):
   so a hostile `dir.list` cannot steer a request or a local file name with `\`, `/`, `?`, `#`, `%` or
   `:`, open a Windows device, or make two listed names one local file; a byte-order mark is ignored in a
   site configuration as in a listing. Tests on the committed ND SWC, IEM and Laredo captures
-  (`testdata/files/other/polling/`); a `polling_listing` fuzz target (same name and wrapper as
+  (`testdata/files/other/polling/`); a `polling-listing` fuzz target (same name and wrapper as
   `frontends`'; it also checks that no two usable names differ only in case), whose seeds are those three
   captures.
 - Provider options are chainable setters that take a `bool` and apply in any order
@@ -366,7 +366,7 @@ cargo run --release -p recast-radar-data --example feeds_survey -- ~/radar-corpu
 # the known failures
 cargo test --release -p recast-radar-data --test feeds_known_failures
 # the polling parsers' fuzz target, from fuzz/ (Linux or nexbench, nightly, cargo-fuzz; seeds from `fuzz-tools seeds`)
-cargo +nightly fuzz run polling_listing seeds/polling_listing -- -max_total_time=300
+cargo +nightly fuzz run polling-listing seeds/polling-listing -- -max_total_time=300
 ```
 
 The Python side (`tools/feeds_survey/`, run with `~/radar-ref-venv`; `common.py` lists the

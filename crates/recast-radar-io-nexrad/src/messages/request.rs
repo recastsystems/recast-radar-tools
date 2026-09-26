@@ -29,6 +29,7 @@ impl RequestForData {
 /// Data request type codes (Table XIII, halfword 1): one bit from 0 to 5 plus
 /// bit 7.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum DataRequestType {
     /// 129: summary RDA status (message 2).
     RdaStatus,

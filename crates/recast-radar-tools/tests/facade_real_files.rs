@@ -7,7 +7,7 @@
 
 use std::error::Error;
 
-use recast_radar_tools::core::{Field, Quantity, Sweep, Volume};
+use recast_radar_tools::model::{Field, Quantity, Sweep, Volume};
 use recast_radar_tools::{correct, filters, io, map, odim};
 
 type TestResult = Result<(), Box<dyn Error>>;

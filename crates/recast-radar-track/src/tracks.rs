@@ -85,6 +85,7 @@ const AZ_BINS: usize = 1440;
 /// magenta at 0.02 s⁻¹ (brackets the strong-mesocyclone azimuthal-shear range
 /// of the MRMS rotation-track display; Mahalik et al. 2019).
 pub const TRACK_DISPLAY_FLOOR_E3: f32 = 3.0;
+/// Top of the display ramp, ×10⁻³ s⁻¹ (0.02 s⁻¹).
 pub const TRACK_DISPLAY_CEIL_E3: f32 = 20.0;
 
 /// TDS criteria (Ryzhkov et al. 2005; Van Den Broeke & Jauernic 2014):
@@ -93,8 +94,11 @@ pub const TRACK_DISPLAY_CEIL_E3: f32 = 20.0;
 /// "significant azimuthal shear" requirement — debris-like dual-pol values
 /// without a vortex (hail cores, biota) must not flag.
 pub const TDS_CC_MAX: f32 = 0.82;
+/// TDS criterion: the gate's reflectivity is at least this, dBZ.
 pub const TDS_MIN_DBZ: f32 = 30.0;
+/// TDS criterion: the gate lies within this distance of a detected circulation, km.
 pub const TDS_ANCHOR_RADIUS_KM: f64 = 5.0;
+/// TDS criterion: that circulation has at least this 3-D rank.
 pub const TDS_ANCHOR_MIN_RANK: u8 = 3;
 /// Debris is a low-level signature (median TDS heights are well below
 /// 1.5 km AGL; Van Den Broeke & Jauernic 2014) — gates whose beam center
@@ -108,7 +112,9 @@ const MAX_TDS_GATES: usize = 4_096;
 /// AEQD placement applies).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TracksGridSpec {
+    /// Half the side of the square grid, km.
     pub half_extent_km: f32,
+    /// Side of one grid cell, km.
     pub cell_km: f32,
 }
 
@@ -306,9 +312,13 @@ pub fn rotation_track_color(shear_e3: f32) -> [u8; 4] {
 /// One TDS-flagged gate (planar ENU km about the radar).
 #[derive(Clone, Copy, Debug)]
 pub struct TdsGate {
+    /// Km east of the radar.
     pub east_km: f32,
+    /// Km north of the radar.
     pub north_km: f32,
+    /// Correlation coefficient of the gate.
     pub cc: f32,
+    /// Reflectivity of the gate, dBZ.
     pub dbz: f32,
 }
 

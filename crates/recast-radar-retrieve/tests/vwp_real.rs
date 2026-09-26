@@ -7,6 +7,9 @@
 //! velocity, plus Py-ART's own `vad_browning` wind on the same tilt, and the
 //! DORADE walker's geometry for the sector scan.
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{

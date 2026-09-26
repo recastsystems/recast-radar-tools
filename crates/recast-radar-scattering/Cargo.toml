@@ -5,9 +5,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Typed, validated radar-scattering primitives and offline LUTs"
-readme = "README.md"
 keywords = ["radar", "scattering", "t-matrix", "microphysics", "polarimetric"]
 categories = ["science", "science::geo", "simulation"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate, and the examples are
+# developer probes built on dev-dependencies; tools/ holds the offline
+# PyTMatrix table generator.
+exclude = ["tests/", "examples/", "tools/"]
 
 [dependencies]
 serde.workspace = true

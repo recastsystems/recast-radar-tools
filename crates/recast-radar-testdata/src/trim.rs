@@ -162,6 +162,7 @@ enum Slot {
 
 /// Why a volume could not be trimmed.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum TrimError {
     /// Reading or decompressing the input failed.
     Io(io::Error),
@@ -249,6 +250,7 @@ impl From<io::Error> for TrimError {
 
 /// Whole-file compression of the source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Container {
     /// No whole-file compression.
     None,
@@ -260,11 +262,33 @@ pub enum Container {
 
 /// How the source stores its messages after the volume header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Framing {
     /// LDM records: control word + bzip2 stream.
     LdmRecords,
     /// Uncompressed messages.
     Messages,
+}
+
+impl Container {
+    /// Short description for reports (`"gzip"`, `"bzip2"`, ...).
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::None => "no whole-file compression",
+            Self::Gzip => "gzip",
+            Self::Bzip2 => "bzip2",
+        }
+    }
+}
+
+impl Framing {
+    /// Short description for reports (`"LDM bzip2 records"`, ...).
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::LdmRecords => "LDM bzip2 records",
+            Self::Messages => "uncompressed messages",
+        }
+    }
 }
 
 /// A trimmed volume.

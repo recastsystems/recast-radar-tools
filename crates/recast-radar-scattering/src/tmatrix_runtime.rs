@@ -36,41 +36,64 @@ const RAIN_LUT_TEMPERATURE_EDGE_TOLERANCE_K: f64 = 0.1;
 
 /// Microphysics family and exact native category represented by a table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TMatrixParticleCategory {
+    /// A conventional hydrometeor category.
     Conventional(ConventionalHydrometeor),
     /// Characteristic-particle node explicitly shared by closed P3 and
     /// ISHMAEL states; this is not a conventional-category alias or PSD.
     PropertyAwareFrozenCharacteristicParticle,
 }
 
+/// The population a table serves.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TMatrixPopulationRole {
+    /// An ordinary conventional category.
     OrdinaryConventional,
+    /// Conventional rain, both on its own and as the rain left over after wet pairing.
     ConventionalRainStandaloneAndResidual,
+    /// Dry frozen characteristic particles, indexed by their properties.
     PropertyAwareDryCharacteristicParticle,
+    /// Wet (melting) characteristic particles, indexed by their properties.
     PropertyAwareWetCharacteristicParticle,
 }
 
+/// The particle densities a table applies to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum DensityApplicability {
+    /// The category's own density.
     ConventionalCategory,
+    /// Dry bulk density from 1.5 to 917 kg m⁻³, above the 1.225 kg m⁻³ air density.
     DryBulkDensity15To917KgM3Above1225Air,
+    /// Condensed volume fraction from 0.0015 to 1, with the density above the 1.225 kg m⁻³ air density.
     WetCondensedVolumeFraction00015To1Above1225Air,
 }
 
+/// How the generator ran PyTMatrix.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TMatrixExecutionDescriptor {
+    /// A fresh process for every grid point.
     FreshProcessPerGridPoint,
+    /// A fresh process for each group of points that share a material state.
     FreshProcessPerMaterialStateGroup {
+        /// The axes that define the material state.
         material_state_axes: Vec<AxisKind>,
+        /// The axes that define the T-matrix state.
         tmatrix_state_axes: Vec<AxisKind>,
+        /// The geometry axis.
         geometry_axis: AxisKind,
+        /// Most points one process evaluates.
         maximum_points_per_process: u32,
+        /// Time limit of a group, seconds.
         group_timeout_seconds: u64,
     },
 }
 
 impl TMatrixParticleCategory {
+    /// The microphysics family of a conventional category.
     #[must_use]
     pub const fn conventional_family(self) -> Option<MicrophysicsFamily> {
         match self {
@@ -82,6 +105,7 @@ impl TMatrixParticleCategory {
 
 /// Geometric meaning of the table's minor-to-major aspect-ratio coordinate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SpheroidConvention {
     /// Rotational axis is the minor axis. PyTMatrix receives
     /// `horizontal/rotational = 1 / minor_to_major`.
@@ -92,6 +116,7 @@ pub enum SpheroidConvention {
 }
 
 impl SpheroidConvention {
+    /// The axis ratio PyTMatrix takes (horizontal over rotational) for a minor-to-major ratio in (0, 1].
     pub fn pytmatrix_axis_ratio(self, minor_to_major: f64) -> Result<f64, EvaluationError> {
         if !(minor_to_major.is_finite() && 0.0 < minor_to_major && minor_to_major <= 1.0) {
             return Err(EvaluationError::InvalidQuery {
@@ -106,62 +131,104 @@ impl SpheroidConvention {
     }
 }
 
+/// A complex refractive index.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ComplexRefractiveIndex {
+    /// Real part.
     pub real: f64,
+    /// Imaginary part.
     pub imaginary: f64,
 }
 
+/// A homogeneous material.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum HomogeneousMaterial {
+    /// Liquid water.
     LiquidWater,
+    /// Ice.
     Ice,
 }
 
 /// Exact dielectric/material topology used at generation time.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum TMatrixMaterial {
+    /// One homogeneous material.
     Homogeneous {
+        /// The material.
         material: HomogeneousMaterial,
+        /// Its refractive index.
         refractive_index: ComplexRefractiveIndex,
+        /// Its density, kg m⁻³.
         mass_density_kg_m3: f64,
+        /// The temperature the refractive index is for, K.
         temperature_k: f64,
     },
+    /// Ice with liquid water inclusions, by the Maxwell Garnett rule.
     MaxwellGarnettIceHostWaterInclusion {
+        /// Refractive index of ice.
         ice_refractive_index: ComplexRefractiveIndex,
+        /// Refractive index of liquid water.
         liquid_water_refractive_index: ComplexRefractiveIndex,
+        /// Density of ice, kg m⁻³.
         ice_density_kg_m3: f64,
+        /// Density of liquid water, kg m⁻³.
         liquid_water_density_kg_m3: f64,
+        /// The temperature the refractive indices are for, K.
         temperature_k: f64,
     },
+    /// A spherical air, ice and water mixture, by the symmetric Bruggeman rule.
     SymmetricBruggemanSphericalAirIceWaterV1 {
+        /// Relative permittivity of air.
         air_relative_permittivity: ComplexRefractiveIndex,
+        /// The ice permittivity model.
         ice_permittivity_model: String,
+        /// The liquid water permittivity model.
         liquid_water_permittivity_model: String,
+        /// How the ice temperature is treated.
         ice_temperature_treatment: String,
+        /// Density of solid ice, kg m⁻³.
         ice_material_density_kg_m3: f64,
+        /// Density of liquid water, kg m⁻³.
         liquid_water_density_kg_m3: f64,
+        /// Homotopy steps of the solver.
         homotopy_steps: u32,
+        /// Newton iterations allowed.
         newton_max_iterations: u32,
+        /// Newton relative tolerance.
         newton_relative_tolerance: f64,
+        /// Temperatures the table covers, K.
         temperature_range_k: [f64; 2],
     },
+    /// A spherical air and ice mixture, by the symmetric Bruggeman rule with Mätzler (2006) ice.
     SymmetricBruggemanSphericalAirIceMatzler2006V1 {
+        /// Relative permittivity of air.
         air_relative_permittivity: ComplexRefractiveIndex,
+        /// Density of solid ice, kg m⁻³.
         ice_material_density_kg_m3: f64,
+        /// Homotopy steps of the solver.
         homotopy_steps: u32,
+        /// Newton iterations allowed.
         newton_max_iterations: u32,
+        /// Newton relative tolerance.
         newton_relative_tolerance: f64,
+        /// Temperatures the table covers, K.
         temperature_range_k: [f64; 2],
     },
+    /// Liquid water with the temperature-dependent Liebe (1991) permittivity.
     TemperatureDependentLiquidWaterLiebe1991 {
+        /// Density, kg m⁻³.
         mass_density_kg_m3: f64,
+        /// Temperatures the table covers, K.
         temperature_range_k: [f64; 2],
+        /// Frequencies the table covers, Hz.
         frequency_range_hz: [f64; 2],
     },
 }
 
 impl TMatrixMaterial {
+    /// The temperature the material is fixed at, when it has one.
     #[must_use]
     pub const fn fixed_temperature_k(&self) -> Option<f64> {
         match self {
@@ -178,15 +245,24 @@ impl TMatrixMaterial {
 
 /// The exact orientation integration represented by each LUT value.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum TMatrixOdfConvention {
+    /// Every particle aligned with the vertical.
     FixedAlignedVertical {
+        /// PyTMatrix α angle, degrees.
         pytmatrix_alpha_deg: f64,
+        /// PyTMatrix β angle, degrees.
         pytmatrix_beta_deg: f64,
     },
+    /// Gaussian canting.
     GaussianCanting {
+        /// Mean canting angle, degrees.
         mean_deg: f64,
+        /// Standard deviation, degrees.
         standard_deviation_deg: f64,
+        /// Quadrature points in α.
         alpha_quadrature_points: u16,
+        /// Quadrature points in β.
         beta_quadrature_points: u16,
     },
 }
@@ -215,6 +291,7 @@ impl TMatrixOdfConvention {
 
 /// The only radar-basis convention accepted by this schema-v1 runtime.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RadarHvConvention {
     /// PyTMatrix horizontal back/forward geometries, with complex covariance
     /// `HH * conjugate(VV)` and phase supplied by `delta_hv`.
@@ -229,6 +306,7 @@ pub struct RadarViewGeometry {
 }
 
 impl RadarViewGeometry {
+    /// A view at a beam elevation in [-90, 90] degrees.
     pub fn new(beam_elevation_deg: f64) -> Result<Self, EvaluationError> {
         if !beam_elevation_deg.is_finite() || !(-90.0..=90.0).contains(&beam_elevation_deg) {
             return Err(EvaluationError::InvalidQuery {
@@ -239,6 +317,7 @@ impl RadarViewGeometry {
         Ok(Self { beam_elevation_deg })
     }
 
+    /// A horizontal view.
     #[must_use]
     pub const fn horizontal() -> Self {
         Self {
@@ -246,30 +325,42 @@ impl RadarViewGeometry {
         }
     }
 
+    /// Beam elevation, degrees.
     #[must_use]
     pub const fn beam_elevation_deg(self) -> f64 {
         self.beam_elevation_deg
     }
 }
 
+/// The beam views a table applies to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RadarViewApplicability {
+    /// Horizontal only: a single 0° elevation coordinate.
     HorizontalSingletonZeroDegreeAxis,
+    /// PPI elevations from -0.5° to 20° with an axisymmetric Gaussian orientation.
     PpiElevationAxisMinus05To20AxisymmetricGaussian,
 }
 
+/// The radar conventions of a table.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RadarConventionDescriptor {
+    /// The H/V basis convention.
     pub convention: RadarHvConvention,
+    /// The beam views the table applies to.
     pub view_applicability: RadarViewApplicability,
+    /// The |K|² reference water dielectric factor.
     pub reference_water_dielectric_factor_squared: f64,
+    /// The T-matrix solver's `ddelt` accuracy.
     pub solver_ddelt: f64,
+    /// The T-matrix solver's `ndgs` quadrature divisions.
     pub solver_ndgs: u32,
 }
 
 /// Policy for the small discontinuity where the piecewise Schiller-Naumann
 /// drag approximation switches to its constant high-Reynolds drag value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum DragTransitionBoundaryPolicy {
     /// Select the exact transition-Reynolds speed when the one-sided drag
     /// residuals straddle zero and the piecewise approximation has no exact
@@ -282,21 +373,36 @@ pub enum DragTransitionBoundaryPolicy {
 /// stored moments with the closed or diagnosed category's positive-downward
 /// fall speed before number-density scaling.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum TerminalSpeedPolicy {
+    /// The Atlas et al. (1973) exponential rain law, `v = a - b exp(-c D)`.
     AtlasRain1973Exponential {
+        /// Coefficient a, m s⁻¹.
         a_m_s: f64,
+        /// Coefficient b, m s⁻¹.
         b_m_s: f64,
+        /// Coefficient c, mm⁻¹.
         c_per_mm: f64,
+        /// Diameters the law applies to, m.
         valid_diameter_range_m: [f64; 2],
     },
+    /// Gravity balanced against Schiller-Naumann drag.
     SchillerNaumannGravityDrag {
+        /// Gravitational acceleration, m s⁻².
         gravity_m_s2: f64,
+        /// Air density, kg m⁻³.
         air_density_kg_m3: f64,
+        /// Dynamic viscosity of air, Pa s.
         air_dynamic_viscosity_pa_s: f64,
+        /// Reynolds number where the drag approximation switches to a constant.
         drag_transition_reynolds: f64,
+        /// The constant drag coefficient above that Reynolds number.
         high_reynolds_drag_coefficient: f64,
+        /// Treatment of the switch.
         drag_transition_boundary_policy: DragTransitionBoundaryPolicy,
+        /// Iterations allowed.
         maximum_iterations: u32,
+        /// Relative tolerance.
         relative_tolerance: f64,
     },
 }
@@ -319,56 +425,67 @@ pub struct TMatrixTableDescriptor {
 }
 
 impl TMatrixTableDescriptor {
+    /// Identifier of the table.
     #[must_use]
     pub fn table_id(&self) -> &str {
         &self.table_id
     }
 
+    /// The category the table represents.
     #[must_use]
     pub const fn category(&self) -> TMatrixParticleCategory {
         self.category
     }
 
+    /// The population the table serves.
     #[must_use]
     pub const fn population_role(&self) -> TMatrixPopulationRole {
         self.population_role
     }
 
+    /// The densities the table applies to.
     #[must_use]
     pub const fn density_applicability(&self) -> DensityApplicability {
         self.density_applicability
     }
 
+    /// The spheroid convention.
     #[must_use]
     pub const fn spheroid(&self) -> SpheroidConvention {
         self.spheroid
     }
 
+    /// The material.
     #[must_use]
     pub const fn material(&self) -> &TMatrixMaterial {
         &self.material
     }
 
+    /// The orientation distribution.
     #[must_use]
     pub const fn odf(&self) -> &TMatrixOdfConvention {
         &self.odf
     }
 
+    /// The radar conventions.
     #[must_use]
     pub const fn radar(&self) -> &RadarConventionDescriptor {
         &self.radar
     }
 
+    /// The terminal-speed law of the generator.
     #[must_use]
     pub const fn terminal_speed(&self) -> &TerminalSpeedPolicy {
         &self.terminal_speed
     }
 
+    /// How the generator ran.
     #[must_use]
     pub const fn execution(&self) -> &TMatrixExecutionDescriptor {
         &self.execution
     }
 
+    /// The number concentration each table value is normalized to, m⁻³.
     #[must_use]
     pub const fn normalization_number_concentration_m3(&self) -> f64 {
         self.normalization_number_concentration_m3
@@ -463,6 +580,7 @@ impl PreparedTMatrixParticleNode {
         &self.coordinates
     }
 
+    /// Positive-down terminal speed bound to the node, m s⁻¹.
     #[must_use]
     pub const fn positive_down_fall_speed_m_s(&self) -> f64 {
         self.positive_down_fall_speed_m_s
@@ -476,6 +594,10 @@ enum ParticleNodeTerminalSpeedValidation {
 }
 
 impl TMatrixParticleNodeQuery {
+    /// A query from temperature (K), equal-volume diameter (m), bulk density
+    /// (kg m⁻³), minor-to-major axis ratio, habit, optional rime mass fraction and
+    /// rime density, positive-down fall speed (m s⁻¹) and its provenance,
+    /// orientation and request.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         temperature_k: f64,
@@ -553,6 +675,7 @@ impl TMatrixParticleNodeQuery {
         })
     }
 
+    /// A query for a PSD node at a temperature (K) with a fall speed, its provenance, an orientation and a request.
     pub fn from_psd_node(
         node: &PsdParticleNode,
         temperature_k: f64,
@@ -576,56 +699,67 @@ impl TMatrixParticleNodeQuery {
         )
     }
 
+    /// Temperature, K.
     #[must_use]
     pub const fn temperature_k(&self) -> f64 {
         self.temperature_k
     }
 
+    /// Diameter of the sphere of equal volume, m.
     #[must_use]
     pub const fn equivolume_diameter_m(&self) -> f64 {
         self.equivolume_diameter_m
     }
 
+    /// Bulk density, kg m⁻³.
     #[must_use]
     pub const fn bulk_density_kg_m3(&self) -> f64 {
         self.bulk_density_kg_m3
     }
 
+    /// Ratio of minor to major axis.
     #[must_use]
     pub const fn minor_to_major_axis_ratio(&self) -> f64 {
         self.minor_to_major_axis_ratio
     }
 
+    /// Oblate, prolate or spherical.
     #[must_use]
     pub const fn habit(&self) -> PsdSpheroidHabit {
         self.habit
     }
 
+    /// Rime mass fraction, for rimed ice.
     #[must_use]
     pub const fn rime_mass_fraction(&self) -> Option<f64> {
         self.rime_mass_fraction
     }
 
+    /// Rime density, kg m⁻³, for rimed ice.
     #[must_use]
     pub const fn rime_density_kg_m3(&self) -> Option<f64> {
         self.rime_density_kg_m3
     }
 
+    /// Positive-down fall speed, m s⁻¹.
     #[must_use]
     pub const fn positive_down_fall_speed_m_s(&self) -> f64 {
         self.positive_down_fall_speed_m_s
     }
 
+    /// Provenance of the fall speed.
     #[must_use]
     pub const fn fall_speed(&self) -> PsdFallSpeedProvenance {
         self.fall_speed
     }
 
+    /// The orientation distribution.
     #[must_use]
     pub const fn orientation(&self) -> &OrientationModel {
         &self.orientation
     }
 
+    /// The request.
     #[must_use]
     pub const fn request(&self) -> TMatrixEvaluationRequest {
         self.request
@@ -635,18 +769,27 @@ impl TMatrixParticleNodeQuery {
 /// Auditable conversion from a closure's per-dry-air number to the number
 /// density used to scale a per-1-m3 monodisperse table node.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum NumberScalingPolicy {
+    /// Number per kg of air times the air density.
     ClosedCategoryNumberPerKgTimesAirDensity,
+    /// The frozen particle number is kept for the wet category.
     PreserveFrozenParticleNumberForWetCategory,
+    /// The rain distribution's shape and scale are kept; number scales with the residual mass fraction.
     PreserveRainPsdShapeScaleNumberByResidualMassFraction,
 }
 
+/// How the fall-speed moments of a contribution are formed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum FallMomentPolicy {
+    /// The closed category's positive-down fall speed, with no variance within the category.
     ClosedCategoryPositiveDownZeroWithinCategoryVariance,
+    /// The diagnosed wet category's positive-down fall speed, with no variance within the category.
     DiagnosticWetCategoryPositiveDownZeroWithinCategoryVariance,
 }
 
+/// A table value scaled to a population, with how it was scaled.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScaledScatteringContribution {
     additive: AdditiveScattering,
@@ -658,31 +801,37 @@ pub struct ScaledScatteringContribution {
 }
 
 impl ScaledScatteringContribution {
+    /// The scaled additive scattering.
     #[must_use]
     pub const fn additive(self) -> AdditiveScattering {
         self.additive
     }
 
+    /// Number density used, m⁻³.
     #[must_use]
     pub const fn number_density_m3(self) -> f64 {
         self.number_density_m3
     }
 
+    /// Mixing ratio the contribution represents, kg kg⁻¹.
     #[must_use]
     pub const fn represented_mixing_ratio_kgkg(self) -> f64 {
         self.represented_mixing_ratio_kgkg
     }
 
+    /// Liquid mass paired into it, kg kg⁻¹.
     #[must_use]
     pub const fn consumed_paired_liquid_mass_kgkg(self) -> f64 {
         self.consumed_paired_liquid_mass_kgkg
     }
 
+    /// How the number density was obtained.
     #[must_use]
     pub const fn number_scaling(self) -> NumberScalingPolicy {
         self.number_scaling
     }
 
+    /// How the fall moments were formed.
     #[must_use]
     pub const fn fall_moments(self) -> FallMomentPolicy {
         self.fall_moments
@@ -690,6 +839,7 @@ impl ScaledScatteringContribution {
 }
 
 impl TMatrixEvaluationRequest {
+    /// A request from a positive frequency (Hz), a spheroid convention and a view.
     pub fn new(
         frequency_hz: f64,
         spheroid: SpheroidConvention,
@@ -708,16 +858,19 @@ impl TMatrixEvaluationRequest {
         })
     }
 
+    /// Radar frequency, Hz.
     #[must_use]
     pub const fn frequency_hz(self) -> f64 {
         self.frequency_hz
     }
 
+    /// The spheroid convention.
     #[must_use]
     pub const fn spheroid(self) -> SpheroidConvention {
         self.spheroid
     }
 
+    /// The view geometry.
     #[must_use]
     pub const fn view(self) -> RadarViewGeometry {
         self.view
@@ -764,16 +917,19 @@ impl ResearchTMatrixLut {
         })
     }
 
+    /// The descriptor.
     #[must_use]
     pub const fn descriptor(&self) -> &TMatrixTableDescriptor {
         &self.descriptor
     }
 
+    /// SHA-256 of the table file.
     #[must_use]
     pub const fn file_sha256(&self) -> Sha256Digest {
         self.file_sha256
     }
 
+    /// The underlying LUT.
     #[must_use]
     pub const fn offline_lut(&self) -> &OfflineLut {
         &self.lut
@@ -1811,197 +1967,350 @@ fn schiller_naumann_terminal_speed_m_s(
     })
 }
 
+/// Why a research T-matrix table could not be loaded.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum TMatrixLoadError {
+    /// The file's SHA-256 is not the one expected.
     #[error("whole LUT SHA-256 mismatch: expected {expected}, got {actual}")]
     FileDigestMismatch {
+        /// The digest expected.
         expected: Sha256Digest,
+        /// The file's digest.
         actual: Sha256Digest,
     },
+    /// The external generator configuration differs from the one in the file.
     #[error("external generator config bytes differ from the exact bytes embedded in the LUT")]
     ExternalConfigBytesMismatch,
+    /// The generator configuration is not valid schema-v1 JSON.
     #[error("generator config is not strict schema-v1 JSON: {0}")]
     GeneratorConfigJson(#[source] serde_json::Error),
+    /// A generator configuration field is unsupported or inconsistent.
     #[error("unsupported or inconsistent generator config field {field}: {detail}")]
-    InvalidConfig { field: &'static str, detail: String },
+    InvalidConfig {
+        /// Which field.
+        field: &'static str,
+        /// What is wrong.
+        detail: String,
+    },
+    /// A configuration axis differs from the header's.
     #[error("generator config axis {index} does not exactly match the LUT header")]
-    AxisMismatch { index: usize },
+    AxisMismatch {
+        /// Position of the axis.
+        index: usize,
+    },
+    /// The configuration and the header have different axis counts.
     #[error("generator config has {config} axes but the LUT header has {header}")]
-    AxisCountMismatch { config: usize, header: usize },
+    AxisCountMismatch {
+        /// Axes in the configuration.
+        config: usize,
+        /// Axes in the header.
+        header: usize,
+    },
+    /// The configuration's science metadata differs from the header's.
     #[error("generator config science does not exactly match LUT header science: {field}")]
-    ScienceMismatch { field: &'static str },
+    ScienceMismatch {
+        /// Which item.
+        field: &'static str,
+    },
+    /// The LUT could not be read.
     #[error(transparent)]
     OfflineLut(#[from] LutError),
 }
 
+/// Why a T-matrix evaluation was rejected.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum EvaluationError {
+    /// A query value is invalid.
     #[error("{field} must be finite and positive, got {value}")]
-    InvalidQuery { field: &'static str, value: f64 },
+    InvalidQuery {
+        /// Which value.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// The table is for another microphysics family.
     #[error("table family mismatch: expected {expected:?}, got {actual:?}")]
     FamilyMismatch {
+        /// The table's family.
         expected: MicrophysicsFamily,
+        /// The particle's family.
         actual: MicrophysicsFamily,
     },
+    /// The table's population does not apply to the particle's family.
     #[error("table population {expected:?} is not applicable to state family {actual:?}")]
     PopulationApplicabilityMismatch {
+        /// The table's category.
         expected: TMatrixParticleCategory,
+        /// The particle's family.
         actual: MicrophysicsFamily,
     },
+    /// The table is for another category.
     #[error("table category mismatch: expected {expected:?}, got {actual:?}")]
     CategoryMismatch {
+        /// The table's category.
         expected: TMatrixParticleCategory,
+        /// The particle's category.
         actual: TMatrixParticleCategory,
     },
+    /// Particle-node evaluation needs a dry property-aware table.
     #[error(
         "dry per-particle PSD evaluation requires a dry property-aware table, got {actual_category:?}/{actual_role:?}"
     )]
     DryParticleNodeTableRequired {
+        /// The table's category.
         actual_category: TMatrixParticleCategory,
+        /// The table's population.
         actual_role: TMatrixPopulationRole,
     },
+    /// A particle-node table must be normalized to one particle per m³.
     #[error("per-particle PSD table normalization must be exactly 1 m^-3, got {actual_m3}")]
-    ParticleNodeNormalizationMismatch { actual_m3: f64 },
+    ParticleNodeNormalizationMismatch {
+        /// The table's normalization, m⁻³.
+        actual_m3: f64,
+    },
+    /// The node's habit cannot use the requested spheroid convention.
     #[error("PSD node habit {habit:?} cannot use requested spheroid convention {actual:?}")]
     ParticleNodeSpheroidMismatch {
+        /// The node's habit.
         habit: PsdSpheroidHabit,
+        /// The requested convention.
         actual: SpheroidConvention,
     },
+    /// The node's habit disagrees with its axis ratio.
     #[error(
         "PSD node habit {habit:?} is inconsistent with minor-to-major ratio {minor_to_major_axis_ratio}"
     )]
     ParticleNodeHabitGeometryMismatch {
+        /// The habit.
         habit: PsdSpheroidHabit,
+        /// The axis ratio.
         minor_to_major_axis_ratio: f64,
     },
+    /// Particle-node evaluation needs a dry ice material table.
     #[error("dry per-particle PSD evaluation requires a dry ice material table")]
     DryParticleNodeMaterialRequired,
+    /// Particle-node evaluation needs the table's Schiller-Naumann terminal-speed law.
     #[error("dry per-particle PSD evaluation requires the table's Schiller-Naumann speed policy")]
     DryParticleNodeTerminalSpeedPolicyRequired,
+    /// The node's fall-speed provenance is not the table's.
     #[error(
         "PSD particle-node terminal-speed provenance mismatch: expected {expected:?}, got {actual:?}"
     )]
     ParticleNodeFallSpeedProvenanceMismatch {
+        /// The table's provenance.
         expected: PsdFallSpeedProvenance,
+        /// The node's provenance.
         actual: PsdFallSpeedProvenance,
     },
+    /// The node's fall speed differs from the table's law.
     #[error(
         "PSD particle-node terminal speed mismatch: exact table policy gives {expected_m_s} m s^-1, query supplied {actual_m_s} m s^-1"
     )]
-    ParticleNodeFallSpeedValueMismatch { expected_m_s: f64, actual_m_s: f64 },
+    ParticleNodeFallSpeedValueMismatch {
+        /// Speed from the table's law, m s⁻¹.
+        expected_m_s: f64,
+        /// Speed given, m s⁻¹.
+        actual_m_s: f64,
+    },
+    /// A prepared node belongs to another table.
     #[error(
         "prepared dry particle node belongs to LUT {actual}, not the evaluating LUT {expected}"
     )]
     PreparedParticleNodeTableMismatch {
+        /// SHA-256 of the evaluating table.
         expected: Sha256Digest,
+        /// SHA-256 of the table that prepared the node.
         actual: Sha256Digest,
     },
+    /// The table has more axes than a prepared plan holds.
     #[error(
         "dry particle-node table has {actual} axes; fixed prepared interpolation supports at most {maximum}"
     )]
-    PreparedParticleNodeAxisCapacity { actual: usize, maximum: usize },
+    PreparedParticleNodeAxisCapacity {
+        /// Axes of the table.
+        actual: usize,
+        /// The most a plan holds.
+        maximum: usize,
+    },
+    /// The particle is not denser than the air of the terminal-speed law.
     #[error(
         "PSD particle density {particle_density_kg_m3} kg m^-3 must exceed terminal-policy air density {air_density_kg_m3} kg m^-3"
     )]
     ParticleNodeDensityNotAboveAir {
+        /// Particle density, kg m⁻³.
         particle_density_kg_m3: f64,
+        /// Air density, kg m⁻³.
         air_density_kg_m3: f64,
     },
+    /// The terminal speed could not be bracketed.
     #[error(
         "could not bracket PSD particle terminal speed at D={diameter_m} m, density={density_kg_m3} kg m^-3"
     )]
-    ParticleNodeTerminalSpeedNotBracketed { diameter_m: f64, density_kg_m3: f64 },
+    ParticleNodeTerminalSpeedNotBracketed {
+        /// Diameter, m.
+        diameter_m: f64,
+        /// Density, kg m⁻³.
+        density_kg_m3: f64,
+    },
+    /// The terminal speed did not converge.
     #[error(
         "PSD particle terminal speed did not converge in {maximum_iterations} iterations at D={diameter_m} m, density={density_kg_m3} kg m^-3"
     )]
     ParticleNodeTerminalSpeedDidNotConverge {
+        /// Diameter, m.
         diameter_m: f64,
+        /// Density, kg m⁻³.
         density_kg_m3: f64,
+        /// Iterations allowed.
         maximum_iterations: u32,
     },
+    /// The particle category has no number concentration.
     #[error("particle category has no number concentration; PSD integration is unsupported")]
     MissingNumberConcentration,
+    /// Wet coexistence with this material is not implemented.
     #[error("wet-coexistence/mixed-material evaluation is not implemented")]
     UnsupportedWetCoexistence,
+    /// Wet-category evaluation needs the property-aware Bruggeman table.
     #[error("wet-category evaluation requires the property-aware Bruggeman table")]
     WetCategoryTableRequired,
+    /// A wet property table needs a diagnosed wet category.
     #[error("wet property tables require DiagnosticWetCategory input")]
     WetCategoryInputRequired,
+    /// The particle's liquid fraction is outside the table's phase.
     #[error(
         "property phase mismatch: expected {expected}, got liquid mass fraction {actual_liquid_mass_fraction}"
     )]
     PhaseRegimeMismatch {
+        /// The phase the table expects.
         expected: &'static str,
+        /// The particle's liquid mass fraction.
         actual_liquid_mass_fraction: f64,
     },
+    /// Evaluating left-over rain needs a residual conventional rain table.
     #[error("unused-rain evaluation requires a declared residual conventional-rain table")]
     ResidualRainTableRequired,
+    /// The left-over rain must come from a closed conventional rain category.
     #[error("unused-rain source must be a closed conventional rain category")]
     ResidualRainSourceRequired,
+    /// The wet category's mixture topology is not supported.
     #[error("wet-category mixture topology {0:?} is unsupported")]
     UnsupportedMixtureTopology(MixtureTopology),
+    /// The wet category's canting is not an exact Gaussian distribution.
     #[error("wet-category canting cannot be represented as an exact Gaussian ODF")]
     WetOrientationUnavailable,
+    /// The wet category's characteristic diameter is invalid.
     #[error("wet-category mass/number/density produced invalid characteristic diameter {value}")]
-    InvalidWetCharacteristicDiameter { value: f64 },
+    InvalidWetCharacteristicDiameter {
+        /// The value, m.
+        value: f64,
+    },
+    /// The density and liquid fraction give an invalid condensed volume fraction.
     #[error(
         "bulk density {bulk_density_kg_m3} kg m^-3 and liquid fraction {liquid_mass_fraction} produce invalid condensed volume fraction {value}"
     )]
     InvalidCondensedVolumeFraction {
+        /// Bulk density, kg m⁻³.
         bulk_density_kg_m3: f64,
+        /// Liquid mass fraction.
         liquid_mass_fraction: f64,
+        /// The condensed volume fraction.
         value: f64,
     },
+    /// The closure's fall speed is invalid.
     #[error("closure-derived positive-down fall speed is invalid: {value} m s^-1")]
-    InvalidClosureFallSpeed { value: f64 },
+    InvalidClosureFallSpeed {
+        /// The value, m s⁻¹.
+        value: f64,
+    },
+    /// The residual rain mass is not positive or exceeds the original.
     #[error(
         "residual rain mass {residual_kgkg} kg/kg must be positive and no greater than original {original_kgkg} kg/kg"
     )]
     InvalidResidualRainMass {
+        /// Residual rain mass, kg kg⁻¹.
         residual_kgkg: f64,
+        /// Original rain mass, kg kg⁻¹.
         original_kgkg: f64,
     },
+    /// The table's spheroid convention differs from the request.
     #[error("table shape convention mismatch: expected {expected:?}, got {actual:?}")]
     SpheroidConventionMismatch {
+        /// The table's convention.
         expected: SpheroidConvention,
+        /// The requested convention.
         actual: SpheroidConvention,
     },
+    /// The table's orientation differs from the particle's.
     #[error("ODF mismatch: table uses {expected:?}, particle closure uses {actual:?}")]
     OrientationMismatch {
+        /// The table's orientation.
         expected: OrientationModel,
+        /// The particle's orientation.
         actual: OrientationModel,
     },
+    /// The particle temperature differs from the table's fixed dielectric temperature.
     #[error("fixed dielectric temperature mismatch: expected {expected_k} K, got {actual_k} K")]
-    FixedDielectricTemperatureMismatch { expected_k: f64, actual_k: f64 },
+    FixedDielectricTemperatureMismatch {
+        /// The table's temperature, K.
+        expected_k: f64,
+        /// The particle's temperature, K.
+        actual_k: f64,
+    },
+    /// The particle density differs from the table's homogeneous material.
     #[error(
         "homogeneous material density mismatch: expected {expected_kg_m3} kg m^-3, got {actual_kg_m3} kg m^-3"
     )]
     MaterialDensityMismatch {
+        /// The table's density, kg m⁻³.
         expected_kg_m3: f64,
+        /// The particle's density, kg m⁻³.
         actual_kg_m3: f64,
     },
+    /// The evaluator does not support a table axis.
     #[error("table axis {0:?} is unsupported by the closed-particle evaluator")]
     UnsupportedAxis(AxisKind),
+    /// The particle lacks a property an axis needs.
     #[error("closed particle does not provide property required by axis {0:?}")]
     MissingAxisProperty(AxisKind),
+    /// The PSD node lacks a property an axis needs.
     #[error("PSD particle node does not provide property required by axis {0:?}")]
     MissingParticleNodeAxisProperty(AxisKind),
+    /// A particle-node table lacks an axis it needs.
     #[error("dry particle-node table does not provide required axis {0:?}")]
     MissingParticleNodeTableAxis(AxisKind),
+    /// A particle-node table's domain is invalid.
     #[error("dry particle-node table domain is invalid: {0}")]
     ParticleNodeDomain(#[source] PsdError),
+    /// A particle-node table must have exactly one frequency.
     #[error(
         "dry particle-node table must bind exactly one frequency coordinate, got {actual_coordinates}"
     )]
-    ParticleNodeFrequencyMustBeSingleton { actual_coordinates: usize },
+    ParticleNodeFrequencyMustBeSingleton {
+        /// Frequencies in the table.
+        actual_coordinates: usize,
+    },
+    /// The request's frequency is not the table's.
     #[error(
         "dry particle-node table requires exact frequency {expected_hz} Hz, got {actual_hz} Hz"
     )]
-    ParticleNodeFrequencyMismatch { expected_hz: f64, actual_hz: f64 },
+    ParticleNodeFrequencyMismatch {
+        /// The table's frequency, Hz.
+        expected_hz: f64,
+        /// The request's frequency, Hz.
+        actual_hz: f64,
+    },
+    /// A number density is invalid.
     #[error("number concentration per cubic metre is invalid: {value}")]
-    InvalidNumberDensity { value: f64 },
+    InvalidNumberDensity {
+        /// The value, m⁻³.
+        value: f64,
+    },
+    /// Interpolation failed.
     #[error(transparent)]
     Interpolation(#[from] InterpolationError),
+    /// The scaled or accumulated output is invalid.
     #[error("scaled/accumulated additive output is invalid: {0}")]
     Output(#[source] OutputError),
 }

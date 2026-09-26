@@ -510,6 +510,7 @@ impl DataHeaderBlock {
 
 /// Compression indicator (Table XVII-A byte 16).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CompressionIndicator {
     /// 0.
     Uncompressed,
@@ -545,6 +546,7 @@ impl CompressionIndicator {
 
 /// Azimuthal spacing between adjacent radials (Table XVII-A byte 20).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum AzimuthResolution {
     /// 1: 0.5 degree.
     HalfDegree,
@@ -705,6 +707,7 @@ impl VolumeDataBlock {
 
 /// Layout of a VOL block.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum VolumeBlockLayout {
     /// 44 bytes, through Build 19.
     Original44,
@@ -821,6 +824,7 @@ impl RadialDataBlock {
 
 /// Layout of a RAD block.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RadialBlockLayout {
     /// 20 bytes, before Build 14.0.
     Original20,
@@ -831,6 +835,7 @@ pub enum RadialBlockLayout {
 
 /// Name of a data moment block (Table XVII-B bytes 1-3, Table XVII-I).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[non_exhaustive]
 pub enum DataMomentName {
     /// "REF": reflectivity, dBZ.
     Reflectivity,
@@ -901,6 +906,7 @@ impl fmt::Display for DataMomentName {
 
 /// Recombination applied to a data moment (Table XVII-B byte 18).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ControlFlags {
     /// 0.
     None,
@@ -1112,6 +1118,7 @@ impl<'a> MomentDataBlock<'a> {
 
 /// One classified gate of a data moment.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum GateValue {
     /// Physical value in the moment's units.
     Value(f32),

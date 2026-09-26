@@ -4,6 +4,7 @@
 
 use std::collections::HashSet;
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -14,7 +15,17 @@ use super::volume::SourceFormat;
 
 /// One FM301 sweep group: one physical elevation cut, numbered in acquisition
 /// order.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// With the `serde` feature, deserializing a sweep checks that every field has
+/// a row for every ray, that the range and every field's extent on it stay
+/// within [`MAX_GATES_PER_RADIAL`](crate::bounded_read::MAX_GATES_PER_RADIAL)
+/// gates, and what [`Sweep::seal`] checks, and fails when a check does.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(try_from = "super::serde_checked::SweepRepr")
+)]
 pub struct Sweep {
     /// `sweep_number`: 0-based acquisition index; the group is
     /// `sweep_<sweep_number>`.
@@ -37,6 +48,7 @@ pub struct Sweep {
     pub target_scan_rate_deg_per_s: Option<f32>,
     /// `rays_are_indexed`, `rays_angle_resolution`.
     pub rays_are_indexed: Option<bool>,
+    /// `rays_angle_resolution`: nominal angle between indexed rays, degrees.
     pub rays_angle_resolution_deg: Option<f32>,
     /// `qc_procedures`.
     pub qc_procedures: Option<String>,
@@ -68,7 +80,8 @@ pub struct Sweep {
 }
 
 /// Ray coordinates, struct-of-arrays.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Rays {
     /// `time`: seconds since `Volume::time_reference`, at ray centre.
     pub time_s: Vec<f64>,
@@ -84,24 +97,36 @@ impl Rays {
         self.azimuth_deg.len()
     }
 
+    /// Whether there are no rays.
     pub fn is_empty(&self) -> bool {
         self.azimuth_deg.is_empty()
     }
 }
 
 /// The sweep's `range` coordinate: gate centres in metres.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// Exhaustive, like [`crate::model::FieldData`]: the file writers each map
+/// every gate geometry to their format or refuse it, so a new geometry is a
+/// breaking change instead of a case a wildcard arm would mishandle.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum RangeCoord {
     /// `spacing_is_constant = "true"`: centre of gate j is
     /// `first_center_m + j * spacing_m`. `spacing_m == 0` with no gates means
     /// "not yet set" ([`Sweep::new`]).
     Uniform {
+        /// Centre of gate 0, in metres.
         first_center_m: f64,
+        /// Distance between gate centres, in metres.
         spacing_m: f64,
+        /// Number of gates.
         ngates: u32,
     },
     /// `spacing_is_constant = "false"`: explicit gate centres.
-    Explicit { centers_m: Vec<f32> },
+    Explicit {
+        /// Gate centres, metres.
+        centers_m: Vec<f32>,
+    },
 }
 
 impl RangeCoord {
@@ -112,6 +137,7 @@ impl RangeCoord {
         ngates: 0,
     };
 
+    /// Number of gates.
     pub fn ngates(&self) -> usize {
         match self {
             Self::Uniform { ngates, .. } => *ngates as usize,
@@ -160,9 +186,14 @@ macro_rules! string_enum {
         $name:ident { $($variant:ident => $text:literal,)* }
     ) => {
         $(#[$meta])*
-        #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+        #[non_exhaustive]
         pub enum $name {
-            $($variant,)*
+            $(
+                #[doc = concat!("The spelling `", $text, "`.")]
+                $variant,
+            )*
             /// A source spelling outside the table, verbatim. Never a table
             /// spelling.
             Other(Box<str>),
@@ -244,18 +275,30 @@ string_enum! {
 }
 
 /// Table 301-11. Each variable is `(time)`; `None` means not provided.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Monitoring {
+    /// `radar_measured_transmit_power_h`: measured transmit power, horizontal channel, dBm.
     pub radar_measured_transmit_power_h_dbm: Option<Vec<f32>>,
+    /// `radar_measured_transmit_power_v`: measured transmit power, vertical channel, dBm.
     pub radar_measured_transmit_power_v_dbm: Option<Vec<f32>>,
+    /// `radar_measured_sky_noise`: measured sky noise, dBm.
     pub radar_measured_sky_noise_dbm: Option<Vec<f32>>,
+    /// `radar_measured_cold_noise`: measured cold noise, dBm.
     pub radar_measured_cold_noise_dbm: Option<Vec<f32>>,
+    /// `radar_measured_hot_noise`: measured hot noise, dBm.
     pub radar_measured_hot_noise_dbm: Option<Vec<f32>>,
+    /// `phase_difference_transmit_hv`: transmit phase difference between H and V, degrees.
     pub phase_difference_transmit_hv_deg: Option<Vec<f32>>,
+    /// `antenna_pointing_accuracy_elev`: antenna pointing accuracy in elevation, degrees.
     pub antenna_pointing_accuracy_elev_deg: Option<Vec<f32>>,
+    /// `antenna_pointing_accuracy_az`: antenna pointing accuracy in azimuth, degrees.
     pub antenna_pointing_accuracy_az_deg: Option<Vec<f32>>,
+    /// `calibration_offset_h`: calibration offset, horizontal channel, dB.
     pub calibration_offset_h_db: Option<Vec<f32>>,
+    /// `calibration_offset_v`: calibration offset, vertical channel, dB.
     pub calibration_offset_v_db: Option<Vec<f32>>,
+    /// `zdr_offset`: differential reflectivity offset, dB.
     pub zdr_offset_db: Option<Vec<f32>>,
 }
 
@@ -326,23 +369,35 @@ impl Monitoring {
 
 /// Moving-platform position and attitude per ray (CfRadial 1 georeference
 /// variables). Not FM301.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PlatformTrack {
+    /// `latitude`: platform latitude per ray, WGS84 degrees north.
     pub latitude_deg: Vec<f64>,
+    /// `longitude`: platform longitude per ray, WGS84 degrees east.
     pub longitude_deg: Vec<f64>,
+    /// `altitude`: platform altitude per ray, metres above mean sea level.
     pub altitude_m: Vec<f64>,
+    /// `altitude_agl`: platform altitude per ray, metres above ground.
     pub altitude_agl_m: Option<Vec<f64>>,
+    /// `heading`: platform heading per ray, degrees clockwise from true north.
     pub heading_deg: Option<Vec<f32>>,
+    /// `roll`: platform roll per ray, degrees.
     pub roll_deg: Option<Vec<f32>>,
+    /// `pitch`: platform pitch per ray, degrees.
     pub pitch_deg: Option<Vec<f32>>,
+    /// `drift`: platform drift angle per ray, degrees.
     pub drift_deg: Option<Vec<f32>>,
+    /// `rotation`: antenna rotation angle per ray, degrees.
     pub rotation_deg: Option<Vec<f32>>,
+    /// `tilt`: antenna tilt angle per ray, degrees.
     pub tilt_deg: Option<Vec<f32>>,
 }
 
 /// Optional `(time)` instrument variables (Table 301-8a). A present vector has
 /// one entry per ray.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RayVariables {
     /// `nyquist_velocity(time)`, m/s, NaN = missing.
     pub nyquist_velocity_mps: Option<Vec<f32>>,
@@ -371,9 +426,12 @@ pub struct RayVariables {
 }
 
 /// `prt_sequence(time, prt)`, row-major.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PrtSequence {
+    /// Pulses per sequence (the `prt` dimension).
     pub nprt: u32,
+    /// The pulse repetition times in seconds, row-major `[nrays × nprt]`.
     pub values_s: Vec<f32>,
 }
 
@@ -427,60 +485,112 @@ impl RayVariables {
     }
 }
 
+/// A field's gate geometry cannot be placed on the sweep's range coordinate.
 #[derive(Clone, Debug, PartialEq, Error)]
+#[non_exhaustive]
 pub enum GeometryError {
+    /// The field's gate geometry is not finite, or its spacing is not positive.
     #[error("invalid gate geometry: first centre {first_center_m} m, spacing {spacing_m} m")]
-    Invalid { first_center_m: f64, spacing_m: f64 },
+    Invalid {
+        /// Centre of the first gate, metres.
+        first_center_m: f64,
+        /// Gate spacing, metres.
+        spacing_m: f64,
+    },
+    /// The field's gates fall between the range coordinate's gates.
     #[error(
         "gates (first centre {first_center_m} m, spacing {spacing_m} m) do not align with the \
          sweep range (first centre {range_first_center_m} m, spacing {range_spacing_m} m)"
     )]
     Unaligned {
+        /// Centre of the field's first gate, metres.
         first_center_m: f64,
+        /// The field's gate spacing, metres.
         spacing_m: f64,
+        /// Centre of the range coordinate's first gate, metres.
         range_first_center_m: f64,
+        /// The range coordinate's gate spacing, metres.
         range_spacing_m: f64,
     },
+    /// The field's gates are not a subset of the explicit range centres.
     #[error("gates do not match the explicit range centres")]
     ExplicitMismatch,
+    /// The range needs more than `u32::MAX` gates.
     #[error("range gate count exceeds u32")]
     TooManyGates,
 }
 
+/// A sweep that breaks the model's invariants.
 #[derive(Clone, Debug, PartialEq, Error)]
+#[non_exhaustive]
 pub enum SweepError {
+    /// A per-ray variable does not have one entry per ray.
     #[error("sweep {what} has {len} entries for {nrays} rays")]
     RayLength {
+        /// Name of the variable.
         what: String,
+        /// Its length.
         len: usize,
+        /// Rays of the sweep.
         nrays: usize,
     },
+    /// A field failed its own checks.
     #[error("field {field}: {source}")]
     Field {
+        /// Name of the field.
         field: String,
+        /// The field's error.
         #[source]
         source: FieldError,
     },
+    /// A field's buffer does not hold `nrays × ngates` values.
     #[error("field {field} has {len} values, expected {expected}")]
     FieldLength {
+        /// Name of the field.
         field: String,
+        /// Values in the buffer.
         len: usize,
+        /// Values the shape requires.
         expected: usize,
     },
+    /// A field's absent rows are not ascending, or name a ray past the last.
     #[error("field {field} absent rows are not ascending and within the rays")]
-    AbsentRows { field: String },
+    AbsentRows {
+        /// Name of the field.
+        field: String,
+    },
+    /// A field extends past the end of an explicit range coordinate.
     #[error("field {field} extends to range gate {end}, past the explicit range's {range_gates}")]
     FieldExtent {
+        /// Name of the field.
         field: String,
+        /// One past the last range gate the field covers.
         end: u64,
+        /// Gates of the range coordinate.
         range_gates: usize,
     },
+    /// A field's gate stride is 0, or not 1 on an explicit range coordinate.
     #[error("field {field} has stride {stride} on a range that does not allow it")]
-    Stride { field: String, stride: u32 },
+    Stride {
+        /// Name of the field.
+        field: String,
+        /// The field's gate stride.
+        stride: u32,
+    },
+    /// Two fields of a sweep have the same name.
     #[error("duplicate field name {name}")]
-    DuplicateName { name: String },
+    DuplicateName {
+        /// The name.
+        name: String,
+    },
+    /// A sweep's `sweep_number` is not its position in the volume.
     #[error("sweep at index {index} has sweep_number {sweep_number}")]
-    SweepNumber { index: usize, sweep_number: u32 },
+    SweepNumber {
+        /// Position of the sweep in `Volume::sweeps`.
+        index: usize,
+        /// Its `sweep_number`.
+        sweep_number: u32,
+    },
     /// [`Sweep::permute_rays`] found a verbatim array attribute of the sweep
     /// or of one of its fields with one entry per ray under a name not known
     /// to be per ray ([`RayAlignment::Unknown`]): moving it could scramble
@@ -501,8 +611,39 @@ pub enum SweepError {
         /// Rays in the sweep.
         nrays: usize,
     },
+    /// The field's gate geometry does not fit the range coordinate.
     #[error(transparent)]
     Geometry(#[from] GeometryError),
+    /// A deserialized sweep's range coordinate, or the range gates one of
+    /// its fields covers, exceeds
+    /// [`MAX_GATES_PER_RADIAL`](crate::bounded_read::MAX_GATES_PER_RADIAL),
+    /// the ceiling every decoder applies to a radial.
+    #[error("{what} spans {gates} range gates (limit {limit})")]
+    RangeGates {
+        /// `range`, or the field (`field DBZH`).
+        what: String,
+        /// Range gates it spans.
+        gates: u64,
+        /// The ceiling.
+        limit: usize,
+    },
+    /// A deserialized [`ExtraVariable`]'s `shape` does not describe its
+    /// values: it has a different number of entries than `dims`, or its
+    /// product is not the number of values.
+    #[error(
+        "extra variable {name}: dims {dims:?} and shape {shape:?} do not describe a value \
+         count of {len}"
+    )]
+    ExtraShape {
+        /// Name of the variable.
+        name: String,
+        /// Its dimension names.
+        dims: Vec<String>,
+        /// Its `shape`.
+        shape: Vec<u32>,
+        /// Values it holds.
+        len: usize,
+    },
 }
 
 /// `length` is a whole number of `step`s (0 included), within `tolerance`.
@@ -576,6 +717,7 @@ impl Sweep {
         }
     }
 
+    /// Reserve storage for `rays` more rays in the ray coordinates.
     pub fn reserve_rays(&mut self, rays: usize) {
         self.rays.time_s.reserve(rays);
         self.rays.azimuth_deg.reserve(rays);
@@ -749,18 +891,21 @@ impl Sweep {
         Ok(self.fields.len() - 1)
     }
 
+    /// The field named `name`.
     pub fn field(&self, name: &FieldName) -> Option<&Field> {
         self.fields
             .iter()
             .find(|field| field.name.as_str() == name.as_str())
     }
 
+    /// The field named `name`, mutably.
     pub fn field_mut(&mut self, name: &FieldName) -> Option<&mut Field> {
         self.fields
             .iter_mut()
             .find(|field| field.name.as_str() == name.as_str())
     }
 
+    /// Position of the field named `name` in [`Sweep::fields`].
     pub fn field_index(&self, name: &FieldName) -> Option<usize> {
         self.fields
             .iter()
@@ -806,7 +951,7 @@ impl Sweep {
             ray_len(name, len)?;
         }
         if let Some(seq) = &self.ray_vars.prt_sequence_s
-            && seq.values_s.len() != nrays * seq.nprt as usize
+            && nrays.checked_mul(seq.nprt as usize) != Some(seq.values_s.len())
         {
             return Err(SweepError::RayLength {
                 what: "prt_sequence values".to_owned(),
@@ -858,12 +1003,12 @@ impl Sweep {
                     field: label.clone(),
                     source,
                 })?;
-            let expected = nrays * field.ngates as usize;
-            if field.data.len() != expected {
+            let expected = nrays.checked_mul(field.ngates as usize);
+            if expected != Some(field.data.len()) {
                 return Err(SweepError::FieldLength {
                     field: label,
                     len: field.data.len(),
-                    expected,
+                    expected: nrays.saturating_mul(field.ngates as usize),
                 });
             }
             if !field.absent_rows.windows(2).all(|pair| pair[0] < pair[1])

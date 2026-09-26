@@ -15,10 +15,13 @@
 //! tornado (17 tilts), KTLX 1999-05-03 truncated after 68 radials, a TDWR
 //! status-only object with no radials, and the JMA radial-velocity product.
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{array, as_f64, as_i64, as_opt_f64, as_usize, assert_close, golden, row_stats};
-use recast_radar_core::{Field, FieldData, FieldName, Quantity, Sweep, Volume};
+use recast_radar_core::{Field, FieldData, FieldName, Quantity, Sweep, SweepMode, Volume};
 use recast_radar_map as products;
 use recast_radar_map::{
     CrossSection, CrossSectionSmoothing, ECHO_TOP_THRESHOLD_DBZ, InterpPolicy, MeshCalibration,
@@ -125,6 +128,91 @@ fn base_cut<'a>(golden: &Value, volume: &'a Volume) -> &'a Sweep {
 /// `Sweep::tilt_elevation_deg` of sweep `index`, the elevation the products use.
 fn tilt_elevation(volume: &Volume, index: usize) -> f32 {
     volume.tilt_elevation_deg(index).expect("sweep")
+}
+
+/// `column_base_sweep` is the golden's base tilt, the reflectivity sweep with
+/// the lowest first-ray elevation in MetPy's reading: KEWX sweep 9 (a SAILS
+/// cut at 0.483 deg, below sweep 1 at 0.527 deg), KTLX clear air sweep 1
+/// (0.483 deg, below sweep 0 at 0.555 deg) and the truncated KTLX 1999
+/// volume's one sweep. Every column product has that sweep's rays and its
+/// reflectivity field's gates (the `composite` example adds one to the sweep
+/// and draws it; tools/check_example_outputs.py runs it). No sweep is chosen
+/// without reflectivity: the TDWR status-only object has no sweeps and the
+/// JMA product only velocity.
+#[test]
+fn column_base_sweep_is_the_lowest_reflectivity_tilt() {
+    for key in ["hail", "clear_air", "truncated"] {
+        let Some((golden, volume)) = product_volume(key) else {
+            continue;
+        };
+        let base = products::column_base_sweep(&volume).expect("a reflectivity sweep");
+        assert_eq!(base, as_usize(&golden["base_sweep"]), "{key} base sweep");
+        assert_eq!(
+            base,
+            as_usize(&array(&golden["tilts"])[0]["sweep"]),
+            "{key}: the lowest tilt"
+        );
+
+        let (freezing_m, minus20_m) = (3200.0, 6400.0);
+        let hail = products::hail(&volume, freezing_m, minus20_m, MeshCalibration::Witt1998)
+            .expect("hail");
+        let grids = [
+            products::composite_reflectivity(&volume).expect("composite"),
+            products::echo_top(&volume, ECHO_TOP_THRESHOLD_DBZ).expect("echo top"),
+            products::vil(&volume).expect("vil"),
+            products::vil_density(&volume).expect("vil density"),
+            products::mehs(&volume, freezing_m, minus20_m).expect("mehs"),
+            products::poh(&volume, freezing_m).expect("poh"),
+            hail.shi,
+            hail.mesh_mm,
+            hail.posh_pct,
+        ];
+        let sweep = &volume.sweeps[base];
+        let base_field = reflectivity(sweep);
+        for grid in &grids {
+            let what = format!("{key} {}", grid.name);
+            assert_eq!(grid.shape(), base_field.shape(), "{what} shape");
+            assert_eq!(grid.shape().0, sweep.nrays(), "{what} rows");
+            assert_eq!(grid.gates, base_field.gates, "{what} gates");
+        }
+    }
+
+    let path = recast_radar_testdata::require_file!("l2-tbwi-20230601-175101-stub");
+    assert_eq!(products::column_base_sweep(&common::level2(&path)), None);
+    let path = recast_radar_testdata::require_file!("jma-n6-20191012-090000-rs47773");
+    let velocity_only = common::jma(&path);
+    assert!(!velocity_only.sweeps.is_empty());
+    assert_eq!(products::column_base_sweep(&velocity_only), None);
+}
+
+/// An RHI is not a tilt. The DOW8 CfRadial 1 RHI (sweep_mode "rhi", fixed
+/// angle 184 deg of azimuth, reflectivity on every ray) has no column base,
+/// no column product, no cross-section and no box resample; the same holds
+/// when its mode is outside FM301 Table 301-15, where the ray geometry
+/// decides. Declared a PPI, its one sweep would be the base.
+#[test]
+fn column_products_skip_rhi_sweeps() {
+    let path =
+        recast_radar_testdata::require_file!("cfrad1-dow8-20211011-223602-rhi-trim3-classic");
+    let mut volume = common::cfradial(&path);
+    assert_eq!(volume.sweeps.len(), 1);
+    assert_eq!(volume.sweeps[0].sweep_mode, SweepMode::Rhi);
+    assert!(volume.sweeps[0].find(Quantity::Reflectivity).is_some());
+
+    assert_eq!(products::column_base_sweep(&volume), None);
+    assert!(products::composite_reflectivity(&volume).is_none());
+    assert!(products::echo_top(&volume, ECHO_TOP_THRESHOLD_DBZ).is_none());
+    assert!(products::vil(&volume).is_none());
+    assert!(products::vil_density(&volume).is_none());
+    assert!(reflectivity_section(&volume, (0.0, 0.0), (0.0, -20.0), 64, 32, 10_000.0).is_none());
+    assert!(box_resample(&volume, 0.0, -10.0, 10.0, 16, 8, 10_000.0).is_none());
+
+    volume.sweeps[0].sweep_mode = SweepMode::Other("unlisted".into());
+    assert_eq!(products::column_base_sweep(&volume), None);
+    assert!(products::composite_reflectivity(&volume).is_none());
+
+    volume.sweeps[0].sweep_mode = SweepMode::AzimuthSurveillance;
+    assert_eq!(products::column_base_sweep(&volume), Some(0));
 }
 
 /// KEWX hailstorm: the composite is the column maximum over all 19 tilts

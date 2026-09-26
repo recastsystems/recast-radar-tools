@@ -71,6 +71,7 @@ fn is_false(value: &bool) -> bool {
 /// File format of a manifest entry. Serialized as a kebab-case string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
+#[non_exhaustive]
 pub enum Format {
     /// `nexrad-level2`: NEXRAD Level II archive volume.
     NexradLevel2,
@@ -173,6 +174,7 @@ impl Manifest {
 
 /// Error loading a manifest file.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ManifestError {
     /// The manifest file or directory could not be read.
     Io {

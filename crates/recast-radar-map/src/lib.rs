@@ -24,8 +24,8 @@ pub use rhi::{
 };
 pub use volumetric::{
     CrossSection, CrossSectionSmoothing, ECHO_TOP_THRESHOLD_DBZ, HailFields, InterpPolicy,
-    MeshCalibration, VolumeDealiasCache, box_resample, box_resample_field, composite_reflectivity,
-    echo_top, field_section, field_section_with_smoothing, hail, mehs, poh, reflectivity_section,
-    reflectivity_section_with_smoothing, velocity_section, velocity_section_cached,
-    velocity_section_cached_with_smoothing, vil, vil_density,
+    MeshCalibration, VolumeDealiasCache, box_resample, box_resample_field, column_base_sweep,
+    composite_reflectivity, echo_top, field_section, field_section_with_smoothing, hail, mehs, poh,
+    reflectivity_section, reflectivity_section_with_smoothing, velocity_section,
+    velocity_section_cached, velocity_section_cached_with_smoothing, vil, vil_density,
 };

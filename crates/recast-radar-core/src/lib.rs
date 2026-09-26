@@ -1,9 +1,33 @@
 //! Core data model for recast-radar-tools.
 //!
-//! - [`model`]: the WMO FM301 / CfRadial 2 data model (`Volume`, `Sweep`,
-//!   `Field`) with compact raw storage and lazy scaling
-//!   (`docs/design/fm301-model.md`).
-//! - [`fm301`]: the FM301 group view over a [`model::Volume`], the conformance
+//! # The data model
+//!
+//! The WMO FM301 / CfRadial 2 data model (`docs/design/fm301-model.md`), with
+//! compact raw storage and lazy scaling:
+//!
+//! - [`Volume`] is the root group of an FM301 file: global attributes, the
+//!   station location, radar parameters and calibration, and the sweeps.
+//! - [`Sweep`] is one `sweep_<n>` group: ray coordinates (`time`, `azimuth`,
+//!   `elevation`), one `range` coordinate, per-ray instrument variables and the
+//!   dataset variables ([`Field`]).
+//! - [`Field`] holds one variable's values row-major `[nrays × ngates]` in the
+//!   source's own encoding (`u8`, `u16`, `i8`, `i16`, `i32`, `f32`, `f64`) with
+//!   its CF packing. Physical values are computed on demand; decoders never
+//!   expand raw storage to floats.
+//!
+//! The model keeps rays in the source's storage order and each field in its
+//! native gate geometry ([`GateMapping`] onto the sweep range). The FM301 view
+//! ([`fm301`]) applies ray order, padding and gate repetition when a caller
+//! reads a variable.
+//!
+//! The model's items are documented here, at the crate root. Each is also
+//! reachable as `model::<item>` (`recast_radar_core::model::Volume`), the path
+//! the member crates use; that module is left out of the documentation so
+//! that every item has one page.
+//!
+//! # The rest of the crate
+//!
+//! - [`fm301`]: the FM301 group view over a [`Volume`], the conformance
 //!   surface for xradar `DataTree` and CfRadial 2 output.
 //! - Beam geometry, refractivity and bounded decompression helpers shared by
 //!   every crate.
@@ -20,14 +44,20 @@
 
 pub mod bounded_read;
 pub mod fm301;
+// Hidden from the documentation only (`cfg(doc)` is set by rustdoc alone):
+// its items are documented at the crate root, where the glob below re-exports
+// them. A plain `#[doc(hidden)]` would also switch off `missing_docs` for
+// every item in the module, so an undocumented model item would build.
+#[cfg_attr(doc, doc(hidden))]
 pub mod model;
 mod refractivity;
 
-pub use model::{
-    ArrayBuf, AttrValue, ExtraVariable, Field, FieldAttrs, FieldData, FieldName, FloatCoding, Gate,
-    GateMapping, IntCoding, LinearTransform, MergeError, MergeReport, Polarization, Quantity,
-    RangeCoord, RayVariables, Rays, Scalar, SourceFormat, Sweep, SweepMode, Volume, merge_volumes,
-};
+// Every public item of the model, so that each has one short path
+// (`recast_radar_core::RowRef`, `recast_radar_tools::model::RowRef`) as well
+// as its `model::` path. A glob, so that a type added to the model is
+// reachable here without a second edit.
+#[doc(inline)]
+pub use model::*;
 pub use refractivity::{
     EARTH_DUCTING_GRADIENT_N_PER_KM, PropagationRegime, RefractedBeamError, RefractedBeamPoint,
     RefractedBeamTrace, RefractivityLevel, RefractivityProfile, RefractivityProfileError,

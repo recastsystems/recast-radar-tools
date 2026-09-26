@@ -21,40 +21,72 @@ use crate::kdp::{self, KdpMethod};
 
 /// Products that can be computed independently for each elevation cut.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
 pub enum DerivedSweepProduct {
+    /// `KDP`: specific differential phase, degrees per km.
     Kdp,
+    /// `PHIF`: filtered, unfolded differential phase, degrees.
     FilteredDifferentialPhase,
+    /// `KDP_SD`: standard error of the KDP fit, degrees per km.
     KdpUncertainty,
+    /// `AH`: specific attenuation, dB per km.
     SpecificAttenuation,
+    /// `PIA`: path-integrated attenuation, dB.
     PathIntegratedAttenuation,
+    /// `REFC`: reflectivity corrected for attenuation, dBZ.
     CorrectedReflectivity,
+    /// `ADP`: specific differential attenuation, dB per km.
     SpecificDifferentialAttenuation,
+    /// `PIDA`: path-integrated differential attenuation, dB.
     PathIntegratedDifferentialAttenuation,
+    /// `ZDRC`: differential reflectivity corrected for attenuation, dB.
     CorrectedDifferentialReflectivity,
+    /// `RATE_Z`: rain rate from a Z-R relation, mm/h.
     RainRateReflectivity,
+    /// `RATE_KDP`: rain rate from a KDP-R relation, mm/h.
     RainRateKdp,
+    /// `RATE`: rain rate from KDP in heavy rain and from Z elsewhere, mm/h.
     RainRateHybrid,
+    /// `LWC`: liquid water content estimated from reflectivity, g m⁻³.
     LiquidWaterContent,
+    /// `HKE`: hail kinetic energy flux, J m⁻² s⁻¹.
     HailKineticEnergy,
+    /// `CDR`: circular depolarization ratio from ZDR and RHOHV, dB.
     CircularDepolarizationRatio,
+    /// `L_RHO`: logarithmic correlation ratio, -log10(1 - RHOHV).
     LogCorrelationRatio,
+    /// `REF_TEX`: local standard deviation of reflectivity, dB.
     ReflectivityTexture,
+    /// `VEL_TEX`: local standard deviation of radial velocity (folding-aware), m/s.
     VelocityTexture,
+    /// `SW_TEX`: local standard deviation of spectrum width, m/s.
     SpectrumWidthTexture,
+    /// `ZDR_TEX`: local standard deviation of differential reflectivity, dB.
     DifferentialReflectivityTexture,
+    /// `RHO_TEX`: local standard deviation of the correlation coefficient.
     CorrelationCoefficientTexture,
+    /// `PHI_TEX`: local standard deviation of differential phase (folding-aware), degrees.
     DifferentialPhaseTexture,
+    /// `KDP_TEX`: local standard deviation of KDP, degrees per km.
     KdpTexture,
+    /// `REF_GRAD_R`: reflectivity gradient along the beam, dBZ per km.
     ReflectivityRangeGradient,
+    /// `VEL_GRAD_R`: radial-velocity gradient along the beam, 10⁻³ s⁻¹.
     VelocityRangeGradient,
+    /// `MET_QI`: meteorological quality of a gate, 0 to 1.
     MeteorologicalQuality,
+    /// `MET_MASK`: 1 for gates judged meteorological, 0 otherwise.
     MeteorologicalGateMask,
+    /// `TDS_SCORE`: tornadic debris signature diagnostic, percent.
     TdsConfidence,
+    /// `HAIL_SCORE`: dual-polarization hail signature diagnostic, percent.
     HailSignature,
+    /// `TURB`: Doppler turbulence proxy from spectrum width and velocity texture, m/s.
     TurbulenceProxy,
 }
 
 impl DerivedSweepProduct {
+    /// Every product, in declaration order.
     pub const ALL: &'static [Self] = &[
         Self::Kdp,
         Self::FilteredDifferentialPhase,
@@ -88,6 +120,7 @@ impl DerivedSweepProduct {
         Self::TurbulenceProxy,
     ];
 
+    /// The field name the product is stored under (`KDP`, `PHIF`, ...).
     pub const fn id(self) -> &'static str {
         match self {
             Self::Kdp => "KDP",
@@ -123,6 +156,7 @@ impl DerivedSweepProduct {
         }
     }
 
+    /// Title for menus and legends.
     pub const fn display_name(self) -> &'static str {
         match self {
             Self::Kdp => "Specific Differential Phase",
@@ -162,6 +196,7 @@ impl DerivedSweepProduct {
         }
     }
 
+    /// Units of the product's values.
     pub const fn units(self) -> &'static str {
         match self {
             Self::Kdp => "deg/km",
@@ -373,17 +408,23 @@ impl DerivedSweepProduct {
     }
 }
 
+/// The transmit band of a radar, which several products' coefficients depend on.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RadarBand {
     /// No trustworthy transmit frequency, network classification, or
     /// site-specific metadata is available.
     Unknown,
+    /// S band (about 10 cm; WSR-88D).
     S,
+    /// C band (about 5 cm).
     C,
+    /// X band (about 3 cm).
     X,
 }
 
 impl RadarBand {
+    /// Whether the band is known.
     pub const fn is_known(self) -> bool {
         !matches!(self, Self::Unknown)
     }
@@ -422,6 +463,7 @@ impl RadarBand {
     }
 }
 
+/// KDP estimation: a robust linear fit of unfolded, despiked PHIDP along each radial.
 #[derive(Clone, Debug)]
 pub struct KdpConfig {
     /// Estimator that turns the filtered phase into KDP. The phase front end
@@ -441,17 +483,29 @@ pub struct KdpConfig {
     pub method: KdpMethod,
     /// Robust regression window length along a radial.
     pub window_km: f32,
+    /// Fewest gates in the fit window.
     pub min_window_gates: usize,
+    /// Most gates in the fit window.
     pub max_window_gates: usize,
+    /// Fewest valid gates a fit needs.
     pub min_valid_gates: usize,
+    /// Longest PHIDP gap, in gates, filled by interpolation before fitting.
     pub max_interpolated_gap_gates: usize,
+    /// PHIDP folding period, degrees (360 for most radars, 180 for some).
     pub phase_period_deg: f32,
+    /// Gates with a lower correlation coefficient are left out of the fit.
     pub min_rho_hv: f32,
+    /// Gates with lower reflectivity are left out of the fit, dBZ.
     pub min_reflectivity_dbz: f32,
+    /// Half width of the Hampel despiking window, gates.
     pub hampel_half_window: usize,
+    /// Hampel threshold, in scaled median absolute deviations.
     pub hampel_sigma: f32,
+    /// Huber threshold of the robust fit, in scaled residuals.
     pub huber_k: f32,
+    /// KDP values below this are discarded, degrees per km.
     pub kdp_min_deg_km: f32,
+    /// KDP values above this are discarded, degrees per km.
     pub kdp_max_deg_km: f32,
     /// Emit estimates at short, internally interpolated PHIDP gaps. Keeping
     /// this false is conservative and prevents interpolation from inventing
@@ -463,6 +517,7 @@ pub struct KdpConfig {
 }
 
 impl KdpConfig {
+    /// The defaults for a radar band (KDP bounds depend on the band).
     pub fn for_band(band: RadarBand) -> Self {
         let (kdp_min_deg_km, kdp_max_deg_km) = band.default_kdp_bounds();
         Self {
@@ -486,20 +541,30 @@ impl KdpConfig {
     }
 }
 
+/// Rain-rate relations.
 #[derive(Clone, Debug)]
 pub struct QpeConfig {
     /// Marshall-Palmer/NWS-style Z=a R^b relationship.
     pub z_r_a: f32,
+    /// Exponent `b` of Z = a R^b.
     pub z_r_b: f32,
+    /// Coefficient `α` of R = α KDP^β.
     pub kdp_alpha: f32,
+    /// Exponent `β` of R = α KDP^β.
     pub kdp_beta: f32,
+    /// The hybrid rate uses KDP where KDP is at least this, degrees per km...
     pub hybrid_min_kdp_deg_km: f32,
+    /// ...reflectivity is at least this, dBZ...
     pub hybrid_min_reflectivity_dbz: f32,
+    /// ...and the correlation coefficient, when present, is at least this.
     pub hybrid_min_rho_hv: f32,
+    /// Rates above this are capped, mm/h.
     pub max_rate_mm_h: f32,
 }
 
 impl QpeConfig {
+    /// The defaults for a radar band: Z = 300 R^1.4 and the band's KDP-R
+    /// coefficients.
     pub fn for_band(band: RadarBand) -> Self {
         let (kdp_alpha, kdp_beta) = band.rain_kdp_coefficients();
         Self {
@@ -531,18 +596,26 @@ pub enum AttenuationMethod {
     ZPhi(ZPhiAttenuation),
 }
 
+/// Attenuation correction: the method, and for
+/// [`AttenuationMethod::PhiLinear`] the attenuation proportional to
+/// differential phase (the Py-ART band table).
 #[derive(Clone, Debug)]
 pub struct AttenuationConfig {
     /// Correction method. The coefficients and caps below apply to
     /// [`AttenuationMethod::PhiLinear`]; Z-PHI carries its own.
     pub method: AttenuationMethod,
+    /// Specific attenuation per degree of PHIDP, dB per degree.
     pub horizontal_db_per_degree: f32,
+    /// Specific differential attenuation per degree of PHIDP, dB per degree.
     pub differential_db_per_degree: f32,
+    /// Largest path-integrated attenuation applied, dB.
     pub max_pia_db: f32,
+    /// Largest path-integrated differential attenuation applied, dB.
     pub max_pida_db: f32,
 }
 
 impl AttenuationConfig {
+    /// The coefficients of a radar band.
     pub fn for_band(band: RadarBand) -> Self {
         let (horizontal_db_per_degree, differential_db_per_degree) =
             band.attenuation_coefficients();
@@ -556,10 +629,14 @@ impl AttenuationConfig {
     }
 }
 
+/// The neighbourhood of the texture products.
 #[derive(Clone, Debug)]
 pub struct TextureConfig {
+    /// Rays to each side of the gate.
     pub radial_radius: usize,
+    /// Gates to each side of the gate.
     pub gate_radius: usize,
+    /// Fewest valid neighbours a texture value needs.
     pub min_samples: usize,
 }
 
@@ -573,9 +650,12 @@ impl Default for TextureConfig {
     }
 }
 
+/// The meteorological gate mask.
 #[derive(Clone, Debug)]
 pub struct MeteoMaskConfig {
+    /// Gates with a lower `MET_QI` are masked.
     pub minimum_quality: f32,
+    /// Gates with lower reflectivity are masked, dBZ.
     pub minimum_reflectivity_dbz: f32,
 }
 
@@ -588,10 +668,14 @@ impl Default for MeteoMaskConfig {
     }
 }
 
+/// Thresholds of the diagnostic products.
 #[derive(Clone, Debug)]
 pub struct DiagnosticConfig {
+    /// `TDS_SCORE` needs at least this reflectivity, dBZ.
     pub tds_min_reflectivity_dbz: f32,
+    /// `TDS_SCORE` needs a correlation coefficient at or below this.
     pub tds_rho_ceiling: f32,
+    /// `HAIL_SCORE` needs at least this reflectivity, dBZ.
     pub hail_min_reflectivity_dbz: f32,
 }
 
@@ -605,24 +689,36 @@ impl Default for DiagnosticConfig {
     }
 }
 
+/// Which products [`derive_sweep_in_place`] computes, and how.
 #[derive(Clone, Debug)]
 pub struct DerivationConfig {
+    /// The products to compute.
     pub products: BTreeSet<DerivedSweepProduct>,
+    /// Whether a product replaces a field of the same name already in the sweep.
     pub overwrite_existing: bool,
+    /// The radar band; band-dependent products are not computed when it is unknown.
     pub band: RadarBand,
+    /// KDP estimation.
     pub kdp: KdpConfig,
+    /// Rain-rate relations.
     pub qpe: QpeConfig,
+    /// Attenuation correction.
     pub attenuation: AttenuationConfig,
+    /// Texture neighbourhood.
     pub texture: TextureConfig,
+    /// Meteorological gate mask.
     pub meteo_mask: MeteoMaskConfig,
+    /// Diagnostic thresholds.
     pub diagnostics: DiagnosticConfig,
 }
 
 impl DerivationConfig {
+    /// KDP only, S band.
     pub fn kdp_only() -> Self {
         Self::with_products(RadarBand::S, [DerivedSweepProduct::Kdp])
     }
 
+    /// KDP, PHIF, KDP_SD, the hybrid rain rate and MET_QI, S band (the default).
     pub fn analyst_defaults() -> Self {
         Self::with_products(
             RadarBand::S,
@@ -636,10 +732,12 @@ impl DerivationConfig {
         )
     }
 
+    /// Every product, S band.
     pub fn all_supported() -> Self {
         Self::with_products(RadarBand::S, DerivedSweepProduct::ALL.iter().copied())
     }
 
+    /// The given products, with the defaults for `band`.
     pub fn with_products(
         band: RadarBand,
         products: impl IntoIterator<Item = DerivedSweepProduct>,
@@ -657,6 +755,7 @@ impl DerivationConfig {
         }
     }
 
+    /// Change the band and reset the band-dependent settings (KDP, rain rates, attenuation).
     pub fn set_band(&mut self, band: RadarBand) {
         self.band = band;
         self.kdp = KdpConfig::for_band(band);
@@ -671,18 +770,27 @@ impl Default for DerivationConfig {
     }
 }
 
+/// What [`derive_sweep_in_place`] did, by product id.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SweepDerivationReport {
+    /// Products added to the sweep.
     pub inserted: Vec<String>,
+    /// Products skipped because the sweep already had a field of that name.
     pub skipped_existing: Vec<String>,
+    /// Products the sweep lacks the inputs for (or that need a known band).
     pub unavailable: Vec<String>,
 }
 
+/// What [`derive_volume_in_place`] did: `(sweep index, product id)` pairs.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DerivationReport {
+    /// Sweeps visited.
     pub sweeps_processed: usize,
+    /// Products added.
     pub inserted: Vec<(usize, String)>,
+    /// Products skipped because the sweep already had them.
     pub skipped_existing: Vec<(usize, String)>,
+    /// Products the sweep lacks the inputs for.
     pub unavailable: Vec<(usize, String)>,
 }
 

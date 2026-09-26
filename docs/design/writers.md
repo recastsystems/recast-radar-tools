@@ -392,7 +392,7 @@ beyond the decode budget with `TooLarge`, as the CfRadial 1 writer did).
 The first two are committed regression inputs (`testdata/fuzz/manifest.toml`,
 `recast-radar-io/tests/fuzz_regressions.rs`). On the fixed code a further
 15-minute round found no crash: `writers` 68,878 inputs, `cfradial`
-1,072,808, `io_router` 1,376,435 (and `hdf5` 258,286, `odim` 525,531 in
+1,072,808, `io-router` 1,376,435 (and `hdf5` 258,286, `odim` 525,531 in
 the round before). The other timeouts (one in `hdf5`, two in `writers`;
 the third `writers` timeout was the 75-million-gate range) replay in under
 half a second: they came from the load of the shared machine.
@@ -400,7 +400,7 @@ half a second: they came from the load of the shared machine.
 After review (2026-09-25; nexbench, fork mode, the `hdf5`, `odim` and
 `cfradial` harnesses also reading without HDF5 metadata checksums, and
 `writers` comparing every gate), three rounds of 20, 15 and 10 minutes over
-`writers`, `hdf5`, `odim`, `cfradial` (and `io_router` in the first):
+`writers`, `hdf5`, `odim`, `cfradial` (and `io-router` in the first):
 
 - `writers` saved 20 crash artifacts (18, 1 and 1 by round) from two
   defects: the CfRadial reader wrapping a -8.6e-41 degree azimuth to 360
@@ -423,8 +423,8 @@ After review (2026-09-25; nexbench, fork mode, the `hdf5`, `odim` and
   `fuzz-hdf5-chunk-offset-overflow`), and the stable checksum-free
   byte-flip test in `recast-radar-hdf5` found a panic on chunk dimensions
   of another rank than the dataspace; both are errors now.
-- `odim`, `cfradial` and `io_router`: no crash. The three timeouts (one
-  each in `io_router`, `hdf5` and `writers`) replay in 8 ms to 1.2 s; the
+- `odim`, `cfradial` and `io-router`: no crash. The three timeouts (one
+  each in `io-router`, `hdf5` and `writers`) replay in 8 ms to 1.2 s; the
   `writers` one was the unchanged BEWID seed, whose full-gate comparison
   took 0.6 s, now bounded by the ray step.
 

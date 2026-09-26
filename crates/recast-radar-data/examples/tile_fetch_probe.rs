@@ -1,3 +1,5 @@
+//! Fetch one map tile over HTTPS and print its size and magic bytes (a check of the HTTP client).
+
 fn main() {
     let url =
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/8/97/62";

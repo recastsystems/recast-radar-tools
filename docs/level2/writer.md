@@ -567,7 +567,7 @@ handling of what the writer wrote, the script checks that it is exactly that, an
 
 Two targets cover the writer (`fuzz/README.md`):
 
-- `level2_writer` decodes the input as Level II with its metadata, writes it (without the source
+- `level2-writer` decodes the input as Level II with its metadata, writes it (without the source
   metadata as LDM records; with its metadata, metadata record and data messages uncompressed,
   gzip-wrapped, or as real-time chunks, by input length), and decodes the output again: the
   written volume must decode with the sweeps and radials reported, the source's rays in their
@@ -575,7 +575,7 @@ Two targets cover the writer (`fuzz/README.md`):
   angles, and every written moment's codes, gates and absent rows as the source had them. Seeds:
   11 real Level II files; a Message 1 volume is given KTLX's position in the modes that set the
   site. Every moment here is a NEXRAD moment, whose codes are copied.
-- `level2_writer_router` decodes the input with the format router (ODIM_H5, CfRadial, DORADE,
+- `level2-writer-router` decodes the input with the format router (ODIM_H5, CfRadial, DORADE,
   JMA, Level II) and writes it under the `Precise`, `Compatible` or `Standard` policy
   (plain, or dropping gates before the radar, accepting any range rounding, supplying a Nyquist
   velocity and unambiguous range where the source has none and going through the real-time
@@ -589,8 +589,8 @@ Two targets cover the writer (`fuzz/README.md`):
 
 `fuzz-tools smoke <target> <n>` runs `n` seeded mutations of every seed through a target on
 stable Rust, repeatably and on Windows. At `63ef7e2` (2026-09-25; ray order, rays and sweeps
-without data, record layouts and the chunk writer's pinned codings included): `level2_writer`
-13,000 mutants (6,196 written and decoded again), `level2_writer_router` 9,000 (2,667), no panic.
+without data, record layouts and the chunk writer's pinned codings included): `level2-writer`
+13,000 mutants (6,196 written and decoded again), `level2-writer-router` 9,000 (2,667), no panic.
 Again at `8a9c80a` (the Nyquist velocity and unambiguous range options, the streamed writer and
 the radials' own identifiers and resolution codes): the same counts, no panic. No
 AddressSanitizer campaign has run on `8a9c80a` or on the integration changes; the campaigns below
@@ -600,18 +600,18 @@ Campaigns in nexbench (cargo-fuzz 0.13.2, nightly, AddressSanitizer, one worker 
 
 | Target and code | Runs | Result |
 |---|---|---|
-| `level2_writer`, the working tree between `f646a66` and `91790be` (an earlier, wider form of the range refinement) | 69,405 in 20 min | no finding |
-| `level2_writer`, `b6d7e80` | 12,317 | a REF moment with a NaN scale and offset was written below threshold instead of copied; fixed in `9d0b76a` (NEXRAD codes are copied whatever their scale and offset), kept as `fuzz-level2-writer-nexrad-moment-nan-scale` with a regression test in `tests/fuzz_regressions.rs` |
-| `level2_writer`, `9d0b76a` | 106,011 in 30 min | no finding (peak RSS 676 MB, 920 new corpus units) |
-| `level2_writer_router`, `c1e4cdf` (before records within cuts and the chunk writer) | 19,325 in 20 min | no finding (peak RSS 663 MB, 1,633 new units) |
-| `level2_writer`, `c7d5fa8` (the final writer code) | 96,996 in 30 min | no finding (peak RSS 599 MB, 2,628 new units) |
-| `level2_writer_router`, `c7d5fa8` | 20,435 in 14 min | stopped by a libFuzzer clock glitch ("working on the last Unit for -1 seconds", a timeout of 2^64 - 1 s); the saved input runs in 6.6 s under AddressSanitizer, as its unmutated seed (6.3 s), and in 164 ms in the stable replay: no finding |
-| `level2_writer_router`, `c7d5fa8`, fork mode | 26,841 in 17 min | no crash, timeout or OOM; stopped by a restart of the container |
-| `level2_writer_router`, `c7d5fa8`, fork mode, from the grown corpus | 33,363 in 20 min | no crash, timeout or OOM (corpus 1,459 units, 14,754 coverage points) |
-| `level2_writer`, `33ab2d0` (ray order, rays and sweeps without data, record layouts), fork mode | 212,982 in 30 min | 7 inputs panic in the harness, not the writer: it compared ray times relative to each volume's own reference, which the decoder takes from the first radial it reads (to the second), so it moves when the writer leaves out a ray or sweep without data. Fixed in `63ef7e2` (times compared in milliseconds since 1970, as the router harness does); `writer_layout.rs` checks the times of a sweep whose first ray is left out |
-| `level2_writer_router`, `33ab2d0`, fork mode | 67,438 in 30 min | no crash, timeout or OOM |
-| `level2_writer`, `63ef7e2`, fork mode, from the grown corpus | 160,957 in 30 min | the 7 inputs above run without a panic; no crash, timeout or OOM (corpus 1,812 units) |
-| `level2_writer_router`, `63ef7e2`, fork mode, from the grown corpus | 21,219 in 30 min | no crash, timeout or OOM (corpus 1,579 units, 14,578 coverage points) |
+| `level2-writer`, the working tree between `f646a66` and `91790be` (an earlier, wider form of the range refinement) | 69,405 in 20 min | no finding |
+| `level2-writer`, `b6d7e80` | 12,317 | a REF moment with a NaN scale and offset was written below threshold instead of copied; fixed in `9d0b76a` (NEXRAD codes are copied whatever their scale and offset), kept as `fuzz-level2-writer-nexrad-moment-nan-scale` with a regression test in `tests/fuzz_regressions.rs` |
+| `level2-writer`, `9d0b76a` | 106,011 in 30 min | no finding (peak RSS 676 MB, 920 new corpus units) |
+| `level2-writer-router`, `c1e4cdf` (before records within cuts and the chunk writer) | 19,325 in 20 min | no finding (peak RSS 663 MB, 1,633 new units) |
+| `level2-writer`, `c7d5fa8` (the final writer code) | 96,996 in 30 min | no finding (peak RSS 599 MB, 2,628 new units) |
+| `level2-writer-router`, `c7d5fa8` | 20,435 in 14 min | stopped by a libFuzzer clock glitch ("working on the last Unit for -1 seconds", a timeout of 2^64 - 1 s); the saved input runs in 6.6 s under AddressSanitizer, as its unmutated seed (6.3 s), and in 164 ms in the stable replay: no finding |
+| `level2-writer-router`, `c7d5fa8`, fork mode | 26,841 in 17 min | no crash, timeout or OOM; stopped by a restart of the container |
+| `level2-writer-router`, `c7d5fa8`, fork mode, from the grown corpus | 33,363 in 20 min | no crash, timeout or OOM (corpus 1,459 units, 14,754 coverage points) |
+| `level2-writer`, `33ab2d0` (ray order, rays and sweeps without data, record layouts), fork mode | 212,982 in 30 min | 7 inputs panic in the harness, not the writer: it compared ray times relative to each volume's own reference, which the decoder takes from the first radial it reads (to the second), so it moves when the writer leaves out a ray or sweep without data. Fixed in `63ef7e2` (times compared in milliseconds since 1970, as the router harness does); `writer_layout.rs` checks the times of a sweep whose first ray is left out |
+| `level2-writer-router`, `33ab2d0`, fork mode | 67,438 in 30 min | no crash, timeout or OOM |
+| `level2-writer`, `63ef7e2`, fork mode, from the grown corpus | 160,957 in 30 min | the 7 inputs above run without a panic; no crash, timeout or OOM (corpus 1,812 units) |
+| `level2-writer-router`, `63ef7e2`, fork mode, from the grown corpus | 21,219 in 30 min | no crash, timeout or OOM (corpus 1,579 units, 14,578 coverage points) |
 
 The foreign inputs are slow under AddressSanitizer (JMA's float planes take seconds per input
 against milliseconds without it), so the router target runs at 16 to 50 inputs a second.

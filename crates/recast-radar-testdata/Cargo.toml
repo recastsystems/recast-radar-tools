@@ -18,7 +18,14 @@ serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
 toml = "1.1"
 # HTTPS via rustls is allowed in this dev-only crate (plan: Global Constraints).
-ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+ureq = { version = "3.4", default-features = false, features = ["rustls"], optional = true }
+
+[features]
+default = ["download"]
+# Download entries that are not committed into the cache (ureq with rustls,
+# whose crypto provider compiles C). Without it only committed and
+# already-cached files resolve; the rest report `TestdataError::Offline`.
+download = ["dep:ureq"]
 
 [lints]
 workspace = true

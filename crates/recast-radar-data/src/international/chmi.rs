@@ -100,6 +100,7 @@ const CHMI_STATIONS: [(&str, &str, f32, f32); 2] = [
 pub struct ChmiProvider;
 
 impl ChmiProvider {
+    /// The provider (it keeps no state).
     pub fn new() -> Self {
         Self
     }

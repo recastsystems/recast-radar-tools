@@ -7,6 +7,9 @@
 //! storm motion), and a numpy implementation of the documented ring fit on
 //! Py-ART's region-based dealiased velocity of the same sweep.
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{array, as_f64, as_str, as_usize, assert_close, golden, level2, moment};

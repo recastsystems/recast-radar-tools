@@ -30,12 +30,19 @@ use thiserror::Error;
 
 use crate::{P3Category, Sha256Digest};
 
+/// Revision of the P3 size-distribution reconstruction.
 pub const P3_PSD_REVISION: &str = "wrf-p3-v4.5.2-table-v5.4-psd-v3";
+/// The pinned WRF commit the P3 code and tables come from.
 pub const P3_WRF_SOURCE_COMMIT: &str = "f52c197ed39d12e087d02c50f412d90d418f6186";
+/// The WRF release of that commit.
 pub const P3_WRF_RELEASE: &str = "v4.7.1";
+/// Version of `module_mp_p3.F`.
 pub const P3_MODULE_VERSION: &str = "4.5.2";
+/// Version of the lookup table generator.
 pub const P3_TABLE_GENERATOR_VERSION: &str = "5.4";
+/// Version of the two-moment ice table.
 pub const P3_TWO_MOMENT_TABLE_VERSION: &str = "5.4_2momI";
+/// Version of the three-moment ice table.
 pub const P3_THREE_MOMENT_TABLE_VERSION: &str = "5.4_3momI";
 /// SHA-256 of the raw official table file at [`P3_WRF_SOURCE_COMMIT`].
 pub const P3_TWO_MOMENT_TABLE_SHA256: &str =
@@ -43,11 +50,16 @@ pub const P3_TWO_MOMENT_TABLE_SHA256: &str =
 /// SHA-256 of the raw official table file at [`P3_WRF_SOURCE_COMMIT`].
 pub const P3_THREE_MOMENT_TABLE_SHA256: &str =
     "9a3c57ecc09498802c8d7cb3931dbb0200dcf0f51466b3e288120c080271e6dc";
+/// DOI of Morrison and Milbrandt (2015), P3 part I.
 pub const P3_PART_I_DOI: &str = "10.1175/JAS-D-14-0065.1";
+/// DOI of Milbrandt and Morrison (2016), multiple ice categories.
 pub const P3_MULTICATEGORY_DOI: &str = "10.1175/JAS-D-15-0204.1";
+/// DOI of the triple-moment P3 context reference.
 pub const P3_TRIPLE_MOMENT_CONTEXT_DOI: &str = "10.1029/2024MS004644";
 
+/// Rime density range of P3, kg m⁻³.
 pub const P3_RIME_DENSITY_RANGE_KG_M3: [f64; 2] = [50.0, 900.0];
+/// Range of the gamma shape parameter μ.
 pub const P3_MU_RANGE: [f64; 2] = [0.0, 20.0];
 /// P3's default-`REAL` minimum ice mass mixing ratio.
 pub const P3_WRF_QSMALL_KGKG: f32 = 1.0e-14;
@@ -94,14 +106,20 @@ const GL8_WEIGHTS: [f64; GL8_POINTS] = [
 /// The four P3 configurations exposed by official WRF.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum P3WrfScheme {
+    /// `mp_physics = 50`: one ice category, fixed cloud droplet number.
     Mp50OneIceFixedCloudNumber,
+    /// `mp_physics = 51`: one ice category, predicted cloud droplet number.
     Mp51OneIcePredictedCloudNumber,
+    /// `mp_physics = 52`: two ice categories, predicted cloud droplet number.
     Mp52TwoIcePredictedCloudNumber,
+    /// `mp_physics = 53`: one triple-moment ice category.
     Mp53OneIceTripleMoment,
 }
 
 impl P3WrfScheme {
+    /// The WRF `mp_physics` id.
     #[must_use]
     pub const fn mp_physics(self) -> i32 {
         match self {
@@ -112,6 +130,7 @@ impl P3WrfScheme {
         }
     }
 
+    /// How many ice moments the scheme predicts.
     #[must_use]
     pub const fn moment_order(self) -> P3IceMomentOrder {
         match self {
@@ -120,6 +139,7 @@ impl P3WrfScheme {
         }
     }
 
+    /// Number of free ice categories.
     #[must_use]
     pub const fn category_count(self) -> usize {
         match self {
@@ -128,6 +148,7 @@ impl P3WrfScheme {
         }
     }
 
+    /// The lookup table version the scheme needs.
     #[must_use]
     pub const fn required_table_version(self) -> &'static str {
         match self.moment_order() {
@@ -136,6 +157,7 @@ impl P3WrfScheme {
         }
     }
 
+    /// SHA-256 of the lookup table the scheme needs, lowercase hexadecimal.
     #[must_use]
     pub const fn required_table_sha256(self) -> &'static str {
         match self.moment_order() {
@@ -159,10 +181,14 @@ impl TryFrom<i32> for P3WrfScheme {
     }
 }
 
+/// How many ice moments a P3 configuration predicts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum P3IceMomentOrder {
+    /// Mass and number.
     TwoMoment,
+    /// Mass, number and the sixth moment (`QZI`).
     TripleMomentQzi,
 }
 
@@ -173,25 +199,40 @@ pub enum P3IceMomentOrder {
 /// applies the inverse transform. This type prevents treating history-file
 /// QZI itself as M6.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum P3IceMomentInput {
+    /// Two-moment ice: no third moment.
     TwoMoment,
-    WrfAdvectedQzi { qzi_sqrt_n_times_m6: f64 },
+    /// The history-file `QZI`, which is `sqrt(QNICE · M6)`.
+    WrfAdvectedQzi {
+        /// The `QZI` value.
+        qzi_sqrt_n_times_m6: f64,
+    },
 }
 
 /// Native WRF P3 state for one free ice category.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct P3PsdInput {
+    /// The WRF configuration.
     pub scheme: P3WrfScheme,
+    /// The ice category.
     pub category: P3Category,
+    /// `QICE`: total ice mass mixing ratio, kg kg⁻¹.
     pub total_ice_kgkg: f64,
+    /// `QNICE`: total ice number mixing ratio, kg⁻¹.
     pub total_number_per_kg: f64,
+    /// `QIR`: rime mass mixing ratio, kg kg⁻¹.
     pub rime_mass_kgkg: f64,
+    /// `QIB`: rime volume mixing ratio, m³ kg⁻¹.
     pub rime_volume_m3_per_kg: f64,
+    /// Dry-air density, kg m⁻³.
     pub dry_air_density_kg_m3: f64,
+    /// The third moment, for triple-moment ice.
     pub moment: P3IceMomentInput,
 }
 
 impl P3PsdInput {
+    /// A two-moment input from the configuration, category, `QICE`, `QNICE`, `QIR`, `QIB` and the dry-air density.
     #[must_use]
     pub const fn two_moment(
         scheme: P3WrfScheme,
@@ -214,6 +255,7 @@ impl P3PsdInput {
         }
     }
 
+    /// A triple-moment input (`mp_physics = 53`, category 1) from `QICE`, `QNICE`, `QIR`, `QIB`, the history-file `QZI` and the dry-air density.
     #[must_use]
     pub const fn triple_moment_qzi(
         total_ice_kgkg: f64,
@@ -241,10 +283,15 @@ impl P3PsdInput {
 /// Exact provenance required of a lookup table implementation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct P3LookupTableDescriptor {
+    /// The WRF commit the table comes from.
     pub wrf_source_commit: String,
+    /// Version of `module_mp_p3.F`.
     pub p3_module_version: String,
+    /// Version of the table generator.
     pub generator_version: String,
+    /// Version of the table.
     pub table_version: String,
+    /// SHA-256 of the table file.
     pub table_sha256: Sha256Digest,
 }
 
@@ -295,14 +342,20 @@ impl P3LookupTableDescriptor {
 /// Physical coordinates passed to the official table interpolation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct P3LookupQuery {
+    /// The WRF configuration.
     pub scheme: P3WrfScheme,
+    /// The ice category.
     pub category: P3Category,
+    /// Rime mass fraction.
     pub rime_mass_fraction: f64,
+    /// Rime density, kg m⁻³.
     pub rime_density_kg_m3: f64,
     /// Unmodified WRF history-field value. Negative finite leading-edge values
     /// are repaired by the exact P3 number-limiter sequence during lookup.
     pub total_number_per_kg: f64,
+    /// Total ice mass mixing ratio, kg kg⁻¹.
     pub total_ice_kgkg: f64,
+    /// Sixth-moment mixing ratio, m⁶ kg⁻¹, for triple-moment ice.
     pub sixth_moment_per_kg: Option<f64>,
 }
 
@@ -314,16 +367,27 @@ pub struct P3LookupQuery {
 /// bounds in that order.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3NumberLimiterAudit {
+    /// The number mixing ratio given, kg⁻¹.
     pub original_total_number_per_kg: f64,
+    /// That number rounded to WRF's `REAL`, kg⁻¹.
     pub wrf_real_original_total_number_per_kg: f64,
+    /// The number after the `nsmall` floor, kg⁻¹.
     pub after_nsmall_total_number_per_kg: f64,
+    /// The table's `inv_Qmin`, kg⁻¹.
     pub inverse_qmin_per_kg: f64,
+    /// The table's `inv_Qmax`, kg⁻¹.
     pub inverse_qmax_per_kg: f64,
+    /// The upper number limit, `inv_Qmin · QICE`, kg⁻¹.
     pub maximum_total_number_per_kg: f64,
+    /// The lower number limit, `inv_Qmax · QICE`, kg⁻¹.
     pub minimum_total_number_per_kg: f64,
+    /// The number after all limiters, kg⁻¹.
     pub repaired_total_number_per_kg: f64,
+    /// Whether the `nsmall` floor changed the number.
     pub nsmall_applied: bool,
+    /// Whether the upper limit changed the number.
     pub maximum_applied: bool,
+    /// Whether the lower limit changed the number.
     pub minimum_applied: bool,
 }
 
@@ -387,8 +451,11 @@ impl P3NumberLimiterAudit {
 /// table. Axis clamping is retained because it is explicit WRF behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3LookupSolution {
+    /// Slope λ of the gamma distribution, m⁻¹.
     pub slope_lambda_m_inv: f64,
+    /// Shape μ of the gamma distribution.
     pub shape_mu: f64,
+    /// Which table axes the query was clamped on.
     pub axis_clamps: P3LookupAxisClamps,
     /// Interpolated table field 7 (`i_qsmall`/`inv_Qmin`).
     pub inverse_qmin_per_kg: f64,
@@ -396,15 +463,21 @@ pub struct P3LookupSolution {
     pub inverse_qmax_per_kg: f64,
 }
 
+/// Which table axes WRF clamped the query to.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct P3LookupAxisClamps {
+    /// The normalized-mass axis.
     pub normalized_mass: bool,
+    /// The rime fraction axis.
     pub rime_fraction: bool,
+    /// The rime density axis.
     pub rime_density: bool,
+    /// The shape axis.
     pub shape: bool,
 }
 
 impl P3LookupAxisClamps {
+    /// Whether any axis was clamped.
     #[must_use]
     pub const fn any(self) -> bool {
         self.normalized_mass || self.rime_fraction || self.rime_density || self.shape
@@ -413,11 +486,15 @@ impl P3LookupAxisClamps {
 
 /// Failure produced by a concrete official-table reader/interpolator.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[non_exhaustive]
 pub enum P3LookupFailure {
+    /// The state is outside the table.
     #[error("P3 lookup state is outside the loaded table: {0}")]
     OutsideDomain(String),
+    /// The table is corrupt or incomplete.
     #[error("P3 lookup table is corrupt or incomplete: {0}")]
     Corrupt(String),
+    /// The table does not support the operation.
     #[error("P3 lookup operation is unsupported: {0}")]
     Unsupported(String),
 }
@@ -426,10 +503,13 @@ pub enum P3LookupFailure {
 /// and multilinear interpolation in the pinned `module_mp_p3.F`, including its
 /// documented axis clamps. This crate intentionally provides no fallback.
 pub trait P3LookupTableV54: Send + Sync {
+    /// Provenance of the table.
     fn descriptor(&self) -> &P3LookupTableDescriptor;
+    /// Interpolate the table at a query, as `module_mp_p3.F` does.
     fn lookup_psd(&self, query: P3LookupQuery) -> Result<P3LookupSolution, P3LookupFailure>;
 }
 
+/// Tolerances of the P3 size-distribution reconstruction.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3ReconstructionConfig {
     /// Maximum numerical relative error allowed after mass-normalizing the
@@ -455,18 +535,28 @@ impl Default for P3ReconstructionConfig {
 /// Exact four-region P3 mass and projected-area law.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3PiecewiseParticleLaw {
+    /// Rime mass fraction.
     pub rime_mass_fraction: f64,
+    /// Rime density, kg m⁻³.
     pub rime_density_kg_m3: f64,
+    /// Largest maximum dimension of a small dense sphere, m.
     pub small_sphere_limit_m: f64,
+    /// Boundary between unrimed ice and graupel, m.
     pub dense_unrimed_to_graupel_m: f64,
+    /// Boundary between graupel and partially rimed ice, m.
     pub graupel_to_partially_rimed_m: f64,
+    /// Mass coefficient of graupel (`m = c D³`), kg m⁻³.
     pub graupel_mass_coefficient: f64,
+    /// Mass coefficient of partially rimed ice.
     pub partially_rimed_mass_coefficient: f64,
+    /// Mass exponent of partially rimed ice.
     pub partially_rimed_mass_exponent: f64,
+    /// Iterations the graupel density fixed point took.
     pub rime_density_iterations: u16,
 }
 
 impl P3PiecewiseParticleLaw {
+    /// The particle law for a rime mass fraction in [0, 1] and, when rimed, a rime density in the P3 range.
     pub fn reconstruct(
         rime_mass_fraction: f64,
         rime_density_kg_m3: f64,
@@ -588,6 +678,7 @@ impl P3PiecewiseParticleLaw {
         })
     }
 
+    /// The particle of a maximum dimension (m).
     pub fn particle(&self, maximum_dimension_m: f64) -> Result<P3ParticleGeometry, P3PsdError> {
         positive("P3 particle maximum dimension", maximum_dimension_m)?;
         let (region, mass_kg, projected_area_m2) =
@@ -656,17 +747,25 @@ impl P3PiecewiseParticleLaw {
     }
 }
 
+/// The region of the P3 particle law a particle falls in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum P3ParticleRegion {
+    /// A small solid-ice sphere.
     SmallDenseSphere,
+    /// Unrimed ice with the dense power-law mass.
     DenseUnrimed,
+    /// A fully rimed sphere (graupel).
     FullyRimedSphere,
+    /// Partially rimed ice.
     PartiallyRimed,
 }
 
+/// What the P3 particle law specifies about particle shape.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum P3ShapeAuthority {
     /// WRF P3 provides maximum dimension and projected area, but not a unique
     /// spheroidal axis ratio/canting distribution for nonspherical particles.
@@ -683,19 +782,29 @@ pub enum P3ShapeAuthority {
 /// artifact from an arbitrary invalid mass/area tuple.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum P3ProjectedAreaConsistency {
+    /// The area is within the circle of the maximum dimension.
     #[default]
     GeometricallyBounded,
+    /// The pinned generator's final-coefficient artifact: the area exceeds that circle in a narrow transition interval.
     PinnedFinalCoefficientTransitionOvershoot,
 }
 
+/// A P3 particle: size, mass, projected area and region.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3ParticleGeometry {
+    /// Maximum dimension, m.
     pub maximum_dimension_m: f64,
+    /// Mass, kg.
     pub mass_kg: f64,
+    /// Projected area, m².
     pub projected_area_m2: f64,
+    /// Mass divided by the volume of the sphere of the maximum dimension, kg m⁻³.
     pub effective_spherical_density_kg_m3: f64,
+    /// The region of the particle law.
     pub region: P3ParticleRegion,
+    /// What the law specifies about the shape.
     pub shape_authority: P3ShapeAuthority,
     #[serde(default)]
     pub(crate) projected_area_consistency: P3ProjectedAreaConsistency,
@@ -722,34 +831,59 @@ impl P3ParticleGeometry {
     }
 }
 
+/// Provenance of a P3 size distribution.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3PsdProvenance {
+    /// Revision of the reconstruction.
     pub revision: String,
+    /// The WRF release.
     pub wrf_release: String,
+    /// The WRF commit.
     pub wrf_source_commit: String,
+    /// Version of `module_mp_p3.F`.
     pub p3_module_version: String,
+    /// The lookup table.
     pub table: P3LookupTableDescriptor,
+    /// The number limiter audit.
     pub number_limiter: P3NumberLimiterAudit,
+    /// DOIs of the primary sources.
     pub primary_source_dois: Vec<String>,
 }
 
+/// How well the reconstructed distribution reproduces the native moments.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3MomentClosureAudit {
+    /// Number density from the input, m⁻³.
     pub expected_number_density_m3: f64,
+    /// Number density of the reconstruction, m⁻³.
     pub reconstructed_number_density_m3: f64,
+    /// Relative error of the number density.
     pub number_relative_error: f64,
+    /// Mass concentration from the input, kg m⁻³.
     pub expected_mass_concentration_kg_m3: f64,
+    /// Mass concentration of the reconstruction, kg m⁻³.
     pub reconstructed_mass_concentration_kg_m3: f64,
+    /// Relative error of the mass concentration.
     pub mass_relative_error: f64,
+    /// Sixth moment from the input, m³, for triple-moment ice.
     pub expected_sixth_moment_m3: Option<f64>,
+    /// Sixth moment of the reconstruction, m³.
     pub reconstructed_sixth_moment_m3: f64,
+    /// Relative error of the sixth moment, for triple-moment ice.
     pub sixth_moment_relative_error: Option<f64>,
+    /// Rime mass concentration from the input, kg m⁻³.
     pub expected_rime_mass_concentration_kg_m3: f64,
+    /// Rime mass concentration of the reconstruction, kg m⁻³.
     pub reconstructed_rime_mass_concentration_kg_m3: f64,
+    /// Relative error of the rime mass.
     pub rime_mass_relative_error: f64,
+    /// Rime volume concentration from the input, m³ m⁻³.
     pub expected_rime_volume_concentration_m3_m3: f64,
+    /// Rime volume concentration of the reconstruction, m³ m⁻³.
     pub reconstructed_rime_volume_concentration_m3_m3: f64,
+    /// Relative error of the rime volume.
     pub rime_volume_relative_error: f64,
+    /// Which table axes were clamped.
     pub table_axis_clamps: P3LookupAxisClamps,
 }
 
@@ -758,9 +892,13 @@ pub struct P3MomentClosureAudit {
 /// Rayleigh radar weight before the constant solid-ice-density factor.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3PopulationMoments {
+    /// Number density, m⁻³.
     pub number_density_m3: f64,
+    /// Mass concentration, kg m⁻³.
     pub mass_concentration_kg_m3: f64,
+    /// Mass-squared radar weight, kg² m⁻³.
     pub mass_squared_radar_weight_kg2_m3: f64,
+    /// Sixth moment of the maximum dimension, m³.
     pub sixth_moment_m3: f64,
 }
 
@@ -777,6 +915,7 @@ pub struct P3Psd {
 }
 
 impl P3Psd {
+    /// Reconstruct the distribution of an input from the official table, which must match the scheme's pinned version and digest.
     pub fn reconstruct(
         input: P3PsdInput,
         table: &dyn P3LookupTableV54,
@@ -945,16 +1084,19 @@ impl P3Psd {
         })
     }
 
+    /// The input.
     #[must_use]
     pub const fn input(&self) -> P3PsdInput {
         self.input
     }
 
+    /// Slope λ, m⁻¹.
     #[must_use]
     pub const fn lambda_m_inv(&self) -> f64 {
         self.lambda_m_inv
     }
 
+    /// Shape μ.
     #[must_use]
     pub const fn mu(&self) -> f64 {
         self.mu
@@ -966,26 +1108,31 @@ impl P3Psd {
         self.n0_intercept_si
     }
 
+    /// The particle law.
     #[must_use]
     pub const fn particle_law(&self) -> P3PiecewiseParticleLaw {
         self.law
     }
 
+    /// The moment closure audit.
     #[must_use]
     pub const fn closure_audit(&self) -> P3MomentClosureAudit {
         self.closure
     }
 
+    /// The provenance.
     #[must_use]
     pub fn provenance(&self) -> &P3PsdProvenance {
         &self.provenance
     }
 
+    /// The number limiter audit.
     #[must_use]
     pub const fn number_limiter_audit(&self) -> P3NumberLimiterAudit {
         self.provenance.number_limiter
     }
 
+    /// Gauss-Legendre quadrature of the distribution.
     pub fn quadrature(&self, config: P3QuadratureConfig) -> Result<P3Quadrature, P3PsdError> {
         self.quadrature_with_dimension_breakpoints(config, &[])
     }
@@ -1346,12 +1493,18 @@ impl P3Psd {
     }
 }
 
+/// Settings of the P3 quadrature.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3QuadratureConfig {
+    /// Gauss-Legendre panels.
     pub panels: u16,
+    /// Largest number of nodes.
     pub maximum_nodes: u32,
+    /// Largest fraction of the distribution left in the upper tail.
     pub maximum_tail_fraction: f64,
+    /// Largest upper limit, as λ·D.
     pub maximum_scaled_d: f64,
+    /// Largest relative quadrature error of the moments.
     pub maximum_quadrature_relative_error: f64,
 }
 
@@ -1390,132 +1543,242 @@ impl P3QuadratureConfig {
     }
 }
 
+/// A quadrature node: a particle and the population it carries.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3QuadratureNode {
+    /// Maximum dimension, m.
     pub maximum_dimension_m: f64,
     /// Integrated population carried by this quadrature node, # m^-3.
     pub number_concentration_m3: f64,
+    /// The particle.
     pub particle: P3ParticleGeometry,
 }
 
+/// Fractions of the distribution omitted at the lower end of the domain and left in the upper tail.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct P3OmissionTailAudit {
+    /// Number fraction omitted at the lower end.
     pub lower_domain_omitted_number_fraction: f64,
+    /// Mass fraction omitted at the lower end.
     pub lower_domain_omitted_mass_fraction: f64,
+    /// Radar-weight fraction omitted at the lower end.
     pub lower_domain_omitted_mass_squared_radar_weight_fraction: f64,
+    /// Sixth-moment fraction omitted at the lower end.
     pub lower_domain_omitted_sixth_moment_fraction: f64,
+    /// Number fraction in the upper tail.
     pub upper_tail_number_fraction: f64,
+    /// Mass fraction in the upper tail.
     pub upper_tail_mass_fraction: f64,
+    /// Radar-weight fraction in the upper tail.
     pub upper_tail_mass_squared_radar_weight_fraction: f64,
+    /// Sixth-moment fraction in the upper tail.
     pub upper_tail_sixth_moment_fraction: f64,
 }
 
+/// What a P3 quadrature represents and how accurately.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P3QuadratureAudit {
+    /// The configuration.
     pub config: P3QuadratureConfig,
+    /// Upper limit of the quadrature, m.
     pub upper_dimension_m: f64,
+    /// Nodes evaluated.
     pub nodes_evaluated: usize,
+    /// Omitted and tail fractions.
     pub omission: P3OmissionTailAudit,
+    /// Analytic number density on the domain, m⁻³.
     pub analytic_domain_number_density_m3: f64,
+    /// Analytic mass concentration on the domain, kg m⁻³.
     pub analytic_domain_mass_concentration_kg_m3: f64,
+    /// Analytic radar weight on the domain, kg² m⁻³.
     pub analytic_domain_mass_squared_radar_weight_kg2_m3: f64,
+    /// Analytic sixth moment on the domain, m³.
     pub analytic_domain_sixth_moment_m3: f64,
+    /// Number density the nodes represent, m⁻³.
     pub represented_number_density_m3: f64,
+    /// Mass concentration the nodes represent, kg m⁻³.
     pub represented_mass_concentration_kg_m3: f64,
+    /// Radar weight the nodes represent, kg² m⁻³.
     pub represented_mass_squared_radar_weight_kg2_m3: f64,
+    /// Sixth moment the nodes represent, m³.
     pub represented_sixth_moment_m3: f64,
+    /// Relative quadrature error of the number density.
     pub number_quadrature_relative_error: f64,
+    /// Relative quadrature error of the mass.
     pub mass_quadrature_relative_error: f64,
+    /// Relative quadrature error of the radar weight.
     pub mass_squared_radar_weight_quadrature_relative_error: f64,
+    /// Relative quadrature error of the sixth moment.
     pub sixth_moment_quadrature_relative_error: f64,
 }
 
+/// The nodes of a P3 quadrature and its audit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct P3Quadrature {
+    /// The nodes.
     pub nodes: Vec<P3QuadratureNode>,
+    /// The audit.
     pub audit: P3QuadratureAudit,
 }
 
+/// Why a P3 size distribution could not be reconstructed or integrated.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum P3PsdError {
+    /// The `mp_physics` id is not a P3 configuration.
     #[error("WRF mp_physics={mp_physics} is not a supported P3 configuration")]
-    UnsupportedScheme { mp_physics: i32 },
+    UnsupportedScheme {
+        /// The id.
+        mp_physics: i32,
+    },
+    /// The configuration has no such ice category.
     #[error("P3 category {category:?} is unavailable for WRF mp_physics={mp_physics}")]
     CategoryUnavailable {
+        /// The `mp_physics` id.
         mp_physics: i32,
+        /// The category.
         category: P3Category,
     },
+    /// The input's moments do not match the configuration.
     #[error("WRF mp_physics={mp_physics} requires {required:?}, got {actual:?}")]
     MomentOrderMismatch {
+        /// The `mp_physics` id.
         mp_physics: i32,
+        /// The moments the configuration needs.
         required: P3IceMomentOrder,
+        /// The moments given.
         actual: P3IceMomentOrder,
     },
+    /// An input value fails its requirement.
     #[error("{field} must be {requirement}, got {value}")]
     InvalidInput {
+        /// Which value.
         field: &'static str,
+        /// The value.
         value: f64,
+        /// What it must be.
         requirement: &'static str,
     },
+    /// A value is outside its range.
     #[error("{field} value {value} is outside [{minimum}, {maximum}]")]
     OutsideRange {
+        /// Which value.
         field: &'static str,
+        /// The value.
         value: f64,
+        /// The lower bound.
         minimum: f64,
+        /// The upper bound.
         maximum: f64,
     },
+    /// Rime mass and rime volume are not both zero or both positive.
     #[error("rime mass and volume must both be zero or both be positive")]
     InconsistentRimeState,
+    /// The rime mass exceeds the total ice mass.
     #[error("P3 rime mass {rime_mass} exceeds total ice mass {total_mass}")]
-    RimeMassExceedsTotal { rime_mass: f64, total_mass: f64 },
+    RimeMassExceedsTotal {
+        /// Rime mass mixing ratio, kg kg⁻¹.
+        rime_mass: f64,
+        /// Total ice mass mixing ratio, kg kg⁻¹.
+        total_mass: f64,
+    },
+    /// The particle law's size thresholds are not ordered.
     #[error("P3 piecewise particle thresholds are not ordered")]
     InvalidPiecewiseOrdering,
+    /// The table's provenance does not match the pinned version.
     #[error("P3 lookup {field} mismatch: expected '{expected}', got '{actual}'")]
     LookupRevisionMismatch {
+        /// Which item.
         field: &'static str,
+        /// The pinned value.
         expected: String,
+        /// The table's value.
         actual: String,
     },
+    /// The table's SHA-256 does not match the pinned digest.
     #[error("P3 lookup SHA-256 mismatch: expected {expected}, got {actual}")]
-    LookupDigestMismatch { expected: String, actual: String },
+    LookupDigestMismatch {
+        /// The pinned digest.
+        expected: String,
+        /// The table's digest.
+        actual: String,
+    },
+    /// The table lookup failed.
     #[error("P3 official-table lookup failed: {0}")]
     Lookup(#[source] P3LookupFailure),
+    /// Triple-moment ice needs a number repair, which needs WRF's coupled Zi limiter.
     #[error(
         "P3 triple-moment number repair from {original_number_per_kg} to {repaired_number_per_kg} kg-1 requires the coupled WRF Zi limiter"
     )]
     TripleMomentNumberRepairRequiresZiLimiter {
+        /// The number given, kg⁻¹.
         original_number_per_kg: f64,
+        /// The repaired number, kg⁻¹.
         repaired_number_per_kg: f64,
     },
+    /// A computation produced an invalid value.
     #[error("{field} produced invalid value {value}")]
-    InvalidComputation { field: &'static str, value: f64 },
+    InvalidComputation {
+        /// Which quantity.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// An iterative computation did not converge.
     #[error("{operation} did not converge")]
-    NumericalConvergence { operation: &'static str },
+    NumericalConvergence {
+        /// Which computation.
+        operation: &'static str,
+    },
+    /// A reconstructed moment does not match the native moment.
     #[error("P3 {moment} reconstruction error {relative_error} exceeds {maximum}")]
     MomentClosure {
+        /// Which moment.
         moment: &'static str,
+        /// The relative error.
         relative_error: f64,
+        /// The largest allowed.
         maximum: f64,
     },
+    /// The node budget arithmetic overflowed.
     #[error("quadrature node-budget arithmetic overflowed")]
     NodeBudgetOverflow,
+    /// The quadrature needs more nodes than allowed.
     #[error("P3 quadrature needs {required} nodes but maximum is {maximum}")]
-    NodeBudgetExceeded { required: usize, maximum: usize },
+    NodeBudgetExceeded {
+        /// Nodes needed.
+        required: usize,
+        /// The most allowed.
+        maximum: usize,
+    },
+    /// The gamma tail cannot reach the requested fraction within the largest λ·D.
     #[error(
         "P3 gamma tails cannot reach {requested_fraction} by scaled diameter {maximum_scaled_d}"
     )]
     TailToleranceUnreachable {
+        /// The largest λ·D.
         maximum_scaled_d: f64,
+        /// The tail fraction asked for.
         requested_fraction: f64,
     },
+    /// A quadrature moment does not match the analytic moment.
     #[error("P3 {moment} quadrature error {relative_error} exceeds {maximum}")]
     QuadratureClosure {
+        /// Which moment.
         moment: &'static str,
+        /// The relative error.
         relative_error: f64,
+        /// The largest allowed.
         maximum: f64,
     },
+    /// An integer setting is zero.
     #[error("{field} must be positive, got {value}")]
-    InvalidIntegerConfig { field: &'static str, value: u64 },
+    InvalidIntegerConfig {
+        /// Which setting.
+        field: &'static str,
+        /// The value.
+        value: u64,
+    },
 }
 
 fn validate_input(input: P3PsdInput) -> Result<(), P3PsdError> {

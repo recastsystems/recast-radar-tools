@@ -2141,7 +2141,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 - `fuzz-target:cfradial` (1): `fuzz-cfradial-overlapping-sweep-ray-ranges`
 - `fuzz-target:hdf5` (1): `fuzz-hdf5-chunk-offset-overflow`
-- `fuzz-target:level2_writer` (1): `fuzz-level2-writer-nexrad-moment-nan-scale`
+- `fuzz-target:level2-writer` (1): `fuzz-level2-writer-nexrad-moment-nan-scale`
 - `fuzz-target:level3` (1): `fuzz-level3-rcm-centroid-non-ascii`
 - `fuzz-target:odim` (1): `fuzz-odim-hdf5-local-heap-name-offset-overflow`
 - `fuzz-target:writers` (8): `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`

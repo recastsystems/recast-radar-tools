@@ -10,6 +10,9 @@
 //! two rows are not compared. The KTLX 1999 sweep is a whole circle and every
 //! row is compared, including the wrap.
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{array, as_f64, as_opt_f64, as_usize, assert_close, cell, golden, row_stats};

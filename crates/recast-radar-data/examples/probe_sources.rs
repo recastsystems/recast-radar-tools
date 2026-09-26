@@ -1,3 +1,5 @@
+//! Probe the live Level II sources for a site (default KTLX): recent sites on AWS, the latest archive object and the real-time chunks; `--download` also fetches them.
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let requested_site = args

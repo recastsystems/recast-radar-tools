@@ -26,6 +26,7 @@
 /// unit-aware Solarpower07 tables; the parameterized families reuse existing
 /// BowEcho ramps rescaled over a physically sensible range (no new palettes).
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum WrfColorFamily {
     /// Solar temperature (unit-aware K/°C/°F).
     Temperature,
@@ -50,12 +51,23 @@ pub enum WrfColorFamily {
     /// Analyst Probability ramp rescaled over 0..1 (fraction-valued fields).
     Fraction,
     /// Solar composite severe ramp over 0..`vmax` (dimensionless composites).
-    Composite { vmax: f32 },
+    Composite {
+        /// Top of the ramp.
+        vmax: f32,
+    },
     /// Analyst Generic sequential ramp rescaled over `lo..hi`.
-    Sequential { lo: f32, hi: f32 },
+    Sequential {
+        /// Bottom of the ramp.
+        lo: f32,
+        /// Top of the ramp.
+        hi: f32,
+    },
     /// Balance (CVD-safe) diverging ramp rescaled to ±`max_abs` — signed
     /// fluxes and vector components, neutral at zero.
-    Diverging { max_abs: f32 },
+    Diverging {
+        /// Magnitude at the ends of the ramp.
+        max_abs: f32,
+    },
     /// No existing ramp fits (categories, buckets, run-length accumulations):
     /// keep the caller's fallback (range-normalized generic).
     Unassigned,

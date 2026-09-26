@@ -22,12 +22,16 @@ use crate::{
     P3QuadratureConfig, P3QuadratureNode, PsdParticleDomain, PsdSpheroidHabit,
 };
 
+/// Revision of the strict, exact-sphere integration.
 pub const P3_SPHERICAL_INTEGRATION_REVISION: &str =
     "wrf-p3-v5.4-shape-authoritative-spherical-integration-v4";
+/// Revision of the research projected-area-equivalent oblate mapping.
 pub const P3_PROJECTED_AREA_EQUIVALENT_OBLATE_REVISION: &str =
     "wrf-p3-v5.4-projected-area-equivalent-oblate-gaussian20-research-v4";
+/// Revision of the research projected-area-equivalent spheroid mapping.
 pub const P3_PROJECTED_AREA_EQUIVALENT_SPHEROID_REVISION: &str =
     "wrf-p3-v5.4-area-spheroid-fixed-point-area-closure-gaussian20-research-v3";
+/// Revision of the Rayleigh bridge for small dense spheres below the table's diameter floor.
 pub const P3_SMALL_SPHERE_RAYLEIGH_BRIDGE_REVISION: &str =
     "wrf-p3-v5.4-exact-small-dense-sphere-rayleigh-table-floor-bridge-v1";
 /// Native diameter grid used by the pinned WRF source's P3-module-v4.5.2,
@@ -38,41 +42,64 @@ pub const P3_SMALL_SPHERE_RAYLEIGH_BRIDGE_REVISION: &str =
 /// provenance, not a claim encoded in (or authenticated by) a runtime table
 /// hash.
 pub const P3_WRF_LOOKUP_INTEGRATION_BIN_COUNT: u32 = 40_000;
+/// Width of a bin of the WRF generator's diameter grid, µm.
 pub const P3_WRF_LOOKUP_INTEGRATION_BIN_WIDTH_UM: u32 = 2;
+/// Centre of the first bin, µm.
 pub const P3_WRF_LOOKUP_INTEGRATION_FIRST_CENTER_UM: u32 = 1;
+/// Centre of the last bin, µm.
 pub const P3_WRF_LOOKUP_INTEGRATION_LAST_CENTER_UM: u32 = 79_999;
+/// Upper edge of the last bin, µm.
 pub const P3_WRF_LOOKUP_INTEGRATION_UPPER_EDGE_UM: u32 = 80_000;
+/// Width of a bin, m.
 pub const P3_WRF_LOOKUP_INTEGRATION_BIN_WIDTH_M: f64 =
     P3_WRF_LOOKUP_INTEGRATION_BIN_WIDTH_UM as f64 * 1.0e-6;
+/// Centre of the first bin, m.
 pub const P3_WRF_LOOKUP_INTEGRATION_FIRST_CENTER_M: f64 =
     P3_WRF_LOOKUP_INTEGRATION_FIRST_CENTER_UM as f64 * 1.0e-6;
+/// Centre of the last bin, m.
 pub const P3_WRF_LOOKUP_INTEGRATION_LAST_CENTER_M: f64 =
     P3_WRF_LOOKUP_INTEGRATION_LAST_CENTER_UM as f64 * 1.0e-6;
+/// Upper edge of the grid (the largest maximum dimension integrated), m.
 pub const P3_WRF_LOOKUP_INTEGRATION_MAXIMUM_DIMENSION_M: f64 =
     P3_WRF_LOOKUP_INTEGRATION_UPPER_EDGE_UM as f64 * 1.0e-6;
+/// The WRF source file that defines the grid.
 pub const P3_WRF_LOOKUP_INTEGRATION_SOURCE_PATH: &str = "run/create_p3_lookupTable_1.f90-v5.4";
+/// Revision of the grid provenance.
 pub const P3_WRF_LOOKUP_INTEGRATION_DOMAIN_REVISION: &str =
     "wrf-p3-v5.4-lookup-integration-grid-inferred-v1";
 
+/// How the source integration domain is known.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum P3TMatrixSourceDomainAuthority {
     /// Inferred from the pinned generator's 40,000-bin, 2 um numerical grid.
     InferredPinnedWrfLookupIntegrationGridV1,
 }
 
+/// The WRF lookup generator's diameter grid, the domain P3's own moments are integrated over.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct P3TMatrixSourceDomainProvenance {
+    /// How the domain is known.
     pub authority: P3TMatrixSourceDomainAuthority,
+    /// Revision of this provenance.
     pub revision: &'static str,
+    /// WRF commit of the source.
     pub wrf_source_commit: &'static str,
+    /// Source file path.
     pub source_path: &'static str,
+    /// Bins of the grid.
     pub bin_count: u32,
+    /// Bin width, m.
     pub bin_width_m: f64,
+    /// Centre of the first bin, m.
     pub first_bin_center_m: f64,
+    /// Centre of the last bin, m.
     pub last_bin_center_m: f64,
+    /// Upper edge of the grid, m.
     pub maximum_dimension_edge_m: f64,
 }
 
+/// The pinned WRF v5.4 lookup generator's grid: 40,000 bins of 2 µm.
 pub const P3_TMATRIX_SOURCE_DOMAIN_PROVENANCE: P3TMatrixSourceDomainProvenance =
     P3TMatrixSourceDomainProvenance {
         authority: P3TMatrixSourceDomainAuthority::InferredPinnedWrfLookupIntegrationGridV1,
@@ -88,6 +115,7 @@ pub const P3_TMATRIX_SOURCE_DOMAIN_PROVENANCE: P3TMatrixSourceDomainProvenance =
 
 /// Shape contract applied after exact native P3 lambda/mu reconstruction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum P3TMatrixShapePolicy {
     /// Evaluate only regions that the pinned P3 law itself defines as
     /// spheres; all other nodes count against the omission budget.
@@ -115,15 +143,21 @@ pub enum P3TMatrixShapePolicy {
 /// diameter floor. No policy applies to nonspherical particles or to any
 /// upper-size, density, aspect-ratio, temperature, frequency, or view miss.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum P3SmallSphereScatteringPolicy {
+    /// No bridge: small spheres below the table floor count as omitted.
     Disabled,
+    /// Small dense spheres below the table's diameter floor are evaluated in the Rayleigh limit, anchored at the floor.
     RayleighLimitBelowTableDiameterFloorV1,
 }
 
 /// Per-node scattering route selected before the application evaluator runs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum P3ParticleScatteringRoute {
+    /// The node is evaluated from the T-matrix table.
     TMatrixTable,
+    /// The node is a small dense sphere evaluated by the Rayleigh bridge.
     TableFloorAnchoredSmallDenseSphereRayleighV1,
 }
 
@@ -139,6 +173,7 @@ pub struct P3TMatrixIntegrationConfig {
 }
 
 impl P3TMatrixIntegrationConfig {
+    /// A configuration from its policies and quadrature, and the largest omitted number, mass and radar-weight fractions allowed (each finite, in [0, 1)).
     pub fn new(
         shape_policy: P3TMatrixShapePolicy,
         small_sphere_policy: P3SmallSphereScatteringPolicy,
@@ -175,31 +210,37 @@ impl P3TMatrixIntegrationConfig {
         })
     }
 
+    /// The shape policy.
     #[must_use]
     pub const fn shape_policy(self) -> P3TMatrixShapePolicy {
         self.shape_policy
     }
 
+    /// The small-sphere policy.
     #[must_use]
     pub const fn small_sphere_policy(self) -> P3SmallSphereScatteringPolicy {
         self.small_sphere_policy
     }
 
+    /// The quadrature.
     #[must_use]
     pub const fn quadrature(self) -> P3QuadratureConfig {
         self.quadrature
     }
 
+    /// Largest omitted fraction of the number concentration.
     #[must_use]
     pub const fn maximum_omitted_number_fraction(self) -> f64 {
         self.maximum_omitted_number_fraction
     }
 
+    /// Largest omitted fraction of the mass.
     #[must_use]
     pub const fn maximum_omitted_mass_fraction(self) -> f64 {
         self.maximum_omitted_mass_fraction
     }
 
+    /// Largest omitted fraction of the mass-squared radar weight.
     #[must_use]
     pub const fn maximum_omitted_radar_weight_fraction(self) -> f64 {
         self.maximum_omitted_radar_weight_fraction
@@ -221,17 +262,30 @@ impl Default for P3TMatrixIntegrationConfig {
     }
 }
 
+/// Why an integration configuration was rejected.
 #[derive(Clone, Copy, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum P3TMatrixIntegrationConfigError {
+    /// An omission fraction is not finite or outside [0, 1).
     #[error("{field} must be finite and within [0, 1), got {value}")]
-    InvalidFraction { field: &'static str, value: f64 },
+    InvalidFraction {
+        /// Which fraction.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
 }
 
+/// Fractions of a population, one per weighting.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct P3TMatrixWeightFractions {
+    /// Of the number concentration.
     pub number: f64,
+    /// Of the mass.
     pub mass: f64,
+    /// Of the mass-squared radar weight (N m²).
     pub mass_squared_radar_weight: f64,
+    /// Of the sixth moment.
     pub sixth_moment: f64,
 }
 
@@ -241,12 +295,19 @@ pub struct P3TMatrixWeightFractions {
 /// of the in-source shape/table omission gate.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct P3TMatrixSourceDomainAudit {
+    /// The source domain.
     pub provenance: P3TMatrixSourceDomainProvenance,
+    /// Quadrature nodes inside the source domain.
     pub in_source_nodes: usize,
+    /// Moments of the whole analytic size distribution.
     pub analytic_total: P3PopulationMoments,
+    /// Moments represented inside the source domain.
     pub source_represented: P3PopulationMoments,
+    /// Moments beyond the source domain.
     pub source_excluded: P3PopulationMoments,
+    /// The excluded moments as fractions of the analytic distribution.
     pub source_excluded_fraction_of_analytic_psd: P3TMatrixWeightFractions,
+    /// Relative error of the in-source quadrature against the analytic moments.
     pub source_quadrature_relative_error: P3TMatrixWeightFractions,
 }
 
@@ -255,26 +316,44 @@ pub struct P3TMatrixSourceDomainAudit {
 /// denominator; source-excluded nodes never consume this gate's budget.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct P3TMatrixInSourceOmissionAudit {
+    /// Omitted number fraction from non-spherical particles.
     pub non_spherical_number_fraction: f64,
+    /// Omitted mass fraction from non-spherical particles.
     pub non_spherical_mass_fraction: f64,
+    /// Omitted radar-weight fraction from non-spherical particles.
     pub non_spherical_radar_weight_fraction: f64,
+    /// Omitted number fraction from particles outside the table.
     pub outside_table_number_fraction: f64,
+    /// Omitted mass fraction from particles outside the table.
     pub outside_table_mass_fraction: f64,
+    /// Omitted radar-weight fraction from particles outside the table.
     pub outside_table_radar_weight_fraction: f64,
+    /// Total omitted number fraction.
     pub total_omitted_number_fraction: f64,
+    /// Total omitted mass fraction.
     pub total_omitted_mass_fraction: f64,
+    /// Total omitted radar-weight fraction.
     pub total_omitted_radar_weight_fraction: f64,
 }
 
+/// What a P3 T-matrix integration did.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct P3TMatrixIntegrationAudit {
+    /// Revision of the integration.
     pub revision: &'static str,
+    /// The configuration.
     pub config: P3TMatrixIntegrationConfig,
+    /// The quadrature audit.
     pub quadrature: P3QuadratureAudit,
+    /// Nodes evaluated.
     pub supported_nodes: usize,
+    /// Nodes omitted as non-spherical.
     pub non_spherical_nodes: usize,
+    /// Nodes omitted as outside the table.
     pub outside_table_nodes: usize,
+    /// Nodes mapped to a projected-area-equivalent spheroid.
     pub projected_area_equivalent_nodes: usize,
+    /// Nodes held at the solid-ice density bound.
     pub solid_ice_constrained_nodes: usize,
     /// Source quadrature nodes carrying the typed final-coefficient area
     /// artifact. These are counted after shape mapping and before table-support
@@ -287,11 +366,15 @@ pub struct P3TMatrixIntegrationAudit {
     /// analytic `N*m^2` population. Like the count, this precedes table-support
     /// filtering and is independent of the omission audit below.
     pub fixed_point_area_closure_radar_weight_fraction: f64,
+    /// Nodes evaluated by the small-sphere Rayleigh bridge.
     pub small_sphere_rayleigh_bridge_nodes: usize,
+    /// The source-domain audit.
     pub source_domain: P3TMatrixSourceDomainAudit,
+    /// Shape and table omissions inside the source domain.
     pub in_source_shape_table_omission: P3TMatrixInSourceOmissionAudit,
 }
 
+/// The integrated scattering of a P3 population and its audit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct P3TMatrixIntegrationResult {
     additive: AdditiveScattering,
@@ -299,45 +382,71 @@ pub struct P3TMatrixIntegrationResult {
 }
 
 impl P3TMatrixIntegrationResult {
+    /// The integrated scattering.
     #[must_use]
     pub const fn additive(&self) -> AdditiveScattering {
         self.additive
     }
 
+    /// The audit.
     #[must_use]
     pub const fn audit(&self) -> P3TMatrixIntegrationAudit {
         self.audit
     }
 }
 
+/// Why a P3 T-matrix integration failed; `E` is the evaluator's error.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum P3TMatrixIntegrationError<E: Error + 'static> {
+    /// The P3 quadrature could not be built.
     #[error("construct exact P3 quadrature: {0}")]
     Psd(#[source] P3PsdError),
+    /// More of the population would be omitted than the configuration allows.
     #[error(
         "P3 cannot be represented inside the inferred WRF source integration domain by the existing spheroidal tables without an invented shape: in-source omitted number={number_fraction}, mass={mass_fraction}, equivalent-ice-volume-squared radar weight={radar_weight_fraction} (shape={shape_radar_weight_fraction}, table={table_radar_weight_fraction}); in-source limits are {maximum_number}, {maximum_mass}, {maximum_radar_weight}"
     )]
     ShapeOrTableOmission {
+        /// Omitted number fraction.
         number_fraction: f64,
+        /// Omitted mass fraction.
         mass_fraction: f64,
+        /// Omitted radar-weight fraction.
         radar_weight_fraction: f64,
+        /// Radar-weight fraction omitted for shape.
         shape_radar_weight_fraction: f64,
+        /// Radar-weight fraction omitted outside the table.
         table_radar_weight_fraction: f64,
+        /// Largest omitted number fraction allowed.
         maximum_number: f64,
+        /// Largest omitted mass fraction allowed.
         maximum_mass: f64,
+        /// Largest omitted radar-weight fraction allowed.
         maximum_radar_weight: f64,
     },
+    /// A projected-area-equivalent geometry is invalid.
     #[error("P3 projected-area equivalent geometry is invalid at node {node_index}: {message}")]
-    InvalidEquivalentGeometry { node_index: usize, message: String },
+    InvalidEquivalentGeometry {
+        /// Index of the quadrature node.
+        node_index: usize,
+        /// What is wrong.
+        message: String,
+    },
+    /// The evaluator failed on a node.
     #[error("evaluate table-ready P3 quadrature node {node_index}: {source}")]
     Evaluation {
+        /// Index of the quadrature node.
         node_index: usize,
+        /// The evaluator's error.
         #[source]
         source: E,
     },
+    /// Scaling or adding a node's contribution failed.
     #[error("scale or accumulate table-ready P3 quadrature node {node_index}: {source}")]
     Output {
+        /// Index of the quadrature node.
         node_index: usize,
+        /// The error.
         #[source]
         source: OutputError,
     },
@@ -349,24 +458,41 @@ pub enum P3TMatrixIntegrationError<E: Error + 'static> {
 /// gate. Once this succeeds, evaluating the returned particles cannot change
 /// which source nodes are included or the completed integration audit.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum P3TMatrixPreparationError {
+    /// The P3 quadrature could not be built.
     #[error("construct exact P3 quadrature: {0}")]
     Psd(#[source] P3PsdError),
+    /// More of the population would be omitted than the configuration allows.
     #[error(
         "P3 cannot be represented inside the inferred WRF source integration domain by the existing spheroidal tables without an invented shape: in-source omitted number={number_fraction}, mass={mass_fraction}, equivalent-ice-volume-squared radar weight={radar_weight_fraction} (shape={shape_radar_weight_fraction}, table={table_radar_weight_fraction}); in-source limits are {maximum_number}, {maximum_mass}, {maximum_radar_weight}"
     )]
     ShapeOrTableOmission {
+        /// Omitted number fraction.
         number_fraction: f64,
+        /// Omitted mass fraction.
         mass_fraction: f64,
+        /// Omitted radar-weight fraction.
         radar_weight_fraction: f64,
+        /// Radar-weight fraction omitted for shape.
         shape_radar_weight_fraction: f64,
+        /// Radar-weight fraction omitted outside the table.
         table_radar_weight_fraction: f64,
+        /// Largest omitted number fraction allowed.
         maximum_number: f64,
+        /// Largest omitted mass fraction allowed.
         maximum_mass: f64,
+        /// Largest omitted radar-weight fraction allowed.
         maximum_radar_weight: f64,
     },
+    /// A projected-area-equivalent geometry is invalid.
     #[error("P3 projected-area equivalent geometry is invalid at node {node_index}: {message}")]
-    InvalidEquivalentGeometry { node_index: usize, message: String },
+    InvalidEquivalentGeometry {
+        /// Index of the quadrature node.
+        node_index: usize,
+        /// What is wrong.
+        message: String,
+    },
 }
 
 impl<E: Error + 'static> From<P3TMatrixPreparationError> for P3TMatrixIntegrationError<E> {
@@ -420,51 +546,61 @@ pub struct P3TMatrixParticleNode {
 }
 
 impl P3TMatrixParticleNode {
+    /// The P3 quadrature node the particle comes from.
     #[must_use]
     pub const fn source(self) -> P3QuadratureNode {
         self.source
     }
 
+    /// Diameter of the sphere of equal volume, m.
     #[must_use]
     pub const fn equivolume_diameter_m(self) -> f64 {
         self.equivolume_diameter_m
     }
 
+    /// Bulk density, kg m⁻³.
     #[must_use]
     pub const fn bulk_density_kg_m3(self) -> f64 {
         self.bulk_density_kg_m3
     }
 
+    /// Ratio of minor to major axis.
     #[must_use]
     pub const fn minor_to_major_axis_ratio(self) -> f64 {
         self.minor_to_major_axis_ratio
     }
 
+    /// Spheroid habit (oblate, prolate or sphere).
     #[must_use]
     pub const fn habit(self) -> PsdSpheroidHabit {
         self.habit
     }
 
+    /// The shape policy that mapped the node.
     #[must_use]
     pub const fn shape_policy(self) -> P3TMatrixShapePolicy {
         self.shape_policy
     }
 
+    /// How the node is evaluated.
     #[must_use]
     pub const fn scattering_route(self) -> P3ParticleScatteringRoute {
         self.scattering_route
     }
 
+    /// Whether the density was held at the solid-ice bound.
     #[must_use]
     pub const fn solid_ice_constrained(self) -> bool {
         self.solid_ice_constrained
     }
 
+    /// Whether the node carries the rime-density fixed-point area artifact and was closed to the Dmax sphere.
     #[must_use]
     pub const fn fixed_point_area_closed(self) -> bool {
         self.fixed_point_area_closed
     }
 
+    /// The node's source projected-area ratio, 4A/(π Dmax²).
     #[must_use]
     pub const fn source_projected_area_ratio(self) -> f64 {
         self.source_projected_area_ratio
@@ -494,6 +630,7 @@ impl PreparedP3TMatrixIntegration {
         self.nodes.iter().copied()
     }
 
+    /// Number of prepared particles.
     #[must_use]
     pub const fn node_count(&self) -> usize {
         self.nodes.len()

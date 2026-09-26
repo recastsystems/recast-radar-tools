@@ -28,8 +28,11 @@ use recast_radar_core::{Field, Sweep};
 pub struct PolarVelocityField {
     /// One azimuth (deg from north, clockwise) per radial.
     pub azimuths_deg: Vec<f32>,
+    /// Centre of gate 0, metres.
     pub first_gate_m: f32,
+    /// Gate spacing, metres.
     pub gate_spacing_m: f32,
+    /// Gates per radial.
     pub gate_count: usize,
     /// Dealiased radial velocity in m/s, row-major `[radial * gate_count +
     /// gate]`; NaN marks missing/thresholded gates.
@@ -40,6 +43,7 @@ pub struct PolarVelocityField {
 /// radial wind, plus the wavenumber-1 tangential asymmetry.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RingFit {
+    /// Radius of the ring from the storm centre, km.
     pub radius_km: f32,
     /// Axisymmetric tangential wind (m/s); positive = cyclonic (Northern
     /// Hemisphere counter-clockwise).
@@ -52,6 +56,7 @@ pub struct RingFit {
     /// radar→center axis (see `fit_ring`). These capture the storm's wavenumber-1
     /// asymmetry (e.g. a stronger eyewall on one side; Lee et al. 1999, §4).
     pub vt1_cos: f32,
+    /// Sine term of the wavenumber-1 tangential wind (m/s); see `vt1_cos`.
     pub vt1_sin: f32,
     /// Wavenumber-1 tangential asymmetry amplitude, `hypot(vt1_cos, vt1_sin)`
     /// (m/s): 0 for a purely axisymmetric vortex.
@@ -60,6 +65,7 @@ pub struct RingFit {
     /// `atan2(vt1_sin, vt1_cos)`, measured from the radar→center axis toward the
     /// GBVTD-positive (mathematically counter-clockwise) direction.
     pub vt1_phase_deg: f32,
+    /// Velocity samples on the ring used in the fit.
     pub samples: usize,
     /// RMS Doppler residual of the axisymmetric (wavenumber-0) fit (m/s). The
     /// wavenumber-1 asymmetry is fit as a diagnostic on top of this and does not
@@ -72,6 +78,7 @@ pub struct RingFit {
 pub struct TcCirculation {
     /// Storm center in radar-relative km (x east, y north).
     pub center_km: (f32, f32),
+    /// One fit per radius ring, from the centre outward.
     pub rings: Vec<RingFit>,
     /// Radius of maximum (axisymmetric tangential) wind, km.
     pub rmw_km: Option<f32>,

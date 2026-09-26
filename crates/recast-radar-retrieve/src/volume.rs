@@ -20,8 +20,11 @@ use crate::sweep::physical_field;
 const EFFECTIVE_EARTH_RADIUS_M: f64 = 4.0 / 3.0 * 6_371_000.0;
 const HALF_BEAMWIDTH_RAD: f64 = 0.475 * std::f64::consts::PI / 180.0;
 
+/// How a CAPPI samples between tilts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CappiInterpolation {
+    /// The value of the tilt whose beam is nearest the height.
     Nearest,
     /// Interpolate between bracketing tilts in elevation-angle space.
     LinearElevation,

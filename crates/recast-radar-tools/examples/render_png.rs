@@ -1,13 +1,13 @@
-// Render the first reflectivity sweep and the first velocity sweep (dealiased)
-// of a Level II file to PNG.
-//
-// cargo run --release -p recast-radar-tools --features render \
-//     --example render_png -- <level2-file> <out-dir>
+//! Render the first reflectivity sweep and the first velocity sweep (dealiased)
+//! of a Level II file to PNG.
+//!
+//! cargo run --release -p recast-radar-tools --features render \
+//!     --example render_png -- <level2-file> <out-dir>
 
 use std::error::Error;
 use std::path::PathBuf;
 
-use recast_radar_tools::core::{FieldName, Quantity, Volume};
+use recast_radar_tools::model::{FieldName, Quantity, Volume};
 use recast_radar_tools::nexrad;
 use recast_radar_tools::render::{self, RasterOptions};
 

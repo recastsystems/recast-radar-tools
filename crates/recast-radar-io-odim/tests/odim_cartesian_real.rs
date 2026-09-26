@@ -1,3 +1,7 @@
+//! ODIM_H5 Cartesian MAX decoding of real IMGW POLRAD products (KDP,
+//! PhiDP, RhoHV and ZDR): dataset-level metadata, grid geometry, missing
+//! values and physical units.
+
 use chrono::{TimeZone, Utc};
 use recast_radar_io_odim::odim_cartesian::{
     OdimCartesianProjection, OdimCartesianQuantity, PROJ_SPHERE_RADIUS_M,
@@ -50,7 +54,13 @@ fn imgw_max_decodes_dataset_level_metadata_geometry_and_missing_values() {
         center_longitude_deg,
         radius_m,
         projdef,
-    } = &grid.projection;
+    } = &grid.projection
+    else {
+        panic!(
+            "projection {:?} is not the azimuthal equidistant sphere",
+            grid.projection
+        );
+    };
     assert!((*center_latitude_deg - 50.1513).abs() < 1.0e-8);
     assert!((*center_longitude_deg - 18.7251).abs() < 1.0e-8);
     assert_eq!(*radius_m, PROJ_SPHERE_RADIUS_M);

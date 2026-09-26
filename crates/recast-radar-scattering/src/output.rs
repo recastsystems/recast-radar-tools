@@ -12,10 +12,12 @@ const ACCUMULATOR_MAX_FALL_VARIANCE_M2S2: f64 = 2_500.0;
 pub struct LinearReflectivity(f64);
 
 impl LinearReflectivity {
+    /// A linear reflectivity, which must be finite and nonnegative.
     pub fn new(value_mm6_m3: f64) -> Result<Self, OutputError> {
         finite_nonnegative("linear reflectivity", value_mm6_m3).map(Self)
     }
 
+    /// The value, mm⁶ m⁻³.
     #[must_use]
     pub const fn get(self) -> f64 {
         self.0
@@ -30,22 +32,26 @@ pub struct ComplexCovariance {
 }
 
 impl ComplexCovariance {
+    /// A covariance from finite real and imaginary parts.
     pub fn new(re: f64, im: f64) -> Result<Self, OutputError> {
         finite("covariance real component", re)?;
         finite("covariance imaginary component", im)?;
         Ok(Self { re, im })
     }
 
+    /// Real part.
     #[must_use]
     pub const fn re(self) -> f64 {
         self.re
     }
 
+    /// Imaginary part.
     #[must_use]
     pub const fn im(self) -> f64 {
         self.im
     }
 
+    /// Magnitude.
     #[must_use]
     pub fn magnitude(self) -> f64 {
         self.re.hypot(self.im)
@@ -61,10 +67,12 @@ impl ComplexCovariance {
 pub struct SpecificDifferentialPhase(f64);
 
 impl SpecificDifferentialPhase {
+    /// A KDP value, which must be finite (it may be negative).
     pub fn new(value_deg_km: f64) -> Result<Self, OutputError> {
         finite("specific differential phase", value_deg_km).map(Self)
     }
 
+    /// The value, degrees per kilometre.
     #[must_use]
     pub const fn get(self) -> f64 {
         self.0
@@ -76,10 +84,12 @@ impl SpecificDifferentialPhase {
 pub struct SpecificAttenuation(f64);
 
 impl SpecificAttenuation {
+    /// An attenuation, which must be finite and nonnegative.
     pub fn new(value_db_km: f64) -> Result<Self, OutputError> {
         finite_nonnegative("specific attenuation", value_db_km).map(Self)
     }
 
+    /// The value, dB per kilometre.
     #[must_use]
     pub const fn get(self) -> f64 {
         self.0
@@ -97,12 +107,14 @@ pub struct FallSpeedMoments {
 }
 
 impl FallSpeedMoments {
+    /// Moments from their values (finite and nonnegative).
     pub fn new(first: f64, second: f64) -> Result<Self, OutputError> {
         finite_nonnegative("fall-speed first moment", first)?;
         finite_nonnegative("fall-speed second moment", second)?;
         Ok(Self { first, second })
     }
 
+    /// Moments of a population with reflectivity `zh`, mean fall speed `mean_mps` and speed variance `variance_m2s2`.
     pub fn from_mean_variance(
         zh: LinearReflectivity,
         mean_mps: f64,
@@ -115,11 +127,13 @@ impl FallSpeedMoments {
         Self::new(first, second)
     }
 
+    /// ZH-weighted first moment, (mm⁶ m⁻³)(m s⁻¹).
     #[must_use]
     pub const fn first(self) -> f64 {
         self.first
     }
 
+    /// ZH-weighted second moment, (mm⁶ m⁻³)(m² s⁻²).
     #[must_use]
     pub const fn second(self) -> f64 {
         self.second
@@ -198,8 +212,11 @@ pub struct AdditiveScattering {
 }
 
 impl AdditiveScattering {
+    /// Number of values in [`AdditiveScattering::components`].
     pub const COMPONENT_COUNT: usize = 9;
 
+    /// A contribution from its parts. Fails when the HH/VV covariance exceeds
+    /// sqrt(ZH ZV) or the fall-speed moments imply a negative variance.
     pub fn new(
         zh: LinearReflectivity,
         zv: LinearReflectivity,
@@ -222,6 +239,7 @@ impl AdditiveScattering {
         Ok(candidate)
     }
 
+    /// A contribution from the values [`AdditiveScattering::components`] returns.
     pub fn from_components(values: [f64; Self::COMPONENT_COUNT]) -> Result<Self, OutputError> {
         Self::new(
             LinearReflectivity::new(values[0])?,
@@ -234,6 +252,7 @@ impl AdditiveScattering {
         )
     }
 
+    /// `[ZH, ZV, covariance re, covariance im, KDP, AH, AV, fall-speed first, fall-speed second]`.
     #[must_use]
     pub fn components(self) -> [f64; Self::COMPONENT_COUNT] {
         [
@@ -249,41 +268,49 @@ impl AdditiveScattering {
         ]
     }
 
+    /// Horizontal linear reflectivity.
     #[must_use]
     pub const fn zh(self) -> LinearReflectivity {
         self.zh
     }
 
+    /// Vertical linear reflectivity.
     #[must_use]
     pub const fn zv(self) -> LinearReflectivity {
         self.zv
     }
 
+    /// HH/VV copolar covariance.
     #[must_use]
     pub const fn covariance(self) -> ComplexCovariance {
         self.covariance
     }
 
+    /// Specific differential phase.
     #[must_use]
     pub const fn kdp(self) -> SpecificDifferentialPhase {
         self.kdp
     }
 
+    /// Horizontal specific attenuation.
     #[must_use]
     pub const fn ah(self) -> SpecificAttenuation {
         self.ah
     }
 
+    /// Vertical specific attenuation.
     #[must_use]
     pub const fn av(self) -> SpecificAttenuation {
         self.av
     }
 
+    /// ZH-weighted fall-speed moments.
     #[must_use]
     pub const fn fall_speed(self) -> FallSpeedMoments {
         self.fall_speed
     }
 
+    /// Every component multiplied by a nonnegative weight (a number concentration, a quadrature weight).
     pub fn checked_scale(self, nonnegative_weight: f64) -> Result<Self, OutputError> {
         finite_nonnegative("additive contribution weight", nonnegative_weight)?;
         let mut values = self.components();
@@ -304,6 +331,7 @@ impl AdditiveScattering {
         Self::from_components(values)
     }
 
+    /// The component-wise sum of two contributions.
     pub fn checked_add(self, other: Self) -> Result<Self, OutputError> {
         let left = self.components();
         let right = other.components();
@@ -392,14 +420,23 @@ impl AdditiveScattering {
 /// Exact f32 field shape consumed by the current application accumulator.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PolarAccumulatorQuantities {
+    /// Horizontal linear reflectivity, mm⁶ m⁻³.
     pub zh: f32,
+    /// Vertical linear reflectivity, mm⁶ m⁻³.
     pub zv: f32,
+    /// Real part of the HH/VV covariance.
     pub cov_re: f32,
+    /// Imaginary part of the HH/VV covariance.
     pub cov_im: f32,
+    /// Specific differential phase, degrees per kilometre.
     pub kdp_deg_km: f32,
+    /// Horizontal specific attenuation, dB per kilometre.
     pub ah_db_km: f32,
+    /// Vertical specific attenuation, dB per kilometre.
     pub av_db_km: f32,
+    /// ZH-weighted mean fall speed, m s⁻¹ (positive down).
     pub fall_speed_mps: f32,
+    /// ZH-weighted fall-speed variance, m² s⁻².
     pub fall_speed_variance_m2s2: f32,
 }
 
@@ -450,30 +487,74 @@ fn accumulator_range(
     }
 }
 
+/// Why a scattering quantity was rejected.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum OutputError {
+    /// A value is not finite.
     #[error("{field} must be finite, got {value}")]
-    NonFinite { field: &'static str, value: f64 },
+    NonFinite {
+        /// What the value is.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// A value that must be nonnegative is negative.
     #[error("{field} must be nonnegative, got {value}")]
-    Negative { field: &'static str, value: f64 },
+    Negative {
+        /// What the value is.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// The HH/VV covariance magnitude exceeds sqrt(ZH ZV).
     #[error("HH/VV covariance magnitude {magnitude} exceeds sqrt(ZH*ZV) {maximum}")]
-    CovarianceBound { magnitude: f64, maximum: f64 },
+    CovarianceBound {
+        /// The covariance magnitude.
+        magnitude: f64,
+        /// sqrt(ZH ZV).
+        maximum: f64,
+    },
+    /// Fall-speed moments are nonzero while ZH is zero.
     #[error("nonzero fall-speed moments require positive ZH")]
     FallMomentsWithoutReflectivity,
+    /// The fall-speed moments imply a negative variance.
     #[error("fall-speed moments imply negative variance (first={first}, second={second}, ZH={zh})")]
-    NegativeFallSpeedVariance { first: f64, second: f64, zh: f64 },
+    NegativeFallSpeedVariance {
+        /// The first moment.
+        first: f64,
+        /// The second moment.
+        second: f64,
+        /// ZH.
+        zh: f64,
+    },
+    /// Negative KDP (no longer returned: the accumulator takes signed KDP).
     #[deprecated(note = "signed KDP is representable by the application accumulator")]
     #[error("negative KDP {value} cannot be passed to the legacy PolarAccumulator seam")]
-    NegativeKdpNotRepresentable { value: f64 },
+    NegativeKdpNotRepresentable {
+        /// The KDP value.
+        value: f64,
+    },
+    /// A value does not fit a finite f32.
     #[error("{field} value {value} is outside finite f32 range")]
-    F32Range { field: &'static str, value: f64 },
+    F32Range {
+        /// What the value is.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// A value is outside the range the application accumulator accepts.
     #[error(
         "{field} value {value} is outside the current PolarAccumulator range [{minimum}, {maximum}]"
     )]
     PolarAccumulatorRange {
+        /// What the value is.
         field: &'static str,
+        /// The value.
         value: f64,
+        /// Smallest accepted value.
         minimum: f64,
+        /// Largest accepted value.
         maximum: f64,
     },
 }

@@ -265,6 +265,7 @@ pub struct DopplerSector {
 
 /// Pattern type (halfword 2).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PatternType {
     /// 2: constant elevation cut, used by every operational VCP.
     ConstantElevationCut,
@@ -292,6 +293,7 @@ impl PatternType {
 
 /// Doppler velocity resolution (halfword 6, upper byte).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum DopplerVelocityResolution {
     /// 2 (bit 1): 0.5 m/s.
     HalfMetrePerSecond,
@@ -332,6 +334,7 @@ impl DopplerVelocityResolution {
 
 /// Pulse width (halfword 6, lower byte).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PulseWidth {
     /// 2 (bit 1).
     Short,
@@ -363,6 +366,7 @@ impl PulseWidth {
 
 /// Channel configuration of a cut (E2, upper byte).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ChannelConfiguration {
     /// 0.
     ConstantPhase,
@@ -398,6 +402,7 @@ impl ChannelConfiguration {
 
 /// Waveform type (Table XI E2 lower byte, and Table XVIII P1 of message 32).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum WaveformType {
     /// 1: contiguous surveillance (CS).
     ContiguousSurveillance,

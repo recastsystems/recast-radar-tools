@@ -8,18 +8,21 @@ description = "FM301 weather radar data model for recast-radar-tools: volumes, s
 readme.workspace = true
 keywords = ["radar", "weather", "meteorology", "remote-sensing", "cfradial"]
 categories = ["science", "science::geo", "data-structures"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate.
+exclude = ["tests/"]
 
 [dependencies]
 chrono.workspace = true
-serde.workspace = true
+serde = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [features]
-# Serde derives on the data model. Reserved switch: the derives are still
-# unconditional today; once the model settles (stream F), `serde` becomes
-# optional and this feature turns into `["dep:serde"]`. The facade's `serde`
-# feature already forwards here.
-serde = []
+# `Serialize` and `Deserialize` for the data model (`Volume`, `Sweep`,
+# `Field`, names, codings, refractivity profiles), with chrono's serde
+# support for the timestamps. Off by default. `FieldName` serializes as its
+# FM301 spelling (`"DBZH"`). The facade's `serde` feature turns this on.
+serde = ["dep:serde", "chrono/serde"]
 
 [dev-dependencies]
 # Real-data model tests (tests/real_model.rs, tests/real_merge.rs) and the
@@ -34,7 +37,12 @@ recast-radar-io-jma = { path = "../recast-radar-io-jma" }
 recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
 recast-radar-io-odim = { path = "../recast-radar-io-odim" }
 recast-radar-testdata = { path = "../recast-radar-testdata" }
-serde_json.workspace = true
+# `float_roundtrip`: exact f64 parsing for the serde round-trip test.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[[test]]
+name = "serde_real"
+required-features = ["serde"]
 
 [lints]
 workspace = true

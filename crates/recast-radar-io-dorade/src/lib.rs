@@ -57,6 +57,7 @@ pub type Result<T> = std::result::Result<T, DoradeError>;
 
 /// Errors from DORADE sweepfile and mobile-archive decoding.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum DoradeError {
     /// A sweepfile, archive, or directory could not be read.
     #[error("I/O error reading {path}: {source}")]

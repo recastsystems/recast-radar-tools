@@ -39,6 +39,25 @@
 //! carries every decoded value.
 //!
 //! The format reference with ICD section numbers is `docs/level3/reference.md`.
+//!
+//! # Limits
+//!
+//! A product file is untrusted input. The decoder bounds what one can make
+//! it allocate, and a file over a limit is an error:
+//!
+//! - Decompressed data, a bzip2 product body or the zlib frames of a
+//!   NOAAPort file: at most 64 MiB ([`Level3Error::DecompressedTooLarge`]).
+//!   The largest product in the test corpus decompresses to under 5 MB.
+//! - Radial packets (16, 0xAF1F), and the radial components of generic
+//!   packets (28) padded to their longest radial: at most
+//!   [`packets::radial::MAX_RADIAL_CELLS`] (2^24) radials x bins
+//!   ([`Level3Error::InvalidPacket`]).
+//! - Raster packets (0xBA07, 0xBA0F, 17, 18, 33): at most
+//!   [`packets::raster::MAX_GRID_DIMENSION`] (4096) rows and cells per row.
+//! - A packet's length fields must stay inside its layer or page
+//!   ([`Level3Error::PacketOverrun`]), and every
+//!   count and string length in a generic packet's XDR data is checked
+//!   against the bytes left before anything is allocated for it.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 

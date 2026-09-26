@@ -8,10 +8,14 @@ description = "Pure-Rust decoder for Japan Meteorological Agency polar-coordinat
 readme.workspace = true
 keywords = ["jma", "grib2", "radar", "weather", "japan"]
 categories = ["science::geo", "parser-implementations", "encoding"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate, and the examples are
+# developer probes built on dev-dependencies.
+exclude = ["tests/", "examples/"]
 
 [dependencies]
 chrono.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]

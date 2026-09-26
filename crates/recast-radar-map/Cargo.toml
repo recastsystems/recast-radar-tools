@@ -8,12 +8,15 @@ description = "Weather radar geometry products: composites, echo tops, VIL, hail
 readme.workspace = true
 keywords = ["radar", "weather", "composite", "cross-section", "gridding"]
 categories = ["science::geo", "algorithms"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate.
+exclude = ["tests/"]
 
 [dependencies]
 rayon.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
-recast-radar-correct = { path = "../recast-radar-correct" }
-recast-radar-filters = { path = "../recast-radar-filters" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
+recast-radar-correct = { version = "0.1.0", path = "../recast-radar-correct" }
+recast-radar-filters = { version = "0.1.0", path = "../recast-radar-filters" }
 thiserror.workspace = true
 
 [dev-dependencies]

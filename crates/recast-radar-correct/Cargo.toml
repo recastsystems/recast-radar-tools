@@ -8,11 +8,15 @@ description = "Weather radar data correction: Doppler velocity dealiasing"
 readme.workspace = true
 keywords = ["radar", "weather", "dealiasing", "doppler", "meteorology"]
 categories = ["science::geo", "algorithms"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate, and the examples are
+# developer probes built on dev-dependencies.
+exclude = ["tests/", "examples/"]
 
 [dependencies]
 chrono.workspace = true
 rayon.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
 
 [dev-dependencies]
 image.workspace = true

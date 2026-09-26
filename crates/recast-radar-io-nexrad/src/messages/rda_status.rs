@@ -40,6 +40,7 @@ pub const RDA_STATUS_ALARM_SLOTS: usize = 14;
 /// Which RDA produced a message, from the RDA redundant channel byte of the
 /// message header (Table II).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RdaSystem {
     /// Bit 3 clear: legacy RDA (channel codes 0, 1, 2).
     Legacy,
@@ -60,6 +61,7 @@ impl RdaSystem {
 
 /// Decoded RDA Status Data in the layout of the RDA that sent it.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum RdaStatus {
     /// Open RDA layout (ICD 2620002AA Table IV).
     Orda(OrdaRdaStatus),
@@ -331,6 +333,7 @@ fn hundredths(raw: u16) -> f32 {
 
 /// RDA state (halfword 1; mutually exclusive codes).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RdaState {
     /// 2 (bit 1).
     StartUp,
@@ -407,6 +410,7 @@ impl OperabilityStatus {
 
 /// Operability state (halfword 2 without bit 0).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum OperabilityState {
     /// 2 (bit 1): on-line.
     OnLine,
@@ -450,6 +454,7 @@ impl OperabilityState {
 
 /// Control status (halfword 3; mutually exclusive codes).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ControlStatus {
     /// 2 (bit 1): local only.
     LocalOnly,
@@ -536,6 +541,7 @@ impl DataTransmission {
 /// Volume coverage pattern number (halfword 8, a signed Integer*2): the
 /// magnitude is the pattern, the sign how it was selected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum VcpSelection {
     /// 0: no pattern.
     NoPattern,
@@ -576,6 +582,7 @@ impl VcpSelection {
 
 /// RDA control authorization (halfword 9; mutually exclusive codes).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ControlAuthorization {
     /// 0: no action.
     NoAction,
@@ -690,6 +697,7 @@ impl std::fmt::Display for RdaBuild {
 
 /// Operational mode (halfword 11; mutually exclusive codes).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum OperationalMode {
     /// 2 (bit 1): test (ORDA tables through Build 13.0). The legacy RDA table
     /// uses 2 for maintenance.
@@ -727,6 +735,7 @@ impl OperationalMode {
 /// Enabled/disabled status coded 2/4 (super resolution in halfword 12 of the
 /// ORDA layout, the interference suppression unit in the legacy layout).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum EnableStatus {
     /// 2 (bit 1).
     Enabled,
@@ -886,6 +895,7 @@ impl LegacyAlarmSummary {
 
 /// Command acknowledgment (halfword 16).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CommandAcknowledgment {
     /// 0: no acknowledgment.
     None,
@@ -930,6 +940,7 @@ impl CommandAcknowledgment {
 
 /// Channel control status (halfword 17).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ChannelControlStatus {
     /// 0: this channel is the controlling channel.
     Controlling,
@@ -961,6 +972,7 @@ impl ChannelControlStatus {
 
 /// Spot blanking status (halfword 18; mutually exclusive codes).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SpotBlanking {
     /// 0: not installed.
     NotInstalled,
@@ -1020,6 +1032,7 @@ impl MapGenerationTime {
 
 /// Transition power source status (halfword 24).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TransitionPowerSource {
     /// 0: not installed.
     NotInstalled,
@@ -1059,6 +1072,7 @@ impl TransitionPowerSource {
 
 /// RMS control status (halfword 25; mutually exclusive codes).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RmsControl {
     /// 0: non-RMS system.
     NonRms,
@@ -1094,6 +1108,7 @@ impl RmsControl {
 
 /// Performance check status (halfword 26; mutually exclusive codes).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PerformanceCheckStatus {
     /// 0: no command pending.
     NoCommandPending,

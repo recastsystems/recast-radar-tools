@@ -10,8 +10,10 @@ pub struct Complex64 {
 }
 
 impl Complex64 {
+    /// Zero.
     pub const ZERO: Self = Self { re: 0.0, im: 0.0 };
 
+    /// A complex number from finite real and imaginary parts.
     pub fn new(re: f64, im: f64) -> Result<Self, OrientationError> {
         if !re.is_finite() || !im.is_finite() {
             return Err(OrientationError::NonFiniteComplex { re, im });
@@ -19,11 +21,13 @@ impl Complex64 {
         Ok(Self { re, im })
     }
 
+    /// Real part.
     #[must_use]
     pub const fn re(self) -> f64 {
         self.re
     }
 
+    /// Imaginary part.
     #[must_use]
     pub const fn im(self) -> f64 {
         self.im
@@ -49,6 +53,7 @@ impl Complex64 {
 pub struct UnitVector3([f64; 3]);
 
 impl UnitVector3 {
+    /// A vector from components whose norm is 1 (within 1e-10).
     pub fn from_components(x: f64, y: f64, z: f64) -> Result<Self, OrientationError> {
         let components = [x, y, z];
         if components.iter().any(|value| !value.is_finite()) {
@@ -74,6 +79,7 @@ impl UnitVector3 {
         Self::from_components(x / norm, y / norm, z / norm)
     }
 
+    /// `[east, north, up]`.
     #[must_use]
     pub const fn components(self) -> [f64; 3] {
         self.0
@@ -87,6 +93,7 @@ pub struct BodyOrientation {
 }
 
 impl BodyOrientation {
+    /// No rotation: body axes are east, north and up.
     #[must_use]
     pub const fn identity() -> Self {
         Self {
@@ -94,6 +101,7 @@ impl BodyOrientation {
         }
     }
 
+    /// A rotation from its matrix, which must be orthonormal with determinant +1.
     pub fn from_matrix(body_to_enu: [[f64; 3]; 3]) -> Result<Self, OrientationError> {
         validate_rotation(body_to_enu)?;
         Ok(Self { body_to_enu })
@@ -157,6 +165,7 @@ impl BodyOrientation {
         ])
     }
 
+    /// The body-to-ENU rotation matrix (columns are the body axes in ENU).
     #[must_use]
     pub const fn matrix(self) -> [[f64; 3]; 3] {
         self.body_to_enu
@@ -210,26 +219,31 @@ impl RadarGeometry {
         })
     }
 
+    /// Beam azimuth, degrees clockwise from north.
     #[must_use]
     pub const fn azimuth_deg(self) -> f64 {
         self.azimuth_deg
     }
 
+    /// Beam elevation, degrees.
     #[must_use]
     pub const fn elevation_deg(self) -> f64 {
         self.elevation_deg
     }
 
+    /// Unit vector along the beam, away from the radar.
     #[must_use]
     pub const fn propagation_enu(self) -> UnitVector3 {
         self.propagation_enu
     }
 
+    /// Unit vector of horizontal polarization.
     #[must_use]
     pub const fn horizontal_enu(self) -> UnitVector3 {
         self.horizontal_enu
     }
 
+    /// Unit vector of vertical polarization (the upward-positive member of the transverse basis).
     #[must_use]
     pub const fn vertical_enu(self) -> UnitVector3 {
         self.vertical_enu
@@ -248,6 +262,7 @@ pub struct SymmetricScatteringTensor {
 }
 
 impl SymmetricScatteringTensor {
+    /// A tensor from its six independent components.
     #[must_use]
     pub const fn new(
         xx: Complex64,
@@ -267,6 +282,7 @@ impl SymmetricScatteringTensor {
         }
     }
 
+    /// A diagonal tensor (the body axes are principal axes).
     #[must_use]
     pub const fn from_diagonal(xx: Complex64, yy: Complex64, zz: Complex64) -> Self {
         Self::new(
@@ -306,21 +322,31 @@ impl SymmetricScatteringTensor {
 /// assume a monostatic reversal convention or solve a new scattering geometry.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyFrameScattering {
+    /// Backscatter tensor.
     pub backscatter: SymmetricScatteringTensor,
+    /// Forward-scatter tensor.
     pub forward_scatter: SymmetricScatteringTensor,
 }
 
+/// Scattering amplitudes in the radar's H/V basis (first index: received, second: transmitted).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RadarJonesMatrix {
+    /// H received from H transmitted.
     pub hh: Complex64,
+    /// H received from V transmitted.
     pub hv: Complex64,
+    /// V received from H transmitted.
     pub vh: Complex64,
+    /// V received from V transmitted.
     pub vv: Complex64,
 }
 
+/// Backscatter and forward-scatter amplitudes in the radar's H/V basis.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RadarScattering {
+    /// Backscatter amplitudes.
     pub backscatter: RadarJonesMatrix,
+    /// Forward-scatter amplitudes.
     pub forward_scatter: RadarJonesMatrix,
 }
 
@@ -381,34 +407,73 @@ fn validate_rotation(matrix: [[f64; 3]; 3]) -> Result<(), OrientationError> {
     Ok(())
 }
 
+/// Why an orientation, geometry or amplitude value was rejected.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum OrientationError {
+    /// A complex amplitude is not finite.
     #[error("complex amplitude must be finite, got ({re}, {im})")]
-    NonFiniteComplex { re: f64, im: f64 },
+    NonFiniteComplex {
+        /// Real part.
+        re: f64,
+        /// Imaginary part.
+        im: f64,
+    },
+    /// A vector component is not finite.
     #[error("vector components must be finite, got {components:?}")]
-    NonFiniteVector { components: [f64; 3] },
+    NonFiniteVector {
+        /// The components.
+        components: [f64; 3],
+    },
+    /// A vector that should have unit length does not.
     #[error("vector must have unit norm, got {norm}")]
-    NotUnitVector { norm: f64 },
+    NotUnitVector {
+        /// Its norm.
+        norm: f64,
+    },
+    /// A zero vector cannot be normalized.
     #[error("cannot normalize a zero vector")]
     ZeroVector,
+    /// An axis-angle rotation angle is not finite.
     #[error("axis-angle rotation angle must be finite, got {angle_deg}")]
-    NonFiniteAngle { angle_deg: f64 },
+    NonFiniteAngle {
+        /// The angle, degrees.
+        angle_deg: f64,
+    },
+    /// An Euler angle is not finite.
     #[error("Euler angles must be finite, got yaw={yaw_deg}, pitch={pitch_deg}, roll={roll_deg}")]
     NonFiniteEuler {
+        /// Yaw, degrees.
         yaw_deg: f64,
+        /// Pitch, degrees.
         pitch_deg: f64,
+        /// Roll, degrees.
         roll_deg: f64,
     },
+    /// A rotation matrix has a non-finite element.
     #[error("rotation matrix contains a non-finite value")]
     NonFiniteRotation,
+    /// A rotation matrix is not orthonormal.
     #[error("rotation matrix must be orthonormal")]
     NonOrthonormalRotation,
+    /// A rotation matrix is a reflection (determinant -1).
     #[error("rotation matrix must be proper with determinant +1, got {determinant}")]
-    ImproperRotation { determinant: f64 },
+    ImproperRotation {
+        /// Its determinant.
+        determinant: f64,
+    },
+    /// The azimuth is not finite or outside [0, 360).
     #[error("azimuth must be finite in [0, 360), got {azimuth_deg}")]
-    AzimuthRange { azimuth_deg: f64 },
+    AzimuthRange {
+        /// The azimuth, degrees.
+        azimuth_deg: f64,
+    },
+    /// The elevation is not finite or outside [-90, 90].
     #[error("elevation must be finite in [-90, 90], got {elevation_deg}")]
-    ElevationRange { elevation_deg: f64 },
+    ElevationRange {
+        /// The elevation, degrees.
+        elevation_deg: f64,
+    },
 }
 
 #[cfg(test)]

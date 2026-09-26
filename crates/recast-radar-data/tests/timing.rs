@@ -395,6 +395,7 @@ fn chunk_type_code(chunk_type: RealtimeChunkType) -> &'static str {
         RealtimeChunkType::Start => "S",
         RealtimeChunkType::Intermediate => "I",
         RealtimeChunkType::End => "E",
+        other => panic!("chunk type {other:?} has no code"),
     }
 }
 
@@ -692,6 +693,7 @@ fn compare_with_build24_catalog(set: Set) -> TestResult<CatalogComparison> {
                 row.doppler_prfs.iter().map(move |cell| match cell.value {
                     DopplerPrfValue::AzimuthRateDegPerSecond(rate) => rate,
                     DopplerPrfValue::PulseCount(_) => row.azimuth_rate_deg_per_second,
+                    other => panic!("Doppler PRF value {other:?} is not handled here"),
                 })
             })
             .collect();
@@ -713,6 +715,7 @@ fn compare_with_build24_catalog(set: Set) -> TestResult<CatalogComparison> {
                     Waveform::Sz2ContiguousDoppler => ("CD/W", true),
                     Waveform::Batch => ("B", false),
                     Waveform::ContiguousDopplerWithoutRangeAmbiguity => ("CD/WO", false),
+                    other => panic!("waveform {other:?} has no code"),
                 };
                 let elevation_ok = (executed.elevation_deg - row.elevation_deg).abs() <= 0.05;
                 if elevation_ok

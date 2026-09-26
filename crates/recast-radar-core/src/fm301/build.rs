@@ -1857,9 +1857,15 @@ fn extra_variable<'a>(
             _ => Cow::Borrowed(&**dim),
         })
         .collect();
-    let row_len: usize = extra.shape.iter().skip(1).map(|n| *n as usize).product();
-    let values = match ray {
-        Some((_, RowOrder::Permutation(permutation))) if per_ray => Values::Owned(
+    // `None` when the shape overflows; `take_rows` refuses rows past the
+    // values, so a shape that disagrees with them costs no allocation.
+    let row_len = extra
+        .shape
+        .iter()
+        .skip(1)
+        .try_fold(1usize, |product, len| product.checked_mul(*len as usize));
+    let values = match (ray, row_len) {
+        (Some((_, RowOrder::Permutation(permutation))), Some(row_len)) if per_ray => Values::Owned(
             extra
                 .values
                 .take_rows(row_len.max(1), permutation)

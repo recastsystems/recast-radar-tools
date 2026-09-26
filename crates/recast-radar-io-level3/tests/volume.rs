@@ -443,6 +443,7 @@ fn check_sweep(
             (Gate::Missing, level) => {
                 expected.is_nan() && !matches!(level, Level::Flag(LevelFlag::RangeFolded))
             }
+            (other, _) => panic!("gate class {other:?} is not handled here"),
         };
         if !ok {
             mismatches += 1;

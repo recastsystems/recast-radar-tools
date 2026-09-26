@@ -5,7 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Single- and multi-core decode and render benchmark harness for recast-radar-tools"
-readme = "README.md"
 keywords = ["radar", "benchmark", "nexrad", "weather"]
 categories = ["development-tools::profiling", "science::geo"]
 # Benchmark harness binary; not a library to publish.
@@ -18,19 +17,20 @@ default-run = "recast-radar-bench"
 paired-bzip2 = ["recast-radar-io-nexrad/paired-bzip2"]
 
 [dependencies]
-chrono.workspace = true
+# The dealias evaluation reads timestamps from its JSON config.
+chrono = { workspace = true, features = ["serde"] }
 rayon.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
-recast-radar-correct = { path = "../recast-radar-correct" }
-recast-radar-io = { path = "../recast-radar-io" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
+recast-radar-correct = { version = "0.1.0", path = "../recast-radar-correct" }
+recast-radar-io = { version = "0.1.0", path = "../recast-radar-io" }
 # The per-format readers, called directly by src/bin/decode_bench.rs.
-recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
-recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
-recast-radar-io-jma = { path = "../recast-radar-io-jma" }
-recast-radar-io-level3 = { path = "../recast-radar-io-level3" }
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
-recast-radar-io-odim = { path = "../recast-radar-io-odim" }
-recast-radar-render = { path = "../recast-radar-render" }
+recast-radar-io-cfradial = { version = "0.1.0", path = "../recast-radar-io-cfradial" }
+recast-radar-io-dorade = { version = "0.1.0", path = "../recast-radar-io-dorade" }
+recast-radar-io-jma = { version = "0.1.0", path = "../recast-radar-io-jma" }
+recast-radar-io-level3 = { version = "0.1.0", path = "../recast-radar-io-level3" }
+recast-radar-io-nexrad = { version = "0.1.0", path = "../recast-radar-io-nexrad" }
+recast-radar-io-odim = { version = "0.1.0", path = "../recast-radar-io-odim" }
+recast-radar-render = { version = "0.1.0", path = "../recast-radar-render" }
 serde.workspace = true
 serde_json.workspace = true
 

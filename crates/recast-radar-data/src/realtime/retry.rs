@@ -26,6 +26,7 @@ use std::time::Duration;
 
 /// How the delay is drawn below the exponential ceiling.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum Jitter {
     /// Always the ceiling: a fixed exponential schedule.
     None,

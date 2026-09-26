@@ -164,6 +164,7 @@ pub struct AustraliaNciProvider {
 }
 
 impl AustraliaNciProvider {
+    /// A provider with an empty site cache; nothing is fetched until it is used.
     pub fn new() -> Self {
         Self {
             sites: SiteCache::new(),

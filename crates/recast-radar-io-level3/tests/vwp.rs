@@ -240,7 +240,7 @@ fn render_new_as_old(product: &Level3Product, vwp: &VadWindProfile, view: OldVie
     let profiles = match view.source {
         VwpSource::Tabular => &vwp.tabular,
         VwpSource::Symbology => &vwp.display,
-        other => panic!("VWP source {other:?}"),
+        other => panic!("VWP source {other:?} is not handled here"),
     };
     for profile in profiles {
         lines.push(format!(
@@ -327,7 +327,7 @@ fn matches_level3_vwp_output_on_every_product_48_file() {
         let profiles = match view.source {
             VwpSource::Tabular => &vwp.tabular,
             VwpSource::Symbology => &vwp.display,
-            other => panic!("VWP source {other:?}"),
+            other => panic!("VWP source {other:?} is not handled here"),
         };
         let old_heights: Vec<f64> = snapshot
             .lines()

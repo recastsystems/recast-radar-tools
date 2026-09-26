@@ -17,13 +17,21 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
-# Toolchains: rustfmt and clippy run on Rust 1.94.0, the workspace
-# `rust-version` (MSRV). Each Rust release adds clippy lints, so a pinned
-# toolchain changes their results only in a commit that moves the pin, and
-# clippy's build of every target with --all-features doubles as the MSRV
-# check. The other jobs run on the latest stable Rust. When the MSRV changes,
-# move both pins with it (crates/recast-radar-tools/tests/readme.rs fails
-# until Cargo.toml, the README and these pins agree).
+# Toolchains: rustfmt, clippy and the MSRV test job run on Rust 1.94.0, the
+# workspace `rust-version`. Each Rust release adds clippy lints, so a pinned
+# toolchain changes their results only in a commit that moves the pin; the
+# test matrix and the other jobs run on the latest stable Rust, and the fuzz
+# smoke test on nightly (libFuzzer needs it). When the MSRV changes, move the
+# pins with it (crates/recast-radar-tools/tests/readme.rs fails until
+# Cargo.toml, the README and these pins agree).
+#
+# Test files that are not committed are downloaded into a cache
+# ($RECAST_RADAR_TESTDATA, read by recast-radar-testdata). The cache is keyed
+# on the testdata manifests: a manifest change starts from an empty cache, so
+# a cached file never predates its manifest entry (a cached file whose sha256
+# no longer matches is a test error, not a re-download). Within one manifest
+# version the cache grows with the tests: a run that downloads new files saves
+# a new entry, and later runs restore the newest.
 
 jobs:
   fmt:
@@ -47,44 +55,34 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # Not `-D warnings` until stream D.3 lands (plan G.2). On Rust 1.94.0 the
-      # only warnings are `clippy::unwrap_used` and `clippy::expect_used` from
-      # the workspace lints (newer releases add others, for example 1.98's
-      # `clippy::chunks_exact_to_as_chunks`, so moving the pin means clearing
-      # those first). At D.3, tests and examples still inherit the workspace
-      # `warn`, so unless D.3 also clears those, append
-      # `-- -D warnings -A clippy::unwrap_used -A clippy::expect_used`: the
-      # crate-root `deny` D.3 adds still overrides the `-A` for library code.
-      - run: cargo clippy --workspace --all-targets --all-features --locked
+      # Every target (tests, examples, benches, bins) with every feature.
+      # Library crates deny unwrap/expect from their roots; test crates
+      # exempt their helpers (clippy.toml says how).
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   test:
-    name: test (stable)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    name: test (${{ matrix.os }}, stable)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     env:
-      # Download cache for real test files that are not committed
-      # (read by recast-radar-testdata).
       RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Keyed on the testdata manifests: a manifest change starts from an empty
-      # cache, so a cached file never predates its manifest entry (a cached file
-      # whose sha256 no longer matches is a test error, not a re-download).
-      # Within one manifest version the cache grows with the tests: a run that
-      # downloads new files saves a new entry, and later runs restore the newest.
-      # Skipped while the workspace has no testdata manifests.
       - name: Restore testdata cache
         id: testdata-cache
-        if: hashFiles('testdata/**/manifest.toml') != ''
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.RECAST_RADAR_TESTDATA }}
           key: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-
       - name: List cached testdata
-        if: steps.testdata-cache.outcome == 'success'
+        shell: bash
         run: bash tools/ci/testdata-cache-list.sh > "$RUNNER_TEMP/testdata-before.txt"
       - run: cargo test --workspace --locked --no-fail-fast
       # `encode_many` and `EncoderPool` sit behind recast-radar-bzip2's
@@ -92,9 +90,14 @@ jobs:
       # above never compiles them; clippy's --all-features build does not
       # run their tests.
       - run: cargo test -p recast-radar-bzip2 --features rayon --locked --no-fail-fast -- encode_many EncoderPool
+      # recast-radar-core with its serde feature, which the workspace run
+      # leaves off: the serde round trip on real files (tests/serde_real.rs)
+      # and the serde unit tests in src/ (FM301 spelling of field names).
+      - run: cargo test --locked -p recast-radar-core --features serde
       - name: Check for new testdata downloads
         id: testdata-new
-        if: ${{ !cancelled() && steps.testdata-cache.outcome == 'success' }}
+        if: ${{ !cancelled() }}
+        shell: bash
         run: |
           bash tools/ci/testdata-cache-list.sh > "$RUNNER_TEMP/testdata-after.txt"
           if cmp -s "$RUNNER_TEMP/testdata-before.txt" "$RUNNER_TEMP/testdata-after.txt"; then
@@ -108,6 +111,43 @@ jobs:
         with:
           path: ${{ env.RECAST_RADAR_TESTDATA }}
           key: ${{ steps.testdata-cache.outputs.cache-primary-key }}
+
+  msrv:
+    name: test (Rust 1.94.0, MSRV)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Restore testdata cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.RECAST_RADAR_TESTDATA }}
+          key: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-
+      - run: cargo test --workspace --locked --no-fail-fast
+
+  docs:
+    name: docs and packages (stable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Broken intra-doc links and other rustdoc warnings fail the build
+      # (missing_docs itself is a workspace lint, denied in every build).
+      - run: cargo doc --workspace --no-deps --all-features --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+      # A dry run: builds and verifies the .crate file of every workspace
+      # crate under target/package. Nothing is uploaded. The script counts
+      # the expected warnings (excluded test and example targets, no
+      # repository link) and fails on any other; see its header.
+      - run: bash tools/ci/package-check.sh
 
   features:
     name: facade features, pure Rust
@@ -130,22 +170,6 @@ jobs:
       # No C or C++ build without `net`, for any target; see the script header.
       - run: bash tools/ci/pure-rust-check.sh
 
-  fuzz:
-    name: fuzz harness compiles (stable)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: fuzz
-      # `fuzz/` is its own workspace, so the jobs above never build it, and a
-      # renamed decoder entry point would break it unnoticed. Without the
-      # `libfuzzer` feature this checks the harness library and `fuzz-tools`
-      # on stable (the libFuzzer binaries need nightly; see fuzz/README.md).
-      - run: cargo check --manifest-path fuzz/Cargo.toml --workspace --all-targets --no-default-features --locked
-
   wasm:
     name: wasm32
     runs-on: ubuntu-latest
@@ -159,6 +183,115 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      # Every library crate except networking, plus the facade without `net`;
-      # see the script header.
+      # Every crate except networking and the test corpus (the bench binary
+      # included), plus the facade without `net`; see the script header.
       - run: bash tools/ci/wasm-check.sh
+
+  golden:
+    name: Level II goldens reproduce
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # MetPy 1.7.1 and arm_pyart 2.2.5, the versions the committed goldens
+      # were written with (the script refuses any other), with the rest of
+      # the environment pinned as it was when the check last passed.
+      - run: python -m pip install -r tools/ci/golden-requirements.txt
+      - name: Restore testdata cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.RECAST_RADAR_TESTDATA }}
+          key: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-
+      # tools/level2_golden.py --check all: every committed golden under
+      # testdata/level2/golden must be reproduced byte for byte.
+      - run: bash tools/ci/level2-golden-check.sh
+        env:
+          RECAST_RADAR_GOLDEN_PYTHON: python
+
+  examples:
+    name: example outputs match the docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
+      # The examples' output does not depend on these; thin LTO keeps the
+      # release build short.
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Restore testdata cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.RECAST_RADAR_TESTDATA }}
+          key: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-
+      # Runs every facade example whose output README.md and docs/guide/
+      # show, as their `<!-- output: ... -->` markers say, and fails when a
+      # shown output differs (ubuntu-latest's python3 has tomllib).
+      - run: python3 tools/check_example_outputs.py
+
+  fuzz:
+    name: fuzz harness compiles, regressions replay (stable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      # `fuzz/` is its own workspace, so the jobs above never build it, and a
+      # renamed decoder entry point would break it unnoticed. Without the
+      # `libfuzzer` feature this checks the harness library and `fuzz-tools`
+      # on stable (the libFuzzer binaries need nightly; see fuzz/README.md).
+      - run: cargo check --manifest-path fuzz/Cargo.toml --workspace --all-targets --no-default-features --locked
+      # Every committed fuzz regression input through its target and
+      # io-router, with debug assertions and overflow checks.
+      - run: cargo run --locked --release --manifest-path fuzz/tools/Cargo.toml -- regressions
+
+  fuzz-smoke:
+    name: fuzz smoke run (nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Restore testdata cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.RECAST_RADAR_TESTDATA }}
+          key: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-
+      # Seeds from the real corpus, then every target for 60 s; fails on any
+      # crash, timeout or out-of-memory input.
+      - run: bash tools/ci/fuzz-smoke.sh 60
+      - name: Keep fuzz findings
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: fuzz-findings
+          path: |
+            fuzz/artifacts
+            fuzz/logs
+          retention-days: 14

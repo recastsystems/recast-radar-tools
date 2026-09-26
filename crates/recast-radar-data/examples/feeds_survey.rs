@@ -400,6 +400,7 @@ fn nexrad_metadata_summary(metadata: &NexradMetadata) -> Value {
             "status_version": orda.status_version,
         }),
         RdaStatus::Legacy(_) => json!({"layout": "legacy"}),
+        other => json!({"layout": format!("{other:?}")}),
     });
     let vcp = metadata.vcp.as_ref().map(|vcp| {
         json!({

@@ -108,10 +108,15 @@ const SOURCE_BOUND_RELATIVE_TOLERANCE: f64 = 16.0 * f32::EPSILON as f64;
 /// The native distribution revision selected by a PSD integration config.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SchemePsdRevision {
+    /// The first ISHMAEL gamma reconstruction.
     IshmaelGammaV1,
+    /// The gamma reconstruction with WRF's `var_check` state checks.
     IshmaelGammaVarCheckV2,
+    /// The gamma reconstruction with WRF's final state checks.
     IshmaelGammaFinalCheckV3,
+    /// The final-check reconstruction with the small-sphere Rayleigh bridge.
     IshmaelGammaFinalCheckRayleighBridgeV4,
 }
 
@@ -120,15 +125,21 @@ pub enum SchemePsdRevision {
 /// coordinate miss.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum IshmaelSmallSphereScatteringPolicy {
+    /// No bridge: exact spheres below the table floor count as omitted.
     Disabled,
+    /// Exact spheres below the table's diameter floor are evaluated in the Rayleigh limit, anchored at the floor.
     RayleighLimitBelowTableDiameterFloorV1,
 }
 
 /// Per-node scattering route selected during ISHMAEL PSD preparation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum IshmaelParticleScatteringRoute {
+    /// The node is evaluated from the T-matrix table.
     TMatrixTable,
+    /// The node is an exact sphere evaluated by the Rayleigh bridge.
     TableFloorAnchoredExactSphereRayleighV1,
 }
 
@@ -141,7 +152,9 @@ pub enum IshmaelParticleScatteringRoute {
 /// the measured additive integral requires one further refinement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PsdQuadratureRule {
+    /// Eight-point Gauss-Legendre panels, compared with a grid of twice as many panels.
     CompositeGaussLegendre8RefinedV1,
     /// The same bounded GL8 rules, with one further factor-of-two grid
     /// admitted when the first coarse/refined scattering comparison exceeds
@@ -155,25 +168,36 @@ pub enum PsdQuadratureRule {
 /// not from the source category label.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PsdSpheroidHabit {
+    /// Oblate: the minor axis is the rotation axis.
     Oblate,
+    /// Prolate: the major axis is the rotation axis.
     Prolate,
+    /// Effectively spherical.
     Spherical,
 }
 
 /// Which convergence pass produced a callback failure.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PsdQuadratureLevel {
+    /// The coarse pass.
     Coarse,
+    /// The refined pass (twice the coarse panels).
     Refined,
+    /// The optional further refinement.
     AdaptiveRefined,
 }
 
 /// Scheme/category identity retained separately from generic node geometry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PsdSourceCategory {
+    /// An ISHMAEL ice category.
     Ishmael(IshmaelIceCategory),
+    /// A P3 ice category.
     P3(P3Category),
 }
 
@@ -181,6 +205,7 @@ pub enum PsdSourceCategory {
 /// per-particle scattering callback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PsdFallSpeedAuthority {
     /// The WRF ISHMAEL Mitchell-Heymsfield terminal-speed law, version 1.
     WrfIshmaelMitchellHeymsfieldV1,
@@ -200,6 +225,7 @@ pub struct PsdFallSpeedProvenance {
 }
 
 impl PsdFallSpeedProvenance {
+    /// Provenance from an authority and the SHA-256 of the implementation.
     #[must_use]
     pub const fn new(
         authority: PsdFallSpeedAuthority,
@@ -211,11 +237,13 @@ impl PsdFallSpeedProvenance {
         }
     }
 
+    /// The authority behind the fall speeds.
     #[must_use]
     pub const fn authority(self) -> PsdFallSpeedAuthority {
         self.authority
     }
 
+    /// SHA-256 of the fall-speed implementation and configuration.
     #[must_use]
     pub const fn implementation_sha256(self) -> Sha256Digest {
         self.implementation_sha256
@@ -236,6 +264,7 @@ pub struct IshmaelPsdInput {
 }
 
 impl IshmaelPsdInput {
+    /// An input from the category, `QICE` (kg kg⁻¹), `QNICE` (kg⁻¹), `QVOLI` and `QAOLI` (m³ kg⁻¹), and the dry-air density (kg m⁻³).
     #[must_use]
     pub const fn new(
         category: IshmaelIceCategory,
@@ -255,31 +284,37 @@ impl IshmaelPsdInput {
         }
     }
 
+    /// The ISHMAEL category.
     #[must_use]
     pub const fn category(self) -> IshmaelIceCategory {
         self.category
     }
 
+    /// `QICE`: ice mass mixing ratio, kg kg⁻¹.
     #[must_use]
     pub const fn qice_kgkg(self) -> f64 {
         self.qice_kgkg
     }
 
+    /// `QNICE`: ice number mixing ratio, kg⁻¹.
     #[must_use]
     pub const fn qnice_per_kg(self) -> f64 {
         self.qnice_per_kg
     }
 
+    /// `QVOLI`: the `a² c` volume moment, m³ kg⁻¹.
     #[must_use]
     pub const fn qvoli_m3_per_kg(self) -> f64 {
         self.qvoli_m3_per_kg
     }
 
+    /// `QAOLI`: the `c² a` volume moment, m³ kg⁻¹.
     #[must_use]
     pub const fn qaoli_m3_per_kg(self) -> f64 {
         self.qaoli_m3_per_kg
     }
 
+    /// Dry-air density, kg m⁻³.
     #[must_use]
     pub const fn dry_air_density_kg_m3(self) -> f64 {
         self.dry_air_density_kg_m3
@@ -290,8 +325,11 @@ impl IshmaelPsdInput {
 /// prognostics.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct IshmaelReconstructionAudit {
+    /// Relative error of the reconstructed `QVOLI`.
     pub qvoli_relative_error: f64,
+    /// Relative error of the reconstructed `QAOLI`.
     pub qaoli_relative_error: f64,
+    /// Relative error of the reconstructed mass.
     pub mass_relative_error: f64,
     /// Signed raw excursion beyond the nearest WRF bound; zero when inside.
     pub delta_bound_excursion: f64,
@@ -842,31 +880,37 @@ impl IshmaelPsd {
         Ok(checked)
     }
 
+    /// The input the distribution was reconstructed from.
     #[must_use]
     pub const fn input(self) -> IshmaelPsdInput {
         self.input
     }
 
+    /// The ISHMAEL category.
     #[must_use]
     pub const fn category(self) -> IshmaelIceCategory {
         self.input.category
     }
 
+    /// Characteristic a-axis scale of the gamma distribution, m.
     #[must_use]
     pub const fn a_scale_m(self) -> f64 {
         self.a_scale_m
     }
 
+    /// The c semi-axis at the characteristic a-axis scale, m.
     #[must_use]
     pub const fn c_at_a_scale_m(self) -> f64 {
         self.c_at_a_scale_m
     }
 
+    /// The habit exponent δ of `c ∝ a^δ`.
     #[must_use]
     pub const fn aspect_power_delta(self) -> f64 {
         self.aspect_power_delta
     }
 
+    /// Bulk density, kg m⁻³.
     #[must_use]
     pub const fn bulk_density_kg_m3(self) -> f64 {
         self.bulk_density_kg_m3
@@ -881,26 +925,31 @@ impl IshmaelPsd {
         self.mass_preserving_bulk_density_kg_m3
     }
 
+    /// Number density, m⁻³.
     #[must_use]
     pub const fn number_density_m3(self) -> f64 {
         self.input.qnice_per_kg * self.input.dry_air_density_kg_m3
     }
 
+    /// Mass concentration, kg m⁻³.
     #[must_use]
     pub const fn mass_concentration_kg_m3(self) -> f64 {
         self.input.qice_kgkg * self.input.dry_air_density_kg_m3
     }
 
+    /// Mean particle mass, kg.
     #[must_use]
     pub const fn mean_particle_mass_kg(self) -> f64 {
         self.mean_particle_mass_kg
     }
 
+    /// Mean sixth power of the equal-volume diameter, m⁶.
     #[must_use]
     pub const fn mean_equivolume_diameter_sixth_m6(self) -> f64 {
         self.mean_equivolume_diameter_sixth_m6
     }
 
+    /// The reconstruction audit.
     #[must_use]
     pub const fn reconstruction_audit(self) -> IshmaelReconstructionAudit {
         self.reconstruction
@@ -1132,16 +1181,19 @@ pub struct PsdParticleNode {
 }
 
 impl PsdParticleNode {
+    /// Index of the node in its quadrature rule.
     #[must_use]
     pub const fn index(self) -> usize {
         self.index
     }
 
+    /// The scheme and category the node comes from.
     #[must_use]
     pub const fn source_category(self) -> PsdSourceCategory {
         self.source_category
     }
 
+    /// The ISHMAEL category, for ISHMAEL nodes.
     #[must_use]
     pub const fn ishmael_category(self) -> Option<IshmaelIceCategory> {
         match self.source_category {
@@ -1150,26 +1202,31 @@ impl PsdParticleNode {
         }
     }
 
+    /// The quadrature variable: the a semi-axis divided by the characteristic scale.
     #[must_use]
     pub const fn scaled_a(self) -> f64 {
         self.scaled_a
     }
 
+    /// The a semi-axis, m.
     #[must_use]
     pub const fn a_semi_axis_m(self) -> f64 {
         self.a_semi_axis_m
     }
 
+    /// The c semi-axis, m.
     #[must_use]
     pub const fn c_semi_axis_m(self) -> f64 {
         self.c_semi_axis_m
     }
 
+    /// Diameter of the sphere of equal volume, m.
     #[must_use]
     pub const fn equivolume_diameter_m(self) -> f64 {
         self.equivolume_diameter_m
     }
 
+    /// Bulk density, kg m⁻³.
     #[must_use]
     pub const fn bulk_density_kg_m3(self) -> f64 {
         self.bulk_density_kg_m3
@@ -1182,46 +1239,55 @@ impl PsdParticleNode {
         self.mass_preserving_bulk_density_kg_m3
     }
 
+    /// Ratio of minor to major axis.
     #[must_use]
     pub const fn minor_to_major_axis_ratio(self) -> f64 {
         self.minor_to_major_axis_ratio
     }
 
+    /// Oblate, prolate or spherical.
     #[must_use]
     pub const fn habit(self) -> PsdSpheroidHabit {
         self.habit
     }
 
+    /// Particle volume, m³.
     #[must_use]
     pub const fn particle_volume_m3(self) -> f64 {
         self.particle_volume_m3
     }
 
+    /// Particle mass, kg.
     #[must_use]
     pub const fn particle_mass_kg(self) -> f64 {
         self.particle_mass_kg
     }
 
+    /// The node's quadrature weight, as a fraction of the population number.
     #[must_use]
     pub const fn number_fraction(self) -> f64 {
         self.number_fraction
     }
 
+    /// Number density the node represents, m⁻³.
     #[must_use]
     pub const fn number_density_m3(self) -> f64 {
         self.number_density_m3
     }
 
+    /// Rime mass fraction, for rimed ice.
     #[must_use]
     pub const fn rime_mass_fraction(self) -> Option<f64> {
         self.rime_mass_fraction
     }
 
+    /// Rime density, kg m⁻³, for rimed ice.
     #[must_use]
     pub const fn rime_density_kg_m3(self) -> Option<f64> {
         self.rime_density_kg_m3
     }
 
+    /// How the node is evaluated.
     #[must_use]
     pub const fn scattering_route(self) -> IshmaelParticleScatteringRoute {
         self.scattering_route
@@ -1339,16 +1405,19 @@ impl IshmaelSolidIceMaterialClosure {
         Ok(())
     }
 
+    /// Revision of the closure.
     #[must_use]
     pub const fn revision(self) -> &'static str {
         self.revision
     }
 
+    /// Whether the closure changed the geometry.
     #[must_use]
     pub const fn applied(self) -> bool {
         self.applied
     }
 
+    /// The distribution's bulk density, kg m⁻³.
     #[must_use]
     pub const fn source_bulk_density_kg_m3(self) -> f64 {
         self.source_bulk_density_kg_m3
@@ -1361,11 +1430,13 @@ impl IshmaelSolidIceMaterialClosure {
         self.mass_preserving_source_bulk_density_kg_m3
     }
 
+    /// Density used for scattering, kg m⁻³.
     #[must_use]
     pub const fn scattering_bulk_density_kg_m3(self) -> f64 {
         self.scattering_bulk_density_kg_m3
     }
 
+    /// Factor applied to every linear dimension so that mass is preserved at the scattering density.
     #[must_use]
     pub const fn linear_dimension_scale(self) -> f64 {
         self.linear_dimension_scale
@@ -1396,41 +1467,49 @@ impl IshmaelScatteringParticleNode {
         }
     }
 
+    /// The native node.
     #[must_use]
     pub const fn source(self) -> PsdParticleNode {
         self.source
     }
 
+    /// The a semi-axis after the closure, m.
     #[must_use]
     pub const fn a_semi_axis_m(self) -> f64 {
         self.a_semi_axis_m
     }
 
+    /// The c semi-axis after the closure, m.
     #[must_use]
     pub const fn c_semi_axis_m(self) -> f64 {
         self.c_semi_axis_m
     }
 
+    /// Diameter of the sphere of equal volume after the closure, m.
     #[must_use]
     pub const fn equivolume_diameter_m(self) -> f64 {
         self.equivolume_diameter_m
     }
 
+    /// Density used for scattering, kg m⁻³.
     #[must_use]
     pub const fn bulk_density_kg_m3(self) -> f64 {
         self.bulk_density_kg_m3
     }
 
+    /// Ratio of minor to major axis (unchanged by the closure).
     #[must_use]
     pub const fn minor_to_major_axis_ratio(self) -> f64 {
         self.source.minor_to_major_axis_ratio
     }
 
+    /// Oblate, prolate or spherical.
     #[must_use]
     pub const fn habit(self) -> PsdSpheroidHabit {
         self.source.habit
     }
 
+    /// Particle mass, kg (unchanged by the closure).
     #[must_use]
     pub const fn particle_mass_kg(self) -> f64 {
         self.source.particle_mass_kg
@@ -1448,6 +1527,7 @@ pub struct PsdParticleDomain {
 }
 
 impl PsdParticleDomain {
+    /// A domain from positive, ordered ranges of equal-volume diameter (m), bulk density (kg m⁻³) and axis ratio (at most 1).
     pub fn new(
         equivolume_diameter_m: [f64; 2],
         bulk_density_kg_m3: [f64; 2],
@@ -1473,6 +1553,7 @@ impl PsdParticleDomain {
         })
     }
 
+    /// The domain of every physical particle.
     #[must_use]
     pub const fn unbounded_physical() -> Self {
         Self {
@@ -1482,21 +1563,25 @@ impl PsdParticleDomain {
         }
     }
 
+    /// Equal-volume diameter range, m.
     #[must_use]
     pub const fn equivolume_diameter_range_m(self) -> [f64; 2] {
         self.equivolume_diameter_m
     }
 
+    /// Bulk density range, kg m⁻³.
     #[must_use]
     pub const fn bulk_density_range_kg_m3(self) -> [f64; 2] {
         self.bulk_density_kg_m3
     }
 
+    /// Axis ratio range.
     #[must_use]
     pub const fn minor_to_major_axis_ratio_range(self) -> [f64; 2] {
         self.minor_to_major_axis_ratio
     }
 
+    /// Whether the node lies inside the domain.
     #[must_use]
     pub fn contains(self, node: PsdParticleNode) -> bool {
         contains(self.equivolume_diameter_m, node.equivolume_diameter_m)
@@ -1534,6 +1619,7 @@ pub struct PsdParticleSupport {
 }
 
 impl PsdParticleSupport {
+    /// Support from a domain per habit; a habit without one is not supported.
     #[must_use]
     pub const fn new(
         oblate: Option<PsdParticleDomain>,
@@ -1547,26 +1633,31 @@ impl PsdParticleSupport {
         }
     }
 
+    /// The same domain for every habit.
     #[must_use]
     pub const fn uniform(domain: PsdParticleDomain) -> Self {
         Self::new(Some(domain), Some(domain), Some(domain))
     }
 
+    /// The oblate domain.
     #[must_use]
     pub const fn oblate(self) -> Option<PsdParticleDomain> {
         self.oblate
     }
 
+    /// The prolate domain.
     #[must_use]
     pub const fn prolate(self) -> Option<PsdParticleDomain> {
         self.prolate
     }
 
+    /// The spherical domain.
     #[must_use]
     pub const fn spherical(self) -> Option<PsdParticleDomain> {
         self.spherical
     }
 
+    /// The domain for a habit.
     #[must_use]
     pub const fn domain_for(self, habit: PsdSpheroidHabit) -> Option<PsdParticleDomain> {
         match habit {
@@ -1576,6 +1667,7 @@ impl PsdParticleSupport {
         }
     }
 
+    /// Whether the node lies inside the domain for its habit.
     #[must_use]
     pub fn contains(self, node: PsdParticleNode) -> bool {
         self.domain_for(node.habit())
@@ -1615,6 +1707,10 @@ pub struct PsdIntegrationConfig {
 }
 
 impl PsdIntegrationConfig {
+    /// A configuration from the coarse panel count, the refined node budget, the
+    /// largest scaled a, the tail, closure and convergence tolerances, the absolute
+    /// convergence tolerance per additive component, and the largest omitted number,
+    /// mass and D6 fractions.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         coarse_panels: u16,
@@ -1698,6 +1794,7 @@ impl PsdIntegrationConfig {
         })
     }
 
+    /// The configuration with a small-sphere policy (which also selects the revision).
     #[must_use]
     pub const fn with_small_sphere_scattering_policy(
         mut self,
@@ -1715,71 +1812,85 @@ impl PsdIntegrationConfig {
         self
     }
 
+    /// The distribution revision.
     #[must_use]
     pub const fn revision(self) -> SchemePsdRevision {
         self.revision
     }
 
+    /// The quadrature rule.
     #[must_use]
     pub const fn quadrature(self) -> PsdQuadratureRule {
         self.quadrature
     }
 
+    /// Panels of the coarse pass.
     #[must_use]
     pub const fn coarse_panels(self) -> u16 {
         self.coarse_panels
     }
 
+    /// Nodes of the base refined pass.
     #[must_use]
     pub const fn base_refined_nodes(self) -> usize {
         self.coarse_panels as usize * REFINEMENT_FACTOR * GL8_POINTS_PER_PANEL
     }
 
+    /// Largest number of refined nodes allowed.
     #[must_use]
     pub const fn maximum_refined_nodes(self) -> u32 {
         self.maximum_refined_nodes
     }
 
+    /// Largest scaled a integrated.
     #[must_use]
     pub const fn maximum_scaled_a(self) -> f64 {
         self.maximum_scaled_a
     }
 
+    /// Largest gamma tail fraction left beyond the integration interval.
     #[must_use]
     pub const fn maximum_tail_fraction(self) -> f64 {
         self.maximum_tail_fraction
     }
 
+    /// Largest relative closure error of the quadrature moments.
     #[must_use]
     pub const fn maximum_quadrature_closure_error(self) -> f64 {
         self.maximum_quadrature_closure_error
     }
 
+    /// Largest relative coarse/refined difference of the additive outputs.
     #[must_use]
     pub const fn maximum_additive_convergence_error(self) -> f64 {
         self.maximum_additive_convergence_error
     }
 
+    /// Absolute convergence tolerance per additive component.
     #[must_use]
     pub const fn additive_absolute_tolerances(self) -> [f64; AdditiveScattering::COMPONENT_COUNT] {
         self.additive_absolute_tolerances
     }
 
+    /// Largest number fraction the table domain may omit.
     #[must_use]
     pub const fn maximum_domain_omitted_number_fraction(self) -> f64 {
         self.maximum_domain_omitted_number_fraction
     }
 
+    /// Largest mass fraction the table domain may omit.
     #[must_use]
     pub const fn maximum_domain_omitted_mass_fraction(self) -> f64 {
         self.maximum_domain_omitted_mass_fraction
     }
 
+    /// Largest D6 fraction the table domain may omit.
     #[must_use]
     pub const fn maximum_domain_omitted_d6_fraction(self) -> f64 {
         self.maximum_domain_omitted_d6_fraction
     }
 
+    /// The small-sphere policy.
     #[must_use]
     pub const fn small_sphere_scattering_policy(self) -> IshmaelSmallSphereScatteringPolicy {
         self.small_sphere_scattering_policy
@@ -1811,11 +1922,17 @@ impl Default for PsdIntegrationConfig {
 /// Complete numerical, truncation, and table-domain audit for one result.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct PsdIntegrationAudit {
+    /// The configuration.
     pub config: PsdIntegrationConfig,
+    /// The table support.
     pub support: PsdParticleSupport,
+    /// The distribution revision.
     pub revision: SchemePsdRevision,
+    /// The quadrature rule.
     pub quadrature: PsdQuadratureRule,
+    /// Provenance of the fall speeds.
     pub fall_speed: PsdFallSpeedProvenance,
+    /// The reconstruction audit.
     pub reconstruction: IshmaelReconstructionAudit,
     /// Native-to-table material geometry binding. Native distribution moments
     /// remain governed by `reconstruction`; only support, LUT geometry, and
@@ -1827,27 +1944,46 @@ pub struct PsdIntegrationAudit {
     /// Node counts in the comparison pair that satisfied every convergence
     /// gate (or would have been reported by a final fail-closed error).
     pub coarse_nodes_evaluated: usize,
+    /// Nodes of the refined grid in the comparison pair.
     pub refined_nodes_evaluated: usize,
     /// Total scattering callbacks consumed, including a rejected base grid
     /// when adaptive refinement was required.
     pub total_nodes_reduced: usize,
+    /// Upper end of the integration interval, in scaled a.
     pub upper_scaled_a: f64,
+    /// Number density of the distribution, m⁻³.
     pub expected_number_density_m3: f64,
+    /// Mass concentration of the distribution, kg m⁻³.
     pub expected_mass_concentration_kg_m3: f64,
+    /// D6 concentration of the distribution, m³.
     pub expected_d6_concentration_m3: f64,
+    /// Number fraction represented by supported nodes.
     pub represented_number_fraction: f64,
+    /// Mass fraction represented by supported nodes.
     pub represented_mass_fraction: f64,
+    /// D6 fraction represented by supported nodes.
     pub represented_d6_fraction: f64,
+    /// Number fraction omitted by the table domain.
     pub domain_omitted_number_fraction: f64,
+    /// Mass fraction omitted by the table domain.
     pub domain_omitted_mass_fraction: f64,
+    /// D6 fraction omitted by the table domain.
     pub domain_omitted_d6_fraction: f64,
+    /// Number fraction beyond the integration interval.
     pub truncation_tail_number_fraction: f64,
+    /// Mass fraction beyond the integration interval.
     pub truncation_tail_mass_fraction: f64,
+    /// D6 fraction beyond the integration interval.
     pub truncation_tail_d6_fraction: f64,
+    /// Relative closure error of the number moment.
     pub number_closure_relative_error: f64,
+    /// Relative closure error of the mass moment.
     pub mass_closure_relative_error: f64,
+    /// Relative closure error of the D6 moment.
     pub d6_closure_relative_error: f64,
+    /// Largest relative coarse/refined difference of the additive outputs.
     pub maximum_additive_convergence_error: f64,
+    /// The additive component with that difference.
     pub maximum_additive_convergence_component: usize,
     /// Versioned route used for exact spherical sub-floor nodes, when enabled.
     pub small_sphere_scattering_revision: Option<&'static str>,
@@ -1864,16 +2000,19 @@ pub struct PsdIntegrationResult {
 }
 
 impl PsdIntegrationResult {
+    /// The integrated additive scattering.
     #[must_use]
     pub const fn additive(self) -> AdditiveScattering {
         self.additive
     }
 
+    /// The integrated accumulator quantities.
     #[must_use]
     pub const fn accumulator(self) -> PolarAccumulatorQuantities {
         self.accumulator
     }
 
+    /// The audit.
     #[must_use]
     pub const fn audit(self) -> PsdIntegrationAudit {
         self.audit
@@ -1953,6 +2092,7 @@ impl PreparedIshmaelPsdIntegration {
             )
     }
 
+    /// Nodes in a pass.
     #[must_use]
     pub fn node_count(&self, level: PsdQuadratureLevel) -> usize {
         match level {
@@ -1965,11 +2105,13 @@ impl PreparedIshmaelPsdIntegration {
         }
     }
 
+    /// Upper end of the integration interval, in scaled a.
     #[must_use]
     pub const fn upper_scaled_a(&self) -> f64 {
         self.upper_scaled_a
     }
 
+    /// The material closure.
     #[must_use]
     pub const fn material_closure(&self) -> IshmaelSolidIceMaterialClosure {
         self.material_closure
@@ -3080,104 +3222,182 @@ fn ishmael_source_projection_relative_change(incoming: f64, projected: f64) -> f
     ISHMAEL_UNBOUNDED_SOURCE_PROJECTION_RELATIVE_CHANGE_SENTINEL
 }
 
+/// Why a PSD could not be reconstructed or integrated.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum PsdError {
+    /// An input value fails its requirement.
     #[error("{field} must be {requirement}, got {value}")]
     InvalidInput {
+        /// Which value.
         field: &'static str,
+        /// The value.
         value: f64,
+        /// What it must be.
         requirement: &'static str,
     },
+    /// A range is not finite, positive and ordered.
     #[error("{field} range must be finite, positive, and ordered, got [{minimum}, {maximum}]")]
     InvalidRange {
+        /// Which range.
         field: &'static str,
+        /// Lower end.
         minimum: f64,
+        /// Upper end.
         maximum: f64,
     },
+    /// A computation produced a value that is not finite and positive.
     #[error("{field} produced an invalid nonpositive or nonfinite value {value}")]
-    InvalidComputation { field: &'static str, value: f64 },
+    InvalidComputation {
+        /// Which quantity.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// The table's solid-ice density is not the expected endpoint.
     #[error(
         "authenticated dry-LUT solid-ice material endpoint must be exactly {expected_kg_m3} kg m^-3, got {actual_kg_m3} kg m^-3"
     )]
     SolidIceMaterialEndpoint {
+        /// The expected density, kg m⁻³.
         expected_kg_m3: f64,
+        /// The table's density, kg m⁻³.
         actual_kg_m3: f64,
     },
+    /// A material closure does not match the distribution.
     #[error("ISHMAEL solid-ice material closure does not match the native distribution")]
     InvalidMaterialClosure,
+    /// A reconstructed value is outside WRF's bounds.
     #[error("{field} value {value} is outside [{minimum}, {maximum}]")]
     OutsideReconstructionBound {
+        /// Which value.
         field: &'static str,
+        /// The value.
         value: f64,
+        /// The lower bound.
         minimum: f64,
+        /// The upper bound.
         maximum: f64,
     },
+    /// A reconstructed moment does not reproduce the native moment.
     #[error("native {moment} reconstruction relative error {relative_error} exceeds {maximum}")]
     ReconstructionClosure {
+        /// Which moment.
         moment: &'static str,
+        /// The relative error.
         relative_error: f64,
+        /// The largest allowed.
         maximum: f64,
     },
+    /// The native mean particle mass disagrees with the particle geometry.
     #[error(
         "native ISHMAEL source-state mean mass {expected_mean_particle_mass_kg} kg is inconsistent with its particle-geometry mean mass {geometry_mean_particle_mass_kg} kg; relative error {relative_error} exceeds {maximum}"
     )]
     SourceStateMassClosure {
+        /// Mean mass of the native state, kg.
         expected_mean_particle_mass_kg: f64,
+        /// Mean mass from the particle geometry, kg.
         geometry_mean_particle_mass_kg: f64,
+        /// The relative error.
         relative_error: f64,
+        /// The largest allowed.
         maximum: f64,
     },
+    /// An integer setting is zero.
     #[error("{field} must be positive, got {value}")]
-    InvalidIntegerConfig { field: &'static str, value: u64 },
+    InvalidIntegerConfig {
+        /// Which setting.
+        field: &'static str,
+        /// The value.
+        value: u64,
+    },
+    /// The node budget arithmetic overflowed.
     #[error("quadrature node-budget arithmetic overflowed")]
     NodeBudgetOverflow,
+    /// The refined pass needs more nodes than the budget.
     #[error("refined quadrature needs {required} nodes but the configured maximum is {maximum}")]
-    NodeBudgetExceeded { required: usize, maximum: usize },
+    NodeBudgetExceeded {
+        /// Nodes needed.
+        required: usize,
+        /// The budget.
+        maximum: usize,
+    },
+    /// The gamma tail cannot reach the requested fraction within the largest scaled a.
     #[error(
         "gamma tails cannot reach fraction {requested_fraction} by scaled a={maximum_scaled_a}"
     )]
     TailToleranceUnreachable {
+        /// The largest scaled a.
         maximum_scaled_a: f64,
+        /// The tail fraction asked for.
         requested_fraction: f64,
     },
+    /// An iterative computation did not converge.
     #[error("{operation} did not converge within the fixed iteration limit")]
-    NumericalConvergence { operation: &'static str },
+    NumericalConvergence {
+        /// Which computation.
+        operation: &'static str,
+    },
+    /// A quadrature moment does not match the analytic moment.
     #[error("{moment} quadrature closure error {relative_error} exceeds {maximum}")]
     QuadratureClosure {
+        /// Which moment.
         moment: &'static str,
+        /// The relative error.
         relative_error: f64,
+        /// The largest allowed.
         maximum: f64,
     },
+    /// The table domain omits too much of the distribution.
     #[error("table domain omits {fraction} of PSD {moment}, exceeding {maximum}")]
     DomainOmission {
+        /// Which moment.
         moment: &'static str,
+        /// The fraction omitted.
         fraction: f64,
+        /// The largest allowed.
         maximum: f64,
     },
+    /// The coarse and refined passes disagree on an additive output.
     #[error(
         "additive component {component} coarse value {coarse_value}, refined value {refined_value}, magnitude {magnitude}, absolute error {absolute_error}, relative error {relative_error} exceeds abs_tol={absolute_tolerance} + rel_tol={relative_tolerance} * magnitude"
     )]
     AdditiveConvergence {
+        /// Index of the additive component.
         component: usize,
+        /// Coarse value.
         coarse_value: f64,
+        /// Refined value.
         refined_value: f64,
+        /// Magnitude used to scale the tolerance.
         magnitude: f64,
+        /// Absolute difference.
         absolute_error: f64,
+        /// Relative difference.
         relative_error: f64,
+        /// Absolute tolerance.
         absolute_tolerance: f64,
+        /// Relative tolerance.
         relative_tolerance: f64,
     },
 }
 
 /// PSD failures preserve the concrete scattering-callback error type.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum PsdIntegrationError<E> {
+    /// The distribution or integration failed.
     Psd(PsdError),
+    /// The scattering callback failed on a node.
     NodeEvaluation {
+        /// The pass.
         level: PsdQuadratureLevel,
+        /// Index of the node in its rule.
         node_index: usize,
+        /// The callback's error.
         source: E,
     },
+    /// The integrated output is invalid.
     Output(OutputError),
 }
 

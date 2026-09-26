@@ -1,3 +1,5 @@
+//! Time the Level II decode stages of one file: normalization, bzip2 and gzip previews and the full decode.
+
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

@@ -7,6 +7,7 @@
 //! the actual refractivity gradient and ducting flag so anomalous propagation
 //! is never silently presented as ordinary terrain blockage.
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::EARTH_RADIUS_M;
@@ -48,18 +49,32 @@ pub fn radio_refractivity_n_units(
     refractivity.is_finite().then_some(refractivity)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// One level of a refractivity profile.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RefractivityLevel {
     /// Height above the radar antenna, metres.
     pub height_m: f64,
+    /// Radio refractivity at that height, N-units.
     pub refractivity_n: f64,
 }
 
+/// Why [`RefractivityProfile::new`] rejected its levels.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RefractivityProfileError {
+    /// A profile needs at least two levels.
     TooFewLevels,
-    NonFiniteLevel { index: usize },
-    NonIncreasingHeight { index: usize },
+    /// A level's height or refractivity is not finite.
+    NonFiniteLevel {
+        /// Position of the level.
+        index: usize,
+    },
+    /// A level is not higher than the one before it.
+    NonIncreasingHeight {
+        /// Position of the level.
+        index: usize,
+    },
 }
 
 impl std::fmt::Display for RefractivityProfileError {
@@ -81,12 +96,16 @@ impl std::fmt::Display for RefractivityProfileError {
 
 impl std::error::Error for RefractivityProfileError {}
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Radio refractivity as a function of height above the antenna, linear
+/// between levels.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RefractivityProfile {
     levels: Vec<RefractivityLevel>,
 }
 
 impl RefractivityProfile {
+    /// A profile from levels in increasing height: at least two, all finite.
     pub fn new(levels: Vec<RefractivityLevel>) -> Result<Self, RefractivityProfileError> {
         if levels.len() < 2 {
             return Err(RefractivityProfileError::TooFewLevels);
@@ -102,6 +121,7 @@ impl RefractivityProfile {
         Ok(Self { levels })
     }
 
+    /// The levels, in increasing height.
     pub fn levels(&self) -> &[RefractivityLevel] {
         &self.levels
     }
@@ -117,6 +137,9 @@ impl RefractivityProfile {
         lower.refractivity_n + alpha * (upper.refractivity_n - lower.refractivity_n)
     }
 
+    /// The refractivity gradient at a height, in N-units per kilometre: the
+    /// slope of the segment that contains it (the end segments extend past
+    /// the first and last levels).
     pub fn gradient_n_per_km_at(&self, height_m: f64) -> f64 {
         let segment = self.segment_index(height_m);
         let lower = self.levels[segment];
@@ -135,12 +158,22 @@ impl RefractivityProfile {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// Propagation class of a refractivity gradient ([`propagation_regime`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[non_exhaustive]
 pub enum PropagationRegime {
+    /// Gradient above -20 N/km: the beam bends less than standard, and runs
+    /// higher than the 4/3-Earth model says.
     Subrefractive,
+    /// Gradient from -79 to -20 N/km, around the standard -39 N/km.
     NearStandard,
+    /// Gradient below -79 N/km, down to the ducting threshold: the beam bends
+    /// towards the ground more than standard.
     Superrefractive,
+    /// Gradient at or below [`EARTH_DUCTING_GRADIENT_N_PER_KM`]: the beam
+    /// bends at least as much as the Earth curves, and can be trapped.
     Ducting,
 }
 
@@ -160,30 +193,47 @@ pub fn propagation_regime(gradient_n_per_km: f64) -> PropagationRegime {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// One step of a traced ray.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RefractedBeamPoint {
+    /// Distance along the ray from the antenna, metres.
     pub slant_range_m: f64,
+    /// Great-circle distance from the radar, metres.
     pub ground_range_m: f64,
     /// Height above the radar antenna's local Earth surface.
     pub height_above_radar_m: f64,
     /// Ray elevation relative to the local horizontal.
     pub elevation_deg: f64,
+    /// Refractivity at the point, N-units.
     pub refractivity_n: f64,
+    /// Refractivity gradient at the point, N-units per kilometre.
     pub gradient_n_per_km: f64,
+    /// Propagation class of that gradient.
     pub regime: PropagationRegime,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// A ray traced through a refractivity profile ([`trace_refracted_beam`]).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RefractedBeamTrace {
+    /// Points along the ray, one per integration step, from the antenna out.
     pub points: Vec<RefractedBeamPoint>,
+    /// Whether the ray passed through a layer at or below the ducting gradient.
     pub encountered_ducting_layer: bool,
+    /// The most negative gradient the ray passed through, N-units per kilometre.
     pub minimum_gradient_n_per_km: f64,
 }
 
+/// Why [`trace_refracted_beam`] refused its inputs.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum RefractedBeamError {
+    /// The initial elevation is not finite or outside -10 to 90 degrees.
     InvalidElevation(f64),
+    /// The maximum slant range is not finite or negative.
     InvalidRange(f64),
+    /// The step is not finite, not positive, or over 10 km.
     InvalidStep(f64),
 }
 

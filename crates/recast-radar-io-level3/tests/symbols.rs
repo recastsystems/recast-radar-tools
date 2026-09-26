@@ -778,7 +778,7 @@ fn cell_trend_data_follows_the_icd() {
                     TrendKind::ProbabilityOfHail | TrendKind::ProbabilityOfSevereHail => 0..=100,
                     TrendKind::CellVil => 0..=100,
                     TrendKind::MaxReflectivity => 0..=75,
-                    other => panic!("{what}: trend kind {other:?}"),
+                    other => panic!("{what}: trend kind {other:?} has no value range"),
                 };
                 for &v in &volumes.values {
                     assert!(

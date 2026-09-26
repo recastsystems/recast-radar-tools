@@ -1,8 +1,8 @@
-// Print the strongest inbound and outbound velocity gates inside an event's
-// bounding box for every low sweep of a Level II file, with the colors the
-// velocity table gives them raw and dealiased.
-//
-// usage: cargo run --release -p recast-radar-render --example velocity_event_probe -- <level2-file>
+//! Print the strongest inbound and outbound velocity gates inside an event's
+//! bounding box for every low sweep of a Level II file, with the colors the
+//! velocity table gives them raw and dealiased.
+//!
+//! usage: cargo run --release -p recast-radar-render --example velocity_event_probe -- <level2-file>
 
 use std::cmp::Ordering;
 use std::path::PathBuf;

@@ -22,6 +22,7 @@ use crate::{
     P3LookupTableV54, P3NumberLimiterAudit, P3WrfScheme, Sha256Digest,
 };
 
+/// Revision of this table reader.
 pub const P3_TABLE_READER_REVISION: &str = "wrf-p3-v5.4-exact-table-reader-v2";
 
 const MASS_AXIS_SIZE: usize = 50;
@@ -50,15 +51,23 @@ const OFFICIAL_LAYOUT: TableLayout = TableLayout {
 /// The exact external file required for an official P3 lookup mode.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct P3TableAssetSpec {
+    /// Which table.
     pub kind: P3OfficialTableKind,
+    /// The file's name in the WRF `run/` directory.
     pub file_name: &'static str,
+    /// Where the pinned file is published.
     pub source_url: &'static str,
+    /// Exact size of the file, bytes.
     pub expected_bytes: usize,
+    /// Data rows the file holds.
     pub expected_data_rows: usize,
+    /// SHA-256 of the file, lowercase hexadecimal.
     pub expected_sha256: &'static str,
+    /// Version of the table.
     pub table_version: &'static str,
 }
 
+/// The two-moment ice table, `p3_lookupTable_1.dat-v5.4_2momI` (WRF commit f52c197).
 pub const P3_TWO_MOMENT_TABLE_ASSET: P3TableAssetSpec = P3TableAssetSpec {
     kind: P3OfficialTableKind::TwoMoment,
     file_name: "p3_lookupTable_1.dat-v5.4_2momI",
@@ -73,6 +82,7 @@ pub const P3_TWO_MOMENT_TABLE_ASSET: P3TableAssetSpec = P3TableAssetSpec {
     table_version: P3_TWO_MOMENT_TABLE_VERSION,
 };
 
+/// The three-moment ice table, `p3_lookupTable_1.dat-v5.4_3momI` (WRF commit f52c197).
 pub const P3_THREE_MOMENT_TABLE_ASSET: P3TableAssetSpec = P3TableAssetSpec {
     kind: P3OfficialTableKind::ThreeMoment,
     file_name: "p3_lookupTable_1.dat-v5.4_3momI",
@@ -87,13 +97,18 @@ pub const P3_THREE_MOMENT_TABLE_ASSET: P3TableAssetSpec = P3TableAssetSpec {
     table_version: P3_THREE_MOMENT_TABLE_VERSION,
 };
 
+/// Which official P3 v5.4 lookup table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum P3OfficialTableKind {
+    /// The two-moment ice table.
     TwoMoment,
+    /// The three-moment ice table.
     ThreeMoment,
 }
 
 impl P3OfficialTableKind {
+    /// The file this table kind needs.
     #[must_use]
     pub const fn asset_spec(self) -> &'static P3TableAssetSpec {
         match self {
@@ -133,6 +148,7 @@ pub struct P3OfficialTableV54 {
 }
 
 impl P3OfficialTableV54 {
+    /// Load the table's file from `directory` (named as [`P3TableAssetSpec::file_name`]).
     pub fn load_from_directory(
         kind: P3OfficialTableKind,
         directory: impl AsRef<Path>,
@@ -140,6 +156,7 @@ impl P3OfficialTableV54 {
         Self::load_path(kind, directory.as_ref().join(kind.asset_spec().file_name))
     }
 
+    /// Load the table from a file.
     pub fn load_path(
         kind: P3OfficialTableKind,
         path: impl AsRef<Path>,
@@ -152,6 +169,7 @@ impl P3OfficialTableV54 {
         Self::load_bytes(kind, &bytes)
     }
 
+    /// Parse the table from its bytes, after checking their length and SHA-256.
     pub fn load_bytes(kind: P3OfficialTableKind, bytes: &[u8]) -> Result<Self, P3TableLoadError> {
         let spec = kind.asset_spec();
         if bytes.len() != spec.expected_bytes {
@@ -170,6 +188,7 @@ impl P3OfficialTableV54 {
         parse_exact_table(kind, bytes, OFFICIAL_LAYOUT, descriptor(kind, digest))
     }
 
+    /// Which table this is.
     #[must_use]
     pub const fn kind(&self) -> P3OfficialTableKind {
         self.kind
@@ -386,80 +405,154 @@ impl P3OfficialTableV54 {
     }
 }
 
+/// Why an official P3 table could not be loaded.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum P3TableLoadError {
+    /// The file could not be read.
     #[error("cannot read P3 table {path}: {source}")]
     Io {
+        /// The path.
         path: PathBuf,
+        /// The underlying error.
         #[source]
         source: io::Error,
     },
+    /// The file does not have the expected size.
     #[error("P3 table byte length mismatch: expected {expected}, got {actual}")]
-    ByteLength { expected: usize, actual: usize },
+    ByteLength {
+        /// What was expected.
+        expected: usize,
+        /// What was found.
+        actual: usize,
+    },
+    /// The file's SHA-256 differs from the pinned one.
     #[error("P3 table SHA-256 mismatch: expected {expected}, got {actual}")]
-    DigestMismatch { expected: String, actual: String },
+    DigestMismatch {
+        /// What was expected.
+        expected: String,
+        /// What was found.
+        actual: String,
+    },
+    /// The file is not UTF-8 text.
     #[error("P3 table is not UTF-8: {source}")]
     Utf8 {
+        /// The underlying error.
         #[source]
         source: Utf8Error,
     },
+    /// The first line is not the table's header.
     #[error("P3 table header mismatch: expected {expected:?}, got {actual:?}")]
-    Header { expected: String, actual: String },
+    Header {
+        /// What was expected.
+        expected: String,
+        /// What was found.
+        actual: String,
+    },
+    /// The second line is not the expected separator.
     #[error("P3 table separator mismatch on line 2: expected one space, got {actual:?}")]
-    Separator { actual: String },
+    Separator {
+        /// What was found.
+        actual: String,
+    },
+    /// The file ends early.
     #[error("P3 table ended before line {line}, expected {expected}")]
-    UnexpectedEof { line: usize, expected: String },
+    UnexpectedEof {
+        /// Line number, from 1.
+        line: usize,
+        /// What was expected.
+        expected: String,
+    },
+    /// The file has content after the last record.
     #[error("P3 table has extra content on line {line}: {actual:?}")]
-    ExtraContent { line: usize, actual: String },
+    ExtraContent {
+        /// Line number, from 1.
+        line: usize,
+        /// What was found.
+        actual: String,
+    },
+    /// A record has the wrong number of tokens.
     #[error("P3 table line {line} has {actual} tokens, expected {expected} for {record_kind}")]
     TokenCount {
+        /// Line number, from 1.
         line: usize,
+        /// Which kind of record.
         record_kind: &'static str,
+        /// What was expected.
         expected: usize,
+        /// What was found.
         actual: usize,
     },
+    /// A token that should be an integer is not.
     #[error("P3 table line {line} token {position} is not an integer ({token:?}): {source}")]
     InvalidInteger {
+        /// Line number, from 1.
         line: usize,
+        /// Position of the token on the line.
         position: usize,
+        /// The token.
         token: String,
+        /// The underlying error.
         #[source]
         source: ParseIntError,
     },
+    /// A record's index does not follow the table's order.
     #[error(
         "P3 table line {line} index {position} is {actual}, expected {expected} for {record_kind}"
     )]
     WrongIndex {
+        /// Line number, from 1.
         line: usize,
+        /// Which kind of record.
         record_kind: &'static str,
+        /// Position of the token on the line.
         position: usize,
+        /// What was expected.
         expected: usize,
+        /// What was found.
         actual: usize,
     },
+    /// A token that should be a number is not.
     #[error("P3 table line {line} token {position} is not a float ({token:?}): {source}")]
     InvalidFloat {
+        /// Line number, from 1.
         line: usize,
+        /// Position of the token on the line.
         position: usize,
+        /// The token.
         token: String,
+        /// The underlying error.
         #[source]
         source: ParseFloatError,
     },
+    /// A number is not finite.
     #[error("P3 table line {line} token {position} is nonfinite: {token:?}")]
     NonFinite {
+        /// Line number, from 1.
         line: usize,
+        /// Position of the token on the line.
         position: usize,
+        /// The token.
         token: String,
     },
+    /// A number-limiter value is not positive.
     #[error("P3 table line {line} has invalid {field} value {value}; it must be positive")]
     InvalidNumberLimiter {
+        /// Line number, from 1.
         line: usize,
+        /// Which value.
         field: &'static str,
+        /// The value.
         value: f32,
     },
+    /// inv_Qmin is below inv_Qmax on a record.
     #[error("P3 table line {line} has inv_Qmin={inverse_qmin} below inv_Qmax={inverse_qmax}")]
     InvalidNumberLimiterOrdering {
+        /// Line number, from 1.
         line: usize,
+        /// inv_Qmin of the record.
         inverse_qmin: f32,
+        /// inv_Qmax of the record.
         inverse_qmax: f32,
     },
 }

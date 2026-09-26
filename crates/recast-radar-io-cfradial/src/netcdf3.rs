@@ -325,9 +325,13 @@ pub struct Nc3File<'a> {
     /// (name, length) — the record dimension stores its per-file length
     /// (`numrecs`), not zero.
     pub dims: Vec<(String, usize)>,
+    /// Index of the record (unlimited) dimension in `dims`, if the file has one.
     pub record_dim: Option<usize>,
+    /// Number of records.
     pub numrecs: usize,
+    /// Global attributes, in file order.
     pub gattrs: NcAttrs,
+    /// Variables, by name.
     pub vars: BTreeMap<String, NcVar>,
 }
 
@@ -485,6 +489,8 @@ impl<'a> Cursor<'a> {
 }
 
 impl<'a> Nc3File<'a> {
+    /// Parse the header of a classic netCDF file (CDF-1 or CDF-2). Variable data
+    /// is read on request.
     pub fn open(bytes: &'a [u8]) -> Result<Self> {
         if !looks_like_netcdf3_bytes(bytes) {
             return Err(invalid(0, "missing netCDF classic magic"));
@@ -607,10 +613,12 @@ impl<'a> Nc3File<'a> {
         })
     }
 
+    /// A global text attribute.
     pub fn gattr_str(&self, name: &str) -> Option<&str> {
         self.gattrs.get(name).and_then(NcValue::as_str)
     }
 
+    /// The first value of a numeric global attribute, as `f64`.
     pub fn gattr_f64(&self, name: &str) -> Option<f64> {
         self.gattrs.get(name).and_then(NcValue::as_f64)
     }

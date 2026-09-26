@@ -43,7 +43,8 @@ use recast_radar_correct::{
     range_band_reference,
 };
 
-pub const DEALIAS_USAGE: &str = "usage: recast-radar-bench --dealias --target <vol> [options]
+pub(crate) const DEALIAS_USAGE: &str =
+    "usage: recast-radar-bench --dealias --target <vol> [options]
 
   --target <file>        Level-II target volume (required)
   --prior <file>         previous volume for the temporal prior
@@ -66,7 +67,7 @@ const BOUNDARY_NYQUIST_FRAC: f32 = 1.2;
 const DEFAULT_ITERS: usize = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Engine {
+pub(crate) enum Engine {
     Region,
     RegionPyart,
     V4,
@@ -101,14 +102,14 @@ impl Engine {
 const ALL_ENGINES: [Engine; 3] = [Engine::Region, Engine::V4, Engine::V4NoEnv];
 
 #[derive(Clone, Debug)]
-pub struct Probe {
+pub(crate) struct Probe {
     azimuth_deg: f32,
     range_km: f32,
     label: String,
 }
 
 #[derive(Debug)]
-pub struct DealiasArgs {
+pub(crate) struct DealiasArgs {
     target: PathBuf,
     prior: Option<PathBuf>,
     env: Option<PathBuf>,
@@ -121,7 +122,7 @@ pub struct DealiasArgs {
     dump_fields: Option<PathBuf>,
 }
 
-pub fn parse_dealias_args(args: &[String]) -> Result<DealiasArgs, String> {
+pub(crate) fn parse_dealias_args(args: &[String]) -> Result<DealiasArgs, String> {
     let mut target = None;
     let mut prior = None;
     let mut env = None;
@@ -1081,7 +1082,7 @@ fn format_option_f32(value: Option<f32>) -> String {
     value.map_or_else(|| "-".to_owned(), |value| format!("{value:+.1}"))
 }
 
-pub fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
+pub(crate) fn run_dealias(args: &DealiasArgs) -> Result<bool, String> {
     let raw =
         fs::read(&args.target).map_err(|err| format!("read {}: {err}", args.target.display()))?;
     let volume = recast_radar_io::read_supported_volume_bytes(raw.as_slice())

@@ -1211,6 +1211,92 @@ fn product_138_follows_the_icd_and_differs_from_metpy_as_documented() {
     }
 }
 
+/// The uncompressed message of a bzip2-compressed generic product (the file's
+/// bytes up to the end of the Product Description Block, then the
+/// decompressed rest) and the offset of its packet's XDR data.
+fn unpacked_generic(id: &str) -> (Vec<u8>, usize) {
+    let entry = common::entry(id);
+    let golden = entry.golden();
+    let bytes = entry.bytes();
+    assert!(common::is_bzip2(&golden), "{id}");
+    let range = common::message_range(&golden, bytes.len());
+    let start = range.start;
+    let message = &bytes[range];
+    let mut out = bytes[..start + 120].to_vec();
+    std::io::Read::read_to_end(&mut bzip2::read::BzDecoder::new(&message[120..]), &mut out)
+        .unwrap();
+    let product = decode_product(&out).unwrap();
+    // XDR data starts after the symbology block/layer headers and the packet header.
+    let xdr = start + 2 * product.description.symbology_offset as usize + 16 + 8;
+    (out, xdr)
+}
+
+/// The big-endian XDR word at `at`.
+fn xdr_word(bytes: &[u8], at: usize) -> u32 {
+    u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap())
+}
+
+/// A generic radial component rewritten in place, in the same number of
+/// bytes, so that 359 of its 360 radials hold no values and the last holds
+/// all the value bytes: padded to the longest radial, the grid would hold 360
+/// times as many cells as the packet holds values (over 100 million).
+/// Decoding refuses it; before the limit, `read_level3_volume` built that
+/// grid.
+#[test]
+fn generic_radial_grid_beyond_the_cell_limit_is_refused() {
+    let (dpr, xdr) = unpacked_generic("l3-tlx-dpr-20130520-2016");
+    // Radial count and array length (XDR words 54 and 55), then the records:
+    // azimuth, elevation, width, bin count, attribute string, value count,
+    // values.
+    assert_eq!(
+        (xdr_word(&dpr, xdr + 216), xdr_word(&dpr, xdr + 220)),
+        (360, 360)
+    );
+    let first = xdr + 224;
+    let mut headers = Vec::new();
+    let mut at = first;
+    for _ in 0..360 {
+        let record = at;
+        let attributes = xdr_word(&dpr, at + 16) as usize;
+        at += 20 + attributes.div_ceil(4) * 4;
+        let count = xdr_word(&dpr, at) as usize;
+        headers.push(record..at);
+        at += 4 + 4 * count;
+    }
+    let end = at;
+    let original = decode_product(&dpr).unwrap();
+
+    let mut bad = dpr[..first].to_vec();
+    for header in &headers[..359] {
+        bad.extend_from_slice(&dpr[header.clone()]);
+        bad.extend_from_slice(&0u32.to_be_bytes());
+    }
+    let last = headers[359].clone();
+    let value_bytes = end - (bad.len() + last.len() + 4);
+    let values = value_bytes / 4;
+    let mut header = dpr[last].to_vec();
+    // The bin count (the fourth word) announces every value.
+    header[12..16].copy_from_slice(&(values as u32).to_be_bytes());
+    bad.extend_from_slice(&header);
+    bad.extend_from_slice(&(values as u32).to_be_bytes());
+    bad.extend_from_slice(&dpr[end - value_bytes..end]);
+    bad.extend_from_slice(&dpr[end..]);
+    assert_eq!(bad.len(), dpr.len());
+    assert!(
+        360 * values > 100_000_000 && 100_000_000 > MAX_RADIAL_CELLS,
+        "{values} values in the last radial"
+    );
+
+    match decode_product(&bad) {
+        Err(Level3Error::InvalidPacket { code: 28, reason }) => {
+            assert!(reason.contains("cell limit"), "{reason}")
+        }
+        other => panic!("expected InvalidPacket, got {:?}", other.map(|_| ())),
+    }
+    // The unmodified message still decodes.
+    assert!(original.symbology.is_some());
+}
+
 /// Real files with header fields corrupted: decoding returns an error or a
 /// well-formed result, allocates nothing unbounded and never panics.
 #[test]
@@ -1252,23 +1338,8 @@ fn corrupted_radial_and_generic_packets() {
 
     // KTLX 2013 DPR and ASP: bzip2 products. Decompress, corrupt the XDR data
     // and hand the decoder the uncompressed message.
-    let unpacked = |id: &str| {
-        let entry = common::entry(id);
-        let golden = entry.golden();
-        let bytes = entry.bytes();
-        assert!(common::is_bzip2(&golden), "{id}");
-        let range = common::message_range(&golden, bytes.len());
-        let start = range.start;
-        let message = &bytes[range];
-        let mut out = bytes[..start + 120].to_vec();
-        std::io::Read::read_to_end(&mut bzip2::read::BzDecoder::new(&message[120..]), &mut out)
-            .unwrap();
-        let product = decode_product(&out).unwrap();
-        // XDR data starts after the symbology block/layer headers and the packet header.
-        let xdr = start + 2 * product.description.symbology_offset as usize + 16 + 8;
-        (out, xdr)
-    };
-    let word = |b: &[u8], at: usize| u32::from_be_bytes(b[at..at + 4].try_into().unwrap());
+    let unpacked = unpacked_generic;
+    let word = xdr_word;
     let expect_invalid = |b: &[u8], what: &str| match decode_product(b) {
         Err(Level3Error::InvalidPacket { code: 28, reason }) => eprintln!("{what}: {reason}"),
         other => panic!(

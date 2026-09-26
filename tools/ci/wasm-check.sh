@@ -17,9 +17,9 @@
 #   checked with --no-default-features, and with --no-default-features
 #   --features async-client (the non-blocking client, which uses the browser's
 #   fetch on wasm32); skipped while it has no `net` feature.
-# - recast-radar-bench: not checked. It is the native benchmark harness binary,
-#   not a library, so wasm32 is not a goal for it (it did compile for wasm32
-#   when G.3 was done).
+# - recast-radar-bench (the benchmark harness binary) is checked with the
+#   workspace crates: every crate that does not need the network builds for
+#   wasm32 (spec 9.7). Its file reads return I/O errors there.
 # - recast-radar-testdata: not checked. It is the test-only corpus fetcher
 #   (ureq + rustls, whose `ring` compiles C), never a normal dependency of a
 #   library crate.
@@ -46,7 +46,6 @@ has_net_feature() {
 cargo hack check --locked --target "$target" --workspace \
     --exclude recast-radar-tools \
     --exclude recast-radar-data \
-    --exclude recast-radar-bench \
     --exclude recast-radar-testdata
 
 cargo hack check --locked --target "$target" -p recast-radar-tools \

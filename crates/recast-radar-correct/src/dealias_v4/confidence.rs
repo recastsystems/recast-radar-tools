@@ -56,10 +56,12 @@ impl ConfidenceGrid {
         }
     }
 
+    /// Rows (rays) of the grid.
     pub fn rows(&self) -> usize {
         self.rows
     }
 
+    /// Gates per row.
     pub fn gates(&self) -> usize {
         self.gates
     }
@@ -69,6 +71,7 @@ impl ConfidenceGrid {
         &self.values
     }
 
+    /// Confidence of one gate, 0 (no data) to 255 (decisive); `None` outside the grid.
     pub fn value(&self, row: usize, gate: usize) -> Option<u8> {
         if row >= self.rows || gate >= self.gates {
             return None;

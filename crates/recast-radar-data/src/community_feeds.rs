@@ -239,6 +239,7 @@ pub struct CommunityMarker {
     pub label: String,
     /// Marker location (a cluster's shared pad, or the lone feed's site).
     pub latitude_deg: f32,
+    /// Marker longitude, degrees east.
     pub longitude_deg: f32,
     /// Indices into [`community_feeds`], table order. Exactly one for a
     /// direct-click marker; two or more for a cluster.

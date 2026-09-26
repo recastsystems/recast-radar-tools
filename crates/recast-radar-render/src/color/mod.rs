@@ -37,15 +37,21 @@ use std::hash::{Hash, Hasher};
 const KNOT_TO_MPS: f32 = 0.514_444;
 const MPH_TO_MPS: f32 = 0.447_04;
 
+/// An 8-bit RGBA color.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Rgba8 {
+    /// Red.
     pub r: u8,
+    /// Green.
     pub g: u8,
+    /// Blue.
     pub b: u8,
+    /// Alpha (0 transparent, 255 opaque).
     pub a: u8,
 }
 
 impl Rgba8 {
+    /// Fully transparent black.
     pub const TRANSPARENT: Self = Self {
         r: 0,
         g: 0,
@@ -53,14 +59,17 @@ impl Rgba8 {
         a: 0,
     };
 
+    /// A color from its four channels.
     pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
 
+    /// An opaque color.
     pub const fn opaque(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
     }
 
+    /// `[r, g, b, a]`.
     pub const fn to_array(self) -> [u8; 4] {
         [self.r, self.g, self.b, self.a]
     }
@@ -76,25 +85,42 @@ impl Rgba8 {
     }
 }
 
+/// A kind of product that shares one color table.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum ColorTableFamily {
+    /// Reflectivity (dBZ).
     Reflectivity,
+    /// Radial velocity (m/s), diverging about zero.
     Velocity,
+    /// Spectrum width (m/s).
     SpectrumWidth,
+    /// Correlation coefficient.
     CorrelationCoefficient,
+    /// Differential reflectivity (dB).
     DifferentialReflectivity,
+    /// Echo top heights.
     EchoTops,
+    /// Vertically integrated liquid.
     Vil,
+    /// VIL density.
     VilDensity,
+    /// Hail size (MESH, mm).
     HailSize,
+    /// Probabilities (percent).
     Probability,
+    /// Azimuthal shear.
     AzimuthalShear,
+    /// Differential phase (degrees).
     DifferentialPhase,
+    /// Specific differential phase (degrees per km).
     SpecificDifferentialPhase,
+    /// Anything else: a generic sequential ramp.
     Generic,
 }
 
 impl ColorTableFamily {
+    /// Name of the family for menus.
     pub fn label(self) -> &'static str {
         match self {
             Self::Reflectivity => "Reflectivity",
@@ -190,11 +216,17 @@ pub fn product_code_for_family(family: ColorTableFamily) -> Option<&'static str>
 /// Picker badges (docs/customization-spec.md §2.1). An entry can carry
 /// several; `Default` marks the table the family ships with.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum Badge {
+    /// The family's default table.
     Default,
+    /// Safe under color vision deficiency.
     CvdSafe,
+    /// A classic look (GR2Analyst, NWS).
     Classic,
+    /// A smooth ramp without hard category edges.
     Smooth,
+    /// High contrast.
     HighContrast,
     /// Tables ported from research-radar toolkits (DOW/COW mobile-radar
     /// work), e.g. the GURT V3 set by ambient330.
@@ -202,6 +234,7 @@ pub enum Badge {
 }
 
 impl Badge {
+    /// Label of the badge.
     pub fn label(self) -> &'static str {
         match self {
             Self::Default => "default",
@@ -217,20 +250,28 @@ impl Badge {
 /// A built-in table plus the metadata the picker renders: one-line
 /// description (hover) and badges (docs/customization-spec.md §2.1).
 pub struct CatalogEntry {
+    /// The table.
     pub table: ColorTable,
+    /// One-line description for the picker.
     pub description: &'static str,
+    /// Badges for the picker.
     pub badges: &'static [Badge],
 }
 
+/// One stop of a color table: a value and its color.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorStop {
+    /// The value, in the table's internal units (m/s for velocity tables).
     pub value: f32,
+    /// The color at the value.
     pub color: Rgba8,
     /// GR .pal two-color entries: the color ramps from `color` to this
     /// across the stop's own interval (None = single-color entry).
     pub end_color: Option<Rgba8>,
 }
 
+/// A color table: stops that map values to colors, how to sample between
+/// them, and the range-folded color.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColorTable {
     name: String,
@@ -248,6 +289,7 @@ pub struct ColorTable {
 }
 
 impl ColorTable {
+    /// An interpolating table from stops (at least two with distinct finite values).
     pub fn new(name: impl Into<String>, stops: Vec<ColorStop>) -> Result<Self, ColorTableError> {
         Self::from_parts(
             name.into(),
@@ -259,6 +301,7 @@ impl ColorTable {
         )
     }
 
+    /// A stepped table (each stop's color holds until the next stop) from stops.
     pub fn new_stepped(
         name: impl Into<String>,
         stops: Vec<ColorStop>,
@@ -273,10 +316,15 @@ impl ColorTable {
         )
     }
 
+    /// Parse a color table in the GRLevelX `.pal` text format (`Color:`,
+    /// `Color4:`, `SolidColor:`, `Product:`, `Units:`, `Scale:`, `Step:`, `RF:`),
+    /// interpolating between stops unless the file says otherwise. Velocity
+    /// tables in kt or mph are converted to m/s.
     pub fn parse(name: impl Into<String>, text: &str) -> Result<Self, ColorTableError> {
         Self::parse_with_default_mode(name, text, SampleMode::Interpolated)
     }
 
+    /// [`ColorTable::parse`] with the sample mode used when the file does not name one.
     pub fn parse_with_default_mode(
         name: impl Into<String>,
         text: &str,
@@ -363,38 +411,47 @@ impl ColorTable {
         Self::parse_with_default_mode(name, text, SampleMode::GrPal)
     }
 
+    /// [`ColorTable::parse`], stepped unless the file says otherwise.
     pub fn parse_stepped(name: impl Into<String>, text: &str) -> Result<Self, ColorTableError> {
         Self::parse_with_default_mode(name, text, SampleMode::Stepped)
     }
 
+    /// Name of the table.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The `Product:` the table declares.
     pub fn product(&self) -> Option<&str> {
         self.product.as_deref()
     }
 
+    /// The `Units:` the table declares.
     pub fn units(&self) -> Option<&str> {
         self.units.as_deref()
     }
 
+    /// The stops, sorted by value.
     pub fn stops(&self) -> &[ColorStop] {
         &self.stops
     }
 
+    /// Whether the table interpolates between stops.
     pub fn interpolates(&self) -> bool {
         self.sample_mode == SampleMode::Interpolated
     }
 
+    /// Name of the sample mode for menus.
     pub fn sample_mode_label(&self) -> &'static str {
         self.sample_mode.label()
     }
 
+    /// Quantization step of a quantized table.
     pub fn step_size(&self) -> Option<f32> {
         self.sample_mode.step_size()
     }
 
+    /// The color of a value; transparent for NaN and for values below the display threshold.
     pub fn sample(&self, value: f32) -> Rgba8 {
         if !value.is_finite() {
             return Rgba8::TRANSPARENT;
@@ -502,6 +559,7 @@ impl ColorTable {
         })?
     }
 
+    /// [`ColorTable::sample`] as `[r, g, b, a]`.
     pub fn color_for_value(&self, value: f32) -> [u8; 4] {
         self.sample(value).to_array()
     }
@@ -533,14 +591,17 @@ impl ColorTable {
         ColorSampler::new(self)
     }
 
+    /// The range-folded color as `[r, g, b, a]`.
     pub fn range_folded_color(&self) -> [u8; 4] {
         self.range_folded.to_array()
     }
 
+    /// The range-folded color.
     pub fn range_folded_rgba(&self) -> Rgba8 {
         self.range_folded
     }
 
+    /// A hash of everything that affects the colors, to key caches on.
     pub fn signature(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.name.hash(&mut hasher);
@@ -559,6 +620,7 @@ impl ColorTable {
         hasher.finish()
     }
 
+    /// The table with its stop values negated (a velocity table seen from the other side).
     pub fn mirrored_values(&self, name: impl Into<String>) -> Self {
         let stops = self
             .stops
@@ -684,6 +746,7 @@ impl ColorSampler {
         }
     }
 
+    /// The color of a value; the same result as [`ColorTable::sample`].
     pub fn sample(&self, value: f32) -> Rgba8 {
         if !value.is_finite() {
             return Rgba8::TRANSPARENT;
@@ -711,10 +774,12 @@ impl ColorSampler {
         }
     }
 
+    /// [`ColorSampler::sample`] as `[r, g, b, a]`.
     pub fn color_for_value(&self, value: f32) -> [u8; 4] {
         self.sample(value).to_array()
     }
 
+    /// The range-folded color as `[r, g, b, a]`.
     pub fn range_folded_color(&self) -> [u8; 4] {
         self.range_folded.to_array()
     }
@@ -798,12 +863,19 @@ fn bucket_for(value: f32, min_value: f32, inv_bucket_width: f32, bucket_count: u
     (((value - min_value) * inv_bucket_width) as usize).min(bucket_count - 1)
 }
 
+/// How a table samples between stops.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum SampleMode {
+    /// Linear interpolation between stops.
     Interpolated,
+    /// Each stop's color holds until the next stop.
     Stepped,
+    /// Values snapped to a grid of `step`, then interpolated.
     QuantizedInterpolated {
+        /// Grid spacing, in the table's internal units.
         step: f32,
+        /// A grid point.
         origin: f32,
     },
     /// GR .pal semantics: a stop's interval is SOLID for single-color
@@ -865,6 +937,7 @@ impl Hash for SampleMode {
     }
 }
 
+/// One color table per [`ColorTableFamily`]; the default holds the built-in tables.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColorTableSet {
     reflectivity: ColorTable,
@@ -884,6 +957,7 @@ pub struct ColorTableSet {
 }
 
 impl ColorTableSet {
+    /// The table of a family.
     pub fn for_family(&self, family: ColorTableFamily) -> &ColorTable {
         match family {
             ColorTableFamily::Reflectivity => &self.reflectivity,
@@ -903,6 +977,7 @@ impl ColorTableSet {
         }
     }
 
+    /// Replace the table of a family.
     pub fn set_family(&mut self, family: ColorTableFamily, table: ColorTable) {
         match family {
             ColorTableFamily::Reflectivity => self.reflectivity = table,
@@ -922,6 +997,7 @@ impl ColorTableSet {
         }
     }
 
+    /// [`ColorTable::signature`] of a family's table.
     pub fn signature_for_family(&self, family: ColorTableFamily) -> u64 {
         self.for_family(family).signature()
     }
@@ -971,9 +1047,18 @@ fn invalid_table_fallback(error: ColorTableError) -> ColorTable {
     }
 }
 
+/// Why a color table could not be built.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ColorTableError {
-    InvalidColor { line: usize, reason: &'static str },
+    /// A line of the table text has a color that cannot be parsed.
+    InvalidColor {
+        /// Line number, from 1.
+        line: usize,
+        /// What is wrong.
+        reason: &'static str,
+    },
+    /// A table needs at least two stops with distinct values.
     NotEnoughStops,
 }
 
@@ -990,6 +1075,7 @@ impl fmt::Display for ColorTableError {
 
 impl std::error::Error for ColorTableError {}
 
+/// The default reflectivity table: the NWS-convention dBZ ladder, transparent below 10 dBZ, magenta for 65+ dBZ.
 pub fn builtin_reflectivity_table() -> ColorTable {
     analyst_reflectivity_hd_table()
 }
@@ -1005,6 +1091,7 @@ pub fn analyst_reflectivity_hd_table() -> ColorTable {
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// The default velocity table: diverging green and red about a neutral dark zero.
 pub fn builtin_velocity_table() -> ColorTable {
     analyst_hd_velocity_table()
 }
@@ -1024,11 +1111,13 @@ pub fn analyst_hd_velocity_table() -> ColorTable {
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity with hot break colors at tornadic speeds and bright extremes.
 pub fn tornado_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Tornado VEL", TORNADO_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: the WxTools "Vortex Velo" palette.
 pub fn vortex_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("WxTools Vortex Velo", VORTEX_VELO_TABLE)
         .unwrap_or_else(invalid_table_fallback)
@@ -1540,6 +1629,7 @@ pub fn builtin_differential_reflectivity_table() -> ColorTable {
     .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: "Analyst High Contrast REF", a stepped high-contrast ladder from -10 dBZ.
 pub fn analyst_reflectivity_table() -> ColorTable {
     ColorTable::new_stepped(
         "Analyst High Contrast REF",
@@ -1561,41 +1651,49 @@ pub fn analyst_reflectivity_table() -> ColorTable {
     .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: the traditional NWS web-radar palette.
 pub fn nws_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("NWS Classic REF", NWS_CLASSIC_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: a classic electric hue ladder with cleaned-up category boundaries.
 pub fn analyst_classic_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Classic REF", ANALYST_CLASSIC_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: the GR2Analyst default palette.
 pub fn gr2_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("GR2Analyst Classic REF", GR2_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: "Analyst Storm Detail REF", with extra steps in the storm-scale range.
 pub fn storm_detail_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Storm Detail REF", STORM_DETAIL_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity with an extended high end: white and cyan flag 80+ dBZ hail spikes.
 pub fn hail_core_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Hail Core REF", HAIL_CORE_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity with a low-end stretch for drizzle, snow bands and weak echo.
 pub fn low_precip_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Low Precip REF", LOW_PRECIP_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: a muted, darker ramp for night work.
 pub fn dark_scope_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Dark Scope REF", DARK_SCOPE_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: the Wilson AWIPS Dark `.pal` preset.
 pub fn awips_wilson_edit_reflectivity_table() -> ColorTable {
     ColorTable::parse_gr_pal(
         "AWIPS Wilson Edit REF",
@@ -1604,11 +1702,13 @@ pub fn awips_wilson_edit_reflectivity_table() -> ColorTable {
     .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity with high-end contrast for debris-ball work.
 pub fn tornado_debris_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Tornado Debris REF", TORNADO_DEBRIS_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Reflectivity: a lighter, lower-saturation ramp for bright rooms and screenshots.
 pub fn clean_light_reflectivity_table() -> ColorTable {
     ColorTable::parse_stepped("Clean Light REF", CLEAN_LIGHT_REFLECTIVITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
@@ -1628,26 +1728,31 @@ pub fn turbo_reflectivity_table() -> ColorTable {
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: a stepped operational diverging ramp with bright extremes.
 pub fn analyst_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Pro VEL", ANALYST_PRO_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: the NWS palette.
 pub fn nws_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("NWS Classic VEL", NWS_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: the GR2Analyst palette.
 pub fn gr2_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("GR2Analyst Classic VEL", GR2_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: "Analyst Tight Couplet VEL", with tight color steps at couplet speeds.
 pub fn tight_couplet_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Analyst Tight Couplet VEL", TIGHT_COUPLET_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: a RadarScope-style contrast curve with pale extreme bands.
 pub fn radarscope_contrast_velocity_table() -> ColorTable {
     ColorTable::parse_stepped(
         "RadarScope Contrast VEL",
@@ -1656,26 +1761,31 @@ pub fn radarscope_contrast_velocity_table() -> ColorTable {
     .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: the WDT/RadarScope `.pal` preset.
 pub fn wdt_radarscope_velocity_table() -> ColorTable {
     ColorTable::parse_gr_pal("WDT RadarScope VEL", WDT_RADARSCOPE_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity in three hard bands (toward, zero, away), for polarity and dealiasing checks.
 pub fn sign_check_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Sign Check VEL", SIGN_CHECK_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity with a dark mid-range and saturated cores, so rotation couplets stand out.
 pub fn couplet_pop_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Couplet Pop VEL", COUPLET_POP_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: GR2Analyst-like greens and reds with a modern zero treatment.
 pub fn gr2_ish_analyst_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("GR2-ish Analyst VEL", GR2_ISH_ANALYST_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: a low-saturation ramp for storm-relative work under other overlays.
 pub fn subtle_srv_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Subtle SRV VEL", SUBTLE_SRV_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
@@ -1707,16 +1817,19 @@ pub fn balance_velocity_table() -> ColorTable {
     .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: "NWS Split VEL", the NWS colors with a split at zero.
 pub fn nws_split_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("NWS Split VEL", NWS_SPLIT_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// Velocity: "Dark Analyst VEL", a dark analyst ramp.
 pub fn dark_analyst_velocity_table() -> ColorTable {
     ColorTable::parse_stepped("Dark Analyst VEL", DARK_ANALYST_VELOCITY_TABLE)
         .unwrap_or_else(invalid_table_fallback)
 }
 
+/// The default spectrum width table: dark below about 4 m/s, warm above 8 m/s.
 pub fn builtin_spectrum_width_table() -> ColorTable {
     ColorTable::new(
         "Analyst Spectrum Width",
@@ -1737,6 +1850,7 @@ pub fn builtin_spectrum_width_table() -> ColorTable {
     .unwrap_or_else(invalid_table_fallback)
 }
 
+/// The generic sequential table for products without their own.
 pub fn builtin_generic_table() -> ColorTable {
     ColorTable::new(
         "Analyst Generic",

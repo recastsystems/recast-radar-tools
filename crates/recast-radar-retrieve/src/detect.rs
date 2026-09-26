@@ -98,6 +98,7 @@ const MAX_SITES: usize = 12;
 /// Display tier from the 3D strength rank (Stumpf 1998: rank ≥ 5 ≈ the
 /// classic Vrot ≥ 15 m/s mesocyclone nomogram line, Andra 1997).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RotationStrength {
     /// 3D rank 1–2.
     WeakCirculation,
@@ -115,6 +116,7 @@ pub enum RotationStrength {
 pub struct RotationSite {
     /// Lowest-tilt feature position.
     pub azimuth_deg: f32,
+    /// Ground range of the lowest-tilt feature, metres.
     pub ground_range_m: f64,
     /// Best rotational velocity (ΔV/2) across the column (m/s).
     pub vrot_mps: f32,
@@ -126,7 +128,9 @@ pub struct RotationSite {
     pub depth_tilts: usize,
     /// Core depth (m, beam-extended).
     pub depth_m: f64,
+    /// Elevation of the lowest tilt the circulation appears on, degrees.
     pub base_elevation_deg: f32,
+    /// Strength class of the circulation.
     pub strength: RotationStrength,
 }
 

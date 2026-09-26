@@ -1,12 +1,51 @@
 //! Pure-Rust weather radar toolkit.
 //!
-//! This facade re-exports the `recast-radar-*` crates as modules, each behind
-//! a Cargo feature, so an application depends on one crate and picks the parts
-//! it needs. The data model ([`core`]) is always available.
+//! Read NEXRAD Level II and Level III, ODIM_H5, CfRadial 1, DORADE and JMA
+//! radar files into one data model that follows WMO FM301 (CfRadial 2),
+//! fetch radar data from AWS and other public feeds, dealias velocity,
+//! filter, compute derived products and composites, track storm cells, and
+//! render sweeps to PNG. There is no unsafe code and, without the `net`
+//! feature, no C in the build.
+//!
+//! This facade re-exports the `recast-radar-*` crates as modules, each
+//! behind a Cargo feature, so an application depends on one crate and picks
+//! the parts it needs. The data model ([`model`]) is always available.
+//!
+//! # Quick start
+//!
+//! ```no_run
+//! # #[cfg(feature = "io")]
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use recast_radar_tools::io;
+//! use recast_radar_tools::model::Quantity;
+//!
+//! // Any supported format: Level II, ODIM_H5, CfRadial 1, DORADE, JMA GRIB2
+//! // tar, optionally inside gzip or a single-file ZIP.
+//! let bytes = std::fs::read("KTLX20240315_000217_V06")?;
+//! let volume = io::read_supported_volume_bytes(&bytes)?;
+//!
+//! for sweep in &volume.sweeps {
+//!     if let Some(reflectivity) = sweep.find(Quantity::Reflectivity) {
+//!         // Physical value (dBZ) of ray 0, gate 100; `None` for no data,
+//!         // below-threshold and range-folded gates.
+//!         println!("{:.2} deg: {:?}", sweep.fixed_angle_deg, reflectivity.value(0, 100));
+//!     }
+//! }
+//! # Ok(())
+//! # }
+//! # #[cfg(not(feature = "io"))]
+//! # fn main() {}
+//! ```
+//!
+//! The user guide in the repository's `docs/guide/` walks through reading,
+//! the data model, fetching, processing and rendering, with a runnable
+//! example for each (`crates/recast-radar-tools/examples/`).
+//!
+//! # Modules and features
 //!
 //! | Feature | Module | Crate | Contents |
 //! |---|---|---|---|
-//! | (always) | [`core`] | `recast-radar-core` | data model, geometry, field names |
+//! | (always) | [`model`] | `recast-radar-core` | data model, FM301 view, beam geometry, field names, decode limits |
 //! | `nexrad` | `nexrad` | `recast-radar-io-nexrad` | NEXRAD Archive II (Level II) |
 //! | `level3` | `level3` | `recast-radar-io-level3` | NEXRAD and TDWR Level III products |
 //! | `odim` | `odim` | `recast-radar-io-odim` | ODIM_H5 |
@@ -22,7 +61,7 @@
 //! | `track` | `track` | `recast-radar-track` | cell tracking, swaths, temporal grids |
 //! | `render` | `render` | `recast-radar-render` | CPU raster, PNG, color tables |
 //! | `scattering` | `scattering` | `recast-radar-scattering` | scattering primitives, LUTs |
-//! | `serde` | | | placeholder: forwards to `recast-radar-core/serde`, which does nothing yet |
+//! | `serde` | | | `Serialize` and `Deserialize` on the data model (`recast-radar-core/serde`) |
 //! | `full` | | | all of the above |
 //!
 //! Default features: `io`, `correct`, `filters`, `retrieve`, `map`.
@@ -30,8 +69,24 @@
 //! A feature also enables the features of the member crates its crate
 //! depends on (for example `track` enables `correct`, `map` and `retrieve`),
 //! so every type a module's API names can be named through this crate.
+//!
+//! # Conventions
+//!
+//! - Decoders are named `read_*` and return a [`model::Volume`] (or, for
+//!   Level III, a product): `nexrad::read_volume_from_path`,
+//!   `odim::read_odim_h5_volume`, `io::read_supported_volume_bytes`. Byte
+//!   entry points work everywhere, including `wasm32-unknown-unknown`;
+//!   path entry points need a file system.
+//! - Every decoder bounds what untrusted input can make it allocate and
+//!   reports a typed error instead of panicking. Error enums and most other
+//!   public enums are `#[non_exhaustive]`: match them with a wildcard arm.
+//! - Fields keep the source's packed values; [`model::Field::value`] and
+//!   [`model::Field::to_physical`] give physical values on demand.
 
-pub use recast_radar_core as core;
+// No code of its own, but the rule every library crate root states.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+pub use recast_radar_core as model;
 
 #[cfg(feature = "io")]
 pub use recast_radar_io as io;

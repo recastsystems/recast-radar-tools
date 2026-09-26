@@ -53,19 +53,24 @@ const SPEED_SANITY_MPS: f64 = 60.0;
 /// SCIT's 0 and Lakshmanan & Smith 2008's 3).
 const COAST_VOLUMES: u32 = 2;
 
+/// One storm cell followed from volume to volume.
 #[derive(Clone, Debug)]
 pub struct StormTrack {
+    /// Track number, unique within its [`StormTracker`].
     pub id: u32,
     /// Observed fixes (time, east_km, north_km), newest last. Coasting adds
     /// no fixes.
     pub history: VecDeque<(DateTime<Utc>, f64, f64)>,
+    /// Peak reflectivity of the latest matched cell, dBZ.
     pub max_dbz: f32,
+    /// Equivalent radius of the latest matched cell, km.
     pub eq_radius_km: f64,
     /// Least-squares motion (east_mps, north_mps) — only from ≥2 fixes.
     pub fitted_motion: Option<(f64, f64)>,
     /// First-guess motion when no fit exists (SCIT §2c fallback chain or
     /// split inheritance). Never enters the fit.
     pub assumed_motion: Option<(f64, f64)>,
+    /// Volumes in a row without a matching cell (the track coasts).
     pub missed: u32,
     /// Consecutive speed-sanity violations (2 nulls the motion).
     pub suspect: u32,
@@ -93,6 +98,7 @@ impl StormTrack {
         }
     }
 
+    /// The newest fix: time, km east and km north of the radar.
     pub fn last_fix(&self) -> Option<(DateTime<Utc>, f64, f64)> {
         self.history.back().copied()
     }
@@ -106,12 +112,14 @@ impl StormTrack {
 /// The tracker state the app holds per site.
 #[derive(Default)]
 pub struct StormTracker {
+    /// The live tracks.
     pub tracks: Vec<StormTrack>,
     next_id: u32,
     last_time: Option<DateTime<Utc>>,
 }
 
 impl StormTracker {
+    /// Forget every track.
     pub fn clear(&mut self) {
         self.tracks.clear();
         self.last_time = None;

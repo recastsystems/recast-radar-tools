@@ -56,6 +56,7 @@ const SITES: [PiemonteSite; 2] = [
 pub struct PiemonteProvider;
 
 impl PiemonteProvider {
+    /// The provider (it keeps no state).
     pub fn new() -> Self {
         Self
     }

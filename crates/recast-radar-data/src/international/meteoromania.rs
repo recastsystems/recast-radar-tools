@@ -114,6 +114,7 @@ const ANM_STATIONS: [(&str, &str, f32, f32); 7] = [
 pub struct MeteoRomaniaProvider;
 
 impl MeteoRomaniaProvider {
+    /// The provider (it keeps no state).
     pub fn new() -> Self {
         Self
     }

@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::volume::SourceFormat;
@@ -18,58 +19,109 @@ use super::volume::SourceFormat;
 #[non_exhaustive]
 pub enum FieldName {
     // FM301-2022 Table 301-9
+    /// `DBZH`: equivalent reflectivity factor, horizontal channel (dBZ).
     Dbzh,
+    /// `DBZV`: equivalent reflectivity factor, vertical channel (dBZ).
     Dbzv,
+    /// `ZH`: linear equivalent reflectivity factor, horizontal channel (mm⁶ m⁻³).
     Zh,
+    /// `ZV`: linear equivalent reflectivity factor, vertical channel (mm⁶ m⁻³).
     Zv,
+    /// `DBTH`: total power (uncorrected reflectivity), horizontal channel (dBZ).
     Dbth,
+    /// `DBTV`: total power (uncorrected reflectivity), vertical channel (dBZ).
     Dbtv,
+    /// `TH`: linear total power, horizontal channel (mm⁶ m⁻³).
     Th,
+    /// `TV`: linear total power, vertical channel (mm⁶ m⁻³).
     Tv,
+    /// `VRADH`: radial velocity of scatterers away from the radar, horizontal channel (m s⁻¹).
     Vradh,
+    /// `VRADV`: radial velocity of scatterers away from the radar, vertical channel (m s⁻¹).
     Vradv,
+    /// `WRADH`: Doppler spectrum width, horizontal channel (m s⁻¹).
     Wradh,
+    /// `WRADV`: Doppler spectrum width, vertical channel (m s⁻¹).
     Wradv,
+    /// `ZDR`: log differential reflectivity H/V (dB).
     Zdr,
+    /// `LDR`: log linear depolarization ratio (dB).
     Ldr,
+    /// `LDRH`: log linear depolarization ratio, horizontal transmit (dB).
     Ldrh,
+    /// `LDRV`: log linear depolarization ratio, vertical transmit (dB).
     Ldrv,
+    /// `PHIDP`: differential phase H/V (degrees).
     Phidp,
+    /// `KDP`: specific differential phase (degrees per km).
     Kdp,
+    /// `PHIHX`: cross-polar differential phase (degrees).
     Phihx,
+    /// `RHOHV`: co-polar correlation coefficient H/V.
     Rhohv,
+    /// `RHOHX`: co-to-cross-polar correlation coefficient, horizontal channel.
     Rhohx,
+    /// `RHOVX`: co-to-cross-polar correlation coefficient, vertical channel.
     Rhovx,
+    /// `DBM`: received signal power, raw total power (dBm).
     Dbm,
+    /// `DBMHC`: received signal power, horizontal co-polar channel (dBm).
     Dbmhc,
+    /// `DBMHX`: received signal power, horizontal cross-polar channel (dBm).
     Dbmhx,
+    /// `DBMVC`: received signal power, vertical co-polar channel (dBm).
     Dbmvc,
+    /// `DBMVX`: received signal power, vertical cross-polar channel (dBm).
     Dbmvx,
+    /// `SNR`: signal-to-noise ratio (dB).
     Snr,
+    /// `SNRHC`: signal-to-noise ratio, horizontal co-polar channel (dB).
     Snrhc,
+    /// `SNRHX`: signal-to-noise ratio, horizontal cross-polar channel (dB).
     Snrhx,
+    /// `SNRVC`: signal-to-noise ratio, vertical co-polar channel (dB).
     Snrvc,
+    /// `SNRVX`: signal-to-noise ratio, vertical cross-polar channel (dB).
     Snrvx,
+    /// `NCP`: normalized coherent power.
     Ncp,
+    /// `NCPH`: normalized coherent power, horizontal channel.
     Ncph,
+    /// `NCPV`: normalized coherent power, vertical channel.
     Ncpv,
+    /// `RR`: radar-estimated precipitation rate (mm h⁻¹).
     Rr,
+    /// `REC`: radar echo classification.
     Rec,
     // Outside Table 301-9, but emitted by xradar 0.12 for sources we decode, or
     // by our algorithms.
+    /// `DBZ`: equivalent reflectivity factor, polarization not stated (dBZ).
     Dbz,
+    /// `VRAD`: radial velocity of scatterers away from the radar, polarization not stated (m s⁻¹).
     Vrad,
+    /// `WRAD`: Doppler spectrum width, polarization not stated (m s⁻¹).
     Wrad,
+    /// `CCORH`: clutter correction, horizontal channel (dB).
     Ccorh,
+    /// `CCORV`: clutter correction, vertical channel (dB).
     Ccorv,
+    /// `SQIH`: signal quality index, horizontal channel.
     Sqih,
+    /// `SQIV`: signal quality index, vertical channel.
     Sqiv,
+    /// `SNRH`: signal-to-noise ratio, horizontal channel (dB).
     Snrh,
+    /// `SNRV`: signal-to-noise ratio, vertical channel (dB).
     Snrv,
+    /// `RATE`: rainfall rate (mm h⁻¹).
     Rate,
+    /// `VRADDH`: dealiased radial velocity, horizontal channel (m s⁻¹).
     Vraddh,
+    /// `UZDR`: differential reflectivity before corrections (dB).
     Uzdr,
+    /// `UPHIDP`: differential phase before corrections (degrees).
     Uphidp,
+    /// `URHOHV`: correlation coefficient before corrections.
     Urhohv,
     /// A verbatim source name (CfRadial `VEL`, DORADE `DBZHC_F`, ODIM `QIND`)
     /// or a derived-product id. Never a known spelling.
@@ -77,62 +129,102 @@ pub enum FieldName {
 }
 
 /// Semantic class of a field, regardless of its spelling.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum Quantity {
+    /// Equivalent reflectivity factor, in dBZ.
     Reflectivity,
+    /// Linear equivalent reflectivity factor.
     LinearReflectivity,
+    /// Total power (reflectivity before clutter and other corrections), in dBZ.
     TotalPower,
+    /// Linear total power.
     LinearTotalPower,
+    /// Radial velocity.
     RadialVelocity,
+    /// Radial velocity after dealiasing.
     DealiasedRadialVelocity,
+    /// Doppler spectrum width.
     SpectrumWidth,
+    /// Differential reflectivity.
     DifferentialReflectivity,
+    /// Linear depolarization ratio.
     LinearDepolarizationRatio,
+    /// Differential phase.
     DifferentialPhase,
+    /// Specific differential phase.
     SpecificDifferentialPhase,
+    /// Co-polar correlation coefficient.
     CorrelationCoefficient,
+    /// Cross-polar differential phase.
     CrossPolarDifferentialPhase,
+    /// Co-to-cross-polar correlation coefficient.
     CrossPolarCorrelation,
+    /// Received power.
     ReceivedPower,
+    /// Signal-to-noise ratio.
     SignalToNoiseRatio,
+    /// Normalized coherent power.
     NormalizedCoherentPower,
+    /// Signal quality index.
     SignalQualityIndex,
+    /// Clutter correction.
     ClutterCorrection,
+    /// Precipitation rate.
     PrecipitationRate,
+    /// Echo classification (hydrometeor or target type).
     EchoClassification,
+    /// Anything else.
     Other,
 }
 
 /// Polarization channel of a field.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub enum Polarization {
+    /// Horizontal.
     H,
+    /// Vertical.
     V,
+    /// Both, or a quantity of the H/V pair (ZDR, PHIDP, RHOHV).
     Hv,
+    /// Horizontal co-polar channel.
     CopolarH,
+    /// Horizontal cross-polar channel.
     CrosspolarH,
+    /// Vertical co-polar channel.
     CopolarV,
+    /// Vertical cross-polar channel.
     CrosspolarV,
+    /// Not stated by the name.
     Unspecified,
 }
 
 /// xradar 0.12 `sweep_vars_mapping` attributes, verbatim (typos included).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct XradarAttrs {
+    /// xradar's `standard_name`.
     pub standard_name: &'static str,
+    /// xradar's `long_name`.
     pub long_name: &'static str,
+    /// xradar's `units`.
     pub units: &'static str,
 }
 
 /// Static metadata for a known name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NameInfo {
+    /// The variable name.
     pub name: &'static str,
+    /// Semantic class of the field.
     pub quantity: Quantity,
+    /// Polarization channel of the field.
     pub polarization: Polarization,
     /// FM301 Table 301-9 standard name, else xradar's.
     pub standard_name: Option<&'static str>,
+    /// FM301 Table 301-9 long name.
     pub long_name: &'static str,
     /// UDUNITS spelling for the WMO flavor (`"m s-1"`, `"dB"`, `"degree"`).
     pub units: &'static str,
@@ -151,6 +243,7 @@ pub struct NameInfo {
 
 /// How a Py-ART export names fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PyartNames {
     /// `pyart.config` defaults for every source: the names Py-ART's algorithms
     /// expect.
@@ -1110,12 +1203,14 @@ impl From<&str> for FieldName {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for FieldName {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for FieldName {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let name = Cow::<'de, str>::deserialize(deserializer)?;
@@ -1455,6 +1550,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn serde_uses_fm301_spelling() {
         let names = vec![FieldName::Dbzh, FieldName::parse("VEL")];

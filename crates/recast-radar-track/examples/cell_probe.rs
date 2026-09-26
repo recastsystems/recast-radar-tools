@@ -1,5 +1,5 @@
-// Identify storm cells on real volumes: count, positions, timing.
-// usage: cell_probe <l2-file> [...]
+//! Identify storm cells on real volumes: count, positions, timing.
+//! usage: cell_probe <l2-file> [...]
 
 use recast_radar_track::identify_storm_cells;
 use std::time::Instant;

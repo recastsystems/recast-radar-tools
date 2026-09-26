@@ -49,10 +49,12 @@ const SITES: [LombardiaSite; 2] = [
     },
 ];
 
+/// ARPA Lombardia (Italy): 5-minute ODIM_H5 volumes of the Desio and Flero radars.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LombardiaProvider;
 
 impl LombardiaProvider {
+    /// The provider (it keeps no state).
     pub fn new() -> Self {
         Self
     }

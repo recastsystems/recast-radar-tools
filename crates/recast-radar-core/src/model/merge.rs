@@ -1,6 +1,7 @@
 //! Assembly of one scan split across several files (ODIM product-per-file
 //! feeds, JMA member tars) into one [`Volume`].
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -11,7 +12,8 @@ use super::volume::{SourceFormat, TimeCoverage, Volume};
 pub const ANGLE_MATCH_TOLERANCE_DEG: f32 = 0.05;
 
 /// Counters describing what [`merge_volumes`] did.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MergeReport {
     /// Fields moved from a later part into an angle-matched sweep.
     pub merged_fields: usize,
@@ -24,15 +26,27 @@ pub struct MergeReport {
     pub field_collisions: usize,
 }
 
+/// Why [`merge_volumes`] refused its parts.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum MergeError {
+    /// No parts were given.
     #[error("no radar volumes to merge")]
     NoParts,
+    /// The parts come from different radars (`attrs.instrument_name`).
     #[error("cannot merge radar volumes from different sites: '{first}' vs '{other}'")]
-    SiteMismatch { first: String, other: String },
+    SiteMismatch {
+        /// The first part's instrument name.
+        first: String,
+        /// The differing part's instrument name.
+        other: String,
+    },
+    /// The parts were decoded from different formats.
     #[error("cannot merge radar volumes from different source formats: {first:?} vs {other:?}")]
     SourceMismatch {
+        /// The first part's format.
         first: SourceFormat,
+        /// The differing part's format.
         other: SourceFormat,
     },
 }

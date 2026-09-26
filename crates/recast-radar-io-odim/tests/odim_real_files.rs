@@ -27,6 +27,8 @@
 //!   failed on before the HDF5 reader learned the v2 header dialect.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use chrono::{TimeZone, Utc};
 use recast_radar_core::model::{Field, FieldData, FieldName, RangeCoord, SweepMode, Volume};

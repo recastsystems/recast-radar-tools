@@ -9,6 +9,9 @@
 //! reference (every pixel inverse-mapped to slant range and elevation, nearest
 //! gate, nearest beam within 1 degree).
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{array, as_f64, as_i64, as_usize, assert_close, golden};

@@ -1,3 +1,5 @@
+//! Profile decoding and viewport rendering of several Level II volumes at once, as a multi-site display would.
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 

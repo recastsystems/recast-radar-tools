@@ -18,6 +18,8 @@
 mod field;
 mod merge;
 mod names;
+#[cfg(feature = "serde")]
+mod serde_checked;
 mod sweep;
 mod values;
 mod volume;

@@ -8,10 +8,13 @@ description = "Weather radar gate filters, polar smoothing and display interpola
 readme.workspace = true
 keywords = ["radar", "weather", "filter", "qc", "meteorology"]
 categories = ["science::geo", "algorithms"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate.
+exclude = ["tests/"]
 
 [dependencies]
 rayon.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
 
 [dev-dependencies]
 # Real-data tests: corpus files decoded with the real readers, goldens as JSON.

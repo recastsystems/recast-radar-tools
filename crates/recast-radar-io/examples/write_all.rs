@@ -155,9 +155,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .unwrap_or(Gate::Missing);
                         let (value, class) = match state {
                             Gate::Value(v) if v.is_finite() => (v, 0u8),
-                            Gate::Value(_) | Gate::Missing => (f32::NAN, 1),
                             Gate::Undetect => (f32::NAN, 2),
                             Gate::RangeFolded => (f32::NAN, 3),
+                            // Missing, a non-finite value, and any gate
+                            // class added to the model later.
+                            _ => (f32::NAN, 1),
                         };
                         values.extend_from_slice(&value.to_le_bytes());
                         classes.push(class);

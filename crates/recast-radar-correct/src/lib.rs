@@ -39,7 +39,9 @@ use recast_radar_core::{
 /// on each engine's own output for the `rms_harmonic` metric (dealias-v4
 /// spec §10.2).
 pub struct RangeBandReference {
+    /// Gates per range band.
     pub band_gates: usize,
+    /// The `(a, b)` fit of each band, `None` for bands with too few samples.
     pub fits: Vec<Option<(f32, f32)>>,
 }
 

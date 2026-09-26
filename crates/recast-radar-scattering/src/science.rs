@@ -6,22 +6,32 @@ use crate::Sha256Digest;
 /// Numerical scattering kernel used to generate a table.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "model", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum KernelModel {
+    /// Rayleigh scattering by spheres.
     RayleighSphere,
+    /// The T-matrix method.
     TMatrix {
+        /// Which T-matrix code produced the table.
         implementation: TMatrixImplementation,
     },
     /// Reserved for analytic/unit-test data with no physical interpretation.
     SyntheticFixtureOnly,
 }
 
+/// A T-matrix code.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "implementation", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TMatrixImplementation {
+    /// PyTMatrix 0.3.3.
     #[serde(rename = "pytmatrix_0_3_3")]
     PyTMatrix033,
+    /// Another research code, named with its version.
     ExternalResearch {
+        /// Name of the code.
         engine: String,
+        /// Its version.
         version: String,
     },
 }
@@ -29,58 +39,99 @@ pub enum TMatrixImplementation {
 /// Orientation distribution represented by the generated values.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "model", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum OrientationModel {
     /// Values remain in the particle body frame; callers must transform them.
     ExplicitBodyFrame,
+    /// Every particle has the same orientation, given as Euler angles.
     FixedEuler {
+        /// Yaw, degrees.
         yaw_deg: f64,
+        /// Pitch, degrees.
         pitch_deg: f64,
+        /// Roll, degrees.
         roll_deg: f64,
     },
+    /// Canting angles follow a Gaussian distribution, integrated by quadrature.
     GaussianCanting {
+        /// Mean canting angle, degrees.
         mean_deg: f64,
+        /// Standard deviation of the canting angle, degrees.
         standard_deviation_deg: f64,
+        /// Quadrature points.
         quadrature_points: u16,
     },
+    /// Orientations are uniformly random, integrated by quadrature.
     Isotropic {
+        /// Quadrature points.
         quadrature_points: u16,
     },
 }
 
+/// An effective-medium mixing rule for the permittivity of a mixture.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum EffectiveMediumRule {
+    /// Maxwell Garnett.
     MaxwellGarnett,
+    /// Bruggeman.
     Bruggeman,
 }
 
 /// Dielectric/geometry representation of melting particles.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "model", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum MeltingModel {
+    /// No melting: dry particles.
     Dry,
-    HomogeneousEffectiveMedium { rule: EffectiveMediumRule },
-    WaterCoated { shell_parameterization: String },
+    /// A homogeneous mixture of ice, air and water.
+    HomogeneousEffectiveMedium {
+        /// The mixing rule.
+        rule: EffectiveMediumRule,
+    },
+    /// An ice core with a water shell.
+    WaterCoated {
+        /// How the shell is parameterized, as text.
+        shell_parameterization: String,
+    },
+    /// The microphysics scheme's own melting representation.
     SchemeResolved,
 }
 
 /// Time representation of one table lookup or generated sample.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "sampling", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TemporalSampling {
+    /// A single instant.
     Instantaneous,
+    /// Particles frozen in place during the beam dwell.
     FrozenDuringBeamDwell,
-    TimeAveraged { window_seconds: f64, samples: u32 },
+    /// An average over a time window.
+    TimeAveraged {
+        /// Length of the window, seconds.
+        window_seconds: f64,
+        /// Samples in the window (at least 2).
+        samples: u32,
+    },
 }
 
 /// Evidence status is explicit and has no implicit "production" default.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TableValidation {
+    /// Synthetic data for tests, with no physical meaning.
     SyntheticFixtureOnly,
+    /// A research table that has not been validated.
     ResearchOnlyUnvalidated,
+    /// Validated against an independently generated held-out report.
     HeldOutValidated {
+        /// Identifier of the validation report.
         report_id: String,
+        /// SHA-256 of the report file.
         report_sha256: Sha256Digest,
     },
 }
@@ -97,6 +148,7 @@ pub struct ScienceMetadata {
 }
 
 impl ScienceMetadata {
+    /// Metadata from its five choices, validated ([`ScienceMetadata::validate`]).
     pub fn new(
         kernel: KernelModel,
         orientation: OrientationModel,
@@ -115,31 +167,39 @@ impl ScienceMetadata {
         Ok(metadata)
     }
 
+    /// The scattering kernel.
     #[must_use]
     pub const fn kernel(&self) -> &KernelModel {
         &self.kernel
     }
 
+    /// The orientation model.
     #[must_use]
     pub const fn orientation(&self) -> &OrientationModel {
         &self.orientation
     }
 
+    /// The melting model.
     #[must_use]
     pub const fn melting(&self) -> &MeltingModel {
         &self.melting
     }
 
+    /// The temporal sampling.
     #[must_use]
     pub const fn temporal(&self) -> &TemporalSampling {
         &self.temporal
     }
 
+    /// The validation status.
     #[must_use]
     pub const fn validation(&self) -> &TableValidation {
         &self.validation
     }
 
+    /// Check the choices: names are not empty, angles and windows are finite and
+    /// in range, quadratures have points, and the synthetic kernel and the
+    /// synthetic validation label appear together.
     pub fn validate(&self) -> Result<(), ScienceError> {
         match &self.kernel {
             KernelModel::TMatrix {
@@ -295,31 +355,66 @@ fn finite_positive(field: &'static str, value: f64) -> Result<(), ScienceError> 
     }
 }
 
+/// Why science metadata was rejected.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum ScienceError {
+    /// A required text is empty.
     #[error("{field} must not be empty")]
-    EmptyText { field: &'static str },
+    EmptyText {
+        /// Which text.
+        field: &'static str,
+    },
+    /// A value is not finite.
     #[error("{field} must be finite, got {value}")]
-    NonFinite { field: &'static str, value: f64 },
+    NonFinite {
+        /// Which value.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// A value is outside its valid range.
     #[error("{field} is outside its valid range: {value}")]
-    OutOfRange { field: &'static str, value: f64 },
+    OutOfRange {
+        /// Which value.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// An orientation quadrature has no points.
     #[error("orientation quadrature must contain at least one point")]
     ZeroQuadraturePoints,
+    /// A time average has fewer than two samples.
     #[error("a time average requires at least two samples, got {samples}")]
-    TimeAverageSamples { samples: u32 },
+    TimeAverageSamples {
+        /// The samples.
+        samples: u32,
+    },
+    /// A synthetic kernel without the synthetic validation label, or the reverse.
     #[error("synthetic-fixture kernel and validation labels must appear together")]
     SyntheticLabelMismatch,
+    /// The table has no held-out validation.
     #[error("independently generated held-out validation is required")]
     HeldOutValidationRequired,
+    /// Body-frame amplitudes cannot enter an additive LUT before the radar-basis transform.
     #[error(
         "body-frame amplitudes must be transformed into a declared radar H/V basis before entering an additive LUT"
     )]
     BodyFrameRequiresAmplitudeTransform,
+    /// The held-out report id differs from the metadata.
     #[error("held-out validation report id mismatch: expected {expected:?}, got {actual:?}")]
-    ValidationReportId { expected: String, actual: String },
+    ValidationReportId {
+        /// The id in the metadata.
+        expected: String,
+        /// The id given.
+        actual: String,
+    },
+    /// The held-out report's SHA-256 differs from the metadata.
     #[error("held-out validation report SHA-256 mismatch: expected {expected}, got {actual}")]
     ValidationReportDigest {
+        /// The digest in the metadata.
         expected: Sha256Digest,
+        /// The digest of the report given.
         actual: Sha256Digest,
     },
 }

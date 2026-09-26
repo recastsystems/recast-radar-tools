@@ -63,15 +63,28 @@
 //! assert!(out.is_empty());
 //! ```
 //!
+//! # Limits
+//!
+//! The work buffers are fixed in size (see below); what untrusted input
+//! controls is the output. One block can expand to about 47 MB (900,000
+//! pre-RLE1 bytes, each 5-byte run standing for up to 259 bytes) and a
+//! stream can hold any number of blocks, so decode untrusted input with a
+//! bound: [`Decoder::set_max_output`] limits the bytes one call may append
+//! (no limit by default). The limit is checked against a block's exact
+//! decoded size before that block's output is allocated, and a stream that
+//! would exceed it returns [`Error::OutputLimit`]. The Level II and Level III
+//! decoders set it from their own limits. Block header fields (origPtr,
+//! symbol map, group and selector counts) and Huffman code lengths are
+//! validated before they are used ([`Error::BadBlockHeader`],
+//! [`Error::BadHuffmanTables`]), and the selector count is clamped at 18,002
+//! as in libbzip2.
+//!
 //! # Memory and reuse
 //!
 //! A [`Decoder`] owns the work buffers for one block: about 7 MiB of
 //! zero-initialised address space, of which a block touches roughly five
 //! bytes per pre-BWT symbol. They are allocated on the first decode and
 //! reused by every later call, so keep one decoder per thread and reuse it.
-//! [`Decoder::set_max_output`] bounds the bytes one call may append, which
-//! caps the memory a hostile stream can claim; the limit is checked against
-//! a block's exact decoded size before that block's output is allocated.
 //!
 //! An [`Encoder`] owns the work buffers for one block of its level: about
 //! 22 bytes of zero-initialised address space per byte of block capacity

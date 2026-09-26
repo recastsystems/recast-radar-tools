@@ -16,7 +16,7 @@ shift || true
 if [ "$#" -gt 0 ]; then
     targets=("$@")
 else
-    targets=(level2_volume level2_metadata level2_writer level2_writer_router io_router odim hdf5 cfradial dorade dorade_archive jma bzip2 bzip2_encode writers level3 polling_listing)
+    targets=(level2-volume level2-metadata level2-writer level2-writer-router io-router odim hdf5 cfradial dorade dorade-archive jma bzip2 bzip2-encode writers level3 polling-listing)
 fi
 
 cargo +nightly fuzz build -s none

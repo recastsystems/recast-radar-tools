@@ -116,7 +116,7 @@ const KIWA_CHUNK_S: &str = "l2chunk-kiwa-307-20260917-003629-001-s";
 const KIWA_CHUNK_I2: &str = "l2chunk-kiwa-307-20260917-003629-002-i";
 
 const SEEDS: &[Seed] = &[
-    // level2_volume: small real files as published (LDM bzip2 status-only
+    // level2-volume: small real files as published (LDM bzip2 status-only
     // stub, truncated gzip message 1 volume, whole gzip AR2V0001 volume,
     // real-time start chunk, a headerless intermediate chunk, and the two
     // chunks assembled), plus record- and block-aligned cuts of larger
@@ -125,54 +125,54 @@ const SEEDS: &[Seed] = &[
     // message 31, AR2V0004/6/8), message 1 vs 31, VOL block 44/52, RAD block
     // 20/28, 8- and 16-bit ZDR, CFP, SAILS/MESO-SAILS, TDWR, message 32, and
     // RDA builds 10 through 24.
-    ("level2_volume", "l2-tbwi-20230601-175101-stub", Verbatim),
-    ("level2_volume", "l2-ktlx-19990503-230052", Verbatim),
-    ("level2_volume", "l2-kvwx-20080415-235337", Verbatim),
-    ("level2_volume", KIWA_CHUNK_S, Verbatim),
-    ("level2_volume", KIWA_CHUNK_I2, Verbatim),
+    ("level2-volume", "l2-tbwi-20230601-175101-stub", Verbatim),
+    ("level2-volume", "l2-ktlx-19990503-230052", Verbatim),
+    ("level2-volume", "l2-kvwx-20080415-235337", Verbatim),
+    ("level2-volume", KIWA_CHUNK_S, Verbatim),
+    ("level2-volume", KIWA_CHUNK_I2, Verbatim),
     (
-        "level2_volume",
+        "level2-volume",
         KIWA_CHUNK_S,
         ConcatChunks(&[KIWA_CHUNK_I2]),
     ),
-    ("level2_volume", "l2-kbox-20220129-150537", L2BlockHead),
-    ("level2_volume", "l2-klix-20050829-130035", L2Head),
-    ("level2_volume", "l2-kpah-20080415-235014", L2Head),
-    ("level2_volume", "l2-kiwa-20260917-003629", L2Head),
-    ("level2_volume", "l2-ktlx-19910605-162126", L2Sparse),
-    ("level2_volume", "l2-ktlx-19990503-230052", L2Sparse),
-    ("level2_volume", "l2-ktlx-20030508-221041", L2Sparse),
-    ("level2_volume", "l2-klix-20050829-130035", L2Sparse),
-    ("level2_volume", "l2-kvwx-20080415-235337", L2Sparse),
-    ("level2_volume", "l2-kpah-20080415-235014", L2Sparse),
-    ("level2_volume", "l2-kvnx-20110315-000203", L2Sparse),
-    ("level2_volume", "l2-koax-20140616-205305", L2Sparse),
-    ("level2_volume", "l2-klix-20210829-180425", L2Sparse),
-    ("level2_volume", "l2-kbox-20220129-150537", L2Sparse),
-    ("level2_volume", "l2-tstl-20230331-230314", L2Sparse),
-    ("level2_volume", "l2-pahg-20250909-212549", L2Sparse),
-    ("level2_volume", "l2-kiwa-20260917-003629", L2Sparse),
-    // level2_writer: small real volumes the decoder accepts, one per case
+    ("level2-volume", "l2-kbox-20220129-150537", L2BlockHead),
+    ("level2-volume", "l2-klix-20050829-130035", L2Head),
+    ("level2-volume", "l2-kpah-20080415-235014", L2Head),
+    ("level2-volume", "l2-kiwa-20260917-003629", L2Head),
+    ("level2-volume", "l2-ktlx-19910605-162126", L2Sparse),
+    ("level2-volume", "l2-ktlx-19990503-230052", L2Sparse),
+    ("level2-volume", "l2-ktlx-20030508-221041", L2Sparse),
+    ("level2-volume", "l2-klix-20050829-130035", L2Sparse),
+    ("level2-volume", "l2-kvwx-20080415-235337", L2Sparse),
+    ("level2-volume", "l2-kpah-20080415-235014", L2Sparse),
+    ("level2-volume", "l2-kvnx-20110315-000203", L2Sparse),
+    ("level2-volume", "l2-koax-20140616-205305", L2Sparse),
+    ("level2-volume", "l2-klix-20210829-180425", L2Sparse),
+    ("level2-volume", "l2-kbox-20220129-150537", L2Sparse),
+    ("level2-volume", "l2-tstl-20230331-230314", L2Sparse),
+    ("level2-volume", "l2-pahg-20250909-212549", L2Sparse),
+    ("level2-volume", "l2-kiwa-20260917-003629", L2Sparse),
+    // level2-writer: small real volumes the decoder accepts, one per case
     // the writer handles differently: a real-time start chunk alone and with
     // the next chunk, Message 1 volumes (a blank ICAO, gates before the
     // radar), the AR2V0001 header over Message 31, legacy resolution, 8- and
     // 16-bit ZDR with CFP, VOL block 52, TDWR, and a volume head.
-    ("level2_writer", KIWA_CHUNK_S, Verbatim),
+    ("level2-writer", KIWA_CHUNK_S, Verbatim),
     (
-        "level2_writer",
+        "level2-writer",
         KIWA_CHUNK_S,
         ConcatChunks(&[KIWA_CHUNK_I2]),
     ),
-    ("level2_writer", "l2-ktlx-19910605-162126-trim", Verbatim),
-    ("level2_writer", "l2-klix-20050829-130035-trim", Verbatim),
-    ("level2_writer", "l2-kvwx-20080415-235337", L2Sparse),
-    ("level2_writer", "l2-kpah-20080415-235014", L2Sparse),
-    ("level2_writer", "l2-kvnx-20110315-000203", L2Sparse),
-    ("level2_writer", "l2-klix-20210829-180425", L2Sparse),
-    ("level2_writer", "l2-kbox-20220129-150537", L2Sparse),
-    ("level2_writer", "l2-tstl-20230331-230314", L2Sparse),
-    ("level2_writer", "l2-kiwa-20260917-003629", L2Head),
-    // level2_writer_router: real volumes of the other formats, one per case
+    ("level2-writer", "l2-ktlx-19910605-162126-trim", Verbatim),
+    ("level2-writer", "l2-klix-20050829-130035-trim", Verbatim),
+    ("level2-writer", "l2-kvwx-20080415-235337", L2Sparse),
+    ("level2-writer", "l2-kpah-20080415-235014", L2Sparse),
+    ("level2-writer", "l2-kvnx-20110315-000203", L2Sparse),
+    ("level2-writer", "l2-klix-20210829-180425", L2Sparse),
+    ("level2-writer", "l2-kbox-20220129-150537", L2Sparse),
+    ("level2-writer", "l2-tstl-20230331-230314", L2Sparse),
+    ("level2-writer", "l2-kiwa-20260917-003629", L2Head),
+    // level2-writer-router: real volumes of the other formats, one per case
     // the writer's quantiser and geometry handle differently: 8-bit ODIM on
     // the typical REF coding and on its own grid (DBZH and VRADH), mixed
     // gains across sweeps (the Norwegian vertical scan), dual-polarization
@@ -181,105 +181,105 @@ const SEEDS: &[Seed] = &[
     // and 0.0001, a sector scan and an RHI (refused); JMA float levels on
     // an uneven table of hundredths.
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "odim-espdg-20260707-1927-pvol-dbzh-vradh",
         Verbatim,
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "odim-norst-20170421-0908-pvol",
         Verbatim,
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "odim-dkrom-20260820-1130-pvol",
         Verbatim,
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "cfrad1-xsapr-sgp-20110520-ppi-classic",
         Verbatim,
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "cfrad1-irene-sr2-20110827-120420-sur-sweeps01",
         Verbatim,
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "dorade-cow2-20260521-225514-sur-head24",
         Verbatim,
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "dorade-noxp-20090525-203211-sector",
         DoradeHead(8),
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "dorade-dow6-20211230-222139-rhi-head41",
         DoradeHead(4),
     ),
     (
-        "level2_writer_router",
+        "level2-writer-router",
         "jma-n6-20191012-090000-rs47773",
         Verbatim,
     ),
     // Whole-file bzip2 around real record streams (message 31 and message
     // 1), for the block-by-block parse of that wrapper.
-    ("level2_volume", "l2-kiwa-20260917-003629", L2SparseBzip2(1)),
-    ("level2_volume", "l2-klix-20050829-130035", L2SparseBzip2(1)),
-    // level2_metadata: the metadata record of every wrapper: LDM bzip2
+    ("level2-volume", "l2-kiwa-20260917-003629", L2SparseBzip2(1)),
+    ("level2-volume", "l2-klix-20050829-130035", L2SparseBzip2(1)),
+    // level2-metadata: the metadata record of every wrapper: LDM bzip2
     // (status-only stub, real-time start chunk, a block-aligned head),
     // uncompressed, whole-file gzip (ARCHIVE2 1999 without a metadata
     // record, AR2V0001 2008) and whole-file bzip2 (several blocks at level
     // 1, one at level 9).
-    ("level2_metadata", "l2-tbwi-20230601-175101-stub", Verbatim),
-    ("level2_metadata", KIWA_CHUNK_S, Verbatim),
-    ("level2_metadata", "l2-kbox-20220129-150537", L2BlockHead),
-    ("level2_metadata", "l2-kiwa-20260917-003629", L2Head),
-    ("level2_metadata", "l2-ktlx-19990503-230052", Verbatim),
-    ("level2_metadata", "l2-kvwx-20080415-235337", Verbatim),
+    ("level2-metadata", "l2-tbwi-20230601-175101-stub", Verbatim),
+    ("level2-metadata", KIWA_CHUNK_S, Verbatim),
+    ("level2-metadata", "l2-kbox-20220129-150537", L2BlockHead),
+    ("level2-metadata", "l2-kiwa-20260917-003629", L2Head),
+    ("level2-metadata", "l2-ktlx-19990503-230052", Verbatim),
+    ("level2-metadata", "l2-kvwx-20080415-235337", Verbatim),
     (
-        "level2_metadata",
+        "level2-metadata",
         "l2-kiwa-20260917-003629",
         L2SparseBzip2(1),
     ),
     (
-        "level2_metadata",
+        "level2-metadata",
         "l2-kbox-20220129-150537",
         L2SparseBzip2(9),
     ),
-    // io_router: one small real file per routed format, plus gzip and
+    // io-router: one small real file per routed format, plus gzip and
     // block-bzip Level II.
-    ("io_router", "l2-tbwi-20230601-175101-stub", Verbatim),
-    ("io_router", "l2-ktlx-19990503-230052", Verbatim),
-    ("io_router", KIWA_CHUNK_S, Verbatim),
-    ("io_router", "l2-kvnx-20110315-000203", L2Sparse),
-    ("io_router", "odim-imgw-ram-20260711-0015-kdp-max", Verbatim),
+    ("io-router", "l2-tbwi-20230601-175101-stub", Verbatim),
+    ("io-router", "l2-ktlx-19990503-230052", Verbatim),
+    ("io-router", KIWA_CHUNK_S, Verbatim),
+    ("io-router", "l2-kvnx-20110315-000203", L2Sparse),
+    ("io-router", "odim-imgw-ram-20260711-0015-kdp-max", Verbatim),
     (
-        "io_router",
+        "io-router",
         "odim-espdg-20260707-1927-pvol-dbzh-vradh",
         Verbatim,
     ),
     (
-        "io_router",
+        "io-router",
         "cfrad1-xsapr-sgp-20110520-ppi-classic",
         Verbatim,
     ),
     (
-        "io_router",
+        "io-router",
         "cfrad1-xsapr-sgp-20110520-ppi-netcdf4",
         Verbatim,
     ),
     (
-        "io_router",
+        "io-router",
         "dorade-cow2-20260521-225514-sur-head24",
         Verbatim,
     ),
-    ("io_router", "jma-n6-20191012-090000-rs47773", Verbatim),
+    ("io-router", "jma-n6-20191012-090000-rs47773", Verbatim),
     (
-        "io_router",
+        "io-router",
         "cfrad2-xradar-xsapr-sgp-20110520-ppi",
         Verbatim,
     ),
@@ -421,10 +421,10 @@ const SEEDS: &[Seed] = &[
         "dorade-n42rf-tm-20181010-123925-air-head48",
         DoradeHead(4),
     ),
-    // dorade_archive: the committed deployment zip (three head-trimmed NOXP
+    // dorade-archive: the committed deployment zip (three head-trimmed NOXP
     // sweepfiles of one volume run and three text members).
     (
-        "dorade_archive",
+        "dorade-archive",
         "dorade-noxp-20090610-003210-heads-zip",
         Verbatim,
     ),
@@ -484,9 +484,9 @@ const SEEDS: &[Seed] = &[
     ("level3", "l3-lzk-ncz-19970301-1912", Verbatim),
     ("level3", "l3-sgf-nme-20030504-2332", Verbatim),
     ("level3", "l3-ilx-irm-19960419-2309", Verbatim),
-    // io_router: Level III now routes too.
-    ("io_router", "l3-tlx-n0v-20130520-2016", Verbatim),
-    ("io_router", "l3-mci-dpa-20160526-2154", Verbatim),
+    // io-router: Level III now routes too.
+    ("io-router", "l3-tlx-n0v-20130520-2016", Verbatim),
+    ("io-router", "l3-mci-dpa-20160526-2154", Verbatim),
     // jma: both committed single-station tars.
     ("jma", "jma-n6-20191012-090000-rs47773", Verbatim),
     ("jma", "jma-n5-20191012-090000-rs47773", Verbatim),
@@ -500,20 +500,20 @@ const SEEDS: &[Seed] = &[
     ("bzip2", "l2-tstl-20230331-230314", LdmRecord(1)),
     ("bzip2", "l2-tstl-20230331-230314", LdmRecord(69)),
     ("bzip2", "l2-kbox-20220129-150537", LdmRecord(0)),
-    // bzip2_encode: what a Level II writer compresses, the decompressed
+    // bzip2-encode: what a Level II writer compresses, the decompressed
     // LDM records (status-only, metadata, 120-radial and TDWR records; the
     // largest are multi-block at the low levels), and already-compressed
     // bytes (a published LDM record: no runs, flat symbol mix).
     (
-        "bzip2_encode",
+        "bzip2-encode",
         "l2-tbwi-20230601-175101-stub",
         LdmPayload(0),
     ),
-    ("bzip2_encode", KIWA_CHUNK_S, LdmPayload(0)),
-    ("bzip2_encode", KIWA_CHUNK_I2, LdmPayload(0)),
-    ("bzip2_encode", "l2-tstl-20230331-230314", LdmPayload(1)),
-    ("bzip2_encode", "l2-tstl-20230331-230314", LdmPayload(69)),
-    ("bzip2_encode", KIWA_CHUNK_I2, LdmRecord(0)),
+    ("bzip2-encode", KIWA_CHUNK_S, LdmPayload(0)),
+    ("bzip2-encode", KIWA_CHUNK_I2, LdmPayload(0)),
+    ("bzip2-encode", "l2-tstl-20230331-230314", LdmPayload(1)),
+    ("bzip2-encode", "l2-tstl-20230331-230314", LdmPayload(69)),
+    ("bzip2-encode", KIWA_CHUNK_I2, LdmRecord(0)),
     // writers: small real volumes of every format the writers take
     // (Level II message 31 and message 1, CfRadial 1 classic and netCDF-4,
     // CfRadial 2, DORADE, ODIM_H5 with quality groups and legends, an RHI).
@@ -560,21 +560,21 @@ const SEEDS: &[Seed] = &[
         "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry",
         Verbatim,
     ),
-    // polling_listing: a site dir.list (North Dakota SWC's KXWA), a polling
+    // polling-listing: a site dir.list (North Dakota SWC's KXWA), a polling
     // root's multi-site config.cfg (the Iowa Environmental Mesonet's) and a
     // single-site grlevel2.cfg (Laredo EWR's), as served.
     (
-        "polling_listing",
+        "polling-listing",
         "polling-ndswc-kxwa-dir-list-20260925",
         Verbatim,
     ),
     (
-        "polling_listing",
+        "polling-listing",
         "polling-iem-config-cfg-20260926",
         Verbatim,
     ),
     (
-        "polling_listing",
+        "polling-listing",
         "polling-ewr-laredo-grlevel2-cfg-20260925",
         Verbatim,
     ),
@@ -1080,7 +1080,7 @@ const REGRESSION_TAG: &str = "fuzz-regression";
 const TARGET_TAG_PREFIX: &str = "fuzz-target:";
 
 /// Replay every testdata entry tagged `fuzz-regression` through the harness
-/// named by its `fuzz-target:` tag, then through `io_router`, which routes
+/// named by its `fuzz-target:` tag, then through `io-router`, which routes
 /// every format.
 fn replay_regressions() -> io::Result<bool> {
     let ids = recast_radar_testdata::ids_with_tag(REGRESSION_TAG);
@@ -1103,8 +1103,8 @@ fn replay_regressions() -> io::Result<bool> {
                 "testdata `{id}`: no `{TARGET_TAG_PREFIX}<target>` tag"
             )));
         }
-        if !targets.contains(&"io_router") {
-            targets.push("io_router");
+        if !targets.contains(&"io-router") {
+            targets.push("io-router");
         }
         let path = recast_radar_testdata::path(id)
             .map_err(|err| other_error(format!("testdata `{id}`: {err}")))?;

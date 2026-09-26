@@ -36,13 +36,19 @@ pub const IMGW_PROCESSED_NOTICE_PL: &str = "Dane Instytutu Meteorologii i Gospod
 /// Attribution obligations carried with IMGW-derived output surfaces.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ImgwAttributionRequirements {
+    /// IMGW-PIB's terms of use.
     pub terms_url: &'static str,
+    /// The source notice (Polish) that must accompany the data.
     pub source_notice_pl: &'static str,
+    /// The notice (Polish) that must accompany processed data.
     pub processed_notice_pl: &'static str,
+    /// Whether the source notice is required.
     pub source_notice_required: bool,
+    /// Whether the processed-data notice is required when the data were modified.
     pub processed_notice_required_when_modified: bool,
 }
 
+/// The attribution IMGW-PIB's terms require.
 pub const IMGW_ATTRIBUTION_REQUIREMENTS: ImgwAttributionRequirements =
     ImgwAttributionRequirements {
         terms_url: IMGW_DATA_TERMS_URL,
@@ -54,19 +60,31 @@ pub const IMGW_ATTRIBUTION_REQUIREMENTS: ImgwAttributionRequirements =
 
 /// The ten sites in the modernized POLRAD network.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
 pub enum ImgwPolradSite {
+    /// Brzuchania (BRZ).
     Brzuchania,
+    /// Nowy Gdańsk (GDY).
     NowyGdansk,
+    /// Góra Świętej Anny (GSA).
     GoraSwietejAnny,
+    /// Legionowo (LEG).
     Legionowo,
+    /// Pastewnik (PAS).
     Pastewnik,
+    /// Poznań (POZ).
     Poznan,
+    /// Ramża (RAM).
     Ramza,
+    /// Rzeszów (RZE).
     Rzeszow,
+    /// Świdwin (SWI).
     Swidwin,
+    /// Użranki (UZR).
     Uzranki,
 }
 
+/// Every POLRAD site.
 pub const IMGW_POLRAD_SITES: &[ImgwPolradSite] = &[
     ImgwPolradSite::Brzuchania,
     ImgwPolradSite::NowyGdansk,
@@ -113,6 +131,7 @@ impl ImgwPolradSite {
         }
     }
 
+    /// Site name for menus.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Brzuchania => "Brzuchania",
@@ -149,6 +168,7 @@ impl ImgwPolradSite {
         format!("/Oper/Polrad/Produkty/HVD/HVD_{}_250.max", self.code())
     }
 
+    /// The site with a three-letter code (case-insensitive).
     pub fn from_code(code: &str) -> Option<Self> {
         IMGW_POLRAD_SITES
             .iter()
@@ -159,13 +179,19 @@ impl ImgwPolradSite {
 
 /// Dual-polarization quantity carried by an IMGW CMAX file.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
 pub enum ImgwPolradQuantity {
+    /// Specific differential phase.
     Kdp,
+    /// Correlation coefficient.
     RhoHv,
+    /// Differential reflectivity.
     Zdr,
+    /// Differential phase.
     PhiDp,
 }
 
+/// Every CMAX quantity.
 pub const IMGW_POLRAD_QUANTITIES: &[ImgwPolradQuantity] = &[
     ImgwPolradQuantity::Kdp,
     ImgwPolradQuantity::RhoHv,
@@ -194,6 +220,7 @@ impl ImgwPolradQuantity {
         }
     }
 
+    /// Name for menus.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Kdp => "Specific differential phase (KDP)",
@@ -203,6 +230,7 @@ impl ImgwPolradQuantity {
         }
     }
 
+    /// Units of the values.
     pub const fn units(self) -> &'static str {
         match self {
             Self::Kdp => "deg/km",
@@ -226,12 +254,17 @@ impl ImgwPolradQuantity {
 /// One validated, directly downloadable IMGW CMAX object.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImgwCmaxFile {
+    /// The radar.
     pub site: ImgwPolradSite,
+    /// The quantity.
     pub quantity: ImgwPolradQuantity,
+    /// Observation time.
     pub observed_at: DateTime<Utc>,
     /// The final `CC` in the 16-digit file prefix. Not part of cycle time.
     pub product_counter: u8,
+    /// File name.
     pub filename: String,
+    /// Download URL.
     pub download_url: String,
     /// Stable cache/dedupe identity. It never includes a fetch time or cookie.
     pub identity: String,
@@ -240,7 +273,9 @@ pub struct ImgwCmaxFile {
 /// All currently published quantities for one site/observation time.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImgwCmaxCycle {
+    /// The radar.
     pub site: ImgwPolradSite,
+    /// Observation time.
     pub observed_at: DateTime<Utc>,
     /// One selected file per quantity, sorted by [`ImgwPolradQuantity`].
     pub files: Vec<ImgwCmaxFile>,
@@ -249,6 +284,7 @@ pub struct ImgwCmaxCycle {
 }
 
 impl ImgwCmaxCycle {
+    /// The file of a quantity, if the cycle has one.
     pub fn file(&self, quantity: ImgwPolradQuantity) -> Option<&ImgwCmaxFile> {
         self.files.iter().find(|file| file.quantity == quantity)
     }

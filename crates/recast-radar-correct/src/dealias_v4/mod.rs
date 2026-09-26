@@ -86,33 +86,51 @@ const V4_INTERVAL_SPLIT_FRAC: f32 = 0.5;
 /// The previous volume's evidence, in order of preference.  Prefer passing
 /// the previous *solution* so confidence propagates (F6); a bare previous
 /// volume is accepted and solved internally as a fallback (see module doc).
+#[non_exhaustive]
 pub enum TemporalPrior<'a> {
+    /// The previous volume's solution, confidences included (preferred).
     Solution(&'a V4VolumeSolution),
+    /// The previous volume, solved internally first.
     Volume(&'a Volume),
 }
 
 /// Solver + gauntlet diagnostics; the eval battery regression-gates these.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct V4Diagnostics {
+    /// Sweeps with radial velocity that were solved.
     pub velocity_tilts: usize,
+    /// Nodes of the fold graph (velocity regions).
     pub nodes: usize,
+    /// Edges of the fold graph.
     pub graph_edges: usize,
+    /// Connected components of the graph.
     pub components: usize,
+    /// Components solved by exhaustive enumeration.
     pub enumerated_components: usize,
     /// Nonzero means the forest-DP + ICM heuristic missed an optimum that
     /// exhaustive enumeration found — watch it in the battery.
     pub enumeration_beat_heuristic: usize,
+    /// Energy of the solution (lower is more consistent).
     pub energy: f64,
+    /// Whether an environmental wind profile anchored the solve.
     pub env_profile_used: bool,
+    /// Whether the previous volume anchored the solve.
     pub temporal_prior_used: bool,
+    /// Gates masked as compact rotation couplets and left untouched by the repairs (R0).
     pub couplet_masked: usize,
+    /// Gates moved by the speck despeckle (R1).
     pub speck_snapped: usize,
+    /// Gates moved by the coherent-patch branch repair (R2).
     pub patch_changed: usize,
+    /// Gates joined to a flipped patch by ring closure (R2).
     pub ring_closed: usize,
     /// Patch components reverted by the boundary-inflation audit (gates).
     pub patch_reverted: usize,
+    /// Gates moved by the box-median ladder (R3).
     pub box_moved: usize,
+    /// Gates moved by the least-squares plane check (R4).
     pub plane_moved: usize,
+    /// Repair modules that aborted because they would have changed too many gates.
     pub repair_aborts: u32,
 }
 
@@ -156,6 +174,7 @@ impl V4VolumeSolution {
             .map(|tilt| &tilt.confidence)
     }
 
+    /// Solver and repair counts of this solve.
     pub fn diagnostics(&self) -> &V4Diagnostics {
         &self.diagnostics
     }

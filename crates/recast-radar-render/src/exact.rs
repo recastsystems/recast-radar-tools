@@ -14,15 +14,16 @@
 //!   Those cases call `f32::mul_add`.
 //! - [`round_to_isize`]: `x.round() as isize` without the library `roundf`.
 //! - [`azimuth_bin`]: the 0.1-degree azimuth bin of an east/north offset.
-//!   The plain path is `atan2f` (the platform's libm, which is why pixel
-//!   checksums are per platform) followed by f32 degree arithmetic and a
-//!   rounding to the nearest bin. The fast path computes the angle with an
-//!   f64 series accurate to 1e-10 rad, uses the same f32 constants, and keeps
-//!   its bin only when the bin position is more than [`BIN_MARGIN`] bins away
-//!   from a rounding boundary; the plain path's own error (a few ulp of
-//!   `atan2f` plus five f32 roundings) is below 1e-3 bins, so both round the
-//!   same way. Positions near a boundary, zero offsets and non-finite input
-//!   take the plain path.
+//!   The plain path is [`crate::trig::atan2`] (this crate's own `atan2`,
+//!   the same bits on every target, where a C library's `atan2f` differs in
+//!   the last bit between platforms) rounded to f32, followed by f32 degree
+//!   arithmetic and a rounding to the nearest bin. The fast path computes the
+//!   angle with an f64 series accurate to 1e-10 rad, uses the same f32
+//!   constants, and keeps its bin only when the bin position is more than
+//!   [`BIN_MARGIN`] bins away from a rounding boundary; the plain path's own
+//!   error (2 ulp of the f64 angle, its f32 rounding and four more f32
+//!   roundings) is below 1e-3 bins, so both round the same way. Positions
+//!   near a boundary, zero offsets and non-finite input take the plain path.
 
 use std::f32::consts::PI;
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_6, PI as PI_F64};
@@ -63,10 +64,12 @@ pub(crate) fn round_to_isize(x: f32) -> isize {
     }
 }
 
-/// The plain azimuth of an east/north offset, degrees in `[0, 360]`.
+/// The plain azimuth of an east/north offset, degrees in `[0, 360]`: the
+/// angle from [`crate::trig::atan2`], rounded to f32.
 #[inline]
 pub(crate) fn azimuth_from_xy(east: f32, north: f32) -> f32 {
-    let mut degrees = east.atan2(north) * 180.0 / PI;
+    let radians = crate::trig::atan2(east, north) as f32;
+    let mut degrees = radians * 180.0 / PI;
     if degrees < 0.0 {
         degrees += 360.0;
     }

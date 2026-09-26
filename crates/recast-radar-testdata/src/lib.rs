@@ -7,6 +7,10 @@
 //! [`cache_dir`]). Every file handed out is verified against the manifest
 //! SHA-256.
 //!
+//! The `download` feature (on by default) fetches entries that are not
+//! committed. Without it only committed and already-cached files resolve,
+//! and the others report [`TestdataError::Offline`], so tests skip.
+//!
 //! ```no_run
 //! # fn decode(_: &std::path::Path) {}
 //! #[test]
@@ -19,6 +23,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod cache;
+#[cfg(feature = "download")]
 mod fetch;
 mod manifest;
 pub mod synthetic;
@@ -41,6 +46,7 @@ pub use manifest::{
 
 /// Error resolving a testdata file.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum TestdataError {
     /// No manifest entry has this id.
     UnknownId(String),
@@ -209,11 +215,13 @@ fn resolve(id: &str, network: bool) -> Result<PathBuf, TestdataError> {
         if path.is_file() {
             verify(entry, &path)?;
         } else {
-            if !network || cache::offline_forced() {
-                let reason = if network {
+            if !network || cache::offline_forced() || !cfg!(feature = "download") {
+                let reason = if !network {
+                    "network access not requested".to_owned()
+                } else if cfg!(feature = "download") {
                     format!("downloads disabled by {OFFLINE_ENV}")
                 } else {
-                    "network access not requested".to_owned()
+                    "built without the `download` feature".to_owned()
                 };
                 return Err(TestdataError::Offline {
                     id: id.to_owned(),
@@ -232,6 +240,7 @@ fn resolve(id: &str, network: bool) -> Result<PathBuf, TestdataError> {
                 verify(entry, &path)?;
             } else {
                 // Verifies the SHA-256 before renaming into place.
+                #[cfg(feature = "download")]
                 fetch::download(entry, &path)?;
             }
         }

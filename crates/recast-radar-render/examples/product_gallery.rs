@@ -1,10 +1,10 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-// Render the full product set for a scan to PNGs through the SAME
-// ViewportFieldCache path the GUI uses — visual proof every product + palette
-// works end to end (base moments, dual-pol, dealiased velocity, the derived
-// volumetric/shear products). usage: product_gallery <l2-file> <out-dir>
+//! Render the full product set for a scan to PNGs through the SAME
+//! ViewportFieldCache path the GUI uses — visual proof every product + palette
+//! works end to end (base moments, dual-pol, dealiased velocity, the derived
+//! volumetric/shear products). usage: product_gallery <l2-file> <out-dir>
 
 use std::path::PathBuf;
 

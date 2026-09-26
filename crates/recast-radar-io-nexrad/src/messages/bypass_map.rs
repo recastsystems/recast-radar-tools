@@ -58,6 +58,7 @@ pub type BypassRadial = [u16; HALFWORDS_PER_RADIAL];
 
 /// Which revision of Table IX a bypass map follows.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum BypassMapLayout {
     /// 2620002AA Table IX: generation date and time, 360 radials of 1 degree.
     #[default]

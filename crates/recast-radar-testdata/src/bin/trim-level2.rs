@@ -16,9 +16,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use recast_radar_testdata::sha256_hex;
-use recast_radar_testdata::trim::{
-    Container, Framing, TOOL_NAME, TrimOptions, TrimReport, trim_level2,
-};
+use recast_radar_testdata::trim::{Framing, TOOL_NAME, TrimOptions, TrimReport, trim_level2};
 
 const USAGE: &str =
     "usage: trim-level2 (INPUT | --id ID) OUTPUT [--sweeps N] [--max-radials N | --max-bytes N]";
@@ -91,14 +89,14 @@ fn run(args: Vec<String>) -> Result<(), String> {
 
 fn print_report(report: &TrimReport) {
     println!("derivation  {TOOL_NAME} {}", report.options.to_args());
-    let container = match report.source_container {
-        Container::None => "no whole-file compression",
-        Container::Gzip => "gzip",
-        Container::Bzip2 => "bzip2",
-    };
+    let container = report.source_container.description();
     let framing = match report.source_framing {
-        Framing::LdmRecords => format!("LDM bzip2 records ({} read)", report.source_records_read),
-        Framing::Messages => "uncompressed messages".to_owned(),
+        Framing::LdmRecords => format!(
+            "{} ({} read)",
+            Framing::LdmRecords.description(),
+            report.source_records_read
+        ),
+        other => other.description().to_owned(),
     };
     println!("source fmt  {container}, {framing}");
     println!(

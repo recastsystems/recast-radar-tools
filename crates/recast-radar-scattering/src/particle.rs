@@ -2,29 +2,49 @@ use std::collections::HashSet;
 
 use thiserror::Error;
 
+/// The kind of microphysics scheme a particle state comes from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum MicrophysicsFamily {
+    /// A conventional bulk scheme with fixed hydrometeor categories.
     Conventional,
+    /// The Predicted Particle Properties (P3) scheme.
     P3,
+    /// The ISHMAEL ice scheme.
     Ishmael,
 }
 
+/// A hydrometeor category of a conventional bulk scheme.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ConventionalHydrometeor {
+    /// Cloud water.
     CloudWater,
+    /// Rain.
     Rain,
+    /// Cloud ice.
     CloudIce,
+    /// Snow.
     Snow,
+    /// Graupel.
     Graupel,
+    /// Hail.
     Hail,
 }
 
+/// An ice category of the ISHMAEL scheme.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum IshmaelIceCategory {
+    /// Small ice.
     SmallIce,
+    /// Planar-nucleated ice.
     Planar,
+    /// Columnar-nucleated ice.
     Columnar,
+    /// Aggregates.
     Aggregate,
+    /// Rimed ice.
     Rimed,
 }
 
@@ -36,6 +56,7 @@ pub struct ParticleEnvironment {
 }
 
 impl ParticleEnvironment {
+    /// An environment from a positive, finite temperature and air density.
     pub fn new(temperature_k: f64, air_density_kg_m3: f64) -> Result<Self, ParticleError> {
         positive("temperature", temperature_k)?;
         positive("air density", air_density_kg_m3)?;
@@ -45,11 +66,13 @@ impl ParticleEnvironment {
         })
     }
 
+    /// Air temperature, K.
     #[must_use]
     pub const fn temperature_k(self) -> f64 {
         self.temperature_k
     }
 
+    /// Air density, kg m⁻³.
     #[must_use]
     pub const fn air_density_kg_m3(self) -> f64 {
         self.air_density_kg_m3
@@ -66,6 +89,8 @@ pub struct ParticleShape {
 }
 
 impl ParticleShape {
+    /// A shape from a positive diameter and bulk density, an axis ratio in (0, 1]
+    /// and a liquid mass fraction in [0, 1].
     pub fn new(
         equivolume_diameter_m: f64,
         bulk_density_kg_m3: f64,
@@ -84,27 +109,32 @@ impl ParticleShape {
         })
     }
 
+    /// Diameter of the sphere of equal volume, m.
     #[must_use]
     pub const fn equivolume_diameter_m(self) -> f64 {
         self.equivolume_diameter_m
     }
 
+    /// Bulk density of the particle, kg m⁻³.
     #[must_use]
     pub const fn bulk_density_kg_m3(self) -> f64 {
         self.bulk_density_kg_m3
     }
 
+    /// Ratio of the minor to the major axis of the spheroid, (0, 1].
     #[must_use]
     pub const fn minor_to_major_axis_ratio(self) -> f64 {
         self.minor_to_major_axis_ratio
     }
 
+    /// Fraction of the particle's mass that is liquid, [0, 1].
     #[must_use]
     pub const fn liquid_mass_fraction(self) -> f64 {
         self.liquid_mass_fraction
     }
 }
 
+/// A particle state of a conventional bulk scheme.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ConventionalParticleState {
     category: ConventionalHydrometeor,
@@ -115,6 +145,7 @@ pub struct ConventionalParticleState {
 }
 
 impl ConventionalParticleState {
+    /// A state from a category, environment and shape, a positive mixing ratio and an optional positive number concentration.
     pub fn new(
         category: ConventionalHydrometeor,
         environment: ParticleEnvironment,
@@ -133,26 +164,31 @@ impl ConventionalParticleState {
         })
     }
 
+    /// The hydrometeor category.
     #[must_use]
     pub const fn category(self) -> ConventionalHydrometeor {
         self.category
     }
 
+    /// The environment.
     #[must_use]
     pub const fn environment(self) -> ParticleEnvironment {
         self.environment
     }
 
+    /// The particle shape.
     #[must_use]
     pub const fn shape(self) -> ParticleShape {
         self.shape
     }
 
+    /// Mixing ratio, kg kg⁻¹.
     #[must_use]
     pub const fn mixing_ratio_kgkg(self) -> f64 {
         self.mixing_ratio_kgkg
     }
 
+    /// Number concentration, kg⁻¹, for double-moment categories.
     #[must_use]
     pub const fn number_per_kg(self) -> Option<f64> {
         self.number_per_kg
@@ -172,6 +208,7 @@ pub struct P3ParticleState {
 }
 
 impl P3ParticleState {
+    /// A state from its environment, shape, total-ice mixing ratio and number, rime mass fraction and rime density.
     pub fn new(
         environment: ParticleEnvironment,
         shape: ParticleShape,
@@ -194,31 +231,37 @@ impl P3ParticleState {
         })
     }
 
+    /// The environment.
     #[must_use]
     pub const fn environment(self) -> ParticleEnvironment {
         self.environment
     }
 
+    /// The particle shape.
     #[must_use]
     pub const fn shape(self) -> ParticleShape {
         self.shape
     }
 
+    /// Total-ice mixing ratio, kg kg⁻¹.
     #[must_use]
     pub const fn total_ice_mixing_ratio_kgkg(self) -> f64 {
         self.total_ice_mixing_ratio_kgkg
     }
 
+    /// Total-ice number concentration, kg⁻¹.
     #[must_use]
     pub const fn total_ice_number_per_kg(self) -> f64 {
         self.total_ice_number_per_kg
     }
 
+    /// Fraction of the ice mass that is rime, [0, 1].
     #[must_use]
     pub const fn rime_mass_fraction(self) -> f64 {
         self.rime_mass_fraction
     }
 
+    /// Density of the rime, kg m⁻³.
     #[must_use]
     pub const fn rime_density_kg_m3(self) -> f64 {
         self.rime_density_kg_m3
@@ -237,6 +280,7 @@ pub struct IshmaelParticleState {
 }
 
 impl IshmaelParticleState {
+    /// A state from its category, environment, shape, mixing ratio, number concentration and rime mass fraction.
     pub fn new(
         category: IshmaelIceCategory,
         environment: ParticleEnvironment,
@@ -258,45 +302,57 @@ impl IshmaelParticleState {
         })
     }
 
+    /// The ISHMAEL category.
     #[must_use]
     pub const fn category(self) -> IshmaelIceCategory {
         self.category
     }
 
+    /// The environment.
     #[must_use]
     pub const fn environment(self) -> ParticleEnvironment {
         self.environment
     }
 
+    /// The particle shape.
     #[must_use]
     pub const fn shape(self) -> ParticleShape {
         self.shape
     }
 
+    /// Mixing ratio, kg kg⁻¹.
     #[must_use]
     pub const fn mixing_ratio_kgkg(self) -> f64 {
         self.mixing_ratio_kgkg
     }
 
+    /// Number concentration, kg⁻¹.
     #[must_use]
     pub const fn number_per_kg(self) -> f64 {
         self.number_per_kg
     }
 
+    /// Fraction of the ice mass that is rime, [0, 1].
     #[must_use]
     pub const fn rime_mass_fraction(self) -> f64 {
         self.rime_mass_fraction
     }
 }
 
+/// A particle state of any scheme family.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum ParticleState {
+    /// A conventional bulk scheme state.
     Conventional(ConventionalParticleState),
+    /// A P3 state.
     P3(P3ParticleState),
+    /// An ISHMAEL state.
     Ishmael(IshmaelParticleState),
 }
 
 impl ParticleState {
+    /// The scheme family of the state.
     #[must_use]
     pub const fn family(self) -> MicrophysicsFamily {
         match self {
@@ -307,6 +363,7 @@ impl ParticleState {
     }
 }
 
+/// A model variable a particle state was derived from.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceVariable {
     name: String,
@@ -314,6 +371,7 @@ pub struct SourceVariable {
 }
 
 impl SourceVariable {
+    /// A variable from its name and units (neither empty).
     pub fn new(name: impl Into<String>, units: impl Into<String>) -> Result<Self, ProvenanceError> {
         let name = name.into();
         let units = units.into();
@@ -322,23 +380,40 @@ impl SourceVariable {
         Ok(Self { name, units })
     }
 
+    /// Name of the variable (`QRAIN`, `QICE`, ...).
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Its units.
     #[must_use]
     pub fn units(&self) -> &str {
         &self.units
     }
 }
 
+/// A closure assumption made when the scheme's variables do not determine a particle state.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ClosureAssumption {
+    /// The scheme's own closure: nothing assumed.
     SchemeNative,
-    FixedInterceptPsd { identifier: String },
-    FixedNumberConcentration { identifier: String },
-    DiagnosedShape { identifier: String },
+    /// A fixed-intercept size distribution was assumed.
+    FixedInterceptPsd {
+        /// Identifier of the assumption.
+        identifier: String,
+    },
+    /// A fixed number concentration was assumed.
+    FixedNumberConcentration {
+        /// Identifier of the assumption.
+        identifier: String,
+    },
+    /// A particle shape was diagnosed.
+    DiagnosedShape {
+        /// Identifier of the assumption.
+        identifier: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -392,7 +467,8 @@ impl ProvenanceCore {
 }
 
 macro_rules! provenance_type {
-    ($name:ident, $extra_name:ident : $extra_type:ty) => {
+    ($(#[$meta:meta])* $name:ident, $extra_name:ident : $extra_type:ty) => {
+        $(#[$meta])*
         #[derive(Clone, Debug, Eq, PartialEq)]
         pub struct $name {
             core: ProvenanceCore,
@@ -400,21 +476,25 @@ macro_rules! provenance_type {
         }
 
         impl $name {
+            /// Name of the microphysics scheme.
             #[must_use]
             pub fn scheme_name(&self) -> &str {
                 &self.core.scheme_name
             }
 
+            /// Revision of the mapping from scheme variables to particle states.
             #[must_use]
             pub fn mapping_revision(&self) -> &str {
                 &self.core.mapping_revision
             }
 
+            /// The model variables the state was derived from.
             #[must_use]
             pub fn source_variables(&self) -> &[SourceVariable] {
                 &self.core.source_variables
             }
 
+            /// The closure assumptions made.
             #[must_use]
             pub fn assumptions(&self) -> &[ClosureAssumption] {
                 &self.core.assumptions
@@ -423,11 +503,25 @@ macro_rules! provenance_type {
     };
 }
 
-provenance_type!(ConventionalProvenance, wrf_mp_physics: Option<i32>);
-provenance_type!(P3Provenance, p3_revision: String);
-provenance_type!(IshmaelProvenance, ishmael_revision: String);
+provenance_type!(
+    /// Where a conventional bulk-scheme particle state came from: the scheme,
+    /// the variable mapping, the source variables and the closure assumptions.
+    ConventionalProvenance,
+    wrf_mp_physics: Option<i32>
+);
+provenance_type!(
+    /// Where a P3 particle state came from, with the P3 revision.
+    P3Provenance,
+    p3_revision: String
+);
+provenance_type!(
+    /// Where an ISHMAEL particle state came from, with the ISHMAEL revision.
+    IshmaelProvenance,
+    ishmael_revision: String
+);
 
 impl ConventionalProvenance {
+    /// Provenance from the scheme name, mapping revision, source variables (at least one, no duplicates), assumptions, and the WRF `mp_physics` id if known (positive).
     pub fn new(
         scheme_name: impl Into<String>,
         mapping_revision: impl Into<String>,
@@ -451,6 +545,7 @@ impl ConventionalProvenance {
         })
     }
 
+    /// The WRF `mp_physics` id of the scheme, if known.
     #[must_use]
     pub const fn wrf_mp_physics(&self) -> Option<i32> {
         self.wrf_mp_physics
@@ -458,6 +553,7 @@ impl ConventionalProvenance {
 }
 
 impl P3Provenance {
+    /// Provenance from the scheme name, mapping revision, source variables, assumptions and P3 revision.
     pub fn new(
         scheme_name: impl Into<String>,
         mapping_revision: impl Into<String>,
@@ -478,6 +574,7 @@ impl P3Provenance {
         })
     }
 
+    /// Revision of the P3 scheme.
     #[must_use]
     pub fn p3_revision(&self) -> &str {
         &self.p3_revision
@@ -485,6 +582,7 @@ impl P3Provenance {
 }
 
 impl IshmaelProvenance {
+    /// Provenance from the scheme name, mapping revision, source variables, assumptions and ISHMAEL revision.
     pub fn new(
         scheme_name: impl Into<String>,
         mapping_revision: impl Into<String>,
@@ -505,20 +603,27 @@ impl IshmaelProvenance {
         })
     }
 
+    /// Revision of the ISHMAEL scheme.
     #[must_use]
     pub fn ishmael_revision(&self) -> &str {
         &self.ishmael_revision
     }
 }
 
+/// Provenance of a particle state of any scheme family.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ParticleProvenance {
+    /// Conventional scheme provenance.
     Conventional(ConventionalProvenance),
+    /// P3 provenance.
     P3(P3Provenance),
+    /// ISHMAEL provenance.
     Ishmael(IshmaelProvenance),
 }
 
 impl ParticleProvenance {
+    /// The scheme family of the provenance.
     #[must_use]
     pub const fn family(&self) -> MicrophysicsFamily {
         match self {
@@ -538,6 +643,7 @@ pub struct ParticleRecord {
 }
 
 impl ParticleRecord {
+    /// A record from a state and a provenance of the same scheme family.
     pub fn new(
         state: ParticleState,
         provenance: ParticleProvenance,
@@ -551,11 +657,13 @@ impl ParticleRecord {
         Ok(Self { state, provenance })
     }
 
+    /// The particle state.
     #[must_use]
     pub const fn state(&self) -> ParticleState {
         self.state
     }
 
+    /// Its provenance.
     #[must_use]
     pub const fn provenance(&self) -> &ParticleProvenance {
         &self.provenance
@@ -612,27 +720,59 @@ fn required_text(field: &'static str, value: &str) -> Result<(), ProvenanceError
     }
 }
 
+/// Why a particle state value was rejected.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum ParticleError {
+    /// A value is not finite.
     #[error("{field} must be finite, got {value}")]
-    NonFinite { field: &'static str, value: f64 },
+    NonFinite {
+        /// Which value.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// A value is outside its physical range.
     #[error("{field} is outside its valid physical range: {value}")]
-    OutOfRange { field: &'static str, value: f64 },
+    OutOfRange {
+        /// Which value.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
 }
 
+/// Why a provenance was rejected.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum ProvenanceError {
+    /// A required text is empty.
     #[error("{field} must not be empty")]
-    EmptyText { field: &'static str },
+    EmptyText {
+        /// Which text.
+        field: &'static str,
+    },
+    /// No source variable is named.
     #[error("particle provenance must name at least one source variable")]
     NoSourceVariables,
+    /// A source variable is named twice (case-insensitively).
     #[error("source variable {name} appears more than once")]
-    DuplicateSourceVariable { name: String },
+    DuplicateSourceVariable {
+        /// Its name.
+        name: String,
+    },
+    /// The WRF `mp_physics` id is not positive.
     #[error("WRF microphysics scheme id must be positive, got {value}")]
-    InvalidSchemeId { value: i32 },
+    InvalidSchemeId {
+        /// The id.
+        value: i32,
+    },
+    /// The state and the provenance belong to different scheme families.
     #[error("particle state family {state:?} does not match provenance family {provenance:?}")]
     FamilyMismatch {
+        /// Family of the state.
         state: MicrophysicsFamily,
+        /// Family of the provenance.
         provenance: MicrophysicsFamily,
     },
 }

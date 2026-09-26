@@ -13,9 +13,10 @@ use crate::Level3Error;
 use crate::budget::Budget;
 use crate::levels::{DataLevels, Level};
 
-/// Largest radials x bins grid a radial packet may declare. The largest ICD
-/// products hold 720 x 1840 bins; packets declaring more than 2^24 cells are
-/// rejected with [`Level3Error::InvalidPacket`] instead of allocated.
+/// Largest radials x bins grid a radial packet may declare, or a generic
+/// packet's radial component may pad to. The largest ICD products hold
+/// 720 x 1840 bins; packets declaring more than 2^24 cells are rejected with
+/// [`Level3Error::InvalidPacket`] instead of allocated.
 ///
 /// A packet must also be able to hold its grid: 0xAF1F encodes at most 15
 /// bins per byte (two 4-bit runs of up to 15 in a halfword) and packet 16 one,

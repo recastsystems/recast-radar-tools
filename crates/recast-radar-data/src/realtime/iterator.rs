@@ -99,6 +99,7 @@ pub fn next_volume_id(volume_id: u16) -> u16 {
 
 /// What a request fetches.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum FetchKind {
     /// A site's volume-id prefixes (`prefix=SITE/&delimiter=/`).
     VolumeIds,
@@ -123,6 +124,7 @@ pub struct FetchRequest {
 
 /// Why a fetch failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TransportErrorKind {
     /// The server answered with this non-success HTTP status.
     Status(u16),
@@ -139,8 +141,10 @@ pub enum TransportErrorKind {
     Other,
 }
 
-/// A failed fetch, as reported by a [`ChunkTransport`].
+/// A failed fetch, as reported by a [`ChunkTransport`]. Build one with
+/// [`TransportError::new`].
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct TransportError {
     /// Classification that drives retrying.
     pub kind: TransportErrorKind,
@@ -208,6 +212,7 @@ impl<T: ChunkTransport + ?Sized> ChunkTransport for Box<T> {
 
 /// Where a new iterator starts.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum JoinMode {
     /// The newest volume from its Start chunk, whether it is still being
     /// collected (joining mid-volume) or already complete; then live.
@@ -409,6 +414,7 @@ pub struct VolumePosition {
 
 /// The next thing a driver must do for a [`ChunkPlanner`].
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PlannerStep {
     /// Perform this GET and pass the result to [`ChunkPlanner::complete`].
     Fetch(FetchRequest),

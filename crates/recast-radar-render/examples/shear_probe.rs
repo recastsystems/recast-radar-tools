@@ -1,9 +1,9 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-// Verify azimuthal shear on a real scan: compute LLSD az-shear on the lowest
-// velocity tilt and render it (velocity diverging palette) so rotational
-// couplets show as green/red dipoles. usage: shear_probe <l2-file> <out.png>
+//! Verify azimuthal shear on a real scan: compute LLSD az-shear on the lowest
+//! velocity tilt and render it (velocity diverging palette) so rotational
+//! couplets show as green/red dipoles. usage: shear_probe <l2-file> <out.png>
 
 use std::path::PathBuf;
 

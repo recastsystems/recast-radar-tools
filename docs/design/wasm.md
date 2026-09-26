@@ -38,11 +38,12 @@ Not checked:
   blocking client, which does not exist on wasm32 (30 compile errors at
   `ba35387`).
 - The facade's `net` and `full` features, because both enable `recast-radar-data`.
-- `recast-radar-bench`: the benchmark harness binary. It is not a library, so
-  wasm32 is not a goal for it. It did compile for wasm32 at `ba35387` (see
-  Result).
 - `recast-radar-testdata`: the test-only corpus crate. It downloads over HTTPS
   through ureq and rustls, and no library crate has it as a normal dependency.
+
+Since wave 3 the script also checks `recast-radar-bench`, the benchmark
+harness binary (spec 9.7: every crate that does not need the network); it
+compiles for wasm32 unchanged, and its file reads return I/O errors there.
 
 ## Result (branch `packaging` at `ba35387`)
 
@@ -117,6 +118,12 @@ difference selects the neighbouring bin.
 The cause is the math library. On native Windows, `f32::atan2` calls the MSVC
 UCRT; on wasm32 it calls Rust's `libm` port. Pixel checksums therefore depend on
 the platform math library. The baselines in
-`docs/baselines/import-checksums.txt` hold for x86_64-pc-windows-msvc. Other
-targets are not expected to match them bit for bit: wasm32 does not, and Linux
-glibc has not been checked.
+`docs/baselines/import-checksums.txt` held for x86_64-pc-windows-msvc only:
+wasm32 did not match them, and Linux glibc and musl printed the wasm32 values.
+
+Since 4043175 the renderer computes the per-pixel azimuth with its own `atan2`
+in plain f64 arithmetic (`recast-radar-render/src/trig.rs`), and the bench
+prints the baseline checksums on Windows, Linux glibc and Linux musl
+([render-atan2.md](../perf/render-atan2.md)). The function uses only IEEE
+`+ - * /`, which wasm32 evaluates the same way, so wasm32 is expected to
+match as well; the smoke run above has not been repeated.

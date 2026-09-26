@@ -17,6 +17,7 @@ use std::path::Path;
 
 pub mod color;
 mod exact;
+mod trig;
 
 pub use color::{ColorSampler, ColorTable, ColorTableFamily, ColorTableSet};
 use image::{ImageBuffer, ImageError, Rgba};
@@ -32,14 +33,17 @@ const AZIMUTH_BIN_WIDTH_DEG: f32 = 0.1;
 const MAX_AZIMUTH_HALF_WIDTH_DEG: f32 = 3.0;
 const MAX_AZIMUTH_CANDIDATES: usize = 8;
 
+/// A field drawn as a map layer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenderLayer {
     /// The field drawn: a sweep variable name or a derived field id.
     pub field: FieldName,
+    /// Whether the layer is drawn.
     pub visible: bool,
 }
 
 impl RenderLayer {
+    /// A visible layer of `field`.
     pub fn base(field: FieldName) -> Self {
         Self {
             field,
@@ -48,10 +52,15 @@ impl RenderLayer {
     }
 }
 
+/// Size of a radar-centred raster ([`render_field_png`], [`render_field_image`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RasterOptions {
+    /// Width in pixels (at least 64).
     pub width: u32,
+    /// Height in pixels (at least 64).
     pub height: u32,
+    /// How far the sweep's last gate reaches, in percent of the distance from the
+    /// centre to the nearer edge.
     pub range_fraction: u8,
 }
 
@@ -65,13 +74,20 @@ impl Default for RasterOptions {
     }
 }
 
+/// Placement of a viewport raster: the radar's pixel position and the scale.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewportRasterOptions {
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
+    /// Column of the radar, pixels from the left edge.
     pub radar_x_px: f32,
+    /// Row of the radar, pixels from the top edge.
     pub radar_y_px: f32,
+    /// Kilometres per pixel, east-west.
     pub km_per_px_x: f32,
+    /// Kilometres per pixel, north-south.
     pub km_per_px_y: f32,
     /// Clockwise screen rotation of local north at the radar (radians) —
     /// the AEQD meridian-convergence angle. Baked into the per-pixel
@@ -129,11 +145,13 @@ impl ViewportRasterOptions {
     }
 }
 
+/// Length in bytes of the RGBA buffer a viewport raster needs.
 pub fn viewport_rgba_buffer_len(options: ViewportRasterOptions) -> usize {
     let (width, height) = viewport_dimensions(options);
     rgba_len(width, height)
 }
 
+/// Upper bound in bytes of a [`ViewportSampleCache`] for a viewport, whatever the field.
 pub fn viewport_sample_cache_storage_upper_bound(options: ViewportRasterOptions) -> usize {
     let (width, height) = viewport_dimensions(options);
     (width as usize)
@@ -173,61 +191,104 @@ fn sample_cache_storage_upper_bound(gates: FieldGeometry, options: ViewportRaste
         .saturating_add((height as usize).saturating_mul(std::mem::size_of::<CachedRowSpan>()))
 }
 
+/// The motion subtracted from radial velocity in storm-relative velocity.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StormMotion {
+    /// Direction the storm moves toward, degrees clockwise from north.
     pub direction_deg: f32,
+    /// Storm speed, m/s.
     pub speed_mps: f32,
 }
 
+/// Why a render failed.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum RenderError {
+    /// The volume has no sweep at that index.
     #[error("sweep index {index} is out of range for {sweep_count} sweeps")]
-    SweepOutOfRange { index: usize, sweep_count: usize },
+    SweepOutOfRange {
+        /// The index asked for.
+        index: usize,
+        /// Sweeps in the volume.
+        sweep_count: usize,
+    },
+    /// The sweep has no field of that name.
     #[error("field {field} is not available in sweep {sweep_index}")]
     MissingField {
+        /// Index of the sweep.
         sweep_index: usize,
+        /// The field.
         field: FieldName,
     },
+    /// The field has no rows.
     #[error("field {field} in sweep {sweep_index} has no decoded rows")]
     EmptyField {
+        /// Index of the sweep.
         sweep_index: usize,
+        /// The field.
         field: FieldName,
     },
+    /// The field's gates cannot be placed on the sweep's range.
     #[error("field {field} in sweep {sweep_index} has no gate geometry on the sweep range")]
     NoGateGeometry {
+        /// Index of the sweep.
         sweep_index: usize,
+        /// The field.
         field: FieldName,
     },
+    /// Dealiasing or storm-relative rendering asked for a field that is not a radial velocity.
     #[error("field {field} is not a radial velocity")]
-    NotRadialVelocity { field: FieldName },
+    NotRadialVelocity {
+        /// The field.
+        field: FieldName,
+    },
+    /// An RGBA buffer does not have `width × height × 4` bytes.
     #[error("RGBA buffer has {actual} bytes, expected {expected} for {width}x{height}")]
     BufferSizeMismatch {
+        /// Its length.
         actual: usize,
+        /// The length needed.
         expected: usize,
+        /// Width of the raster.
         width: u32,
+        /// Height of the raster.
         height: u32,
     },
+    /// A cache was used with a volume other than the one it was built for.
     #[error("viewport render cache belongs to a different radar volume")]
     CacheVolumeMismatch,
+    /// A cache was used with a sweep other than the one it was built for.
     #[error("viewport render cache is for sweep {actual}, expected sweep {expected}")]
-    CacheSweepMismatch { expected: usize, actual: usize },
+    CacheSweepMismatch {
+        /// The sweep asked for.
+        expected: usize,
+        /// The sweep the cache was built for.
+        actual: usize,
+    },
+    /// A cache was used with a field other than the one it was built for.
     #[error("viewport render cache is for {actual}, expected {expected}")]
     CacheFieldMismatch {
+        /// The field the cache was built for.
         expected: FieldName,
+        /// The field asked for.
         actual: FieldName,
     },
+    /// The field's storage changed since the cache was built.
     #[error("viewport render cache storage no longer matches the field storage")]
     CacheStorageMismatch,
+    /// A geometry cache does not match the field's gate geometry.
     #[error("viewport geometry cache does not match this field's gate geometry")]
     GeometryCacheMismatch,
     /// The sample cache was resolved under another colour table: which
     /// radial a pixel shows depends on which values the table hides.
     #[error("viewport sample cache was built with a different colour table")]
     CacheColorTableMismatch,
+    /// The PNG could not be encoded or written.
     #[error("image write failed: {0}")]
     Image(#[from] ImageError),
 }
 
+/// Result of the renderers.
 pub type Result<T> = std::result::Result<T, RenderError>;
 
 /// Wrap a rendered RGBA pixel buffer as an image, reporting a size mismatch
@@ -257,6 +318,7 @@ pub fn render_field_png(
     Ok(())
 }
 
+/// [`render_field_png`] without writing the file: the image in memory.
 pub fn render_field_image(
     volume: &Volume,
     sweep_index: usize,
@@ -380,6 +442,7 @@ pub fn dealiased_velocity_field(
     Ok(recast_radar_correct::dealias_velocity(sweep, view.field))
 }
 
+/// Render one field of one sweep into a viewport, as an image.
 pub fn render_field_viewport_image(
     volume: &Volume,
     sweep_index: usize,
@@ -390,6 +453,7 @@ pub fn render_field_viewport_image(
     rgba_image(width, height, pixels)
 }
 
+/// Render one field of one sweep into a viewport: `(width, height, RGBA pixels)`.
 pub fn render_field_viewport_rgba(
     volume: &Volume,
     sweep_index: usize,
@@ -402,6 +466,7 @@ pub fn render_field_viewport_rgba(
     Ok((width, height, pixels))
 }
 
+/// Render one field of one sweep into a caller's RGBA buffer; returns `(width, height)`.
 pub fn render_field_viewport_rgba_into(
     volume: &Volume,
     sweep_index: usize,
@@ -413,6 +478,9 @@ pub fn render_field_viewport_rgba_into(
     cache.render_field_rgba_into(volume, options, pixels)
 }
 
+/// The per-field state a viewport renderer keeps: the azimuth lookup and the
+/// colors of every code. Build it once per field and sweep; later frames at
+/// any viewport reuse it.
 pub struct ViewportFieldCache {
     volume_ptr: usize,
     sweep_index: usize,
@@ -462,6 +530,8 @@ pub struct ViewportSampleCache {
     samples: Vec<CachedSample>,
 }
 
+/// The pixel-to-gate mapping of one gate geometry at one viewport, shared by
+/// every field with that geometry.
 pub struct ViewportGeometryCache {
     width: u32,
     height: u32,
@@ -471,6 +541,7 @@ pub struct ViewportGeometryCache {
     samples: Vec<CachedSample>,
 }
 
+/// Per-ray palettes of storm-relative velocity for one storm motion (8-bit fields).
 pub struct StormRelativePaletteCache {
     volume_ptr: usize,
     sweep_index: usize,
@@ -478,22 +549,27 @@ pub struct StormRelativePaletteCache {
 }
 
 impl ViewportSampleCache {
+    /// Width in pixels.
     pub fn width(&self) -> u32 {
         self.width
     }
 
+    /// Height in pixels.
     pub fn height(&self) -> u32 {
         self.height
     }
 
+    /// `(width, height)` in pixels.
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
     }
 
+    /// Pixels that fall on data.
     pub fn sample_count(&self) -> usize {
         self.sample_count
     }
 
+    /// Bytes the cache holds.
     pub fn storage_bytes(&self) -> usize {
         self.samples.len() * std::mem::size_of::<CachedSample>()
             + self.row_spans.len() * std::mem::size_of::<CachedRowSpan>()
@@ -508,22 +584,27 @@ impl ViewportSampleCache {
 }
 
 impl ViewportGeometryCache {
+    /// Width in pixels.
     pub fn width(&self) -> u32 {
         self.width
     }
 
+    /// Height in pixels.
     pub fn height(&self) -> u32 {
         self.height
     }
 
+    /// `(width, height)` in pixels.
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
     }
 
+    /// Pixels that fall on data.
     pub fn sample_count(&self) -> usize {
         self.sample_count
     }
 
+    /// Bytes the cache holds.
     pub fn storage_bytes(&self) -> usize {
         self.samples.len() * std::mem::size_of::<CachedSample>()
             + self.row_spans.len() * std::mem::size_of::<CachedRowSpan>()
@@ -944,16 +1025,17 @@ impl StormMotionBasis {
                 .get(row)
                 .map(|azimuth| azimuth.to_radians())
                 .unwrap_or(0.0);
-            beam_cos.push(azimuth_rad.cos());
-            beam_sin.push(azimuth_rad.sin());
+            let (sin, cos) = sin_cos_f32(azimuth_rad);
+            beam_cos.push(cos);
+            beam_sin.push(sin);
         }
         Self { beam_cos, beam_sin }
     }
 
     fn row_motion_components(&self, storm_motion: StormMotion) -> Vec<f32> {
-        let direction_rad = storm_motion.direction_deg.to_radians();
-        let storm_cos = storm_motion.speed_mps * direction_rad.cos();
-        let storm_sin = storm_motion.speed_mps * direction_rad.sin();
+        let (direction_sin, direction_cos) = sin_cos_f32(storm_motion.direction_deg.to_radians());
+        let storm_cos = storm_motion.speed_mps * direction_cos;
+        let storm_sin = storm_motion.speed_mps * direction_sin;
         self.beam_cos
             .iter()
             .zip(&self.beam_sin)
@@ -1050,10 +1132,12 @@ impl CachedColorLookup {
 }
 
 impl ViewportFieldCache {
+    /// A cache for a field of a sweep, with the default color tables.
     pub fn new(volume: &Volume, sweep_index: usize, field: &FieldName) -> Result<Self> {
         Self::new_with_color_tables(volume, sweep_index, field, &ColorTableSet::default())
     }
 
+    /// A cache for a field of a sweep, with the given color tables.
     pub fn new_with_color_tables(
         volume: &Volume,
         sweep_index: usize,
@@ -1063,6 +1147,7 @@ impl ViewportFieldCache {
         Self::new_with_color_tables_for_family(volume, sweep_index, field, color_tables, None)
     }
 
+    /// A cache for a field of a sweep, colored by `family`'s table instead of the field's own family.
     pub fn new_with_color_tables_for_family(
         volume: &Volume,
         sweep_index: usize,
@@ -1105,6 +1190,7 @@ impl ViewportFieldCache {
         )
     }
 
+    /// [`ViewportFieldCache::new_dealiased_velocity`] with the given color tables.
     pub fn new_dealiased_velocity_with_color_tables(
         volume: &Volume,
         sweep_index: usize,
@@ -1241,6 +1327,7 @@ impl ViewportFieldCache {
         })
     }
 
+    /// Index of the sweep the cache belongs to.
     pub fn sweep_index(&self) -> usize {
         self.sweep_index
     }
@@ -1250,6 +1337,7 @@ impl ViewportFieldCache {
         &self.field
     }
 
+    /// Render into a caller's RGBA buffer at a viewport; returns `(width, height)`.
     pub fn render_field_rgba_into(
         &self,
         volume: &Volume,
@@ -1270,6 +1358,7 @@ impl ViewportFieldCache {
         Ok((width, height))
     }
 
+    /// Map every pixel of a viewport to its gate, for fast redraws at that viewport.
     pub fn build_sample_cache(
         &self,
         volume: &Volume,
@@ -1325,6 +1414,7 @@ impl ViewportFieldCache {
         ))
     }
 
+    /// Map every pixel of a viewport to its gate, independent of the field's values.
     pub fn build_geometry_cache(
         &self,
         volume: &Volume,
@@ -1347,6 +1437,7 @@ impl ViewportFieldCache {
         })
     }
 
+    /// A sample cache from a geometry cache (the field must have the cache's gate geometry).
     pub fn build_sample_cache_from_geometry_cache(
         &self,
         volume: &Volume,
@@ -1404,6 +1495,7 @@ impl ViewportFieldCache {
         ))
     }
 
+    /// Upper bound in bytes of this field's sample cache at a viewport.
     pub fn sample_cache_storage_upper_bound(
         &self,
         volume: &Volume,
@@ -1413,6 +1505,7 @@ impl ViewportFieldCache {
         Ok(sample_cache_storage_upper_bound(view.geometry, options))
     }
 
+    /// Render through a sample cache into a caller's RGBA buffer.
     pub fn render_field_rgba_with_sample_cache(
         &self,
         volume: &Volume,
@@ -1459,6 +1552,7 @@ impl ViewportFieldCache {
         Ok(sample_cache.dimensions())
     }
 
+    /// Render storm-relative velocity (radial velocity minus the storm motion along the beam).
     pub fn render_storm_relative_velocity_rgba_into(
         &self,
         volume: &Volume,
@@ -1475,6 +1569,8 @@ impl ViewportFieldCache {
         )
     }
 
+    /// Per-ray palettes for `storm_motion`, so storm-relative frames need no
+    /// per-pixel arithmetic. `None` for fields that are not 8-bit.
     pub fn build_storm_relative_velocity_palette_cache(
         &self,
         volume: &Volume,
@@ -1509,6 +1605,7 @@ impl ViewportFieldCache {
         }))
     }
 
+    /// [`ViewportFieldCache::render_storm_relative_velocity_rgba_into`] through a palette cache.
     pub fn render_storm_relative_velocity_rgba_into_with_palette_cache(
         &self,
         volume: &Volume,
@@ -1557,6 +1654,7 @@ impl ViewportFieldCache {
         Ok((width, height))
     }
 
+    /// Storm-relative velocity through a sample cache.
     pub fn render_storm_relative_velocity_rgba_with_sample_cache(
         &self,
         volume: &Volume,
@@ -1596,6 +1694,7 @@ impl ViewportFieldCache {
         )
     }
 
+    /// Storm-relative velocity through a sample cache and a palette cache.
     pub fn render_storm_relative_velocity_rgba_with_sample_cache_and_palette_cache(
         &self,
         volume: &Volume,
@@ -1615,6 +1714,9 @@ impl ViewportFieldCache {
         )
     }
 
+    /// Storm-relative velocity through a sample cache and a palette cache, over
+    /// an existing buffer without clearing transparent pixels first (see
+    /// [`ViewportFieldCache::render_storm_relative_velocity_rgba_with_sample_cache_reusing_transparency`]).
     pub fn render_storm_relative_velocity_rgba_with_sample_cache_reusing_transparency_and_palette_cache(
         &self,
         volume: &Volume,
@@ -1931,6 +2033,7 @@ pub fn render_storm_relative_velocity_image(
     rgba_image(width, height, pixels)
 }
 
+/// Render storm-relative velocity of one sweep into a viewport, as an image.
 pub fn render_storm_relative_velocity_viewport_image(
     volume: &Volume,
     sweep_index: usize,
@@ -1948,6 +2051,7 @@ pub fn render_storm_relative_velocity_viewport_image(
     rgba_image(width, height, pixels)
 }
 
+/// Render storm-relative velocity into a viewport: `(width, height, RGBA pixels)`.
 pub fn render_storm_relative_velocity_viewport_rgba(
     volume: &Volume,
     sweep_index: usize,
@@ -1968,6 +2072,7 @@ pub fn render_storm_relative_velocity_viewport_rgba(
     Ok((width, height, pixels))
 }
 
+/// Render storm-relative velocity into a caller's RGBA buffer.
 pub fn render_storm_relative_velocity_viewport_rgba_into(
     volume: &Volume,
     sweep_index: usize,
@@ -2189,7 +2294,7 @@ fn viewport_dimensions(options: ViewportRasterOptions) -> (u32, u32) {
 fn viewport_geometry(gates: FieldGeometry, options: ViewportRasterOptions) -> ViewportGeometry {
     let (width, _) = viewport_dimensions(options);
     let max_range_km = gates.max_range_m().max(1.0) / 1000.0;
-    let (rot_sin, rot_cos) = options.rotation_rad.sin_cos();
+    let (rot_sin, rot_cos) = sin_cos_f32(options.rotation_rad);
     ViewportGeometry {
         width,
         radar_x_px: options.radar_x_px,
@@ -3615,9 +3720,28 @@ fn color_for_code<T: PackedInt>(coding: &IntCoding<T>, sampler: &ColorSampler, r
     }
 }
 
+/// Azimuth in degrees clockwise from north, in [0, 360], of the offset
+/// (`dx` east, `dy` north): [`exact::azimuth_from_xy`], whose angle comes
+/// from [`trig::atan2`], the same bits on every target.
 #[cfg(test)]
 fn azimuth_from_xy(dx: f32, dy: f32) -> f32 {
     exact::azimuth_from_xy(dx, dy)
+}
+
+/// Sine and cosine of an f32 angle in radians, computed in f64 and rounded
+/// to f32.
+///
+/// `f32::sin_cos` calls the platform's `sinf` and `cosf`, whose last bit can
+/// differ between C libraries, and a one-ulp difference in the viewport
+/// rotation or a storm-motion component moves pixels across azimuth or color
+/// bin boundaries. The f64 functions are accurate to well under an f32 ulp,
+/// so the rounded results agree across C libraries unless the f64 value lies
+/// within that error of an f32 rounding boundary: far rarer than an f32
+/// disagreement, not ruled out. These run once per frame or per ray, not per
+/// pixel.
+fn sin_cos_f32(radians: f32) -> (f32, f32) {
+    let (sin, cos) = f64::from(radians).sin_cos();
+    (sin as f32, cos as f32)
 }
 
 struct AzimuthLookup {
@@ -3885,6 +4009,7 @@ fn row_motion_components(sweep: &Sweep, field: &Field, storm_motion: StormMotion
         .collect()
 }
 
+/// Radial velocity minus the component of the storm motion along the beam, m/s.
 pub fn storm_relative_velocity_mps(
     radar_velocity_mps: f32,
     beam_azimuth_deg: f32,
@@ -3895,7 +4020,8 @@ pub fn storm_relative_velocity_mps(
 
 fn motion_component_away_mps(storm_motion: StormMotion, beam_azimuth_deg: f32) -> f32 {
     let delta = (storm_motion.direction_deg - beam_azimuth_deg).to_radians();
-    storm_motion.speed_mps * delta.cos()
+    let (_, cos) = sin_cos_f32(delta);
+    storm_motion.speed_mps * cos
 }
 
 /// Color table family of a field, from its quantity (`Field::quantity`);

@@ -10,6 +10,7 @@ use thiserror::Error;
 pub struct Sha256Digest([u8; 32]);
 
 impl Sha256Digest {
+    /// The SHA-256 digest of `bytes`.
     #[must_use]
     pub fn compute(bytes: &[u8]) -> Self {
         let computed = Sha256::digest(bytes);
@@ -18,6 +19,7 @@ impl Sha256Digest {
         Self(digest)
     }
 
+    /// Parse 64 lowercase hexadecimal characters.
     pub fn from_hex(value: &str) -> Result<Self, DigestError> {
         if value.len() != 64 {
             return Err(DigestError::Length {
@@ -40,6 +42,7 @@ impl Sha256Digest {
         Ok(Self(bytes))
     }
 
+    /// The digest as 64 lowercase hexadecimal characters.
     #[must_use]
     pub fn to_hex(self) -> String {
         const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -51,6 +54,7 @@ impl Sha256Digest {
         encoded
     }
 
+    /// The 32 digest bytes.
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
@@ -115,14 +119,25 @@ impl<'de> Deserialize<'de> for Sha256Digest {
     }
 }
 
+/// Why [`Sha256Digest::from_hex`] rejected its text.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[non_exhaustive]
 pub enum DigestError {
+    /// The text is not 64 characters long.
     #[error("SHA-256 text must be 64 characters, got {actual}")]
-    Length { actual: usize },
+    Length {
+        /// Its length.
+        actual: usize,
+    },
+    /// The text contains uppercase letters (the canonical form is lowercase).
     #[error("SHA-256 text must use canonical lowercase hexadecimal")]
     NotCanonicalLowercase,
+    /// A character is not a hexadecimal digit.
     #[error("invalid hexadecimal character at SHA-256 text index {index}")]
-    InvalidHex { index: usize },
+    InvalidHex {
+        /// Position of the character.
+        index: usize,
+    },
 }
 
 #[cfg(test)]

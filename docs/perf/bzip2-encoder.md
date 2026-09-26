@@ -29,7 +29,7 @@ Checked by:
   at every level, prefixes around a block boundary, empty and short inputs,
   and periodic blocks: identical to the reference encoder (up to the
   `origPtr` exception), decoded to the input by both decoders;
-- the `bzip2_encode` fuzz target (see `fuzz/README.md` and *Fuzzing*
+- the `bzip2-encode` fuzz target (see `fuzz/README.md` and *Fuzzing*
   below).
 
 Block boundaries follow one `BZ_FINISH` call over the whole input
@@ -189,7 +189,7 @@ threads) was measured under different load and is not comparable.
 
 ## Fuzzing
 
-`bzip2_encode` (see `fuzz/README.md`) compresses each input, then its first
+`bzip2-encode` (see `fuzz/README.md`) compresses each input, then its first
 quarter with the same encoder, and checks both streams against the
 reference encoder and decoders; the encoders and the decoder are reused
 across inputs. Four libFuzzer campaigns ran at the same time on 2026-09-25

@@ -37,6 +37,7 @@ pub const ISO_PICKER_LEVELS_HPA: [u16; 6] = [925, 850, 700, 500, 300, 250];
 /// One synthesizable per-level field kind, backed by the hour's isobaric
 /// volume(s) named in [`IsoLevelField::source_volumes`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum IsoLevelField {
     /// `temperature_iso` (K) → Solar per-level temperature tables where they
     /// exist (250/500/700/850), unit-aware surface table otherwise.
@@ -104,7 +105,9 @@ impl IsoLevelField {
 /// One synthesized per-level field: kind + exposed pressure level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IsoLevelSpec {
+    /// Which quantity.
     pub field: IsoLevelField,
+    /// Pressure level, hPa.
     pub level_hpa: u16,
 }
 

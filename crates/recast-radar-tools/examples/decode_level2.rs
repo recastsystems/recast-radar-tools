@@ -1,6 +1,6 @@
-// Decode a NEXRAD Level II file and list its sweeps.
-//
-// cargo run --release -p recast-radar-tools --example decode_level2 -- <level2-file>
+//! Decode a NEXRAD Level II file and list its sweeps.
+//!
+//! cargo run --release -p recast-radar-tools --example decode_level2 -- <level2-file>
 
 use std::error::Error;
 use std::path::PathBuf;

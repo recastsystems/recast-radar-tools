@@ -175,18 +175,28 @@ const BZIP_BUFFER_POOL_MIN_CAPACITY: usize = 64 * 1024;
 /// MiB is freed instead of being pinned for the life of the process.
 const BZIP_BUFFER_POOL_MAX_CAPACITY: usize = 8 * 1024 * 1024;
 
+/// Result of the Level II decoders.
 pub type Result<T> = std::result::Result<T, NexradError>;
 
+/// Why a Level II decode failed.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum NexradError {
+    /// A file could not be read.
     #[error("I/O error reading {path}: {source}")]
     Io {
+        /// The path of the file.
         path: String,
+        /// The I/O error.
         #[source]
         source: std::io::Error,
     },
+    /// The input is shorter than the 24-byte volume header.
     #[error("input is too short for an Archive II volume header: {actual} bytes")]
-    ShortVolumeHeader { actual: usize },
+    ShortVolumeHeader {
+        /// Length of the input.
+        actual: usize,
+    },
     /// The input does not start with an Archive II volume header (`AR2V` or
     /// `ARCHIVE2`, Table I of the Archive II ICD 2620010). Model-data
     /// (`_MDM`) files, intermediate real-time chunks and bare records have
@@ -201,17 +211,29 @@ pub enum NexradError {
         /// The first 8 input bytes, ASCII-escaped.
         found: String,
     },
+    /// The input ends inside a structure.
     #[error("truncated {what} at offset {offset}: need {needed} bytes, have {available}")]
     Truncated {
+        /// What was being read.
         what: &'static str,
+        /// Where it starts.
         offset: usize,
+        /// Bytes it needs.
         needed: usize,
+        /// Bytes left.
         available: usize,
     },
+    /// The gzip or bzip2 wrapper could not be expanded.
     #[error("unsupported or corrupt compression wrapper: {0}")]
     Compression(String),
+    /// A message or record is malformed.
     #[error("invalid message at offset {offset}: {reason}")]
-    InvalidMessage { offset: usize, reason: String },
+    InvalidMessage {
+        /// Where the message starts in the (decompressed) input.
+        offset: usize,
+        /// What is wrong.
+        reason: String,
+    },
     /// The file declares more data than a documented resource limit allows
     /// (see the crate-level `# Limits` section).
     #[error("decode limit exceeded: {0}")]
@@ -223,6 +245,7 @@ pub enum NexradError {
 /// LDM-compressed file is [`Self::Gzip`] or [`Self::Bzip2WholeFile`]; its
 /// LDM records are decoded as the unwrapped file's are.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ArchiveCompression {
     /// A gzip file (every member decoded).
     Gzip,
@@ -249,13 +272,21 @@ impl ArchiveCompression {
 /// Message 1 / Message 31 radial status (ICD 2620002): where a radial sits in
 /// its elevation cut and volume scan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[non_exhaustive]
 pub enum RadialStatus {
+    /// First radial of an elevation cut (code 0).
     StartElevation,
+    /// A radial inside a cut (code 1).
     Intermediate,
+    /// Last radial of a cut (code 2).
     EndElevation,
+    /// First radial of the volume scan (code 3).
     StartVolume,
+    /// Last radial of the volume scan (code 4).
     EndVolume,
+    /// First radial of the last cut of the volume scan (code 5).
     StartElevationLastCut,
+    /// Any other code, as recorded.
     Unknown(u8),
 }
 
@@ -1357,33 +1388,54 @@ struct VolumeHeader {
     milliseconds: u32,
 }
 
+/// The 16-byte header of a Level II message (ICD 2620002, Table II).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessageHeader {
+    /// Message size in halfwords, header included; 65535 means the size in bytes is in `segments` and `segment_number`.
     pub size_halfwords: u16,
+    /// RDA redundant channel (bit 3 set: ORDA).
     pub channels: u8,
+    /// Message type (1, 2, 3, 5, 13, 15, 18, 31, ...).
     pub message_type: u8,
+    /// Message sequence number.
     pub sequence_id: u16,
+    /// Date: days since 1 January 1970, 1 January 1970 being day 1.
     pub date: u16,
+    /// Time: milliseconds after midnight UTC.
     pub milliseconds: u32,
+    /// Number of segments of the message.
     pub segments: u16,
+    /// Number of this segment, from 1.
     pub segment_number: u16,
 }
 
+/// The data header of a Message 31 radial (ICD 2620002, Table XVII-A).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message31Header {
     /// Bytes 0-3: radar identifier as recorded. It can be blank (KVWX
     /// 2008-04-15 records four spaces); see [`Self::radar_identifier_or`].
     pub radar_identifier: [u8; 4],
+    /// Collection time: milliseconds after midnight UTC.
     pub collect_ms: u32,
+    /// Collection date: days since 1 January 1970, 1 January 1970 being day 1.
     pub collect_date: u16,
+    /// Radial number within the elevation cut, from 1.
     pub azimuth_number: u16,
+    /// Azimuth angle, degrees.
     pub azimuth_angle: f32,
+    /// Radial length in bytes, data header included.
     pub radial_length: u16,
+    /// Azimuth spacing code (1: 0.5 degrees, 2: 1 degree).
     pub azimuth_resolution: u8,
+    /// Where the radial sits in its cut and volume.
     pub radial_status: RadialStatus,
+    /// Elevation number within the volume coverage pattern, from 1.
     pub elevation_number: u8,
+    /// Sector number within the cut.
     pub cut_sector: u8,
+    /// Elevation angle, degrees.
     pub elevation_angle: f32,
+    /// Offsets of the data blocks from the start of the data header, in block order (0 for absent blocks).
     pub block_pointers: [usize; 10],
 }
 
@@ -2299,14 +2351,26 @@ fn decompress_bzip_block_pair_into(
     })
 }
 
+/// Add `additional` to `total` unless the sum would pass `limit`; `false`
+/// (and `total` unchanged) when it would.
+///
+/// A compare-exchange loop, which is what `AtomicUsize::fetch_update` does;
+/// nightly deprecates `fetch_update` for `try_update`, which is newer than
+/// the minimum Rust version.
 fn reserve_atomic_budget(total: &AtomicUsize, additional: usize, limit: usize) -> bool {
-    total
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-            current
-                .checked_add(additional)
-                .filter(|next| *next <= limit)
-        })
-        .is_ok()
+    let mut current = total.load(Ordering::Acquire);
+    loop {
+        let Some(next) = current
+            .checked_add(additional)
+            .filter(|next| *next <= limit)
+        else {
+            return false;
+        };
+        match total.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return true,
+            Err(actual) => current = actual,
+        }
+    }
 }
 
 /// True when `bytes` start with an Archive II volume header tape name:
@@ -2356,6 +2420,7 @@ fn message_framing(header: &MessageHeader) -> (usize, bool) {
     (total_len, variable)
 }
 
+/// Parse the 16-byte message header at `offset`.
 pub fn parse_message_header(bytes: &[u8], offset: usize) -> Result<MessageHeader> {
     require_len(bytes, offset, MESSAGE_HEADER_LEN, "message header")?;
     Ok(parse_message_header_bytes(

@@ -1,16 +1,16 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-// Quantitative + visual diagnostic for velocity dealias spokes.
-//
-// For each velocity cut it dealiases with the current production algorithm,
-// computes the integer Nyquist "fold" applied to every gate, and measures
-// AZIMUTHAL FOLD DISCONTINUITIES -- the signature of radial spokes (a radial
-// unfolded to a different integer fold than its azimuthal neighbors). It also
-// renders the fold field to a PNG with a diagnostic palette so spokes are
-// directly visible as radial streaks.
-//
-// usage: cargo run --release -p recast-radar-correct --example velocity_diag -- <l2-file> <out-prefix>
+//! Quantitative + visual diagnostic for velocity dealias spokes.
+//!
+//! For each velocity cut it dealiases with the current production algorithm,
+//! computes the integer Nyquist "fold" applied to every gate, and measures
+//! AZIMUTHAL FOLD DISCONTINUITIES -- the signature of radial spokes (a radial
+//! unfolded to a different integer fold than its azimuthal neighbors). It also
+//! renders the fold field to a PNG with a diagnostic palette so spokes are
+//! directly visible as radial streaks.
+//!
+//! usage: cargo run --release -p recast-radar-correct --example velocity_diag -- <l2-file> <out-prefix>
 
 use std::f32::consts::PI;
 use std::path::PathBuf;

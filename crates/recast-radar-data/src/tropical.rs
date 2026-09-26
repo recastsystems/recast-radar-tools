@@ -37,21 +37,32 @@ use serde::Deserialize;
 /// geographic records.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GeoPoint {
+    /// Longitude, degrees east.
     pub lon: f32,
+    /// Latitude, degrees north.
     pub lat: f32,
 }
 
 /// Ocean basin a storm lives in. Used for labeling ("Hurricane" vs "Typhoon")
 /// and for grouping the storm list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Basin {
+    /// North Atlantic.
     Atlantic,
+    /// Eastern North Pacific.
     EastPacific,
+    /// Central North Pacific.
     CentralPacific,
+    /// Western North Pacific.
     WestPacific,
+    /// North Indian Ocean.
     NorthIndian,
+    /// South Indian Ocean.
     SouthIndian,
+    /// South Pacific.
     SouthPacific,
+    /// Anywhere else.
     Other,
 }
 
@@ -96,12 +107,16 @@ impl Basin {
 
 /// Which center/aggregator a record came from (shown in the card for honesty).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Source {
+    /// The US National Hurricane Center (`CurrentStorms.json`).
     Nhc,
+    /// The Global Disaster Alert and Coordination System.
     Gdacs,
 }
 
 impl Source {
+    /// `NHC` or `GDACS`.
     pub fn label(self) -> &'static str {
         match self {
             Source::Nhc => "NHC",
@@ -113,8 +128,11 @@ impl Source {
 /// Which official center's bulletin a [`WarningInfo`] came from — drives the
 /// product noun on the storm card ("JTWC Warning #25" vs "NHC Advisory #15").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum WarningAgency {
+    /// The Joint Typhoon Warning Center.
     Jtwc,
+    /// The US National Hurricane Center.
     Nhc,
 }
 
@@ -141,6 +159,7 @@ impl WarningAgency {
 ///    issued newer warnings (see [`sync_storm_with_geometry`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct WarningInfo {
+    /// The center that issued the bulletin.
     pub agency: WarningAgency,
     /// Warning/advisory sequence number (JTWC `WARNING NR 025`, NHC
     /// `FORECAST/ADVISORY NUMBER 15`).
@@ -153,9 +172,11 @@ pub struct WarningInfo {
     pub position: Option<GeoPoint>,
     /// Current max sustained wind (kt) at the analysis time.
     pub max_wind_kt: Option<f32>,
+    /// Peak gust (kt) at the analysis time.
     pub gust_kt: Option<f32>,
     /// Recent motion (toward, degrees true / kt), where the bulletin states it.
     pub movement_dir_deg: Option<f32>,
+    /// Speed of motion (kt), where the bulletin states it.
     pub movement_speed_kt: Option<f32>,
     /// Minimum central pressure (mb), where the bulletin states it.
     pub min_pressure_mb: Option<f32>,
@@ -204,13 +225,21 @@ pub fn age_label(now: DateTime<Utc>, then: DateTime<Utc>) -> String {
 
 /// Saffir–Simpson bin by 1-min max sustained wind (kt).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Category {
+    /// Maximum sustained wind below 34 kt.
     TropicalDepression,
+    /// 34 to 63 kt.
     TropicalStorm,
+    /// Category 1: 64 to 82 kt.
     One,
+    /// Category 2: 83 to 95 kt.
     Two,
+    /// Category 3: 96 to 112 kt.
     Three,
+    /// Category 4: 113 to 136 kt.
     Four,
+    /// Category 5: 137 kt or more.
     Five,
 }
 
@@ -254,8 +283,11 @@ impl Category {
 /// One point on the forecast track.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ForecastPoint {
+    /// Forecast position.
     pub position: GeoPoint,
+    /// Valid time of the forecast point.
     pub valid_time: Option<DateTime<Utc>>,
+    /// Forecast maximum sustained wind (kt).
     pub max_wind_kt: Option<f32>,
     /// The 34/50/64-kt quadrant wind radii at this point, when the issuing
     /// center provides them. JTWC Tropical Cyclone Warnings carry them under
@@ -284,9 +316,13 @@ pub struct ForecastPoint {
 pub struct WindRadii {
     /// The wind threshold this radius set describes (34, 50 or 64 kt).
     pub kt: u16,
+    /// Radius in the northeast quadrant, nautical miles.
     pub ne_nm: f32,
+    /// Radius in the southeast quadrant, nautical miles.
     pub se_nm: f32,
+    /// Radius in the southwest quadrant, nautical miles.
     pub sw_nm: f32,
+    /// Radius in the northwest quadrant, nautical miles.
     pub nw_nm: f32,
 }
 
@@ -813,6 +849,7 @@ pub fn danger_area_34kt<'a>(
 /// A storm's track/cone geometry (from GDACS `getgeometry`, or NHC GIS later).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StormGeometry {
+    /// Centre of the storm, when the geometry gives one.
     pub centroid: Option<GeoPoint>,
     /// Track polylines (past + forecast). GDACS delivers the track as many
     /// short, independently-oriented segments, so these are kept SEPARATE (not
@@ -845,16 +882,25 @@ pub struct TropicalCyclone {
     pub id: String,
     /// Storm name without any season suffix, e.g. `Alberto`, `Bavi`.
     pub name: String,
+    /// Ocean basin.
     pub basin: Basin,
+    /// Where the record came from.
     pub source: Source,
     /// Human label, e.g. "Category 4 Typhoon".
     pub classification: String,
+    /// Saffir-Simpson category, when the wind is known.
     pub category: Option<Category>,
+    /// Current position.
     pub position: GeoPoint,
+    /// Maximum sustained wind (kt).
     pub max_wind_kt: Option<f32>,
+    /// Peak gust (kt).
     pub gust_kt: Option<f32>,
+    /// Minimum central pressure (mb).
     pub min_pressure_mb: Option<f32>,
+    /// Direction of motion, degrees true (toward).
     pub movement_dir_deg: Option<f32>,
+    /// Speed of motion (kt).
     pub movement_speed_kt: Option<f32>,
     /// When the underlying advisory/analysis was issued.
     pub advisory_time: Option<DateTime<Utc>>,
@@ -862,11 +908,13 @@ pub struct TropicalCyclone {
     pub alert_level: Option<String>,
     /// Land areas at risk (GDACS `country`), if any.
     pub affected_areas: Option<String>,
+    /// Official forecast track points.
     pub forecast: Vec<ForecastPoint>,
     /// The 34/50/64-kt wind radii at the current position (from a matched JTWC
     /// warning's analysis block); empty otherwise. Mirrored from
     /// [`StormGeometry::current_wind_radii`] by the overlay layer.
     pub current_wind_radii: Vec<WindRadii>,
+    /// Cone-of-uncertainty outer ring.
     pub cone: Vec<GeoPoint>,
     /// A human report page to open externally (never scraped).
     pub report_url: Option<String>,
@@ -892,10 +940,12 @@ pub struct TropicalCyclone {
 }
 
 impl TropicalCyclone {
+    /// Maximum sustained wind in mph.
     pub fn max_wind_mph(&self) -> Option<f32> {
         self.max_wind_kt.map(|kt| kt / KT_PER_MPH)
     }
 
+    /// Maximum sustained wind in km/h.
     pub fn max_wind_kmh(&self) -> Option<f32> {
         self.max_wind_kt.map(|kt| kt / KT_PER_KMH)
     }
@@ -941,7 +991,9 @@ pub fn compass_16(deg: f32) -> &'static str {
     POINTS[idx]
 }
 
+/// Knots per kilometre per hour.
 pub const KT_PER_KMH: f32 = 0.539_957;
+/// Knots per mile per hour.
 pub const KT_PER_MPH: f32 = 0.868_976;
 
 fn normalize_lon(lon: f32) -> f32 {
@@ -1464,9 +1516,13 @@ pub const JTWC_RSS_URL: &str = "https://www.metoc.navy.mil/jtwc/rss/jtwc.rss?tc"
 /// freshness signal that tells the geometry cache a re-issued warning exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JtwcWarningRef {
+    /// Storm designation (`09W`).
     pub designation: String,
+    /// Storm name (`Bavi`).
     pub name: String,
+    /// URL of the Tropical Cyclone Warning text.
     pub warning_url: String,
+    /// Warning number the feed advertises.
     pub warning_nr: Option<u32>,
 }
 
@@ -2286,7 +2342,9 @@ fn geojson_polygon_centroid(geometry: &serde_json::Value) -> Option<GeoPoint> {
 // Fetch + merge
 // ---------------------------------------------------------------------------
 
+/// NHC's list of active storms.
 pub const NHC_CURRENT_STORMS_URL: &str = "https://www.nhc.noaa.gov/CurrentStorms.json";
+/// GDACS's list of active tropical cyclone events.
 pub const GDACS_TC_LIST_URL: &str =
     "https://www.gdacs.org/gdacsapi/api/events/geteventlist/EVENTS4APP?eventtypes=TC";
 

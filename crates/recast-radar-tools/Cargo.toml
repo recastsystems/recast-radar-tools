@@ -55,42 +55,62 @@ track = ["dep:recast-radar-track", "correct", "map", "retrieve"]
 render = ["dep:recast-radar-render", "correct"]
 scattering = ["dep:recast-radar-scattering"]
 
+# `Serialize` and `Deserialize` on the data model.
 serde = ["recast-radar-core/serde"]
 
 [dependencies]
-recast-radar-core = { path = "../recast-radar-core" }
-recast-radar-correct = { path = "../recast-radar-correct", optional = true }
-recast-radar-data = { path = "../recast-radar-data", optional = true }
-recast-radar-filters = { path = "../recast-radar-filters", optional = true }
-recast-radar-io = { path = "../recast-radar-io", optional = true }
-recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial", optional = true }
-recast-radar-io-dorade = { path = "../recast-radar-io-dorade", optional = true }
-recast-radar-io-jma = { path = "../recast-radar-io-jma", optional = true }
-recast-radar-io-level3 = { path = "../recast-radar-io-level3", optional = true }
-recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad", optional = true }
-recast-radar-io-odim = { path = "../recast-radar-io-odim", optional = true }
-recast-radar-map = { path = "../recast-radar-map", optional = true }
-recast-radar-render = { path = "../recast-radar-render", optional = true }
-recast-radar-retrieve = { path = "../recast-radar-retrieve", optional = true }
-recast-radar-scattering = { path = "../recast-radar-scattering", optional = true }
-recast-radar-track = { path = "../recast-radar-track", optional = true }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
+recast-radar-correct = { version = "0.1.0", path = "../recast-radar-correct", optional = true }
+recast-radar-data = { version = "0.1.0", path = "../recast-radar-data", optional = true }
+recast-radar-filters = { version = "0.1.0", path = "../recast-radar-filters", optional = true }
+recast-radar-io = { version = "0.1.0", path = "../recast-radar-io", optional = true }
+recast-radar-io-cfradial = { version = "0.1.0", path = "../recast-radar-io-cfradial", optional = true }
+recast-radar-io-dorade = { version = "0.1.0", path = "../recast-radar-io-dorade", optional = true }
+recast-radar-io-jma = { version = "0.1.0", path = "../recast-radar-io-jma", optional = true }
+recast-radar-io-level3 = { version = "0.1.0", path = "../recast-radar-io-level3", optional = true }
+recast-radar-io-nexrad = { version = "0.1.0", path = "../recast-radar-io-nexrad", optional = true }
+recast-radar-io-odim = { version = "0.1.0", path = "../recast-radar-io-odim", optional = true }
+recast-radar-map = { version = "0.1.0", path = "../recast-radar-map", optional = true }
+recast-radar-render = { version = "0.1.0", path = "../recast-radar-render", optional = true }
+recast-radar-retrieve = { version = "0.1.0", path = "../recast-radar-retrieve", optional = true }
+recast-radar-scattering = { version = "0.1.0", path = "../recast-radar-scattering", optional = true }
+recast-radar-track = { version = "0.1.0", path = "../recast-radar-track", optional = true }
 
 [dev-dependencies]
-recast-radar-testdata = { path = "../recast-radar-testdata" }
+# Without `download`: the facade tests read committed fixtures only, and the
+# examples (which cargo builds with the dev-dependencies) do not pull the
+# downloader's HTTPS stack (ureq, rustls, ring) into `cargo run --example`.
+recast-radar-testdata = { path = "../recast-radar-testdata", default-features = false }
 
 [[test]]
 name = "facade_real_files"
 required-features = ["io", "correct", "filters", "map"]
 
-# README examples. The README shows these files verbatim; tests/readme.rs
-# fails when the two drift apart.
+# Examples. The README and the user guide (docs/guide/) show these files
+# verbatim; tests/readme.rs fails when a copy drifts from its file.
 [[example]]
 name = "decode_level2"
 required-features = ["nexrad"]
 
 [[example]]
+name = "read_any"
+required-features = ["io"]
+
+[[example]]
+name = "physical_values"
+required-features = ["io"]
+
+[[example]]
+name = "fetch_aws"
+required-features = ["net", "nexrad"]
+
+[[example]]
 name = "dealias_velocity"
 required-features = ["nexrad", "correct"]
+
+[[example]]
+name = "composite"
+required-features = ["io", "map", "render"]
 
 [[example]]
 name = "render_png"

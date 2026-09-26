@@ -18,16 +18,25 @@
 /// Primary-source metadata for this checked catalog revision.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScanDefinitionSource {
+    /// Organization that issued the document.
     pub issuing_organization: &'static str,
+    /// Document number.
     pub document_number: &'static str,
+    /// Revision.
     pub revision: &'static str,
+    /// Code identification (CAGE code) of the issuer.
     pub code_identification: &'static str,
+    /// Issue date.
     pub issue_date: &'static str,
+    /// RDA software build the document describes.
     pub rda_build: &'static str,
+    /// Section of the document that defines the patterns.
     pub appendix: &'static str,
+    /// Where the document is published.
     pub public_url: &'static str,
 }
 
+/// ICD 2620002AA (RDA Build 24.0), Appendix C, the source of this catalog.
 pub const BUILD_24_SOURCE: ScanDefinitionSource = ScanDefinitionSource {
     issuing_organization: "WSR-88D Radar Operations Center",
     document_number: "2620002AA",
@@ -42,16 +51,24 @@ pub const BUILD_24_SOURCE: ScanDefinitionSource = ScanDefinitionSource {
 /// The Build 24 VCPs defined by Appendix C of [`BUILD_24_SOURCE`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u16)]
+#[non_exhaustive]
 pub enum Build24Vcp {
+    /// VCP 12: precipitation, fast low-level updates.
     Vcp12 = 12,
+    /// VCP 34: clear air, long pulse.
     Vcp34 = 34,
+    /// VCP 35: clear air, short pulse.
     Vcp35 = 35,
+    /// VCP 112: precipitation, with two fixed MPDA Doppler cuts.
     Vcp112 = 112,
+    /// VCP 212: precipitation, SZ-2 phase coding at low elevations.
     Vcp212 = 212,
+    /// VCP 215: precipitation, dense elevation coverage.
     Vcp215 = 215,
 }
 
 impl Build24Vcp {
+    /// Every Build 24 VCP, in number order.
     pub const ALL: [Self; 6] = [
         Self::Vcp12,
         Self::Vcp34,
@@ -61,6 +78,7 @@ impl Build24Vcp {
         Self::Vcp215,
     ];
 
+    /// The VCP number.
     pub const fn number(self) -> u16 {
         self as u16
     }
@@ -85,31 +103,47 @@ impl TryFrom<u16> for Build24Vcp {
 /// A scan-strategy identity that does not mislabel old archives or synthetic
 /// scans as a current operational definition.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ScanStrategy {
     /// A checked definition from this Build 24 catalog.
     Build24(Build24Vcp),
     /// A numbered VCP from a different/unknown build.  VCP numbers can be
     /// redefined between builds, so it must not silently use Build 24 rows.
-    LegacyVcp { number: u16 },
+    LegacyVcp {
+        /// The VCP number.
+        number: u16,
+    },
     /// A research, synthetic, or user-authored scan with no operational VCP
     /// claim.
-    Custom { name: String },
+    Custom {
+        /// Name of the scan.
+        name: String,
+    },
 }
 
+/// Whether a VCP is for clear air or precipitation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ScanRegime {
+    /// Clear-air mode.
     ClearAir,
+    /// Precipitation mode.
     Precipitation,
 }
 
+/// Transmitter pulse length of a VCP.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PulseLength {
+    /// Short pulse.
     Short,
+    /// Long pulse.
     Long,
 }
 
 /// Appendix C waveform abbreviations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum Waveform {
     /// Contiguous surveillance.
     ContiguousSurveillance,
@@ -126,6 +160,7 @@ pub enum Waveform {
 }
 
 impl Waveform {
+    /// The Appendix C abbreviation (`CS`, `CD/W`, `B`, `CD/WO`, `SZCS`, `SZCD`).
     pub const fn abbreviation(self) -> &'static str {
         match self {
             Self::ContiguousSurveillance => "CS",
@@ -168,35 +203,44 @@ impl MomentCoverage {
     const CORRELATION_COEFFICIENT_BIT: u8 = 1 << 4;
     const DIFFERENTIAL_PHASE_BIT: u8 = 1 << 5;
 
+    /// Reflectivity and the dual-polarization moments (a surveillance rotation).
     pub const SURVEILLANCE: Self = Self(
         Self::REFLECTIVITY_BIT
             | Self::DIFFERENTIAL_REFLECTIVITY_BIT
             | Self::CORRELATION_COEFFICIENT_BIT
             | Self::DIFFERENTIAL_PHASE_BIT,
     );
+    /// Velocity and spectrum width (a Doppler rotation of a split cut).
     pub const DOPPLER: Self = Self(Self::VELOCITY_BIT | Self::SPECTRUM_WIDTH_BIT);
+    /// Every moment.
     pub const ALL: Self = Self(Self::SURVEILLANCE.0 | Self::DOPPLER.0);
 
+    /// Whether reflectivity is covered.
     pub const fn has_reflectivity(self) -> bool {
         self.0 & Self::REFLECTIVITY_BIT != 0
     }
 
+    /// Whether radial velocity is covered.
     pub const fn has_velocity(self) -> bool {
         self.0 & Self::VELOCITY_BIT != 0
     }
 
+    /// Whether spectrum width is covered.
     pub const fn has_spectrum_width(self) -> bool {
         self.0 & Self::SPECTRUM_WIDTH_BIT != 0
     }
 
+    /// Whether differential reflectivity is covered.
     pub const fn has_differential_reflectivity(self) -> bool {
         self.0 & Self::DIFFERENTIAL_REFLECTIVITY_BIT != 0
     }
 
+    /// Whether the correlation coefficient is covered.
     pub const fn has_correlation_coefficient(self) -> bool {
         self.0 & Self::CORRELATION_COEFFICIENT_BIT != 0
     }
 
+    /// Whether differential phase is covered.
     pub const fn has_differential_phase(self) -> bool {
         self.0 & Self::DIFFERENTIAL_PHASE_BIT != 0
     }
@@ -205,23 +249,29 @@ impl MomentCoverage {
 /// A source-table surveillance PRF code and its pulse count.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SurveillancePrf {
+    /// Numbered PRF code from Appendix C.
     pub code: u8,
+    /// Pulses per radial.
     pub pulse_count: u16,
 }
 
 /// What a Doppler PRF table cell means.  No variant is a frequency.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum DopplerPrfValue {
+    /// A pulse count per radial.
     PulseCount(u16),
     /// Appendix C's SZCD non-default-PRF cell value.
     AzimuthRateDegPerSecond(f32),
 }
 
+/// One cell of a row's Doppler PRF table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DopplerPrfCell {
     /// Numbered PRF code from Appendix C (normally 1 for long-pulse rows or
     /// 2..=8 for short-pulse rows).
     pub code: u8,
+    /// What the cell holds.
     pub value: DopplerPrfValue,
     /// Bold/underlined in the source table, or the sole fixed long-pulse cell.
     pub is_default: bool,
@@ -229,23 +279,34 @@ pub struct DopplerPrfCell {
 
 /// Whether the source allows the row's Doppler PRF code to vary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum DopplerPrfPolicy {
+    /// The row has no Doppler PRF (a surveillance rotation).
     NotApplicable,
+    /// The PRF code can be chosen among the cells.
     Selectable,
+    /// The PRF code is fixed.
     Fixed,
 }
 
 /// One physical Appendix C row, in antenna execution order.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicalScanRow {
+    /// Elevation angle, degrees.
     pub elevation_deg: f32,
+    /// Antenna azimuth rate, degrees per second.
     pub azimuth_rate_deg_per_second: f32,
     /// The table's source period for this rotation, not a measured duration.
     pub source_period_seconds: f32,
+    /// Waveform of the rotation.
     pub waveform: Waveform,
+    /// Moments the rotation contributes.
     pub moments: MomentCoverage,
+    /// Surveillance PRF, for rotations with surveillance pulses.
     pub surveillance_prf: Option<SurveillancePrf>,
+    /// Whether the Doppler PRF can vary.
     pub doppler_prf_policy: DopplerPrfPolicy,
+    /// The Doppler PRF table cells.
     pub doppler_prfs: &'static [DopplerPrfCell],
 }
 
@@ -277,23 +338,33 @@ impl PhysicalScanRow {
 /// overhead and any operational adaptation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ApproximateCadence {
+    /// Sum of the rows' source periods, seconds.
     pub seconds: f32,
 }
 
 impl ApproximateCadence {
+    /// The same in minutes.
     pub const fn minutes(self) -> f32 {
         self.seconds / 60.0
     }
 }
 
+/// One Build 24 volume coverage pattern: its rows in antenna execution order and its source.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VcpDefinition {
+    /// Which VCP.
     pub vcp: Build24Vcp,
+    /// The document the definition was transcribed from.
     pub source: &'static ScanDefinitionSource,
+    /// Clear air or precipitation.
     pub regime: ScanRegime,
+    /// Pulse length.
     pub pulse_length: PulseLength,
+    /// Figure of Appendix C that defines the VCP.
     pub source_figure: &'static str,
+    /// Nominal duration of the pattern.
     pub nominal_cadence: ApproximateCadence,
+    /// The rows: one per antenna rotation, split cuts as separate rows.
     pub rows: &'static [PhysicalScanRow],
 }
 
@@ -1452,6 +1523,7 @@ const VCP_34_ROWS: &[PhysicalScanRow] = &[
     PhysicalScanRow::new(4.5, 8.491, 42.40, CDWO, None, FIXED, &[p(1, 52, true)]),
 ];
 
+/// VCP 12 (Appendix C, Figure C-1).
 pub const VCP_12: VcpDefinition = VcpDefinition {
     vcp: Build24Vcp::Vcp12,
     source: &BUILD_24_SOURCE,
@@ -1462,6 +1534,7 @@ pub const VCP_12: VcpDefinition = VcpDefinition {
     rows: VCP_12_ROWS,
 };
 
+/// VCP 34 (Appendix C, Figure C-8).
 pub const VCP_34: VcpDefinition = VcpDefinition {
     vcp: Build24Vcp::Vcp34,
     source: &BUILD_24_SOURCE,
@@ -1472,6 +1545,7 @@ pub const VCP_34: VcpDefinition = VcpDefinition {
     rows: VCP_34_ROWS,
 };
 
+/// VCP 35 (Appendix C, Figure C-6).
 pub const VCP_35: VcpDefinition = VcpDefinition {
     vcp: Build24Vcp::Vcp35,
     source: &BUILD_24_SOURCE,
@@ -1482,6 +1556,7 @@ pub const VCP_35: VcpDefinition = VcpDefinition {
     rows: VCP_35_ROWS,
 };
 
+/// VCP 112 (Appendix C, Figure C-7).
 pub const VCP_112: VcpDefinition = VcpDefinition {
     vcp: Build24Vcp::Vcp112,
     source: &BUILD_24_SOURCE,
@@ -1492,6 +1567,7 @@ pub const VCP_112: VcpDefinition = VcpDefinition {
     rows: VCP_112_ROWS,
 };
 
+/// VCP 212 (Appendix C, Figure C-4).
 pub const VCP_212: VcpDefinition = VcpDefinition {
     vcp: Build24Vcp::Vcp212,
     source: &BUILD_24_SOURCE,
@@ -1502,6 +1578,7 @@ pub const VCP_212: VcpDefinition = VcpDefinition {
     rows: VCP_212_ROWS,
 };
 
+/// VCP 215 (Appendix C, Figure C-5).
 pub const VCP_215: VcpDefinition = VcpDefinition {
     vcp: Build24Vcp::Vcp215,
     source: &BUILD_24_SOURCE,
@@ -1516,6 +1593,7 @@ pub const VCP_215: VcpDefinition = VcpDefinition {
 pub const BUILD_24_DEFINITIONS: [&VcpDefinition; 6] =
     [&VCP_12, &VCP_34, &VCP_35, &VCP_112, &VCP_212, &VCP_215];
 
+/// The Build 24 definition of a VCP number, `None` for numbers the catalog does not define.
 pub fn build_24_definition(number: u16) -> Option<&'static VcpDefinition> {
     match number {
         12 => Some(&VCP_12),

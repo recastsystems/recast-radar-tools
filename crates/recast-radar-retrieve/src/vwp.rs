@@ -76,36 +76,57 @@ impl Default for VwpConfig {
     }
 }
 
+/// Quality of a retrieved wind level.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum VwpQuality {
+    /// At least 10 of 12 azimuth sectors, gaps of at most 60 degrees, RMS residual at most 3.1 m/s, at most 30 % outliers and a vector standard error of at most 1.5 m/s.
     Good,
+    /// Accepted, but short of `Good` on at least one criterion.
     Marginal,
 }
 
+/// Why no wind was retrieved at a height.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum VwpRejectionReason {
     /// No supplied velocity tilt has a gate near this requested height inside
     /// the configured range limits.
     NoBeamCoverage,
+    /// Fewer than 60 velocity samples.
     InsufficientSamples,
+    /// Fewer than 8 of 12 azimuth sectors covered, or a gap of more than 120 degrees.
     InsufficientAzimuthCoverage,
+    /// The harmonic fit has no stable solution.
     IllConditionedFit,
+    /// More than 55 % of the samples are outliers.
     ExcessiveOutliers,
+    /// The RMS residual of the fit is above 5.2 m/s.
     ResidualTooLarge,
 }
 
 /// Fit/coverage diagnostics shared by accepted and rejected candidates.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VwpCandidateDiagnostics {
+    /// The sweep the samples came from.
     pub sweep_index: usize,
+    /// Height of the beam centre above the radar, metres.
     pub height_m_agl: f32,
+    /// Slant range of the annulus, metres.
     pub slant_range_m: f32,
+    /// Elevation of the sweep, degrees.
     pub elevation_deg: f32,
+    /// Samples in the annulus.
     pub samples_total: usize,
+    /// Samples left after outlier rejection.
     pub samples_used: usize,
+    /// Azimuth sectors (of 12, 30 degrees each) with samples.
     pub azimuth_sectors: usize,
+    /// Largest azimuth gap between samples, degrees.
     pub max_azimuth_gap_deg: f32,
+    /// Fraction of samples rejected as outliers.
     pub outlier_fraction: f32,
+    /// RMS residual of the fit, m/s, when a fit was made.
     pub rms_mps: Option<f32>,
     /// Fraction of retained azimuth samples whose source radial declared a
     /// finite, positive Nyquist velocity.  Missing Nyquist is disclosed rather
@@ -114,64 +135,98 @@ pub struct VwpCandidateDiagnostics {
     pub nyquist_sample_fraction: f32,
 }
 
+/// A wind retrieved at one height.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VwpWindLevel {
+    /// Height above the radar, metres.
     pub height_m_agl: f32,
+    /// Height above mean sea level, metres, when the radar's altitude is known.
     pub height_m_msl: Option<f32>,
+    /// Eastward wind component, m/s.
     pub u_mps: f32,
+    /// Northward wind component, m/s.
     pub v_mps: f32,
     /// Meteorological direction the wind is coming from, clockwise from north.
     pub direction_deg: f32,
+    /// Wind speed, m/s.
     pub speed_mps: f32,
     /// Zeroth-harmonic/intercept term.  It is diagnostic only, not a vertical
     /// velocity retrieval.
     pub radial_bias_mps: f32,
+    /// Standard error of the wind vector, m/s.
     pub vector_std_error_mps: f32,
+    /// Quality class.
     pub quality: VwpQuality,
+    /// How the fit went.
     pub diagnostics: VwpCandidateDiagnostics,
 }
 
+/// A height with no retrieved wind.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VwpRejectedLevel {
+    /// Why.
     pub reason: VwpRejectionReason,
     /// The candidate that progressed furthest through QC.  `None` means no
     /// tilt/range geometry reached this height at all.
     pub best_candidate: Option<VwpCandidateDiagnostics>,
 }
 
+/// What happened at one requested height.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum VwpLevelOutcome {
+    /// A wind was retrieved.
     Retrieved(VwpWindLevel),
+    /// No wind was retrieved.
     Rejected(VwpRejectedLevel),
 }
 
+/// One requested height of a profile.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VwpLevel {
+    /// The requested height above the radar, metres.
     pub target_height_m_agl: f32,
+    /// The wind, or why there is none.
     pub outcome: VwpLevelOutcome,
 }
 
+/// A VAD wind profile ([`compute_vwp`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct VwpProfile {
+    /// The radar (`attrs.instrument_name`).
     pub site_id: String,
+    /// Time of the volume.
     pub valid_time: DateTime<Utc>,
+    /// Radar altitude above mean sea level, metres, when known.
     pub radar_elevation_m: Option<f32>,
+    /// Velocity sweeps that contributed.
     pub velocity_sweep_count: usize,
     /// One entry for every requested height, including explicit rejections so
     /// gaps in the plotted profile never look like an application failure.
     pub levels: Vec<VwpLevel>,
 }
 
+/// Why [`compute_vwp`] failed.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum VwpError {
+    /// The caller did not supply one (optional) field per sweep of the volume.
     #[error(
         "VWP needs one optional dealiased field per volume sweep (got {actual}, expected {expected})"
     )]
-    GridCountMismatch { expected: usize, actual: usize },
+    GridCountMismatch {
+        /// Sweeps of the volume.
+        expected: usize,
+        /// Fields supplied.
+        actual: usize,
+    },
+    /// A sweep is not a PPI (azimuth surveillance or sector).
     #[error("VWP is defined for PPI volume scans, not {0:?}")]
     UnsupportedScanMode(SweepMode),
+    /// The configuration is inconsistent (the message says which setting).
     #[error("VWP configuration is invalid: {0}")]
     InvalidConfig(&'static str),
+    /// None of the supplied fields is a velocity field.
     #[error("volume has no caller-supplied dealiased velocity fields")]
     NoVelocityGrids,
 }

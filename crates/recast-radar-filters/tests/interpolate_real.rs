@@ -18,6 +18,9 @@
 //! - `sector`: NOXP 2009-05-25 DORADE sector PPI, 100 rays over 200-300 deg.
 //! - `fine_rhi`: DOW8 CfRadial RHI (azimuth steps far below 0.25 deg, 125 m).
 
+// Test code panics on purpose: the workspace's unwrap/expect lints guard library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{array, as_f64, as_i64, as_opt_f64, as_usize, assert_close, cell, golden, row_stats};

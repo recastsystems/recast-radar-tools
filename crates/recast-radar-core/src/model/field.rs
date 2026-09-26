@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -18,13 +19,23 @@ const LUT16_MIN_VALUES: usize = 1 << 17;
 ///
 /// Values are stored row-major `[nrays × ngates]` in the source's encoding and
 /// in the field's native gate geometry. Row `r` belongs to ray `r` of the sweep.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// With the `serde` feature, deserializing a field checks that `data` holds
+/// `nrays × ngates` values and that `absent_rows` ascend below `nrays`, and
+/// fails when a check does.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(try_from = "super::serde_checked::FieldRepr")
+)]
 pub struct Field {
     /// Variable name in the sweep group (section 8).
     pub name: FieldName,
     /// Semantic class regardless of spelling (DBZH, DBZ, DBZHC_F all ->
     /// Reflectivity).
     pub quantity: Quantity,
+    /// Polarization channel of the field (from its name and standard name).
     pub polarization: Polarization,
     /// CF / FM301 attributes: `standard_name`, `long_name`, `units`, Table
     /// 301-10.
@@ -45,8 +56,10 @@ pub struct Field {
 
 /// Native gate `i` covers sweep-range gates
 /// `start + i*stride ..= start + i*stride + stride - 1`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GateMapping {
+    /// First sweep-range gate that native gate 0 covers.
     pub start: u32,
     /// 1: native spacing equals the sweep range spacing. 4: 1 km gates over a
     /// 250 m range.
@@ -73,45 +86,74 @@ impl Default for GateMapping {
 }
 
 /// Field values in their source encoding with their coding.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// Not `#[non_exhaustive]`, on purpose: the variants are the storage types of
+/// the data model, and code that reads raw storage (decoders, renderers,
+/// writers, bindings) must handle every one. A new storage type is a
+/// breaking change that every such `match` has to see. [`RowRef`] and
+/// [`Coding`] mirror these variants and are exhaustive for the same reason,
+/// as are [`LinearTransform`] and [`FloatWidth`], which the same code needs
+/// to turn packed values into physical ones or to write the packing back.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FieldData {
+    /// Unsigned 8-bit codes (NEXRAD moments, most ODIM planes).
     U8 {
+        /// Row-major `[nrays × ngates]` codes.
         values: Vec<u8>,
+        /// How codes map to physical values and sentinels.
         coding: IntCoding<u8>,
     },
+    /// Unsigned 16-bit codes (NEXRAD ZDR and PHIDP, 16-bit ODIM planes).
     U16 {
+        /// Row-major `[nrays × ngates]` codes.
         values: Vec<u16>,
+        /// How codes map to physical values and sentinels.
         coding: IntCoding<u16>,
     },
+    /// Signed 8-bit codes (CfRadial `byte` fields).
     I8 {
+        /// Row-major `[nrays × ngates]` codes.
         values: Vec<i8>,
+        /// How codes map to physical values and sentinels.
         coding: IntCoding<i8>,
     },
+    /// Signed 16-bit codes (CfRadial `short` fields, DORADE).
     I16 {
+        /// Row-major `[nrays × ngates]` codes.
         values: Vec<i16>,
+        /// How codes map to physical values and sentinels.
         coding: IntCoding<i16>,
     },
     /// 32-bit integer sources (CfRadial `int` fields), stored verbatim.
     I32 {
+        /// Row-major `[nrays × ngates]` codes.
         values: Vec<i32>,
+        /// How codes map to physical values and sentinels.
         coding: IntCoding<i32>,
     },
     /// Physical values (derived products, float32 sources), stored verbatim.
     F32 {
+        /// Row-major `[nrays × ngates]` values.
         values: Vec<f32>,
+        /// Fill and undetect values, and an optional gain and offset.
         coding: FloatCoding<f32>,
     },
     /// float64 sources (ODIM float64 planes, CfRadial `double` fields), stored
     /// verbatim.
     F64 {
+        /// Row-major `[nrays × ngates]` values.
         values: Vec<f64>,
+        /// Fill and undetect values, and an optional gain and offset.
         coding: FloatCoding<f64>,
     },
 }
 
 /// Coding of an integer field.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IntCoding<T> {
+    /// How a code maps to a physical value.
     pub transform: LinearTransform,
     /// CF `_FillValue`: the code for "no data" and the code the view pads with.
     /// NEXRAD 0, ODIM `nodata`, CfRadial `_FillValue`.
@@ -187,20 +229,32 @@ impl<T: PackedInt> IntCoding<T> {
 /// linear function of the code (16-level threshold tables, high resolution
 /// VIL, enhanced echo tops); CF has no attribute for them, so the FM301 view
 /// writes such fields decoded, with the codes beside them (`crate::fm301`).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[non_exhaustive]
+///
+/// Exhaustive, like [`FieldData`]: a writer or binding that converts or
+/// re-encodes packed values must handle every transform, so a new one is a
+/// breaking change instead of a case a wildcard arm would silently mishandle.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum LinearTransform {
     /// `physical = (raw - offset) / scale`, evaluated in f32. NEXRAD ICD form;
     /// Py-ART evaluates exactly this expression. The
     /// view writes `scale_factor = 1/scale` and `add_offset = -offset/scale` as
     /// float64, as xradar does.
-    IcdScaleOffset { scale: f32, offset: f32 },
+    IcdScaleOffset {
+        /// The ICD scale (codes per physical unit).
+        scale: f32,
+        /// The ICD offset, in codes.
+        offset: f32,
+    },
     /// `physical = raw * scale_factor + add_offset`, evaluated in f64. CF and
     /// ODIM gain-offset form. `attr_width` is the type the source wrote the two
     /// attributes in; xarray derives the decoded dtype from it.
     CfScaleOffset {
+        /// CF `scale_factor` (ODIM `gain`).
         scale_factor: f64,
+        /// CF `add_offset` (ODIM `offset`).
         add_offset: f64,
+        /// The type the source wrote the two attributes in.
         attr_width: FloatWidth,
     },
     /// `physical = table.value(raw)`: a data level encoding that is not
@@ -266,7 +320,8 @@ impl LinearTransform {
 /// the level (ICD 2620001 Figure 3-6 sheet 6 Note 1). Every variant is
 /// evaluated in f64 and rounded to f32 once. Code that only decodes needs
 /// [`LevelTable::value`], not a `match`; later encodings may add variants.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum LevelTable {
     /// A 16-level product: level `n` (0-15) is `values[n]` (the threshold
@@ -343,30 +398,45 @@ impl LevelTable {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// The float type a source wrote `scale_factor` and `add_offset` in.
+///
+/// Exhaustive, like [`LinearTransform`]: a writer chooses the attribute type
+/// from it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FloatWidth {
+    /// `float` (32-bit).
     F32,
+    /// `double` (64-bit).
     F64,
 }
 
 /// Coding of a float field. Values are stored as the source wrote them. NaN is
 /// always missing. A non-NaN source fill (for example -9999) stays in the data
 /// and resolves to `Missing`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FloatCoding<T> {
     /// `None`: the values are physical. `Some`: a plane whose gain / offset is
     /// not 1 / 0, applied on read.
     pub transform: Option<LinearTransform>,
+    /// CF `_FillValue`: the value for "no data". NaN is always missing as well.
     pub fill_value: Option<T>,
+    /// FM301 `_Undetect`: radiated, but no valid echo (ODIM `undetect`).
     pub undetect: Option<T>,
 }
 
 /// Integer types a field can be packed in.
 pub trait PackedInt: Copy + PartialEq + PartialOrd + std::fmt::Debug + private::Sealed {
+    /// The largest value of the type.
     const MAX: Self;
+    /// NumPy-style dtype name (`uint8`, `int16`, ...).
     const DTYPE: &'static str;
+    /// The value of a `u8` code in this type.
     fn from_u8(value: u8) -> Self;
+    /// The value as `f64` (exact for every packed type).
     fn as_f64(self) -> f64;
+    /// The value as a typed scalar.
     fn to_scalar(self) -> Scalar;
     /// A typed array of this integer type.
     fn array(values: Vec<Self>) -> ArrayBuf;
@@ -436,6 +506,9 @@ fn resolve_float(
 }
 
 impl FloatCoding<f32> {
+    /// Resolve a stored value: `Undetect` when it equals `undetect`, `Missing`
+    /// when it is NaN or equals `fill_value`, else its physical value (through
+    /// `transform` when there is one).
     pub fn resolve(&self, raw: f32) -> Gate {
         resolve_float(
             f64::from(raw),
@@ -454,6 +527,9 @@ impl FloatCoding<f32> {
 }
 
 impl FloatCoding<f64> {
+    /// Resolve a stored value: `Undetect` when it equals `undetect`, `Missing`
+    /// when it is NaN or equals `fill_value`, else its physical value (through
+    /// `transform` when there is one).
     pub fn resolve(&self, raw: f64) -> Gate {
         resolve_float(
             raw,
@@ -474,26 +550,41 @@ impl FloatCoding<f64> {
 /// CF and FM301 attributes of a field. `None` / empty means "not stated by the
 /// source"; the FM301 view fills `standard_name`, `long_name` and `units` of
 /// known names from the name table.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FieldAttrs {
+    /// CF `standard_name`.
     pub standard_name: Option<Cow<'static, str>>,
+    /// CF `long_name`.
     pub long_name: Option<Cow<'static, str>>,
+    /// UDUNITS `units` of the physical values.
     pub units: Option<Cow<'static, str>>,
     // Table 301-10, all optional
+    /// `sampling_ratio`: samples per gate over nominal (Table 301-10).
     pub sampling_ratio: Option<f32>,
+    /// `is_discrete`: the values are categories, not a continuous quantity.
     pub is_discrete: Option<bool>,
+    /// `field_folds`: the values fold (velocity, phase) between the fold limits.
     pub field_folds: Option<bool>,
+    /// `fold_limit_lower`: lower fold limit, physical units.
     pub fold_limit_lower: Option<f32>,
+    /// `fold_limit_upper`: upper fold limit, physical units.
     pub fold_limit_upper: Option<f32>,
+    /// `is_quality_field`: the field describes the quality of other fields.
     pub is_quality_field: Option<bool>,
+    /// `qualified_variables`: the fields a quality field describes.
     pub qualified_variables: Vec<FieldName>,
+    /// `ancillary_variables`: the quality fields that describe this field.
     pub ancillary_variables: Vec<FieldName>,
+    /// `thresholding_xml`: the thresholding applied to the field, as XML.
     pub thresholding_xml: Option<String>,
     /// `flag_values`, `flag_masks` and `flag_meanings` of discrete fields,
     /// besides the range-folded flag, which comes from the coding. The view
     /// writes values and masks in the variable's packed type.
     pub flag_values: Vec<i64>,
+    /// `flag_masks` of a bit-flag field.
     pub flag_masks: Vec<i64>,
+    /// `flag_meanings`, one per flag value or mask.
     pub flag_meanings: Vec<Box<str>>,
     /// Source attributes with no slot above, verbatim, typed and in file order
     /// (for example CfRadial `grid_mapping`). A per-ray array
@@ -505,14 +596,20 @@ pub struct FieldAttrs {
 
 /// One gate's value with its sentinel resolved.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Gate {
+    /// A physical value, in the field's units.
     Value(f32),
+    /// No data: the fill code, NaN, a value outside `valid_range`, or a row the source did not provide.
     Missing,
+    /// Radiated, but no valid echo (NEXRAD code 0, ODIM `undetect`).
     Undetect,
+    /// Range folded (NEXRAD code 1).
     RangeFolded,
 }
 
 impl Gate {
+    /// The physical value of a `Value`, `None` for every sentinel.
     pub fn value(self) -> Option<f32> {
         match self {
             Self::Value(value) => Some(value),
@@ -521,15 +618,23 @@ impl Gate {
     }
 }
 
-/// A borrowed row of a field in its storage type.
+/// A borrowed row of a field in its storage type. Exhaustive, like
+/// [`FieldData`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RowRef<'a> {
+    /// A row of unsigned 8-bit codes.
     U8(&'a [u8]),
+    /// A row of unsigned 16-bit codes.
     U16(&'a [u16]),
+    /// A row of signed 8-bit codes.
     I8(&'a [i8]),
+    /// A row of signed 16-bit codes.
     I16(&'a [i16]),
+    /// A row of signed 32-bit codes.
     I32(&'a [i32]),
+    /// A row of 32-bit floats.
     F32(&'a [f32]),
+    /// A row of 64-bit floats.
     F64(&'a [f64]),
 }
 
@@ -537,44 +642,83 @@ pub enum RowRef<'a> {
 /// without copying).
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldParts {
+    /// See [`Field::name`].
     pub name: FieldName,
+    /// See [`Field::quantity`].
     pub quantity: Quantity,
+    /// See [`Field::polarization`].
     pub polarization: Polarization,
+    /// See [`Field::attrs`].
     pub attrs: FieldAttrs,
+    /// See [`Field::nrays`].
     pub nrays: u32,
+    /// See [`Field::ngates`].
     pub ngates: u32,
+    /// See [`Field::gates`].
     pub gates: GateMapping,
+    /// See [`Field::data`].
     pub data: FieldData,
+    /// See [`Field::absent_rows`].
     pub absent_rows: Vec<u32>,
 }
 
-/// A field's coding, detached from its buffer.
+/// A field's coding, detached from its buffer. Exhaustive, like
+/// [`FieldData`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Coding {
+    /// Coding of unsigned 8-bit codes.
     U8(IntCoding<u8>),
+    /// Coding of unsigned 16-bit codes.
     U16(IntCoding<u16>),
+    /// Coding of signed 8-bit codes.
     I8(IntCoding<i8>),
+    /// Coding of signed 16-bit codes.
     I16(IntCoding<i16>),
+    /// Coding of signed 32-bit codes.
     I32(IntCoding<i32>),
+    /// Coding of 32-bit floats.
     F32(FloatCoding<f32>),
+    /// Coding of 64-bit floats.
     F64(FloatCoding<f64>),
 }
 
+/// Error building or filling a [`Field`].
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum FieldError {
+    /// A row of one storage type pushed into a field of another.
     #[error("field storage is {expected}, row is {actual}")]
     StorageMismatch {
+        /// The field's storage type.
         expected: &'static str,
+        /// The row's storage type.
         actual: &'static str,
     },
+    /// Rows pushed out of ray order.
     #[error("row for ray {ray} pushed after {rows} rows (rows must be pushed in ray order)")]
-    RowOrder { ray: usize, rows: usize },
+    RowOrder {
+        /// The ray the row was pushed for.
+        ray: usize,
+        /// Rows the field already had.
+        rows: usize,
+    },
+    /// A big-endian 16-bit row with an odd number of bytes.
     #[error("big-endian 16-bit row has odd byte length {byte_len}")]
-    InvalidRowByteLength { byte_len: usize },
+    InvalidRowByteLength {
+        /// Length of the row in bytes.
+        byte_len: usize,
+    },
+    /// The field's dimensions do not fit `u32` or addressable memory.
     #[error("field dimensions exceed u32 or addressable memory")]
     TooLarge,
+    /// The field has more rows than its sweep has rays.
     #[error("field has {rows} rows, more than the sweep's {nrays} rays")]
-    TooManyRows { rows: usize, nrays: usize },
+    TooManyRows {
+        /// Rows of the field.
+        rows: usize,
+        /// Rays of the sweep.
+        nrays: usize,
+    },
 }
 
 impl FieldData {
@@ -591,6 +735,7 @@ impl FieldData {
         }
     }
 
+    /// Whether the field stores no values.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

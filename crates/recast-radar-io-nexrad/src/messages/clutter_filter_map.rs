@@ -45,6 +45,7 @@ const HEADER_HALFWORDS: usize = 3;
 /// (Table XIV "Op Code") and message 8 censor zones (Table XII "Operator
 /// Select Code").
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum OperatorSelectCode {
     /// 0: bypass the clutter filter (no filtering).
     BypassFilter,

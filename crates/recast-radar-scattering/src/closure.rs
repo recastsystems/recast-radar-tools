@@ -40,6 +40,7 @@ const ISOTROPIC_QUADRATURE_POINTS: u16 = 64;
 
 /// The evidence class for a closed scalar property.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PropertySourceKind {
     /// Algebra using only prognostic variables of the selected scheme.
     NativePrognostic,
@@ -72,16 +73,19 @@ impl PropertyProvenance {
         }
     }
 
+    /// The evidence class of the property.
     #[must_use]
     pub const fn kind(&self) -> PropertySourceKind {
         self.kind
     }
 
+    /// The WRF variables the property was computed from.
     #[must_use]
     pub fn source_variables(&self) -> &[&'static str] {
         &self.source_variables
     }
 
+    /// How it was computed (a method identifier).
     #[must_use]
     pub const fn method(&self) -> &'static str {
         self.method
@@ -100,11 +104,13 @@ impl SourcedScalar {
         Self { value, provenance }
     }
 
+    /// The value.
     #[must_use]
     pub const fn value(&self) -> f64 {
         self.value
     }
 
+    /// Where the value came from.
     #[must_use]
     pub const fn provenance(&self) -> &PropertyProvenance {
         &self.provenance
@@ -113,6 +119,7 @@ impl SourcedScalar {
 
 /// Orientation policy requested by a caller of a grid-point closure.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum OrientationDefinition {
     /// Scheme-family defaults. They are assumptions, never native predictions.
     #[default]
@@ -139,16 +146,19 @@ pub struct ClosedOrientation {
 }
 
 impl ClosedOrientation {
+    /// The orientation policy that was requested.
     #[must_use]
     pub const fn definition(&self) -> OrientationDefinition {
         self.definition
     }
 
+    /// The orientation distribution it resolved to.
     #[must_use]
     pub const fn model(&self) -> &OrientationModel {
         &self.model
     }
 
+    /// Where the orientation came from.
     #[must_use]
     pub const fn provenance(&self) -> &PropertyProvenance {
         &self.provenance
@@ -177,6 +187,7 @@ pub struct ClosureContext {
 }
 
 impl ClosureContext {
+    /// A context for WRF `mp_physics` id `wrf_mp_physics` (positive) at a temperature (K) and air density (kg m⁻³), with the scheme's default orientation.
     pub fn new(
         wrf_mp_physics: i32,
         temperature_k: f64,
@@ -194,6 +205,7 @@ impl ClosureContext {
         })
     }
 
+    /// A context for a scheme id and an existing environment.
     pub fn with_environment(
         wrf_mp_physics: i32,
         environment: ParticleEnvironment,
@@ -210,22 +222,26 @@ impl ClosureContext {
         })
     }
 
+    /// The context with another orientation policy.
     #[must_use]
     pub const fn with_orientation(mut self, orientation: OrientationDefinition) -> Self {
         self.orientation = orientation;
         self
     }
 
+    /// The WRF `mp_physics` id.
     #[must_use]
     pub const fn wrf_mp_physics(self) -> i32 {
         self.wrf_mp_physics
     }
 
+    /// Temperature and air density at the grid point.
     #[must_use]
     pub const fn environment(self) -> ParticleEnvironment {
         self.environment
     }
 
+    /// The orientation policy.
     #[must_use]
     pub const fn orientation(self) -> OrientationDefinition {
         self.orientation
@@ -234,7 +250,9 @@ impl ClosureContext {
 
 /// Native P3 ice category represented by one WRF scalar tuple.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum P3Category {
+    /// The first free-ice category.
     Category1,
     /// The second free-ice category is valid only for WRF `mp_physics=52`.
     Category2,
@@ -253,6 +271,7 @@ pub struct P3CategoryInput {
 }
 
 impl P3CategoryInput {
+    /// An input for `category` from its four prognostics: `QICE` (kg kg⁻¹), `QNICE` (kg⁻¹), `QIR` (rime mass, kg kg⁻¹) and `QIB` (rime volume, m³ kg⁻¹).
     #[must_use]
     pub const fn new(
         category: P3Category,
@@ -271,6 +290,7 @@ impl P3CategoryInput {
         }
     }
 
+    /// [`P3CategoryInput::new`] for category 1.
     #[must_use]
     pub const fn category1(
         qice_kgkg: f64,
@@ -287,6 +307,7 @@ impl P3CategoryInput {
         )
     }
 
+    /// [`P3CategoryInput::new`] for category 2.
     #[must_use]
     pub const fn category2(
         qice_kgkg: f64,
@@ -303,6 +324,7 @@ impl P3CategoryInput {
         )
     }
 
+    /// An input whose absent prognostics are `None`, including the sixth moment `QZI` of three-moment ice.
     #[must_use]
     pub const fn from_optional(
         category: P3Category,
@@ -322,12 +344,14 @@ impl P3CategoryInput {
         }
     }
 
+    /// The input with the sixth-moment prognostic `QZI` of three-moment ice.
     #[must_use]
     pub const fn with_qzi(mut self, qzi: f64) -> Self {
         self.qzi = Some(qzi);
         self
     }
 
+    /// The P3 category.
     #[must_use]
     pub const fn category(self) -> P3Category {
         self.category
@@ -363,6 +387,7 @@ pub struct IshmaelSourceFields {
 }
 
 impl IshmaelSourceFields {
+    /// Diagnostics from the WRF values, each `None` when absent: `D_ICE` (m), `RHO_ICE` (kg m⁻³), `PHI_ICE` (aspect ratio) and `V_ICE` (m s⁻¹).
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
@@ -387,6 +412,7 @@ impl IshmaelSourceFields {
         }
     }
 
+    /// The names of ISHMAEL category 1, which WRF writes without a suffix.
     #[must_use]
     pub const fn wrf_category_1_shorthand() -> Self {
         Self::new(
@@ -394,11 +420,13 @@ impl IshmaelSourceFields {
         )
     }
 
+    /// Names of the four prognostics: mass, number, and the two volume moments.
     #[must_use]
     pub const fn required(self) -> [&'static str; 4] {
         [self.qice, self.qnice, self.qvoli, self.qaoli]
     }
 
+    /// Names of the four diagnostics: diameter, density, aspect ratio and fall speed.
     #[must_use]
     pub const fn diagnostics(self) -> [&'static str; 4] {
         [self.d_ice, self.rho_ice, self.phi_ice, self.v_ice]
@@ -406,6 +434,7 @@ impl IshmaelSourceFields {
 }
 
 impl IshmaelDiagnostics {
+    /// A set of names, prognostics first, then diagnostics.
     #[must_use]
     pub const fn new(
         d_ice_m: Option<f64>,
@@ -421,21 +450,25 @@ impl IshmaelDiagnostics {
         }
     }
 
+    /// The `D_ICE` diagnostic, m.
     #[must_use]
     pub const fn d_ice_m(self) -> Option<f64> {
         self.d_ice_m
     }
 
+    /// The `RHO_ICE` diagnostic, kg m⁻³.
     #[must_use]
     pub const fn rho_ice_kg_m3(self) -> Option<f64> {
         self.rho_ice_kg_m3
     }
 
+    /// The `PHI_ICE` diagnostic (aspect ratio).
     #[must_use]
     pub const fn phi_ice(self) -> Option<f64> {
         self.phi_ice
     }
 
+    /// The `V_ICE` diagnostic, m s⁻¹.
     #[must_use]
     pub const fn v_ice_m_s(self) -> Option<f64> {
         self.v_ice_m_s
@@ -459,6 +492,7 @@ pub struct IshmaelCategoryInput {
 }
 
 impl IshmaelCategoryInput {
+    /// An input from the four prognostics: `QICE` (kg kg⁻¹), `QNICE` (kg⁻¹), `QVOLI` and `QAOLI` (m³ kg⁻¹), with no diagnostics and the category-1 names.
     #[must_use]
     pub const fn new(
         category: IshmaelIceCategory,
@@ -478,6 +512,7 @@ impl IshmaelCategoryInput {
         }
     }
 
+    /// An input whose absent prognostics are `None`, with diagnostics.
     #[must_use]
     pub const fn from_optional(
         category: IshmaelIceCategory,
@@ -498,6 +533,7 @@ impl IshmaelCategoryInput {
         }
     }
 
+    /// The input with diagnostics.
     #[must_use]
     pub const fn with_diagnostics(mut self, diagnostics: IshmaelDiagnostics) -> Self {
         self.diagnostics = diagnostics;
@@ -511,11 +547,13 @@ impl IshmaelCategoryInput {
         self
     }
 
+    /// The WRF names of the input's variables.
     #[must_use]
     pub const fn source_fields(self) -> IshmaelSourceFields {
         self.source_fields
     }
 
+    /// The ISHMAEL category.
     #[must_use]
     pub const fn category(self) -> IshmaelIceCategory {
         self.category
@@ -536,6 +574,7 @@ pub struct ConventionalCategoryInput {
 }
 
 impl ConventionalCategoryInput {
+    /// An input from a mixing ratio (kg kg⁻¹) and, for double-moment schemes, a number concentration (kg⁻¹).
     #[must_use]
     pub const fn new(
         category: ConventionalHydrometeor,
@@ -553,6 +592,7 @@ impl ConventionalCategoryInput {
         }
     }
 
+    /// An input whose absent values are `None`.
     #[must_use]
     pub const fn from_optional(
         category: ConventionalHydrometeor,
@@ -570,30 +610,35 @@ impl ConventionalCategoryInput {
         }
     }
 
+    /// The input with WRF's diagnosed characteristic diameter, m.
     #[must_use]
     pub const fn with_characteristic_diameter_m(mut self, value: f64) -> Self {
         self.characteristic_diameter_m = Some(value);
         self
     }
 
+    /// The input with WRF's diagnosed bulk density, kg m⁻³.
     #[must_use]
     pub const fn with_bulk_density_kg_m3(mut self, value: f64) -> Self {
         self.bulk_density_kg_m3 = Some(value);
         self
     }
 
+    /// The input with WRF's diagnosed axis ratio.
     #[must_use]
     pub const fn with_minor_to_major_axis_ratio(mut self, value: f64) -> Self {
         self.minor_to_major_axis_ratio = Some(value);
         self
     }
 
+    /// The input with WRF's diagnosed fall speed, m s⁻¹.
     #[must_use]
     pub const fn with_fall_speed_m_s(mut self, value: f64) -> Self {
         self.fall_speed_m_s = Some(value);
         self
     }
 
+    /// The hydrometeor category.
     #[must_use]
     pub const fn category(self) -> ConventionalHydrometeor {
         self.category
@@ -615,36 +660,43 @@ pub struct ClosedParticleCategory {
 }
 
 impl ClosedParticleCategory {
+    /// The validated particle state and its provenance.
     #[must_use]
     pub const fn record(&self) -> &ParticleRecord {
         &self.record
     }
 
+    /// Characteristic diameter, m.
     #[must_use]
     pub const fn characteristic_diameter_m(&self) -> &SourcedScalar {
         &self.characteristic_diameter_m
     }
 
+    /// Effective density, kg m⁻³.
     #[must_use]
     pub const fn effective_density_kg_m3(&self) -> &SourcedScalar {
         &self.effective_density_kg_m3
     }
 
+    /// Ratio of minor to major axis.
     #[must_use]
     pub const fn minor_to_major_axis_ratio(&self) -> &SourcedScalar {
         &self.minor_to_major_axis_ratio
     }
 
+    /// Mass-weighted fall speed, m s⁻¹.
     #[must_use]
     pub const fn fall_speed_m_s(&self) -> &SourcedScalar {
         &self.fall_speed_m_s
     }
 
+    /// Rime mass fraction, for rimed ice.
     #[must_use]
     pub const fn rime_mass_fraction(&self) -> Option<&SourcedScalar> {
         self.rime_mass_fraction.as_ref()
     }
 
+    /// Rime density, kg m⁻³, for rimed ice.
     #[must_use]
     pub const fn rime_density_kg_m3(&self) -> Option<&SourcedScalar> {
         self.rime_density_kg_m3.as_ref()
@@ -656,16 +708,19 @@ impl ClosedParticleCategory {
         self.sixth_moment_m6.as_ref()
     }
 
+    /// The orientation distribution.
     #[must_use]
     pub const fn orientation(&self) -> &ClosedOrientation {
         &self.orientation
     }
 
+    /// Mixing ratio of the category, kg kg⁻¹.
     #[must_use]
     pub fn mixing_ratio_kgkg(&self) -> f64 {
         state_mass(self.record.state())
     }
 
+    /// The particle shape of the state.
     #[must_use]
     pub fn shape(&self) -> ParticleShape {
         state_shape(self.record.state())
@@ -1290,6 +1345,7 @@ pub fn close_ishmael_category(
 
 /// The only two mixture topology hooks exposed by the v1 diagnosis.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum MixtureTopology {
     /// A future kernel may apply a declared effective-medium rule.
     #[default]
@@ -1300,7 +1356,9 @@ pub enum MixtureTopology {
 
 /// Explicit evidence that the diagnosis did not invent scattering amplitudes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum MixtureScatteringStatus {
+    /// No amplitudes or LUT values were computed for the mixture.
     NotEvaluatedNoLutOrAmplitude,
 }
 
@@ -1319,11 +1377,13 @@ impl MixtureMetadata {
         MixtureTopology::WaterCoatedFrozenCore,
     ];
 
+    /// The declared mixture topology.
     #[must_use]
     pub const fn topology(self) -> MixtureTopology {
         self.topology
     }
 
+    /// Whether scattering was evaluated (never, in this version).
     #[must_use]
     pub const fn scattering_status(self) -> MixtureScatteringStatus {
         self.scattering_status
@@ -1340,6 +1400,9 @@ pub struct DiagnosticCoexistenceInput {
 }
 
 impl DiagnosticCoexistenceInput {
+    /// An input from the grid-point temperature (within the diagnostic envelope,
+    /// [`DIAGNOSTIC_COEXISTENCE_COLD_K`] to [`DIAGNOSTIC_COEXISTENCE_WARM_K`]), a
+    /// closed rain category and at least one closed frozen category.
     pub fn new(
         temperature_k: f64,
         rain: ClosedParticleCategory,
@@ -1377,32 +1440,38 @@ impl DiagnosticCoexistenceInput {
         })
     }
 
+    /// The input with another mixture topology.
     #[must_use]
     pub const fn with_topology(mut self, topology: MixtureTopology) -> Self {
         self.topology = topology;
         self
     }
 
+    /// Temperature, K.
     #[must_use]
     pub const fn temperature_k(&self) -> f64 {
         self.temperature_k
     }
 
+    /// The rain category.
     #[must_use]
     pub const fn rain(&self) -> &ClosedParticleCategory {
         &self.rain
     }
 
+    /// The frozen categories.
     #[must_use]
     pub fn frozen_categories(&self) -> &[ClosedParticleCategory] {
         &self.frozen_categories
     }
 
+    /// The mixture topology.
     #[must_use]
     pub const fn topology(&self) -> MixtureTopology {
         self.topology
     }
 
+    /// Run the diagnosis ([`diagnose_coexistence`]).
     pub fn diagnose(&self) -> Result<DiagnosticCoexistenceResult, ClosureError> {
         diagnose_coexistence(self)
     }
@@ -1422,26 +1491,31 @@ pub struct DiagnosticCantingTransition {
 }
 
 impl DiagnosticCantingTransition {
+    /// The frozen endpoint's orientation.
     #[must_use]
     pub const fn frozen(&self) -> &ClosedOrientation {
         &self.frozen
     }
 
+    /// The rain endpoint's orientation.
     #[must_use]
     pub const fn rain(&self) -> &ClosedOrientation {
         &self.rain
     }
 
+    /// Weight of the rain endpoint (the category's liquid fraction).
     #[must_use]
     pub const fn liquid_weight(&self) -> f64 {
         self.liquid_weight
     }
 
+    /// Interpolated Gaussian `(mean, standard deviation, quadrature points)`, when both endpoints are Gaussian.
     #[must_use]
     pub const fn effective_gaussian(&self) -> Option<(f64, f64, u16)> {
         self.effective_gaussian
     }
 
+    /// Where the transition came from.
     #[must_use]
     pub const fn provenance(&self) -> &PropertyProvenance {
         &self.provenance
@@ -1466,61 +1540,73 @@ pub struct DiagnosticWetCategory {
 }
 
 impl DiagnosticWetCategory {
+    /// The frozen category before pairing.
     #[must_use]
     pub const fn source_category(&self) -> &ClosedParticleCategory {
         &self.source_category
     }
 
+    /// Its frozen mass, kg kg⁻¹.
     #[must_use]
     pub const fn frozen_mass_kgkg(&self) -> f64 {
         self.frozen_mass_kgkg
     }
 
+    /// Rain mass paired with it, kg kg⁻¹.
     #[must_use]
     pub const fn paired_liquid_mass_kgkg(&self) -> f64 {
         self.paired_liquid_mass_kgkg
     }
 
+    /// Frozen plus paired liquid mass, kg kg⁻¹.
     #[must_use]
     pub const fn wet_total_mass_kgkg(&self) -> f64 {
         self.wet_total_mass_kgkg
     }
 
+    /// Liquid fraction of the wet category.
     #[must_use]
     pub const fn wet_fraction(&self) -> f64 {
         self.wet_fraction
     }
 
+    /// The category's share of the total frozen mass.
     #[must_use]
     pub const fn frozen_category_fraction(&self) -> f64 {
         self.frozen_category_fraction
     }
 
+    /// The category's share of the total wet mass.
     #[must_use]
     pub const fn wet_category_fraction(&self) -> f64 {
         self.wet_category_fraction
     }
 
+    /// Effective density of the wet category, kg m⁻³.
     #[must_use]
     pub const fn effective_density_kg_m3(&self) -> &SourcedScalar {
         &self.effective_density_kg_m3
     }
 
+    /// Ratio of minor to major axis of the wet category.
     #[must_use]
     pub const fn minor_to_major_axis_ratio(&self) -> &SourcedScalar {
         &self.minor_to_major_axis_ratio
     }
 
+    /// Fall speed of the wet category, m s⁻¹.
     #[must_use]
     pub const fn fall_speed_m_s(&self) -> &SourcedScalar {
         &self.fall_speed_m_s
     }
 
+    /// Canting between the frozen and rain orientations.
     #[must_use]
     pub const fn canting(&self) -> &DiagnosticCantingTransition {
         &self.canting
     }
 
+    /// The mixture metadata.
     #[must_use]
     pub const fn mixture(&self) -> MixtureMetadata {
         self.mixture
@@ -1546,31 +1632,37 @@ impl DiagnosticCoexistenceResult {
         false
     }
 
+    /// `DiagnosticCoexistenceV1`.
     #[must_use]
     pub const fn model_identifier(&self) -> &'static str {
         "DiagnosticCoexistenceV1"
     }
 
+    /// Rain mass before pairing, kg kg⁻¹.
     #[must_use]
     pub const fn input_rain_mass_kgkg(&self) -> f64 {
         self.input_rain_mass_kgkg
     }
 
+    /// Frozen mass before pairing, kg kg⁻¹.
     #[must_use]
     pub const fn input_frozen_mass_kgkg(&self) -> f64 {
         self.input_frozen_mass_kgkg
     }
 
+    /// Rain plus frozen mass before pairing, kg kg⁻¹.
     #[must_use]
     pub const fn input_total_mass_kgkg(&self) -> f64 {
         self.input_rain_mass_kgkg + self.input_frozen_mass_kgkg
     }
 
+    /// Liquid fraction the temperature asks for: 0 at the cold edge of the envelope, 1 at the warm edge, linear between.
     #[must_use]
     pub const fn target_wet_fraction(&self) -> f64 {
         self.target_wet_fraction
     }
 
+    /// Rain mass paired with frozen categories, kg kg⁻¹.
     #[must_use]
     pub const fn paired_liquid_mass_kgkg(&self) -> f64 {
         self.paired_liquid_mass_kgkg
@@ -1583,16 +1675,19 @@ impl DiagnosticCoexistenceResult {
         self.paired_liquid_mass_kgkg / (self.input_frozen_mass_kgkg + self.paired_liquid_mass_kgkg)
     }
 
+    /// Rain mass left over as rain, kg kg⁻¹.
     #[must_use]
     pub const fn unused_rain_mass_kgkg(&self) -> f64 {
         self.unused_rain_mass_kgkg
     }
 
+    /// The wet frozen categories.
     #[must_use]
     pub fn wet_categories(&self) -> &[DiagnosticWetCategory] {
         &self.wet_categories
     }
 
+    /// Mass after the diagnosis (unused rain plus wet categories), kg kg⁻¹; equals the input total.
     #[must_use]
     pub fn output_total_mass_kgkg(&self) -> f64 {
         self.unused_rain_mass_kgkg
@@ -1603,6 +1698,7 @@ impl DiagnosticCoexistenceResult {
                 .sum::<f64>()
     }
 
+    /// The mixture metadata.
     #[must_use]
     pub const fn mixture(&self) -> MixtureMetadata {
         self.mixture
@@ -2029,64 +2125,118 @@ fn is_frozen(state: ParticleState) -> bool {
     }
 }
 
+/// Why a grid-point closure failed.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum ClosureError {
+    /// The WRF `mp_physics` id is not positive.
     #[error("WRF microphysics scheme id must be positive, got {value}")]
-    InvalidSchemeId { value: i32 },
+    InvalidSchemeId {
+        /// The id.
+        value: i32,
+    },
+    /// The closure asked for does not belong to the scheme.
     #[error("WRF mp_physics={wrf_mp_physics} is incompatible with the {requested} closure")]
     SchemeFamilyMismatch {
+        /// The WRF `mp_physics` id.
         wrf_mp_physics: i32,
+        /// The family asked for.
         requested: &'static str,
     },
+    /// The scheme has no such category.
     #[error("{category} is unavailable for WRF mp_physics={wrf_mp_physics}")]
     CategoryUnavailable {
+        /// The WRF `mp_physics` id.
         wrf_mp_physics: i32,
+        /// The category asked for.
         category: &'static str,
     },
+    /// A required input is absent.
     #[error("required raw WRF scalar {field} is missing")]
-    MissingInput { field: &'static str },
+    MissingInput {
+        /// Which input.
+        field: &'static str,
+    },
+    /// An input is present that the scheme does not have.
     #[error("raw WRF scalar {field} is unexpected for mp_physics={wrf_mp_physics}")]
     UnexpectedInput {
+        /// Which input.
         field: &'static str,
+        /// The WRF `mp_physics` id.
         wrf_mp_physics: i32,
     },
+    /// An input is not finite.
     #[error("{field} must be finite, got {value}")]
-    NonFinite { field: &'static str, value: f64 },
+    NonFinite {
+        /// Which input.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// An input is outside its valid range.
     #[error("{field} is outside its valid physical range: {value}")]
-    OutOfRange { field: &'static str, value: f64 },
+    OutOfRange {
+        /// Which input.
+        field: &'static str,
+        /// The value.
+        value: f64,
+    },
+    /// A density exceeds the density of the pure material.
     #[error("{field} density {value} exceeds material-density limit {maximum}")]
     DensityAboveMaterialLimit {
+        /// Which density.
         field: &'static str,
+        /// The value, kg m⁻³.
         value: f64,
+        /// The material limit, kg m⁻³.
         maximum: f64,
     },
+    /// Two inputs contradict each other.
     #[error("inconsistent raw WRF inputs: {relation}; got {left} and {right}")]
     InconsistentInputs {
+        /// The relation that fails.
         relation: &'static str,
+        /// Left-hand side.
         left: f64,
+        /// Right-hand side.
         right: f64,
     },
+    /// A mass has no positive volume to give a density.
     #[error("positive {volume_field} is required when {mass_field} is positive")]
     MissingPositiveVolume {
+        /// The mass input.
         mass_field: &'static str,
+        /// The volume input.
         volume_field: &'static str,
     },
+    /// The temperature is outside the diagnostic coexistence envelope.
     #[error(
         "temperature {temperature_k} K is outside DiagnosticCoexistenceV1 envelope [{cold_k}, {warm_k}] K"
     )]
     OutsideCoexistenceEnvelope {
+        /// The temperature, K.
         temperature_k: f64,
+        /// Cold edge of the envelope, K.
         cold_k: f64,
+        /// Warm edge of the envelope, K.
         warm_k: f64,
     },
+    /// The rain input is not a rain category.
     #[error("DiagnosticCoexistenceV1 requires a conventional rain category")]
     RainCategoryRequired,
+    /// No frozen category was given.
     #[error("DiagnosticCoexistenceV1 requires at least one frozen category")]
     NoFrozenCategories,
+    /// A category given as frozen is not frozen.
     #[error("DiagnosticCoexistenceV1 input category {index} is not frozen")]
-    FrozenCategoryRequired { index: usize },
+    FrozenCategoryRequired {
+        /// Its position.
+        index: usize,
+    },
+    /// A particle state was rejected.
     #[error(transparent)]
     Particle(#[from] ParticleError),
+    /// A provenance was rejected.
     #[error(transparent)]
     Provenance(#[from] ProvenanceError),
 }

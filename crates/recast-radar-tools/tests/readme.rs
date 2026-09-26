@@ -1,25 +1,45 @@
-//! Keeps the repository README, the crate manifests and CI in step with each
-//! other.
+//! Keeps the repository README, the user guide, the crate manifests and CI
+//! in step with each other.
 //!
-//! - Every ```` ```rust ```` block is one of this crate's examples, verbatim,
-//!   so the README's code compiles wherever the examples do (CI builds them
-//!   with `clippy --all-targets --all-features`).
+//! - Every ```` ```rust ```` block of the README and of the user guide
+//!   (`docs/guide/*.md`) is one of this crate's examples, verbatim, so the
+//!   documented code compiles wherever the examples do (CI builds them with
+//!   `clippy --all-targets --all-features`), and every example is shown.
+//!   Fragments that are not examples are marked ```` ```rust,ignore ````.
+//! - Every ```` ```text ```` block of those documents is an example's output,
+//!   marked `<!-- output: <example> <args> -->` (or `output-head:` for the
+//!   first lines, `output-unchecked:` for a live download) on the line
+//!   before it, naming an example shown in the same document, with testdata
+//!   ids that exist and repository paths that resolve.
+//!   `tools/check_example_outputs.py` (CI job `examples`) runs the examples
+//!   as marked and compares their output with the blocks.
+//! - Relative links in the README and the guide point at existing files.
+//! - Every `model::` path the README and the guide name in prose resolves
+//!   through the facade.
 //! - The crate map lists exactly the workspace crates, and its Module column
 //!   matches the re-exports in `src/lib.rs`.
 //! - Every crate's manifest has the package metadata (description, keywords,
-//!   categories, readme, workspace edition, license and rust-version).
+//!   categories, readme, workspace version, edition, license and
+//!   rust-version), and its directory holds both license texts, so the
+//!   packaged crate carries them.
+//! - Every internal normal or build dependency states the workspace version
+//!   beside its path, as `cargo package` needs.
 //! - The feature table matches this crate's `[features]` and `src/lib.rs`,
 //!   including which features are on by default, directly or through another
 //!   default feature.
 //! - Each feature enables the features of the member crates its crate depends
-//!   on, apart from the exceptions listed here and in the README.
+//!   on (in any `[dependencies]` table, target-specific ones included), apart
+//!   from the exceptions listed here and in the README.
 //! - The "No unsafe" list names exactly the crates that do not opt in to the
-//!   workspace lints, which forbid `unsafe`.
+//!   workspace lints, which forbid `unsafe`, and every library crate root
+//!   denies `clippy::unwrap_used` and `clippy::expect_used` outside its unit
+//!   tests, as that section says.
 //! - The minimum Rust version agrees between the workspace manifest, the
 //!   README and the toolchain pinned in `.github/workflows/ci.yml`.
 //!
-//! Not checked: prose outside these tables and lists, the example output
-//! excerpts, and code blocks other than ```` ```rust ````.
+//! Not checked here: prose outside these tables and lists, the printed
+//! outputs themselves (the script above compares those), anchors within
+//! links, and code blocks other than ```` ```rust ```` and ```` ```text ````.
 //!
 //! The inputs are the repository's own files, read at run time, so this file
 //! is not part of the packaged crate (`exclude` in Cargo.toml).
@@ -160,13 +180,54 @@ fn opts_into_workspace_lints(manifest: &str) -> bool {
         .is_some_and(|lints| lints.lines().any(|line| line.trim() == "workspace = true"))
 }
 
-/// Names of the `recast-radar-*` crates in a manifest's `[dependencies]`.
+/// Bodies of a manifest's `[<kind>]` table and of every
+/// `[target.<cfg>.<kind>]` table, for `kind` `dependencies`,
+/// `dev-dependencies` or `build-dependencies`.
+fn dependency_tables<'a>(manifest: &'a str, kind: &str) -> Vec<&'a str> {
+    let target_suffix = format!(".{kind}");
+    let mut tables = Vec::new();
+    let mut offset = 0;
+    for line in manifest.split_inclusive('\n') {
+        offset += line.len();
+        let Some(name) = line
+            .trim()
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+        else {
+            continue;
+        };
+        if name != kind && !(name.starts_with("target.") && name.ends_with(&target_suffix)) {
+            continue;
+        }
+        let body = &manifest[offset..];
+        let end = if body.starts_with('[') {
+            0
+        } else {
+            body.find("\n[").map_or(body.len(), |at| at + 1)
+        };
+        tables.push(&body[..end]);
+    }
+    tables
+}
+
+/// `(name, value)` of each `recast-radar-*` entry in the given tables.
+fn member_entries<'a>(tables: &[&'a str]) -> Vec<(&'a str, &'a str)> {
+    tables
+        .iter()
+        .flat_map(|table| table.lines())
+        .filter_map(|line| line.split_once('='))
+        .map(|(name, value)| (name.trim(), value.trim()))
+        .filter(|(name, _)| name.starts_with("recast-radar-"))
+        .collect()
+}
+
+/// Names of the `recast-radar-*` crates among a manifest's normal
+/// dependencies (`[dependencies]` and every target-specific
+/// `[target.<cfg>.dependencies]`).
 fn member_dependencies(manifest: &str) -> BTreeSet<&str> {
-    toml_table(manifest, "[dependencies]")
+    member_entries(&dependency_tables(manifest, "dependencies"))
         .into_iter()
-        .flat_map(str::lines)
-        .filter_map(|line| line.split_once('=').map(|(name, _)| name.trim()))
-        .filter(|name| name.starts_with("recast-radar-"))
+        .map(|(name, _)| name)
         .collect()
 }
 
@@ -266,41 +327,71 @@ fn crate_modules() -> Result<BTreeMap<String, String>, Box<dyn Error>> {
         .collect())
 }
 
+/// The documents whose Rust code blocks must be examples: the README and
+/// every page of the user guide (`docs/guide/*.md`), as (path relative to
+/// the repository root, text).
+fn documents() -> Result<Vec<(String, String)>, Box<dyn Error>> {
+    let mut documents = vec![("README.md".to_owned(), readme()?)];
+    let mut pages: Vec<PathBuf> = fs::read_dir(repo_root().join("docs").join("guide"))?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<Result<_, _>>()?;
+    pages.sort();
+    for page in pages {
+        if page.extension().is_some_and(|extension| extension == "md") {
+            let name = page
+                .file_name()
+                .ok_or("guide page without a name")?
+                .to_string_lossy()
+                .into_owned();
+            documents.push((format!("docs/guide/{name}"), read_text(&page)?));
+        }
+    }
+    Ok(documents)
+}
+
 #[test]
 fn rust_code_blocks_are_the_examples_verbatim() -> TestResult {
-    let readme = readme()?;
     let mut shown = BTreeSet::new();
-    let mut previous = "";
-    let mut lines = readme.lines();
-    while let Some(line) = lines.next() {
-        if line.trim() == "```rust" {
-            let path = previous
-                .trim()
-                .strip_prefix("<!-- example: ")
-                .and_then(|rest| rest.strip_suffix(" -->"))
-                .ok_or_else(|| {
-                    format!(
-                        "a ```rust block follows {previous:?}; put \
-                         `<!-- example: <path> -->` on the line before it"
-                    )
-                })?;
-            let mut block = String::new();
-            for code in lines.by_ref() {
-                if code.trim() == "```" {
-                    break;
+    for (document, text) in documents()? {
+        let mut in_document = BTreeSet::new();
+        let mut previous = "";
+        let mut lines = text.lines();
+        while let Some(line) = lines.next() {
+            if line.trim() == "```rust" {
+                let path = previous
+                    .trim()
+                    .strip_prefix("<!-- example: ")
+                    .and_then(|rest| rest.strip_suffix(" -->"))
+                    .ok_or_else(|| {
+                        format!(
+                            "{document}: a ```rust block follows {previous:?}; put \
+                             `<!-- example: <path> -->` on the line before it, or mark \
+                             a fragment ```rust,ignore"
+                        )
+                    })?;
+                let mut block = String::new();
+                for code in lines.by_ref() {
+                    if code.trim() == "```" {
+                        break;
+                    }
+                    block.push_str(code);
+                    block.push('\n');
                 }
-                block.push_str(code);
-                block.push('\n');
+                let file = read_text(&repo_root().join(path))?;
+                assert!(
+                    block == file,
+                    "{document}: the code block for {path} differs from the file; \
+                     run `python tools/sync_doc_examples.py`"
+                );
+                assert!(
+                    in_document.insert(path.to_owned()),
+                    "{document}: {path} is shown twice"
+                );
+                shown.insert(path.to_owned());
+                previous = "```";
+            } else {
+                previous = line;
             }
-            let file = read_text(&repo_root().join(path))?;
-            assert!(
-                block == file,
-                "README code block for {path} differs from the file; copy the file into the README"
-            );
-            assert!(shown.insert(path.to_owned()), "{path} is shown twice");
-            previous = "```";
-        } else {
-            previous = line;
         }
     }
 
@@ -312,7 +403,188 @@ fn rust_code_blocks_are_the_examples_verbatim() -> TestResult {
         }
     }
     assert!(!examples.is_empty(), "no examples found");
-    assert_eq!(shown, examples, "README must show every facade example");
+    assert_eq!(
+        shown, examples,
+        "the README and the user guide must show every facade example"
+    );
+    Ok(())
+}
+
+/// Markers that introduce an example's output; `tools/check_example_outputs.py`
+/// reads the same ones.
+const OUTPUT_MARKERS: [&str; 3] = [
+    "<!-- output: ",
+    "<!-- output-head: ",
+    "<!-- output-unchecked: ",
+];
+
+#[test]
+fn text_blocks_are_marked_example_outputs() -> TestResult {
+    let mut marked = 0;
+    for (document, text) in documents()? {
+        let mut previous = "";
+        for line in text.lines() {
+            if line.trim() == "```text" {
+                let marker = previous.trim();
+                let body = OUTPUT_MARKERS
+                    .iter()
+                    .find_map(|prefix| marker.strip_prefix(prefix))
+                    .and_then(|rest| rest.strip_suffix(" -->"))
+                    .ok_or_else(|| {
+                        format!(
+                            "{document}: a ```text block follows {previous:?}; put                              `<!-- output: <example> <args> -->` (or `output-head:`,                              `output-unchecked:`) on the line before it; see                              tools/check_example_outputs.py"
+                        )
+                    })?;
+                let mut words = body.split_whitespace();
+                let example = words
+                    .next()
+                    .ok_or_else(|| format!("{document}: `{marker}` names no example"))?;
+                let path = format!("crates/recast-radar-tools/examples/{example}.rs");
+                assert!(
+                    repo_root().join(&path).is_file(),
+                    "{document}: `{marker}`: no file {path}"
+                );
+                assert!(
+                    text.contains(&format!("<!-- example: {path} -->")),
+                    "{document}: `{marker}`: the document does not show {path}"
+                );
+                if !marker.starts_with("<!-- output-unchecked: ") {
+                    for word in words {
+                        if let Some(id) = word.strip_prefix("testdata:") {
+                            assert!(
+                                recast_radar_testdata::entry(id).is_some(),
+                                "{document}: `{marker}`: no testdata id {id}"
+                            );
+                        } else if let Some(relative) = word.strip_prefix("repo:") {
+                            assert!(
+                                repo_root().join(relative).is_file(),
+                                "{document}: `{marker}`: no file {relative}"
+                            );
+                        }
+                    }
+                }
+                marked += 1;
+            }
+            previous = line;
+        }
+    }
+    assert!(marked > 0, "no example outputs found");
+    Ok(())
+}
+
+/// Relative link targets (`[text](target)`) in a Markdown text: no URLs, no
+/// in-page anchors, the `#fragment` removed.
+fn relative_links(text: &str) -> Vec<&str> {
+    text.split("](")
+        .skip(1)
+        .filter_map(|rest| rest.split(')').next())
+        .map(|target| target.split('#').next().unwrap_or(target))
+        .filter(|target| {
+            !target.is_empty() && !target.contains("://") && !target.starts_with("mailto:")
+        })
+        .collect()
+}
+
+/// Every `model::` path that the README and the guide name outside code
+/// blocks (whose code is an example and compiles). This `use` does not
+/// compile if one of them does not resolve through the facade, and
+/// `model_paths_named_in_the_docs_resolve` fails if a document names a path
+/// that is not listed in [`DOC_MODEL_PATHS`].
+#[allow(unused_imports)]
+use recast_radar_tools::model::{
+    ArrayBuf, Coding, FieldData, FloatWidth, LinearTransform, RowRef, Scalar, Volume, bounded_read,
+    bounded_read::read_to_end_limited, fm301::ArrayRef, fm301::volume_view, merge_volumes,
+};
+
+/// The paths of the `use` above, as the documents write them.
+const DOC_MODEL_PATHS: &[&str] = &[
+    "model::ArrayBuf",
+    "model::Coding",
+    "model::FieldData",
+    "model::FloatWidth",
+    "model::LinearTransform",
+    "model::RowRef",
+    "model::Scalar",
+    "model::Volume",
+    "model::bounded_read",
+    "model::bounded_read::read_to_end_limited",
+    "model::fm301::ArrayRef",
+    "model::fm301::volume_view",
+    "model::merge_volumes",
+];
+
+/// `text` without its fenced code blocks.
+fn prose(text: &str) -> String {
+    let mut fenced = false;
+    let mut out = String::new();
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+        } else if !fenced {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// The `model::` paths in the code spans of `text`: from `model::` up to the
+/// first character that cannot be part of a path.
+fn model_paths(text: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    for span in code_spans(text) {
+        for (start, _) in span.match_indices("model::") {
+            let at_segment_start = span[..start]
+                .chars()
+                .next_back()
+                .is_none_or(|before| !(before.is_alphanumeric() || before == '_'));
+            if !at_segment_start {
+                continue;
+            }
+            let path: String = span[start..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == ':')
+                .collect();
+            paths.push(path.trim_end_matches(':').to_owned());
+        }
+    }
+    paths
+}
+
+#[test]
+fn model_paths_named_in_the_docs_resolve() -> TestResult {
+    let mut unlisted = Vec::new();
+    let mut named = 0;
+    for (document, text) in documents()? {
+        for path in model_paths(&prose(&text)) {
+            named += 1;
+            if !DOC_MODEL_PATHS.contains(&path.as_str()) {
+                unlisted.push(format!("{document}: {path}"));
+            }
+        }
+    }
+    assert!(named > 0, "no model:: paths found; is the scan broken?");
+    assert!(
+        unlisted.is_empty(),
+        "model:: paths not in DOC_MODEL_PATHS (add each to the list and to the `use` \
+         above it, which checks that it resolves): {unlisted:#?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn relative_links_in_the_readme_and_guide_resolve() -> TestResult {
+    let mut broken = Vec::new();
+    for (document, text) in documents()? {
+        let dir = repo_root().join(&document);
+        let dir = dir.parent().ok_or("document without a directory")?;
+        for target in relative_links(&text) {
+            if !dir.join(target).exists() {
+                broken.push(format!("{document}: {target}"));
+            }
+        }
+    }
+    assert!(broken.is_empty(), "broken relative links: {broken:#?}");
     Ok(())
 }
 
@@ -365,9 +637,21 @@ fn every_crate_has_package_metadata() -> TestResult {
             problems.push(format!("{name}: no [package] table"));
             continue;
         };
-        for key in ["edition", "license", "rust-version"] {
+        for key in ["version", "edition", "license", "rust-version"] {
             if toml_value(package, &format!("{key}.workspace")) != Some("true") {
                 problems.push(format!("{name}: `{key}.workspace = true` missing"));
+            }
+        }
+        // `license` names both licenses; cargo packages only files under the
+        // crate's directory, so each crate carries the texts.
+        for license in ["LICENSE-MIT", "LICENSE-APACHE"] {
+            let path = member.dir.join(license);
+            match (read_text(&path), read_text(&repo_root().join(license))) {
+                (Ok(copy), Ok(original)) if copy == original => {}
+                (Ok(_), Ok(_)) => {
+                    problems.push(format!("{name}: {license} differs from the root copy"))
+                }
+                (Err(error), _) | (_, Err(error)) => problems.push(format!("{name}: {error}")),
             }
         }
         if toml_value(package, "description").is_none_or(|value| value.len() <= 2) {
@@ -389,6 +673,9 @@ fn every_crate_has_package_metadata() -> TestResult {
         ) {
             (Some("true"), _) => Some(repo_root().join("README.md")),
             (_, Some(path)) => Some(member.dir.join(path.trim_matches('"'))),
+            // Cargo infers the crate's own README.md (and nightly cargo warns
+            // when a manifest names it explicitly).
+            _ if member.dir.join("README.md").is_file() => Some(member.dir.join("README.md")),
             _ => None,
         };
         match readme {
@@ -398,6 +685,39 @@ fn every_crate_has_package_metadata() -> TestResult {
         }
     }
     assert!(problems.is_empty(), "package metadata: {problems:#?}");
+    Ok(())
+}
+
+/// A packaged crate's manifest names its dependencies by version, so every
+/// internal dependency a package keeps (normal and build dependencies; cargo
+/// drops path-only dev-dependencies) states the workspace version beside its
+/// path.
+#[test]
+fn internal_dependencies_state_the_workspace_version() -> TestResult {
+    let workspace = read_text(&repo_root().join("Cargo.toml"))?;
+    let version = toml_table(&workspace, "[workspace.package]")
+        .and_then(|package| toml_value(package, "version"))
+        .ok_or("Cargo.toml: no [workspace.package] version")?;
+    let mut problems = Vec::new();
+    for (name, member) in workspace_members()? {
+        let mut tables = dependency_tables(&member.manifest, "dependencies");
+        tables.extend(dependency_tables(&member.manifest, "build-dependencies"));
+        for (dependency, value) in member_entries(&tables) {
+            let versioned = value
+                .split(',')
+                .filter_map(|part| part.split_once('='))
+                .any(|(key, text)| {
+                    key.trim_start_matches('{').trim() == "version" && text.trim() == version
+                });
+            if !versioned {
+                problems.push(format!("{name} -> {dependency}: {value}"));
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "internal dependencies without `version = {version}`: {problems:#?}"
+    );
     Ok(())
 }
 
@@ -414,7 +734,7 @@ fn feature_table_matches_manifest_and_lib() -> TestResult {
             return Err(format!("feature table row {cells:?} needs 5 cells").into());
         };
         let Some(&feature) = code_spans(feature).first() else {
-            continue; // the always-on `core` row
+            continue; // the always-on `model` row
         };
         let entries = features
             .get(feature)
@@ -534,6 +854,31 @@ fn features_enable_the_features_of_member_dependencies() -> TestResult {
     Ok(())
 }
 
+/// The README's "No unsafe" section says library code denies
+/// `clippy::unwrap_used` and `clippy::expect_used`: every library crate root
+/// (`src/lib.rs`) carries the attribute, outside its unit tests.
+#[test]
+fn library_roots_deny_unwrap_and_expect() -> TestResult {
+    const ATTRIBUTE: &str =
+        "#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]";
+    assert!(readme()?.contains("denies `clippy::unwrap_used` and `clippy::expect_used`"));
+    let mut roots = 0;
+    for (name, member) in workspace_members()? {
+        let root = member.dir.join("src").join("lib.rs");
+        if !root.is_file() {
+            continue;
+        }
+        roots += 1;
+        let text = read_text(&root)?;
+        assert!(
+            text.lines().any(|line| line.trim() == ATTRIBUTE),
+            "{name}: src/lib.rs lacks `{ATTRIBUTE}`"
+        );
+    }
+    assert!(roots > 0, "no library crate roots found");
+    Ok(())
+}
+
 #[test]
 fn unsafe_exceptions_match_the_manifests() -> TestResult {
     let readme = readme()?;
@@ -573,7 +918,7 @@ fn minimum_rust_version_agrees_across_manifest_readme_and_ci() -> TestResult {
         .split("dtolnay/rust-toolchain@")
         .skip(1)
         .filter_map(|rest| rest.split_whitespace().next())
-        .filter(|toolchain| *toolchain != "stable")
+        .filter(|toolchain| !matches!(*toolchain, "stable" | "beta" | "nightly"))
         .collect();
     assert!(
         !pins.is_empty(),

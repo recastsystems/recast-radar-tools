@@ -116,6 +116,7 @@ use thiserror::Error;
 
 /// Errors from JMA radar GRIB2 tar decoding.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum JmaError {
     /// The tar archive or a GRIB2 member could not be decoded; the message
     /// names the member and the failing structure.

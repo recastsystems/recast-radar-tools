@@ -212,10 +212,10 @@ unavailable offline; the committed KIWA real-time chunks always run.
   3,000 random code-length sets (including over-full and incomplete codes)
   and exhaustively over all 14-bit prefixes for small alphabets.
 
-`fuzz/` has the `bzip2` (decoder) and `bzip2_encode` (differential encoder:
+`fuzz/` has the `bzip2` (decoder) and `bzip2-encode` (differential encoder:
 each input and then its first quarter compressed by encoders reused across
 inputs; each stream must match the reference encoder's and decode with our
-decoder) cargo-fuzz targets. Two 15-minute `bzip2_encode` campaigns from
+decoder) cargo-fuzz targets. Two 15-minute `bzip2-encode` campaigns from
 decompressed LDM records (7,728 inputs of up to 1.2 MB, 66,861 of up to
 8 KiB) found nothing.
 `examples/differential_fuzz.rs` runs the decoder check on random mutations

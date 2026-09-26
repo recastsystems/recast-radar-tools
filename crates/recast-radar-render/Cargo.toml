@@ -8,11 +8,15 @@ description = "CPU raster rendering of weather radar sweeps to PNG with color ta
 readme.workspace = true
 keywords = ["radar", "weather", "png", "colormap", "rendering"]
 categories = ["science::geo", "rendering", "visualization"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate, and the examples are
+# developer probes built on dev-dependencies.
+exclude = ["tests/", "examples/"]
 
 [dependencies]
 image.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
-recast-radar-correct = { path = "../recast-radar-correct" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
+recast-radar-correct = { version = "0.1.0", path = "../recast-radar-correct" }
 rayon.workspace = true
 thiserror.workspace = true
 

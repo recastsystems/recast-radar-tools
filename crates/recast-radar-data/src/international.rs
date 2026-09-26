@@ -434,10 +434,15 @@ pub fn intl_static_sites() -> &'static [IntlSite] {
 /// predictably from the adapter contract.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IntlProviderCapability {
+    /// Provider identifier (`smhi`, `ord`, ...).
     pub provider_id: &'static str,
+    /// Provider name for menus.
     pub provider_label: &'static str,
+    /// Country or region covered.
     pub country: &'static str,
+    /// Sites the provider shows on the map.
     pub visible_sites: usize,
+    /// Whether the provider serves the latest frame.
     pub live: bool,
     /// Derived from [`IntlProvider::supports_recent`] — `true` iff the
     /// provider implements a real multi-frame `IntlProvider::recent`
@@ -450,9 +455,13 @@ pub struct IntlProviderCapability {
     /// SMHI false above its own working day loader, NCI true without a
     /// dated lookup).
     pub archive_lookup: bool,
+    /// How far back the adapter reaches today, as text.
     pub current_window: &'static str,
+    /// How far back the provider's service keeps data, as text.
     pub upstream_window: &'static str,
+    /// Implementation status, as text.
     pub bowecho_status: &'static str,
+    /// What would widen the window, as text.
     pub next_unlock: &'static str,
 }
 

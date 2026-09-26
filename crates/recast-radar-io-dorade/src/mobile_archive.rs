@@ -80,6 +80,7 @@ pub fn looks_like_zip_path(path: &Path) -> bool {
 /// One decoded volume scan plus where it came from inside the archive.
 #[derive(Clone, Debug)]
 pub struct MobileVolume {
+    /// The decoded volume.
     pub volume: Volume,
     /// Display label: first member name of the group (`swp....` or `*.msg31`).
     pub member_label: String,
@@ -494,17 +495,22 @@ where
 /// archive-wide total, failing once it would pass `limit`.
 fn charge_batch(total: &AtomicUsize, volume: &Volume, limit: usize) -> Result<()> {
     let bytes = retained_bytes(volume);
-    total
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-            used.checked_add(bytes).filter(|next| *next <= limit)
-        })
-        .map(|_| ())
-        .map_err(|used| {
-            DoradeError::LimitExceeded(format!(
+    // A compare-exchange loop, which is what `AtomicUsize::fetch_update`
+    // does; nightly deprecates `fetch_update` for `try_update`, which is
+    // newer than the minimum Rust version.
+    let mut used = total.load(Ordering::Acquire);
+    loop {
+        let Some(next) = used.checked_add(bytes).filter(|next| *next <= limit) else {
+            return Err(DoradeError::LimitExceeded(format!(
                 "mobile archive decodes to more than {limit} bytes (limit); {used} bytes \
                  were already decoded before a {bytes}-byte volume"
-            ))
-        })
+            )));
+        };
+        match total.compare_exchange_weak(used, next, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return Ok(()),
+            Err(actual) => used = actual,
+        }
+    }
 }
 
 fn with_member(name: &str, err: impl Display) -> DoradeError {

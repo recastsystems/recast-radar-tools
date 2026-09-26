@@ -19,7 +19,7 @@ libfuzzer = ["dep:libfuzzer-sys"]
 
 [dependencies]
 libfuzzer-sys = { version = "0.4", optional = true }
-# Reference decoder and encoder for the bzip2_encode target: the bzip2
+# Reference decoder and encoder for the bzip2-encode target: the bzip2
 # crate's default backend, libbz2-rs-sys (a Rust port of libbzip2 1.0.8).
 bzip2 = "0.6"
 recast-radar-bzip2 = { path = "../crates/recast-radar-bzip2" }
@@ -41,40 +41,40 @@ recast-radar-io-odim = { path = "../crates/recast-radar-io-odim" }
 path = "src/lib.rs"
 
 [[bin]]
-name = "level2_volume"
-path = "fuzz_targets/level2_volume.rs"
+name = "level2-volume"
+path = "fuzz_targets/level2-volume.rs"
 test = false
 doc = false
 bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
-name = "level2_writer"
-path = "fuzz_targets/level2_writer.rs"
+name = "level2-writer"
+path = "fuzz_targets/level2-writer.rs"
 test = false
 doc = false
 bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
-name = "level2_writer_router"
-path = "fuzz_targets/level2_writer_router.rs"
+name = "level2-writer-router"
+path = "fuzz_targets/level2-writer-router.rs"
 test = false
 doc = false
 bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
-name = "level2_metadata"
-path = "fuzz_targets/level2_metadata.rs"
+name = "level2-metadata"
+path = "fuzz_targets/level2-metadata.rs"
 test = false
 doc = false
 bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
-name = "io_router"
-path = "fuzz_targets/io_router.rs"
+name = "io-router"
+path = "fuzz_targets/io-router.rs"
 test = false
 doc = false
 bench = false
@@ -113,8 +113,8 @@ bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
-name = "dorade_archive"
-path = "fuzz_targets/dorade_archive.rs"
+name = "dorade-archive"
+path = "fuzz_targets/dorade-archive.rs"
 test = false
 doc = false
 bench = false
@@ -137,8 +137,8 @@ bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
-name = "bzip2_encode"
-path = "fuzz_targets/bzip2_encode.rs"
+name = "bzip2-encode"
+path = "fuzz_targets/bzip2-encode.rs"
 test = false
 doc = false
 bench = false
@@ -153,8 +153,8 @@ bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
-name = "polling_listing"
-path = "fuzz_targets/polling_listing.rs"
+name = "polling-listing"
+path = "fuzz_targets/polling-listing.rs"
 test = false
 doc = false
 bench = false

@@ -105,6 +105,7 @@ pub fn group_for_path(path: &str) -> Option<&'static str> {
 
 /// Why an item or file was flagged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Rule {
     /// The item, or a function or type defined inside it, is named as a
     /// fabricator: contains `synth`, `fake`, `fabricat`, `mock`, `dummy`,
@@ -628,6 +629,7 @@ fn scan_data_file(
 /// Status of an allowlist entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum AllowStatus {
     /// Synthetic input still to be converted to real data (plan C.2).
     Pending,

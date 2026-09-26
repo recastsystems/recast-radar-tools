@@ -1,6 +1,7 @@
 //! The FM301 root group (`docs/design/fm301-model.md` sections 2 and 11).
 
 use chrono::{DateTime, Duration, Timelike, Utc};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::sweep::{Sweep, SweepError};
@@ -8,7 +9,15 @@ use super::values::{AttrValue, ExtraVariable, VariableAttrs};
 
 /// FM301 volume: the root group of an FM301 / CfRadial 2 file and the root node
 /// of an xradar `DataTree`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+///
+/// With the `serde` feature, deserializing a volume checks what
+/// [`Volume::seal`] checks and fails when a check does.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(try_from = "super::serde_checked::VolumeRepr")
+)]
 pub struct Volume {
     /// Root attributes (Tables 301-1, 301-2, 301-3; WMO-CF-2).
     pub attrs: GlobalAttrs,
@@ -45,7 +54,7 @@ pub struct Volume {
     /// holds (CfRadial `azimuth:comment`, `range:meters_between_gates`), by
     /// group and variable, verbatim and in file order. The view writes them
     /// with `Passthrough::All` beside the attributes it derives.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub variable_attrs: Vec<VariableAttrs>,
     /// Source format, container version, decode statistics. Not exported as
     /// variables.
@@ -56,29 +65,45 @@ pub struct Volume {
     pub sweeps: Vec<Sweep>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// First and last ray times of a volume: `/time_coverage_start` and `/time_coverage_end`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct TimeCoverage {
+    /// Time of the first ray.
     pub start: DateTime<Utc>,
+    /// Time of the last ray.
     pub end: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Global attributes of the root group (FM301 Tables 301-1 to 301-3 and the
+/// WMO-CF attributes).
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GlobalAttrs {
+    /// `title`: a short description of what the file holds.
     pub title: Option<String>,
+    /// `institution`: where the data were produced.
     pub institution: Option<String>,
+    /// `references`: published or web references for the data or the methods.
     pub references: Option<String>,
+    /// `source`: how the original data were produced.
     pub source: Option<String>,
+    /// `history`: the processing the data have been through.
     pub history: Option<String>,
+    /// `comment`: anything else about the data.
     pub comment: Option<String>,
     /// `instrument_name`: NEXRAD ICAO; ODIM `what/source` NOD, else RAD, else
     /// WMO; CfRadial attribute. Empty when the source has none.
     pub instrument_name: String,
+    /// `site_name`: the name of the radar site.
     pub site_name: Option<String>,
     /// `platform_is_mobile`: `true` when the source says the platform moves
     /// (a CfRadial file's attribute; a DORADE airborne or shipborne radar,
     /// as LROSE Radx writes it), else `false`, the only value FM301 2022
     /// uses for the fixed platforms it describes.
     pub platform_is_mobile: bool,
+    /// `ray_times_increase`: whether ray times increase through the file
+    /// (CfRadial); `None` when the source does not say.
     pub ray_times_increase: Option<bool>,
     /// `simulated` (Table 301-3).
     pub simulated: bool,
@@ -88,7 +113,9 @@ pub struct GlobalAttrs {
     pub other: Vec<(Box<str>, AttrValue)>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// The WMO-CF global attributes (`wmo__*`, WMO-CF.6.10).
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WmoAttrs {
     /// `wmo__wsi`.
     pub wsi: Option<String>,
@@ -96,21 +123,30 @@ pub struct WmoAttrs {
     pub id: Option<String>,
     /// `wmo__originating_centre` (Common Code Table C-11).
     pub originating_centre: Option<u16>,
+    /// `wmo__originating_sub_centre` (Common Code Table C-12).
     pub originating_sub_centre: Option<u16>,
     /// `wmo__data_category` (C-13).
     pub data_category: Option<u8>,
     /// `wmo__data_policy`.
     pub data_policy: Option<WmoDataPolicy>,
+    /// `wmo__update_sequence_number`: 0 for the original data, incremented with
+    /// each correction.
     pub update_sequence_number: Option<u32>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// `wmo__data_policy`, the WMO Unified Data Policy category of the data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
 pub enum WmoDataPolicy {
+    /// `core`: exchanged without charge or conditions.
     Core,
+    /// `recommended`: exchanged, possibly with conditions.
     Recommended,
 }
 
 impl WmoDataPolicy {
+    /// The attribute spelling: `core` or `recommended`.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Core => "core",
@@ -119,23 +155,32 @@ impl WmoDataPolicy {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// `/latitude`, `/longitude`, `/altitude` and `/altitude_agl`: where the radar is.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Location {
     /// WGS84 degrees north. `None` when the source has no location (Message 1
     /// archives).
     pub latitude_deg: Option<f64>,
+    /// WGS84 degrees east. `None` when the source has no location.
     pub longitude_deg: Option<f64>,
     /// Metres above MSL at the antenna's centre of rotation.
     pub altitude_m: Option<f64>,
+    /// Metres above the ground at the antenna's centre of rotation.
     pub altitude_agl_m: Option<f64>,
 }
 
 macro_rules! table_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident => $text:literal,)* }) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+        #[non_exhaustive]
         pub enum $name {
-            $($variant,)*
+            $(
+                #[doc = concat!("The spelling `", $text, "`.")]
+                $variant,
+            )*
         }
 
         impl $name {
@@ -195,7 +240,10 @@ table_enum! {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// The scan strategy: `scan_name`, `scan_id`, the NEXRAD volume coverage
+/// pattern, and the scan table the volume follows.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ScanStrategy {
     /// `scan_name`. NEXRAD: "VCP-212" (xradar's spelling).
     pub name: Option<String>,
@@ -207,13 +255,22 @@ pub struct ScanStrategy {
     pub definition: Option<Box<ScanDefinition>>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Provenance of a scan table: the document it was taken from, and one leg per
+/// sweep.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ScanDefinition {
+    /// Document the table comes from (for example a WSR-88D ICD).
     pub source_document: Option<String>,
+    /// Revision of that document.
     pub source_revision: Option<String>,
+    /// RDA software build the table applies to.
     pub source_rda_build: Option<String>,
+    /// Figure or table of the document that lists the scan.
     pub source_figure: Option<String>,
+    /// Pulse length of the scan (`short`, `long`), as the document names it.
     pub pulse_length: Option<String>,
+    /// Site adaptations applied to the table, as written.
     pub adaptations: Option<String>,
     /// `scan_id` text as the source wrote it, whenever it is not exactly
     /// `ScanStrategy::id.to_string()`: non-numeric ids, and numeric ids with
@@ -227,95 +284,165 @@ pub struct ScanDefinition {
 ///
 /// PRF values here are source-table *codes* and pulse counts, never
 /// frequencies or pulse-repetition times.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ScanLeg {
     /// Zero-based row within the qualified source definition.
     pub source_row_index: Option<u16>,
+    /// Elevation angle of the leg, in degrees.
     pub elevation_deg: Option<f32>,
+    /// Antenna azimuth rate of the leg, in degrees per second.
     pub azimuth_rate_deg_per_second: Option<f32>,
+    /// Duration of the leg in the source table, in seconds.
     pub source_period_seconds: Option<f32>,
     /// Source waveform abbreviation (for example `CS`, `CD/W`, or `SZCD`).
     pub waveform: Option<String>,
     /// `surveillance`, `doppler`, or `all` for catalog-backed synthetic cuts.
     pub moment_coverage: Option<String>,
+    /// PRF code of the surveillance (long-PRT) scan of the leg.
     pub surveillance_prf_code: Option<u8>,
+    /// Pulse count per radial of the surveillance scan.
     pub surveillance_pulse_count: Option<u16>,
+    /// PRF code of the Doppler (short-PRT) scan of the leg.
     pub doppler_prf_code: Option<u8>,
+    /// Pulse count per radial of the Doppler scan.
     pub doppler_pulse_count: Option<u16>,
 }
 
 /// `/radar_parameters`. Variable names differ by flavor (design note 12.4).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RadarParameters {
     /// Operating frequencies in Hz (`frequency` dimension).
     pub frequency_hz: Vec<f64>,
+    /// Antenna gain, horizontal polarization, in dB.
     pub antenna_gain_h_db: Option<f32>,
+    /// Antenna gain, vertical polarization, in dB.
     pub antenna_gain_v_db: Option<f32>,
+    /// Antenna 3 dB beam width, horizontal plane, in degrees.
     pub beam_width_h_deg: Option<f32>,
+    /// Antenna 3 dB beam width, vertical plane, in degrees.
     pub beam_width_v_deg: Option<f32>,
+    /// Receiver bandwidth, in Hz.
     pub receiver_bandwidth_hz: Option<f32>,
     /// Volume-constant values some sources declare instead of per-ray vectors.
     /// For sweeps whose `RayVariables` lack them, the view broadcasts these into
     /// `(time)` variables.
     pub pulse_width_s: Option<f32>,
+    /// Pulse repetition time, in seconds, for the whole volume.
     pub prt_s: Option<f32>,
+    /// Unambiguous range, in metres, for the whole volume.
     pub unambiguous_range_m: Option<f32>,
 }
 
 /// One `calib` entry of `/radar_calibration` (Table 301-14a names plus a unit
 /// suffix).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RadarCalibration {
+    /// `calib_index`: this entry's index, as the source numbers it.
     pub calib_index: Option<i32>,
     /// Seconds since `Volume::time_reference`.
     pub time_s: Option<f64>,
+    /// `pulse_width`: the pulse width the entry applies to, in seconds.
     pub pulse_width_s: Option<f32>,
+    /// `antenna_gain_h`: antenna gain, horizontal polarization, dB.
     pub antenna_gain_h_db: Option<f32>,
+    /// `antenna_gain_v`: antenna gain, vertical polarization, dB.
     pub antenna_gain_v_db: Option<f32>,
+    /// `xmit_power_h`: transmitted power, horizontal channel, dBm.
     pub xmit_power_h_dbm: Option<f32>,
+    /// `xmit_power_v`: transmitted power, vertical channel, dBm.
     pub xmit_power_v_dbm: Option<f32>,
+    /// `two_way_waveguide_loss_h`: two-way waveguide loss, horizontal channel, dB.
     pub two_way_waveguide_loss_h_db: Option<f32>,
+    /// `two_way_waveguide_loss_v`: two-way waveguide loss, vertical channel, dB.
     pub two_way_waveguide_loss_v_db: Option<f32>,
+    /// `two_way_radome_loss_h`: two-way radome loss, horizontal channel, dB.
     pub two_way_radome_loss_h_db: Option<f32>,
+    /// `two_way_radome_loss_v`: two-way radome loss, vertical channel, dB.
     pub two_way_radome_loss_v_db: Option<f32>,
+    /// `receiver_mismatch_loss`: receiver mismatch loss, dB.
     pub receiver_mismatch_loss_db: Option<f32>,
+    /// `receiver_mismatch_loss_h`: receiver mismatch loss, horizontal channel, dB.
     pub receiver_mismatch_loss_h_db: Option<f32>,
+    /// `receiver_mismatch_loss_v`: receiver mismatch loss, vertical channel, dB.
     pub receiver_mismatch_loss_v_db: Option<f32>,
+    /// `radar_constant_h`: radar constant, horizontal channel, dB.
     pub radar_constant_h: Option<f32>,
+    /// `radar_constant_v`: radar constant, vertical channel, dB.
     pub radar_constant_v: Option<f32>,
+    /// `probert_jones_correction`: Probert-Jones beam-filling correction, dB.
     pub probert_jones_correction: Option<f32>,
+    /// `dielectric_factor_used`: the dielectric factor |K|² the calibration assumes.
     pub dielectric_factor_used: Option<f32>,
+    /// `noise_hc`: noise power, horizontal co-polar channel, dBm.
     pub noise_hc_dbm: Option<f32>,
+    /// `noise_vc`: noise power, vertical co-polar channel, dBm.
     pub noise_vc_dbm: Option<f32>,
+    /// `noise_hx`: noise power, horizontal cross-polar channel, dBm.
     pub noise_hx_dbm: Option<f32>,
+    /// `noise_vx`: noise power, vertical cross-polar channel, dBm.
     pub noise_vx_dbm: Option<f32>,
+    /// `receiver_gain_hc`: receiver gain, horizontal co-polar channel, dB.
     pub receiver_gain_hc_db: Option<f32>,
+    /// `receiver_gain_vc`: receiver gain, vertical co-polar channel, dB.
     pub receiver_gain_vc_db: Option<f32>,
+    /// `receiver_gain_hx`: receiver gain, horizontal cross-polar channel, dB.
     pub receiver_gain_hx_db: Option<f32>,
+    /// `receiver_gain_vx`: receiver gain, vertical cross-polar channel, dB.
     pub receiver_gain_vx_db: Option<f32>,
+    /// `base_1km_hc`: reflectivity of a noise-level signal at 1 km, horizontal
+    /// co-polar channel, dBZ.
     pub base_1km_hc_dbz: Option<f32>,
+    /// `base_1km_vc`: reflectivity of a noise-level signal at 1 km, vertical
+    /// co-polar channel, dBZ.
     pub base_1km_vc_dbz: Option<f32>,
+    /// `base_1km_hx`: reflectivity of a noise-level signal at 1 km, horizontal
+    /// cross-polar channel, dBZ.
     pub base_1km_hx_dbz: Option<f32>,
+    /// `base_1km_vx`: reflectivity of a noise-level signal at 1 km, vertical
+    /// cross-polar channel, dBZ.
     pub base_1km_vx_dbz: Option<f32>,
+    /// `sun_power_hc`: measured sun power, horizontal co-polar channel, dBm.
     pub sun_power_hc_dbm: Option<f32>,
+    /// `sun_power_vc`: measured sun power, vertical co-polar channel, dBm.
     pub sun_power_vc_dbm: Option<f32>,
+    /// `sun_power_hx`: measured sun power, horizontal cross-polar channel, dBm.
     pub sun_power_hx_dbm: Option<f32>,
+    /// `sun_power_vx`: measured sun power, vertical cross-polar channel, dBm.
     pub sun_power_vx_dbm: Option<f32>,
+    /// `noise_source_power_h`: calibration noise source power, horizontal channel, dBm.
     pub noise_source_power_h_dbm: Option<f32>,
+    /// `noise_source_power_v`: calibration noise source power, vertical channel, dBm.
     pub noise_source_power_v_dbm: Option<f32>,
+    /// `power_measure_loss_h`: loss in the power measurement path, horizontal channel, dB.
     pub power_measure_loss_h_db: Option<f32>,
+    /// `power_measure_loss_v`: loss in the power measurement path, vertical channel, dB.
     pub power_measure_loss_v_db: Option<f32>,
+    /// `coupler_forward_loss_h`: directional coupler forward loss, horizontal channel, dB.
     pub coupler_forward_loss_h_db: Option<f32>,
+    /// `coupler_forward_loss_v`: directional coupler forward loss, vertical channel, dB.
     pub coupler_forward_loss_v_db: Option<f32>,
+    /// `zdr_correction`: correction added to differential reflectivity, dB.
     pub zdr_correction_db: Option<f32>,
+    /// `ldr_correction_h`: correction added to LDR, horizontal channel, dB.
     pub ldr_correction_h_db: Option<f32>,
+    /// `ldr_correction_v`: correction added to LDR, vertical channel, dB.
     pub ldr_correction_v_db: Option<f32>,
+    /// `system_phidp`: the system's differential phase, degrees.
     pub system_phidp_deg: Option<f32>,
+    /// `test_power_h`: calibration test signal power, horizontal channel, dBm.
     pub test_power_h_dbm: Option<f32>,
+    /// `test_power_v`: calibration test signal power, vertical channel, dBm.
     pub test_power_v_dbm: Option<f32>,
+    /// `receiver_slope_hc`: slope of the receiver power response, horizontal co-polar channel.
     pub receiver_slope_hc: Option<f32>,
+    /// `receiver_slope_vc`: slope of the receiver power response, vertical co-polar channel.
     pub receiver_slope_vc: Option<f32>,
+    /// `receiver_slope_hx`: slope of the receiver power response, horizontal cross-polar channel.
     pub receiver_slope_hx: Option<f32>,
+    /// `receiver_slope_vx`: slope of the receiver power response, vertical cross-polar channel.
     pub receiver_slope_vx: Option<f32>,
     /// Entries outside Table 301-14a, named as xradar names them (the CfRadial
     /// `r_calib_` prefix removed): `k_squared_water`, `i0_dbm_hc`, ...
@@ -438,71 +565,122 @@ impl RadarCalibration {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Where a volume came from: source format and file, container version and
+/// conventions, compression and decode counts. The FM301 view does not export
+/// these as variables.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Provenance {
+    /// The format the volume was decoded from.
     pub source_format: SourceFormat,
+    /// The file (or archive member) the volume was read from, when there was one.
     pub source_path: Option<String>,
     /// As written: "AR2V0006", "ARCHIVE2.036", "H5rad 2.3", "CF-Radial-1.3".
     pub source_version: Option<String>,
     /// The source's `Conventions` ("ODIM_H5/V2_2", "CF-1.6").
     pub source_conventions: Option<String>,
+    /// The container's compression or encoding, as the decoder names it (for
+    /// example `bzip2-whole-file`, `jma-grib2-tar`).
     pub compression: Option<String>,
+    /// What the decoder read, decoded and skipped.
     pub decode: DecodeStats,
     /// Free text carried by BowEcho-written CfRadial files.
     pub polarization_note: Option<String>,
+    /// Free text about the calibration, carried by BowEcho-written CfRadial files.
     pub calibration_note: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// A format a volume can be decoded from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub enum SourceFormat {
+    /// NEXRAD Archive II (Level II).
     NexradLevel2,
+    /// NEXRAD or TDWR Level III product.
     NexradLevel3,
+    /// ODIM_H5 (OPERA Data Information Model, HDF5).
     OdimH5,
+    /// CfRadial 1.x (netCDF).
     CfRadial1,
+    /// CfRadial 2 / WMO FM301 (netCDF-4).
     CfRadial2,
+    /// DORADE sweepfile.
     Dorade,
+    /// Japan Meteorological Agency polar radar GRIB2.
     JmaGrib2,
+    /// A simulated volume (a forward operator's output).
     Simulated,
+    /// Not known (the default of a volume built by hand).
     #[default]
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Decode counts. What a message is depends on the format: a Level II
+/// message, a CfRadial sweep, a DORADE ray block.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DecodeStats {
+    /// Messages (or the format's unit of decoding) the decoder read.
     pub message_count: usize,
+    /// Rays decoded into the volume.
     pub decoded_ray_count: usize,
+    /// Messages the decoder skipped as malformed or out of scope instead of failing.
     pub skipped_message_count: usize,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Provenance of a simulated volume: the model and forward operator that produced it.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SimulationProvenance {
+    /// The forward operator that simulated the radar observations.
     pub forward_operator: Option<String>,
+    /// The forward operator's configuration, as written.
     pub forward_operator_config: Option<String>,
+    /// The numerical weather model the simulation started from.
     pub source_model: Option<String>,
+    /// The model's microphysics scheme.
     pub microphysics_scheme: Option<String>,
+    /// The scattering model the forward operator used.
     pub scattering_model: Option<String>,
 }
 
 /// `/georeferencing_correction`: one `Option<f32>` per name in xradar's
 /// `georeferencing_correction_subgroup`.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GeoreferencingCorrection {
+    /// `azimuth_correction`: added to the antenna azimuth, degrees.
     pub azimuth_correction: Option<f32>,
+    /// `elevation_correction`: added to the antenna elevation, degrees.
     pub elevation_correction: Option<f32>,
+    /// `range_correction`: added to the gate ranges, metres.
     pub range_correction: Option<f32>,
+    /// `longitude_correction`: added to the platform longitude, degrees.
     pub longitude_correction: Option<f32>,
+    /// `latitude_correction`: added to the platform latitude, degrees.
     pub latitude_correction: Option<f32>,
+    /// `pressure_altitude_correction`: added to the pressure altitude, metres.
     pub pressure_altitude_correction: Option<f32>,
+    /// `radar_altitude_correction`: added to the radar altitude, metres.
     pub radar_altitude_correction: Option<f32>,
+    /// `eastward_ground_speed_correction`: added to the platform's eastward ground speed, m/s.
     pub eastward_ground_speed_correction: Option<f32>,
+    /// `northward_ground_speed_correction`: added to the platform's northward ground speed, m/s.
     pub northward_ground_speed_correction: Option<f32>,
+    /// `vertical_velocity_correction`: added to the platform's vertical velocity, m/s.
     pub vertical_velocity_correction: Option<f32>,
+    /// `heading_correction`: added to the platform heading, degrees.
     pub heading_correction: Option<f32>,
+    /// `roll_correction`: added to the platform roll, degrees.
     pub roll_correction: Option<f32>,
+    /// `pitch_correction`: added to the platform pitch, degrees.
     pub pitch_correction: Option<f32>,
+    /// `drift_correction`: added to the platform drift angle, degrees.
     pub drift_correction: Option<f32>,
+    /// `rotation_correction`: added to the antenna rotation angle, degrees.
     pub rotation_correction: Option<f32>,
+    /// `tilt_correction`: added to the antenna tilt angle, degrees.
     pub tilt_correction: Option<f32>,
 }
 

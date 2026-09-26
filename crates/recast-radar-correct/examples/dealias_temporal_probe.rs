@@ -1,11 +1,11 @@
 // Developer tool, not library code: a panic on bad input or I/O is its error report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-// Validate TEMPORAL-reference dealiasing: dealias volume A (plain region
-// engine), fit the range-band reference from its lowest tilt, then dealias
-// volume B's lowest tilt WITH that reference. Reports B's largest positive
-// (outbound) clusters — the fold-branch failure mode.
-// usage: dealias_temporal_probe <volume_A> <volume_B>
+//! Validate TEMPORAL-reference dealiasing: dealias volume A (plain region
+//! engine), fit the range-band reference from its lowest tilt, then dealias
+//! volume B's lowest tilt WITH that reference. Reports B's largest positive
+//! (outbound) clusters — the fold-branch failure mode.
+//! usage: dealias_temporal_probe <volume_A> <volume_B>
 use recast_radar_core::{Quantity, Volume};
 use recast_radar_correct::{
     dealias_velocity, dealias_velocity_with_reference, range_band_reference,

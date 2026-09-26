@@ -1,5 +1,5 @@
 //! Fuzz regression inputs for the Level II writer (`fuzz/`, target
-//! `level2_writer`).
+//! `level2-writer`).
 //!
 //! `fuzz-level2-writer-nexrad-moment-nan-scale` (testdata/fuzz/manifest.toml)
 //! is a minimized libFuzzer mutation of the head of KIWA 2026-09-17 whose

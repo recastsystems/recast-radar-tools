@@ -1,3 +1,5 @@
+//! Print a Level II volume's site, time, scan strategy and a summary of every sweep.
+
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};

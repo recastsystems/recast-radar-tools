@@ -55,7 +55,7 @@ size = 22157
 committed = "files/fuzz/level2_writer/crash-nexrad-moment-nan-scale"
 derived_from = "l2-kiwa-20260917-003629"
 derivation = "libFuzzer mutation of the seed's .l2-head derivation (cargo-fuzz 0.13.2, target level2_writer, fuzz and writer at b6d7e80, AddressSanitizer, 20-minute run in nexbench): artifact crash-a6ae43506b94a3be4a383a09add845c30b95b751 (355780 bytes, 96.7% of its bytes equal to the 355780-byte seed at the same offsets), minimized with `cargo fuzz tmin -r 3000 -- -max_total_time=400` to 22157 bytes. A REF moment header with a NaN scale and offset: the writer did not take that for a NEXRAD coding, resolved every gate to NaN and wrote them all below threshold, so the codes did not come back ('sweep 0: DBZH ray 0 codes differ')"
-tags = ["fuzz-regression", "fuzz-target:level2_writer", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
+tags = ["fuzz-regression", "fuzz-target:level2-writer", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "msg:31"]
 description = "Minimized level2_writer fuzz crash: KIWA 2026 head whose REF moment carries a NaN scale and offset"
 
 [[file]]

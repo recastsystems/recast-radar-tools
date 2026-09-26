@@ -248,7 +248,9 @@ pub enum FormatMetadata {
 /// A routed decode: the FM301 volume plus its format metadata.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Decoded {
+    /// The decoded volume.
     pub volume: Volume,
+    /// The format's metadata beside it.
     pub metadata: FormatMetadata,
 }
 

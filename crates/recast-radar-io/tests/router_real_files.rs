@@ -18,6 +18,7 @@
 //! Archive II radial counts are Py-ART / MetPy values from
 //! `tools/golden_io_formats.py`, section `router`.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use recast_radar_core::model::{FieldData, Sweep, Volume};

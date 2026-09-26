@@ -1,7 +1,8 @@
 //! Fuzz harness bodies for the recast-radar decoders and the bzip2 encoder.
 //!
 //! Each `fuzz_targets/<name>.rs` binary is a one-line libFuzzer wrapper around
-//! the function of the same name here, so the stable `fuzz-tools replay`
+//! the function of the same name here, with `_` for the `-` of a kebab-case
+//! target name (`io-router` wraps `io_router`), so the stable `fuzz-tools replay`
 //! runner (see `tools/`) executes exactly the code the fuzzer ran. A harness
 //! must never panic, abort, hang, or exhaust memory on any input; decode
 //! errors are the expected outcome for most inputs. Each harness returns
@@ -57,22 +58,22 @@ pub type Harness = fn(&[u8]) -> bool;
 
 /// Every harness by target name, in `fuzz_targets/` order.
 pub const TARGETS: &[(&str, Harness)] = &[
-    ("level2_volume", level2_volume),
-    ("level2_writer", level2_writer),
-    ("level2_writer_router", level2_writer_router),
-    ("level2_metadata", level2_metadata),
-    ("io_router", io_router),
+    ("level2-volume", level2_volume),
+    ("level2-writer", level2_writer),
+    ("level2-writer-router", level2_writer_router),
+    ("level2-metadata", level2_metadata),
+    ("io-router", io_router),
     ("odim", odim),
     ("hdf5", hdf5),
     ("cfradial", cfradial),
     ("dorade", dorade),
-    ("dorade_archive", dorade_archive),
+    ("dorade-archive", dorade_archive),
     ("jma", jma),
     ("bzip2", bzip2),
-    ("bzip2_encode", bzip2_encode),
+    ("bzip2-encode", bzip2_encode),
     ("writers", writers),
     ("level3", level3),
-    ("polling_listing", polling_listing),
+    ("polling-listing", polling_listing),
 ];
 
 /// Look up a harness by target name.

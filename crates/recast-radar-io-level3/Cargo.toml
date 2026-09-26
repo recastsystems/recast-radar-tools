@@ -8,13 +8,18 @@ license.workspace = true
 readme.workspace = true
 keywords = ["nexrad", "level3", "tdwr", "radar", "weather"]
 categories = ["science::geo", "parser-implementations", "encoding"]
+# Not packaged: the integration tests read the repository's testdata/
+# through the unpublished recast-radar-testdata crate.
+exclude = ["tests/"]
 
 [dependencies]
-recast-radar-bzip2 = { path = "../recast-radar-bzip2" }
-chrono.workspace = true
+recast-radar-bzip2 = { version = "0.1.0", path = "../recast-radar-bzip2" }
+# Not the workspace entry: that one adds the `now` feature, which this crate
+# does not use.
+chrono = { version = "0.4", default-features = false }
 # zlib-rs backend (pure Rust): NOAAPort distributions wrap products in zlib frames.
 flate2.workspace = true
-recast-radar-core = { path = "../recast-radar-core" }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]

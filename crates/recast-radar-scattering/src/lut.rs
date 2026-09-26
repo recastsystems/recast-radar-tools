@@ -9,7 +9,9 @@ use crate::{
     TMatrixImplementation,
 };
 
+/// The eight bytes that open a LUT file.
 pub const LUT_MAGIC: [u8; 8] = *b"BRSLUT01";
+/// The LUT file schema version this crate reads and writes.
 pub const LUT_SCHEMA_VERSION: u16 = 1;
 
 const PREFIX_BYTES: usize = 8 + 2 + 4;
@@ -24,41 +26,71 @@ const MAX_AXES: usize = 16;
 /// staged as fixed-size host records for a batched accelerator backend.
 pub const PREPARED_INTERPOLATION_AXIS_SLOTS: usize = MAX_AXES;
 
+/// What a LUT axis measures.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AxisKind {
+    /// Diameter of the sphere of equal volume.
     EquivolumeDiameter,
+    /// Temperature.
     Temperature,
+    /// Bulk density.
     BulkDensity,
+    /// Fraction of the particle volume that is condensed.
     CondensedVolumeFraction,
+    /// Fraction of the particle mass that is liquid.
     LiquidMassFraction,
+    /// Ratio of minor to major axis.
     MinorToMajorAxisRatio,
+    /// Radar frequency.
     Frequency,
+    /// Radar elevation angle.
     RadarElevation,
+    /// Canting angle.
     CantingAngle,
+    /// Fraction of the ice mass that is rime.
     RimeMassFraction,
+    /// Density of the rime.
     RimeDensity,
+    /// Time offset.
     TimeOffset,
 }
 
+/// A unit of an axis or output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Unit {
+    /// Metres.
     Meter,
+    /// Kelvin.
     Kelvin,
+    /// kg m⁻³.
     KilogramPerCubicMeter,
+    /// A dimensionless fraction.
     UnitlessFraction,
+    /// Hertz.
     Hertz,
+    /// Degrees.
     Degree,
+    /// Seconds.
     Second,
+    /// Linear reflectivity, mm⁶ m⁻³.
     LinearReflectivityMillimeter6PerMeter3,
+    /// Linear covariance, mm⁶ m⁻³.
     LinearCovarianceMillimeter6PerMeter3,
+    /// Degrees per kilometre.
     DegreePerKilometer,
+    /// Decibels per kilometre.
     DecibelPerKilometer,
+    /// Reflectivity-weighted velocity, m s⁻¹.
     ReflectivityWeightedMeterPerSecond,
+    /// Reflectivity-weighted squared velocity, m² s⁻².
     ReflectivityWeightedMeter2PerSecond2,
 }
 
+/// An axis of a LUT: what it measures, its unit and its coordinates.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Axis {
@@ -68,6 +100,7 @@ pub struct Axis {
 }
 
 impl Axis {
+    /// An axis from its kind, the unit that kind requires, and finite, strictly increasing coordinates.
     pub fn new(kind: AxisKind, unit: Unit, coordinates: Vec<f64>) -> Result<Self, LutError> {
         let axis = Self {
             kind,
@@ -78,16 +111,19 @@ impl Axis {
         Ok(axis)
     }
 
+    /// What the axis measures.
     #[must_use]
     pub const fn kind(&self) -> AxisKind {
         self.kind
     }
 
+    /// The axis unit.
     #[must_use]
     pub const fn unit(&self) -> Unit {
         self.unit
     }
 
+    /// The coordinates, strictly increasing.
     #[must_use]
     pub fn coordinates(&self) -> &[f64] {
         &self.coordinates
@@ -188,20 +224,32 @@ fn axis_unit(kind: AxisKind) -> Unit {
     }
 }
 
+/// An output of a LUT; each grid point holds all of them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum OutputKind {
+    /// Horizontal reflectivity.
     Zh,
+    /// Vertical reflectivity.
     Zv,
+    /// Real part of the HH/VV covariance.
     HhVvCovarianceReal,
+    /// Imaginary part of the HH/VV covariance.
     HhVvCovarianceImaginary,
+    /// Specific differential phase.
     Kdp,
+    /// Horizontal specific attenuation.
     Ah,
+    /// Vertical specific attenuation.
     Av,
+    /// Reflectivity-weighted fall speed (first moment).
     FallSpeedFirstMoment,
+    /// Reflectivity-weighted squared fall speed (second moment).
     FallSpeedSecondMoment,
 }
 
+/// An output of a LUT and its unit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OutputDescriptor {
@@ -210,11 +258,13 @@ pub struct OutputDescriptor {
 }
 
 impl OutputDescriptor {
+    /// The output.
     #[must_use]
     pub const fn kind(self) -> OutputKind {
         self.kind
     }
 
+    /// Its unit.
     #[must_use]
     pub const fn unit(self) -> Unit {
         self.unit
@@ -266,8 +316,10 @@ fn canonical_outputs() -> Vec<OutputDescriptor> {
     ]
 }
 
+/// How the LUT payload is encoded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PayloadEncoding {
     /// f64 little endian, one nine-component output per grid point, with the
     /// last declared axis varying fastest.
@@ -287,6 +339,7 @@ pub struct GeneratorMetadata {
 }
 
 impl GeneratorMetadata {
+    /// Generator metadata; text fields must not be empty and package names must be lowercase with non-empty versions.
     pub fn new(
         name: impl Into<String>,
         version: impl Into<String>,
@@ -307,31 +360,37 @@ impl GeneratorMetadata {
         Ok(metadata)
     }
 
+    /// Name of the generator.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Version of the generator.
     #[must_use]
     pub fn version(&self) -> &str {
         &self.version
     }
 
+    /// The executable that ran the generator.
     #[must_use]
     pub fn executable(&self) -> &str {
         &self.executable
     }
 
+    /// Source revision of the generator.
     #[must_use]
     pub fn source_revision(&self) -> &str {
         &self.source_revision
     }
 
+    /// Python version, for Python generators.
     #[must_use]
     pub fn python_version(&self) -> Option<&str> {
         self.python_version.as_deref()
     }
 
+    /// Versions of the packages the generator used, by lowercase package name.
     #[must_use]
     pub const fn package_versions(&self) -> &BTreeMap<String, String> {
         &self.package_versions
@@ -376,6 +435,7 @@ impl GeneratorMetadata {
     }
 }
 
+/// The JSON header of a LUT file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LutHeader {
@@ -394,61 +454,73 @@ pub struct LutHeader {
 }
 
 impl LutHeader {
+    /// The magic text (`BRSLUT01`).
     #[must_use]
     pub fn magic(&self) -> &str {
         &self.magic
     }
 
+    /// The schema version.
     #[must_use]
     pub const fn schema_version(&self) -> u16 {
         self.schema_version
     }
 
+    /// The axes, in payload order (the last varies fastest).
     #[must_use]
     pub fn axes(&self) -> &[Axis] {
         &self.axes
     }
 
+    /// The outputs held at each grid point.
     #[must_use]
     pub fn outputs(&self) -> &[OutputDescriptor] {
         &self.outputs
     }
 
+    /// The generator.
     #[must_use]
     pub const fn generator(&self) -> &GeneratorMetadata {
         &self.generator
     }
 
+    /// The generator's configuration, as JSON text.
     #[must_use]
     pub fn generator_config_utf8(&self) -> &str {
         &self.generator_config_utf8
     }
 
+    /// SHA-256 of the generator configuration.
     #[must_use]
     pub const fn config_sha256(&self) -> Sha256Digest {
         self.config_sha256
     }
 
+    /// The scattering science metadata.
     #[must_use]
     pub const fn science(&self) -> &ScienceMetadata {
         &self.science
     }
 
+    /// How the payload is encoded.
     #[must_use]
     pub const fn payload_encoding(&self) -> PayloadEncoding {
         self.payload_encoding
     }
 
+    /// Grid points in the payload.
     #[must_use]
     pub const fn grid_point_count(&self) -> u64 {
         self.grid_point_count
     }
 
+    /// Length of the payload, bytes.
     #[must_use]
     pub const fn payload_byte_length(&self) -> u64 {
         self.payload_byte_length
     }
 
+    /// SHA-256 of the payload.
     #[must_use]
     pub const fn payload_sha256(&self) -> Sha256Digest {
         self.payload_sha256
@@ -548,6 +620,7 @@ pub struct AxisCoordinate {
 }
 
 impl AxisCoordinate {
+    /// A coordinate for an axis kind; the value must be finite.
     pub fn new(kind: AxisKind, value: f64) -> Result<Self, InterpolationError> {
         if !value.is_finite() {
             return Err(InterpolationError::NonFiniteCoordinate { kind, value });
@@ -555,11 +628,13 @@ impl AxisCoordinate {
         Ok(Self { kind, value })
     }
 
+    /// The axis kind.
     #[must_use]
     pub const fn kind(self) -> AxisKind {
         self.kind
     }
 
+    /// The value, in the axis unit.
     #[must_use]
     pub const fn value(self) -> f64 {
         self.value
@@ -642,6 +717,7 @@ pub struct OfflineLut {
 }
 
 impl OfflineLut {
+    /// A table from its axes (1 to 16, distinct kinds), generator, generator configuration (JSON text), science metadata and one value per grid point, last axis fastest.
     pub fn new(
         axes: Vec<Axis>,
         generator: GeneratorMetadata,
@@ -689,11 +765,13 @@ impl OfflineLut {
         Ok(Self { header, values })
     }
 
+    /// The header.
     #[must_use]
     pub const fn header(&self) -> &LutHeader {
         &self.header
     }
 
+    /// The values, one per grid point, last axis fastest.
     #[must_use]
     pub fn values(&self) -> &[AdditiveScattering] {
         &self.values
@@ -1056,117 +1134,269 @@ fn assemble_file(header: &LutHeader, payload: &[u8]) -> Result<Vec<u8>, LutError
     Ok(file)
 }
 
+/// Why a LUT could not be built, read or written.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum LutError {
+    /// The file is shorter than its 14-byte prefix.
     #[error("LUT prefix is truncated: expected at least 14 bytes, got {actual}")]
-    TruncatedPrefix { actual: usize },
+    TruncatedPrefix {
+        /// Bytes available.
+        actual: usize,
+    },
+    /// The file does not open with [`LUT_MAGIC`].
     #[error("invalid LUT file magic {actual:?}")]
-    FileMagic { actual: [u8; 8] },
+    FileMagic {
+        /// The bytes found.
+        actual: [u8; 8],
+    },
+    /// The schema version is not [`LUT_SCHEMA_VERSION`].
     #[error("unsupported LUT schema version {actual}")]
-    UnsupportedSchema { actual: u16 },
+    UnsupportedSchema {
+        /// The version found.
+        actual: u16,
+    },
+    /// The header length is zero or more than 16 MiB.
     #[error("invalid LUT header length {actual}")]
-    HeaderSize { actual: usize },
+    HeaderSize {
+        /// The length, bytes.
+        actual: usize,
+    },
+    /// The header is longer than the bytes that remain.
     #[error("LUT header declares {declared} bytes but only {available} remain")]
-    TruncatedHeader { declared: usize, available: usize },
+    TruncatedHeader {
+        /// Declared length, bytes.
+        declared: usize,
+        /// Bytes available.
+        available: usize,
+    },
+    /// The header JSON could not be parsed or written.
     #[error("LUT header JSON is invalid: {0}")]
     HeaderJson(#[source] serde_json::Error),
+    /// The header's magic text is wrong.
     #[error("header magic {actual:?} does not match the schema magic")]
-    HeaderMagic { actual: String },
+    HeaderMagic {
+        /// The text found.
+        actual: String,
+    },
+    /// The prefix and the header declare different schema versions.
     #[error("prefix schema {prefix} does not match header schema {header}")]
-    SchemaDisagreement { prefix: u16, header: u16 },
+    SchemaDisagreement {
+        /// Version in the prefix.
+        prefix: u16,
+        /// Version in the header.
+        header: u16,
+    },
+    /// The table has no axes or too many.
     #[error("LUT must have 1..={maximum} axes, got {actual}")]
-    AxisCount { actual: usize, maximum: usize },
+    AxisCount {
+        /// Axes given.
+        actual: usize,
+        /// The most allowed.
+        maximum: usize,
+    },
+    /// An axis has the wrong unit for its kind.
     #[error("axis {index} ({kind:?}) must use {expected:?}, got {actual:?}")]
     AxisUnit {
+        /// Position of the axis.
         index: usize,
+        /// Its kind.
         kind: AxisKind,
+        /// The unit the kind requires.
         expected: Unit,
+        /// The unit given.
         actual: Unit,
     },
+    /// An axis has no coordinates.
     #[error("axis {index} has no coordinates")]
-    EmptyAxis { index: usize },
+    EmptyAxis {
+        /// Position of the axis.
+        index: usize,
+    },
+    /// An axis coordinate is not finite.
     #[error("axis {axis} coordinate {coordinate} is not finite: {value}")]
     NonFiniteAxisCoordinate {
+        /// Position of the axis.
         axis: usize,
+        /// Position of the coordinate.
         coordinate: usize,
+        /// The value.
         value: f64,
     },
+    /// An axis is not strictly increasing.
     #[error("axis {axis} is not strictly increasing at {lower}, {upper}")]
-    NonIncreasingAxis { axis: usize, lower: f64, upper: f64 },
+    NonIncreasingAxis {
+        /// Position of the axis.
+        axis: usize,
+        /// The earlier coordinate.
+        lower: f64,
+        /// The later coordinate.
+        upper: f64,
+    },
+    /// Two axes have the same kind.
     #[error("axis kind {kind:?} appears more than once")]
-    DuplicateAxis { kind: AxisKind },
+    DuplicateAxis {
+        /// The kind.
+        kind: AxisKind,
+    },
+    /// The outputs are not the schema's canonical outputs.
     #[error("output descriptors or units do not match schema-v1 canonical additive outputs")]
     NonCanonicalOutputs,
+    /// A generator text is empty.
     #[error("{field} must not be empty")]
-    EmptyMetadata { field: &'static str },
+    EmptyMetadata {
+        /// Which text.
+        field: &'static str,
+    },
+    /// A generator package name is not canonical lowercase.
     #[error("generator package name {package:?} is not canonical lowercase text")]
-    NonCanonicalPackageName { package: String },
+    NonCanonicalPackageName {
+        /// The name.
+        package: String,
+    },
+    /// A generator package has an empty version.
     #[error("generator package {package} has an empty version")]
-    EmptyPackageVersion { package: String },
+    EmptyPackageVersion {
+        /// The package.
+        package: String,
+    },
+    /// A PyTMatrix table does not name pytmatrix 0.3.3.
     #[error("PyTMatrix tables must identify package pytmatrix version 0.3.3, got {actual:?}")]
-    PyTMatrixVersion { actual: Option<String> },
+    PyTMatrixVersion {
+        /// The version found.
+        actual: Option<String>,
+    },
+    /// The generator configuration is not valid JSON.
     #[error("generator config is not valid JSON: {0}")]
     GeneratorConfigJson(#[source] serde_json::Error),
+    /// The generator configuration is not a JSON object.
     #[error("generator config JSON must be an object")]
     GeneratorConfigNotObject,
+    /// The embedded configuration's SHA-256 differs from the header's.
     #[error("embedded generator config SHA-256 mismatch: expected {expected}, got {actual}")]
     ConfigDigestMismatch {
+        /// The digest in the header.
         expected: Sha256Digest,
+        /// The digest of the configuration.
         actual: Sha256Digest,
     },
+    /// A configuration supplied by the caller differs from the table's.
     #[error("external generator config SHA-256 mismatch: expected {expected}, got {actual}")]
     ExternalConfigDigestMismatch {
+        /// The table's digest.
         expected: Sha256Digest,
+        /// The digest of the supplied configuration.
         actual: Sha256Digest,
     },
+    /// The axis sizes overflow the addressable table size.
     #[error("axis dimensions overflow addressable table size")]
     DimensionOverflow,
+    /// The header's grid-point count differs from the axes.
     #[error("header grid-point count {header} does not match axes {axes}")]
-    GridPointCount { header: u64, axes: u64 },
+    GridPointCount {
+        /// The count in the header.
+        header: u64,
+        /// The count from the axes.
+        axes: u64,
+    },
+    /// The header's payload length differs from the length the schema requires.
     #[error("header payload length {header} does not match schema-derived length {expected}")]
-    HeaderPayloadLength { header: u64, expected: u64 },
+    HeaderPayloadLength {
+        /// The length in the header.
+        header: u64,
+        /// The length required.
+        expected: u64,
+    },
+    /// The payload length differs from the header's.
     #[error("payload length {actual} does not match header length {header}")]
-    PayloadLength { header: u64, actual: u64 },
+    PayloadLength {
+        /// The length in the header.
+        header: u64,
+        /// The length found.
+        actual: u64,
+    },
+    /// The payload's SHA-256 differs from the header's.
     #[error("payload SHA-256 mismatch: expected {expected}, got {actual}")]
     PayloadDigestMismatch {
+        /// The digest in the header.
         expected: Sha256Digest,
+        /// The digest of the payload.
         actual: Sha256Digest,
     },
+    /// The number of values differs from the grid points.
     #[error("table has {actual} values but axes require {expected}")]
-    ValueCount { expected: usize, actual: usize },
+    ValueCount {
+        /// Grid points.
+        expected: usize,
+        /// Values given.
+        actual: usize,
+    },
+    /// A grid point holds an invalid output.
     #[error("invalid additive output at grid point {point}: {source}")]
     InvalidOutput {
+        /// Index of the grid point.
         point: usize,
+        /// The error.
         #[source]
         source: OutputError,
     },
+    /// The science metadata was rejected.
     #[error(transparent)]
     Science(#[from] ScienceError),
 }
 
+/// Why a LUT interpolation failed.
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum InterpolationError {
+    /// A coordinate is not finite.
     #[error("coordinate for {kind:?} must be finite, got {value}")]
-    NonFiniteCoordinate { kind: AxisKind, value: f64 },
+    NonFiniteCoordinate {
+        /// Its axis kind.
+        kind: AxisKind,
+        /// The value.
+        value: f64,
+    },
+    /// The query has the wrong number of coordinates.
     #[error("expected {expected} interpolation coordinates, got {actual}")]
-    CoordinateCount { expected: usize, actual: usize },
+    CoordinateCount {
+        /// Axes of the table.
+        expected: usize,
+        /// Coordinates given.
+        actual: usize,
+    },
+    /// A coordinate is for the wrong axis (queries follow the header's axis order).
     #[error("coordinate {index} must be for {expected:?}, got {actual:?}")]
     AxisOrder {
+        /// Position of the coordinate.
         index: usize,
+        /// The axis at that position.
         expected: AxisKind,
+        /// The axis given.
         actual: AxisKind,
     },
+    /// A coordinate is outside its axis.
     #[error("{kind:?} coordinate {value} is outside [{minimum}, {maximum}]")]
     OutsideAxis {
+        /// The axis kind.
         kind: AxisKind,
+        /// The value.
         value: f64,
+        /// First coordinate of the axis.
         minimum: f64,
+        /// Last coordinate of the axis.
         maximum: f64,
     },
+    /// The axis sizes overflow the addressable table size.
     #[error("interpolation dimensions overflow addressable table size")]
     DimensionOverflow,
+    /// A prepared plan does not fit the table.
     #[error("invalid prepared interpolation plan: {reason}")]
-    InvalidPreparedPlan { reason: &'static str },
+    InvalidPreparedPlan {
+        /// What is wrong.
+        reason: &'static str,
+    },
+    /// The interpolated output is invalid.
     #[error("interpolation produced an invalid additive output: {0}")]
     InvalidInterpolatedOutput(OutputError),
 }
