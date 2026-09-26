@@ -523,8 +523,16 @@ MetPy 1.7.1, xradar 0.12.0, h5py 3.16.0, netCDF4 1.7.4, the `nexrad` crate 1.0.0
 from the sources the example lists (Level II, ODIM_H5, JMA with the merged volume, CfRadial 1 and
 DORADE), once under the default policy (`Precise`) and once under `Compatible`: **0 failures** in
 both. That run predates the integration changes (the site-position refusal, the pulse width, the
-non-clipping `Standard`) and included three Level II sources that are no longer in the corpus; it
-has not been repeated since. Every
+non-clipping `Standard`) and included three Level II sources that are no longer in the corpus.
+
+**Rerun on the integration branch** (2026-09-26, with the site-position refusal, the pulse width,
+the non-clipping `Standard` and the `recast-radar-bzip2` encoder; Py-ART 2.3.0, MetPy 1.7.1,
+xradar 0.12.0, h5py 3.16.0, netCDF4 1.7.4; the `nexrad` crate, RSL and LROSE not rerun): 30 files
+under the default policy (KTLX 2024, KILX 2026 and KIWA 2026 whole volumes, the KTLX, KDVN and
+TSTL trims, KVWX 2008, five ODIM_H5 volumes, two CfRadial 1, two DORADE and the JMA N5, N6 and
+merged volumes, in the variants the example writes), **0 failures** and 116 notes, all of the
+kinds listed below. The KLIX 2005 Message 1 trim, which carries no site position, is refused
+(`MissingLocation`) and not written. Every
 source but the merged JMA volume is now compared with an independent reading of it: DORADE COW2
 and NOXP with RadxConvert's (it keeps COW2's 3 rays flagged in transition, which the decoder
 leaves out; the reference leaves them out too), JMA N5 and N6 with the GRIB2 walker. KVWX 2008's
