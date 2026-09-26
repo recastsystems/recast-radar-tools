@@ -180,6 +180,8 @@ pub fn level2_writer(data: &[u8]) -> bool {
         .collect();
     assert_eq!(again.sweeps.len(), summary.sweeps, "sweeps");
     assert_eq!(kept.len(), summary.sweeps, "kept sweeps");
+    // A Level II source keeps its cut order.
+    assert_eq!(summary.written_sweeps, kept, "cut order");
     let radials: usize = again.sweeps.iter().map(|sweep| sweep.nrays()).sum();
     assert_eq!(radials, summary.radials, "radials");
     for (out, &index) in kept.iter().enumerate() {
@@ -327,9 +329,15 @@ pub fn level2_writer_router(data: &[u8]) -> bool {
         Ok(again) => again,
         Err(error) => panic!("the written volume does not decode: {error}"),
     };
-    let kept: Vec<usize> = (0..source.sweeps.len())
+    // Every sweep not left out, once, as a cut: a foreign volume's in the
+    // order its sweeps were collected.
+    let kept = summary.written_sweeps.clone();
+    let mut sorted = kept.clone();
+    sorted.sort_unstable();
+    let expected: Vec<usize> = (0..source.sweeps.len())
         .filter(|index| !summary.skipped_sweeps.contains(index))
         .collect();
+    assert_eq!(sorted, expected, "written sweeps");
     assert_eq!(again.sweeps.len(), summary.sweeps, "sweeps");
     assert_eq!(kept.len(), summary.sweeps, "kept sweeps");
     let radials: usize = again.sweeps.iter().map(|sweep| sweep.nrays()).sum();

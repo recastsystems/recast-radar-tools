@@ -470,6 +470,9 @@ impl<'a> ChunkWriter<'a> {
                 rays.sweep += offset;
                 rays
             }));
+        summary
+            .written_sweeps
+            .extend(part.written_sweeps.into_iter().map(|index| index + offset));
         summary.notes.extend(part.notes);
         self.pushed_sweeps += part_sweeps;
     }
