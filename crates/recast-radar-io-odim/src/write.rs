@@ -250,6 +250,10 @@ const CONVENTIONS: &str = "ODIM_H5/V2_3";
 /// 20 is otherwise taken as metres).
 pub(crate) const SOFTWARE: &str = "recast-radar-tools";
 const VERSION: &str = "H5rad 2.3";
+/// Largest error, in seconds, of a ray time read back as the mean of the
+/// `startazT` and `stopazT` written for it; a ray whose ends would miss it
+/// by more gets its own time as both.
+const MAX_TIME_ERROR_S: f64 = 1e-6;
 
 /// Where a kept attribute goes.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -893,13 +897,19 @@ fn write_sweep(
         steps.sort_by(f64::total_cmp);
         let half_step = steps.get(steps.len() / 2).map_or(0.0, |step| step / 2.0);
         // A time within half a step of the float range keeps itself as both
-        // ends (the step would overflow it).
+        // ends (the step would overflow it), and so does a time the ends
+        // would not give back to the microsecond: readers take the ray time
+        // as the ends' mean, and a step far larger than the time (a corrupt
+        // ray time elsewhere in the sweep) rounds the ends.
         let time_edge = |time: f64, offset: f64| {
-            let edge = time + offset;
-            if edge.is_finite() || !time.is_finite() {
-                edge
-            } else {
-                time
+            let (start, stop) = (time - offset.abs(), time + offset.abs());
+            let kept = start.is_finite()
+                && stop.is_finite()
+                && (start / 2.0 + stop / 2.0 - time).abs() <= MAX_TIME_ERROR_S;
+            match (kept, offset < 0.0) {
+                (false, _) => time,
+                (true, true) => start,
+                (true, false) => stop,
             }
         };
         attrs.derived(

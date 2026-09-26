@@ -147,6 +147,17 @@ tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived
 description = "Writers fuzz crash: a CfRadial 1 ray time near the double range, whose ODIM round trip overflowed the reader's start/stop mean to -inf"
 
 [[file]]
+id = "fuzz-writers-odim-ray-time-step-beyond-precision"
+format = "cfradial1"
+sha256 = "207fec1b12edc0acd694e96225c0cb4e4d41d77f9b686c952c7710fdbf9ece08"
+size = 13626
+committed = "files/fuzz/writers/crash-odim-ray-time-step-beyond-precision"
+derived_from = "cfrad1-xsapr-sgp-20110520-ppi-classic"
+derivation = "fuzz-tools smoke writers 100 (stable mutator, integration branch, 2026-09-26), mutant 76 of the seed as committed, committed as found. One ray decodes with a time of about -3.8e17 s, which made the ODIM writer's half ray step about 5.5e11 s; the startazT and stopazT it wrote around each ray time then rounded, and the reader's mean of the two missed the other rays' times by 2e-5 s"
+tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "container:netcdf3-classic"]
+description = "Writers fuzz crash: a CfRadial 1 sweep with one ray time far from the others, whose ODIM round trip moved every other ray time by 2e-5 s"
+
+[[file]]
 id = "fuzz-level3-rcm-centroid-non-ascii"
 format = "nexrad-level3"
 sha256 = "2234f045d5b827fab5836af7d5a4684a167350014cc426edc1d30e46f2a2951b"
