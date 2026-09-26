@@ -20,6 +20,10 @@
 # - recast-radar-bench (the benchmark harness binary) is checked with the
 #   workspace crates: every crate that does not need the network builds for
 #   wasm32 (spec 9.7). Its file reads return I/O errors there.
+# - recast-radar-cli: not checked. It is the native `recast-radar` command
+#   (files, sockets, threads and, by default, the blocking HTTPS client).
+# - recast-radar-py: not checked. It is the CPython extension module of the
+#   Python package (PyO3); CPython does not load wasm32-unknown-unknown modules.
 # - recast-radar-testdata: not checked. It is the test-only corpus fetcher
 #   (ureq + rustls, whose `ring` compiles C), never a normal dependency of a
 #   library crate.
@@ -46,6 +50,8 @@ has_net_feature() {
 cargo hack check --locked --target "$target" --workspace \
     --exclude recast-radar-tools \
     --exclude recast-radar-data \
+    --exclude recast-radar-cli \
+    --exclude recast-radar-py \
     --exclude recast-radar-testdata
 
 cargo hack check --locked --target "$target" -p recast-radar-tools \

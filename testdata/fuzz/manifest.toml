@@ -156,3 +156,14 @@ derived_from = "l3-fws-rcm-19950517-2310"
 derivation = "libFuzzer mutation of the seed (cargo-fuzz, target level3, 40-minute run in nexbench over decoders at cac3cd0): artifact crash-20497ef8dd9b1080642c84945195bb2b4128cd0b (7601 bytes, sha256 2fb0010125426623647d2faff1612978cc0d4712971e6248ce2fe91fabc2f2e0; the seed with its centroid group bytes changed to 0xBF/0xC3), minimized with libFuzzer `-minimize_crash=1 -max_total_time=120` to 23 bytes, which the harness passes to the radar coded message text parser (length 3 mod 4). A Part A centroid group whose motion field held Latin-1 bytes above 0x7F (two UTF-8 bytes each once decoded) was sliced at byte 3 of the motion text inside a character ('end byte index 3 is not a char boundary') in rcm::centroid; two more artifacts of the run hit the same line"
 tags = ["fuzz-regression", "fuzz-target:level3", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "product:74"]
 description = "Minimized level3 fuzz crash: radar coded message centroid group with non-ASCII motion characters"
+
+[[file]]
+id = "fuzz-level2-records-volume-header-date-overflow"
+format = "nexrad-level2"
+sha256 = "c6acb83d5b7b2c67b4e22cd9dfd76ca806b453c2d3c2e75dd2ba9f335bd76f76"
+size = 24
+committed = "files/fuzz/level2_records/crash-volume-header-date-overflow"
+derived_from = "l2-tbwi-20230601-175101-stub"
+derivation = "libFuzzer mutation of the seed (cargo-fuzz 0.13.2, target level2_records added on branch frontends after d6a29ed, 150-second run in nexbench without fork mode): artifact crash-0032fb8344436e16dd883d87b3289ecdc99bf352 (477 bytes, starting with the seed's `AR2V0008.718` volume header), minimized with libFuzzer `-minimize_crash=1 -max_total_time=120` (what `cargo fuzz tmin` runs) to the first 24 bytes: an AR2V0008 volume header whose Julian date field (bytes 12..16) reads 0x2EFFFFFF (788,529,151 days, far past chrono's year 262143). recast-radar-cli's record summary added that many days to the Unix epoch with chrono's panicking `+` ('`DateTime + TimeDelta` overflowed'); the cli_open target found the same panic through `open::open_bytes` in the same run"
+tags = ["fuzz-regression", "fuzz-target:level2-records", "fuzz-target:cli-open", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "header:AR2V0008"]
+description = "Minimized level2-records fuzz crash: a 24-byte AR2V0008 volume header whose date field (0x2EFFFFFF days) is past chrono's range"

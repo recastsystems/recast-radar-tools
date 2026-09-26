@@ -1,0 +1,5 @@
+GET /KXWA/dir.list HTTP/1.1
+accept: */*
+user-agent: bowecho (GR2Analyst-compatible placefile client)
+host: 127.0.0.1:55575
+

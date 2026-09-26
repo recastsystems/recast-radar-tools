@@ -38,6 +38,11 @@ Not checked:
   blocking client, which does not exist on wasm32 (30 compile errors at
   `ba35387`).
 - The facade's `net` and `full` features, because both enable `recast-radar-data`.
+- `recast-radar-cli`: the `recast-radar` command. It is a native binary
+  (files, sockets, threads, and by default `recast-radar-data`'s blocking
+  client), so wasm32 is not a goal for it.
+- `recast-radar-py`: the CPython extension module of the Python package
+  (PyO3). CPython does not load `wasm32-unknown-unknown` modules.
 - `recast-radar-testdata`: the test-only corpus crate. It downloads over HTTPS
   through ureq and rustls, and no library crate has it as a normal dependency.
 

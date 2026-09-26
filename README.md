@@ -9,6 +9,12 @@ volumes and real-time chunks from AWS, and data from other public feeds. They
 dealias Doppler velocity, filter gates, compute derived products, build
 composites and cross sections, track storm cells and render sweeps to PNG.
 There is no unsafe code, and without the `net` feature no C in the build.
+There is no GUI. The `recast-radar` command-line tool
+([`crates/recast-radar-cli`](crates/recast-radar-cli), guide
+[docs/guide/cli.md](docs/guide/cli.md)) runs them from a shell, and the
+Python package `recast_radar` ([`crates/recast-radar-py`](crates/recast-radar-py),
+guide [docs/guide/python.md](docs/guide/python.md)) opens radar files as
+xarray DataTrees and Py-ART radars.
 
 Status: version 0.1.0, not published to crates.io, and the API is not stable
 (see [CHANGELOG.md](CHANGELOG.md)). The data model is checked against xradar
@@ -123,7 +129,7 @@ file.
 | `recast-radar-io-nexrad` | `nexrad` | NEXRAD Archive II (Level II), Message 31 and legacy Message 1, uncompressed, gzip, bzip2 or LDM block-bzip2, with the metadata messages; writes any volume as Archive II, real-time chunks or a GR2Analyst polling directory ([docs/level2/writer.md](docs/level2/writer.md)) |
 | `recast-radar-bzip2` | | bzip2 compressor and decompressor without unsafe code or required dependencies (rayon with the `rayon` feature), written for LDM records: the decoder takes about a quarter of the instructions of C libbzip2; the encoder writes libbzip2's exact streams in 0.6 to 0.8 of its time on LDM records, and in less time than it at every input size measured, from 16 bytes up |
 | `recast-radar-io-level3` | `level3` | NEXRAD and TDWR Level III products: NOAAPort/WMO framing, message and product description headers, symbology, graphic and tabular blocks, display packets, data levels, the VAD Wind Profile |
-| `recast-radar-hdf5` | | HDF5 reader without unsafe code (superblocks 0-3, old and new-style groups, dense links and attributes, fractal heaps, v2 B-trees, every chunk index, deflate/shuffle/Fletcher-32, the netCDF-4 data model) and an HDF5 / netCDF-4 writer |
+| `recast-radar-hdf5` | `hdf5` | HDF5 reader without unsafe code (superblocks 0-3, old and new-style groups, dense links and attributes, fractal heaps, v2 B-trees, every chunk index, deflate/shuffle/Fletcher-32, the netCDF-4 data model) and an HDF5 / netCDF-4 writer |
 | `recast-radar-io-odim` | `odim` | ODIM_H5 polar volumes and Cartesian products, through `recast-radar-hdf5`; an ODIM_H5 polar volume writer |
 | `recast-radar-io-cfradial` | `cfradial` | CfRadial 1 (classic netCDF CDF-1/CDF-2 or netCDF-4) and CfRadial 2 / FM301 (netCDF-4), through readers written in Rust; CfRadial 1 (CDF-2) and CfRadial 2 / FM301 writers |
 | `recast-radar-io-dorade` | `dorade` | DORADE sweepfiles and mobile-radar (DOW, COW, RaXPol) archives |
@@ -137,6 +143,8 @@ file.
 | `recast-radar-track` | `track` | Storm cell identification and tracking, rotation tracks, swaths, temporal grids |
 | `recast-radar-render` | `render` | CPU rendering to RGBA and PNG, color tables, GR `.pal` palettes |
 | `recast-radar-scattering` | `scattering` | Radar-scattering primitives and offline lookup tables |
+| `recast-radar-cli` | | The `recast-radar` command: info, dump, render, fetch, validate, bench, convert, publish, serve |
+| `recast-radar-py` | | The Python package `recast_radar` (PyO3 extension module, built into wheels by maturin, not published): FM301 DataTrees, Py-ART radars, writers, fetchers |
 | `recast-radar-bench` | | Decode and render benchmark with output checksums (binary, not published) |
 | `recast-radar-testdata` | | Real test files: manifests, committed fixtures, a SHA-256-verified download cache and the Level II trim tool (for tests only, not published) |
 <!-- crate-map:end -->
@@ -157,11 +165,13 @@ dependency, and a LICENSE file in the package).
 |---|---|---|---|---|
 | (always on) | `model` | `recast-radar-core` | | yes |
 | `nexrad` | `nexrad` | `recast-radar-io-nexrad` | | via `io` |
+| `write` | | | `nexrad` | |
 | `level3` | `level3` | `recast-radar-io-level3` | | via `io` |
-| `odim` | `odim` | `recast-radar-io-odim` | | via `io` |
-| `cfradial` | `cfradial` | `recast-radar-io-cfradial` | | via `io` |
+| `odim` | `odim` | `recast-radar-io-odim` | `hdf5` | via `io` |
+| `cfradial` | `cfradial` | `recast-radar-io-cfradial` | `hdf5` | via `io` |
 | `dorade` | `dorade` | `recast-radar-io-dorade` | | via `io` |
 | `jma` | `jma` | `recast-radar-io-jma` | | via `io` |
+| `hdf5` | `hdf5` | `recast-radar-hdf5` | | via `io` |
 | `io` | `io` | `recast-radar-io` | `nexrad` `level3` `odim` `cfradial` `dorade` `jma` | yes |
 | `net` | `data` | `recast-radar-data` | | |
 | `correct` | `correct` | `recast-radar-correct` | | yes |
@@ -172,7 +182,7 @@ dependency, and a LICENSE file in the package).
 | `render` | `render` | `recast-radar-render` | `correct` | |
 | `scattering` | `scattering` | `recast-radar-scattering` | | |
 | `serde` | | | | |
-| `full` | | | `io` `net` `correct` `filters` `retrieve` `map` `track` `render` `scattering` `serde` | |
+| `full` | | | `io` `write` `net` `correct` `filters` `retrieve` `map` `track` `render` `scattering` `serde` | |
 <!-- features:end -->
 
 - In the Default column, "yes" means the feature is listed in `default`, and
@@ -222,7 +232,8 @@ The same split applies to WebAssembly. Every library crate except
 `recast-radar-data` (which builds for wasm32 without its `net` feature) and
 the test-only `recast-radar-testdata` passes
 `cargo check --target wasm32-unknown-unknown`, and so do the facade with any
-single feature other than `net` and `full`, and the benchmark binary. CI
+single feature other than `net` and `full`, and the benchmark binary. The
+command-line tool and the Python extension module are native only. CI
 checks this with [`tools/ci/wasm-check.sh`](tools/ci/wasm-check.sh). On that
 target, use the byte-slice entry points (such as
 `nexrad::read_volume_from_bytes`), because the path-based ones return I/O
@@ -236,6 +247,12 @@ The workspace sets `unsafe_code = "forbid"`, and every crate opts in with
 
 <!-- lint-exceptions:start -->
 <!-- lint-exceptions:end -->
+
+That includes the Python bindings (`recast-radar-py`): PyO3 0.29's
+`#[pymodule]`, `#[pyfunction]`, `#[pyclass]` and `#[pymethods]` expand to code
+the forbidden lint accepts, and field buffers reach NumPy through
+`numpy::PyArray::from_vec`, which takes ownership of the `Vec` without
+`unsafe` (design note `docs/design/fm301-model.md` 12.2).
 
 Library code also denies `clippy::unwrap_used` and `clippy::expect_used`, and
 the workspace denies `missing_docs`: every public item is documented.
@@ -273,6 +290,34 @@ and checked against their SHA-256.
 - the fuzz harness and the replay of every fuzz regression input on stable,
   and a 60-second run of every fuzz target on nightly
   ([`tools/ci/fuzz-smoke.sh`](tools/ci/fuzz-smoke.sh)).
+
+[`.github/workflows/python-wheels.yml`](.github/workflows/python-wheels.yml)
+is set to build the Python package as abi3 wheels for Linux (manylinux2014),
+Windows and macOS (Apple silicon and Intel) on pushes to `main` and on
+manual dispatch, run the pytest suite against xradar, Py-ART and MetPy with
+each wheel (Python 3.10 and 3.12 on Linux), and keep the wheels as workflow
+artifacts. Nothing is uploaded to PyPI, and the package carries the
+`Private :: Do Not Upload` classifier, which PyPI rejects. The suite
+(`crates/recast-radar-py/pytests`) also runs locally after
+`maturin develop` or with a built wheel installed.
+
+[`.github/workflows/cli-binaries.yml`](.github/workflows/cli-binaries.yml)
+is set to build the `recast-radar` command with the release profile for
+Linux, Windows and macOS (Apple silicon and Intel) on pushes to `main` and on
+manual dispatch, run it on committed test files, and keep the binaries as
+workflow artifacts, which only people with access to the repository can
+download. Nothing is released.
+
+Neither of these two workflows has run on GitHub yet: the branch that adds
+them has not been pushed. What was checked without GitHub: both pass
+`actionlint`; the Windows x64 binary and wheel build; the Linux binary builds
+with the release profile (fat LTO) on stable Rust and passes the workflow's
+smoke commands (Ubuntu 24.04); the manylinux2014
+wheel builds in the maturin manylinux2014 image, and the pytest suite passes
+with it on Linux under Python 3.12 (all of it) and 3.10 (without the xradar
+and Py-ART comparisons, whose pinned readers need 3.11). The macOS jobs
+(native Apple silicon, and the x86_64 cross build on the Apple silicon
+runner) have not run anywhere.
 
 ## License
 

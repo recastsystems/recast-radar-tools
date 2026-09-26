@@ -1,0 +1,47 @@
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
+[project]
+name = "recast-radar"
+description = "Weather radar files (NEXRAD Level II/III, ODIM_H5, CfRadial, DORADE, JMA) as xarray DataTrees and Py-ART radars, decoded in Rust"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT OR Apache-2.0"
+dynamic = ["version"]
+dependencies = [
+    "numpy>=1.23",
+    "xarray>=2024.10",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    # PyPI refuses uploads that carry this classifier: the wheels are built
+    # as private CI artifacts only.
+    "Private :: Do Not Upload",
+]
+
+[project.optional-dependencies]
+pyart = ["arm_pyart>=2.2"]
+test = ["pytest>=8", "xradar>=0.12", "arm_pyart>=2.2", "h5netcdf", "netCDF4", "metpy>=1.6", "tomli; python_version < \"3.11\""]
+
+# `xr.open_datatree(path, engine="recast_radar")` and
+# `xr.open_dataset(path, engine="recast_radar", group="sweep_0")`.
+[project.entry-points."xarray.backends"]
+recast_radar = "recast_radar._backend:RecastRadarBackendEntrypoint"
+
+[tool.maturin]
+python-source = "python"
+module-name = "recast_radar._native"
+manifest-path = "Cargo.toml"
+# abi3-py310 is set on the pyo3 dependency: one wheel per platform serves
+# CPython 3.10 and later.
+
+[tool.pytest.ini_options]
+testpaths = ["pytests"]
+addopts = "-ra"
+markers = [
+    "network: downloads from public servers (deselect with -m 'not network')",
+    "slow: whole-volume comparisons against xradar and Py-ART",
+]

@@ -698,7 +698,7 @@ fn site_id(option: Option<&str>, volume: &Volume) -> Result<[u8; 4], WriteError>
                 && alnum.chars().take(2).all(|c| c.is_ascii_alphabetic())
             {
                 // ODIM NOD: two-letter country, three-letter radar
-                // ("BEJAB" -> "BJAB").
+                // ("DKROM" -> "DROM").
                 let mut id = String::new();
                 id.push(alnum.chars().next().unwrap_or('_'));
                 id.extend(alnum.chars().skip(2));

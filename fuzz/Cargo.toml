@@ -26,6 +26,9 @@ recast-radar-bzip2 = { path = "../crates/recast-radar-bzip2" }
 # The model types of the writer comparison (`src/lib.rs`, `compare`).
 recast-radar-core = { path = "../crates/recast-radar-core" }
 recast-radar-hdf5 = { path = "../crates/recast-radar-hdf5" }
+# The `recast-radar` command's input handling and server; without its
+# default features, so no network client or C code is built.
+recast-radar-cli = { path = "../crates/recast-radar-cli", default-features = false }
 # The polling listing parsers; without `net`, so no network client or C code
 # is built.
 recast-radar-data = { path = "../crates/recast-radar-data", default-features = false }
@@ -155,6 +158,30 @@ required-features = ["libfuzzer"]
 [[bin]]
 name = "polling-listing"
 path = "fuzz_targets/polling-listing.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "cli-open"
+path = "fuzz_targets/cli-open.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "level2-records"
+path = "fuzz_targets/level2-records.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
+name = "serve-request"
+path = "fuzz_targets/serve-request.rs"
 test = false
 doc = false
 bench = false

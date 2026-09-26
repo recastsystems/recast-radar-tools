@@ -1,0 +1,44 @@
+[package]
+name = "recast-radar-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Python bindings for recast-radar-tools: radar files as xarray DataTrees (FM301) and Py-ART radars, writers and data fetchers"
+readme = "README.md"
+keywords = ["radar", "weather", "python", "xarray", "nexrad"]
+categories = ["science", "science::geo", "api-bindings"]
+# Built into wheels by maturin (pyproject.toml), never published to crates.io.
+publish = false
+
+[lib]
+# The extension module `recast_radar._native`; maturin names the file.
+crate-type = ["cdylib"]
+# Tested from Python (pytests/): a Rust test harness would have to link and
+# start an interpreter.
+test = false
+doctest = false
+
+[features]
+default = ["net"]
+# `recast_radar.fetch`: AWS Level II and Level III, international feeds and
+# GR2Analyst polling servers (recast-radar-data, reqwest + rustls).
+net = ["dep:recast-radar-data"]
+
+[dependencies]
+chrono.workspace = true
+flate2.workspace = true
+numpy = "0.29"
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
+recast-radar-cli = { version = "0.1.0", path = "../recast-radar-cli", default-features = false }
+recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
+recast-radar-data = { version = "0.1.0", path = "../recast-radar-data", optional = true }
+recast-radar-io = { version = "0.1.0", path = "../recast-radar-io" }
+recast-radar-io-nexrad = { version = "0.1.0", path = "../recast-radar-io-nexrad" }
+serde_json.workspace = true
+
+[build-dependencies]
+pyo3-build-config = "0.29"
+
+[lints]
+workspace = true

@@ -1,0 +1,130 @@
+name: Python wheels
+
+# Builds the `recast_radar` Python package (crate recast-radar-py) as abi3
+# wheels (one per platform, CPython 3.10 and later) with maturin, installs
+# each wheel and runs the pytest suite against xradar and Py-ART, and keeps
+# the wheels as workflow artifacts. Artifacts are visible only to people with
+# access to this repository. Nothing is uploaded to PyPI: there is no publish
+# step, and the package metadata carries the `Private :: Do Not Upload`
+# classifier, which PyPI rejects.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  wheel:
+    name: wheel (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # manylinux2014 container (glibc 2.17).
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: "2014"
+          - os: windows-latest
+            target: x64
+            manylinux: ""
+          - os: macos-latest
+            target: aarch64
+            manylinux: ""
+          # Cross-built on the Apple silicon runner.
+          - os: macos-latest
+            target: x86_64
+            manylinux: ""
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: crates/recast-radar-py
+          args: --release --locked --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: crates/recast-radar-py/dist/*.whl
+          if-no-files-found: error
+          retention-days: 30
+
+  test:
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: wheel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: wheel-ubuntu-latest-x86_64
+            python: "3.12"
+          - os: ubuntu-latest
+            artifact: wheel-ubuntu-latest-x86_64
+            python: "3.10"
+          - os: windows-latest
+            artifact: wheel-windows-latest-x64
+            python: "3.12"
+          - os: macos-latest
+            artifact: wheel-macos-latest-aarch64
+            python: "3.12"
+    env:
+      RECAST_RADAR_TESTDATA: ${{ github.workspace }}/.testdata-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+      # The reference readers the FM301 goldens and the documented
+      # differences were made with (testdata/conformance/fm301/index.json,
+      # docs/design/fm301-model.md). The suite also passes with arm_pyart
+      # 2.3.0; the pin keeps a new Py-ART release from changing the reference.
+      - name: Install the wheel and the reference readers
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python -m pip install pytest h5netcdf netCDF4 "metpy==1.7.1"
+          if python -c "import sys; sys.exit(sys.version_info < (3, 11))"; then
+            python -m pip install "xradar==0.12.0" "arm_pyart==2.2.5"
+          else
+            # Python 3.10: xradar 0.12 and arm_pyart 2.2.5 need 3.11, so
+            # test_xradar.py and test_pyart.py skip; the rest of the suite
+            # runs, reading the testdata manifests with the tomli backport.
+            python -m pip install tomli
+          fi
+      - name: Restore testdata cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.RECAST_RADAR_TESTDATA }}
+          key: testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-py-${{ github.run_id }}
+          restore-keys: |
+            testdata-${{ runner.os }}-${{ hashFiles('testdata/**/manifest.toml') }}-
+      - name: Import check
+        run: python -c "import recast_radar, sys; print(recast_radar.__version__, sys.version)"
+      - name: pytest
+        working-directory: crates/recast-radar-py
+        run: python -m pytest -ra

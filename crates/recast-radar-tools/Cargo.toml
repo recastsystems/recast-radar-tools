@@ -23,6 +23,7 @@ all-features = true
 default = ["io", "correct", "filters", "retrieve", "map"]
 full = [
     "io",
+    "write",
     "net",
     "correct",
     "filters",
@@ -36,9 +37,16 @@ full = [
 
 # Formats. `io` is the sniffing router plus every format decoder.
 nexrad = ["dep:recast-radar-io-nexrad"]
+# The Level II writer (`nexrad::write`: Archive II files, real-time chunks,
+# GR2Analyst polling directories) and its bzip2 encoder. The CfRadial and
+# ODIM_H5 writers come with their formats.
+write = ["nexrad", "recast-radar-io-nexrad/write"]
+# The HDF5 reader and writer and the netCDF-4 data model under ODIM_H5 and
+# netCDF-4 CfRadial.
+hdf5 = ["dep:recast-radar-hdf5"]
 level3 = ["dep:recast-radar-io-level3"]
-odim = ["dep:recast-radar-io-odim"]
-cfradial = ["dep:recast-radar-io-cfradial"]
+odim = ["dep:recast-radar-io-odim", "hdf5"]
+cfradial = ["dep:recast-radar-io-cfradial", "hdf5"]
 dorade = ["dep:recast-radar-io-dorade"]
 jma = ["dep:recast-radar-io-jma"]
 io = ["dep:recast-radar-io", "nexrad", "level3", "odim", "cfradial", "dorade", "jma"]
@@ -63,6 +71,7 @@ recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
 recast-radar-correct = { version = "0.1.0", path = "../recast-radar-correct", optional = true }
 recast-radar-data = { version = "0.1.0", path = "../recast-radar-data", optional = true }
 recast-radar-filters = { version = "0.1.0", path = "../recast-radar-filters", optional = true }
+recast-radar-hdf5 = { version = "0.1.0", path = "../recast-radar-hdf5", optional = true }
 recast-radar-io = { version = "0.1.0", path = "../recast-radar-io", optional = true }
 recast-radar-io-cfradial = { version = "0.1.0", path = "../recast-radar-io-cfradial", optional = true }
 recast-radar-io-dorade = { version = "0.1.0", path = "../recast-radar-io-dorade", optional = true }
@@ -115,6 +124,10 @@ required-features = ["io", "map", "render"]
 [[example]]
 name = "render_png"
 required-features = ["nexrad", "correct", "render"]
+
+[[example]]
+name = "write_formats"
+required-features = ["io", "write"]
 
 [lints]
 workspace = true

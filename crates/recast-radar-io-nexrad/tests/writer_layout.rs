@@ -583,10 +583,10 @@ fn polling_directory_follows_the_grlevelx_conventions() {
         wrapped.entry.name
     );
     let fixed = PollingDirectory::new(root.join("fixed")).with_suffix(".ar2v.gz");
-    let named = fixed.publish_bytes("BJAB", later, &written).unwrap();
+    let named = fixed.publish_bytes("DROM", later, &written).unwrap();
     assert_eq!(
         named.entry.name,
-        format!("BJAB_{}.ar2v.gz", later.format("%Y%m%d%H%M%S"))
+        format!("DROM_{}.ar2v.gz", later.format("%Y%m%d%H%M%S"))
     );
 
     // Other name formats: the date and time apart, a lower-case site

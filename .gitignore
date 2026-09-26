@@ -5,4 +5,5 @@ target/
 /fuzz/coverage/
 .testdata-cache/
 __pycache__/
-*.pyc
+*.py[cod]
+/crates/recast-radar-py/dist/

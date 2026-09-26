@@ -25,6 +25,9 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | `writers` | `recast-radar-io-cfradial`, `recast-radar-io-odim`, `recast-radar-hdf5` (writer) | `read_supported_volume_bytes`, then `write_cfradial1` (`RangeLayout` `Auto`, `PerSweep` and `PerRay`), `write_cfradial2` and `write_odim_h5_volume` (with and without `every_quantity`) on the volume; each file a writer returns must read back through the router with the same rays per sweep and, except `every_quantity` output, the same data gate by gate: values (float32 tolerance), missing, undetect and range-folded gates, ray angles and times, compared by the writer tests' `crates/recast-radar-io/tests/common/compare.rs` (included by path). A writer's typed refusal is fine; a file its own readers refuse, or one that reads back different data, panics |
 | `level3` | `recast-radar-io-level3` | `looks_like_level3`, `decode_message`, then for a product its Table V parameters, its display packet records, `to_volume` and the FM301 view of the volume, the VAD wind profile, the radar coded message, and every storm table reader (SCIT-era and 1995-1997 layouts); inputs of length 3 mod 4 also go to `RadarCodedMessage::parse` as text |
 | `polling-listing` | `recast-radar-data` | `polling::parse_dir_list` and `polling::parse_site_config` on the same text, `DirList::parse` and `SiteConfig::parse`, then `newest_volume_entry`, `entry_url` and `single_site_url` on the results; asserts that every name and site id the client parsers return is a plain file name whose URL stays in its directory |
+| `cli-open` | `recast-radar-cli` | `open::open_bytes`: the command's sniffing, Level III products and messages for bytes that do not start like Level II, the router, and Level II record summaries (metadata decoding on odd lengths) |
+| `level2-records` | `recast-radar-cli` | `records::summarize`, the record-by-record description of real-time chunks |
+| `serve-request` | `recast-radar-cli` | `serve::status_for_request`: the 16 KiB request-head reader, request line, percent-decoding and path resolution under a temporary directory holding `KXWA/dir.list` (the North Dakota SWC capture) |
 
 The harness bodies live in `src/lib.rs`; each `fuzz_targets/<target>.rs` is a
 one-line libFuzzer wrapper around the function with the same name, `_` for
@@ -143,7 +146,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All sixteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All nineteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2-volume dorade

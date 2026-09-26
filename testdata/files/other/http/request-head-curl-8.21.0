@@ -1,0 +1,5 @@
+GET /KXWA/dir.list HTTP/1.1
+Host: 127.0.0.1:57092
+User-Agent: curl/8.21.0
+Accept: */*
+

@@ -1093,12 +1093,12 @@ Everything below the marker is generated from the manifests by
 |---|---:|---:|---:|---:|---:|
 | `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 |
 | `testdata/feeds/manifest.toml` | 5 | 4 | 224,523 | 1 | 20,616,906 |
-| `testdata/fuzz/manifest.toml` | 13 | 13 | 1,988,240 | 0 | 0 |
+| `testdata/fuzz/manifest.toml` | 14 | 14 | 1,988,264 | 0 | 0 |
 | `testdata/level2/manifest.toml` | 125 | 24 | 10,426,272 | 101 | 332,296,252 |
 | `testdata/level3/manifest.toml` | 269 | 269 | 8,200,268 | 0 | 0 |
-| `testdata/other/manifest.toml` | 72 | 59 | 27,023,030 | 13 | 187,735,375 |
+| `testdata/other/manifest.toml` | 75 | 62 | 27,023,383 | 13 | 187,735,375 |
 | `testdata/scattering/manifest.toml` | 21 | 19 | 763,095 | 2 | 19,492,076 |
-| **all** | **505** | **388** | **48,625,428** | **117** | **560,140,609** |
+| **all** | **509** | **392** | **48,625,805** | **117** | **560,140,609** |
 
 | format | committed | download |
 |---|---:|---:|
@@ -1108,9 +1108,10 @@ Everything below the marker is generated from the manifests by
 | `dorade` | 12 | 2 |
 | `gr2-polling-dir-list` | 1 | 0 |
 | `gr2-polling-site-config` | 2 | 0 |
+| `http-request-head` | 3 | 0 |
 | `jma-grib2-tar` | 4 | 4 |
 | `json` | 12 | 0 |
-| `nexrad-level2` | 21 | 34 |
+| `nexrad-level2` | 22 | 34 |
 | `nexrad-level2-chunk` | 8 | 67 |
 | `nexrad-level2-feed` | 1 | 1 |
 | `nexrad-level3` | 277 | 0 |
@@ -1155,6 +1156,7 @@ No entries.
 | `fuzz-writers-dorade-absent-rows-without-fill` | `dorade` | committed `files/fuzz/writers/crash-dorade-absent-rows-without-fill` | 31,428 | `dorade-noxp-20090501-190244-ppi` |
 | `fuzz-writers-cfradial1-ray-time-near-float-max` | `cfradial1` | committed `files/fuzz/writers/crash-cfradial1-ray-time-near-float-max` | 13,624 | `cfrad1-xsapr-sgp-20110520-ppi-classic` |
 | `fuzz-level3-rcm-centroid-non-ascii` | `nexrad-level3` | committed `files/fuzz/level3/crash-rcm-centroid-non-ascii` | 23 | `l3-fws-rcm-19950517-2310` |
+| `fuzz-level2-records-volume-header-date-overflow` | `nexrad-level2` | committed `files/fuzz/level2_records/crash-volume-header-date-overflow` | 24 | `l2-tbwi-20230601-175101-stub` |
 
 #### `testdata/level2/manifest.toml`
 
@@ -1636,6 +1638,9 @@ No entries.
 | `l3-knqa-20080205-archive-tarz` | `tar-z` | download | 52,026,567 |  |
 | `l3-knqa-20080205-0018-rob` | `nexrad-level3` | committed `files/other/nexrad-level3/KWBC_SDUS44_ROBNQA_200802050018` | 142 | `l3-knqa-20080205-archive-tarz` |
 | `wmo-text-kslc-20251012-0424-hmlslc` | `wmo-text` | committed `files/other/wmo-text/SRUS55_KSLC_HMLSLC_202510120424` | 19,398 |  |
+| `http-request-head-curl-8.21.0` | `http-request-head` | committed `files/other/http/request-head-curl-8.21.0` | 92 |  |
+| `http-request-head-python-urllib-3.13` | `http-request-head` | committed `files/other/http/request-head-python-urllib-3.13` | 132 |  |
+| `http-request-head-recast-radar-fetch` | `http-request-head` | committed `files/other/http/request-head-recast-radar-fetch` | 129 |  |
 
 #### `testdata/scattering/manifest.toml`
 
@@ -1672,17 +1677,18 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `archive` (5): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090610-003210-heads-zip`, `l3-kbmx-19980416-archive-tarz`, `l3-knqa-20080205-archive-tarz`
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
-- `derived` (59): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`, `odim-dkrom-20260820-1130-pvol-h5latest-trim`, `odim-dkrom-20260820-1130-pvol-h5edge-paged-ea`, `odim-dkrom-20260820-1130-pvol-h5edge-len4`, `odim-seang-20260924-2130-qcvol-dataset1-trim`, `odim-fianj-20260924-2130-pvol-dataset1-trim`, `odim-itdes-20260924-2135-pvol-class`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-user-types`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-szip-lzf`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad2-radx-irene-sr2-20110827-120420-sur-r30km`, `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32`, `cfrad2-xradar-xsapr-sgp-20110520-ppi`, `cfrad2-xradar-dow8-20211011-223602-rhi-r300`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `odim-au02-20260921-0000-pvol-subset`, `l3-kbmx-19980416-0006-nvw`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4`, `l3-knqa-20080205-0018-rob`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-dry-oblate-sband-trim-config`, `tmatrix-lut-property-dry-oblate-sband-trim-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim-config`, `tmatrix-lut-property-wet-oblate-sband-trim-trim`, `tmatrix-lut-property-rain-sband-trim`, `tmatrix-lut-property-rain-sband-trim-config`, `tmatrix-lut-property-rain-sband-trim-trim`
+- `derived` (60): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`, `fuzz-level2-records-volume-header-date-overflow`, `odim-dkrom-20260820-1130-pvol-h5latest-trim`, `odim-dkrom-20260820-1130-pvol-h5edge-paged-ea`, `odim-dkrom-20260820-1130-pvol-h5edge-len4`, `odim-seang-20260924-2130-qcvol-dataset1-trim`, `odim-fianj-20260924-2130-pvol-dataset1-trim`, `odim-itdes-20260924-2135-pvol-class`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-user-types`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-szip-lzf`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad2-radx-irene-sr2-20110827-120420-sur-r30km`, `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32`, `cfrad2-xradar-xsapr-sgp-20110520-ppi`, `cfrad2-xradar-dow8-20211011-223602-rhi-r300`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `odim-au02-20260921-0000-pvol-subset`, `l3-kbmx-19980416-0006-nvw`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4`, `l3-knqa-20080205-0018-rob`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-dry-oblate-sband-trim-config`, `tmatrix-lut-property-dry-oblate-sband-trim-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim-config`, `tmatrix-lut-property-wet-oblate-sband-trim-trim`, `tmatrix-lut-property-rain-sband-trim`, `tmatrix-lut-property-rain-sband-trim-config`, `tmatrix-lut-property-rain-sband-trim-trim`
 - `dualpol` (33): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
-- `fuzz-regression` (13): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`
+- `fuzz-regression` (14): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`, `fuzz-level2-records-volume-header-date-overflow`
 - `golden-source` (1): `tmatrix-held-out-interpolation-report-v10`
+- `http-request` (3): `http-request-head-curl-8.21.0`, `http-request-head-python-urllib-3.13`, `http-request-head-recast-radar-fetch`
 - `long-pulse` (1): `l2-kmaf-20230331-230843`
 - `mpda` (4): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-180425-trim`
 - `no-metadata-record` (2): `l2-ktlx-19910605-162126`, `l2-ktlx-19910605-162126-trim`
 - `no-msg5` (1): `l2-kvwx-20080415-235337`
 - `part-of-scan` (5): `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `partial-sweeps` (10): `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
-- `polling-server` (3): `polling-ndswc-kxwa-dir-list-20260925`, `polling-iem-config-cfg-20260926`, `polling-ewr-laredo-grlevel2-cfg-20260925`
+- `polling-server` (6): `polling-ndswc-kxwa-dir-list-20260925`, `polling-iem-config-cfg-20260926`, `polling-ewr-laredo-grlevel2-cfg-20260925`, `http-request-head-curl-8.21.0`, `http-request-head-python-urllib-3.13`, `http-request-head-recast-radar-fetch`
 - `sails` (10): `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-tjua-20220918-190621`, `l2-kiwa-20260917-003629`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-klix-20210829-180425-trim`
 - `split-cut` (16): `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`, `l2-klix-20050829-130035-trim`, `l2-kdmx-20080525-205148-trim`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-tstl-20230331-230314-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `subset` (2): `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4`
@@ -2029,7 +2035,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 - `derivation:archive-member` (9): `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`, `l3-knqa-20080205-0018-rob`
 - `derivation:container-conversion` (10): `odim-dkrom-20260820-1130-pvol-h5latest-trim`, `odim-dkrom-20260820-1130-pvol-h5edge-paged-ea`, `odim-dkrom-20260820-1130-pvol-h5edge-len4`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad2-radx-irene-sr2-20110827-120420-sur-r30km`, `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32`, `cfrad2-xradar-xsapr-sgp-20110520-ppi`, `cfrad2-xradar-dow8-20211011-223602-rhi-r300`, `dorade-noxp-20090610-003210-heads-zip`
-- `derivation:fuzz-mutation` (13): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`
+- `derivation:fuzz-mutation` (14): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`, `fuzz-level2-records-volume-header-date-overflow`
 - `derivation:gunzip` (1): `odim-itdes-20260924-2135-pvol-class`
 - `derivation:head-trim` (7): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `derivation:prefix` (2): `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
@@ -2134,13 +2140,15 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `fuzz-finding:`
 
-- `fuzz-finding:crash` (12): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`
+- `fuzz-finding:crash` (13): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`, `fuzz-level2-records-volume-header-date-overflow`
 - `fuzz-finding:oom` (1): `fuzz-cfradial-overlapping-sweep-ray-ranges`
 
 #### `fuzz-target:`
 
 - `fuzz-target:cfradial` (1): `fuzz-cfradial-overlapping-sweep-ray-ranges`
+- `fuzz-target:cli-open` (1): `fuzz-level2-records-volume-header-date-overflow`
 - `fuzz-target:hdf5` (1): `fuzz-hdf5-chunk-offset-overflow`
+- `fuzz-target:level2-records` (1): `fuzz-level2-records-volume-header-date-overflow`
 - `fuzz-target:level2-writer` (1): `fuzz-level2-writer-nexrad-moment-nan-scale`
 - `fuzz-target:level3` (1): `fuzz-level3-rcm-centroid-non-ascii`
 - `fuzz-target:odim` (1): `fuzz-odim-hdf5-local-heap-name-offset-overflow`
@@ -2187,7 +2195,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `header:AR2V0004` (1): `l2-kpah-20080415-235014`
 - `header:AR2V0006` (32): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `header:AR2V0007` (1): `l2-kgwx-20130601-235640`
-- `header:AR2V0008` (3): `l2-tstl-20230331-230314`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`
+- `header:AR2V0008` (4): `fuzz-level2-records-volume-header-date-overflow`, `l2-tstl-20230331-230314`, `l2-tbwi-20230601-175101-stub`, `l2-tstl-20230331-230314-trim`
 - `header:ARCHIVE2` (7): `l2-ktlx-19910605-162126`, `l2-ktlx-19990503-230052`, `l2-ktlx-19990504-002218`, `l2-ktlx-20030508-221041`, `l2-ktlx-19910605-162126-trim`, `l2-ktlx-19990504-002218-trim`, `l2-ktlx-20030508-221041-trim`
 
 #### `icao:`

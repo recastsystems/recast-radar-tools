@@ -1,11 +1,12 @@
 //! Pure-Rust weather radar toolkit.
 //!
-//! Read NEXRAD Level II and Level III, ODIM_H5, CfRadial 1, DORADE and JMA
-//! radar files into one data model that follows WMO FM301 (CfRadial 2),
-//! fetch radar data from AWS and other public feeds, dealias velocity,
-//! filter, compute derived products and composites, track storm cells, and
-//! render sweeps to PNG. There is no unsafe code and, without the `net`
-//! feature, no C in the build.
+//! Read NEXRAD Level II and Level III, ODIM_H5, CfRadial 1 and 2 (classic
+//! netCDF and netCDF-4), DORADE and JMA radar files into one data model that
+//! follows WMO FM301 (CfRadial 2), write that model as NEXRAD Level II,
+//! CfRadial 1, CfRadial 2 / FM301 and ODIM_H5, fetch radar data from AWS and
+//! other public feeds, dealias velocity, filter, compute derived products
+//! and composites, track storm cells, and render sweeps to PNG. There is no
+//! unsafe code and, without the `net` feature, no C in the build.
 //!
 //! This facade re-exports the `recast-radar-*` crates as modules, each
 //! behind a Cargo feature, so an application depends on one crate and picks
@@ -19,8 +20,8 @@
 //! use recast_radar_tools::io;
 //! use recast_radar_tools::model::Quantity;
 //!
-//! // Any supported format: Level II, ODIM_H5, CfRadial 1, DORADE, JMA GRIB2
-//! // tar, optionally inside gzip or a single-file ZIP.
+//! // Any supported format: Level II, Level III, ODIM_H5, CfRadial 1 and 2,
+//! // DORADE, JMA GRIB2 tar, optionally inside gzip or a single-file ZIP.
 //! let bytes = std::fs::read("KTLX20240315_000217_V06")?;
 //! let volume = io::read_supported_volume_bytes(&bytes)?;
 //!
@@ -38,8 +39,10 @@
 //! ```
 //!
 //! The user guide in the repository's `docs/guide/` walks through reading,
-//! the data model, fetching, processing and rendering, with a runnable
-//! example for each (`crates/recast-radar-tools/examples/`).
+//! writing, the data model, fetching, processing and rendering, with a
+//! runnable example for each (`crates/recast-radar-tools/examples/`). The
+//! `recast-radar` command (`recast-radar-cli`) and the Python package
+//! `recast_radar` (`recast-radar-py`) are built on the same crates.
 //!
 //! # Modules and features
 //!
@@ -47,9 +50,11 @@
 //! |---|---|---|---|
 //! | (always) | [`model`] | `recast-radar-core` | data model, FM301 view, beam geometry, field names, decode limits |
 //! | `nexrad` | `nexrad` | `recast-radar-io-nexrad` | NEXRAD Archive II (Level II) |
+//! | `write` | `nexrad::write` | `recast-radar-io-nexrad` | the Level II writer: Archive II, real-time chunks, polling directories |
 //! | `level3` | `level3` | `recast-radar-io-level3` | NEXRAD and TDWR Level III products |
-//! | `odim` | `odim` | `recast-radar-io-odim` | ODIM_H5 |
-//! | `cfradial` | `cfradial` | `recast-radar-io-cfradial` | CfRadial 1 |
+//! | `odim` | `odim` | `recast-radar-io-odim` | ODIM_H5 reader and writer |
+//! | `cfradial` | `cfradial` | `recast-radar-io-cfradial` | CfRadial 1 and CfRadial 2 / FM301 readers and writers |
+//! | `hdf5` | `hdf5` | `recast-radar-hdf5` | HDF5 reader and writer, the netCDF-4 data model |
 //! | `dorade` | `dorade` | `recast-radar-io-dorade` | DORADE, mobile-radar archives |
 //! | `jma` | `jma` | `recast-radar-io-jma` | JMA polar GRIB2 tar |
 //! | `io` | `io` | `recast-radar-io` | format-sniffing router; enables every format feature |
@@ -88,6 +93,8 @@
 
 pub use recast_radar_core as model;
 
+#[cfg(feature = "hdf5")]
+pub use recast_radar_hdf5 as hdf5;
 #[cfg(feature = "io")]
 pub use recast_radar_io as io;
 #[cfg(feature = "cfradial")]

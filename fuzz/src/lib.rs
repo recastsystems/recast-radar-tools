@@ -74,6 +74,9 @@ pub const TARGETS: &[(&str, Harness)] = &[
     ("writers", writers),
     ("level3", level3),
     ("polling-listing", polling_listing),
+    ("cli-open", cli_open),
+    ("level2-records", level2_records),
+    ("serve-request", serve_request),
 ];
 
 /// Look up a harness by target name.
@@ -945,4 +948,45 @@ pub fn polling_listing(data: &[u8]) -> bool {
         }
     }
     !entries.is_empty() || !sites.is_empty()
+}
+
+/// The `recast-radar` command's decoding of a file's bytes
+/// (`recast-radar-cli` `open::open_bytes`): format sniffing, the Level III
+/// attempt for bytes that do not start like Level II (products, General
+/// Status and text messages), the router, and the Level II record summary
+/// for chunks without a volume. Odd lengths also decode the NEXRAD metadata
+/// messages.
+pub fn cli_open(data: &[u8]) -> bool {
+    let mut options = recast_radar_cli::open::OpenOptions::default();
+    options.metadata = data.len() % 2 == 1;
+    recast_radar_cli::open::open_bytes(data, &options).is_ok()
+}
+
+/// Level II record summaries (`recast-radar-cli` `records::summarize`),
+/// which describe real-time chunks and files without a complete volume.
+pub fn level2_records(data: &[u8]) -> bool {
+    recast_radar_cli::records::summarize(data).is_ok()
+}
+
+/// The `serve` command's request handling (`recast-radar-cli`
+/// `serve::status_for_request`): the bounded request-head reader, the
+/// request line, percent-decoding and path resolution under a served
+/// directory, without sending anything. The directory
+/// (`<temp>/recast-radar-fuzz-serve`) holds `KXWA/dir.list`, a copy of the
+/// committed North Dakota SWC capture, the file the seed requests ask for.
+/// `true` for a 200 answer.
+pub fn serve_request(data: &[u8]) -> bool {
+    static ROOT: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    let root = ROOT.get_or_init(|| {
+        let listing = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../testdata/files/other/polling/ndswc-KXWA-dir.list-20260925T0318Z");
+        let root = std::env::temp_dir().join("recast-radar-fuzz-serve");
+        std::fs::create_dir_all(root.join("KXWA")).ok()?;
+        std::fs::copy(listing, root.join("KXWA/dir.list")).ok()?;
+        std::fs::canonicalize(root).ok()
+    });
+    match root {
+        Some(root) => recast_radar_cli::serve::status_for_request(root, data) == 200,
+        None => false,
+    }
 }

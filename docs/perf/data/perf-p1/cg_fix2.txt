@@ -9,4 +9,3 @@ head-KLIX20050829_130035.gz 244754113 "hash":"d2752069a128f551"
 head-KTLX20130520_201643_V06.bz2 808461967 "hash":"8891e7f3167f759e"
 head-KTLX20130520_201643_V06.gz 433394321 "hash":"8891e7f3167f759e"
 head-KTLX20240315_000217_V06 1211396280 "hash":"8cc57ef6f26a6bb4"
-# tools/xlib-bench/cg_compare.sh's run function (the committed toggle), a 50e6629 build, BJAB:

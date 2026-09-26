@@ -16,9 +16,9 @@ for every value it writes ("ICD compliance" below).
 ```rust
 use recast_radar_io_nexrad::write::{self, WriteOptions};
 
-let volume = recast_radar_io::read_supported_volume_bytes(&std::fs::read("BEJAB.h5")?)?;
+let volume = recast_radar_io::read_supported_volume_bytes(&std::fs::read("202609242130_fianj_PVOL.h5")?)?;
 let mut options = WriteOptions::default();      // LDM bzip2 records, 120 radials each
-options.icao = Some("BJAB".to_owned());         // else derived from the instrument name
+options.icao = Some("FANJ".to_owned());         // else derived from the instrument name
 options.vcp = Some(11);                         // else volume.scan.vcp_pattern, else 0
 let (bytes, summary) =
     write::write_volume_with_source(&volume, write::SourceMetadata::default(), &options)?;
@@ -26,7 +26,7 @@ let (bytes, summary) =
 ```
 
 The writer is the crate's `write` feature (off by default, so that decoding alone does not build
-the temporary bzip2 encoder, "Compression seam" below):
+the bzip2 encoder, "Compression seam" below):
 `recast-radar-io-nexrad = { ..., features = ["write"] }`. The crate's own writer tests need it too
 (`cargo test -p recast-radar-io-nexrad --features write`); a workspace test run enables it through
 `recast-radar-io`'s dev-dependency.
@@ -320,7 +320,7 @@ gives up is in `max_abs_error`. Which one is the default is an owner decision (O
 
 - **Site**: `options.icao`; else the instrument name when it is 4 characters of `[A-Za-z0-9_]`;
   else an ODIM node of two country letters and three radar letters becomes the first letter plus
-  the radar letters (`BEJAB` to `BJAB`, `CZSKA` to `CSKA`); else the first four letters or
+  the radar letters (`DKROM` to `DROM`, `FIANJ` to `FANJ`); else the first four letters or
   digits, upper case. Padded with `_`. Py-ART takes every site whose identifier starts with `T`
   for a TDWR and looks its location up in its own table, failing with a `KeyError` for any other:
   JMA's Takayasu becomes `TAKA` and Py-ART 2.3.0 cannot open that file. Set `options.icao` to
@@ -361,12 +361,15 @@ was written, except `WriteError::Io` from the sink. Level II cannot hold, and th
 ## Compression seam
 
 Every bzip2 stream and the gzip wrapper come from `src/write/compress.rs` and nowhere else. The
-bzip2 streams use the `bzip2` crate with its pure-Rust `libbz2-rs-sys` backend (block size 900k,
-as NOAA's records), compressed in parallel with rayon, **until the `recast-radar-bzip2` encoder is
-integrated**: then `bzip2_stream` becomes `recast_radar_bzip2::Encoder::new(Level::…).encode_into`
-(or `encode_many` for the records at once) and the `bzip2` dependency of this crate goes. Until
-then the dependency is optional, behind the `write` feature, so that decoding alone does not build
-it. Gzip uses `flate2` with the zlib-rs backend, as a writer the file streams through.
+bzip2 streams come from `recast-radar-bzip2`'s encoder at level 9 (the 900k block size of NOAA's
+records), compressed in parallel on rayon through an `EncoderPool` that lives for one file (or
+one real-time chunk writer), so each worker thread's encoder and its work buffers (about 20 MB)
+are allocated once per volume. The encoder writes libbzip2 1.0.8's stream byte for byte except in
+one field of a block that repeats a shorter string; the unit test `records_are_libbzip2_streams`
+compares a real metadata record's stream with the `bzip2` crate's (`libbz2-rs-sys`), which is a
+dev-dependency only. The `write` feature turns on `recast-radar-bzip2`'s `rayon` feature, so that
+decoding alone does not build the encoder. Gzip uses `flate2` with the zlib-rs backend, as a
+writer the file streams through.
 
 ## Re-encoding a Level II file
 
@@ -445,7 +448,8 @@ year to second. A lower-case site in the names and in the files comes from a low
 The listed size is the stored file's. Each file and `dir.list` is written to a temporary name and
 renamed into place, so a polling client never reads a partial file or listing. At most
 `DEFAULT_MAX_FILES` (320, a little over a day of 5-minute volumes) are kept per site; older ones
-are deleted and unlisted. One publisher per root is assumed.
+are deleted and unlisted. Each publish lists its site in `config.cfg` and `grlevel2.cfg` unless
+`with_site_lists(false)` leaves them as they are. One publisher per root is assumed.
 
 ## ICD compliance
 

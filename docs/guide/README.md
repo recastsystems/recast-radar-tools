@@ -1,7 +1,7 @@
 # recast-radar-tools user guide
 
-This guide is for Rust developers who want to read, fetch, process or draw
-weather radar data with recast-radar-tools. Each page explains one task and
+This guide is for Rust developers who want to read, write, fetch, process or
+draw weather radar data with recast-radar-tools. Each page explains one task and
 shows a complete program from
 [`crates/recast-radar-tools/examples/`](../../crates/recast-radar-tools/examples/).
 The programs take their inputs on the command line; run one with
@@ -18,15 +18,17 @@ except the live AWS listing.
 
 1. [Reading radar files](reading.md): any format through the router, the
    format-specific decoders, Level III products, format metadata, limits.
-2. [The data model](data-model.md): volumes, sweeps and fields; physical
+2. [Writing radar files](writing.md): NEXRAD Level II, real-time chunks,
+   GR2Analyst polling directories, CfRadial 1, CfRadial 2 / FM301, ODIM_H5.
+3. [The data model](data-model.md): volumes, sweeps and fields; physical
    values and sentinels; gate positions, beam heights and ray times; the
    FM301 view; merging; serde.
-3. [Fetching data](fetching.md): NEXRAD Level II from AWS, real-time chunks,
+4. [Fetching data](fetching.md): NEXRAD Level II from AWS, real-time chunks,
    site catalogs, international feeds.
-4. [Processing](processing.md): velocity dealiasing, gate filters and
+5. [Processing](processing.md): velocity dealiasing, gate filters and
    smoothing, composites, echo tops and VIL, derived products, tracking.
-5. [Rendering](rendering.md): PNG and RGBA rasters, color tables, viewports.
-6. [Conventions](conventions.md): features, naming, errors and
+6. [Rendering](rendering.md): PNG and RGBA rasters, color tables, viewports.
+7. [Conventions](conventions.md): features, naming, errors and
    `#[non_exhaustive]`, resource limits, WebAssembly, the minimum Rust
    version and API stability.
 
@@ -40,11 +42,13 @@ recast-radar-tools = { path = "../recast-radar-tools/crates/recast-radar-tools",
 ```
 
 The default features are `io`, `correct`, `filters`, `retrieve` and `map`.
-`net` adds the downloaders, `render` the PNG renderer, `track` storm
+`write` adds the Level II writer (the CfRadial and ODIM_H5 writers come with
+their formats), `net` the downloaders, `render` the PNG renderer, `track` storm
 tracking, `scattering` the scattering tables and `serde` serialization of the
 data model; `full` turns everything on. Every module is also its own crate
 (`recast-radar-io-nexrad`, `recast-radar-render`, ...), for callers who want
-only one. The facade's modules are those crates: `recast_radar_tools::model`
+only one. The command-line tool ([cli.md](cli.md)) and the Python package
+([python.md](python.md)) have guides of their own. The facade's modules are those crates: `recast_radar_tools::model`
 is `recast_radar_core`, `recast_radar_tools::nexrad` is
 `recast_radar_io_nexrad`, and so on.
 

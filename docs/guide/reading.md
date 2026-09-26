@@ -119,27 +119,20 @@ codes, and a field can have fewer gates than its sweep's range coordinate
 [the data model](data-model.md) for how to turn codes into physical values.
 
 `io::read_supported_volume_bytes` recognizes, in this order: DORADE
-sweepfiles, HDF5 (read as ODIM_H5), classic netCDF (read as CfRadial 1), JMA
-GRIB2 tar archives, and otherwise NEXRAD Level II. It first removes a gzip
+sweepfiles, HDF5 (by content: netCDF-4 CfRadial 2 / FM301, netCDF-4
+CfRadial 1, else ODIM_H5), classic netCDF (read as CfRadial 1), JMA GRIB2
+tar archives, NEXRAD Level III products, and otherwise NEXRAD Level II. It first removes a gzip
 wrapper or a single-member ZIP record. `io::sniff_supported_volume_format`
 tells which decoder a buffer goes to without decoding it.
 `io::read_supported_volume_with_metadata` also returns the format's metadata
 (below).
 
-**netCDF-4 files are not read yet.** A netCDF-4 file is an HDF5 container,
-so the router sends it to the ODIM_H5 decoder, which cannot read it. That
-covers most CfRadial 1 files written today and every CfRadial 2 / FM301
-file. The ODIM_H5 decoder reads HDF5 superblock versions 0 and 1 only, and
-the public netCDF-4 CfRadial files checked so far use version 2. On the netCDF-4 copy of the
-XSAPR fixture (`testdata/files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc`)
-the router returns `IoError::Odim` with `InvalidMessage` at offset 8:
-"HDF5 superblock version 2 (1.10+ 'latest' layout) is unsupported", followed
-by a hint to convert the file. Convert such a file to classic netCDF first
-(for example `nccopy -k classic in.nc out.nc` from the netCDF utilities) and
-read the copy: the classic copy of the same fixture,
-`cfrad.xsapr_sgp_ppi_20110520.classic.nc`, reads as CfRadial 1. An ODIM_H5
-file written with the HDF5 "latest" layout fails the same way. A native
-netCDF-4 and modern HDF5 reader is planned.
+HDF5 files are read by `recast-radar-hdf5`, this repository's HDF5 reader
+(superblock versions 0 to 3, the "latest" layout included), so an ODIM_H5
+file written with any HDF5 version and a netCDF-4 CfRadial file read without
+conversion: the netCDF-4 copy of the XSAPR fixture
+(`testdata/files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc`)
+decodes exactly like its classic twin.
 
 ## Format-specific decoders
 
@@ -150,8 +143,8 @@ or to use options the router does not have:
 |---|---|---|
 | NEXRAD Level II | `nexrad` | `read_volume_from_path`, `read_volume_from_bytes`, `read_volume_with_metadata`, `read_gzip_volume_from_reader`; previews of a partial download |
 | NEXRAD and TDWR Level III | `level3` | `decode_product`, `decode_message`, `read_level3_volume` |
-| ODIM_H5 (HDF5 superblock 0 or 1) | `odim` | `read_odim_h5_volume`; Cartesian products: `decode_odim_h5_cartesian_max` |
-| CfRadial 1 (classic netCDF only; not netCDF-4) | `cfradial` | `read_cfradial1_volume` |
+| ODIM_H5 | `odim` | `read_odim_h5_volume`; Cartesian products: `decode_odim_h5_cartesian_max` |
+| CfRadial 1 (classic netCDF or netCDF-4) and CfRadial 2 / FM301 | `cfradial` | `read_cfradial_volume` (either container), `read_cfradial1_volume` (classic), `read_cfradial2_volume` |
 | DORADE | `dorade` | `read_dorade_sweep_volume`, `read_dorade_volume_from_slices`, `read_dorade_volume_from_paths`; mobile-radar archives: `read_mobile_archive_from_path`, `read_mobile_dir_from_path` |
 | JMA radar GRIB2 tar | `jma` | `read_jma_tar_volumes` (every station, or one by `site_filter`), `read_jma_tar_first_station` |
 
@@ -171,8 +164,10 @@ raster, a table, text, a wind profile or a set of graphic symbols.
 `level3::decode_product(&bytes)` returns a `Level3Product` with the WMO
 heading, the message and product description headers and every symbology,
 graphic and tabular block. `level3::read_level3_volume(&bytes)` converts a
-radial or raster product into a one-sweep `Volume`. The router does not read
-Level III.
+radial or raster product into a one-sweep `Volume`, which is what the router
+returns for a Level III product (`io::read_supported_volume_with_metadata`
+also returns the decoded product); a product without a data array is a
+router error, and `level3::decode_message` reads it.
 
 ## Format metadata
 

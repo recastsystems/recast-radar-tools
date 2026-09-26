@@ -560,6 +560,45 @@ const SEEDS: &[Seed] = &[
         "cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry",
         Verbatim,
     ),
+    // cli-open: Level III products of each block layout (radial data, a
+    // General Status Message, storm tracking with symbology, graphic and
+    // tabular blocks, mesocyclone and hail symbols, a stand-alone tabular
+    // product, a radar coded message, generic-packet DPR, a TDWR product),
+    // a start chunk, an intermediate chunk and a gzip Level II volume.
+    ("cli-open", "l3-byx-n0q-20150124-2106", Verbatim),
+    ("cli-open", "l3-ddc-gsm-20200817-1000", Verbatim),
+    ("cli-open", "l3-kdvn-20200810-1804-nst", Verbatim),
+    ("cli-open", "l3-mci-nmd-20160526-2154", Verbatim),
+    ("cli-open", "l3-fws-nhi-19950517-1323", Verbatim),
+    ("cli-open", "l3-tlx-102-19990504-0052", Verbatim),
+    ("cli-open", "l3-tlx-rcm-20220503-004553", Verbatim),
+    ("cli-open", "l3-tlx-dpr-20130520-2016", Verbatim),
+    ("cli-open", "l3-slc-tv0-20160516-2359", Verbatim),
+    ("cli-open", KIWA_CHUNK_S, Verbatim),
+    ("cli-open", KIWA_CHUNK_I2, Verbatim),
+    ("cli-open", "l2-ktlx-19990503-230052", Verbatim),
+    // level2-records: real-time chunks (start, intermediate, and the two
+    // assembled) and a status-only LDM stub.
+    ("level2-records", KIWA_CHUNK_S, Verbatim),
+    ("level2-records", KIWA_CHUNK_I2, Verbatim),
+    (
+        "level2-records",
+        KIWA_CHUNK_S,
+        ConcatChunks(&[KIWA_CHUNK_I2]),
+    ),
+    ("level2-records", "l2-tbwi-20230601-175101-stub", Verbatim),
+    // serve-request: request heads captured from three HTTP clients.
+    ("serve-request", "http-request-head-curl-8.21.0", Verbatim),
+    (
+        "serve-request",
+        "http-request-head-python-urllib-3.13",
+        Verbatim,
+    ),
+    (
+        "serve-request",
+        "http-request-head-recast-radar-fetch",
+        Verbatim,
+    ),
     // polling-listing: a site dir.list (North Dakota SWC's KXWA), a polling
     // root's multi-site config.cfg (the Iowa Environmental Mesonet's) and a
     // single-site grlevel2.cfg (Laredo EWR's), as served.

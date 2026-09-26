@@ -1,0 +1,75 @@
+name: CLI binaries
+
+# Builds the `recast-radar` command (crate recast-radar-cli) with the release
+# profile for Windows, Linux and macOS, runs it on committed test files, and
+# keeps each binary as a workflow artifact. Artifacts are visible only to
+# people with access to this repository; nothing is published or released.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: recast-radar (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            exe: recast-radar
+            smoke: true
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            exe: recast-radar.exe
+            smoke: true
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            exe: recast-radar
+            smoke: true
+          # Cross-built on the Apple silicon runner; not run there.
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            exe: recast-radar
+            smoke: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      # The workspace release profile: fat LTO, one codegen unit.
+      - name: Build
+        run: cargo build --release --locked -p recast-radar-cli --target ${{ matrix.target }}
+      - name: Run on committed test files
+        if: matrix.smoke
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/${{ matrix.exe }}"
+          "$bin" --version
+          "$bin" info testdata/files/level2/KTLX20240315_000217.trim.V06
+          "$bin" validate -r testdata/files/level2 testdata/files/level3 testdata/files/level2-chunks
+          "$bin" render testdata/files/other/odim/bejab.pvol.hdf -o "$RUNNER_TEMP/bejab.png"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recast-radar-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/${{ matrix.exe }}
+          if-no-files-found: error
+          retention-days: 30

@@ -3,7 +3,7 @@
 # fixed time budget. Linux (or the nexbench container), nightly toolchain,
 # cargo-fuzz installed; seeds/ generated first (see README.md).
 #
-#   fuzz/run.sh [SECONDS] [TARGET...]    default: 600 s, all sixteen targets
+#   fuzz/run.sh [SECONDS] [TARGET...]    default: 600 s, all nineteen targets
 #
 # Logs go to logs/<target>.log, new corpus entries to corpus/<target>/, and
 # crash/timeout/OOM inputs to artifacts/<target>/. libFuzzer runs in fork mode
@@ -16,7 +16,7 @@ shift || true
 if [ "$#" -gt 0 ]; then
     targets=("$@")
 else
-    targets=(level2-volume level2-metadata level2-writer level2-writer-router io-router odim hdf5 cfradial dorade dorade-archive jma bzip2 bzip2-encode writers level3 polling-listing)
+    targets=(level2-volume level2-metadata level2-writer level2-writer-router io-router odim hdf5 cfradial dorade dorade-archive jma bzip2 bzip2-encode writers level3 polling-listing cli-open level2-records serve-request)
 fi
 
 cargo +nightly fuzz build -s none

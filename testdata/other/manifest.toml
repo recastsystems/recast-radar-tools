@@ -787,3 +787,34 @@ committed = "files/other/wmo-text/SRUS55_KSLC_HMLSLC_202510120424"
 ephemeral = true
 tags = ["provider:nws-tgftp", "license:public-domain", "era:2025", "site:kslc", "awips:HMLSLC", "framing:text-only"]
 description = "NWS hydrological XML bulletin (WMO heading SRUS55 KSLC 120424, AWIPS HMLSLC, generated 2025-10-12 04:24Z for gauge BDWU1), fetched 2026-09-24 from the NWS radar product directory (DC.radar/DS.00hml, rotating sn.0001, so the URL now serves another bulletin): WMO/AWIPS lines ending CR CR LF, then plain-text XML. Not a Level III file; the router must not sniff it as one."
+
+# Request heads captured from HTTP clients, for the `serve` tests and the
+# serve-request fuzz target (added by stream frontends; captured again for
+# the KXWA listing the tests serve).
+
+[[file]]
+id = "http-request-head-curl-8.21.0"
+format = "http-request-head"
+sha256 = "c75758e77099b93b2ea88afde46ba424b202e88a1a1b784e76b35e47fa9c4ede"
+size = 92
+committed = "files/other/http/request-head-curl-8.21.0"
+tags = ["http-request", "polling-server"]
+description = "The request head curl 8.21.0 (Windows, Schannel) sent for `curl http://127.0.0.1:<port>/KXWA/dir.list`, captured byte for byte by a listening socket on 2026-09-26: request line, Host, User-Agent and Accept, CRLF line ends. Input of the `serve` tests and seed of the `serve-request` fuzz target."
+
+[[file]]
+id = "http-request-head-python-urllib-3.13"
+format = "http-request-head"
+sha256 = "1f2b424c2cf2d4a2af59a6017e6cacb5ca429092754979c5035850004d547977"
+size = 132
+committed = "files/other/http/request-head-python-urllib-3.13"
+tags = ["http-request", "polling-server"]
+description = "The request head Python 3.13.7 urllib.request.urlopen sent for http://127.0.0.1:<port>/KXWA/dir.list, captured byte for byte on 2026-09-26: request line, Accept-Encoding, Host, User-Agent and Connection: close. Input of the `serve` tests and seed of the `serve-request` fuzz target."
+
+[[file]]
+id = "http-request-head-recast-radar-fetch"
+format = "http-request-head"
+sha256 = "e46918afa286eeaf3d4f14d686019386734c61edd11083c488df62bc11c22e99"
+size = 129
+committed = "files/other/http/request-head-recast-radar-fetch"
+tags = ["http-request", "polling-server"]
+description = "The request head `recast-radar fetch polling http://127.0.0.1:<port>/ KXWA --list` (recast-radar-data's reqwest client) sent for the site's dir.list, captured byte for byte on 2026-09-26: lower-case accept, user-agent and host headers. Input of the `serve` tests and seed of the `serve-request` fuzz target."

@@ -1,0 +1,6 @@
+# PyO3 (crates/recast-radar-py) links the extension module without libpython,
+# as an extension module must be on Linux and macOS, also in plain
+# `cargo build`/`cargo test --workspace` runs; maturin sets the same variable
+# when it builds wheels. Crates without PyO3 ignore it.
+[env]
+PYO3_BUILD_EXTENSION_MODULE = "1"
