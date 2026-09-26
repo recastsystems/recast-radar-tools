@@ -63,7 +63,7 @@ the bzip2 encoder, "Compression seam" below):
 
 `WriteSummary` reports the site, volume time, sweeps, radials and records written, one
 `MomentReport` per written field (moment, source field, word size, scale, offset, whether the
-coding is exact, the largest value error, clamped gates, absent rays, dropped gates), the fields
+coding is exact, the largest value error, absent rays, dropped gates), the fields
 left out and why, the sweeps left out, the source ray of every radial of each sweep not written
 as its rays in storage order (`written_rays`), the largest range error, and notes (for example a
 carried-over Message 5 that was replaced, a sweep left out, or the sweeps of a foreign volume
@@ -286,9 +286,10 @@ Py-ART decodes every sweep of a moment with the first sweep's scale and offset.
 reader decodes; `exact` is set when that is float rounding of the coding.
 
 No policy clips or drops a value: a fixed coding is used only where it holds every value of the
-moment. (The real-time `ChunkWriter`, whose codings are fixed from the planned volume before the
-data arrives, is the one place a value can fall outside its coding; it is clamped and counted in
-`clamped_gates`, "Real-time chunks" below.)
+moment, and a volume with a value its coding cannot hold is refused
+(`WriteError::ValueOutsideCoding`), nothing written. A coding chosen from the values always holds
+them; the refusal is met under the real-time `ChunkWriter`, whose codings the planned volume fixes
+before the data arrives ("Real-time chunks" below).
 
 **Which policy.** `Precise` is the default because a converter should not lose precision it was
 given. Where every value fits 8 bits exactly it writes what `Compatible` writes; this is the case
@@ -411,8 +412,9 @@ of a cut that is not a multiple of 120 goes out with the next cut's first radial
 `WithinCuts` a cut's records are complete when it is pushed. `finish` returns the end chunk.
 Pushing the planned volume's sweeps one by one gives exactly the chunks `write_realtime_chunks`
 gives for it, under either layout; a volume can end early; a push past the planned cuts is refused
-(`TooManySweeps`), and values outside a moment's planned coding are clamped and counted in
-`clamped_gates`. A push with a moment the planned volume lacks is refused
+(`TooManySweeps`), and so is a push with a value outside its moment's planned coding
+(`ValueOutsideCoding`, nothing sent): the writer never clips a value, so plan with a volume whose
+values span the radar's. A push with a moment the planned volume lacks is refused
 (`UnplannedMoment`), nothing sent: its coding would be chosen from that push's sweeps alone and
 differ from sweep to sweep, which Py-ART decodes with the first sweep's scale and offset. Plan with
 a volume that has every moment the radar sends (a Doppler volume, not a reflectivity-only scan).
@@ -487,7 +489,7 @@ they are not cached and the network is off.
 | Test | What it checks |
 |---|---|
 | `recast-radar-io-nexrad/tests/writer_roundtrip.rs` | every Level II file of the manifests (WSR-88D and TDWR, 1991 to 2026): decode with metadata, write, decode again, for uncompressed records and LDM records, and for files under 1.5 MB both again with gzip. Message 31 volumes come back with every gate code, ray and sweep value and the volume-level model identical; with the source's metadata record carried over, the NEXRAD metadata too (Messages 2, 3, 5, 13, 15, 18, 32 and every radial's VOL, ELV and RAD blocks and Data Header items, radar identifier and azimuth resolution code included), the radial statuses that place a radial in the written volume aside; and the data records' non-radial messages (mid-volume Message 2 updates) come back at their places among the radials. KVWX 2008's blank radial identifiers come back blank, and become the site `options.icao` names. Message 1 volumes, which carry no site position, are refused (`MissingLocation`) and then, with the position of a Message 31 file of the same radar, keep every written gate (the ones before the radar dropped). `Standard` quantisation still copies NEXRAD codes. A volume that leaves out or reorders KTLX 2024's sweeps keeps each sweep's Message 5 cut, fixed angle and constant blocks; VCP and site overrides reach Messages 2, 5 and 18 of the carried-over record, each noted. |
-| `recast-radar-io/tests/level2_writer_intl.rs` | real ODIM_H5 (Belgium, Denmark, Ireland, Norway, Spain), CfRadial 1 (ARM X-SAPR, the SMART-R2 in Irene), DORADE (COW2, NOXP) and JMA GRIB2 (Takayasu, reflectivity and velocity, and both merged) volumes written and decoded again under the default policy and `Compatible`: every ray once, in the order `written_rays` reports (ODIM's and X-SAPR's sweeps written from their earliest ray, their times then running forward; NOXP's kept as stored), with azimuths and elevations bit for bit, times to the millisecond, gate geometry to the metre, fixed angles within half an angle code, every value within the reported quantisation step, location and frequency; under the default, no value coarser than its source stores it; JMA's 512-radial cuts in 120-radial records across cuts by default and in records of one cut under `WithinCuts`, with `ChunkWriter`'s chunks equal to the whole volume's under both; `Standard` giving DKROM NOAA's codings where they hold its values and `Compatible`'s where not (RHOHV), no gate clamped; a JMA velocity volume's radials without a Nyquist velocity noted, and filled by the options (out-of-range values refused); RHI volumes refused |
+| `recast-radar-io/tests/level2_writer_intl.rs` | real ODIM_H5 (Belgium, Denmark, Ireland, Norway, Spain), CfRadial 1 (ARM X-SAPR, the SMART-R2 in Irene), DORADE (COW2, NOXP) and JMA GRIB2 (Takayasu, reflectivity and velocity, and both merged) volumes written and decoded again under the default policy and `Compatible`: every ray once, in the order `written_rays` reports (ODIM's and X-SAPR's sweeps written from their earliest ray, their times then running forward; NOXP's kept as stored), with azimuths and elevations bit for bit, times to the millisecond, gate geometry to the metre, fixed angles within half an angle code, every value within the reported quantisation step, location and frequency; under the default, no value coarser than its source stores it; JMA's 512-radial cuts in 120-radial records across cuts by default and in records of one cut under `WithinCuts`, with `ChunkWriter`'s chunks equal to the whole volume's under both; `ChunkWriter` planned from the first 5-minute cycle of JMA Okinawa's 2026 tar refusing, under `Compatible`, the second cycle's 0.2-degree sweep, whose 3 gates above 47.2 dBZ its planned REF coding cannot hold (`ValueOutsideCoding`, nothing sent), while the whole-file writer holds them and `Precise`'s plan takes the whole cycle; `Standard` giving DKROM NOAA's codings where they hold its values and `Compatible`'s where not (RHOHV), no value clipped; a JMA velocity volume's radials without a Nyquist velocity noted, and filled by the options (out-of-range values refused); RHI volumes refused |
 | `recast-radar-io-nexrad/tests/writer_layout.rs` | the bytes: header, LDM control words, the 134-frame metadata record with Messages 18, 5 and 2 where real files have them, every radial's blocks; real-time chunks concatenating to the file, and `ChunkWriter` (the start chunk with the first sweep, the held-back last record, a volume ended early, pushes past the planned cuts refused, and a Doppler cut pushed after a plan of KTLX's surveillance cut refused as `UnplannedMoment` with nothing sent); `write_volume_to` streaming KDVN 2020 in records of 10 radials from a two-thread pool (many batches) to the bytes of the whole-file writer under every compression, the real-time chunks' for LDM records, only the last control word negated, a gzip wrapper holding exactly the unwrapped file, and a sink that fails part way returning its error; sweeps without fields or with every row absent left out, rays without data left out, every radial carrying a moment, a volume with no data refused; the polling directory (names and name formats, `publish_named`, `dir.list`, site lists, retention, and the names, formats and sites refused, Windows' included); every refusal leaving the sink empty, per-ray arrays and field rows that do not match the ray count included |
 
 ### Independent readers (`tools/level2_writer_check.py`)
@@ -648,9 +650,6 @@ against milliseconds without it), so the router target runs at 16 to 50 inputs a
   open a file whose site starts with `T` unless the site is in its table, nor the KLIX 2005
   Message 1 volume once its gates before the radar are dropped (Independent readers, above).
   These are the readers' limits, not the files'.
-- `ChunkWriter` clamps values outside a moment's planned coding (counted in `clamped_gates`),
-  because the codings go out in the start chunk before the data; a later volume with values
-  beyond the planned volume's range is clipped there.
 - JMA (decoder, not writer): the decoder does not read the product definition's observation
   start and end offsets, so every ray carries the file's reference time and the two 5-minute
   cycles of a 10-minute file cannot be told apart by time; nor its PRFs, so there is no Nyquist

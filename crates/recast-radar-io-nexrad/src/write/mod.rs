@@ -352,6 +352,36 @@ pub enum WriteError {
         /// The field that maps to it.
         field: String,
     },
+    /// A field has values its moment's coding cannot hold, which would be
+    /// clipped. The writer chooses each coding to hold every value of the
+    /// moment, so this happens under a [`realtime::ChunkWriter`], whose
+    /// codings the planned volume fixed before the data arrived (`planned`):
+    /// plan with a volume whose values span the radar's (the same scan
+    /// strategy and moments, or an earlier volume with a wider range).
+    /// Nothing was written.
+    #[error(
+        "sweep {sweep}: {gates} gate(s) of {field} ({moment}) lie outside {low} to {high}, the \
+         values the moment's {} coding holds; the writer does not clip values",
+        if *planned { "planned" } else { "chosen" }
+    )]
+    ValueOutsideCoding {
+        /// Sweep index in the volume (for a [`realtime::ChunkWriter`], in
+        /// the pushed volume).
+        sweep: usize,
+        /// The moment.
+        moment: Moment,
+        /// The field that maps to it.
+        field: String,
+        /// Gates whose value lies outside the coding.
+        gates: usize,
+        /// Smallest value the coding holds.
+        low: f32,
+        /// Largest value the coding holds.
+        high: f32,
+        /// Whether the coding was fixed by a [`realtime::ChunkWriter`]'s
+        /// planned volume.
+        planned: bool,
+    },
     /// A sweep is not a PPI-type scan.
     #[error("sweep {sweep}: {mode} sweeps cannot be written as Level II Message 31 cuts")]
     UnsupportedSweepMode {
@@ -467,9 +497,9 @@ pub struct MomentReport {
     /// rounding of the coding): NEXRAD codes copied, or an exact grid.
     pub exact: bool,
     /// Largest difference between a source value and its decoded value.
+    /// No value is ever clipped: a value the coding cannot hold is refused
+    /// ([`WriteError::ValueOutsideCoding`]).
     pub max_abs_error: f32,
-    /// Gates whose value fell outside the coding and was clamped.
-    pub clamped_gates: usize,
     /// Rays the source field did not provide (their moment block is left
     /// out of the radial).
     pub absent_rays: usize,

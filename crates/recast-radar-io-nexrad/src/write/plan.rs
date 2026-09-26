@@ -504,6 +504,7 @@ pub(crate) fn plan_with_codings<'a>(
         options.quantization,
         pinned.unwrap_or_default(),
     );
+    check_clipping(&sweeps, pinned.is_some())?;
     check_radial_lengths(&sweeps)?;
 
     let header_time = header_time(source, &sweeps)?;
@@ -521,7 +522,6 @@ pub(crate) fn plan_with_codings<'a>(
                 offset: moment.encoding.coding.offset,
                 exact: moment.encoding.exact,
                 max_abs_error: moment.encoding.max_abs_error,
-                clamped_gates: moment.encoding.clamped_gates,
                 absent_rays: moment.field.absent_rows.len(),
                 dropped_gates: moment.skip_gates,
             });
@@ -667,6 +667,31 @@ fn check_pinned(sweeps: &[SweepPlan<'_>], pinned: &[PinnedCoding]) -> Result<(),
                     sweep: sweep.index,
                     moment: moment.moment,
                     field: moment.field.name.to_string(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Refuse a volume with a value its moment's coding cannot hold: the
+/// writer never clips or drops a source value. Only a coding fixed
+/// beforehand (`pinned`, the real-time writer's) leaves values outside it;
+/// a coding chosen from the values holds every one of them.
+fn check_clipping(sweeps: &[SweepPlan<'_>], pinned: bool) -> Result<(), WriteError> {
+    for sweep in sweeps {
+        for moment in &sweep.moments {
+            let gates = moment.encoding.clipped_gates;
+            if gates > 0 {
+                let (low, high) = moment.encoding.coding.value_range();
+                return Err(WriteError::ValueOutsideCoding {
+                    sweep: sweep.index,
+                    moment: moment.moment,
+                    field: moment.field.name.to_string(),
+                    gates,
+                    low,
+                    high,
+                    planned: pinned,
                 });
             }
         }
@@ -1343,7 +1368,7 @@ fn plan_moments<'a>(
             encoder: quantize::GateEncoder::Raw,
             exact: true,
             max_abs_error: 0.0,
-            clamped_gates: 0,
+            clipped_gates: 0,
         };
         moments.push(MomentPlan {
             moment,

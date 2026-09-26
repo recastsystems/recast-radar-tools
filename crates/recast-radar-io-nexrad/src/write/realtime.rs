@@ -197,9 +197,10 @@ pub fn write_realtime_chunks_with_source(
 /// [`WriteOptions::radials_per_record`] radials, so a cut whose radials are
 /// not a multiple of that goes out with the next cut's first radials, while
 /// under [`RecordLayout::WithinCuts`] each cut's records are complete when
-/// it is pushed. A value outside a moment's fixed coding is clamped and
-/// counted in
-/// [`MomentReport::clamped_gates`](super::MomentReport::clamped_gates).
+/// it is pushed. A pushed sweep with a value outside its moment's fixed
+/// coding is refused ([`WriteError::ValueOutsideCoding`]), nothing sent: the
+/// writer never clips a value. Plan with a volume whose values span the
+/// radar's.
 ///
 /// Pushing all the planned volume's sweeps, one by one, gives the chunks
 /// [`write_realtime_chunks`] gives for it. A volume finished early (fewer
@@ -290,7 +291,8 @@ impl<'a> ChunkWriter<'a> {
     /// Add the next sweeps of the volume (`part`'s sweeps with rays, in cut
     /// order) and return the chunks they complete. Refused, with nothing
     /// sent, when the part cannot be written, has a moment the planned
-    /// volume lacks, or would take the volume past its planned cuts.
+    /// volume lacks or a value outside its moment's planned coding, or would
+    /// take the volume past its planned cuts.
     pub fn push(&mut self, part: &Volume) -> Result<Vec<Chunk>, WriteError> {
         let mut plan = plan::plan_with_codings(
             part,

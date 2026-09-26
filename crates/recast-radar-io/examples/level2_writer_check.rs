@@ -139,7 +139,6 @@ fn summary_json(summary: &WriteSummary) -> Value {
                 "offset": m.offset,
                 "exact": m.exact,
                 "max_abs_error": m.max_abs_error,
-                "clamped_gates": m.clamped_gates,
                 "dropped_gates": m.dropped_gates,
                 "absent_rays": m.absent_rays,
             })

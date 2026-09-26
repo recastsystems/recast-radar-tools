@@ -13,7 +13,8 @@
 //!   fixed angles within half a Message 5 angle code (360/65536 degrees);
 //! - every value within the quantisation step the writer reports (and to
 //!   float rounding where it reports an exact coding), missing and undetect
-//!   gates as below threshold, and nothing clamped under any policy;
+//!   gates as below threshold, and nothing clipped under any policy (the
+//!   writer refuses a value its coding cannot hold);
 //! - under the default policy (`Precise`), no value coded more coarsely
 //!   than its source stores it: exact for float sources on a grid and for
 //!   integer sources whose sweeps share one coding, else within half the
@@ -135,7 +136,6 @@ fn assert_values(
     assert_eq!(absent, back.absent_rows, "{at}: absent rays");
 
     let step = 1.0 / report.scale;
-    assert_eq!(report.clamped_gates, 0, "{at}: clamped gates");
     assert!(
         report.max_abs_error <= step / 2.0 * (1.0 + 1e-4),
         "{at}: error {} above half the {step} step",
@@ -505,7 +505,8 @@ fn jma_volumes_come_back_within_the_quantisation_step() {
 /// KILX 2026) where every value of the moment lies within them, and never
 /// clips: DMI Romo's RHOHV (steps of 0.0028 from 0) reaches below the
 /// typical RHO coding's 0.208 floor, so RHO takes the coding `Compatible`
-/// chooses instead, and no gate is clamped.
+/// chooses instead (a value outside a moment's coding would refuse the
+/// write: `WriteError::ValueOutsideCoding`).
 #[test]
 fn standard_quantisation_uses_the_typical_codings_without_clipping() {
     let id = "odim-dkrom-20260820-1130-pvol";
@@ -524,7 +525,6 @@ fn standard_quantisation_uses_the_typical_codings_without_clipping() {
         other => panic!("{other}"),
     };
     for report in &summary.moments {
-        assert_eq!(report.clamped_gates, 0, "{report:?}");
         let coding = (report.word_size, report.scale, report.offset);
         if coding == typical(report.moment) {
             // Values are within half a step of the typical coding.
@@ -747,4 +747,134 @@ fn missing_nyquist_velocities_are_noted_or_supplied() {
             other => panic!("{nyquist:?} {range:?}: {:?}", other.map(|(_, s)| s)),
         }
     }
+}
+
+/// The sweeps of one scan cycle of a JMA 10-minute tar, in the order they
+/// were collected: the tar holds two 5-minute cycles, each starting with its
+/// 25-degree sweep (JMA collects from the top down, then up again).
+fn jma_cycle(volume: &Volume, cycle: usize) -> Volume {
+    let start = |sweep: &Sweep| sweep.rays.time_s.first().copied().unwrap_or(f64::NAN);
+    let mut tops: Vec<f64> = volume
+        .sweeps
+        .iter()
+        .filter(|sweep| (sweep.fixed_angle_deg - 25.0).abs() < 0.01)
+        .map(start)
+        .collect();
+    tops.sort_by(f64::total_cmp);
+    assert_eq!(tops.len(), 2, "two cycles");
+    let (from, until) = match cycle {
+        0 => (f64::NEG_INFINITY, tops[1]),
+        _ => (tops[1], f64::INFINITY),
+    };
+    let mut sweeps: Vec<Sweep> = volume
+        .sweeps
+        .iter()
+        .filter(|sweep| (from..until).contains(&start(sweep)))
+        .cloned()
+        .collect();
+    sweeps.sort_by(|a, b| start(a).total_cmp(&start(b)));
+    let mut part = volume.clone();
+    part.sweeps = sweeps;
+    part
+}
+
+/// The real-time chunk writer never clips. Planned from the first 5-minute
+/// cycle of JMA Okinawa's 2026-09-24 21:00Z tar (the previous volume of the
+/// radar) under `Compatible`, whose 8-bit REF coding spans that cycle's
+/// values (0 to 47.2 dBZ), the second cycle's sweeps are pushed one by one
+/// in the order they were collected. Its 0.2-degree sweep holds 3 gates
+/// above 47.2 dBZ: the push is refused with `ValueOutsideCoding`, nothing
+/// sent, and the volume still ends where the last accepted sweep left it.
+/// The whole-file writer, which chooses the coding from the values, writes
+/// the whole cycle with every value within half its step. Under `Precise`
+/// the plan's exact 16-bit grid holds every value of the second cycle.
+#[test]
+fn chunk_writer_refuses_values_outside_the_planned_coding() {
+    use recast_radar_io_nexrad::write::realtime::ChunkWriter;
+
+    let volume = decoded("jma-n5-20260924-210000-rs47937");
+    let first = jma_cycle(&volume, 0);
+    let second = jma_cycle(&volume, 1);
+    assert_eq!((first.sweeps.len(), second.sweeps.len()), (17, 18));
+    let single = |sweep: &Sweep| {
+        let mut part = second.clone();
+        part.sweeps = vec![sweep.clone()];
+        part
+    };
+
+    let options = compatible();
+    let mut writer = ChunkWriter::new(&first, &options).unwrap();
+    let mut sent = Vec::new();
+    let mut refusal = None;
+    for (index, sweep) in second.sweeps.iter().enumerate() {
+        match writer.push(&single(sweep)) {
+            Ok(chunks) => sent.extend(chunks),
+            Err(WriteError::ValueOutsideCoding {
+                sweep: 0,
+                moment: Moment::Ref,
+                gates,
+                low,
+                high,
+                planned: true,
+                ..
+            }) => {
+                refusal = Some((index, gates, low, high));
+                break;
+            }
+            Err(err) => panic!("{err}"),
+        }
+    }
+    let (refused, gates, low, high) = refusal.unwrap();
+    assert_eq!((refused, gates, low), (11, 3, 0.0));
+    assert!((high - 47.2).abs() < 0.05, "{high}");
+    assert!((second.sweeps[refused].fixed_angle_deg - 0.2).abs() < 0.01);
+    // The 3 gates are the source's values above the planned coding.
+    let field = second.sweeps[refused]
+        .field(&FieldName::parse("DBZH"))
+        .unwrap();
+    let above = (0..field.nrays as usize)
+        .flat_map(|ray| (0..field.ngates as usize).map(move |gate| (ray, gate)))
+        .filter(|&(ray, gate)| {
+            matches!(field.gate(ray, gate), Some(Gate::Value(value)) if value > high)
+        })
+        .count();
+    assert_eq!(above, 3, "gates above the planned coding");
+
+    // The refused push sent nothing: the volume ends after the 11 sweeps
+    // accepted, every value within half a step of its coding.
+    let (end, summary) = writer.finish().unwrap();
+    assert_eq!(summary.sweeps, 11);
+    let file: Vec<u8> = sent
+        .iter()
+        .chain([&end])
+        .flat_map(|chunk| chunk.bytes.clone())
+        .collect();
+    let again = recast_radar_io_nexrad::read_volume_from_bytes(&file).unwrap();
+    assert_eq!(again.sweeps.len(), 11);
+    for report in &summary.moments {
+        assert!(
+            report.max_abs_error <= 0.5 / report.scale * (1.0 + 1e-4),
+            "{report:?}"
+        );
+    }
+
+    // Written whole, the second cycle takes a coding that holds its values.
+    let mut whole = second.clone();
+    whole.sweeps.truncate(17);
+    let (_, summary) =
+        write_volume_with_source(&whole, SourceMetadata::default(), &options).unwrap();
+    assert_eq!(summary.sweeps, 17);
+    for report in &summary.moments {
+        assert!(
+            report.max_abs_error <= 0.5 / report.scale * (1.0 + 1e-4),
+            "{report:?}"
+        );
+    }
+
+    // Under `Precise` the plan's exact grid holds the second cycle.
+    let mut writer = ChunkWriter::new(&first, &default_options()).unwrap();
+    for sweep in second.sweeps.iter().take(17) {
+        writer.push(&single(sweep)).unwrap();
+    }
+    assert_eq!(writer.finish().unwrap().1.sweeps, 17);
 }

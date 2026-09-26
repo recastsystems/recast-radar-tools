@@ -43,7 +43,7 @@ pub(crate) struct Coding {
     /// `value = (code - offset) / scale`.
     pub scale: f32,
     pub offset: f32,
-    /// Largest code written; values above clamp to it.
+    /// Largest code written.
     pub max_code: u16,
 }
 
@@ -57,27 +57,41 @@ impl Coding {
         }
     }
 
-    /// The code of a physical value and whether it was clamped into the
-    /// value codes. Non-finite values are below threshold.
+    /// The code of a finite physical value, and whether the coding loses it
+    /// (the value would be clipped): it lies more than half a step outside
+    /// the value codes, or the coding cannot scale it (a zero or non-finite
+    /// scale or offset, as a Level II moment with floating-point gates has).
+    /// A value just outside the end codes by float rounding of the coding is
+    /// not lost: its end code decodes to it within half a step.
     fn code(self, value: f32) -> (u16, bool) {
-        let scaled = f64::from(value) * f64::from(self.scale) + f64::from(self.offset);
-        if !scaled.is_finite() {
-            return (BELOW_THRESHOLD, false);
+        let scale = f64::from(self.scale);
+        let usable = scale.is_finite() && scale != 0.0 && self.offset.is_finite();
+        let scaled = f64::from(value) * scale + f64::from(self.offset);
+        if !usable || !scaled.is_finite() {
+            return (BELOW_THRESHOLD, true);
         }
         let rounded = scaled.round();
-        if rounded < f64::from(FIRST_VALUE_CODE) {
-            (FIRST_VALUE_CODE, true)
-        } else if rounded > f64::from(self.max_code) {
-            (self.max_code, true)
-        } else {
-            (rounded as u16, false)
+        let code = rounded.clamp(f64::from(FIRST_VALUE_CODE), f64::from(self.max_code));
+        let code = code as u16;
+        if rounded == f64::from(code) {
+            return (code, false);
         }
+        let error = (f64::from(self.decode(code)) - f64::from(value)).abs();
+        let tolerance = 0.5 / scale.abs() + f64::from(value).abs() * f64::from(f32::EPSILON);
+        (code, !(error <= tolerance))
     }
 
     /// The value a decoder reads for `code` (evaluated in f32, as the ICD
     /// form is).
     fn decode(self, code: u16) -> f32 {
         (f32::from(code) - self.offset) / self.scale
+    }
+
+    /// The smallest and largest values the coding holds (its first and last
+    /// value codes decoded).
+    pub(crate) fn value_range(self) -> (f32, f32) {
+        let (a, b) = (self.decode(FIRST_VALUE_CODE), self.decode(self.max_code));
+        (a.min(b), a.max(b))
     }
 
     fn gate_code(self, gate: Gate) -> (u16, bool) {
@@ -149,7 +163,9 @@ pub(crate) struct FieldEncoding {
     pub encoder: GateEncoder,
     pub exact: bool,
     pub max_abs_error: f32,
-    pub clamped_gates: usize,
+    /// Gates whose value the coding cannot hold ([`Coding::code`]); the
+    /// planner refuses a volume with any.
+    pub clipped_gates: usize,
 }
 
 /// Distinct values of a field (every provided row), with their gate counts;
@@ -195,13 +211,13 @@ pub(crate) fn choose(
         .zip(&summaries)
         .map(|(field, summary)| match (summary, coding) {
             (Some(summary), Some(coding)) => {
-                let (max_abs_error, clamped_gates) = measure(field, summary, coding);
+                let (max_abs_error, clipped_gates) = measure(field, summary, coding);
                 FieldEncoding {
                     coding,
                     encoder: encoder(field, coding),
-                    exact: clamped_gates == 0 && is_exact(summary, coding, max_abs_error),
+                    exact: clipped_gates == 0 && is_exact(summary, coding, max_abs_error),
                     max_abs_error,
-                    clamped_gates,
+                    clipped_gates,
                 }
             }
             _ => FieldEncoding {
@@ -209,7 +225,7 @@ pub(crate) fn choose(
                 encoder: GateEncoder::Raw,
                 exact: true,
                 max_abs_error: 0.0,
-                clamped_gates: 0,
+                clipped_gates: 0,
             },
         })
         .collect()
@@ -218,7 +234,8 @@ pub(crate) fn choose(
 /// The encodings of the fields mapped to a moment under a coding fixed
 /// beforehand (the real-time writer's, chosen from the planned volume):
 /// NEXRAD-coded fields keep their codes, the others take `coding`, their
-/// values outside it clamped and counted.
+/// values outside it counted in `clipped_gates` (the planner then refuses
+/// the volume).
 pub(crate) fn with_coding(fields: &[&Field], coding: Coding) -> Vec<FieldEncoding> {
     fields
         .iter()
@@ -228,17 +245,17 @@ pub(crate) fn with_coding(fields: &[&Field], coding: Coding) -> Vec<FieldEncodin
                 encoder: GateEncoder::Raw,
                 exact: true,
                 max_abs_error: 0.0,
-                clamped_gates: 0,
+                clipped_gates: 0,
             },
             None => {
                 let summary = summarize(field);
-                let (max_abs_error, clamped_gates) = measure(field, &summary, coding);
+                let (max_abs_error, clipped_gates) = measure(field, &summary, coding);
                 FieldEncoding {
                     coding,
                     encoder: encoder(field, coding),
-                    exact: clamped_gates == 0 && is_exact(&summary, coding, max_abs_error),
+                    exact: clipped_gates == 0 && is_exact(&summary, coding, max_abs_error),
                     max_abs_error,
-                    clamped_gates,
+                    clipped_gates,
                 }
             }
         })
@@ -347,7 +364,7 @@ fn chosen_coding(summary: &ValueSummary, moment: Moment, policy: Quantization) -
 }
 
 /// `true` when no value of `summary` falls outside the value codes of
-/// `coding` (nothing would be clamped).
+/// `coding` (nothing would be clipped).
 fn covers(summary: &ValueSummary, coding: Coding) -> bool {
     !summary.any || (!coding.code(summary.min).1 && !coding.code(summary.max).1)
 }
@@ -492,14 +509,27 @@ fn estimate_step(values: &[f64], min: f64) -> Option<f64> {
     (step > 0.0 && step.is_finite()).then_some(step)
 }
 
-/// The finest coding whose codes 2 to `max_code` span `[min, max]`.
+/// Largest `|value| * scale` a covering coding allows: its offset, an
+/// `f32`, then still resolves a code (2^22 is half the `f32` mantissa).
+const MAX_SCALED_MAGNITUDE: f64 = 4_194_304.0;
+
+/// The finest coding whose codes 2 to `max_code` span `[min, max]`, no
+/// finer than its `f32` offset can resolve (values far from zero spanning a
+/// few of their own float steps get a coarser coding); a single value, or
+/// a span too narrow for a finite scale, gets scale 1.
 fn covering_coding(min: f32, max: f32, word_size: u8, max_code: u16) -> Coding {
     let (min, max) = (f64::from(min), f64::from(max));
+    let single = Coding::new(word_size, 1.0, (2.0 - min) as f32, max_code);
     if max.is_nan() || min.is_nan() || max <= min {
-        return Coding::new(word_size, 1.0, (2.0 - min) as f32, max_code);
+        return single;
     }
-    let scale = ((f64::from(max_code) - 2.0) / (max - min)) as f32;
+    let finest = (f64::from(max_code) - 2.0) / (max - min);
+    let resolvable = MAX_SCALED_MAGNITUDE / min.abs().max(max.abs());
+    let scale = finest.min(resolvable) as f32;
     let offset = (2.0 - min * f64::from(scale)) as f32;
+    if !scale.is_finite() || scale <= 0.0 || !offset.is_finite() {
+        return single;
+    }
     Coding::new(word_size, scale, offset, max_code)
 }
 
@@ -511,18 +541,19 @@ fn is_exact(summary: &ValueSummary, coding: Coding, max_abs_error: f32) -> bool 
     summary.distinct.is_some() && f64::from(max_abs_error) <= 1e-3 / f64::from(coding.scale).abs()
 }
 
-/// Largest decode error and number of clamped gates of `coding` on the
+/// Largest decode error and number of clipped gates of `coding` on the
 /// field's values.
 fn measure(field: &Field, summary: &ValueSummary, coding: Coding) -> (f32, usize) {
     let mut max_error = 0.0f32;
-    let mut clamped = 0usize;
+    let mut clipped = 0usize;
     let mut account = |value: f32, count: u64| {
         if !value.is_finite() {
             return;
         }
-        let (code, was_clamped) = coding.code(value);
-        if was_clamped {
-            clamped = clamped.saturating_add(usize::try_from(count).unwrap_or(usize::MAX));
+        let (code, clipped_value) = coding.code(value);
+        if clipped_value {
+            clipped = clipped.saturating_add(usize::try_from(count).unwrap_or(usize::MAX));
+            return;
         }
         max_error = max_error.max((coding.decode(code) - value).abs());
     };
@@ -532,7 +563,7 @@ fn measure(field: &Field, summary: &ValueSummary, coding: Coding) -> (f32, usize
             .for_each(|(value, count)| account(*value, *count)),
         None => for_each_value(field, |value| account(value, 1)),
     }
-    (max_error, clamped)
+    (max_error, clipped)
 }
 
 /// Call `f` with every value of every provided row.
