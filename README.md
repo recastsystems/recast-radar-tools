@@ -252,8 +252,8 @@ the centre to the edge.
 | `recast-radar-data` | `data` | NEXRAD Level II archive and real-time chunks on AWS, site catalogs, international and community feeds |
 | `recast-radar-correct` | `correct` | Doppler velocity dealiasing |
 | `recast-radar-filters` | `filters` | Gate filters, polar smoothing, display interpolation |
-| `recast-radar-retrieve` | `retrieve` | Sweep and column products, CAPPI, azimuthal shear and rotation, GBVTD, VAD wind profile |
-| `recast-radar-map` | `map` | Composites, echo tops, VIL, hail, cross sections, RHI panels, volume resampling |
+| `recast-radar-retrieve` | `retrieve` | Sweep and column products (KDP by windowed regression, Vulpiani or Maesaka; PHIDP-linear or Z-PHI attenuation correction), CAPPI, azimuthal shear and rotation, GBVTD, VAD wind profile |
+| `recast-radar-map` | `map` | Composites, echo tops, VIL, hail, cross sections, RHI panels, volume resampling, Cartesian gridding of one or more volumes (Barnes, Cressman) |
 | `recast-radar-track` | `track` | Storm cell identification and tracking, rotation tracks, swaths, temporal grids |
 | `recast-radar-render` | `render` | CPU rendering to RGBA and PNG, color tables, GR `.pal` palettes |
 | `recast-radar-scattering` | `scattering` | Radar-scattering primitives and offline lookup tables |

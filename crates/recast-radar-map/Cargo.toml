@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Weather radar geometry products: composites, echo tops, VIL, hail, cross sections, RHI panels and volume resampling"
+description = "Weather radar geometry products: composites, echo tops, VIL, hail, cross sections, RHI panels, volume resampling and Cartesian gridding"
 readme.workspace = true
 keywords = ["radar", "weather", "composite", "cross-section", "gridding"]
 categories = ["science::geo", "algorithms"]
@@ -14,6 +14,7 @@ rayon.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 recast-radar-correct = { path = "../recast-radar-correct" }
 recast-radar-filters = { path = "../recast-radar-filters" }
+thiserror.workspace = true
 
 [dev-dependencies]
 # Real-data tests: corpus files decoded with the real readers, goldens as JSON.

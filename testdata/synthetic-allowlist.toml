@@ -3,12 +3,11 @@
 # Every C.1 entry was converted to real inputs in C.2, and the tests merged
 # from main in C.3 were converted too (docs/testdata/synthetic-inventory.md).
 # What remains comes from the FM301 model (stream F), under
-# core-data-scattering: two pending model unit tests that need a corpus file
-# nobody has found yet (user review), and one exception; and from
-# metadata-complete (io-nexrad, io-formats): two exceptions, and ten pending
-# feature tests on edited real bytes that await the owner's decision. New
-# findings must be converted; an entry may be added only as a justified
-# exception (see `status` below), or as pending for the owner's review.
+# core-data-scattering: one exception; and from metadata-complete
+# (io-nexrad, io-formats): two exceptions, and ten pending feature tests on
+# edited real bytes that await the owner's decision. New findings must be
+# converted; an entry may be added only as a justified exception (see
+# `status` below), or as pending for the owner's review.
 #
 # `crates/recast-radar-testdata/tests/no_synthetic.rs` scans test code and data
 # files (rules: `recast_radar_testdata::synthetic`) and fails on any finding
@@ -176,7 +175,7 @@ justification = "awaits the owner's decision; merges the two committed real RS47
 # ============================================================================
 
 # ============================================================================
-# core-data-scattering (3 entries: 2 pending, 1 exception)
+# core-data-scattering (1 entry: 1 exception)
 # ============================================================================
 #
 # Every legacy entry of this group was converted in C.2 (branch

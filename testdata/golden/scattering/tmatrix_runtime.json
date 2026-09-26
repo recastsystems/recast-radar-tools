@@ -1,0 +1,453 @@
+{
+ "dry_ice_hail_7mm": {
+  "interpolation": [
+   23852.764450284176,
+   22064.020881990105,
+   22927.94247566112,
+   2.211733649014174,
+   0.014608857907070059,
+   0.0001380320982890405,
+   0.00012771073289710982,
+   300350.8676708538,
+   3787446.5425778367
+  ],
+  "plan": {
+   "active_axis_count": 2,
+   "base_point_index": 58,
+   "corner_count": 4,
+   "strides": [
+    3,
+    1,
+    1,
+    1
+   ],
+   "upper_fractions": [
+    0.03522526612396343,
+    0.3333333333333336
+   ],
+   "upper_point_offsets": [
+    3,
+    1
+   ]
+  },
+  "query": [
+   0.007,
+   0.9,
+   2700832954.954955,
+   0.0
+  ]
+ },
+ "property_dry_node": {
+  "interpolation": [
+   0.044668565586279595,
+   0.04136305048187662,
+   0.042973001195752994,
+   1.4236011767817403e-07,
+   2.0216892855115045e-05,
+   7.180266613767096e-09,
+   6.650477480024755e-09,
+   0.09689434641693055,
+   0.2103444664489744
+  ],
+  "plan": {
+   "active_axis_count": 3,
+   "base_point_index": 837,
+   "corner_count": 8,
+   "strides": [
+    240,
+    80,
+    16,
+    4,
+    4,
+    1
+   ],
+   "upper_fractions": [
+    0.8430760396215845,
+    0.6666666666666672,
+    0.02777777777777777
+   ],
+   "upper_point_offsets": [
+    240,
+    4,
+    1
+   ]
+  },
+  "query": [
+   0.001,
+   260.0,
+   400.0,
+   0.8,
+   2800000000.0,
+   1.0
+  ]
+ },
+ "property_rain_225k": {
+  "interpolation": [
+   1.1102233681198552,
+   0.936344314559692,
+   1.0184100030151144,
+   0.0009108591191044127,
+   0.00021889692567735606,
+   4.936984347707181e-06,
+   4.2067410619487265e-06,
+   4.313992494532714,
+   16.791568251434875
+  ],
+  "plan": {
+   "active_axis_count": 3,
+   "base_point_index": 69,
+   "corner_count": 8,
+   "strides": [
+    64,
+    16,
+    4,
+    4,
+    1
+   ],
+   "upper_fractions": [
+    0.19329166758137656,
+    0.6666666666666666,
+    0.05555555555555553
+   ],
+   "upper_point_offsets": [
+    64,
+    4,
+    1
+   ]
+  },
+  "query": [
+   0.001,
+   225.0,
+   0.9,
+   2800000000.0,
+   1.0
+  ]
+ },
+ "property_rain_273k": {
+  "interpolation": [
+   1.0947100980423676,
+   0.9243749924968051,
+   1.004801662626539,
+   0.0008764631595203598,
+   0.000215689062393454,
+   4.668449996536433e-06,
+   3.970943111983181e-06,
+   4.253729736483439,
+   16.557073251317963
+  ],
+  "plan": {
+   "active_axis_count": 4,
+   "base_point_index": 85,
+   "corner_count": 16,
+   "strides": [
+    64,
+    16,
+    4,
+    4,
+    1
+   ],
+   "upper_fractions": [
+    0.19329166758137656,
+    0.16666666666666666,
+    0.6666666666666666,
+    0.05555555555555553
+   ],
+   "upper_point_offsets": [
+    64,
+    16,
+    4,
+    1
+   ]
+  },
+  "query": [
+   0.001,
+   273.15,
+   0.9,
+   2800000000.0,
+   1.0
+  ]
+ },
+ "property_wet_box": {
+  "brackets": [
+   [
+    1,
+    2
+   ],
+   [
+    0,
+    1
+   ],
+   [
+    1,
+    2
+   ],
+   [
+    1,
+    1
+   ],
+   [
+    1,
+    2
+   ],
+   [
+    0,
+    0
+   ],
+   [
+    1,
+    2
+   ]
+  ],
+  "corners": 32,
+  "query": [
+   7.80890061247781e-05,
+   272.15,
+   0.8385282760071792,
+   0.5,
+   0.855,
+   2800000000.0,
+   1.0
+  ],
+  "zh_max": 2.136500832120134e-07,
+  "zh_min": 6.375915102343665e-08
+ },
+ "tables": {
+  "dry_ice": {
+   "axes": [
+    {
+     "coordinates": [
+      0.0001,
+      0.000125,
+      0.00015625,
+      0.0001953125,
+      0.000244140625,
+      0.00030517578125,
+      0.0003814697265625,
+      0.000476837158203125,
+      0.000596046447753906,
+      0.000745058059692383,
+      0.000931322574615479,
+      0.00116415321826935,
+      0.00145519152283669,
+      0.00181898940354586,
+      0.00227373675443232,
+      0.0028421709430404,
+      0.0035527136788005,
+      0.00444089209850063,
+      0.00555111512312578,
+      0.00693889390390723,
+      0.00867361737988404,
+      0.010842021724855,
+      0.0135525271560688,
+      0.016940658945086,
+      0.0211758236813575,
+      0.0264697796016969,
+      0.0330872245021211,
+      0.0413590306276514,
+      0.05
+     ],
+     "kind": "equivolume_diameter"
+    },
+    {
+     "coordinates": [
+      0.7,
+      0.85,
+      1.0
+     ],
+     "kind": "minor_to_major_axis_ratio"
+    },
+    {
+     "coordinates": [
+      2700832954.954955
+     ],
+     "kind": "frequency"
+    },
+    {
+     "coordinates": [
+      0.0
+     ],
+     "kind": "radar_elevation"
+    }
+   ],
+   "id": "tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3",
+   "lut_sha256": "6f6d3baec9d97379dce71d31132ef564af2c4ad7d6bfe94524ebbb6c3021b1f6",
+   "table_id": "conventional-dry-ice-spheroids-sband-pytmatrix-0.3.3-unvalidated-v1"
+  },
+  "property_dry": {
+   "axes": [
+    {
+     "coordinates": [
+      5e-05,
+      0.0002132480599880018,
+      0.00046566128730773926,
+      0.0009094947017729282,
+      0.001016845989170083,
+      0.004336808689942018,
+      0.0403896783473158,
+      0.089
+     ],
+     "kind": "equivolume_diameter"
+    },
+    {
+     "coordinates": [
+      190.0,
+      260.0,
+      273.15
+     ],
+     "kind": "temperature"
+    },
+    {
+     "coordinates": [
+      1.5,
+      20.0,
+      400.0,
+      850.0,
+      917.0
+     ],
+     "kind": "bulk_density"
+    },
+    {
+     "coordinates": [
+      0.1,
+      0.7,
+      0.85,
+      1.0
+     ],
+     "kind": "minor_to_major_axis_ratio"
+    },
+    {
+     "coordinates": [
+      2800000000.0
+     ],
+     "kind": "frequency"
+    },
+    {
+     "coordinates": [
+      -0.5,
+      0.9,
+      4.5,
+      20.0
+     ],
+     "kind": "radar_elevation"
+    }
+   ],
+   "id": "tmatrix-lut-property-dry-oblate-sband-trim",
+   "lut_sha256": "a570c121acd3c99dcc8cd70a343a8a54bc934325169afb65e1b13025af63fdaf",
+   "table_id": "property-p3-ishmael-dry-oblate-sband-pytmatrix-0.3.3-unvalidated-v1-trim"
+  },
+  "property_rain": {
+   "axes": [
+    {
+     "coordinates": [
+      1.8e-05,
+      0.0009797958971132711,
+      0.0010843224043318137,
+      0.007
+     ],
+     "kind": "equivolume_diameter"
+    },
+    {
+     "coordinates": [
+      225.0,
+      269.15,
+      293.15,
+      313.15
+     ],
+     "kind": "temperature"
+    },
+    {
+     "coordinates": [
+      0.5,
+      0.85,
+      0.925,
+      1.0
+     ],
+     "kind": "minor_to_major_axis_ratio"
+    },
+    {
+     "coordinates": [
+      2800000000.0
+     ],
+     "kind": "frequency"
+    },
+    {
+     "coordinates": [
+      -0.5,
+      0.9,
+      2.7,
+      20.0
+     ],
+     "kind": "radar_elevation"
+    }
+   ],
+   "id": "tmatrix-lut-property-rain-sband-trim",
+   "lut_sha256": "0ee06652c7ad88ac6fb57e1b15c6bb3de18d80e62d8a372128b1c2b714fd3003",
+   "table_id": "property-rain-sband-pytmatrix-0.3.3-unvalidated-v2-trim"
+  },
+  "property_wet": {
+   "axes": [
+    {
+     "coordinates": [
+      5e-05,
+      6.987712429686843e-05,
+      7.8125e-05,
+      8.734640537108554e-05,
+      0.015
+     ],
+     "kind": "equivolume_diameter"
+    },
+    {
+     "coordinates": [
+      269.15,
+      273.15,
+      275.15
+     ],
+     "kind": "temperature"
+    },
+    {
+     "coordinates": [
+      0.0015,
+      0.651872847953581,
+      0.85,
+      1.0
+     ],
+     "kind": "condensed_volume_fraction"
+    },
+    {
+     "coordinates": [
+      0.0,
+      0.5,
+      0.98
+     ],
+     "kind": "liquid_mass_fraction"
+    },
+    {
+     "coordinates": [
+      0.1,
+      0.7,
+      1.0
+     ],
+     "kind": "minor_to_major_axis_ratio"
+    },
+    {
+     "coordinates": [
+      2800000000.0
+     ],
+     "kind": "frequency"
+    },
+    {
+     "coordinates": [
+      -0.5,
+      0.9,
+      4.5,
+      20.0
+     ],
+     "kind": "radar_elevation"
+    }
+   ],
+   "id": "tmatrix-lut-property-wet-oblate-sband-trim",
+   "lut_sha256": "2e5adaed4ac5c2382a380a2ba6d11f6c9453cc71c51b7d95fc7b412aa95b6469",
+   "table_id": "property-p3-ishmael-wet-oblate-sband-pytmatrix-0.3.3-unvalidated-v1-trim"
+  }
+ }
+}

@@ -116,7 +116,7 @@ io-formats.
 | retrieve | `recast-radar-retrieve` | 48 (35 / 13 / 0) | 0 | 0 |
 | track | `recast-radar-track` | 30 (22 / 8 / 0) | 0 | 0 |
 | render-bench | `recast-radar-render`, `recast-radar-bench` | 32 (27 / 5 / 0) | 0 | 0 |
-| core-data-scattering | `recast-radar-core`, `recast-radar-data`, `recast-radar-scattering`, `recast-radar-testdata` | 87 (68 / 19 / 0) | 3 (FM301 model: 2 pending, 1 exception; see below) | 8 |
+| core-data-scattering | `recast-radar-core`, `recast-radar-data`, `recast-radar-scattering`, `recast-radar-testdata` | 87 (68 / 19 / 0) | 1 (FM301 model: 1 exception; see below) | 8 |
 | **all** | | **376 (274 / 98 / 4)** | **3** | **76** |
 
 ## io-nexrad
@@ -428,11 +428,11 @@ rows stored in reverse order, a duplicated radial identity.
 | `circulations_without_echo_are_rejected` | Rolling Fork volume with every REF grid removed | sites before, none after; zero features per tilt |
 | `quiet_volumes_detect_nothing` | `l2-ktlx-20240515-000014` (VCP 35), `l2-kmaf-20230331-230843` (VCP 31) | Py-ART max reflectivity 41.5 / 45.5 dBZ (clutter, biota); no sites |
 
-The Moore 2013-05-20 20:16Z volume (`l2-ktlx-20130520-201643`) is in `detect.json` with its SPC
-position (az 264.5 deg, 20.7 km) but is not asserted: `detect_rotation_sites` reports no site
-within 10 km of it (the debris region's velocity on the lowest tilts is folded and noisy; the
-region dealiaser over-unfolds gates to -73 m/s and the LLSD shear exceeds the 150 m/s/km
-plausibility cap), so that volume is a documented gap for the detector, not a test.
+The Moore 2013-05-20 20:16Z volume (`l2-ktlx-20130520-201643`, SPC position az 264.5 deg,
+20.7 km) joined `violent_tornadoes_are_detected_where_the_damage_survey_puts_them` once the
+detector considered tilts up to 19.5 deg: its rank core must be 3 km deep, which at 21 km only
+the upper tilts reach (root cause and the two remaining effects, a region-dealiaser misbranch and
+the 150 m/s/km shear cap, in `docs/design/retrievals-validation.md`).
 
 ### `crates/recast-radar-retrieve/tests/gbvtd_real.rs`
 
@@ -466,7 +466,12 @@ plausibility cap), so that volume is a documented gap for the detector, not a te
 
 Py-ART's Vulpiani and Maesaka KDP are heavily smoothed and run 2-10x lower than a 3 km windowed
 regression on the Moore core's noisy PHIDP (gate correlation near zero), so they serve only as a
-magnitude-class check, not a gate reference. The dkrom ODIM volume was tried as a second PHIDP input
+magnitude-class check here, not a gate reference. The crate's own Vulpiani and Maesaka estimators
+are compared with Py-ART gate for gate in `tests/kdp_methods_real.rs` and Z-PHI in
+`tests/attenuation_real.rs` (`tools/retrieve_golden.py kdp_methods`, `attenuation`): Vulpiani
+and unsmoothed Z-PHI with unmodified Py-ART, Maesaka with Py-ART's cost function minimised to
+convergence by scipy, and the default smoothed Z-PHI with Py-ART's `smooth_masked` made
+mask-aware (see docs/design/retrievals-validation.md). The dkrom ODIM volume was tried as a second PHIDP input
 and dropped: the file stores PHIDP in radians and RHOHV with a 0.0028 gain (maximum 0.707), so the
 0.80 correlation floor gates every PHIDP sample.
 
@@ -578,8 +583,9 @@ unchanged.
 Two findings from the real data: the COW2 DORADE head trim has no duplicate azimuths (its 3
 transition rays are 0.5 deg apart), so the duplicate-row test became a neighbouring-radial test; and
 the reflectivity sample cache does not fall through hidden (transparent) palette entries the way the
-direct render does, which a four-radial synthetic volume could not show (see
-`viewport_sample_cache_matches_direct_moment_render`). The KLIX 2005 seam case proposed in C.1 needs
+direct render does, which a four-radial synthetic volume could not show. Fixed in wave 3: sample
+caches resolve with the building cache's colour table (see
+`viewport_sample_cache_matches_direct_field_render`). The KLIX 2005 seam case proposed in C.1 needs
 the Message 1 Nyquist fix from `real-tests-io-nexrad` (the base branch reads it from the wrong
 halfword), so the seam test uses the full KDVN 2020 volume until the groups merge.
 
@@ -614,7 +620,7 @@ rebuilt as `raw + 2N·k` from run-length-encoded fold numbers in the golden file
 | `tests::azimuth_lookup_prefers_neighbour_row_with_longer_valid_extent` | `l2-ktlx-20240315-000217-trim` sweep 1 REF | per-row valid extents from Py-ART raw codes; at the bin between two neighbouring radials the longer row ranks first and a gate only it fills resolves to it (24 pairs) |
 | `tests::compact_sample_resolution_keeps_visible_range_folded_candidates` | sweep 2 VEL | per-row valid extents (RF counts as valid); RF gates resolve to their own row |
 | `tests::viewport_render_uses_requested_screen_resolution` | sweep 2 (REF and VEL) | buffer dimensions; image, buffer and cache paths byte-identical |
-| `tests::viewport_sample_cache_matches_direct_moment_render` | sweep 2 REF | exact equality under an all-opaque ramp; under the default palette differences are only cache-transparent / direct-opaque fall-throughs |
+| `tests::viewport_sample_cache_matches_direct_field_render` | sweep 2 REF | exact equality under an all-opaque ramp and under the default palette (and from a geometry cache); a cache built under another table is refused |
 | `tests::viewport_geometry_cache_resolves_across_compatible_products` | sweep 2 REF and VEL (same gate geometry) | geometry-derived and direct sample caches render identically |
 | `tests::viewport_sample_cache_matches_direct_storm_relative_render` | sweep 2 VEL | cached equals direct; a different storm motion recolours the same opaque pixels |
 | `tests::viewport_sample_cache_rejects_mismatched_cache` | sweep 2 | moment mismatch error |
@@ -690,9 +696,10 @@ findings, all in code stream F wrote:
 - exception (1 entry): `real_rows.rs` `u16_rows_decode_real_big_endian_bytes_and_reject_odd_lengths`
   pushes a real PHI block's big-endian bytes, whole and cut by one byte, through
   `Field::push_row_u16_be`. The odd-length and row-order checks are unreachable through any decoder.
-- pending (2 entries): the horizontal/unspecified/vertical preference of `Sweep::find` and its
-  helper. No corpus volume carries DBZH, DBZ and DBZV together, and renaming variables in a real
-  file keeps their `standard_name`, which classification reads first. Needs user review.
+- formerly pending (2 entries, resolved in 7be3b98): the horizontal/unspecified/vertical
+  preference of `Sweep::find` and its helper. No corpus volume carries DBZH, DBZ and DBZV
+  together, so `real_model.rs` re-spells one real IESHA DBZH field under each name
+  (`find_prefers_horizontal_then_unspecified_then_vertical`); no pending entry remains.
 
 metadata-complete added two exceptions, built on real bytes because no real file has the input: in
 io-nexrad, `limits_real.rs` `rda_log_frame` and `rda_log_data_is_limited_per_volume` (message 33 compression
@@ -774,6 +781,15 @@ pins what the captures hold. Expected identities and URLs are the listed object 
 | `combine_keeps_all_gdacs_storms_when_nhc_is_down` | September GDACS list with an NHC error | FIFTEEN-E-26 (East Pacific) survives; strongest first |
 | `empty_nhc_feed_does_not_hide_gdacs_nhc_basin_storm` (was `..._atlantic_storm`) | the same-minute empty NHC and September GDACS captures | FIFTEEN-E-26 kept |
 
+Wave 3 replaced the invented `nhc_active_storms.json` (a hurricane "Alberto", AL012026, that never
+existed), which the detector did not scan: `nhc_parses_storm_vitals`,
+`merge_keeps_both_sources_and_sorts_by_wind`, `combine_failover_arms_never_fake_an_all_clear`,
+`display_helpers_format_vitals` and `sync_attaches_nhc_advisory_identity_without_overriding_vitals`
+read `nhc_current_storms_20251026T0133Z.json` (Internet Archive capture: Hurricane Melissa
+AL132025, 85 kt, 971 mb, and Tropical Storm Sonia EP182025) and Melissa's forecast advisory 18
+(`nhc_melissa_forecast_advisory_018.txt`, the text of the NHC archive page), with values read from
+the files.
+
 ### `crates/recast-radar-scattering/src/lut.rs`
 
 | test | real input | assertion source |
@@ -796,6 +812,12 @@ pins what the captures hold. Expected identities and URLs are the listed object 
 | `parser_rejects_truncation_extra_content_nonfinite_values_and_wrong_indices` | edits of the two-moment first block | parse errors |
 
 ### `crates/recast-radar-scattering/src/scheme_psd.rs` and `tmatrix_runtime.rs`
+
+The research-runtime tests of `tmatrix_runtime.rs` load real tables too (wave 3): the committed
+dry-ice table (its config edited and re-packed for the loader-contract tests) and three tables
+trimmed from the property bundle with `tools/trim_tmatrix_lut.py` (dry and wet oblate P3/ISHMAEL,
+standalone and residual rain; every kept node copied byte for byte), with expected values from
+`tools/scattering_golden.py` (`tmatrix_runtime.json`).
 
 The per-particle callback of every PSD test is the committed dry-ice table looked up at the node's
 diameter and axis ratio (sub-floor spheres at the floor sphere scaled by `(D/D_floor)^6`); the
@@ -840,21 +862,19 @@ recompressing real bytes) now that the library decodes with `recast-radar-bzip2`
 
 ## Follow-ups
 
-- correct: `l2-klix-20050829-130035-trim` (Katrina, Message 1) can join `tools/correct_golden.py`
-  `CASES` and `region_dealias_recovers_smooth_folded_ramp` /
-  `velocity_dealias_preserves_supported_adjacent_folds` now that the Message 1 Nyquist offset fix
-  (io-nexrad C.2) is merged.
+- correct (done, wave 3): `l2-klix-20050829-130035-trim` (Katrina, Message 1) is the
+  `klix_20050829_trim_s1` case of `tools/correct_golden.py` and joins
+  `region_dealias_recovers_smooth_folded_ramp`, `velocity_dealias_preserves_supported_adjacent_folds`
+  and `lightweight_velocity_dealias_unfolds_radial_continuity`.
 - render-bench: `boundary_metric_counts_the_wrap_seam` can move to the committed KLIX 2005 fixture (18
   seam pairs) for the same reason.
-- retrieve/track: `recast_radar_retrieve::detect_rotation_sites` does not detect the Moore 2013-05-20
-  20:16Z tornado circulation at 22 km in `l2-ktlx-20130520-201643` (library behaviour, documented in
-  the retrieve and track sections).
-- render: the compact sample-cache render path and the direct render disagree on transparent palette
-  entries (render-bench section).
+- retrieve/track (done, wave 3): `detect_rotation_sites` detects the Moore 2013-05-20 20:16Z
+  tornado (tilts up to 19.5 deg; `docs/design/retrievals-validation.md`).
+- render (done, wave 3): sample caches resolve with the colour table, as the direct render does.
 - track: `identify_storm_cells` assumes full-circle radials, inflating sector-scan cell areas.
 - core: `MomentGrid`'s gate-count expansion path has no real sample (no corpus sweep has its longest
   radial after a shorter one).
-- scattering: `PsdFallSpeedAuthority::SyntheticTestOnly` remains as a library enum variant no test uses.
+- scattering (done, wave 3): `PsdFallSpeedAuthority::SyntheticTestOnly` was removed.
 
 ## Corpus additions needed
 
@@ -882,15 +902,17 @@ groups can decide on them; the detector enforces none of them.
 
 - Hand-written 1-D gate rows fed to kernels (no model type, no field allocation the detector can tell
   from math arrays):
-  - `crates/recast-radar-retrieve/src/sweep.rs`: `tests::unwraps_phase_crossing_zero`,
-    `tests::unwrap_does_not_bridge_long_missing_phase_gap`, `tests::hampel_filter_removes_spike_in_flat_window`
-  - `crates/recast-radar-retrieve/src/wind.rs`: `tests::convergence_window_finds_couplet`,
-    `tests::median_qc_suppresses_single_gate_spike`
-  - `crates/recast-radar-io-dorade/src/dorade.rs`: `tests::rle_run_of_missing_gates_pads_with_bad` (HRD RLE words)
-
-  Each can take real rays instead (PHIDP rays of `l2-ktlx-20130520-201643-trim` sweep 1, velocity rays of
-  `l2-kdvn-20200810-180401-trim` sweep 2, RLE words of `dorade-cow2-20260521-225514-sur-head24`), or become a
-  documented pure-math exception.
+  - converted in wave 3: the `sweep.rs` unwrapping and Hampel tests
+    (`unwraps_a_real_phase_wrap_between_adjacent_gates`,
+    `unwrap_does_not_bridge_a_real_long_phase_gap`, `hampel_filter_replaces_real_phase_spikes`, on
+    gated PHIDP rays of `l2-ktlx-20130520-201643-trim`) and the `wind.rs` convergence tests
+    (`convergence_window_matches_the_reference_on_a_real_ray`,
+    `median_qc_suppresses_a_real_single_gate_spike`, on velocity rays of
+    `l2-kdvn-20200810-180401-trim`), with numpy f32 references in
+    `testdata/golden/retrieve/kernel_rows.json`;
+  - still hand-written: `crates/recast-radar-io-dorade/src/dorade.rs`
+    `tests::rle_run_of_missing_gates_pads_with_bad` (HRD RLE words). The io-* crates belong to the
+    format streams; the proposal stands (RLE words of `dorade-cow2-20260521-225514-sur-head24`).
 - Published reference vectors: `crates/recast-radar-io-jma/src/lib.rs`
   `tests::decodes_jma_run_length_reference_example`, `crates/recast-radar-io-odim/src/hdf5lite.rs`
   `tests::jenkins_lookup3_matches_reference_vectors`, `crates/recast-radar-retrieve/src/detect.rs`

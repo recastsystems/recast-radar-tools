@@ -118,3 +118,84 @@ derived_from = "wrf-p3-lookup-table-1-v5.4-3momI"
 derivation = "byte prefix through the 1552nd line feed (head -n 1552): the version header, the blank separator, the 50 main records of shape 1 / density 1 / rime 1 and their 1500 collision records; no byte changed"
 tags = ["provider:wrf-model", "license:wrf-public-domain", "p3:v5.4", "p3:three-moment", "text", "derived", "derivation:prefix"]
 description = "First (shape 1, density 1, rime 1) block of the three-moment P3 table: 1550 data rows parsed offline with the reduced layout {shapes 1, densities 1, rimes 1, masses 50, rain_collisions 30}"
+
+[[file]]
+id = "tmatrix-lut-property-dry-oblate-sband-trim"
+format = "brslut-v1"
+sha256 = "a570c121acd3c99dcc8cd70a343a8a54bc934325169afb65e1b13025af63fdaf"
+size = 147472
+committed = "files/scattering/pytmatrix-0.3.3/property_p3_ishmael_dry_oblate_sband_trim/table.lut"
+tags = ["generator:pytmatrix-0.3.3", "lut:schema-1", "table:property-p3-ishmael-dry-oblate", "band:s", "status:research-only-unvalidated", "derived", "derivation:subset"]
+description = "P3/ISHMAEL dry oblate property table (table_id property-p3-ishmael-dry-oblate-sband-pytmatrix-0.3.3-unvalidated-v1-trim), trimmed with tools/trim_tmatrix_lut.py from the locked PyTMatrix 0.3.3 generator's table (SHA-256 30c8da4093b845faa415339f2cb5b4831f3450dc18afea3aacb2e2fabdcc4ad8, 44365435 bytes, radar-bow research_only_assets/tmatrix/pytmatrix-0.3.3): 8 equivolume diameter x 3 temperature x 5 bulk density x 4 minor to major axis ratio x 1 frequency x 4 radar elevation = 1920 nodes, each node's nine f64 outputs copied byte for byte; axis end points kept; research_only_unvalidated"
+
+[[file]]
+id = "tmatrix-lut-property-dry-oblate-sband-trim-config"
+format = "json"
+sha256 = "c5c029d0b5ef45b6bbd377a06069a2ddbcb9bc6733b192df30f239b64bcdcf72"
+size = 6376
+committed = "files/scattering/pytmatrix-0.3.3/property_p3_ishmael_dry_oblate_sband_trim/config.json"
+tags = ["generator:pytmatrix-0.3.3", "lut:generator-config", "table:property-p3-ishmael-dry-oblate", "derived", "derivation:subset"]
+description = "Generator config embedded in and hashed into tmatrix-lut-property-dry-oblate-sband-trim: the source table's config with the kept axis coordinates and a -trim table id"
+
+[[file]]
+id = "tmatrix-lut-property-dry-oblate-sband-trim-trim"
+format = "json"
+sha256 = "d8f4d6ac54e1eb7647c3b8523a558368056926b8886b2ecaafa53b5ebf24d37b"
+size = 1020
+committed = "files/scattering/pytmatrix-0.3.3/property_p3_ishmael_dry_oblate_sband_trim/trim.json"
+tags = ["generator:pytmatrix-0.3.3", "lut:generator-manifest", "table:property-p3-ishmael-dry-oblate", "derived", "derivation:subset"]
+description = "trim_tmatrix_lut.py record of tmatrix-lut-property-dry-oblate-sband-trim: source table id, source LUT and config SHA-256, kept coordinate indices per axis, output digests"
+
+[[file]]
+id = "tmatrix-lut-property-wet-oblate-sband-trim"
+format = "brslut-v1"
+sha256 = "2e5adaed4ac5c2382a380a2ba6d11f6c9453cc71c51b7d95fc7b412aa95b6469"
+size = 165506
+committed = "files/scattering/pytmatrix-0.3.3/property_p3_ishmael_wet_oblate_sband_trim/table.lut"
+tags = ["generator:pytmatrix-0.3.3", "lut:schema-1", "table:property-p3-ishmael-wet-oblate", "band:s", "status:research-only-unvalidated", "derived", "derivation:subset"]
+description = "P3/ISHMAEL wet oblate property table (table_id property-p3-ishmael-wet-oblate-sband-pytmatrix-0.3.3-unvalidated-v1-trim), trimmed with tools/trim_tmatrix_lut.py from the locked PyTMatrix 0.3.3 generator's table (SHA-256 6c376422c512ebfc37dc5b2038defea799995d1821170da74b4af87276df1dd7, 73279689 bytes, radar-bow research_only_assets/tmatrix/pytmatrix-0.3.3): 5 equivolume diameter x 3 temperature x 4 condensed volume fraction x 3 liquid mass fraction x 3 minor to major axis ratio x 1 frequency x 4 radar elevation = 2160 nodes, each node's nine f64 outputs copied byte for byte; axis end points kept; research_only_unvalidated"
+
+[[file]]
+id = "tmatrix-lut-property-wet-oblate-sband-trim-config"
+format = "json"
+sha256 = "8beb5ccb5848b09fcaa598487e940f17a8857de579231f2e20544a942ca22f41"
+size = 7018
+committed = "files/scattering/pytmatrix-0.3.3/property_p3_ishmael_wet_oblate_sband_trim/config.json"
+tags = ["generator:pytmatrix-0.3.3", "lut:generator-config", "table:property-p3-ishmael-wet-oblate", "derived", "derivation:subset"]
+description = "Generator config embedded in and hashed into tmatrix-lut-property-wet-oblate-sband-trim: the source table's config with the kept axis coordinates and a -trim table id"
+
+[[file]]
+id = "tmatrix-lut-property-wet-oblate-sband-trim-trim"
+format = "json"
+sha256 = "62b75b05cecda09e00d8f4eac86074a45eb6d4f43b44adefd30a8003d683e190"
+size = 1044
+committed = "files/scattering/pytmatrix-0.3.3/property_p3_ishmael_wet_oblate_sband_trim/trim.json"
+tags = ["generator:pytmatrix-0.3.3", "lut:generator-manifest", "table:property-p3-ishmael-wet-oblate", "derived", "derivation:subset"]
+description = "trim_tmatrix_lut.py record of tmatrix-lut-property-wet-oblate-sband-trim: source table id, source LUT and config SHA-256, kept coordinate indices per axis, output digests"
+
+[[file]]
+id = "tmatrix-lut-property-rain-sband-trim"
+format = "brslut-v1"
+sha256 = "0ee06652c7ad88ac6fb57e1b15c6bb3de18d80e62d8a372128b1c2b714fd3003"
+size = 25651
+committed = "files/scattering/pytmatrix-0.3.3/property_rain_sband_trim/table.lut"
+tags = ["generator:pytmatrix-0.3.3", "lut:schema-1", "table:property-rain", "band:s", "status:research-only-unvalidated", "derived", "derivation:subset"]
+description = "temperature-dependent standalone and residual rain property table (table_id property-rain-sband-pytmatrix-0.3.3-unvalidated-v2-trim), trimmed with tools/trim_tmatrix_lut.py from the locked PyTMatrix 0.3.3 generator's table (SHA-256 396ca95c58d70a9a413d90799bd790dc389179dc9a38f48152e464bf852d5e11, 1968373 bytes, radar-bow research_only_assets/tmatrix/pytmatrix-0.3.3): 4 equivolume diameter x 4 temperature x 4 minor to major axis ratio x 1 frequency x 4 radar elevation = 256 nodes, each node's nine f64 outputs copied byte for byte; axis end points kept; research_only_unvalidated"
+
+[[file]]
+id = "tmatrix-lut-property-rain-sband-trim-config"
+format = "json"
+sha256 = "7c303b3cad1e38c708b2246c0083027501f3f9e19a3843448a5c988a9a3117c2"
+size = 4654
+committed = "files/scattering/pytmatrix-0.3.3/property_rain_sband_trim/config.json"
+tags = ["generator:pytmatrix-0.3.3", "lut:generator-config", "table:property-rain", "derived", "derivation:subset"]
+description = "Generator config embedded in and hashed into tmatrix-lut-property-rain-sband-trim: the source table's config with the kept axis coordinates and a -trim table id"
+
+[[file]]
+id = "tmatrix-lut-property-rain-sband-trim-trim"
+format = "json"
+sha256 = "37f30d7aebc6a70edf519f38d948ab806aec7d21edae87aaf886c60a1d33eddf"
+size = 892
+committed = "files/scattering/pytmatrix-0.3.3/property_rain_sband_trim/trim.json"
+tags = ["generator:pytmatrix-0.3.3", "lut:generator-manifest", "table:property-rain", "derived", "derivation:subset"]
+description = "trim_tmatrix_lut.py record of tmatrix-lut-property-rain-sband-trim: source table id, source LUT and config SHA-256, kept coordinate indices per axis, output digests"

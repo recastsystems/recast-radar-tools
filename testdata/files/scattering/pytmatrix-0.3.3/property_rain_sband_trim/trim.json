@@ -1,0 +1,40 @@
+{
+  "tool": "tools/trim_tmatrix_lut.py",
+  "source_table_id": "property-rain-sband-pytmatrix-0.3.3-unvalidated-v2",
+  "source_lut_sha256": "396ca95c58d70a9a413d90799bd790dc389179dc9a38f48152e464bf852d5e11",
+  "source_lut_bytes": 1968373,
+  "source_config_sha256": "387f93b5998d9f6010ffb60d081b31dc64a556cf33ae7b34256fc356d26140b5",
+  "kept_indices": {
+    "equivolume_diameter": [
+      0,
+      40,
+      41,
+      71
+    ],
+    "temperature": [
+      0,
+      3,
+      4,
+      5
+    ],
+    "minor_to_major_axis_ratio": [
+      0,
+      4,
+      5,
+      6
+    ],
+    "frequency": [
+      0
+    ],
+    "radar_elevation": [
+      0,
+      2,
+      3,
+      8
+    ]
+  },
+  "grid_point_count": 256,
+  "lut_sha256": "0ee06652c7ad88ac6fb57e1b15c6bb3de18d80e62d8a372128b1c2b714fd3003",
+  "lut_bytes": 25651,
+  "config_sha256": "7c303b3cad1e38c708b2246c0083027501f3f9e19a3843448a5c988a9a3117c2"
+}

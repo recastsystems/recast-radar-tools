@@ -11,9 +11,13 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+use rayon::prelude::*;
 use recast_radar_core::{
     Field, FieldAttrs, FieldData, FieldName, FloatCoding, Polarization, Quantity, Sweep, Volume,
 };
+
+use crate::attenuation::{self, ZPhiAttenuation};
+use crate::kdp::{self, KdpMethod};
 
 /// Products that can be computed independently for each elevation cut.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -420,6 +424,21 @@ impl RadarBand {
 
 #[derive(Clone, Debug)]
 pub struct KdpConfig {
+    /// Estimator that turns the filtered phase into KDP. The phase front end
+    /// (the gating, unwrapping, gap and Hampel settings below) is shared by
+    /// every method.
+    ///
+    /// The method sets KDP, the filtered phase (PHIF: the regression
+    /// intercept, Vulpiani's reconstructed phase or Maesaka's forward phase),
+    /// whether a KDP uncertainty exists, and the products computed from KDP:
+    /// the KDP and hybrid rain rates and KDP texture. It does not change the
+    /// attenuation products (specific, path-integrated and corrected, for
+    /// both PHIDP-linear and Z-PHI): those always use the
+    /// [`KdpMethod::WindowedRegression`] phase and KDP, or a source KDP when
+    /// the sweep has one, so the regression settings below apply to them
+    /// whatever the method. With another method and attenuation products
+    /// requested, the pass runs the regression as well.
+    pub method: KdpMethod,
     /// Robust regression window length along a radial.
     pub window_km: f32,
     pub min_window_gates: usize,
@@ -447,6 +466,7 @@ impl KdpConfig {
     pub fn for_band(band: RadarBand) -> Self {
         let (kdp_min_deg_km, kdp_max_deg_km) = band.default_kdp_bounds();
         Self {
+            method: KdpMethod::default(),
             window_km: 3.0,
             min_window_gates: 7,
             max_window_gates: 41,
@@ -495,8 +515,27 @@ impl QpeConfig {
     }
 }
 
+/// How the attenuation products are computed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum AttenuationMethod {
+    /// Path-integrated attenuation proportional to the propagation phase
+    /// (Py-ART `calculate_attenuation_philinear`), with the coefficients and
+    /// caps of [`AttenuationConfig`].
+    PhiLinear,
+    /// The Z-PHI method (Py-ART `calculate_attenuation_zphi`). Its
+    /// reflectivity smoothing averages only gates with reflectivity, where
+    /// shipped Py-ART also averages the fill values of missing gates, and its
+    /// freezing level is a height above the antenna (see
+    /// [`ZPhiAttenuation`]).
+    ZPhi(ZPhiAttenuation),
+}
+
 #[derive(Clone, Debug)]
 pub struct AttenuationConfig {
+    /// Correction method. The coefficients and caps below apply to
+    /// [`AttenuationMethod::PhiLinear`]; Z-PHI carries its own.
+    pub method: AttenuationMethod,
     pub horizontal_db_per_degree: f32,
     pub differential_db_per_degree: f32,
     pub max_pia_db: f32,
@@ -508,6 +547,7 @@ impl AttenuationConfig {
         let (horizontal_db_per_degree, differential_db_per_degree) =
             band.attenuation_coefficients();
         Self {
+            method: AttenuationMethod::PhiLinear,
             horizontal_db_per_degree,
             differential_db_per_degree,
             max_pia_db: 20.0,
@@ -729,38 +769,45 @@ pub fn derive_sweep_in_place(
         return report;
     }
 
-    let phase_needed = requested.iter().any(|product| {
-        matches!(
-            product,
-            DerivedSweepProduct::Kdp
-                | DerivedSweepProduct::FilteredDifferentialPhase
-                | DerivedSweepProduct::KdpUncertainty
-                | DerivedSweepProduct::SpecificAttenuation
-                | DerivedSweepProduct::PathIntegratedAttenuation
-                | DerivedSweepProduct::CorrectedReflectivity
-                | DerivedSweepProduct::SpecificDifferentialAttenuation
-                | DerivedSweepProduct::PathIntegratedDifferentialAttenuation
-                | DerivedSweepProduct::CorrectedDifferentialReflectivity
-                | DerivedSweepProduct::RainRateKdp
-                | DerivedSweepProduct::RainRateHybrid
-                | DerivedSweepProduct::KdpTexture
-        )
-    });
+    // Products of the configured KDP method: its KDP, its filtered phase and
+    // everything computed from that KDP.
+    let method_phase_needed = needs_any(
+        requested,
+        &[
+            DerivedSweepProduct::Kdp,
+            DerivedSweepProduct::FilteredDifferentialPhase,
+            DerivedSweepProduct::KdpUncertainty,
+            DerivedSweepProduct::RainRateKdp,
+            DerivedSweepProduct::RainRateHybrid,
+            DerivedSweepProduct::KdpTexture,
+        ],
+    );
+    let attenuation_needed = needs_any(requested, &ATTENUATION_PRODUCTS);
 
     let snapshot: &Sweep = sweep;
     let inputs = Inputs::of(snapshot);
-    let phase_bundle = if phase_needed {
-        derive_phase_bundle(snapshot, &inputs, &config.kdp)
+    let phase = if method_phase_needed || attenuation_needed {
+        derive_phase_products(
+            snapshot,
+            &inputs,
+            &config.kdp,
+            method_phase_needed,
+            attenuation_needed,
+        )
     } else {
-        None
+        PhaseProducts::default()
     };
+    let phase_bundle = phase.method.as_ref();
+    let attenuation_bundle = phase.attenuation();
 
     // Prefer a source-provided KDP field for downstream products. If no native
     // KDP is present, use the robust PHIDP retrieval from this pass.
-    let derived_kdp = phase_bundle.as_ref().map(|bundle| &bundle.kdp);
-    let kdp_for_dependencies = inputs.kdp.or(derived_kdp);
+    let kdp_for_dependencies = inputs.kdp.or(phase_bundle.map(|bundle| &bundle.kdp));
+    // The attenuation products never depend on the KDP method: without a
+    // source KDP they use the windowed-regression KDP and phase.
+    let kdp_for_attenuation = inputs.kdp.or(attenuation_bundle.map(|bundle| &bundle.kdp));
 
-    let phase_excess = phase_bundle.as_ref().map(|bundle| {
+    let phase_excess = attenuation_bundle.map(|bundle| {
         phase_excess_field(
             snapshot,
             &bundle.filtered_phi,
@@ -768,7 +815,22 @@ pub fn derive_sweep_in_place(
         )
     });
 
-    let pia = if needs_any(
+    let zphi = match config.attenuation.method {
+        AttenuationMethod::ZPhi(zphi_config) if attenuation_needed => {
+            match (inputs.reflectivity, phase_excess.as_ref()) {
+                (Some(reflectivity), Some(phase)) => {
+                    zphi_fields(snapshot, reflectivity, phase, &zphi_config)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    let use_zphi = matches!(config.attenuation.method, AttenuationMethod::ZPhi(_));
+
+    let pia = if use_zphi {
+        zphi.as_ref().map(|fields| fields.pia.clone())
+    } else if needs_any(
         requested,
         &[
             DerivedSweepProduct::PathIntegratedAttenuation,
@@ -778,7 +840,7 @@ pub fn derive_sweep_in_place(
         let product = DerivedSweepProduct::PathIntegratedAttenuation;
         phase_excess.as_ref().map_or_else(
             || {
-                kdp_for_dependencies.map(|kdp| {
+                kdp_for_attenuation.map(|kdp| {
                     integrate_kdp(
                         snapshot,
                         kdp,
@@ -801,7 +863,9 @@ pub fn derive_sweep_in_place(
         None
     };
 
-    let pida = if needs_any(
+    let pida = if use_zphi {
+        zphi.as_ref().map(|fields| fields.pida.clone())
+    } else if needs_any(
         requested,
         &[
             DerivedSweepProduct::PathIntegratedDifferentialAttenuation,
@@ -811,7 +875,7 @@ pub fn derive_sweep_in_place(
         let product = DerivedSweepProduct::PathIntegratedDifferentialAttenuation;
         phase_excess.as_ref().map_or_else(
             || {
-                kdp_for_dependencies.map(|kdp| {
+                kdp_for_attenuation.map(|kdp| {
                     integrate_kdp(
                         snapshot,
                         kdp,
@@ -847,14 +911,17 @@ pub fn derive_sweep_in_place(
         }
 
         let field = match product {
-            DerivedSweepProduct::Kdp => phase_bundle.as_ref().map(|bundle| bundle.kdp.clone()),
-            DerivedSweepProduct::FilteredDifferentialPhase => phase_bundle
-                .as_ref()
-                .map(|bundle| bundle.filtered_phi.clone()),
-            DerivedSweepProduct::KdpUncertainty => phase_bundle
-                .as_ref()
-                .map(|bundle| bundle.uncertainty.clone()),
-            DerivedSweepProduct::SpecificAttenuation => kdp_for_dependencies.map(|kdp| {
+            DerivedSweepProduct::Kdp => phase_bundle.map(|bundle| bundle.kdp.clone()),
+            DerivedSweepProduct::FilteredDifferentialPhase => {
+                phase_bundle.map(|bundle| bundle.filtered_phi.clone())
+            }
+            DerivedSweepProduct::KdpUncertainty => {
+                phase_bundle.and_then(|bundle| bundle.uncertainty.clone())
+            }
+            DerivedSweepProduct::SpecificAttenuation if use_zphi => {
+                zphi.as_ref().map(|fields| fields.ah.clone())
+            }
+            DerivedSweepProduct::SpecificAttenuation => kdp_for_attenuation.map(|kdp| {
                 scale_positive_field(
                     kdp,
                     product,
@@ -870,8 +937,11 @@ pub fn derive_sweep_in_place(
                     })
                 })
             }
+            DerivedSweepProduct::SpecificDifferentialAttenuation if use_zphi => {
+                zphi.as_ref().map(|fields| fields.adiff.clone())
+            }
             DerivedSweepProduct::SpecificDifferentialAttenuation => {
-                kdp_for_dependencies.map(|kdp| {
+                kdp_for_attenuation.map(|kdp| {
                     scale_positive_field(
                         kdp,
                         product,
@@ -1034,116 +1104,394 @@ fn needs_any(requested: &BTreeSet<DerivedSweepProduct>, products: &[DerivedSweep
     products.iter().any(|product| requested.contains(product))
 }
 
+/// The six attenuation products. Whatever [`KdpConfig::method`] is, they are
+/// computed from the windowed-regression phase and KDP (or a source KDP).
+const ATTENUATION_PRODUCTS: [DerivedSweepProduct; 6] = [
+    DerivedSweepProduct::SpecificAttenuation,
+    DerivedSweepProduct::PathIntegratedAttenuation,
+    DerivedSweepProduct::CorrectedReflectivity,
+    DerivedSweepProduct::SpecificDifferentialAttenuation,
+    DerivedSweepProduct::PathIntegratedDifferentialAttenuation,
+    DerivedSweepProduct::CorrectedDifferentialReflectivity,
+];
+
 #[derive(Clone)]
 struct PhaseBundle {
     filtered_phi: Field,
     kdp: Field,
-    uncertainty: Field,
+    /// The regression slope's standard error; `None` for the Vulpiani and
+    /// Maesaka estimators, which have none.
+    uncertainty: Option<Field>,
 }
 
-fn derive_phase_bundle(
+/// The phase bundles one derivation pass needs.
+#[derive(Default)]
+struct PhaseProducts {
+    /// The configured KDP method's bundle, when a KDP product was requested.
+    method: Option<PhaseBundle>,
+    /// The windowed-regression bundle the attenuation products use, when
+    /// one was requested and `method` is not already that bundle.
+    regression: Option<PhaseBundle>,
+    /// `method` is the windowed regression.
+    method_is_regression: bool,
+}
+
+impl PhaseProducts {
+    /// The bundle attenuation is computed from: always the windowed
+    /// regression's, so the KDP method does not move PIA, PIDA or Z-PHI.
+    fn attenuation(&self) -> Option<&PhaseBundle> {
+        self.regression.as_ref().or(if self.method_is_regression {
+            self.method.as_ref()
+        } else {
+            None
+        })
+    }
+}
+
+/// One ray after the phase front end: the filtered phase (NaN = missing)
+/// and which gates held a phase that passed the gating before gap filling.
+struct PrefilteredRow {
+    values: Vec<f32>,
+    original_valid: Vec<bool>,
+}
+
+/// The phase front end shared by every KDP method: RHOHV and reflectivity
+/// gating, 360 degree unwrapping across short gaps, linear fill of those
+/// gaps and a Hampel filter.
+fn prefilter_phase_row(
+    phi: &Field,
+    row: usize,
+    phi_first_m: f64,
+    phi_spacing_m: f64,
+    rho: Option<&FieldSampler<'_>>,
+    reflectivity: Option<&FieldSampler<'_>>,
+    config: &KdpConfig,
+) -> PrefilteredRow {
+    let mut gated = gated_phase_row(
+        phi,
+        row,
+        phi_first_m,
+        phi_spacing_m,
+        rho,
+        reflectivity,
+        config,
+    );
+    unwrap_phase_in_place(
+        &mut gated.values,
+        config.phase_period_deg,
+        config.max_interpolated_gap_gates,
+    );
+    fill_short_gaps_in_place(&mut gated.values, config.max_interpolated_gap_gates);
+    PrefilteredRow {
+        values: hampel_filter(
+            &gated.values,
+            config.hampel_half_window,
+            config.hampel_sigma,
+        ),
+        original_valid: gated.original_valid,
+    }
+}
+
+/// One ray's phase after the RHOHV and reflectivity gating (NaN where
+/// missing or gated out), before any filtering. A missing RHOHV or
+/// reflectivity sample does not gate the phase.
+fn gated_phase_row(
+    phi: &Field,
+    row: usize,
+    phi_first_m: f64,
+    phi_spacing_m: f64,
+    rho: Option<&FieldSampler<'_>>,
+    reflectivity: Option<&FieldSampler<'_>>,
+    config: &KdpConfig,
+) -> PrefilteredRow {
+    let gates = phi.ngates as usize;
+    let mut values = vec![f32::NAN; gates];
+    let mut original_valid = vec![false; gates];
+
+    for gate in 0..gates {
+        let Some(phase) = phi.value(row, gate) else {
+            continue;
+        };
+        if !phase.is_finite() {
+            continue;
+        }
+        let range_m = phi_first_m + gate as f64 * phi_spacing_m;
+        if let Some(rho_sampler) = rho
+            && let Some(rho_hv) = rho_sampler.sample(row, range_m)
+            && (!rho_hv.is_finite() || rho_hv < config.min_rho_hv)
+        {
+            continue;
+        }
+        if let Some(ref_sampler) = reflectivity
+            && let Some(dbz) = ref_sampler.sample(row, range_m)
+            && (!dbz.is_finite() || dbz < config.min_reflectivity_dbz)
+        {
+            continue;
+        }
+        values[gate] = phase;
+        original_valid[gate] = true;
+    }
+    PrefilteredRow {
+        values,
+        original_valid,
+    }
+}
+
+fn derive_phase_products(
     sweep: &Sweep,
     inputs: &Inputs<'_>,
     config: &KdpConfig,
-) -> Option<PhaseBundle> {
-    let phi = inputs.phi?;
+    method_needed: bool,
+    attenuation_needed: bool,
+) -> PhaseProducts {
+    let method_is_regression = matches!(config.method, KdpMethod::WindowedRegression);
+    let empty = PhaseProducts {
+        method_is_regression,
+        ..PhaseProducts::default()
+    };
+    let Some(phi) = inputs.phi else {
+        return empty;
+    };
     let rho = inputs.rho.and_then(|rho| FieldSampler::new(sweep, rho));
     let reflectivity = inputs
         .reflectivity
         .and_then(|reflectivity| FieldSampler::new(sweep, reflectivity));
 
     let (rows, gates) = phi.shape();
-    let (phi_first_m, phi_spacing_m) = phi.native_geometry(&sweep.range)?;
+    let Some((phi_first_m, phi_spacing_m)) = phi.native_geometry(&sweep.range) else {
+        return empty;
+    };
     if rows == 0 || gates == 0 || phi_spacing_m <= 0.0 {
-        return None;
+        return empty;
     }
 
-    let mut filtered_values = vec![f32::NAN; rows * gates];
-    let mut kdp_values = vec![f32::NAN; rows * gates];
-    let mut uncertainty_values = vec![f32::NAN; rows * gates];
-    let spacing_km = phi_spacing_m / 1000.0;
-    let window_gates = regression_window_gates(config, spacing_km as f32);
+    let prefiltered: Vec<PrefilteredRow> = (0..rows)
+        .into_par_iter()
+        .map(|row| {
+            prefilter_phase_row(
+                phi,
+                row,
+                phi_first_m,
+                phi_spacing_m,
+                rho.as_ref(),
+                reflectivity.as_ref(),
+                config,
+            )
+        })
+        .collect();
 
-    for row in 0..rows {
-        let mut values = vec![f32::NAN; gates];
-        let mut original_valid = vec![false; gates];
-
-        for gate in 0..gates {
-            let Some(phase) = phi.value(row, gate) else {
-                continue;
-            };
-            if !phase.is_finite() {
-                continue;
-            }
-            let range_m = phi_first_m + gate as f64 * phi_spacing_m;
-            if let Some(rho_sampler) = rho.as_ref()
-                && let Some(rho_hv) = rho_sampler.sample(row, range_m)
-                && (!rho_hv.is_finite() || rho_hv < config.min_rho_hv)
-            {
-                continue;
-            }
-            if let Some(ref_sampler) = reflectivity.as_ref()
-                && let Some(dbz) = ref_sampler.sample(row, range_m)
-                && (!dbz.is_finite() || dbz < config.min_reflectivity_dbz)
-            {
-                continue;
-            }
-            values[gate] = phase;
-            original_valid[gate] = true;
-        }
-
-        unwrap_phase_in_place(
-            &mut values,
-            config.phase_period_deg,
-            config.max_interpolated_gap_gates,
-        );
-        fill_short_gaps_in_place(&mut values, config.max_interpolated_gap_gates);
-        let values = hampel_filter(&values, config.hampel_half_window, config.hampel_sigma);
-
-        let mut xs = Vec::with_capacity(window_gates);
-        let mut ys = Vec::with_capacity(window_gates);
-        let mut fit_scratch = FitScratch::default();
-        for (gate, originally_valid) in original_valid.iter().copied().enumerate().take(gates) {
-            if !originally_valid && !config.emit_interpolated_gates {
-                continue;
-            }
-            let half = window_gates / 2;
-            let start = gate.saturating_sub(half);
-            let end = (gate + half + 1).min(gates);
-            xs.clear();
-            ys.clear();
-            for (sample_gate, value) in values.iter().copied().enumerate().take(end).skip(start) {
-                if value.is_finite() {
-                    xs.push((sample_gate as f64 - gate as f64) * spacing_km);
-                    ys.push(value as f64);
-                }
-            }
-            if xs.len() < config.min_valid_gates {
-                continue;
-            }
-            let Some(fit) = robust_linear_fit(&xs, &ys, config.huber_k as f64, &mut fit_scratch)
-            else {
-                continue;
-            };
-            let index = row * gates + gate;
-            filtered_values[index] = fit.intercept as f32;
-            let kdp = (0.5 * fit.slope) as f32;
-            if kdp.is_finite() && kdp >= config.kdp_min_deg_km && kdp <= config.kdp_max_deg_km {
-                kdp_values[index] = kdp;
-                uncertainty_values[index] = (0.5 * fit.slope_standard_error) as f32;
-            }
-        }
-    }
-
-    Some(PhaseBundle {
+    let bundle = |filtered: Vec<f32>, kdp: Vec<f32>, uncertainty: Option<Vec<f32>>| PhaseBundle {
         filtered_phi: f32_field_like(
             phi,
             DerivedSweepProduct::FilteredDifferentialPhase,
-            filtered_values,
+            filtered,
         ),
-        kdp: f32_field_like(phi, DerivedSweepProduct::Kdp, kdp_values),
-        uncertainty: f32_field_like(phi, DerivedSweepProduct::KdpUncertainty, uncertainty_values),
-    })
+        kdp: f32_field_like(phi, DerivedSweepProduct::Kdp, kdp),
+        uncertainty: uncertainty
+            .map(|values| f32_field_like(phi, DerivedSweepProduct::KdpUncertainty, values)),
+    };
+    let regression = || {
+        let (filtered, kdp, uncertainty) =
+            regression_kdp(&prefiltered, gates, phi_spacing_m, config);
+        bundle(filtered, kdp, Some(uncertainty))
+    };
+
+    let method = method_needed.then(|| match config.method {
+        KdpMethod::WindowedRegression => regression(),
+        KdpMethod::Vulpiani(vulpiani) => {
+            // The profile runs to the end of the sweep's range axis, as a
+            // Py-ART ray runs to the radar's last gate: the method's edge
+            // rule (no estimate within half a window of either end) then
+            // applies there, not at the end of the phase field.
+            let stride = phi.gates.stride.max(1) as usize;
+            let profile_gates = (sweep
+                .range
+                .ngates()
+                .saturating_sub(phi.gates.start as usize)
+                / stride)
+                .max(gates);
+            let (filtered, kdp) = vulpiani_kdp(
+                &prefiltered,
+                gates,
+                profile_gates,
+                phi_spacing_m,
+                config,
+                &vulpiani,
+            );
+            bundle(filtered, kdp, None)
+        }
+        KdpMethod::Maesaka(maesaka) => {
+            let (filtered, kdp) = maesaka_kdp(
+                &prefiltered,
+                gates,
+                phi_first_m,
+                phi_spacing_m,
+                config,
+                &maesaka,
+            );
+            bundle(filtered, kdp, None)
+        }
+    });
+    let regression =
+        (attenuation_needed && !(method_is_regression && method.is_some())).then(regression);
+
+    PhaseProducts {
+        method,
+        regression,
+        method_is_regression,
+    }
+}
+
+/// Whether KDP is reported at a gate: gates that held a phase before gap
+/// filling, and filled gates when the config asks for them.
+fn emits(row: &PrefilteredRow, gate: usize, config: &KdpConfig) -> bool {
+    row.original_valid[gate] || config.emit_interpolated_gates
+}
+
+/// [`KdpMethod::WindowedRegression`]: filtered phase (the fit's intercept),
+/// KDP (half the slope, inside the configured bounds) and the slope's
+/// standard error, row-major.
+fn regression_kdp(
+    prefiltered: &[PrefilteredRow],
+    gates: usize,
+    spacing_m: f64,
+    config: &KdpConfig,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let spacing_km = spacing_m / 1000.0;
+    let window_gates = regression_window_gates(config, spacing_km as f32);
+    let per_row: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)> = prefiltered
+        .par_iter()
+        .map(|row| {
+            let mut filtered = vec![f32::NAN; gates];
+            let mut kdp_row = vec![f32::NAN; gates];
+            let mut uncertainty = vec![f32::NAN; gates];
+            let values = &row.values;
+            let mut xs = Vec::with_capacity(window_gates);
+            let mut ys = Vec::with_capacity(window_gates);
+            let mut fit_scratch = FitScratch::default();
+            for gate in 0..gates {
+                if !emits(row, gate, config) {
+                    continue;
+                }
+                let half = window_gates / 2;
+                let start = gate.saturating_sub(half);
+                let end = (gate + half + 1).min(gates);
+                xs.clear();
+                ys.clear();
+                for (sample_gate, value) in values.iter().copied().enumerate().take(end).skip(start)
+                {
+                    if value.is_finite() {
+                        xs.push((sample_gate as f64 - gate as f64) * spacing_km);
+                        ys.push(value as f64);
+                    }
+                }
+                if xs.len() < config.min_valid_gates {
+                    continue;
+                }
+                let Some(fit) =
+                    robust_linear_fit(&xs, &ys, config.huber_k as f64, &mut fit_scratch)
+                else {
+                    continue;
+                };
+                filtered[gate] = fit.intercept as f32;
+                let kdp = (0.5 * fit.slope) as f32;
+                if kdp.is_finite() && kdp >= config.kdp_min_deg_km && kdp <= config.kdp_max_deg_km {
+                    kdp_row[gate] = kdp;
+                    uncertainty[gate] = (0.5 * fit.slope_standard_error) as f32;
+                }
+            }
+            (filtered, kdp_row, uncertainty)
+        })
+        .collect();
+    let mut filtered = Vec::with_capacity(prefiltered.len() * gates);
+    let mut kdp = Vec::with_capacity(prefiltered.len() * gates);
+    let mut uncertainty = Vec::with_capacity(prefiltered.len() * gates);
+    for (f, k, u) in per_row {
+        filtered.extend(f);
+        kdp.extend(k);
+        uncertainty.extend(u);
+    }
+    (filtered, kdp, uncertainty)
+}
+
+/// [`KdpMethod::Vulpiani`]: KDP from `kdp::vulpiani_profile` and the
+/// filtered phase as the reconstructed phase plus the ray's first filtered
+/// phase value (the reconstruction starts at zero).
+fn vulpiani_kdp(
+    prefiltered: &[PrefilteredRow],
+    gates: usize,
+    profile_gates: usize,
+    spacing_m: f64,
+    config: &KdpConfig,
+    vulpiani: &kdp::VulpianiKdp,
+) -> (Vec<f32>, Vec<f32>) {
+    let dr_km = spacing_m / 1000.0;
+    let bounds = (
+        f64::from(config.kdp_min_deg_km),
+        f64::from(config.kdp_max_deg_km),
+    );
+    let per_row: Vec<(Vec<f32>, Vec<f32>)> = prefiltered
+        .par_iter()
+        .map(|row| {
+            let mut psidp: Vec<f64> = row.values.iter().map(|value| f64::from(*value)).collect();
+            psidp.resize(profile_gates, f64::NAN);
+            let (kdp_row, rebuilt) = kdp::vulpiani_profile(&psidp, dr_km, vulpiani, bounds);
+            let offset = psidp.iter().copied().find(|value| value.is_finite());
+            let mut filtered = vec![f32::NAN; gates];
+            let mut out = vec![f32::NAN; gates];
+            for gate in 0..gates {
+                if !emits(row, gate, config) || !kdp_row[gate].is_finite() {
+                    continue;
+                }
+                out[gate] = kdp_row[gate] as f32;
+                if let Some(offset) = offset {
+                    filtered[gate] = (offset + rebuilt[gate]) as f32;
+                }
+            }
+            (filtered, out)
+        })
+        .collect();
+    let mut filtered = Vec::with_capacity(prefiltered.len() * gates);
+    let mut kdp_values = Vec::with_capacity(prefiltered.len() * gates);
+    for (f, k) in per_row {
+        filtered.extend(f);
+        kdp_values.extend(k);
+    }
+    (filtered, kdp_values)
+}
+
+/// [`KdpMethod::Maesaka`]: per-ray variational KDP at the gates that carried
+/// an observation, and the forward propagation phase as the filtered phase.
+fn maesaka_kdp(
+    prefiltered: &[PrefilteredRow],
+    gates: usize,
+    first_m: f64,
+    spacing_m: f64,
+    config: &KdpConfig,
+    maesaka: &kdp::MaesakaKdp,
+) -> (Vec<f32>, Vec<f32>) {
+    let rows: Vec<Vec<f64>> = prefiltered
+        .iter()
+        .map(|row| row.values.iter().map(|value| f64::from(*value)).collect())
+        .collect();
+    let range_m: Vec<f64> = (0..gates)
+        .map(|gate| gate_center_m(first_m, spacing_m, gate))
+        .collect();
+    let bounds = kdp::maesaka_boundary_conditions(&rows, &range_m, maesaka);
+    let solved = kdp::maesaka_rays(&rows, &bounds, spacing_m, maesaka);
+    let mut filtered = vec![f32::NAN; prefiltered.len() * gates];
+    let mut kdp_values = vec![f32::NAN; prefiltered.len() * gates];
+    for (row_index, (row, ray)) in prefiltered.iter().zip(&solved).enumerate() {
+        for gate in 0..gates {
+            if !ray.observed[gate] || !emits(row, gate, config) {
+                continue;
+            }
+            let index = row_index * gates + gate;
+            kdp_values[index] = ray.kdp[gate] as f32;
+            filtered[index] = ray.phidp_forward[gate] as f32;
+        }
+    }
+    (filtered, kdp_values)
 }
 
 fn regression_window_gates(config: &KdpConfig, spacing_km: f32) -> usize {
@@ -1637,6 +1985,87 @@ fn add_aligned_field(
         }
     }
     f32_field_like(base, product, out)
+}
+
+/// Z-PHI products of one sweep on the reflectivity grid.
+struct ZPhiFields {
+    ah: Field,
+    pia: Field,
+    adiff: Field,
+    pida: Field,
+}
+
+/// Run [`attenuation::zphi`] on the reflectivity grid with the phase excess
+/// sampled at each reflectivity gate's range.
+fn zphi_fields(
+    sweep: &Sweep,
+    reflectivity: &Field,
+    phase_excess: &Field,
+    config: &ZPhiAttenuation,
+) -> Option<ZPhiFields> {
+    let (rows, gates) = reflectivity.shape();
+    let (first_m, spacing_m) = reflectivity.native_geometry(&sweep.range)?;
+    if rows == 0 || gates == 0 || spacing_m <= 0.0 {
+        return None;
+    }
+    let phase_sampler = FieldSampler::new(sweep, phase_excess)?;
+    let mut z = vec![f64::NAN; rows * gates];
+    let mut phase = vec![f64::NAN; rows * gates];
+    for row in 0..rows {
+        for gate in 0..gates {
+            let index = row * gates + gate;
+            if let Some(value) = reflectivity.value(row, gate).filter(|v| v.is_finite()) {
+                z[index] = f64::from(value);
+            }
+            if let Some(value) = phase_sampler
+                .sample(row, gate_center_m(first_m, spacing_m, gate))
+                .filter(|v| v.is_finite())
+            {
+                phase[index] = f64::from(value);
+            }
+        }
+    }
+    let end_gate = attenuation::processing_end_gate(
+        first_m,
+        spacing_m,
+        gates,
+        f64::from(sweep.fixed_angle_deg),
+        config,
+    );
+    let result = attenuation::zphi(
+        &z,
+        &phase,
+        rows,
+        gates,
+        end_gate,
+        spacing_m / 1000.0,
+        config,
+    );
+    let to_field = |values: Vec<f64>, product: DerivedSweepProduct| {
+        f32_field_like(
+            reflectivity,
+            product,
+            values.into_iter().map(|value| value as f32).collect(),
+        )
+    };
+    Some(ZPhiFields {
+        ah: to_field(
+            result.specific_attenuation,
+            DerivedSweepProduct::SpecificAttenuation,
+        ),
+        pia: to_field(
+            result.path_integrated_attenuation,
+            DerivedSweepProduct::PathIntegratedAttenuation,
+        ),
+        adiff: to_field(
+            result.specific_differential_attenuation,
+            DerivedSweepProduct::SpecificDifferentialAttenuation,
+        ),
+        pida: to_field(
+            result.path_integrated_differential_attenuation,
+            DerivedSweepProduct::PathIntegratedDifferentialAttenuation,
+        ),
+    })
 }
 
 fn rain_rate_z_field(
@@ -2295,30 +2724,146 @@ fn remap_field(
 mod tests {
     use super::*;
 
-    #[test]
-    fn unwraps_phase_crossing_zero() {
-        let mut values = vec![350.0, 355.0, 2.0, 7.0, f32::NAN, 12.0];
-        unwrap_phase_in_place(&mut values, 360.0, 8);
-        assert!((values[2] - 362.0).abs() < 1.0e-5);
-        assert!((values[3] - 367.0).abs() < 1.0e-5);
-        assert!((values[5] - 372.0).abs() < 1.0e-5);
+    /// `testdata/golden/retrieve/kernel_rows.json` (`tools/retrieve_golden.py
+    /// kernel_rows`): real rays; the unwrapped phase comes from `numpy.unwrap`
+    /// and the Hampel medians from `numpy.median`, each checked there to equal
+    /// an f32 port of the kernel at every gate.
+    fn kernel_rows() -> serde_json::Value {
+        let path = recast_radar_testdata::testdata_dir()
+            .join("golden")
+            .join("retrieve")
+            .join("kernel_rows.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        serde_json::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
     }
 
-    #[test]
-    fn unwrap_does_not_bridge_long_missing_phase_gap() {
-        let mut values = vec![350.0, 355.0, f32::NAN, f32::NAN, f32::NAN, 2.0, 7.0];
-        unwrap_phase_in_place(&mut values, 360.0, 2);
-        assert!((values[0] - 350.0).abs() < 1.0e-5);
-        assert!((values[1] - 355.0).abs() < 1.0e-5);
-        assert!((values[5] - 2.0).abs() < 1.0e-5);
-        assert!((values[6] - 7.0).abs() < 1.0e-5);
+    /// A golden row (`null` = missing) as f32.
+    fn floats(value: &serde_json::Value) -> Vec<f32> {
+        value
+            .as_array()
+            .expect("row")
+            .iter()
+            .map(|v| v.as_f64().map_or(f32::NAN, |v| v as f32))
+            .collect()
     }
 
+    fn index(value: &serde_json::Value) -> usize {
+        value.as_u64().expect("index") as usize
+    }
+
+    /// Row `row` of the Moore surveillance cut's PHIDP after the phase
+    /// bundle's RHOHV/reflectivity gating, from the crate's own decode.
+    fn moore_gated_phase(row: usize) -> Option<Vec<f32>> {
+        let path = match recast_radar_testdata::path("l2-ktlx-20130520-201643-trim") {
+            Ok(path) => path,
+            Err(error) if error.is_offline() => return None,
+            Err(error) => panic!("{error}"),
+        };
+        let volume = crate::test_decode::decode_level2(&path).expect("decode");
+        let sweep = &volume.sweeps[0];
+        let inputs = Inputs::of(sweep);
+        let phi = inputs.phi.expect("PHI");
+        let rho = inputs.rho.and_then(|field| FieldSampler::new(sweep, field));
+        let reflectivity = inputs
+            .reflectivity
+            .and_then(|field| FieldSampler::new(sweep, field));
+        let (first_m, spacing_m) = phi.native_geometry(&sweep.range).expect("geometry");
+        let config = KdpConfig::for_band(RadarBand::S);
+        Some(
+            gated_phase_row(
+                phi,
+                row,
+                first_m,
+                spacing_m,
+                rho.as_ref(),
+                reflectivity.as_ref(),
+                &config,
+            )
+            .values,
+        )
+    }
+
+    fn assert_rows_equal(actual: &[f32], expected: &[f32], what: &str) {
+        assert_eq!(actual.len(), expected.len(), "{what}: length");
+        for (gate, (a, e)) in actual.iter().zip(expected).enumerate() {
+            assert!(
+                (a.is_nan() && e.is_nan()) || a == e,
+                "{what}: gate {gate} is {a}, reference {e}"
+            );
+        }
+    }
+
+    /// A real ray whose phase crosses 360 degrees between two adjacent gates of
+    /// precipitation: the unwrapping keeps the ray continuous and reproduces
+    /// the numpy reference gate for gate.
     #[test]
-    fn hampel_filter_removes_spike_in_flat_window() {
-        let values = vec![5.0, 5.0, 5.0, 50.0, 5.0, 5.0, 5.0];
-        let filtered = hampel_filter(&values, 3, 3.0);
-        assert_eq!(filtered[3], 5.0);
+    fn unwraps_a_real_phase_wrap_between_adjacent_gates() {
+        let golden = kernel_rows();
+        let case = &golden["phase"]["wrap"];
+        let row = index(&case["row"]);
+        let Some(gated) = moore_gated_phase(row) else {
+            return;
+        };
+        let expected_input = floats(&case["qc_phase"]);
+        assert_rows_equal(&gated, &expected_input, "gated phase");
+        let (a, b) = (index(&case["gates"][0]), index(&case["gates"][1]));
+        assert_eq!(b, a + 1);
+        assert!((gated[b] - gated[a]).abs() > 300.0, "a real wrap");
+
+        let mut unwrapped = gated.clone();
+        unwrap_phase_in_place(&mut unwrapped, 360.0, 2);
+        assert_rows_equal(&unwrapped, &floats(&case["unwrapped"]), "unwrapped");
+        assert!((unwrapped[b] - unwrapped[a]).abs() < 60.0);
+    }
+
+    /// Across a gap longer than the 2-gate bridge the unwrapping restarts: the
+    /// first gate after the gap keeps its measured value even though it sits
+    /// more than 180 degrees from the last gate before it.
+    #[test]
+    fn unwrap_does_not_bridge_a_real_long_phase_gap() {
+        let golden = kernel_rows();
+        let case = &golden["phase"]["gap"];
+        let row = index(&case["row"]);
+        let Some(gated) = moore_gated_phase(row) else {
+            return;
+        };
+        assert_rows_equal(&gated, &floats(&case["qc_phase"]), "gated phase");
+        let (a, b) = (index(&case["gates"][0]), index(&case["gates"][1]));
+        assert!(b - a > 3, "the gap is longer than the bridge");
+        let mut unwrapped = gated.clone();
+        unwrap_phase_in_place(&mut unwrapped, 360.0, 2);
+        assert_rows_equal(&unwrapped, &floats(&case["unwrapped"]), "unwrapped");
+        assert_eq!(unwrapped[b], gated[b], "restarted after the gap");
+    }
+
+    /// The Hampel filter replaces the real spikes of a gated, unwrapped ray by
+    /// their 7-gate median and leaves every other gate alone.
+    #[test]
+    fn hampel_filter_replaces_real_phase_spikes() {
+        let golden = kernel_rows();
+        let case = &golden["phase"]["spike"];
+        let row = index(&case["row"]);
+        let Some(gated) = moore_gated_phase(row) else {
+            return;
+        };
+        assert_rows_equal(&gated, &floats(&case["qc_phase"]), "gated phase");
+        let mut unwrapped = gated;
+        unwrap_phase_in_place(&mut unwrapped, 360.0, 2);
+        assert_rows_equal(&unwrapped, &floats(&case["unwrapped"]), "unwrapped");
+        let filtered = hampel_filter(&unwrapped, 3, 3.0);
+        assert_rows_equal(&filtered, &floats(&case["hampel"]), "Hampel");
+        let changed: Vec<usize> = case["changed_gates"]
+            .as_array()
+            .expect("changed")
+            .iter()
+            .map(index)
+            .collect();
+        assert!(!changed.is_empty());
+        for (gate, (before, after)) in unwrapped.iter().zip(&filtered).enumerate() {
+            let replaced = before.is_finite() && before != after;
+            assert_eq!(replaced, changed.contains(&gate), "gate {gate}");
+        }
     }
 
     #[test]

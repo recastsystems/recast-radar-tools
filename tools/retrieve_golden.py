@@ -4,9 +4,12 @@
 The Rust tests decode real corpus files with the workspace readers and compare what the
 retrieval algorithms compute against the JSON files this script writes:
 
+    testdata/golden/retrieve/attenuation.json   crates/recast-radar-retrieve/tests/attenuation_real.rs
     testdata/golden/retrieve/availability.json  crates/recast-radar-retrieve/tests/availability_real.rs
     testdata/golden/retrieve/detect.json        crates/recast-radar-retrieve/tests/detect_real.rs
     testdata/golden/retrieve/gbvtd.json         crates/recast-radar-retrieve/tests/gbvtd_real.rs
+    testdata/golden/retrieve/kdp_methods.json   crates/recast-radar-retrieve/tests/kdp_methods_real.rs
+    testdata/golden/retrieve/kernel_rows.json   crates/recast-radar-retrieve/src/{sweep,wind}.rs unit tests
     testdata/golden/retrieve/shear.json         crates/recast-radar-retrieve/tests/shear_real.rs
     testdata/golden/retrieve/sweep.json         crates/recast-radar-retrieve/tests/sweep_real.rs
     testdata/golden/retrieve/volume.json        crates/recast-radar-retrieve/tests/volume_real.rs
@@ -58,11 +61,19 @@ $RECAST_RADAR_TESTDATA); every file is checked against its manifest sha256. Run
 ``cargo test -p recast-radar-retrieve`` once to download the full volumes. The HURDAT2 and
 SPC files are downloaded into the cache directory on first use.
 
+- Py-ART 2.3.0 for the kdp_methods, attenuation and kernel_rows sections:
+  ``kdp_vulpiani`` and the Maesaka cost (``_cost_maesaka``, ``_jac_maesaka``,
+  ``boundary_conditions_maesaka``) minimised per ray with scipy L-BFGS-B, and
+  ``calculate_attenuation_zphi`` (see those sections). The Maesaka reference takes
+  minutes per case; set RETRIEVE_GOLDEN_CACHE to a directory to keep it between runs.
+
 Usage:
-    python tools/retrieve_golden.py [availability|detect|gbvtd|shear|sweep|volume|vwp ...]
+    python tools/retrieve_golden.py [attenuation|availability|detect|gbvtd|kdp_methods|
+                                     kernel_rows|shear|sweep|volume|vwp ...]
 
 With no arguments every golden file is regenerated. The committed files were written with
-Python 3.13, numpy 2.5.3, MetPy 1.7.1 and Py-ART 2.2.5.
+Python 3.13, numpy 2.5.3, MetPy 1.7.1 and Py-ART 2.2.5 (attenuation, kdp_methods and
+kernel_rows: Py-ART 2.3.0, scipy 1.18.1).
 """
 
 import csv
@@ -278,7 +289,9 @@ def level2_sweeps(entry_id):
                 blocks = dict(ray[1])
                 nyq.append(header.nyq_vel)
             for name, (hdr, data) in blocks.items():
-                m = moments.setdefault(name, {"rows": [], "data": [], "first": [], "spacing": []})
+                m = moments.setdefault(name, {"rows": [], "data": [], "first": [], "spacing": [],
+                                              "scale": float(getattr(hdr, "scale", 0.0) or 0.0),
+                                              "offset": float(getattr(hdr, "offset", 0.0) or 0.0)})
                 m["rows"].append(index)
                 m["data"].append(np.asarray(data, dtype=np.float64))
                 m["first"].append(int(round(hdr.first_gate * 1000.0)))
@@ -1036,8 +1049,9 @@ def robust_linear_fit(xs, ys):
 
 
 def phase_bundle(phi, rho, ref, spacing_m, bounds=S_BAND_KDP_BOUNDS, fill_gaps=True):
-    """sweep.rs derive_phase_bundle on one sweep whose PHI, RHO and REF grids share their
-    gate geometry (so RHO/REF are sampled at the same gate index). Returns
+    """sweep.rs derive_phase_products (windowed regression) on one sweep whose PHI, RHO
+    and REF grids share their gate geometry (so RHO/REF are sampled at the same gate
+    index). Returns
     (PHIF, KDP, out_of_bounds mask, valid-after-QC mask)."""
     rows, gates = phi.shape
     spacing_km = spacing_m / 1000.0
@@ -1722,10 +1736,641 @@ def section_vwp():
     write_golden("retrieve/vwp.json", payload)
 
 
+
+# ------------------------------------------------------------- KDP methods ---
+
+# (case, manifest id, sweep index (MetPy and Py-ART count the same sweeps), band,
+#  description). Each is the surveillance half of a 0.5 deg split cut with PHI, RHO,
+#  REF and ZDR on the same 250 m gates.
+KDP_METHOD_CASES = [
+    ("moore", "l2-ktlx-20130520-201643-trim", 0,
+     "KTLX 2013-05-20 20:16Z, Moore supercell: noisy PHIDP in the hail core"),
+    ("ida", "l2-klix-20210829-180425-trim", 0,
+     "KLIX 2021-08-29 18:04Z, Hurricane Ida: tropical rain, 120 radials"),
+    ("derecho", "l2-kdvn-20200810-180401-trim", 0,
+     "KDVN 2020-08-10 18:04Z, Iowa derecho: convective line, 120 radials"),
+]
+# Py-ART S-band settings: kdp_vulpiani(band="S", windsize=10, n_iter=10); the
+# Maesaka reference solves Py-ART's own cost (_cost_maesaka, _jac_maesaka) with
+# Py-ART's boundary conditions (boundary_conditions_maesaka, n=20, outlier check),
+# Clpf = 1 and first guess 0.01, ray by ray with scipy L-BFGS-B to convergence.
+MAESAKA_PGTOL = 1.0e-9
+MAESAKA_MAXITER = 50000
+KDP_METHOD_SAMPLES = 1500
+
+
+def moment32(moment):
+    """A MetPy moment grid as the Rust reader's f32 physical values."""
+    return scaled32(moment["values"], moment["scale"], moment["offset"])
+
+
+def prefilter_phase(phi, rho, ref):
+    """sweep.rs prefilter_phase_row on every row: RHO/REF gating (a missing sample does
+    not gate), 360-degree unwrapping, short-gap fill and the Hampel filter, in f32.
+    Returns the filtered phase and the gates that passed the gating."""
+    rows, gates = phi.shape
+    out = np.full((rows, gates), np.nan, dtype=F32)
+    valid_all = np.zeros((rows, gates), dtype=bool)
+    for row in range(rows):
+        values = phi[row].astype(F32).copy()
+        valid = np.isfinite(values)
+        if rho is not None:
+            r = rho[row, :gates]
+            valid &= ~(np.isfinite(r) & (r < KDP_MIN_RHO))
+        if ref is not None:
+            z = ref[row, :gates]
+            valid &= ~(np.isfinite(z) & (z < KDP_MIN_DBZ))
+        values[~valid] = np.nan
+        valid_all[row] = valid
+        out[row] = hampel(fill_short_gaps(unwrap_phase(values)))
+    return out, valid_all
+
+
+def pyart_sweep_with(entry, sweep, fields):
+    """Py-ART's reading of one sweep, with extra float64 fields (NaN masked) padded to
+    Py-ART's gate count."""
+    radar = pyart_radar(entry).extract_sweeps([sweep])
+    for name, values in fields.items():
+        data = np.ma.masked_all((radar.nrays, radar.ngates), dtype=np.float64)
+        data[:, :values.shape[1]] = np.ma.masked_invalid(values.astype(np.float64))
+        radar.add_field(name, {"data": data, "units": "degrees"}, replace_existing=True)
+    return radar
+
+
+def maesaka_converged(radar, field):
+    """Py-ART's Maesaka problem minimised ray by ray to convergence."""
+    from pyart.retrieve import kdp_proc
+    from scipy import optimize
+
+    dr = kdp_proc._parse_range_resolution(radar, check_uniform=True)
+    bcs = kdp_proc.boundary_conditions_maesaka(radar, psidp_field=field)
+    phi_near, phi_far = bcs[:2]
+    idx_near, idx_far = bcs[4:]
+    psidp = radar.fields[field]["data"].copy()
+    for ray in range(radar.nrays):
+        psidp[ray, :idx_near[ray]] = np.ma.masked
+        psidp[ray, idx_far[ray] + 1:] = np.ma.masked
+    cobs = np.logical_not(np.ma.getmaskarray(psidp)).astype(np.float64)
+    fill = -9999.0
+    observed = np.ma.filled(psidp, fill)
+    dhv = np.zeros_like(observed)
+    clpf = 1.0 * dr ** 4
+    k = np.zeros_like(observed)
+    iterations = []
+    for ray in range(radar.nrays):
+        args = (observed[ray:ray + 1], [phi_near[ray:ray + 1], phi_far[ray:ray + 1]],
+                dhv[ray:ray + 1], dr, cobs[ray:ray + 1], clpf, "low", fill, 1)
+        result = optimize.minimize(kdp_proc._cost_maesaka, np.full(radar.ngates, 0.01), args=args,
+                                   method="L-BFGS-B", jac=kdp_proc._jac_maesaka,
+                                   options={"maxiter": MAESAKA_MAXITER, "gtol": MAESAKA_PGTOL,
+                                            "ftol": 1e-15, "maxcor": 20})
+        iterations.append(int(result.nit))
+        k[ray] = result.x
+    kdp = k ** 2 / (2.0 * dr) * 1000.0
+    return kdp, cobs > 0, iterations, (phi_near, phi_far, idx_near, idx_far)
+
+
+def section_kdp_methods():
+    import time as _time
+
+    import pyart
+
+    cases = []
+    for case, entry, sweep_index, description in KDP_METHOD_CASES:
+        sweeps, _ = level2_sweeps(entry)
+        s = sweeps[sweep_index]
+        mom = s["moments"]
+        phi_m = mom["PHI"]
+        phi, rho, ref, zdr = (moment32(mom[k]) for k in ("PHI", "RHO", "REF", "ZDR"))
+        spacing = phi_m["gate_spacing_m"]
+        first = phi_m["first_gate_m"]
+        gates = phi_m["gate_count"]
+        for k in ("RHO", "REF", "ZDR"):
+            if mom[k]["first_gate_m"] != first or mom[k]["gate_spacing_m"] != spacing:
+                raise SystemExit(f"{entry}: {k} gate geometry differs from PHI")
+        if not np.array_equal(phi_m["rows"], np.arange(len(s["az"]))):
+            raise SystemExit(f"{entry}: PHI is not on every ray")
+
+        psidp, valid = prefilter_phase(phi, rho, ref)
+        radar = pyart_sweep_with(entry, sweep_index, {"psidp": psidp})
+        if radar.nrays != phi.shape[0] or abs(float(radar.range["data"][0]) - first) > 0.5:
+            raise SystemExit(f"{entry}: Py-ART rays/range do not line up with MetPy")
+        if not np.allclose(radar.azimuth["data"], s["az"], atol=1e-3):
+            raise SystemExit(f"{entry}: Py-ART and MetPy azimuths differ")
+
+        started = _time.time()
+        vulpiani, _ = pyart.retrieve.kdp_vulpiani(radar, psidp_field="psidp", band="S",
+                                                  windsize=10, n_iter=10)
+        vulpiani = np.ma.filled(vulpiani["data"][:, :gates].astype(np.float64), np.nan)
+        vulpiani_seconds = _time.time() - started
+
+        started = _time.time()
+        cache = os.environ.get("RETRIEVE_GOLDEN_CACHE")
+        cache_file = Path(cache) / f"maesaka-{entry}-{sweep_index}.npz" if cache else None
+        if cache_file is not None and cache_file.is_file():
+            stored = np.load(cache_file)
+            maesaka, observed = stored["kdp"], stored["observed"]
+            iterations = [int(x) for x in stored["iterations"]]
+            bcs = tuple(stored[k] for k in ("phi_near", "phi_far", "idx_near", "idx_far"))
+        else:
+            maesaka, observed, iterations, bcs = maesaka_converged(radar, "psidp")
+            if cache_file is not None:
+                np.savez(cache_file, kdp=maesaka, observed=observed, iterations=np.asarray(iterations),
+                         phi_near=bcs[0], phi_far=bcs[1], idx_near=bcs[2], idx_far=bcs[3])
+        maesaka = maesaka[:, :gates]
+        observed = observed[:, :gates]
+        maesaka_seconds = _time.time() - started
+        started = _time.time()
+        default_maesaka = pyart.retrieve.kdp_maesaka(radar, psidp_field="psidp")[0]["data"]
+        default_maesaka = np.asarray(default_maesaka)[:, :gates].astype(np.float64)
+        default_seconds = _time.time() - started
+
+        regression = phase_bundle(phi, rho, ref, spacing)[1].astype(np.float64)
+
+        # Gates each method reports (Rust emits only at gates that passed the gating).
+        v_mask = valid & np.isfinite(vulpiani)
+        m_mask = valid & observed
+        r_mask = np.isfinite(regression)
+        both = v_mask & m_mask & r_mask
+
+        def cells(mask, seed):
+            idx = np.flatnonzero(mask.ravel())
+            pick = idx[sample_indices(len(idx), KDP_METHOD_SAMPLES, seed)]
+            return [[int(i // gates), int(i % gates)] for i in pick]
+
+        v_cells = cells(v_mask, 11)
+        m_cells = cells(m_mask, 12)
+
+        # Method comparison on meteorological echo (Z >= 20 dBZ, RHOHV >= 0.9, gates
+        # that passed the phase gating and where every method reports).
+        dr_km = spacing / 1000.0
+        z_grid = ref[:, :gates].astype(np.float64)
+        rho_grid = rho[:, :gates].astype(np.float64)
+        echo = both & (z_grid >= 20.0) & (rho_grid >= 0.9)
+        grids = (("vulpiani", vulpiani), ("maesaka", maesaka), ("regression", regression))
+        # Phase closure per ray: the filtered phase change across the ray's echo (median
+        # of the first and of the last 10 echo gates) against twice the range sum of
+        # each method's KDP over the echo gates in between (other gates count as 0).
+        closure = {name: [] for name, _ in grids}
+        for row in range(phi.shape[0]):
+            gates_row = np.flatnonzero(echo[row])
+            if len(gates_row) < 40:
+                continue
+            delta = float(np.median(psidp[row, gates_row[-10:]]) - np.median(psidp[row, gates_row[:10]]))
+            if delta < 20.0:
+                continue
+            for name, grid in grids:
+                closure[name].append(2.0 * float(np.sum(grid[row, gates_row])) * dr_km / delta)
+        # Estimator noise in light echo (20-30 dBZ, RHOHV >= 0.97), where S-band KDP is
+        # a few hundredths of a deg/km.
+        light = echo & (z_grid < 30.0) & (rho_grid >= 0.97)
+        comparison = {
+            "echo_gates": int(echo.sum()),
+            "phase_closure_rays": len(closure["regression"]),
+            "phase_closure_median": {name: jf(np.median(v), 4) if v else None
+                                     for name, v in closure.items()},
+            "phase_closure_p10_p90": {name: [jf(np.percentile(v, 10), 4), jf(np.percentile(v, 90), 4)]
+                                      if v else None for name, v in closure.items()},
+            "light_echo_gates": int(light.sum()),
+            "light_echo_mean": {name: jf(grid[light].mean(), 4) for name, grid in grids},
+            "light_echo_std": {name: jf(grid[light].std(), 4) for name, grid in grids},
+            "echo_p99_9": {name: jf(np.percentile(grid[echo], 99.9), 3) for name, grid in grids},
+            "echo_max": {name: jf(grid[echo].max(), 3) for name, grid in grids},
+        }
+
+        def summary(grid, mask):
+            values = grid[mask]
+            return {"gates": int(mask.sum()), "mean": jf(values.mean(), 5),
+                    "p50": jf(np.percentile(values, 50), 5), "p90": jf(np.percentile(values, 90), 5),
+                    "p99": jf(np.percentile(values, 99), 5), "max": jf(values.max(), 5)}
+
+        diff_default = np.abs(default_maesaka - maesaka)[m_mask]
+        cases.append({
+            "case": case,
+            "id": entry,
+            "sweep": sweep_index,
+            "description": description,
+            "rows": int(phi.shape[0]),
+            "gates": int(gates),
+            "first_gate_m": first,
+            "gate_spacing_m": spacing,
+            "qc_valid": int(valid.sum()),
+            "vulpiani": {
+                "summary": summary(vulpiani, v_mask),
+                "cells": [[r, g, jf(vulpiani[r, g], 8)] for r, g in v_cells],
+                "pyart_seconds": jf(vulpiani_seconds, 2),
+            },
+            "maesaka": {
+                "summary": summary(maesaka, m_mask),
+                "cells": [[r, g, jf(maesaka[r, g], 6)] for r, g in m_cells],
+                "boundary_conditions": [[jf(bcs[0][r], 5), jf(bcs[1][r], 5), int(bcs[2][r]),
+                                         int(bcs[3][r])] for r in range(phi.shape[0])],
+                "scipy_iterations": {"median": int(np.median(iterations)), "max": int(max(iterations))},
+                "reference_seconds": jf(maesaka_seconds, 1),
+                "pyart_default_50_iterations": {
+                    "seconds": jf(default_seconds, 1),
+                    "abs_diff_from_converged_p50": jf(np.percentile(diff_default, 50), 5),
+                    "abs_diff_from_converged_p95": jf(np.percentile(diff_default, 95), 5),
+                    "abs_diff_from_converged_max": jf(diff_default.max(), 5),
+                },
+            },
+            "regression": {"summary": summary(regression, r_mask)},
+            "comparison": comparison,
+        })
+        print(f"{case}: vulpiani {v_mask.sum()} maesaka {m_mask.sum()} regression {r_mask.sum()}: "
+              f"{json.dumps(comparison)}")
+
+    write_golden("retrieve/kdp_methods.json", {
+        "source": "tools/retrieve_golden.py kdp_methods; MetPy 1.7.1 Level2File, numpy phase "
+                  f"front end, Py-ART {pyart.__version__} kdp_vulpiani (band S, windsize 10, "
+                  "n_iter 10) and the Py-ART Maesaka cost minimised per ray with scipy L-BFGS-B "
+                  f"(pgtol {MAESAKA_PGTOL}, maxiter {MAESAKA_MAXITER})",
+        "cases": cases,
+    })
+
+
+# ------------------------------------------------------------- attenuation ---
+
+ZPHI_S_BAND = {"a_coef": 0.02, "beta": 0.64884, "c": 0.15917, "d": 1.0804}
+ZPHI_FREEZING_LEVEL_ABOVE_RADAR_M = 4000.0
+ZPHI_EXCLUDED_END_GATES = 15
+PHASE_BASELINE_GATES = 20
+
+
+def phase_excess(phif):
+    """sweep.rs phase_excess_field: PHIF minus the median of its finite values among the
+    first 20 gates of the row, floored at 0; rows without a baseline stay missing."""
+    out = np.full_like(phif, np.nan)
+    for row in range(phif.shape[0]):
+        head = phif[row, :PHASE_BASELINE_GATES]
+        head = head[np.isfinite(head)]
+        if len(head) == 0:
+            continue
+        baseline = median32(head)
+        finite = np.isfinite(phif[row])
+        out[row, finite] = np.maximum((phif[row, finite] - baseline).astype(F32), F32(0.0))
+    return out
+
+
+def smooth_masked_mean(raw_data, wind_len=11, min_valid=6, wind_type="median"):
+    """pyart.correct.phase_proc.smooth_masked with the window mask kept.
+
+    Py-ART builds its rolling window with numpy's as_strided, which drops the
+    mask of a masked array, so the "mean" of a window also averages the
+    underlying data of masked gates (-33 dBZ for NEXRAD code 0, the fill value
+    for other readers). This version averages the unmasked gates only, which is
+    what the function's documentation describes and what the Rust port does."""
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    if wind_type != "mean":
+        raise ValueError("only the mean window is needed here")
+    if wind_len % 2 == 0:
+        wind_len += 1
+    half = (wind_len - 1) // 2
+    data = np.ma.getdata(raw_data).astype(np.float64)
+    mask = np.ma.getmaskarray(raw_data)
+    out = np.ma.masked_all(data.shape, dtype=np.float64)
+    windows = sliding_window_view(np.where(mask, 0.0, data), wind_len, axis=-1)
+    counts = sliding_window_view((~mask).astype(np.int64), wind_len, axis=-1).sum(axis=-1)
+    sums = np.zeros(counts.shape)
+    for k in range(wind_len):
+        sums = sums + windows[..., k]
+    centre_valid = ~mask[:, half:mask.shape[1] - half]
+    ok = centre_valid & (counts >= min_valid)
+    rows, cols = np.nonzero(ok)
+    out[rows, cols + half] = sums[rows, cols] / counts[rows, cols]
+    return out
+
+
+def run_zphi(radar, altitude, smooth_window_len, fixed_smoothing):
+    import pyart
+    import pyart.correct.attenuation as attenuation_module
+
+    shipped = attenuation_module.smooth_masked
+    if fixed_smoothing:
+        attenuation_module.smooth_masked = smooth_masked_mean
+    try:
+        return pyart.correct.calculate_attenuation_zphi(
+            radar, temp_ref="fixed_fzl", fzl=altitude + ZPHI_FREEZING_LEVEL_ABOVE_RADAR_M,
+            doc=ZPHI_EXCLUDED_END_GATES, smooth_window_len=smooth_window_len,
+            refl_field="reflectivity", phidp_field="phase_excess",
+            zdr_field="differential_reflectivity", **ZPHI_S_BAND)
+    finally:
+        attenuation_module.smooth_masked = shipped
+
+
+def zphi_summary(grids, gates, seed):
+    refl_mask = np.isfinite(grids["pia"])
+    idx = np.flatnonzero(refl_mask.ravel())
+    pick = idx[sample_indices(len(idx), 600, seed)]
+    cells = [[int(i // gates), int(i % gates)] + [jf(grids[k].ravel()[i], 9)
+                                                    for k in ("ah", "pia", "adiff", "pida")]
+             for i in pick]
+    # The rays that attenuate most: largest PIA along the ray.
+    top_rows = np.argsort(-np.nanmax(np.where(refl_mask, grids["pia"], -1.0), axis=1))[:3]
+    profiles = []
+    for row in top_rows:
+        g = np.flatnonzero(refl_mask[row])
+        g = g[np.linspace(0, len(g) - 1, min(len(g), 40)).astype(int)]
+        profiles.append({"row": int(row), "gates": [int(x) for x in g],
+                         "pia": [jf(grids["pia"][row, x], 9) for x in g],
+                         "ah": [jf(grids["ah"][row, x], 10) for x in g]})
+    return {
+        "reflectivity_valid": int(refl_mask.sum()),
+        "pia_max": jf(np.nanmax(grids["pia"]), 7),
+        "pia_sum": jf(np.nansum(grids["pia"]), 4),
+        "ah_sum": jf(np.nansum(grids["ah"]), 7),
+        "pida_sum": jf(np.nansum(grids["pida"]), 6),
+        "cells": cells,
+        "profiles": profiles,
+    }
+
+
+def section_attenuation():
+    import pyart
+
+    cases = []
+    for case, entry, sweep_index, description in KDP_METHOD_CASES:
+        sweeps, _ = level2_sweeps(entry)
+        s = sweeps[sweep_index]
+        mom = s["moments"]
+        phi, rho, ref, zdr = (moment32(mom[k]) for k in ("PHI", "RHO", "REF", "ZDR"))
+        spacing = mom["PHI"]["gate_spacing_m"]
+        gates_phi = mom["PHI"]["gate_count"]
+        phif = phase_bundle(phi, rho, ref, spacing)[0]
+        excess = phase_excess(phif)
+        radar = pyart_sweep_with(entry, sweep_index, {"phase_excess": excess})
+        altitude = float(radar.altitude["data"][0])
+        gates = mom["REF"]["gate_count"]
+        runs = {}
+        for name, window, fixed in (("unsmoothed", 0, False), ("smoothed_5", 5, True),
+                                    ("pyart_shipped_5", 5, False)):
+            ah, pia, cor_z, adiff, pida, cor_zdr = run_zphi(radar, altitude, window, fixed)
+            grids = {key: np.ma.filled(field["data"][:, :gates].astype(np.float64), np.nan)
+                     for key, field in (("ah", ah), ("pia", pia), ("adiff", adiff),
+                                        ("pida", pida), ("cor_z", cor_z))}
+            runs[name] = grids
+        shipped = runs.pop("pyart_shipped_5")
+        both = np.isfinite(shipped["pia"]) & np.isfinite(runs["smoothed_5"]["pia"])
+        rel = np.abs(shipped["ah"][both] - runs["smoothed_5"]["ah"][both]) / np.maximum(
+            np.abs(runs["smoothed_5"]["ah"][both]), 1e-12)
+        pia_diff = np.abs(shipped["pia"][both] - runs["smoothed_5"]["pia"][both])
+        z_both = np.isfinite(shipped["cor_z"]) & np.isfinite(runs["smoothed_5"]["cor_z"])
+        z_diff = np.abs(shipped["cor_z"][z_both] - runs["smoothed_5"]["cor_z"][z_both])
+        cases.append({
+            "case": case,
+            "id": entry,
+            "sweep": sweep_index,
+            "radar_altitude_m": altitude,
+            "reflectivity_gates": int(gates),
+            "phase_gates": int(gates_phi),
+            "phase_excess_valid": int(np.isfinite(excess).sum()),
+            "unsmoothed": zphi_summary(runs["unsmoothed"], gates, 21),
+            "smoothed_5": zphi_summary(runs["smoothed_5"], gates, 22),
+            "pyart_shipped_smoothing_vs_mask_aware": {
+                "ah_relative_difference_p50": jf(np.percentile(rel, 50), 5),
+                "ah_relative_difference_p95": jf(np.percentile(rel, 95), 5),
+                "ah_relative_difference_p99": jf(np.percentile(rel, 99), 5),
+                "ah_difference_relative_to_shipped_p99": jf(np.percentile(
+                    np.abs(shipped["ah"][both] - runs["smoothed_5"]["ah"][both])
+                    / np.maximum(np.abs(shipped["ah"][both]), 1e-12), 99), 5),
+                "gates_compared": int(both.sum()),
+                "gates_defined_in_one_only": int((np.isfinite(shipped["pia"])
+                                                  ^ np.isfinite(runs["smoothed_5"]["pia"])).sum()),
+                "pia_abs_difference_p99_db": jf(np.percentile(pia_diff, 99), 5),
+                "pia_abs_difference_max_db": jf(np.max(pia_diff), 5),
+                "corrected_z_abs_difference_max_db": jf(np.max(z_diff), 5),
+                "pia_max_shipped": jf(np.nanmax(shipped["pia"]), 5),
+                "pia_max_mask_aware": jf(np.nanmax(runs["smoothed_5"]["pia"]), 5),
+            },
+        })
+        print(f"{case}: PIA max {np.nanmax(runs['smoothed_5']['pia']):.3f} dB "
+              f"(shipped smoothing {np.nanmax(shipped['pia']):.3f}); shipped - mask-aware "
+              f"PIA max {np.max(pia_diff):.3f} p99 {np.percentile(pia_diff, 99):.4f} dB, "
+              f"AH p99 {np.percentile(rel, 99):.2f}x, corrected Z max {np.max(z_diff):.3f} dB")
+
+    write_golden("retrieve/attenuation.json", {
+        "source": f"tools/retrieve_golden.py attenuation; Py-ART {pyart.__version__} "
+                  "calculate_attenuation_zphi (temp_ref fixed_fzl, fzl = radar altitude + 4000 m, "
+                  "doc 15, S-band coefficients a 0.02, beta 0.64884, c 0.15917, d 1.0804) on the "
+                  "numpy phase-bundle phase excess; 'unsmoothed' with smooth_window_len 0, "
+                  "'smoothed_5' with smooth_window_len 5 and smooth_masked averaging unmasked "
+                  "gates only (Py-ART's rolling window drops the mask)",
+        "cases": cases,
+    })
+
+
+# ------------------------------------------------------------- kernel rows ---
+
+def qc_phase_row(phi, rho, ref, row):
+    """One PHIDP row after the sweep.rs RHO/REF gating (before unwrapping), f32."""
+    gates = phi.shape[1]
+    values = phi[row].astype(F32).copy()
+    valid = np.isfinite(values)
+    valid &= ~(np.isfinite(rho[row, :gates]) & (rho[row, :gates] < KDP_MIN_RHO))
+    valid &= ~(np.isfinite(ref[row, :gates]) & (ref[row, :gates] < KDP_MIN_DBZ))
+    values[~valid] = np.nan
+    return values
+
+
+def median3_32(values):
+    """wind.rs median3: median of the finite values among a gate and its two neighbours
+    (the upper one of two), NaN with fewer than two."""
+    n = len(values)
+    out = np.full(n, np.nan, dtype=F32)
+    for g in range(n):
+        window = [v for v in values[max(g - 1, 0):min(g + 1, n - 1) + 1] if np.isfinite(v)]
+        if len(window) >= 2:
+            window.sort()
+            out[g] = window[len(window) // 2]
+    return out
+
+
+def radial_convergence_32(values, half):
+    """wind.rs radial_convergence_row: after the 3-gate median, max(V) over the gate and
+    `half` gates nearer the radar minus min(V) over the gate and `half` gates farther,
+    kept when in (0, 70] m/s."""
+    values = median3_32(values)
+    n = len(values)
+    out = np.full(n, np.nan, dtype=F32)
+    for g in range(n):
+        near = values[max(g - half, 0):g + 1]
+        far = values[g:min(g + half, n - 1) + 1]
+        near = near[np.isfinite(near)]
+        far = far[np.isfinite(far)]
+        if len(near) and len(far):
+            delta = F32(near.max() - far.min())
+            if 0.0 < delta <= 70.0:
+                out[g] = delta
+    return out
+
+
+def row_json(values, digits=None):
+    return [jf(v, digits) for v in values]
+
+
+def unwrap_phase_numpy(values):
+    """Library reference for unwrap_phase: numpy.unwrap (period 360 deg) on each run of
+    finite gates whose gaps are at most KDP_MAX_GAP gates; a longer gap starts a new run
+    at its measured value. numpy.unwrap runs in float64, where its whole-turn corrections
+    are exact, and the result is rounded once to f32 (in f32 its running sum of
+    corrections drifts by up to 3e-5 deg)."""
+    out = values.astype(F32).copy()
+    idx = np.flatnonzero(np.isfinite(out))
+    if len(idx) == 0:
+        return out
+    for run in np.split(idx, np.flatnonzero(np.diff(idx) > KDP_MAX_GAP + 1) + 1):
+        out[run] = np.unwrap(out[run].astype(np.float64), period=360.0).astype(F32)
+    return out
+
+
+def hampel_numpy(values):
+    """Library reference for hampel: the same rule with numpy.median for the window
+    median and the median absolute deviation."""
+    out = values.astype(F32).copy()
+    n = len(values)
+    for i in range(n):
+        v = values[i]
+        if not np.isfinite(v):
+            continue
+        window = values[max(i - HAMPEL_HALF, 0):min(i + HAMPEL_HALF + 1, n)]
+        window = window[np.isfinite(window)].astype(F32)
+        median = np.median(window)
+        mad = np.median(np.abs(window - median))
+        robust_sigma = F32(F32(1.4826) * mad)
+        deviation = F32(abs(F32(v - median)))
+        limit = F32(HAMPEL_SIGMA * robust_sigma) if robust_sigma > 1.0e-4 else F32(3.0)
+        if deviation > limit:
+            out[i] = median
+    return out
+
+
+def library_checked(port, library, values, what):
+    """The port's row, after checking that the numpy-library construction gives the
+    same f32 values at every gate."""
+    a, b = port(values), library(values)
+    same = (np.isnan(a) & np.isnan(b)) | (a == b)
+    if not np.all(same):
+        bad = np.flatnonzero(~same)[:5]
+        raise SystemExit(f"{what}: port and numpy differ at gates {bad}: {a[bad]} vs {b[bad]}")
+    return b
+
+
+def section_kernel_rows():
+    """Real rays for the 1-D kernels of sweep.rs (phase unwrapping, Hampel filter) and
+    wind.rs (radial convergence with its 3-gate median)."""
+    payload = {"source": "tools/retrieve_golden.py kernel_rows; MetPy 1.7.1 Level2File rows; "
+                         "unwrapped phase from numpy.unwrap (period 360) per run of finite gates "
+                         "split at gaps longer than 2 gates, Hampel medians from numpy.median "
+                         "(both checked equal to f32 ports of unwrap_phase_in_place and "
+                         "hampel_filter); median3 and radial_convergence_row as numpy f32 "
+                         "ports of the wind.rs rules"}
+
+    # Phase: the Moore surveillance cut, gated as the phase bundle gates it.
+    entry = "l2-ktlx-20130520-201643-trim"
+    sweeps, _ = level2_sweeps(entry)
+    s = sweeps[0]
+    mom = s["moments"]
+    phi, rho, ref = (moment32(mom[k]) for k in ("PHI", "RHO", "REF"))
+    rows = phi.shape[0]
+    wrap_row = gap_row = spike_row = None
+    for row in range(rows):
+        values = qc_phase_row(phi, rho, ref, row)
+        idx = np.flatnonzero(np.isfinite(values))
+        if len(idx) < 30:
+            continue
+        steps = np.diff(values[idx])
+        gaps = np.diff(idx)
+        if wrap_row is None:
+            # A clean wrap: adjacent gates jumping by more than 300 deg, the five
+            # gates before and after it within 25 deg of their neighbours.
+            for k in np.flatnonzero((np.abs(steps) > 300.0) & (gaps == 1)):
+                around = steps[max(k - 5, 0):k]
+                after = steps[k + 1:k + 6]
+                if len(around) == 5 and len(after) == 5 and np.all(np.abs(around) < 25) \
+                        and np.all(np.abs(after) < 25) and np.all(gaps[max(k - 5, 0):k + 6] == 1):
+                    wrap_row = (row, int(idx[k]), int(idx[k + 1]))
+                    break
+        if gap_row is None:
+            # A jump of more than 180 deg across a gap longer than the 2-gate bridge.
+            for k in np.flatnonzero((np.abs(steps) > 180.0) & (gaps > KDP_MAX_GAP + 1)):
+                gap_row = (row, int(idx[k]), int(idx[k + 1]))
+                break
+        if spike_row is None:
+            filtered = hampel(unwrap_phase(values))
+            changed = np.flatnonzero(np.isfinite(values) & (filtered != unwrap_phase(values)))
+            if len(changed):
+                spike_row = (row, [int(c) for c in changed])
+        if wrap_row and gap_row and spike_row:
+            break
+    if not (wrap_row and gap_row and spike_row):
+        raise SystemExit(f"{entry}: no wrap / gap / spike row found")
+
+    def phase_case(row, extra):
+        values = qc_phase_row(phi, rho, ref, row)
+        unwrapped = library_checked(unwrap_phase, unwrap_phase_numpy, values, f"unwrap {row}")
+        filtered = library_checked(hampel, hampel_numpy, unwrapped, f"Hampel {row}")
+        return dict(extra, row=int(row), azimuth_deg=jf(s["az"][row], 3),
+                    qc_phase=row_json(values), unwrapped=row_json(unwrapped),
+                    hampel=row_json(filtered))
+
+    payload["phase"] = {
+        "id": entry,
+        "sweep": 0,
+        "max_gap_gates": KDP_MAX_GAP,
+        "wrap": phase_case(wrap_row[0], {"gates": [wrap_row[1], wrap_row[2]]}),
+        "gap": phase_case(gap_row[0], {"gates": [gap_row[1], gap_row[2]]}),
+        "spike": phase_case(spike_row[0], {"changed_gates": spike_row[1]}),
+    }
+
+    # Radial convergence: the derecho Doppler cut, raw velocity rows.
+    entry = "l2-kdvn-20200810-180401-trim"
+    sweeps, _ = level2_sweeps(entry)
+    s = sweeps[1]
+    vel_m = s["moments"]["VEL"]
+    vel = moment32(vel_m)
+    half = 12
+    best = None
+    spike = None
+    for row in range(vel.shape[0]):
+        conv = radial_convergence_32(vel[row], half)
+        if np.isfinite(conv).any():
+            peak = float(np.nanmax(conv))
+            if best is None or peak > best[1]:
+                best = (row, peak)
+        # A single-gate spike: a finite gate more than 20 m/s from both finite
+        # neighbours, which the 3-gate median removes.
+        v = vel[row]
+        for g in range(1, len(v) - 1):
+            if all(np.isfinite([v[g - 1], v[g], v[g + 1]])) and abs(v[g] - v[g - 1]) > 20 \
+                    and abs(v[g] - v[g + 1]) > 20 and spike is None:
+                spike = (row, g)
+    if best is None or spike is None:
+        raise SystemExit(f"{entry}: no convergence or spike row")
+
+    def conv_case(row, extra):
+        return dict(extra, row=int(row), azimuth_deg=jf(s["az"][row], 3),
+                    velocity=row_json(vel[row]), median3=row_json(median3_32(vel[row])),
+                    convergence=row_json(radial_convergence_32(vel[row], half)))
+
+    payload["convergence"] = {
+        "id": entry,
+        "sweep": 1,
+        "half_window_gates": half,
+        "nyquist_mps": jf(np.median(s["nyquist"]), 3),
+        "strongest": conv_case(best[0], {"peak_mps": jf(best[1], 3)}),
+        "spike": conv_case(spike[0], {"spike_gate": int(spike[1])}),
+    }
+    write_golden("retrieve/kernel_rows.json", payload)
+
+
 SECTIONS = {
     "availability": section_availability,
+    "attenuation": section_attenuation,
     "detect": section_detect,
     "gbvtd": section_gbvtd,
+    "kdp_methods": section_kdp_methods,
+    "kernel_rows": section_kernel_rows,
     "shear": section_shear,
     "sweep": section_sweep,
     "volume": section_volume,

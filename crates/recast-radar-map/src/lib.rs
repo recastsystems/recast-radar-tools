@@ -1,5 +1,7 @@
 //! Radar geometry products: volume column walks (composites, echo tops, VIL,
-//! hail), cross sections, volume box resampling, and native RHI panels.
+//! hail), cross sections, volume box resampling, native RHI panels, and
+//! Cartesian gridding of one or more volumes ([`grid_from_volumes`], the
+//! algorithm of Py-ART's `grid_from_radars`).
 //!
 //! Every function works on the FM301 model of `recast-radar-core`
 //! (`docs/design/fm301-model.md`): a [`recast_radar_core::Volume`] of
@@ -9,9 +11,14 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+mod grid;
 mod rhi;
 mod volumetric;
 
+pub use grid::{
+    CartesianGrid, GridError, GridField, GridOptions, GridOrigin, GridSpec, GridWeighting,
+    MAX_GRID_CELLS, RadiusOfInfluence, grid_from_volumes,
+};
 pub use rhi::{
     rhi_coverage_range, rhi_coverage_top, rhi_fixed_azimuth, rhi_panel, sweep_looks_like_rhi,
 };

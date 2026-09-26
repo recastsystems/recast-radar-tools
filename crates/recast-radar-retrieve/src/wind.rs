@@ -372,33 +372,116 @@ pub fn gust_proxy_from_dealiased(
 mod tests {
     use super::*;
 
-    #[test]
-    fn convergence_window_finds_couplet() {
-        // Outbound +20 near, inbound -15 far — 3 gates wide each (the
-        // median QC by design suppresses single-gate spikes).
-        let mut v = vec![f32::NAN; 40];
-        v[8..=10].fill(20.0);
-        v[14..=16].fill(-15.0);
-        let conv = radial_convergence_row(&v, 12);
-        // Between the pair the windowed ΔV sees both: 35 m/s.
-        assert!((conv[12] - 35.0).abs() < 1e-3, "{}", conv[12]);
-        // Divergent orientation (inbound near, outbound far) must NOT fire.
-        let mut d = vec![f32::NAN; 40];
-        d[8..=10].fill(-15.0);
-        d[14..=16].fill(20.0);
-        let div = radial_convergence_row(&d, 12);
-        assert!(div[12].is_nan() || div[12] <= 0.0);
+    /// `testdata/golden/retrieve/kernel_rows.json` `convergence`: two raw
+    /// velocity rays of the KDVN 2020-08-10 derecho Doppler cut (MetPy) with
+    /// numpy f32 references of `median3` and `radial_convergence_row`. These
+    /// references restate this module's rules (no library implements them),
+    /// so they check the Rust arithmetic on real rays, not the rules.
+    fn convergence_rows() -> serde_json::Value {
+        let path = recast_radar_testdata::testdata_dir()
+            .join("golden")
+            .join("retrieve")
+            .join("kernel_rows.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let golden: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        golden["convergence"].clone()
     }
 
-    #[test]
-    fn median_qc_suppresses_single_gate_spike() {
-        // A lone +60 gate in a ±10 field must not fabricate ΔV.
-        let mut v = vec![10.0f32; 40];
-        v[20] = 60.0;
-        let conv = radial_convergence_row(&v, 12);
-        for value in conv.iter().filter(|value| value.is_finite()) {
-            assert!(*value < 5.0, "{value}");
+    fn floats(value: &serde_json::Value) -> Vec<f32> {
+        value
+            .as_array()
+            .expect("row")
+            .iter()
+            .map(|v| v.as_f64().map_or(f32::NAN, |v| v as f32))
+            .collect()
+    }
+
+    fn assert_rows_equal(actual: &[f32], expected: &[f32], what: &str) {
+        assert_eq!(actual.len(), expected.len(), "{what}: length");
+        for (gate, (a, e)) in actual.iter().zip(expected).enumerate() {
+            assert!(
+                (a.is_nan() && e.is_nan()) || a == e,
+                "{what}: gate {gate} is {a}, reference {e}"
+            );
         }
+    }
+
+    /// Velocity row `row` of the derecho Doppler cut from the crate's decode.
+    fn derecho_velocity_row(sweep_index: usize, row: usize) -> Option<Vec<f32>> {
+        let path = match recast_radar_testdata::path("l2-kdvn-20200810-180401-trim") {
+            Ok(path) => path,
+            Err(error) if error.is_offline() => return None,
+            Err(error) => panic!("{error}"),
+        };
+        let volume = recast_radar_io_nexrad::read_volume_from_path(&path).expect("decode");
+        let velocity = volume.sweeps[sweep_index]
+            .find(Quantity::RadialVelocity)
+            .expect("velocity");
+        let gates = velocity.ngates as usize;
+        Some(
+            (0..gates)
+                .map(|gate| velocity.value(row, gate).unwrap_or(f32::NAN))
+                .collect(),
+        )
+    }
+
+    /// The strongest windowed convergence on the derecho cut: the kernel
+    /// reproduces the reference gate for gate, and where it reports a value
+    /// the outbound maximum lies nearer the radar than the inbound minimum.
+    #[test]
+    fn convergence_window_matches_the_reference_on_a_real_ray() {
+        let golden = convergence_rows();
+        let case = &golden["strongest"];
+        let row = case["row"].as_u64().expect("row") as usize;
+        let sweep_index = golden["sweep"].as_u64().expect("sweep") as usize;
+        let Some(velocity) = derecho_velocity_row(sweep_index, row) else {
+            return;
+        };
+        let half = golden["half_window_gates"].as_u64().expect("half") as usize;
+        assert_eq!(half, 12);
+        assert_rows_equal(&velocity, &floats(&case["velocity"]), "decoded velocity");
+        assert_rows_equal(&median3(&velocity), &floats(&case["median3"]), "median3");
+        let convergence = radial_convergence_row(&velocity, half);
+        assert_rows_equal(&convergence, &floats(&case["convergence"]), "convergence");
+        let peak = convergence
+            .iter()
+            .copied()
+            .filter(|v| v.is_finite())
+            .fold(0.0f32, f32::max);
+        let expected_peak = case["peak_mps"].as_f64().expect("peak") as f32;
+        assert!(
+            (peak - expected_peak).abs() < 1e-3,
+            "{peak} vs {expected_peak}"
+        );
+        assert!(peak > 0.0 && peak <= 70.0);
+    }
+
+    /// A real single-gate spike (more than 20 m/s from both neighbours) is
+    /// removed by the 3-gate median before the window sees it.
+    #[test]
+    fn median_qc_suppresses_a_real_single_gate_spike() {
+        let golden = convergence_rows();
+        let case = &golden["spike"];
+        let row = case["row"].as_u64().expect("row") as usize;
+        let sweep_index = golden["sweep"].as_u64().expect("sweep") as usize;
+        let Some(velocity) = derecho_velocity_row(sweep_index, row) else {
+            return;
+        };
+        let gate = case["spike_gate"].as_u64().expect("gate") as usize;
+        assert_rows_equal(&velocity, &floats(&case["velocity"]), "decoded velocity");
+        assert!((velocity[gate] - velocity[gate - 1]).abs() > 20.0);
+        assert!((velocity[gate] - velocity[gate + 1]).abs() > 20.0);
+        let filtered = median3(&velocity);
+        assert_rows_equal(&filtered, &floats(&case["median3"]), "median3");
+        assert_ne!(filtered[gate], velocity[gate], "the spike is replaced");
+        let half = golden["half_window_gates"].as_u64().expect("half") as usize;
+        assert_rows_equal(
+            &radial_convergence_row(&velocity, half),
+            &floats(&case["convergence"]),
+            "convergence",
+        );
     }
 
     /// The gust proxy on the Moore Doppler tilt (KTLX 2013-05-20 sweep 1,

@@ -1081,6 +1081,7 @@ dependencies = [
  "recast-radar-io-nexrad",
  "recast-radar-testdata",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]

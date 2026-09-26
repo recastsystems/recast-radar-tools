@@ -220,6 +220,10 @@ pub enum RenderError {
     CacheStorageMismatch,
     #[error("viewport geometry cache does not match this field's gate geometry")]
     GeometryCacheMismatch,
+    /// The sample cache was resolved under another colour table: which
+    /// radial a pixel shows depends on which values the table hides.
+    #[error("viewport sample cache was built with a different colour table")]
+    CacheColorTableMismatch,
     #[error("image write failed: {0}")]
     Image(#[from] ImageError),
 }
@@ -429,10 +433,28 @@ struct OwnedField {
     geometry: FieldGeometry,
 }
 
+/// Per-pixel radial and gate of one field's viewport render, resolved once
+/// so re-renders skip the viewport lookup and the candidate search.
+///
+/// A pixel is resolved to the first candidate radial of its azimuth bin whose
+/// value the building cache's colour table shows, the rule the direct render
+/// applies (a hidden value falls through to the next candidate), so renders
+/// through the cache equal [`ViewportFieldCache::render_field_rgba_into`]
+/// pixel for pixel. The cache therefore belongs to that colour table: a field
+/// render with another table is refused
+/// ([`RenderError::CacheColorTableMismatch`]). Storm-relative renders through
+/// a sample cache use its resolution as built; they equal the direct
+/// storm-relative render wherever the velocity table shows every measured
+/// velocity (the default tables do). A display threshold hides different
+/// values once the storm motion is subtracted, so where overlapping radials
+/// differ in visibility the cached and direct storm-relative renders can
+/// differ.
 pub struct ViewportSampleCache {
     volume_ptr: usize,
     sweep_index: usize,
     field: FieldName,
+    /// The colour table the pixels were resolved under.
+    color_table: ColorTable,
     width: u32,
     height: u32,
     sample_count: usize,
@@ -1260,25 +1282,33 @@ impl ViewportFieldCache {
         let gate_count = view.gate_count();
         let row_lookup = &self.row_lookup;
 
+        if self.color_lookup.dtype() != view.field.data.dtype() {
+            return Err(RenderError::CacheStorageMismatch);
+        }
+        let palette = self.color_lookup.palette();
+        let sampler = self.color_lookup.color_table().sampler();
+
         macro_rules! int_rows {
-            ($values:expr, $coding:expr) => {
+            ($values:expr) => {
                 build_sample_cache_rows(height, &lookup_table, row_lookup, |sample| {
-                    resolve_int_sample($values, &$coding, gate_count, row_lookup, sample)
+                    resolve_visible_code_sample($values, palette, gate_count, row_lookup, sample)
                 })
             };
         }
         macro_rules! float_rows {
             ($values:expr, $coding:expr) => {
                 build_sample_cache_rows(height, &lookup_table, row_lookup, |sample| {
-                    resolve_float_sample($values, &$coding, gate_count, row_lookup, sample)
+                    resolve_visible_float_sample(
+                        $values, &$coding, &sampler, gate_count, row_lookup, sample,
+                    )
                 })
             };
         }
         let row_builds = match field_values(view.field) {
-            FieldValues::U8(values, coding) => int_rows!(values, coding),
-            FieldValues::I8(values, coding) => int_rows!(values, coding),
-            FieldValues::U16(values, coding) => int_rows!(values, coding),
-            FieldValues::I16(values, coding) => int_rows!(values, coding),
+            FieldValues::U8(values, _) => int_rows!(values),
+            FieldValues::I8(values, _) => int_rows!(values),
+            FieldValues::U16(values, _) => int_rows!(values),
+            FieldValues::I16(values, _) => int_rows!(values),
             FieldValues::F32(values, coding) => float_rows!(values, coding),
             FieldValues::I32(values, coding) => float_rows!(values, coding),
             FieldValues::F64(values, coding) => float_rows!(values, coding),
@@ -1288,6 +1318,7 @@ impl ViewportFieldCache {
             self.volume_ptr,
             self.sweep_index,
             self.field.clone(),
+            self.color_lookup.color_table().clone(),
             width,
             height,
             row_builds,
@@ -1330,25 +1361,33 @@ impl ViewportFieldCache {
         let row_lookup = &self.row_lookup;
         let height = geometry_cache.height;
 
+        if self.color_lookup.dtype() != view.field.data.dtype() {
+            return Err(RenderError::CacheStorageMismatch);
+        }
+        let palette = self.color_lookup.palette();
+        let sampler = self.color_lookup.color_table().sampler();
+
         macro_rules! int_rows {
-            ($values:expr, $coding:expr) => {
+            ($values:expr) => {
                 build_sample_cache_rows_from_geometry(height, geometry, |sample| {
-                    resolve_int_sample($values, &$coding, gate_count, row_lookup, sample)
+                    resolve_visible_code_sample($values, palette, gate_count, row_lookup, sample)
                 })
             };
         }
         macro_rules! float_rows {
             ($values:expr, $coding:expr) => {
                 build_sample_cache_rows_from_geometry(height, geometry, |sample| {
-                    resolve_float_sample($values, &$coding, gate_count, row_lookup, sample)
+                    resolve_visible_float_sample(
+                        $values, &$coding, &sampler, gate_count, row_lookup, sample,
+                    )
                 })
             };
         }
         let row_builds = match field_values(view.field) {
-            FieldValues::U8(values, coding) => int_rows!(values, coding),
-            FieldValues::I8(values, coding) => int_rows!(values, coding),
-            FieldValues::U16(values, coding) => int_rows!(values, coding),
-            FieldValues::I16(values, coding) => int_rows!(values, coding),
+            FieldValues::U8(values, _) => int_rows!(values),
+            FieldValues::I8(values, _) => int_rows!(values),
+            FieldValues::U16(values, _) => int_rows!(values),
+            FieldValues::I16(values, _) => int_rows!(values),
             FieldValues::F32(values, coding) => float_rows!(values, coding),
             FieldValues::I32(values, coding) => float_rows!(values, coding),
             FieldValues::F64(values, coding) => float_rows!(values, coding),
@@ -1358,6 +1397,7 @@ impl ViewportFieldCache {
             self.volume_ptr,
             self.sweep_index,
             self.field.clone(),
+            self.color_lookup.color_table().clone(),
             geometry_cache.width,
             geometry_cache.height,
             row_builds,
@@ -1405,6 +1445,9 @@ impl ViewportFieldCache {
     ) -> Result<(u32, u32)> {
         let (_, view) = self.sweep_and_field(volume)?;
         self.ensure_sample_cache(sample_cache)?;
+        if self.color_lookup.color_table() != &sample_cache.color_table {
+            return Err(RenderError::CacheColorTableMismatch);
+        }
         ensure_rgba_buffer(pixels, sample_cache.width, sample_cache.height)?;
         render_field_sample_cache_into(
             view,
@@ -3305,6 +3348,7 @@ fn viewport_sample_cache_from_rows(
     volume_ptr: usize,
     sweep_index: usize,
     field: FieldName,
+    color_table: ColorTable,
     width: u32,
     height: u32,
     row_builds: Vec<CachedRowBuild>,
@@ -3314,6 +3358,7 @@ fn viewport_sample_cache_from_rows(
         volume_ptr,
         sweep_index,
         field,
+        color_table,
         width,
         height,
         sample_count,
@@ -3362,7 +3407,57 @@ fn push_cached_sample_skip(samples: &mut Vec<CachedSample>, mut pixel_count: u32
     }
 }
 
+/// First candidate row whose code at the sample's gate the palette shows
+/// (alpha not 0): the candidate the direct code render draws.
+fn resolve_visible_code_sample<T: RawCode>(
+    values: &[T],
+    palette: &[[u8; 4]],
+    gate_count: usize,
+    row_lookup: &AzimuthLookup,
+    sample: SampleLookup,
+) -> Option<ResolvedSample> {
+    row_lookup
+        .candidates_for_bin(sample.azimuth_bin)
+        .iter()
+        .find(|candidate| {
+            values
+                .get(candidate.row * gate_count + sample.gate)
+                .and_then(|raw| palette.get(raw.palette_index()))
+                .is_some_and(|color| color[3] != 0)
+        })
+        .map(|candidate| ResolvedSample {
+            row: candidate.row,
+            gate: sample.gate,
+        })
+}
+
+/// First candidate row whose physical value at the sample's gate the colour
+/// table shows: the candidate the direct float render draws.
+fn resolve_visible_float_sample<T: FloatCode>(
+    values: &[T],
+    coding: &T::Coding,
+    sampler: &ColorSampler,
+    gate_count: usize,
+    row_lookup: &AzimuthLookup,
+    sample: SampleLookup,
+) -> Option<ResolvedSample> {
+    row_lookup
+        .candidates_for_bin(sample.azimuth_bin)
+        .iter()
+        .find(|candidate| {
+            values
+                .get(candidate.row * gate_count + sample.gate)
+                .and_then(|value| value.physical(coding))
+                .is_some_and(|value| sampler.color_for_value(value)[3] != 0)
+        })
+        .map(|candidate| ResolvedSample {
+            row: candidate.row,
+            gate: sample.gate,
+        })
+}
+
 /// First candidate row whose code at the sample's gate is not blank.
+#[cfg(test)]
 fn resolve_int_sample<T: RawCode>(
     values: &[T],
     coding: &IntCoding<T>,
@@ -3382,29 +3477,6 @@ fn resolve_int_sample<T: RawCode>(
             row: candidate.row,
             gate: sample.gate,
         });
-    }
-    None
-}
-
-/// First candidate row with a finite physical value at the sample's gate.
-fn resolve_float_sample<T: FloatCode>(
-    values: &[T],
-    coding: &T::Coding,
-    gate_count: usize,
-    row_lookup: &AzimuthLookup,
-    sample: SampleLookup,
-) -> Option<ResolvedSample> {
-    for candidate in row_lookup.candidates_for_bin(sample.azimuth_bin) {
-        let index = candidate.row * gate_count + sample.gate;
-        if values
-            .get(index)
-            .is_some_and(|value| value.physical(coding).is_some())
-        {
-            return Some(ResolvedSample {
-                row: candidate.row,
-                gate: sample.gate,
-            });
-        }
     }
     None
 }
@@ -5291,12 +5363,12 @@ mod tests {
         ));
     }
 
-    /// The sample cache reproduces the direct render exactly when every
-    /// measured code has a visible colour (an opaque reflectivity ramp).
-    /// Under the default reflectivity palette, which hides low dBZ, the two
-    /// paths can differ only where the cache's first candidate radial holds a
-    /// hidden code: the direct render falls through to the next candidate of
-    /// the azimuth bin, the cache leaves the pixel transparent.
+    /// The sample cache reproduces the direct render exactly, under an
+    /// opaque reflectivity ramp and under the default reflectivity palette,
+    /// which hides low dBZ: where a pixel's first candidate radial holds a
+    /// hidden code, both fall through to the next candidate of the azimuth
+    /// bin. A cache built under one table is refused by a field cache with
+    /// another.
     #[test]
     fn viewport_sample_cache_matches_direct_field_render() {
         let expected = golden("ktlx2024.json");
@@ -5365,28 +5437,45 @@ color: 95 255 0 0",
         cache
             .render_field_rgba_with_sample_cache(&volume, &sample_cache, &mut sample_cache_pixels)
             .expect("sample-cache default render");
-        let mut fallthrough = 0usize;
-        for (index, (cached, direct)) in sample_cache_pixels
-            .chunks_exact(4)
-            .zip(direct_pixels.chunks_exact(4))
-            .enumerate()
-        {
-            if cached != direct {
-                assert!(
-                    cached[3] == 0 && direct[3] != 0,
-                    "pixel {} ({}, {}): cache {cached:?}, direct {direct:?}",
-                    index,
-                    index % 333,
-                    index / 333
-                );
-                fallthrough += 1;
-            }
-        }
-        assert!(
-            fallthrough < opaque_pixels(&direct_pixels),
-            "{fallthrough} fall-through pixels of {} opaque",
-            opaque_pixels(&direct_pixels)
+        // The default palette hides codes the opaque ramp shows (fewer
+        // opaque pixels), the precondition for a fall-through.
+        assert!(opaque_pixels(&direct_pixels) > 500);
+        assert!(opaque_pixels(&direct_pixels) < opaque_pixels(&reused_pixels));
+        assert_eq!(
+            sample_cache_pixels, direct_pixels,
+            "sample-cache render differs from the direct render under the default palette"
         );
+        let geometry_cache = cache
+            .build_geometry_cache(&volume, options)
+            .expect("default geometry cache");
+        let from_geometry = cache
+            .build_sample_cache_from_geometry_cache(&volume, &geometry_cache)
+            .expect("sample cache from geometry");
+        let mut geometry_pixels = vec![255; viewport_rgba_buffer_len(options)];
+        cache
+            .render_field_rgba_with_sample_cache(&volume, &from_geometry, &mut geometry_pixels)
+            .expect("geometry-derived sample-cache render");
+        assert_eq!(geometry_pixels, direct_pixels);
+
+        // The opaque-ramp cache resolved every measured code to the first
+        // candidate; the default-palette field cache refuses it.
+        let opaque_cache = ViewportFieldCache::new_with_color_tables(
+            &volume,
+            sweep_index,
+            &FieldName::Dbzh,
+            &tables,
+        )
+        .expect("opaque cache")
+        .build_sample_cache(&volume, options)
+        .expect("opaque sample cache");
+        assert!(matches!(
+            cache.render_field_rgba_with_sample_cache(
+                &volume,
+                &opaque_cache,
+                &mut sample_cache_pixels
+            ),
+            Err(RenderError::CacheColorTableMismatch)
+        ));
     }
 
     #[test]
@@ -5751,10 +5840,8 @@ color: 95 255 0 0",
         let (_, _, direct_viewport) =
             render_field_viewport_rgba(&volume, sweep_index, &FieldName::Dbzh, options).unwrap();
         assert!(has_visible_pixel(&direct_viewport));
-        // The sample cache can leave pixels transparent where the direct
-        // render falls through to a second candidate radial (see
-        // `viewport_sample_cache_matches_direct_field_render`), so cached
-        // renders compare with the u8 field's cached render.
+        // Cached renders compare with the u8 field's cached render (equal to
+        // its direct render, `viewport_sample_cache_matches_direct_field_render`).
         let direct_cached = {
             let cache = ViewportFieldCache::new(&volume, sweep_index, &FieldName::Dbzh).unwrap();
             let sample_cache = cache.build_sample_cache(&volume, options).unwrap();

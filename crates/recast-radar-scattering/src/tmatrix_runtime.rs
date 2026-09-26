@@ -3702,175 +3702,82 @@ fn invalid<T>(field: &'static str, detail: impl Into<String>) -> Result<T, TMatr
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use serde_json::json;
 
     use super::*;
     use crate::{
         Axis, ClosureContext, ConventionalCategoryInput, DiagnosticCoexistenceInput,
-        GeneratorMetadata, IshmaelIceCategory, IshmaelPsd, IshmaelPsdInput, OrientationDefinition,
-        P3CategoryInput, PsdFallSpeedAuthority, PsdIntegrationConfig, PsdParticleSupport,
-        ScienceMetadata, close_conventional_category, close_p3_category, integrate_ishmael_psd,
+        IshmaelIceCategory, IshmaelPsd, IshmaelPsdInput, OrientationDefinition, P3CategoryInput,
+        PsdFallSpeedAuthority, PsdIntegrationConfig, PsdParticleSupport,
+        close_conventional_category, close_p3_category, integrate_ishmael_psd,
     };
 
     const FREQUENCY_HZ: f64 = 2_700_832_954.954_955;
 
-    fn fixture_config(orientation_sigma_deg: f64) -> String {
-        serde_json::to_string(&json!({
-            "schema": 1,
-            "status": "research_only_unvalidated",
-            "kernel": "pytmatrix-0.3.3",
-            "table_id": "software-test-conventional-dry-ice",
-            "particle_population": {
-                "microphysics_family": "conventional",
-                "category": "hail",
-                "shape_family": "oblate_spheroid",
-                "size_distribution": "monodisperse_node",
-                "normalization_number_concentration_m3": 1.0
-            },
-            "axes": [
-                {"kind":"equivolume_diameter","unit":"meter","coordinates":[0.005,0.01]},
-                {"kind":"minor_to_major_axis_ratio","unit":"unitless_fraction","coordinates":[0.8,1.0]},
-                {"kind":"frequency","unit":"hertz","coordinates":[FREQUENCY_HZ]},
-                {"kind":"radar_elevation","unit":"degree","coordinates":[0.0]}
-            ],
-            "dielectric": {
-                "model":"explicit_homogeneous",
-                "material":"ice",
-                "refractive_index":{"real":1.7861,"imaginary":0.0000966},
-                "mass_density_kg_m3":916.7,
-                "temperature_k":273.15,
-                "frequency_dependence":"constant_over_configured_s_band_nodes"
-            },
-            "orientation": {
-                "model":"gaussian_canting",
-                "mean_deg":0.0,
-                "standard_deviation_deg":orientation_sigma_deg,
-                "alpha_quadrature_points":5,
-                "beta_quadrature_points":10,
-                "quadrature_method":"pytmatrix_orient_averaged_fixed_gautschi",
-                "reference_symmetry_axis":"vertical_at_zero_canting"
-            },
-            "radar": {
-                "speed_of_light_m_s":299792458.0,
-                "reference_water_dielectric_factor_squared":0.93,
-                "length_unit_passed_to_pytmatrix":"millimeter",
-                "backscatter_geometry_deg":[90.0,90.0,0.0,180.0,0.0,0.0],
-                "forward_scatter_geometry_deg":[90.0,90.0,0.0,0.0,0.0,0.0],
-                "covariance_phase_convention":"pytmatrix_delta_hv_hh_times_conjugate_vv",
-                "beam_elevation_transform":"pytmatrix_theta0_90_minus_e_theta_back_90_plus_e_theta_forward_90_minus_e_degrees",
-                "polarization_basis":"pytmatrix_local_horizontal_vertical_scattering_basis",
-                "view_applicability":"horizontal_singleton_zero_degree_axis",
-                "solver":{"shape":"spheroid","ddelt":0.001,"ndgs":2}
-            },
-            "terminal_velocity": {
-                "law":"schiller_naumann_gravity_drag",
-                "gravity_m_s2":9.80665,
-                "air_density_kg_m3":1.225,
-                "air_dynamic_viscosity_pa_s":0.000017894,
-                "drag_transition_reynolds":1000.0,
-                "high_reynolds_drag_coefficient":0.44,
-                "drag_transition_boundary_policy":"select_exact_transition_reynolds_boundary_when_piecewise_drag_residual_jump_straddles_zero",
-                "maximum_iterations":200,
-                "relative_tolerance":1e-12
-            },
-            "temporal":{"sampling":"instantaneous"},
-            "execution": {
-                "point_timeout_seconds":120,
-                "process_isolation":"fresh_python_subprocess_per_grid_point",
-                "result_collection_order":"declared_axis_order_last_axis_fastest",
-                "partial_grid_policy":"reject_entire_lut",
-                "thread_count_per_process":1
-            },
-            "payload":{"encoding":"f64_le_point_major_last_axis_fastest"},
-            "references":["software-test-only"]
-        }))
-        .unwrap()
+    /// Frequency of the property bundle's tables (the trimmed dry, wet and
+    /// rain tables): 2.8 GHz exactly.
+    const PROPERTY_FREQUENCY_HZ: f64 = 2.8e9;
+    const DRY_ICE: &str = "tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3";
+    const PROPERTY_DRY: &str = "tmatrix-lut-property-dry-oblate-sband-trim";
+    const PROPERTY_WET: &str = "tmatrix-lut-property-wet-oblate-sband-trim";
+    const PROPERTY_RAIN: &str = "tmatrix-lut-property-rain-sband-trim";
+
+    /// `testdata/golden/scattering/tmatrix_runtime.json`
+    /// (`tools/scattering_golden.py`): the tables' axes read from their
+    /// bytes and the reference multilinear interpolation at each query.
+    fn runtime_golden() -> serde_json::Value {
+        crate::test_corpus::golden("tmatrix_runtime.json")
     }
 
-    fn fixture_with_config(config: String) -> (Vec<u8>, String) {
-        let axes = vec![
-            Axis::new(AxisKind::EquivolumeDiameter, Unit::Meter, vec![0.005, 0.01]).unwrap(),
-            Axis::new(
-                AxisKind::MinorToMajorAxisRatio,
-                Unit::UnitlessFraction,
-                vec![0.8, 1.0],
-            )
-            .unwrap(),
-            Axis::new(AxisKind::Frequency, Unit::Hertz, vec![FREQUENCY_HZ]).unwrap(),
-            Axis::new(AxisKind::RadarElevation, Unit::Degree, vec![0.0]).unwrap(),
-        ];
-        let mut packages = BTreeMap::new();
-        packages.insert("pytmatrix".to_owned(), "0.3.3".to_owned());
-        let generator = GeneratorMetadata::new(
-            "software-test-generator",
-            "1",
-            "unit-test",
-            "software-test-only",
-            Some("3.11".to_owned()),
-            packages,
-        )
-        .unwrap();
-        let science = ScienceMetadata::new(
-            KernelModel::TMatrix {
-                implementation: TMatrixImplementation::PyTMatrix033,
-            },
-            OrientationModel::GaussianCanting {
-                mean_deg: 0.0,
-                standard_deviation_deg: 20.0,
-                quadrature_points: 50,
-            },
-            MeltingModel::Dry,
-            TemporalSampling::Instantaneous,
-            TableValidation::ResearchOnlyUnvalidated,
-        )
-        .unwrap();
-        let node =
-            AdditiveScattering::from_components([2.0, 1.0, 0.5, 0.0, 0.1, 0.01, 0.01, 4.0, 8.0])
-                .unwrap();
+    fn golden_f64s(value: &serde_json::Value) -> Vec<f64> {
+        crate::test_corpus::f64s(value)
+    }
+
+    /// A committed table loaded through the research runtime, with its file
+    /// bytes and exact generator config.
+    fn load_corpus(id: &str) -> (ResearchTMatrixLut, Vec<u8>, Vec<u8>) {
+        let bytes = crate::test_corpus::corpus_bytes(id);
+        let config = crate::test_corpus::corpus_bytes(&format!("{id}-config"));
         let table =
-            OfflineLut::new(axes, generator, config.clone(), science, vec![node; 4]).unwrap();
-        (table.to_bytes().unwrap(), config)
+            ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(&bytes), &config).unwrap();
+        (table, bytes, config)
     }
 
-    fn test_generator() -> GeneratorMetadata {
-        let mut packages = BTreeMap::new();
-        packages.insert("pytmatrix".to_owned(), "0.3.3".to_owned());
-        GeneratorMetadata::new(
-            "software-test-generator",
-            "1",
-            "unit-test",
-            "software-test-only",
-            Some("3.11".to_owned()),
-            packages,
+    /// The committed PyTMatrix conventional dry-ice (hail) table.
+    fn dry_ice_runtime() -> (ResearchTMatrixLut, Vec<u8>, Vec<u8>) {
+        load_corpus(DRY_ICE)
+    }
+
+    /// The committed dry-ice table re-packed with an edited generator config:
+    /// the real nodes, axes, generator identity and science metadata, with the
+    /// config (and so its embedded hash) changed.
+    fn dry_ice_with_config(edit: impl FnOnce(&mut serde_json::Value)) -> (Vec<u8>, String) {
+        let (_, bytes, config) = dry_ice_runtime();
+        let lut = OfflineLut::from_bytes(&bytes).unwrap();
+        let mut value: serde_json::Value = serde_json::from_slice(&config).unwrap();
+        edit(&mut value);
+        let config = serde_json::to_string(&value).unwrap();
+        let header = lut.header();
+        let edited = OfflineLut::new(
+            header.axes().to_vec(),
+            header.generator().clone(),
+            config.clone(),
+            header.science().clone(),
+            lut.values().to_vec(),
         )
-        .unwrap()
+        .unwrap();
+        (edited.to_bytes().unwrap(), config)
     }
 
-    fn constant_runtime(
-        axes: Vec<Axis>,
-        science: ScienceMetadata,
-        descriptor: TMatrixTableDescriptor,
-    ) -> ResearchTMatrixLut {
-        let count = axes
-            .iter()
-            .map(|axis| axis.coordinates().len())
-            .product::<usize>();
-        let node =
-            AdditiveScattering::from_components([2.0, 1.0, 0.5, 0.0, 0.1, 0.01, 0.01, 4.0, 8.0])
-                .unwrap();
-        ResearchTMatrixLut {
-            lut: OfflineLut::new(
-                axes,
-                test_generator(),
-                r#"{"software_test_only":true}"#,
-                science,
-                vec![node; count],
-            )
-            .unwrap(),
-            descriptor,
-            file_sha256: Sha256Digest::compute(b"software-test-only"),
+    /// Relative agreement with a reference table value (exact for zero).
+    fn assert_relative(actual: f64, expected: f64, tolerance: f64, what: &str) {
+        if expected == 0.0 {
+            assert_eq!(actual, expected, "{what}");
+        } else {
+            assert!(
+                ((actual - expected) / expected).abs() <= tolerance,
+                "{what}: {actual} vs reference {expected}"
+            );
         }
     }
 
@@ -3880,17 +3787,6 @@ mod tests {
             standard_deviation_deg: 20.0,
             alpha_quadrature_points: 5,
             beta_quadrature_points: 10,
-        }
-    }
-
-    fn test_radar_descriptor() -> RadarConventionDescriptor {
-        RadarConventionDescriptor {
-            convention: RadarHvConvention::PytMatrixHorizontalHhConjugateVv,
-            view_applicability:
-                RadarViewApplicability::PpiElevationAxisMinus05To20AxisymmetricGaussian,
-            reference_water_dielectric_factor_squared: 0.93,
-            solver_ddelt: 0.001,
-            solver_ndgs: 14,
         }
     }
 
@@ -3905,14 +3801,6 @@ mod tests {
             maximum_iterations: 200,
             relative_tolerance: 1.0e-12,
         }
-    }
-
-    fn fixture() -> (ResearchTMatrixLut, Vec<u8>, String) {
-        let (bytes, config) = fixture_with_config(fixture_config(20.0));
-        let table =
-            ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(&bytes), config.as_bytes())
-                .unwrap();
-        (table, bytes, config)
     }
 
     fn closed_hail(diameter_m: f64, orientation: OrientationDefinition) -> ClosedParticleCategory {
@@ -3951,127 +3839,6 @@ mod tests {
         provenance
     }
 
-    fn dry_property_runtime(spheroid: SpheroidConvention) -> ResearchTMatrixLut {
-        let axes = vec![
-            Axis::new(
-                AxisKind::EquivolumeDiameter,
-                Unit::Meter,
-                vec![1.0e-6, 0.01],
-            )
-            .unwrap(),
-            Axis::new(AxisKind::Temperature, Unit::Kelvin, vec![200.0, 300.0]).unwrap(),
-            Axis::new(
-                AxisKind::BulkDensity,
-                Unit::KilogramPerCubicMeter,
-                vec![50.0, 917.0],
-            )
-            .unwrap(),
-            Axis::new(
-                AxisKind::MinorToMajorAxisRatio,
-                Unit::UnitlessFraction,
-                vec![0.1, 1.0],
-            )
-            .unwrap(),
-            Axis::new(AxisKind::Frequency, Unit::Hertz, vec![FREQUENCY_HZ]).unwrap(),
-            Axis::new(AxisKind::RadarElevation, Unit::Degree, vec![-0.5, 20.0]).unwrap(),
-        ];
-        let science = ScienceMetadata::new(
-            KernelModel::TMatrix {
-                implementation: TMatrixImplementation::PyTMatrix033,
-            },
-            gaussian20_odf().orientation_model(),
-            MeltingModel::Dry,
-            TemporalSampling::Instantaneous,
-            TableValidation::ResearchOnlyUnvalidated,
-        )
-        .unwrap();
-        let descriptor = TMatrixTableDescriptor {
-            table_id: "software-test-dry-property-node".to_owned(),
-            category: TMatrixParticleCategory::PropertyAwareFrozenCharacteristicParticle,
-            population_role: TMatrixPopulationRole::PropertyAwareDryCharacteristicParticle,
-            density_applicability: DensityApplicability::DryBulkDensity15To917KgM3Above1225Air,
-            spheroid,
-            material: TMatrixMaterial::SymmetricBruggemanSphericalAirIceMatzler2006V1 {
-                air_relative_permittivity: ComplexRefractiveIndex {
-                    real: 1.0,
-                    imaginary: 0.0,
-                },
-                ice_material_density_kg_m3: 917.0,
-                homotopy_steps: 64,
-                newton_max_iterations: 100,
-                newton_relative_tolerance: 1.0e-12,
-                temperature_range_k: [200.0, 300.0],
-            },
-            odf: gaussian20_odf(),
-            radar: test_radar_descriptor(),
-            terminal_speed: test_drag_policy(),
-            terminal_speed_sha256: terminal_speed_policy_sha256(&test_drag_policy()),
-            execution: TMatrixExecutionDescriptor::FreshProcessPerGridPoint,
-            normalization_number_concentration_m3: 1.0,
-        };
-        constant_runtime(axes, science, descriptor)
-    }
-
-    fn rain_runtime(temperature_range_k: [f64; 2]) -> ResearchTMatrixLut {
-        let axes = vec![
-            Axis::new(
-                AxisKind::EquivolumeDiameter,
-                Unit::Meter,
-                vec![1.0e-4, 0.01],
-            )
-            .unwrap(),
-            Axis::new(
-                AxisKind::Temperature,
-                Unit::Kelvin,
-                temperature_range_k.to_vec(),
-            )
-            .unwrap(),
-            Axis::new(
-                AxisKind::MinorToMajorAxisRatio,
-                Unit::UnitlessFraction,
-                vec![0.5, 1.0],
-            )
-            .unwrap(),
-            Axis::new(AxisKind::Frequency, Unit::Hertz, vec![FREQUENCY_HZ]).unwrap(),
-            Axis::new(AxisKind::RadarElevation, Unit::Degree, vec![-0.5, 20.0]).unwrap(),
-        ];
-        let science = ScienceMetadata::new(
-            KernelModel::TMatrix {
-                implementation: TMatrixImplementation::PyTMatrix033,
-            },
-            gaussian20_odf().orientation_model(),
-            MeltingModel::Dry,
-            TemporalSampling::Instantaneous,
-            TableValidation::ResearchOnlyUnvalidated,
-        )
-        .unwrap();
-        let rain_terminal_speed = TerminalSpeedPolicy::AtlasRain1973Exponential {
-            a_m_s: 9.65,
-            b_m_s: 10.3,
-            c_per_mm: 0.6,
-            valid_diameter_range_m: [1.0e-4, 0.01],
-        };
-        let descriptor = TMatrixTableDescriptor {
-            table_id: "software-test-residual-rain".to_owned(),
-            category: TMatrixParticleCategory::Conventional(ConventionalHydrometeor::Rain),
-            population_role: TMatrixPopulationRole::ConventionalRainStandaloneAndResidual,
-            density_applicability: DensityApplicability::ConventionalCategory,
-            spheroid: SpheroidConvention::OblateMinorVertical,
-            material: TMatrixMaterial::TemperatureDependentLiquidWaterLiebe1991 {
-                mass_density_kg_m3: 999.84,
-                temperature_range_k,
-                frequency_range_hz: [2.0e9, 4.0e9],
-            },
-            odf: gaussian20_odf(),
-            radar: test_radar_descriptor(),
-            terminal_speed_sha256: terminal_speed_policy_sha256(&rain_terminal_speed),
-            terminal_speed: rain_terminal_speed,
-            execution: TMatrixExecutionDescriptor::FreshProcessPerGridPoint,
-            normalization_number_concentration_m3: 1.0,
-        };
-        constant_runtime(axes, science, descriptor)
-    }
-
     fn closed_rain(temperature_k: f64) -> ClosedParticleCategory {
         let context = ClosureContext::new(6, temperature_k, 1.5)
             .unwrap()
@@ -4088,7 +3855,7 @@ mod tests {
 
     #[test]
     fn loader_binds_complete_digest_config_and_descriptor() {
-        let (table, _, _) = fixture();
+        let (table, _, _) = dry_ice_runtime();
         assert_eq!(
             table.descriptor().category(),
             TMatrixParticleCategory::Conventional(ConventionalHydrometeor::Hail)
@@ -4111,22 +3878,21 @@ mod tests {
 
     #[test]
     fn loader_requires_exact_drag_transition_boundary_policy() {
-        let mut missing: serde_json::Value = serde_json::from_str(&fixture_config(20.0)).unwrap();
-        missing["terminal_velocity"]
-            .as_object_mut()
-            .unwrap()
-            .remove("drag_transition_boundary_policy");
-        let (bytes, config) = fixture_with_config(serde_json::to_string(&missing).unwrap());
+        let (bytes, config) = dry_ice_with_config(|config| {
+            config["terminal_velocity"]
+                .as_object_mut()
+                .unwrap()
+                .remove("drag_transition_boundary_policy");
+        });
         assert!(matches!(
             ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(&bytes), config.as_bytes()),
             Err(TMatrixLoadError::GeneratorConfigJson(_))
         ));
 
-        let mut unsupported: serde_json::Value =
-            serde_json::from_str(&fixture_config(20.0)).unwrap();
-        unsupported["terminal_velocity"]["drag_transition_boundary_policy"] =
-            json!("interpolate_across_drag_jump");
-        let (bytes, config) = fixture_with_config(serde_json::to_string(&unsupported).unwrap());
+        let (bytes, config) = dry_ice_with_config(|config| {
+            config["terminal_velocity"]["drag_transition_boundary_policy"] =
+                json!("interpolate_across_drag_jump");
+        });
         assert!(matches!(
             ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(&bytes), config.as_bytes()),
             Err(TMatrixLoadError::InvalidConfig {
@@ -4138,12 +3904,12 @@ mod tests {
 
     #[test]
     fn loader_rejects_whole_file_or_external_config_mismatch() {
-        let (_, bytes, config) = fixture();
+        let (_, bytes, config) = dry_ice_runtime();
         assert!(matches!(
-            ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(b"wrong"), config.as_bytes()),
+            ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(b"wrong"), &config),
             Err(TMatrixLoadError::FileDigestMismatch { .. })
         ));
-        let changed = format!("{config} ");
+        let changed = format!("{} ", String::from_utf8(config).unwrap());
         assert!(matches!(
             ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(&bytes), changed.as_bytes()),
             Err(TMatrixLoadError::OfflineLut(
@@ -4154,7 +3920,9 @@ mod tests {
 
     #[test]
     fn loader_requires_config_odf_to_match_header_exactly() {
-        let (bytes, config) = fixture_with_config(fixture_config(21.0));
+        let (bytes, config) = dry_ice_with_config(|config| {
+            config["orientation"]["standard_deviation_deg"] = json!(21.0);
+        });
         assert!(matches!(
             ResearchTMatrixLut::load(&bytes, Sha256Digest::compute(&bytes), config.as_bytes()),
             Err(TMatrixLoadError::ScienceMismatch {
@@ -4165,26 +3933,49 @@ mod tests {
 
     #[test]
     fn evaluator_scales_every_additive_component_by_number_density() {
-        let (table, _, _) = fixture();
+        let (table, _, _) = dry_ice_runtime();
         let closed = closed_hail(0.007, OrientationDefinition::Gaussian20Research);
         let output = table.evaluate(&closed, request(FREQUENCY_HZ, 0.0)).unwrap();
-        // N_m-3 = 2 kg-1 * 1.5 kg m-3 = 3 m-3.
-        for (actual, expected) in output
-            .components()
-            .into_iter()
-            .zip([6.0, 3.0, 1.5, 0.0, 0.3, 0.03, 0.03, 30.0, 150.0])
-        {
-            assert!((actual - expected).abs() <= 1.0e-14);
+        // N_m-3 = 2 kg-1 * 1.5 kg m-3 = 3 m-3 times the table interpolated at
+        // 7 mm and axis ratio 0.9; the fall moments are the closure's 5 m/s.
+        let node = golden_f64s(&runtime_golden()["dry_ice_hail_7mm"]["interpolation"]);
+        let components = output.components();
+        for (index, (actual, expected)) in components[..7].iter().zip(&node).enumerate() {
+            assert_relative(
+                *actual,
+                3.0 * expected,
+                1.0e-12,
+                &format!("component {index}"),
+            );
         }
+        assert_relative(
+            components[7],
+            components[0] * 5.0,
+            1.0e-15,
+            "first fall moment",
+        );
+        assert_relative(
+            components[8],
+            components[0] * 25.0,
+            1.0e-15,
+            "second fall moment",
+        );
     }
 
     #[test]
     fn dry_particle_node_query_returns_exactly_one_particle_per_m3() {
-        let table = dry_property_runtime(SpheroidConvention::OblateMinorVertical);
+        let table = load_corpus(PROPERTY_DRY).0;
+        let golden = runtime_golden();
+        let axes = crate::test_corpus::array(&golden["tables"]["property_dry"]["axes"]);
+        let span = |index: usize| {
+            let coordinates = golden_f64s(&axes[index]["coordinates"]);
+            [coordinates[0], coordinates[coordinates.len() - 1]]
+        };
         let domain = table.dry_particle_node_domain().unwrap();
-        assert_eq!(domain.equivolume_diameter_range_m(), [1.0e-6, 0.01]);
-        assert_eq!(domain.bulk_density_range_kg_m3(), [50.0, 917.0]);
-        assert_eq!(domain.minor_to_major_axis_ratio_range(), [0.1, 1.0]);
+        assert_eq!(domain.equivolume_diameter_range_m(), span(0));
+        assert_eq!(domain.bulk_density_range_kg_m3(), span(2));
+        assert_eq!(domain.minor_to_major_axis_ratio_range(), span(3));
+        assert_eq!(span(0), [5.0e-5, 0.089]);
         let exact_speed =
             schiller_naumann_terminal_speed_m_s(table.descriptor().terminal_speed(), 1.0e-3, 400.0)
                 .unwrap();
@@ -4199,24 +3990,14 @@ mod tests {
             exact_speed,
             table.dry_particle_node_fall_speed_provenance().unwrap(),
             gaussian20_odf().orientation_model(),
-            request(FREQUENCY_HZ, 1.0),
+            request(PROPERTY_FREQUENCY_HZ, 1.0),
         )
         .unwrap();
         let output = table.evaluate_dry_particle_node_per_m3(&query).unwrap();
         let components = output.components();
-        for (actual, expected) in components[..7]
-            .iter()
-            .copied()
-            .zip([2.0, 1.0, 0.5, 0.0, 0.1, 0.01, 0.01])
-        {
-            if expected == 0.0 {
-                assert_eq!(actual, expected);
-            } else {
-                assert!(
-                    ((actual - expected) / expected).abs() <= 8.0 * f64::EPSILON,
-                    "one-particle interpolation changed {expected} to {actual}"
-                );
-            }
+        let node = golden_f64s(&golden["property_dry_node"]["interpolation"]);
+        for (index, (actual, expected)) in components[..7].iter().zip(&node).enumerate() {
+            assert_relative(*actual, *expected, 1.0e-12, &format!("component {index}"));
         }
         assert_eq!(components[7], components[0] * exact_speed);
         assert_eq!(components[8], components[0] * exact_speed * exact_speed);
@@ -4224,13 +4005,13 @@ mod tests {
 
     #[test]
     fn prepared_dry_particle_node_is_bit_identical_and_table_bound() {
-        let table = dry_property_runtime(SpheroidConvention::OblateMinorVertical);
+        let table = load_corpus(PROPERTY_DRY).0;
         let exact_speed = table
             .dry_particle_geometry_terminal_speed_m_s(1.0e-3, 400.0)
             .unwrap();
         let speed_provenance = table.dry_particle_node_fall_speed_provenance().unwrap();
         let orientation = gaussian20_odf().orientation_model();
-        let evaluation_request = request(FREQUENCY_HZ, 1.0);
+        let evaluation_request = request(PROPERTY_FREQUENCY_HZ, 1.0);
         let external_query = TMatrixParticleNodeQuery::new(
             260.0,
             1.0e-3,
@@ -4300,28 +4081,34 @@ mod tests {
         assert_eq!(interpolation.table_file_sha256(), table.file_sha256());
         assert_eq!(interpolation.positive_down_fall_speed_m_s(), exact_speed);
         assert!(!std::mem::needs_drop::<PreparedTMatrixLutInterpolation>());
+        // 260 K and 400 kg m-3 are table nodes (inactive axes); diameter,
+        // axis ratio and elevation bracket (golden plan from the axes).
         let plan = interpolation.interpolation_plan();
-        assert_eq!(plan.base_point_index(), 0);
-        assert_eq!(plan.active_axis_count(), 5);
-        assert_eq!(plan.corner_count(), 32);
-        assert_eq!(&plan.upper_point_offsets()[..5], &[16_u64, 8, 4, 2, 1]);
+        let expected = &runtime_golden()["property_dry_node"]["plan"];
+        let active = crate::test_corpus::as_usize(&expected["active_axis_count"]);
+        assert_eq!(active, 3);
         assert_eq!(
-            &plan.upper_fractions()[..5],
-            &[
-                (1.0e-3 - 1.0e-6) / (0.01 - 1.0e-6),
-                (260.0 - 200.0) / (300.0 - 200.0),
-                (400.0 - 50.0) / (917.0 - 50.0),
-                (0.8 - 0.1) / (1.0 - 0.1),
-                (1.0 - (-0.5)) / (20.0 - (-0.5)),
-            ]
+            plan.base_point_index() as usize,
+            crate::test_corpus::as_usize(&expected["base_point_index"])
+        );
+        assert_eq!(plan.active_axis_count() as usize, active);
+        assert_eq!(plan.corner_count(), 8);
+        let offsets: Vec<u64> = crate::test_corpus::array(&expected["upper_point_offsets"])
+            .iter()
+            .map(|value| value.as_u64().unwrap())
+            .collect();
+        assert_eq!(&plan.upper_point_offsets()[..active], offsets.as_slice());
+        assert_eq!(
+            &plan.upper_fractions()[..active],
+            golden_f64s(&expected["upper_fractions"]).as_slice()
         );
         assert!(
-            plan.upper_point_offsets()[5..]
+            plan.upper_point_offsets()[active..]
                 .iter()
                 .all(|value| *value == 0)
         );
         assert!(
-            plan.upper_fractions()[5..]
+            plan.upper_fractions()[active..]
                 .iter()
                 .all(|value| *value == 0.0)
         );
@@ -4334,7 +4121,7 @@ mod tests {
         assert_eq!(prepared_output.components(), external.components());
         assert_eq!(direct_output.components(), external.components());
 
-        let (other_table, _, _) = fixture();
+        let (other_table, _, _) = dry_ice_runtime();
         assert!(matches!(
             other_table.evaluate_prepared_dry_particle_node_per_m3(&prepared),
             Err(EvaluationError::PreparedParticleNodeTableMismatch { .. })
@@ -4352,7 +4139,7 @@ mod tests {
 
     #[test]
     fn malformed_external_particle_node_still_fails_closed_after_preparation_seam() {
-        let table = dry_property_runtime(SpheroidConvention::OblateMinorVertical);
+        let table = load_corpus(PROPERTY_DRY).0;
         let exact_speed = table
             .dry_particle_geometry_terminal_speed_m_s(1.0e-3, 400.0)
             .unwrap();
@@ -4367,7 +4154,7 @@ mod tests {
             exact_speed + 1.0e-9,
             table.dry_particle_node_fall_speed_provenance().unwrap(),
             gaussian20_odf().orientation_model(),
-            request(FREQUENCY_HZ, 1.0),
+            request(PROPERTY_FREQUENCY_HZ, 1.0),
         )
         .unwrap();
         assert!(matches!(
@@ -4386,7 +4173,7 @@ mod tests {
                 None,
                 rain_atlas_fall_speed_provenance(),
                 gaussian20_odf().orientation_model(),
-                request(FREQUENCY_HZ, 1.0),
+                request(PROPERTY_FREQUENCY_HZ, 1.0),
             ),
             Err(EvaluationError::ParticleNodeFallSpeedProvenanceMismatch { .. })
         ));
@@ -4401,14 +4188,14 @@ mod tests {
         const NODE_COUNT: usize = 24_000;
         const ROUNDS: usize = 7;
 
-        let table = dry_property_runtime(SpheroidConvention::OblateMinorVertical);
+        let table = load_corpus(PROPERTY_DRY).0;
         let speed_provenance = table.dry_particle_node_fall_speed_provenance().unwrap();
         let orientation = gaussian20_odf().orientation_model();
-        let evaluation_request = request(FREQUENCY_HZ, 1.0);
+        let evaluation_request = request(PROPERTY_FREQUENCY_HZ, 1.0);
         let geometry = |index: usize| {
             let fraction = (index % 1_024) as f64 / 1_023.0;
             (
-                1.0e-5 + fraction * 9.8e-3,
+                6.0e-5 + fraction * 9.8e-3,
                 55.0 + fraction * 850.0,
                 0.12 + fraction * 0.86,
             )
@@ -4492,13 +4279,16 @@ mod tests {
 
     #[test]
     fn ishmael_psd_integrates_through_typed_particle_node_query() {
-        let table = dry_property_runtime(SpheroidConvention::OblateMinorVertical);
+        let table = load_corpus(PROPERTY_DRY).0;
         let domain = table.dry_particle_node_domain().unwrap();
         let support = PsdParticleSupport::new(Some(domain), None, Some(domain));
+        // Planar ice with a 1.6 mm a-axis scale (a^3 = QVOLI^2 / (QAOLI
+        // QNICE) with 3 particles per kg), so the number and D^6 moments lie
+        // inside the table's 0.05-89 mm diameter axis to 1e-6.
         let distribution = IshmaelPsd::reconstruct(IshmaelPsdInput::new(
             IshmaelIceCategory::Planar,
             1.020_730_388_452_175_2e-3,
-            100_000.0,
+            3.0,
             6.250_000_000_000_000_5e-9,
             3.125_000_000_000_000_3e-9,
             1.2,
@@ -4518,7 +4308,7 @@ mod tests {
                     positive_down_speed,
                     speed_provenance,
                     gaussian20_odf().orientation_model(),
-                    request(FREQUENCY_HZ, 1.0),
+                    request(PROPERTY_FREQUENCY_HZ, 1.0),
                 )?;
                 table
                     .evaluate_dry_particle_node_per_m3(&query)?
@@ -4539,7 +4329,7 @@ mod tests {
 
     #[test]
     fn particle_node_query_rejects_habit_frequency_and_wrong_table_role() {
-        let table = dry_property_runtime(SpheroidConvention::OblateMinorVertical);
+        let table = load_corpus(PROPERTY_DRY).0;
         let exact_speed =
             schiller_naumann_terminal_speed_m_s(table.descriptor().terminal_speed(), 1.0e-3, 400.0)
                 .unwrap();
@@ -4555,7 +4345,7 @@ mod tests {
                 3.0,
                 rain_atlas_fall_speed_provenance(),
                 gaussian20_odf().orientation_model(),
-                request(FREQUENCY_HZ, 1.0),
+                request(PROPERTY_FREQUENCY_HZ, 1.0),
             ),
             Err(EvaluationError::ParticleNodeHabitGeometryMismatch { .. })
         ));
@@ -4570,7 +4360,7 @@ mod tests {
             3.0,
             rain_atlas_fall_speed_provenance(),
             gaussian20_odf().orientation_model(),
-            request(FREQUENCY_HZ, 1.0),
+            request(PROPERTY_FREQUENCY_HZ, 1.0),
         )
         .unwrap();
         assert!(matches!(
@@ -4589,7 +4379,7 @@ mod tests {
             3.0,
             rain_atlas_fall_speed_provenance(),
             gaussian20_odf().orientation_model(),
-            request(FREQUENCY_HZ, 1.0),
+            request(PROPERTY_FREQUENCY_HZ, 1.0),
         )
         .unwrap();
         assert!(matches!(
@@ -4608,7 +4398,7 @@ mod tests {
             exact_speed + 1.0e-9,
             table.dry_particle_node_fall_speed_provenance().unwrap(),
             gaussian20_odf().orientation_model(),
-            request(FREQUENCY_HZ, 1.0),
+            request(PROPERTY_FREQUENCY_HZ, 1.0),
         )
         .unwrap();
         assert!(matches!(
@@ -4627,7 +4417,7 @@ mod tests {
             exact_speed,
             table.dry_particle_node_fall_speed_provenance().unwrap(),
             gaussian20_odf().orientation_model(),
-            request(FREQUENCY_HZ + 1.0, 1.0),
+            request(PROPERTY_FREQUENCY_HZ + 1.0, 1.0),
         )
         .unwrap();
         assert!(matches!(
@@ -4635,7 +4425,7 @@ mod tests {
             Err(EvaluationError::ParticleNodeFrequencyMismatch { .. })
         ));
 
-        let (conventional, _, _) = fixture();
+        let (conventional, _, _) = dry_ice_runtime();
         assert!(matches!(
             conventional.evaluate_dry_particle_node_per_m3(&prolate),
             Err(EvaluationError::DryParticleNodeTableRequired { .. })
@@ -4644,7 +4434,7 @@ mod tests {
 
     #[test]
     fn evaluator_rejects_category_and_exact_odf_mismatches() {
-        let (table, _, _) = fixture();
+        let (table, _, _) = dry_ice_runtime();
         let rain_context = ClosureContext::new(6, 273.15, 1.5).unwrap();
         let rain = close_conventional_category(
             &rain_context,
@@ -4667,7 +4457,7 @@ mod tests {
 
     #[test]
     fn frequency_elevation_and_diameter_never_extrapolate() {
-        let (table, _, _) = fixture();
+        let (table, _, _) = dry_ice_runtime();
         let closed = closed_hail(0.007, OrientationDefinition::Gaussian20Research);
         for query in [request(FREQUENCY_HZ + 1.0, 0.0), request(FREQUENCY_HZ, 0.1)] {
             assert!(matches!(
@@ -4677,7 +4467,7 @@ mod tests {
                 ))
             ));
         }
-        let too_large = closed_hail(0.02, OrientationDefinition::Gaussian20Research);
+        let too_large = closed_hail(0.06, OrientationDefinition::Gaussian20Research);
         assert!(matches!(
             table.evaluate(&too_large, request(FREQUENCY_HZ, 0.0)),
             Err(EvaluationError::Interpolation(
@@ -4691,7 +4481,7 @@ mod tests {
 
     #[test]
     fn p3_state_cannot_be_relabelled_as_conventional_hail() {
-        let (table, _, _) = fixture();
+        let (table, _, _) = dry_ice_runtime();
         let context = ClosureContext::new(50, 273.15, 1.5)
             .unwrap()
             .with_orientation(OrientationDefinition::Gaussian20Research);
@@ -4711,80 +4501,7 @@ mod tests {
 
     #[test]
     fn wet_category_preserves_frozen_number_and_reports_consumed_rain() {
-        let axes = vec![
-            Axis::new(
-                AxisKind::EquivolumeDiameter,
-                Unit::Meter,
-                vec![1.0e-5, 0.05],
-            )
-            .unwrap(),
-            Axis::new(AxisKind::Temperature, Unit::Kelvin, vec![269.15, 275.15]).unwrap(),
-            Axis::new(
-                AxisKind::CondensedVolumeFraction,
-                Unit::UnitlessFraction,
-                vec![1.0e-4, 1.0],
-            )
-            .unwrap(),
-            Axis::new(
-                AxisKind::LiquidMassFraction,
-                Unit::UnitlessFraction,
-                vec![0.0, 1.0],
-            )
-            .unwrap(),
-            Axis::new(
-                AxisKind::MinorToMajorAxisRatio,
-                Unit::UnitlessFraction,
-                vec![0.1, 1.0],
-            )
-            .unwrap(),
-            Axis::new(AxisKind::Frequency, Unit::Hertz, vec![FREQUENCY_HZ]).unwrap(),
-            Axis::new(AxisKind::RadarElevation, Unit::Degree, vec![-0.5, 20.0]).unwrap(),
-        ];
-        let science = ScienceMetadata::new(
-            KernelModel::TMatrix {
-                implementation: TMatrixImplementation::PyTMatrix033,
-            },
-            gaussian20_odf().orientation_model(),
-            MeltingModel::HomogeneousEffectiveMedium {
-                rule: EffectiveMediumRule::Bruggeman,
-            },
-            TemporalSampling::Instantaneous,
-            TableValidation::ResearchOnlyUnvalidated,
-        )
-        .unwrap();
-        let descriptor = TMatrixTableDescriptor {
-            table_id: "software-test-wet-property".to_owned(),
-            category: TMatrixParticleCategory::PropertyAwareFrozenCharacteristicParticle,
-            population_role: TMatrixPopulationRole::PropertyAwareWetCharacteristicParticle,
-            density_applicability:
-                DensityApplicability::WetCondensedVolumeFraction00015To1Above1225Air,
-            spheroid: SpheroidConvention::OblateMinorVertical,
-            material: TMatrixMaterial::SymmetricBruggemanSphericalAirIceWaterV1 {
-                air_relative_permittivity: ComplexRefractiveIndex {
-                    real: 1.0,
-                    imaginary: 0.0,
-                },
-                ice_permittivity_model: "matzler_2006".to_owned(),
-                liquid_water_permittivity_model: "liebe_hufford_manabe_1991_double_debye"
-                    .to_owned(),
-                ice_temperature_treatment:
-                    "minimum_environment_temperature_and_273p15_k_phase_equilibrium".to_owned(),
-                ice_material_density_kg_m3: 917.0,
-                liquid_water_density_kg_m3: 999.84,
-                homotopy_steps: 64,
-                newton_max_iterations: 100,
-                newton_relative_tolerance: 1.0e-12,
-                temperature_range_k: [269.15, 275.15],
-            },
-            odf: gaussian20_odf(),
-            radar: test_radar_descriptor(),
-            terminal_speed: test_drag_policy(),
-            terminal_speed_sha256: terminal_speed_policy_sha256(&test_drag_policy()),
-            execution: TMatrixExecutionDescriptor::FreshProcessPerGridPoint,
-            normalization_number_concentration_m3: 1.0,
-        };
-        let table = constant_runtime(axes, science, descriptor);
-
+        let table = load_corpus(PROPERTY_WET).0;
         let context = ClosureContext::new(50, 272.15, 1.5)
             .unwrap()
             .with_orientation(OrientationDefinition::Gaussian20Research);
@@ -4808,7 +4525,7 @@ mod tests {
             .unwrap();
         let wet = &diagnosis.wet_categories()[0];
         let contribution = table
-            .evaluate_wet_category(wet, request(FREQUENCY_HZ, 1.0))
+            .evaluate_wet_category(wet, request(PROPERTY_FREQUENCY_HZ, 1.0))
             .unwrap();
         assert_eq!(
             contribution.number_scaling(),
@@ -4829,7 +4546,16 @@ mod tests {
         );
         let components = contribution.additive().components();
         let closure_speed = wet.fall_speed_m_s().value();
-        assert!((components[0] - 3.0e6).abs() <= 1.0e-8);
+        // Per particle, the interpolated reflectivity lies inside the box of
+        // table nodes around the category (D 7.81e-5 m, 272.15 K, condensed
+        // volume fraction 0.839, liquid mass fraction 0.5, axis ratio 0.855).
+        let bounds = &runtime_golden()["property_wet_box"];
+        let per_particle = components[0] / 1.5e6;
+        assert!(
+            per_particle >= crate::test_corpus::as_f64(&bounds["zh_min"])
+                && per_particle <= crate::test_corpus::as_f64(&bounds["zh_max"]),
+            "{per_particle} outside the node box {bounds}"
+        );
         assert!((components[7] - components[0] * closure_speed).abs() <= 1.0e-8);
         assert!((components[8] - components[0] * closure_speed * closure_speed).abs() <= 1.0e-8);
 
@@ -4843,7 +4569,7 @@ mod tests {
         assert_eq!(
             table.evaluate_wet_category(
                 &dry_boundary.wet_categories()[0],
-                request(FREQUENCY_HZ, 1.0),
+                request(PROPERTY_FREQUENCY_HZ, 1.0),
             ),
             Err(EvaluationError::PhaseRegimeMismatch {
                 expected: "strictly wet liquid_mass_fraction>0",
@@ -4854,14 +4580,14 @@ mod tests {
 
     #[test]
     fn residual_rain_scales_number_by_unpaired_mass_fraction_exactly_once() {
-        let table = rain_runtime([250.0, 313.15]);
+        let table = load_corpus(PROPERTY_RAIN).0;
         let rain = closed_rain(273.15);
         assert_eq!(
             rain.shape().bulk_density_kg_m3(),
             LIQUID_WATER_DENSITY_KG_M3
         );
         let contribution = table
-            .evaluate_unused_rain(&rain, 2.5e-5, request(FREQUENCY_HZ, 1.0))
+            .evaluate_unused_rain(&rain, 2.5e-5, request(PROPERTY_FREQUENCY_HZ, 1.0))
             .unwrap();
         assert_eq!(
             contribution.number_scaling(),
@@ -4874,16 +4600,30 @@ mod tests {
         assert_eq!(contribution.number_density_m3(), 0.75);
         assert_eq!(contribution.represented_mixing_ratio_kgkg(), 2.5e-5);
         assert_eq!(contribution.consumed_paired_liquid_mass_kgkg(), 0.0);
-        assert!((contribution.additive().zh().get() - 1.5).abs() <= 1.0e-14);
+        // 0.75 m-3 times the table at 1 mm, 273.15 K, axis ratio 0.9, 1 deg.
+        let node = golden_f64s(&runtime_golden()["property_rain_273k"]["interpolation"]);
+        assert_relative(
+            contribution.additive().zh().get(),
+            0.75 * node[0],
+            1.0e-12,
+            "ZH",
+        );
     }
 
     #[test]
     fn standalone_rain_accepts_only_the_bounded_temperature_edge_tolerance() {
-        let table = rain_runtime([225.0, 313.15]);
-        let evaluate =
-            |temperature_k| table.evaluate(&closed_rain(temperature_k), request(FREQUENCY_HZ, 1.0));
+        let table = load_corpus(PROPERTY_RAIN).0;
+        let evaluate = |temperature_k| {
+            table.evaluate(
+                &closed_rain(temperature_k),
+                request(PROPERTY_FREQUENCY_HZ, 1.0),
+            )
+        };
 
         let minimum = evaluate(225.0).unwrap();
+        // 3 m-3 (2 kg-1 x 1.5 kg m-3) times the table's 225 K node row.
+        let node = golden_f64s(&runtime_golden()["property_rain_225k"]["interpolation"]);
+        assert_relative(minimum.zh().get(), 3.0 * node[0], 1.0e-12, "ZH at 225 K");
         assert_eq!(evaluate(224.911_436_141_626_6).unwrap(), minimum);
 
         let tolerance_edge = 225.0 - RAIN_LUT_TEMPERATURE_EDGE_TOLERANCE_K;

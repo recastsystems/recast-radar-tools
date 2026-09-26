@@ -2540,7 +2540,17 @@ fn fetch_text(client: &reqwest::blocking::Client, url: &str) -> Result<String, S
 mod tests {
     use super::*;
 
-    const NHC: &str = include_str!("../tests/fixtures/tropical/nhc_active_storms.json");
+    // NHC `CurrentStorms.json` as the Internet Archive saved it on
+    // 2025-10-26T01:33:24Z (fetched through web.archive.org `id_`): Hurricane
+    // Melissa (AL132025, intermediate advisory 18A, 85 kt, 971 mb, 16.5N
+    // 75.6W, moving 275 deg at 3 kt) and Tropical Storm Sonia (EP182025,
+    // 45 kt), with the forecast advisory Melissa's entry points to
+    // (MIATCMAT3 #18, 2100 UTC 25 Oct 2025, the text of the NHC archive page
+    // `archive/2025/al13/al132025.fstadv.018.shtml`).
+    const NHC: &str =
+        include_str!("../tests/fixtures/tropical/nhc_current_storms_20251026T0133Z.json");
+    const NHC_MELISSA_TCM: &str =
+        include_str!("../tests/fixtures/tropical/nhc_melissa_forecast_advisory_018.txt");
     const GDACS_LIST: &str = include_str!("../tests/fixtures/tropical/gdacs_tc_list.json");
     const GDACS_GEOM: &str = include_str!("../tests/fixtures/tropical/gdacs_bavi_geometry.json");
     // Real products captured live for the forecast-dot feature:
@@ -2569,21 +2579,45 @@ mod tests {
     #[test]
     fn nhc_parses_storm_vitals() {
         let storms = parse_nhc_current_storms(NHC).expect("parse");
-        assert_eq!(storms.len(), 1);
+        assert_eq!(storms.len(), 2);
         let s = &storms[0];
-        assert_eq!(s.name, "Alberto");
-        assert_eq!(s.id, "nhc:al012026");
+        assert_eq!(s.name, "Melissa");
+        assert_eq!(s.id, "nhc:al132025");
         assert_eq!(s.basin, Basin::Atlantic);
         assert_eq!(s.source, Source::Nhc);
         assert_eq!(s.max_wind_kt, Some(85.0));
-        assert_eq!(s.min_pressure_mb, Some(968.0));
-        assert_eq!(s.movement_dir_deg, Some(340.0));
+        assert_eq!(s.min_pressure_mb, Some(971.0));
+        assert_eq!(s.movement_dir_deg, Some(275.0));
+        assert_eq!(s.movement_speed_kt, Some(3.0));
         assert_eq!(s.category, Some(Category::Two)); // 85 kt
         assert_eq!(s.classification, "Category 2 Hurricane");
-        assert!(s.advisory_time.is_some());
-        assert!(s.report_url.as_deref().unwrap().contains("nhc.noaa.gov"));
-        assert!((s.position.lat - 24.5).abs() < 1e-3);
-        assert!((s.position.lon + 88.9).abs() < 1e-3);
+        assert_eq!(
+            s.advisory_time,
+            NaiveDate::from_ymd_opt(2025, 10, 26)
+                .and_then(|date| date.and_hms_opt(0, 0, 0))
+                .map(|dt| dt.and_utc())
+        );
+        assert_eq!(
+            s.report_url.as_deref(),
+            Some("https://www.nhc.noaa.gov/text/MIATCPAT3.shtml")
+        );
+        assert_eq!(
+            s.geometry_url.as_deref(),
+            Some("https://www.nhc.noaa.gov/text/MIATCMAT3.shtml")
+        );
+        assert!((s.position.lat - 16.5).abs() < 1e-3);
+        assert!((s.position.lon + 75.6).abs() < 1e-3);
+
+        let sonia = &storms[1];
+        assert_eq!(sonia.name, "Sonia");
+        assert_eq!(sonia.id, "nhc:ep182025");
+        assert_eq!(sonia.basin, Basin::EastPacific);
+        assert_eq!(sonia.max_wind_kt, Some(45.0));
+        assert_eq!(sonia.min_pressure_mb, Some(1001.0));
+        assert_eq!(sonia.category, Some(Category::TropicalStorm));
+        assert_eq!(sonia.classification, "Tropical Storm");
+        assert!((sonia.position.lat - 13.5).abs() < 1e-3);
+        assert!((sonia.position.lon + 118.9).abs() < 1e-3);
     }
 
     #[test]
@@ -2957,11 +2991,11 @@ REMARKS:
 
     #[test]
     fn merge_keeps_both_sources_and_sorts_by_wind() {
-        let nhc = parse_nhc_current_storms(NHC).unwrap(); // Atlantic "Alberto"
+        let nhc = parse_nhc_current_storms(NHC).unwrap(); // Melissa (AL) + Sonia (EP)
         let gdacs = parse_gdacs_event_list(GDACS_LIST).unwrap(); // W Pacific BAVI + MAYSAK
         let merged = merge_sources(nhc, gdacs);
-        // NHC Atlantic storm kept; both W-Pacific GDACS storms kept (no dupes).
-        assert_eq!(merged.len(), 3);
+        // Both NHC storms kept; both W-Pacific GDACS storms kept (no dupes).
+        assert_eq!(merged.len(), 4);
         // Strongest first: BAVI (~145 kt) leads.
         assert_eq!(merged[0].name, "Bavi");
         assert!(merged[0].max_wind_kt.unwrap() >= merged[1].max_wind_kt.unwrap());
@@ -3175,18 +3209,18 @@ REMARKS:
 
     #[test]
     fn combine_failover_arms_never_fake_an_all_clear() {
-        let nhc = || parse_nhc_current_storms(NHC).unwrap(); // 1 storm
+        let nhc = || parse_nhc_current_storms(NHC).unwrap(); // 2 storms
         let gdacs = || parse_gdacs_event_list(GDACS_LIST).unwrap(); // 2 storms
         // Both ok -> merged.
         assert_eq!(
             combine_source_results(Ok(nhc()), Ok(gdacs()))
                 .unwrap()
                 .len(),
-            3
+            4
         );
         // NHC ok + reporting, GDACS down -> NHC's storms survive.
         let out = combine_source_results(Ok(nhc()), Err("GDACS down".to_owned())).unwrap();
-        assert_eq!(out.len(), 1);
+        assert_eq!(out.len(), 2);
         // A surviving-but-EMPTY source cannot prove "quiet" -> error (retry).
         assert!(combine_source_results(Ok(Vec::new()), Err("GDACS down".to_owned())).is_err());
         assert!(combine_source_results(Err("NHC down".to_owned()), Ok(Vec::new())).is_err());
@@ -3233,11 +3267,11 @@ REMARKS:
         );
         assert!(wind.starts_with("145 kt"), "{wind}");
 
-        let alberto = parse_nhc_current_storms(NHC).unwrap().pop().unwrap();
-        assert_eq!(alberto.pressure_summary().as_deref(), Some("968 mb"));
+        let melissa = parse_nhc_current_storms(NHC).unwrap().remove(0);
+        assert_eq!(melissa.pressure_summary().as_deref(), Some("971 mb"));
         assert_eq!(
-            alberto.motion_summary().as_deref(),
-            Some("NNW (340°) at 12 kt")
+            melissa.motion_summary().as_deref(),
+            Some("W (275°) at 3 kt")
         );
     }
 
@@ -4202,15 +4236,17 @@ REMARKS:
         // NHC vitals come from CurrentStorms.json (refreshed every public
         // advisory, at least as fresh as the 6-hourly TCM) — the TCM identity
         // is attached for display but must NOT clobber them.
-        let mut storm = parse_nhc_current_storms(NHC).unwrap().pop().unwrap(); // Alberto
-        let geometry = nhc_geometry_from_forecast_advisory(NHC_TCM);
+        // Melissa's 00Z intermediate advisory 18A (85 kt, 16.5N 75.6W) is
+        // newer than forecast advisory 18 (21Z: 80 kt, 16.6N 75.5W).
+        let mut storm = parse_nhc_current_storms(NHC).unwrap().remove(0); // Melissa
+        let geometry = nhc_geometry_from_forecast_advisory(NHC_MELISSA_TCM);
         sync_storm_with_geometry(&mut storm, &geometry);
         assert_eq!(storm.max_wind_kt, Some(85.0), "CurrentStorms wind kept");
         assert_eq!(storm.classification, "Category 2 Hurricane");
-        assert!((storm.position.lat - 24.5).abs() < 1e-3, "position kept");
+        assert!((storm.position.lat - 16.5).abs() < 1e-3, "position kept");
         let warning = storm.warning.as_ref().expect("advisory identity");
         assert_eq!(warning.agency, WarningAgency::Nhc);
-        assert_eq!(warning.number, Some(15));
+        assert_eq!(warning.number, Some(18));
         // Forecast + radii still mirror through.
         assert_eq!(storm.forecast.len(), 8);
         assert!(!storm.current_wind_radii.is_empty());

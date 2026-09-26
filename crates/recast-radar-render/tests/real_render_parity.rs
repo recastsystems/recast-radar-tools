@@ -22,7 +22,14 @@
 //! both have the 0.4834 deg VCP cut angle as their fixed angle. KLIX 2005's
 //! dealiased velocity (`DVEL`) was re-recorded when the Message 1 Nyquist
 //! velocity moved from spare bytes 46-47 to halfword 31 (bytes 60-61, ICD
-//! Table III, as MetPy and Py-ART read it).
+//! Table III, as MetPy and Py-ART read it). The sample-cache lines
+//! (`samples`, `sample_bytes`, `sample_cache`, `sample_cache_reuse`,
+//! `geometry_resolved`, `geometry_cache`) were re-recorded when sample caches
+//! began resolving pixels by colour-table visibility, as the direct render
+//! does: 83 lines changed, all on those paths, and every field's cached render
+//! now equals its direct render (`sample_cache` = `viewport`, `geometry_cache`
+//! = `zoom`), which 36 cached/direct pairs did not before. No direct-render or
+//! storm-relative line changed.
 
 // Test code: a panic is the failure report.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

@@ -1,0 +1,50 @@
+{
+  "tool": "tools/trim_tmatrix_lut.py",
+  "source_table_id": "property-p3-ishmael-dry-oblate-sband-pytmatrix-0.3.3-unvalidated-v1",
+  "source_lut_sha256": "30c8da4093b845faa415339f2cb5b4831f3450dc18afea3aacb2e2fabdcc4ad8",
+  "source_lut_bytes": 44365435,
+  "source_config_sha256": "e08adbe6d6e8a1b9a80ba920a0f82539c4056d9758e1e44ba11bcf907ba5cd19",
+  "kept_indices": {
+    "equivolume_diameter": [
+      0,
+      13,
+      20,
+      26,
+      27,
+      40,
+      60,
+      79
+    ],
+    "temperature": [
+      0,
+      2,
+      3
+    ],
+    "bulk_density": [
+      0,
+      26,
+      46,
+      52,
+      54
+    ],
+    "minor_to_major_axis_ratio": [
+      0,
+      4,
+      5,
+      6
+    ],
+    "frequency": [
+      0
+    ],
+    "radar_elevation": [
+      0,
+      1,
+      2,
+      4
+    ]
+  },
+  "grid_point_count": 1920,
+  "lut_sha256": "a570c121acd3c99dcc8cd70a343a8a54bc934325169afb65e1b13025af63fdaf",
+  "lut_bytes": 147472,
+  "config_sha256": "c5c029d0b5ef45b6bbd377a06069a2ddbcb9bc6733b192df30f239b64bcdcf72"
+}

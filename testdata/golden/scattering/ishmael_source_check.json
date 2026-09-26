@@ -1,0 +1,34 @@
+{
+ "digits": {
+  "a_scale_m": "0.000071225756269693337638498664301",
+  "aspect_power_delta": "0.815244949645667557524547914257",
+  "bulk_density_kg_m3": "50.0",
+  "c_at_a_scale_m": "0.0000211640102829964449715838266643",
+  "mean_equivolume_diameter_sixth_m6": "1.95588121403150710379130041367e-20",
+  "qaoli_source_projection_relative_change": "0.711251720924821326870998475536",
+  "qvoli_source_projection_relative_change": "-0.161544562612321170493905273874"
+ },
+ "flags": {
+  "final_density_projected": false,
+  "final_large_ice": false,
+  "final_small_ice": false,
+  "size_cap_applied": false
+ },
+ "input_f32_bits": [
+  "0x2ed0f2c7",
+  "0x3d4b5185",
+  "0x27e50322",
+  "0x26855dbd"
+ ],
+ "method": "mpmath 50-digit evaluation of the documented reconstruction, var_check and cold-aggregate final check (exact log-gamma)",
+ "temperature_k": 244.50424194335938,
+ "values": {
+  "a_scale_m": 7.122575626969334e-05,
+  "aspect_power_delta": 0.8152449496456675,
+  "bulk_density_kg_m3": 50.0,
+  "c_at_a_scale_m": 2.1164010282996445e-05,
+  "mean_equivolume_diameter_sixth_m6": 1.9558812140315072e-20,
+  "qaoli_source_projection_relative_change": 0.7112517209248214,
+  "qvoli_source_projection_relative_change": -0.16154456261232117
+ }
+}

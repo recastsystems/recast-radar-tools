@@ -60,6 +60,12 @@ File format (text):
 Run with the venv that has arm_pyart 2.2.5:
 
     python tools/correct_golden.py [--case NAME ...] [--no-download]
+
+The Katrina case (klix_20050829_trim_s1, Message 1 radials) was added with Py-ART
+2.3.0; kbox_20220129_trim_s1 and ktlx_20130520_trim_s1 regenerated with 2.3.0 are
+identical to their 2.2.5 files apart from the version comment. The two bench
+velocity sweeps (ktlx_20240315_s9, kilx_20260418_s1) were added with Py-ART 2.3.0
+to check the port (dealias_velocity_pyart_region) on the sweeps the bench renders.
 """
 
 import argparse
@@ -95,6 +101,8 @@ CASES = {
     "klix_20210829_trim_s1": ("l2-klix-20210829-180425-trim", 1),
     "ktlx_20130520_trim_s1": ("l2-ktlx-20130520-201643-trim", 1),
     "tstl_20230331_trim_s1": ("l2-tstl-20230331-230314-trim", 1),
+    # Message 1 (legacy digital radar data): Katrina's 0.4 deg split cut
+    "klix_20050829_trim_s1": ("l2-klix-20050829-130035-trim", 1),
     # full volumes
     "klix_20210829_s1": ("l2-klix-20210829-180425", 1, "env_klix_hrrr.json"),
     "klix_20210829_s2": ("l2-klix-20210829-180425", 2, "env_klix_hrrr.json"),
@@ -104,6 +112,9 @@ CASES = {
     "pahg_20250909_s1": ("l2-pahg-20250909-212549", 1),
     "ktlx_20130520_s1": ("l2-ktlx-20130520-201643", 1, "env_ktlx.json"),
     "ktlx_20130520_s3": ("l2-ktlx-20130520-201643", 3, "env_ktlx.json"),
+    # the velocity sweeps the bench renders (docs/baselines/import-checksums.txt)
+    "ktlx_20240315_s9": ("l2-ktlx-20240315-000217", 9),
+    "kilx_20260418_s1": ("l2-kilx-20260418-013553", 1),
 }
 
 

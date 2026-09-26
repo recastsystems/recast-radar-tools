@@ -9,6 +9,7 @@ the filters and map products compute against the JSON files this script writes:
     testdata/golden/filters/interpolate.json   crates/recast-radar-filters/tests/interpolate_real.rs
     testdata/golden/map/rhi.json               crates/recast-radar-map/tests/rhi_real.rs
     testdata/golden/map/volumetric.json        crates/recast-radar-map/tests/volumetric_real.rs
+    testdata/golden/map/grid.json              crates/recast-radar-map/tests/grid_real.rs
 
 Every input value comes from a reader that is independent of recast-radar-tools:
 
@@ -1378,12 +1379,198 @@ def section_volumetric():
     write_golden("map/volumetric.json", out)
 
 
+
+# -------------------------------------------------------------------- grid ---
+
+GRID_FIELDS = {"reflectivity": "DBZH", "differential_reflectivity": "ZDR"}
+
+# (case, manifest id, Py-ART fields, grid_shape, grid_limits (z, y, x) m, origin offset
+#  (east, north) m from the radar or None, map_gates_to_grid keyword arguments)
+GRID_CASES = [
+    ("moore_trim_barnes2", "l2-ktlx-20130520-201643-trim", ["reflectivity", "differential_reflectivity"],
+     (21, 81, 81), ((0.0, 10000.0), (-40000.0, 40000.0), (-40000.0, 40000.0)), None, {}),
+    ("moore_trim_cressman_constant", "l2-ktlx-20130520-201643-trim", ["reflectivity"],
+     (11, 61, 61), ((0.0, 5000.0), (-30000.0, 30000.0), (-30000.0, 30000.0)), None,
+     {"weighting_function": "Cressman", "roi_func": "constant", "constant_roi": 1500.0}),
+    ("moore_trim_origin_dist", "l2-ktlx-20130520-201643-trim", ["reflectivity"],
+     (11, 41, 41), ((0.0, 5000.0), (-20000.0, 20000.0), (-20000.0, 20000.0)), (-20000.0, -2000.0),
+     {"roi_func": "dist", "z_factor": 0.05, "xy_factor": 0.02, "min_radius": 250.0}),
+    ("kewx_volume_barnes2", "l2-kewx-20160413-022531", ["reflectivity"],
+     (16, 101, 101), ((500.0, 15500.0), (-150000.0, 150000.0), (-150000.0, 150000.0)), None, {}),
+    # Two radars 3.5 minutes apart (Paducah and Evansville, 2008-04-15 ~23:52Z), grid
+    # origin at the first: the geographic path for both, and the dist_beam and dist
+    # radii take the minimum over the two radar offsets.
+    ("kpah_kvwx_barnes2", ["l2-kpah-20080415-235014", "l2-kvwx-20080415-235337"], ["reflectivity"],
+     (9, 81, 81), ((1000.0, 9000.0), (-40000.0, 200000.0), (-80000.0, 160000.0)), None, {}),
+    ("kpah_kvwx_barnes_dist", ["l2-kpah-20080415-235014", "l2-kvwx-20080415-235337"], ["reflectivity"],
+     (5, 61, 61), ((1000.0, 5000.0), (-30000.0, 210000.0), (-90000.0, 150000.0)), None,
+     {"weighting_function": "Barnes", "roi_func": "dist", "z_factor": 0.05, "xy_factor": 0.02,
+      "min_radius": 500.0}),
+    # Two volumes of one radar 7 minutes apart (the 2020-08-10 derecho): gridded one
+    # at a time, 26,157 of the points are defined by both, so the per-point sums
+    # accumulate across volumes (in volume order, as Py-ART's loop over radars).
+    ("kdvn_two_volumes_barnes2", ["l2-kdvn-20200810-175718", "l2-kdvn-20200810-180401"],
+     ["reflectivity"], (6, 81, 81), ((1000.0, 6000.0), (-120000.0, 120000.0), (-120000.0, 120000.0)),
+     None, {}),
+    # Nearest: Py-ART lets a masked nearest gate blank the point, the crate ignores
+    # gates without a value. A gate filter excluding masked reflectivity makes Py-ART
+    # skip those gates too (one field, so "nearest" is the same gate for both).
+    ("moore_trim_nearest", "l2-ktlx-20130520-201643-trim", ["reflectivity"],
+     (11, 61, 61), ((0.0, 5000.0), (-30000.0, 30000.0), (-30000.0, 30000.0)), None,
+     {"weighting_function": "Nearest", "exclude_masked": True}),
+]
+GRID_SAMPLES = 1200
+
+
+def exact_gate_positions(radar):
+    """Gate x, y (m from the radar) and altitude (m) in float64 from Py-ART's own ray
+    angles and ranges, by the formula of pyart.core.antenna_to_cartesian (Py-ART itself
+    computes the height in float32)."""
+    ae = 6371.0 * 1000.0 * 4.0 / 3.0
+    r = radar.range["data"].astype(np.float64)[None, :]
+    el = np.deg2rad(radar.elevation["data"].astype(np.float64))[:, None]
+    az = np.deg2rad(radar.azimuth["data"].astype(np.float64))[:, None]
+    z = np.sqrt(r * r + ae * ae + 2.0 * r * ae * np.sin(el)) - ae
+    s = ae * np.arcsin(r * np.cos(el) / (ae + z))
+    return s * np.sin(az), s * np.cos(az), float(radar.altitude["data"][0]) + z
+
+
+def section_grid():
+    import pyart
+    from pyart.core.transforms import cartesian_to_geographic_aeqd
+
+    def load(entry, fields, exact_positions=True):
+        # Only the gridded moments: with other moments on a finer range axis Py-ART
+        # interpolates legacy 1 km reflectivity (KPAH, KVWX 2008) onto 250 m gates,
+        # four gridded gates per recorded one; read alone it keeps the native gates.
+        raw = corpus_path(entry).read_bytes()
+        if raw[:2] == bytes((0x1F, 0x8B)):
+            import io
+            radar = pyart.io.read_nexrad_archive(io.BytesIO(gzip.decompress(raw)),
+                                                 include_fields=fields)
+        else:
+            radar = pyart.io.read_nexrad_archive(str(corpus_path(entry)), include_fields=fields)
+        if not exact_positions:
+            return radar
+        x, y, altitude = exact_gate_positions(radar)
+        radar.gate_x = {"data": x}
+        radar.gate_y = {"data": y}
+        radar.gate_altitude = {"data": altitude}
+        # Py-ART's gate_longitude/gate_latitude: the radar's pyart_aeqd projection
+        # (lon_0/lat_0 = the radar) inverted at the gate positions.
+        lon, lat = cartesian_to_geographic_aeqd(
+            x, y, float(radar.longitude["data"][0]), float(radar.latitude["data"][0]))
+        radar.gate_longitude = {"data": lon.reshape(x.shape)}
+        radar.gate_latitude = {"data": lat.reshape(x.shape)}
+        return radar
+
+    cases = []
+    for case, entries, fields, shape, limits, origin_offset, kwargs in GRID_CASES:
+        entries = [entries] if isinstance(entries, str) else list(entries)
+        entry = entries[0]
+        radars = [load(e, fields) for e in entries]
+        radar = radars[0]
+        radar_lat = float(radar.latitude["data"][0])
+        radar_lon = float(radar.longitude["data"][0])
+        radar_alt = float(radar.altitude["data"][0])
+        pyart_kwargs = {k: v for k, v in kwargs.items() if k != "exclude_masked"}
+
+        def gatefilters(radars):
+            if not kwargs.get("exclude_masked"):
+                return {}
+            filters = []
+            for r in radars:
+                gatefilter = pyart.filters.GateFilter(r)
+                for field in fields:
+                    gatefilter.exclude_masked(field)
+                filters.append(gatefilter)
+            return {"gatefilters": filters}
+        grid_origin = None
+        origin = None
+        if origin_offset is not None:
+            olon, olat = cartesian_to_geographic_aeqd(origin_offset[0], origin_offset[1], radar_lon, radar_lat)
+            grid_origin = (float(olat[0]), float(olon[0]))
+            origin = {"latitude_deg": grid_origin[0], "longitude_deg": grid_origin[1], "altitude_m": radar_alt}
+        extra = {"grid_origin": grid_origin} if grid_origin is not None else {}
+        grid = pyart.map.grid_from_radars(tuple(radars), grid_shape=shape, grid_limits=limits,
+                                          fields=fields, **extra, **pyart_kwargs,
+                                          **gatefilters(radars))
+        # Stock Py-ART, with its own float32 gate heights: how far the crate (which
+        # matches the float64 positions) is from an unmodified grid_from_radars.
+        stock_radars = [load(e, fields, exact_positions=False) for e in entries]
+        stock = pyart.map.grid_from_radars(tuple(stock_radars), grid_shape=shape,
+                                           grid_limits=limits, fields=fields, **extra,
+                                           **pyart_kwargs, **gatefilters(stock_radars))
+        out_fields = []
+        for index, field in enumerate(fields):
+            data = grid.fields[field]["data"]
+            values = np.ma.filled(data.astype(np.float64), np.nan)
+            flat = values.ravel()
+            defined = np.flatnonzero(np.isfinite(flat))
+            undefined = np.flatnonzero(~np.isfinite(flat))
+            pick_defined = defined[sample_indices(len(defined), GRID_SAMPLES, 30 + index)]
+            pick_undefined = undefined[sample_indices(len(undefined), GRID_SAMPLES // 4, 40 + index)]
+            nz, ny, nx = shape
+            cells = [[int(i // (ny * nx)), int(i // nx % ny), int(i % nx), jf(flat[i])]
+                     for i in np.sort(np.concatenate([pick_defined, pick_undefined]))]
+            stock_flat = np.ma.filled(stock.fields[field]["data"].astype(np.float64),
+                                      np.nan).ravel()
+            both = np.isfinite(flat) & np.isfinite(stock_flat)
+            difference = np.abs(flat[both] - stock_flat[both])
+            out_fields.append({
+                "pyart_field": field,
+                "name": GRID_FIELDS[field],
+                "defined": int(len(defined)),
+                "sum": jf(float(np.sum(flat[defined]))),
+                "cells": cells,
+                "stock_pyart_positions": {
+                    "defined": int(np.isfinite(stock_flat).sum()),
+                    "defined_in_one_only": int((np.isfinite(flat) ^ np.isfinite(stock_flat)).sum()),
+                    "points_differing_over_0_01": int((difference > 0.01).sum()),
+                    "max_abs_difference": jf(float(difference.max()) if len(difference) else 0.0, 6),
+                },
+            })
+        roi = np.asarray(grid.fields["ROI"]["data"]).ravel()
+        roi_pick = sample_indices(len(roi), 200, 50)
+        nz, ny, nx = shape
+        cases.append({
+            "case": case,
+            "id": entry,
+            "ids": entries,
+            "shape": list(shape),
+            "z_limits_m": list(limits[0]),
+            "y_limits_m": list(limits[1]),
+            "x_limits_m": list(limits[2]),
+            "radar": {"latitude_deg": radar_lat, "longitude_deg": radar_lon, "altitude_m": radar_alt},
+            "radars": [{"latitude_deg": float(r.latitude["data"][0]),
+                        "longitude_deg": float(r.longitude["data"][0]),
+                        "altitude_m": float(r.altitude["data"][0])} for r in radars],
+            "origin": origin,
+            "options": {k: v for k, v in kwargs.items()},
+            "fields": out_fields,
+            "roi_cells": [[int(i // (ny * nx)), int(i // nx % ny), int(i % nx), jf(roi[i])] for i in roi_pick],
+        })
+        print(f"{case}: " + ", ".join(
+            f"{f['name']} {f['defined']} defined (stock Py-ART {f['stock_pyart_positions']})"
+            for f in out_fields))
+
+    write_golden("map/grid.json", {
+        "source": f"tools/filters_map_golden.py grid; Py-ART {pyart.__version__} grid_from_radars "
+                  "(map_gates_to_grid) on read_nexrad_archive (include_fields = the gridded "
+                  "fields) with float64 gate positions (pyart.core.antenna_to_cartesian's "
+                  "formula on Py-ART's ray angles and ranges); stock_pyart_positions compares "
+                  "that grid with unmodified grid_from_radars (float32 gate heights)",
+        "cases": cases,
+    })
+
+
 SECTIONS = {
     "gate_filter": section_gate_filter,
     "smooth": section_smooth,
     "interpolate": section_interpolate,
     "rhi": section_rhi,
     "volumetric": section_volumetric,
+    "grid": section_grid,
 }
 
 

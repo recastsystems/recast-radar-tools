@@ -60,15 +60,21 @@ fn tornado_volume(golden: &Value, id: &str) -> Option<(Volume, Value)> {
 
 #[test]
 fn violent_tornadoes_are_detected_where_the_damage_survey_puts_them() {
-    // Rolling Fork, MS (EF4, KDGX at 108 km) and Stanton, NE (EF4, KOAX at 103 km):
-    // the strongest site of each volume is a vertically continuous TVS-class
-    // circulation within a few km of the surveyed tornado position at the sweep time.
+    // Rolling Fork, MS (EF4, KDGX at 108 km), Stanton, NE (EF4, KOAX at 103 km) and
+    // Moore, OK (EF5, KTLX at 21 km): the strongest site of each volume is a
+    // vertically continuous TVS-class circulation within a few km of the surveyed
+    // tornado position at the sweep time. Moore is close enough to the radar that
+    // its 3 km rank core reaches the 6-20 deg tilts.
     let golden = golden("retrieve/detect.json");
-    for id in ["l2-kdgx-20230325-010651", "l2-koax-20140616-205305"] {
+    for id in [
+        "l2-kdgx-20230325-010651",
+        "l2-koax-20140616-205305",
+        "l2-ktlx-20130520-201643",
+    ] {
         let Some((volume, case)) = tornado_volume(&golden, id) else {
             return;
         };
-        assert_eq!(as_str(&case["spc"]["mag"]), "4");
+        assert!(matches!(as_str(&case["spc"]["mag"]), "4" | "5"));
         let sites = detect_rotation_sites(&volume);
         assert!(!sites.is_empty(), "{id}: no rotation sites");
         let best = &sites[0];

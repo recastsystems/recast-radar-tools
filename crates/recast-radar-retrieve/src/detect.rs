@@ -84,9 +84,15 @@ const CORE_MIN_DEPTH_M: f64 = 3_000.0;
 const CORE_MAX_BASE_M: f64 = 5_000.0;
 /// TVS depth floor (Mitchell 1998).
 const TVS_MIN_DEPTH_M: f64 = 1_500.0;
-/// Tilts considered (lowest velocity-bearing elevations).
-const MAX_TILTS: usize = 8;
-const MAX_TILT_ELEVATION_DEG: f32 = 10.0;
+/// Tilts considered: the velocity-bearing elevations up to the top of the
+/// WSR-88D VCPs (19.5 deg), lowest first. The 3D rank needs a core 3 km deep
+/// with its base below 5 km (Stumpf 1998), which close to the radar only the
+/// upper tilts reach: at 21 km the 5.1 deg tilt samples 1.9 km above the
+/// radar, so a detector stopping at 8 tilts or 10 deg can never rank a
+/// tornado there (the Moore 2013-05-20 20:16Z miss). Gates above
+/// `MAX_GATE_HEIGHT_M` are skipped, so far-range features are unchanged.
+const MAX_TILTS: usize = 16;
+const MAX_TILT_ELEVATION_DEG: f32 = 20.0;
 const MAX_SITES: usize = 12;
 
 /// Display tier from the 3D strength rank (Stumpf 1998: rank ≥ 5 ≈ the

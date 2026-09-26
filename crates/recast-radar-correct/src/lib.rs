@@ -615,13 +615,16 @@ mod tests {
     /// Along each ray the raw velocity jumps by more than the Nyquist velocity
     /// wherever the wind folds, and Py-ART's unfolding makes those gate pairs
     /// continuous: 3,735 in the KDVN derecho sector (Nyquist 21.0 m/s), 6,713
-    /// in the KBOX blizzard sector (28.4 m/s). The region engine must restore
-    /// radial continuity at nearly all of them (measured: 3,402 and 6,672).
+    /// in the KBOX blizzard sector (28.4 m/s), 4,248 in Katrina's eyewall
+    /// (KLIX 2005, Message 1 radials, 32.1 m/s). The region engine must
+    /// restore radial continuity at nearly all of them (measured: 3,402, 6,672
+    /// and 4,247).
     #[test]
     fn lightweight_velocity_dealias_unfolds_radial_continuity() {
         for (case, min_share) in [
             ("kdvn_20200810_trim_s1", 0.89),
             ("kbox_20220129_trim_s1", 0.99),
+            ("klix_20050829_trim_s1", 0.99),
         ] {
             let Some((volume, golden)) = golden_volume(case) else {
                 return;
@@ -663,8 +666,12 @@ mod tests {
         let sweep = VelocitySweep::of_sweep(&cut);
         golden.aligned_folds(&cut, &sweep);
         assert!(dealias_skipped_no_nyquist(&cut, real_data::velocity(&cut)));
-        let corrected = dealias_velocity(&cut, real_data::velocity(&cut));
-        assert_pass_through(&sweep, &corrected, golden.valid_gates);
+        for corrected in [
+            dealias_velocity(&cut, real_data::velocity(&cut)),
+            dealias_velocity_pyart_region(&cut, real_data::velocity(&cut)),
+        ] {
+            assert_pass_through(&sweep, &corrected, golden.valid_gates);
+        }
 
         // JMA: 547,108 of 2,201,600 velocity gates are non-missing (manifest
         // description of the member, from the JMA GRIB2 run-length walker).
@@ -682,6 +689,11 @@ mod tests {
             let jma_sweep = VelocitySweep::of_sweep(jma_cut);
             let finite = jma_sweep.finite_gates();
             assert_pass_through(&jma_sweep, &dealias_velocity(jma_cut, grid), finite);
+            assert_pass_through(
+                &jma_sweep,
+                &dealias_velocity_pyart_region(jma_cut, grid),
+                finite,
+            );
             valid += finite;
         }
         assert_eq!(valid, 547_108);
@@ -726,15 +738,18 @@ mod tests {
     }
 
     /// Smoothly varying winds folded across whole regions: the KBOX blizzard
-    /// sector (Py-ART moves 13,895 gates) and Ida's 0.48 deg cut at Nyquist
-    /// 23.2 m/s (152,673 gates). The engine's folds must match Py-ART's up to
-    /// one global 2N offset, and the unfolded field must not break where
-    /// Py-ART's is continuous.
+    /// sector (Py-ART moves 13,895 gates), Ida's 0.48 deg cut at Nyquist
+    /// 23.2 m/s (152,673 gates) and Katrina's 0.4 deg Message 1 cut at
+    /// 32.1 m/s (53,164 of 153,501 gates; the engine agrees on 153,391 and
+    /// breaks 8 of 302,259 continuous pairs). The engine's folds must match
+    /// Py-ART's up to one global 2N offset, and the unfolded field must not
+    /// break where Py-ART's is continuous.
     #[test]
     fn region_dealias_recovers_smooth_folded_ramp() {
         for (case, min_agreement, max_break_share) in [
             ("kbox_20220129_trim_s1", 0.997, 0.001),
             ("klix_20210829_s2", 0.995, 0.0005),
+            ("klix_20050829_trim_s1", 0.999, 0.0001),
         ] {
             let Some((volume, golden)) = golden_volume(case) else {
                 return;
@@ -942,35 +957,42 @@ mod tests {
     }
 
     /// Folded patches spanning three or more adjacent radials, enclosed by
-    /// dominant-branch gates in the KBOX blizzard sector: adjacent folded
-    /// rows support each other and must all be unfolded.
+    /// dominant-branch gates, in the KBOX blizzard sector and in Katrina's
+    /// eyewall (Message 1 radials, 1 deg apart): adjacent folded rows support
+    /// each other and must all be unfolded.
     #[test]
     fn velocity_dealias_preserves_supported_adjacent_folds() {
-        let Some((volume, golden)) = golden_volume("kbox_20220129_trim_s1") else {
-            return;
-        };
-        let cut = &volume.sweeps[golden.sweep];
-        let sweep = VelocitySweep::of_sweep(cut);
-        let pyart = golden.aligned_folds(cut, &sweep);
-        let engine = grid_folds(&sweep, &dealias_velocity(cut, real_data::velocity(cut)));
-        let offset = fold_agreement(&sweep, &engine, &pyart, golden.rays_wrap_around).offset;
-        let patches: Vec<_> = enclosed_patches(&sweep, &pyart, 6)
-            .into_iter()
-            .filter(|patch| patch.rows >= 3)
-            .collect();
-        let (patch_share, ring_share) = patch_agreement(&patches, &engine, &pyart, offset);
-        eprintln!(
-            "patches {} patch {patch_share:.4} ring {ring_share:.4}",
-            patches.len()
-        );
-        assert!(patches.len() >= 30);
-        assert!(
-            patch_share >= 0.99,
-            "patch gates matching Py-ART: {patch_share:.4}"
-        );
-        assert!(
-            ring_share >= 0.99,
-            "ring gates matching Py-ART: {ring_share:.4}"
-        );
+        for (case, min_patches) in [("kbox_20220129_trim_s1", 30), ("klix_20050829_trim_s1", 20)] {
+            let Some((volume, golden)) = golden_volume(case) else {
+                return;
+            };
+            let cut = &volume.sweeps[golden.sweep];
+            let sweep = VelocitySweep::of_sweep(cut);
+            let pyart = golden.aligned_folds(cut, &sweep);
+            let engine = grid_folds(&sweep, &dealias_velocity(cut, real_data::velocity(cut)));
+            let offset = fold_agreement(&sweep, &engine, &pyart, golden.rays_wrap_around).offset;
+            let patches: Vec<_> = enclosed_patches(&sweep, &pyart, 6)
+                .into_iter()
+                .filter(|patch| patch.rows >= 3)
+                .collect();
+            let (patch_share, ring_share) = patch_agreement(&patches, &engine, &pyart, offset);
+            eprintln!(
+                "{case}: patches {} patch {patch_share:.4} ring {ring_share:.4}",
+                patches.len()
+            );
+            assert!(
+                patches.len() >= min_patches,
+                "{case}: {} patches",
+                patches.len()
+            );
+            assert!(
+                patch_share >= 0.99,
+                "{case}: patch gates matching Py-ART: {patch_share:.4}"
+            );
+            assert!(
+                ring_share >= 0.99,
+                "{case}: ring gates matching Py-ART: {ring_share:.4}"
+            );
+        }
     }
 }

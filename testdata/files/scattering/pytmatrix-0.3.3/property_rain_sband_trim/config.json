@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "status": "research_only_unvalidated",
+  "kernel": "pytmatrix-0.3.3",
+  "table_id": "property-rain-sband-pytmatrix-0.3.3-unvalidated-v2-trim",
+  "particle_population": {
+    "microphysics_family": "conventional",
+    "category": "rain",
+    "shape_family": "oblate_spheroid",
+    "size_distribution": "monodisperse_node",
+    "normalization_number_concentration_m3": 1.0,
+    "coexistence_descriptor": {
+      "role": "standalone_rain_and_residual_after_mixed_phase_pairing",
+      "allocation_rule": "max_total_rain_mass_minus_liquid_mass_paired_into_wet_frozen_categories_zero",
+      "double_count_policy": "paired_liquid_mass_removed_exactly_once_before_rain_lookup",
+      "over_pairing_policy": "reject"
+    }
+  },
+  "axes": [
+    {
+      "kind": "equivolume_diameter",
+      "unit": "meter",
+      "coordinates": [
+        1.8e-05,
+        0.0009797958971132711,
+        0.0010843224043318137,
+        0.007
+      ]
+    },
+    {
+      "kind": "temperature",
+      "unit": "kelvin",
+      "coordinates": [
+        225.0,
+        269.15,
+        293.15,
+        313.15
+      ]
+    },
+    {
+      "kind": "minor_to_major_axis_ratio",
+      "unit": "unitless_fraction",
+      "coordinates": [
+        0.5,
+        0.85,
+        0.925,
+        1.0
+      ]
+    },
+    {
+      "kind": "frequency",
+      "unit": "hertz",
+      "coordinates": [
+        2800000000.0
+      ]
+    },
+    {
+      "kind": "radar_elevation",
+      "unit": "degree",
+      "coordinates": [
+        -0.5,
+        0.9,
+        2.7,
+        20.0
+      ]
+    }
+  ],
+  "dielectric": {
+    "model": "temperature_dependent_liquid_water_liebe_1991",
+    "liquid_water_permittivity_model": "liebe_hufford_manabe_1991_double_debye",
+    "mass_density_kg_m3": 999.84,
+    "temperature_range_k": [
+      225.0,
+      313.15
+    ],
+    "frequency_range_hz": [
+      2000000000.0,
+      4000000000.0
+    ],
+    "applicability": "pure_fresh_supercooled_or_liquid_water_225_to_313p15_k"
+  },
+  "orientation": {
+    "model": "gaussian_canting",
+    "mean_deg": 0.0,
+    "standard_deviation_deg": 20.0,
+    "alpha_quadrature_points": 5,
+    "beta_quadrature_points": 10,
+    "quadrature_method": "pytmatrix_orient_averaged_fixed_gautschi",
+    "reference_symmetry_axis": "vertical_at_zero_canting"
+  },
+  "radar": {
+    "speed_of_light_m_s": 299792458.0,
+    "reference_water_dielectric_factor_squared": 0.93,
+    "length_unit_passed_to_pytmatrix": "millimeter",
+    "backscatter_geometry_deg": [
+      90.0,
+      90.0,
+      0.0,
+      180.0,
+      0.0,
+      0.0
+    ],
+    "forward_scatter_geometry_deg": [
+      90.0,
+      90.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "beam_elevation_transform": "pytmatrix_theta0_90_minus_e_theta_back_90_plus_e_theta_forward_90_minus_e_degrees",
+    "polarization_basis": "pytmatrix_local_horizontal_vertical_scattering_basis",
+    "view_applicability": "ppi_beam_elevation_minus0p5_to_20_axisymmetric_gaussian_odf_not_general_body_frame",
+    "covariance_phase_convention": "pytmatrix_delta_hv_hh_times_conjugate_vv",
+    "solver": {
+      "shape": "spheroid",
+      "ddelt": 0.001,
+      "ndgs": 14
+    }
+  },
+  "terminal_velocity": {
+    "law": "schiller_naumann_gravity_drag",
+    "gravity_m_s2": 9.80665,
+    "air_density_kg_m3": 1.225,
+    "air_dynamic_viscosity_pa_s": 1.7894e-05,
+    "drag_transition_reynolds": 1000.0,
+    "high_reynolds_drag_coefficient": 0.44,
+    "drag_transition_boundary_policy": "select_exact_transition_reynolds_boundary_when_piecewise_drag_residual_jump_straddles_zero",
+    "maximum_iterations": 200,
+    "relative_tolerance": 1e-12
+  },
+  "temporal": {
+    "sampling": "instantaneous"
+  },
+  "execution": {
+    "point_timeout_seconds": 300,
+    "process_isolation": "fresh_python_subprocess_per_material_state_group",
+    "result_collection_order": "declared_axis_order_last_axis_fastest",
+    "partial_grid_policy": "reject_entire_lut",
+    "thread_count_per_process": 1,
+    "grouping": {
+      "model": "fresh_crash_isolated_material_state_process",
+      "material_state_axis_kinds": [
+        "temperature",
+        "frequency"
+      ],
+      "tmatrix_state_axis_kinds": [
+        "equivolume_diameter",
+        "minor_to_major_axis_ratio"
+      ],
+      "geometry_axis_kind": "radar_elevation",
+      "partial_group_policy": "reject_entire_lut",
+      "maximum_points_per_process": 4096,
+      "group_timeout_seconds": 3600
+    }
+  },
+  "payload": {
+    "encoding": "f64_le_point_major_last_axis_fastest"
+  },
+  "references": [
+    "https://github.com/jleinonen/pytmatrix/tree/0.3.3",
+    "https://doi.org/10.1007/BF01008897",
+    "https://doi.org/10.1029/JC078i033p07847"
+  ]
+}

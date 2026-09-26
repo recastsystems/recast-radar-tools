@@ -980,6 +980,7 @@ its lookup-table, PSD-integration and P3-table tests read real inputs instead of
 |---|---|---|---|---|
 | `tmatrix-lut-rain-sband-pytmatrix-0.3.3` (+ `-config`, `-manifest`) | C | 9108 (+ 3151, 4595) | schema-1 LUT `conventional-liquid-rain-sband-pytmatrix-0.3.3-unvalidated-v1`: 16 diameters 0.3-7 mm x 3 axis ratios x singleton 2.7008 GHz x singleton 0 deg, 48 nodes; the exact generator config its header hashes; the generator manifest with every SHA-256 | `crates/recast-radar-scattering/tools/pytmatrix-0.3.3` run (`run_all.ps1`, locked Docker image) recorded in radar-bow `research_only_assets/tmatrix/pytmatrix-0.3.3` |
 | `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3` (+ `-config`, `-manifest`) | C | 12947 (+ 3882, 5000) | LUT `conventional-dry-ice-spheroids-sband-pytmatrix-0.3.3-unvalidated-v1`: 29 diameters 0.1-50 mm x 3 axis ratios, 87 nodes, Gaussian 20-degree canting, Schiller-Naumann fall speeds | same run |
+| `tmatrix-lut-property-dry-oblate-sband-trim`, `-wet-oblate-`, `-rain-` (+ `-config`, `-trim`) | C | 147472, 165506, 25651 | subsets of three property-bundle tables (P3/ISHMAEL dry oblate, wet oblate, standalone and residual rain; 2.8 GHz), every kept node's outputs copied byte for byte and every axis end point kept, for the research-runtime tests; the rewritten config each header hashes; the trim record naming the source table's SHA-256 | `tools/trim_tmatrix_lut.py` on the tables in radar-bow `research_only_assets/tmatrix/pytmatrix-0.3.3` |
 | `tmatrix-held-out-interpolation-report-v10`, `tmatrix-held-out-nodes-v10` | C | 186036, 17067 | the post-freeze held-out check of all 8 generated tables: nodes absent from the grids (public seed), direct PyTMatrix recomputation, the validator's multilinear interpolation and per-component errors; the node request it answers | radar-bow `validation/tmatrix/refined_grid_v10_post_freeze_held_out_*.json` |
 | `wrf-p3-lookup-table-1-v5.4-2momI`, `-3momI` | D | 1606038, 17886038 | the official WRF P3 v5.4 lookup tables at commit f52c197 (the bytes the crate pins by length and SHA-256) | github.com/wrf-model/WRF (public domain) |
 | `wrf-p3-lookup-table-1-v5.4-{2,3}momI-first-block` | C, derived | 80338, 81338 | the byte prefix through the 1552nd line feed of each table: header, separator, the first (density 1, rime 1[, shape 1]) block of 50 main records and 1500 collision records | `head -n 1552` of the download |
@@ -1077,17 +1078,17 @@ Everything below the marker is generated from the manifests by
 | `testdata/level2/manifest.toml` | 125 | 24 | 10,426,272 | 101 | 332,296,252 |
 | `testdata/level3/manifest.toml` | 269 | 269 | 8,200,268 | 0 | 0 |
 | `testdata/other/manifest.toml` | 71 | 58 | 26,881,646 | 13 | 187,735,375 |
-| `testdata/scattering/manifest.toml` | 12 | 10 | 403,462 | 2 | 19,492,076 |
-| **all** | **490** | **374** | **47,899,888** | **116** | **539,523,703** |
+| `testdata/scattering/manifest.toml` | 21 | 19 | 763,095 | 2 | 19,492,076 |
+| **all** | **499** | **383** | **48,259,521** | **116** | **539,523,703** |
 
 | format | committed | download |
 |---|---:|---:|
-| `brslut-v1` | 2 | 0 |
+| `brslut-v1` | 5 | 0 |
 | `cfradial1` | 10 | 2 |
 | `cfradial2` | 4 | 1 |
 | `dorade` | 12 | 2 |
 | `jma-grib2-tar` | 4 | 4 |
-| `json` | 6 | 0 |
+| `json` | 12 | 0 |
 | `nexrad-level2` | 21 | 34 |
 | `nexrad-level2-chunk` | 8 | 67 |
 | `nexrad-level3` | 277 | 0 |
@@ -1619,6 +1620,15 @@ No entries.
 | `wrf-p3-lookup-table-1-v5.4-3momI` | `wrf-p3-lookup-table` | download | 17,886,038 |  |
 | `wrf-p3-lookup-table-1-v5.4-2momI-first-block` | `wrf-p3-lookup-table` | committed `files/scattering/wrf-p3/p3_lookupTable_1.dat-v5.4_2momI.first-block` | 80,338 | `wrf-p3-lookup-table-1-v5.4-2momI` |
 | `wrf-p3-lookup-table-1-v5.4-3momI-first-block` | `wrf-p3-lookup-table` | committed `files/scattering/wrf-p3/p3_lookupTable_1.dat-v5.4_3momI.first-block` | 81,338 | `wrf-p3-lookup-table-1-v5.4-3momI` |
+| `tmatrix-lut-property-dry-oblate-sband-trim` | `brslut-v1` | committed `files/scattering/pytmatrix-0.3.3/property_p3_ishmael_dry_oblate_sband_trim/table.lut` | 147,472 |  |
+| `tmatrix-lut-property-dry-oblate-sband-trim-config` | `json` | committed `files/scattering/pytmatrix-0.3.3/property_p3_ishmael_dry_oblate_sband_trim/config.json` | 6,376 |  |
+| `tmatrix-lut-property-dry-oblate-sband-trim-trim` | `json` | committed `files/scattering/pytmatrix-0.3.3/property_p3_ishmael_dry_oblate_sband_trim/trim.json` | 1,020 |  |
+| `tmatrix-lut-property-wet-oblate-sband-trim` | `brslut-v1` | committed `files/scattering/pytmatrix-0.3.3/property_p3_ishmael_wet_oblate_sband_trim/table.lut` | 165,506 |  |
+| `tmatrix-lut-property-wet-oblate-sband-trim-config` | `json` | committed `files/scattering/pytmatrix-0.3.3/property_p3_ishmael_wet_oblate_sband_trim/config.json` | 7,018 |  |
+| `tmatrix-lut-property-wet-oblate-sband-trim-trim` | `json` | committed `files/scattering/pytmatrix-0.3.3/property_p3_ishmael_wet_oblate_sband_trim/trim.json` | 1,044 |  |
+| `tmatrix-lut-property-rain-sband-trim` | `brslut-v1` | committed `files/scattering/pytmatrix-0.3.3/property_rain_sband_trim/table.lut` | 25,651 |  |
+| `tmatrix-lut-property-rain-sband-trim-config` | `json` | committed `files/scattering/pytmatrix-0.3.3/property_rain_sband_trim/config.json` | 4,654 |  |
+| `tmatrix-lut-property-rain-sband-trim-trim` | `json` | committed `files/scattering/pytmatrix-0.3.3/property_rain_sband_trim/trim.json` | 892 |  |
 
 ### Index by tag
 
@@ -1629,7 +1639,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `archive` (5): `dorade-noxp-20090501-sweeps-tgz`, `dorade-noxp-20090525-sweeps-tgz`, `dorade-noxp-20090610-003210-heads-zip`, `l3-kbmx-19980416-archive-tarz`, `l3-knqa-20080205-archive-tarz`
 - `avset` (4): `l2-kdgx-20230325-010651`, `l2-ktlx-20240315-000217`, `l2-kiwa-20260917-003629`, `l2-ktlx-20240315-000217-trim`
 - `bench` (4): `l2-ktlx-19990504-002218`, `l2-ktlx-20130520-201643`, `l2-ktlx-20240315-000217`, `l2-kilx-20260418-013553`
-- `derived` (49): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`, `odim-dkrom-20260820-1130-pvol-h5latest-trim`, `odim-dkrom-20260820-1130-pvol-h5edge-paged-ea`, `odim-dkrom-20260820-1130-pvol-h5edge-len4`, `odim-seang-20260924-2130-qcvol-dataset1-trim`, `odim-fianj-20260924-2130-pvol-dataset1-trim`, `odim-itdes-20260924-2135-pvol-class`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-user-types`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-szip-lzf`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad2-radx-irene-sr2-20110827-120420-sur-r30km`, `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32`, `cfrad2-xradar-xsapr-sgp-20110520-ppi`, `cfrad2-xradar-dow8-20211011-223602-rhi-r300`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4`, `l3-knqa-20080205-0018-rob`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
+- `derived` (58): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`, `odim-dkrom-20260820-1130-pvol-h5latest-trim`, `odim-dkrom-20260820-1130-pvol-h5edge-paged-ea`, `odim-dkrom-20260820-1130-pvol-h5edge-len4`, `odim-seang-20260924-2130-qcvol-dataset1-trim`, `odim-fianj-20260924-2130-pvol-dataset1-trim`, `odim-itdes-20260924-2135-pvol-class`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-user-types`, `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-szip-lzf`, `cfrad1-xsapr-sgp-20110520-ppi-classic`, `cfrad1-dow8-20211011-223602-rhi-trim3-classic`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad2-radx-irene-sr2-20110827-120420-sur-r30km`, `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32`, `cfrad2-xradar-xsapr-sgp-20110520-ppi`, `cfrad2-xradar-dow8-20211011-223602-rhi-r300`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi`, `dorade-noxp-20090525-203211-sector`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-noxp-20090610-003210-heads-zip`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`, `l3-kbmx-19980416-0006-nvw`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-per-ray-geometry`, `cfrad1-radx-fianj-20260924-2130-sweeps1-2-7-finest-geometry-netcdf4`, `l3-knqa-20080205-0018-rob`, `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-dry-oblate-sband-trim-config`, `tmatrix-lut-property-dry-oblate-sband-trim-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim-config`, `tmatrix-lut-property-wet-oblate-sband-trim-trim`, `tmatrix-lut-property-rain-sband-trim`, `tmatrix-lut-property-rain-sband-trim-config`, `tmatrix-lut-property-rain-sband-trim-trim`
 - `dualpol` (33): `l2-kvnx-20110315-000203`, `l2-ktlx-20130520-201643`, `l2-kgwx-20130601-235640`, `l2-koax-20140616-205305`, `l2-kewx-20160413-022531`, `l2-kdvn-20200810-175718`, `l2-kdvn-20200810-180401`, `l2-kdvn-20200810-181043`, `l2-kdvn-20200810-181724`, `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-kbox-20220129-150537`, `l2-tjua-20220918-190621`, `l2-kdgx-20230325-010651`, `l2-kmaf-20230331-230843`, `l2-pgua-20230524-030945`, `l2-kmtx-20240301-212827`, `l2-ktlx-20240315-000217`, `l2-ktlx-20240515-000014`, `l2-pahg-20250909-212549`, `l2-kilx-20260418-013553`, `l2-kiwa-20260917-003629`, `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `fuzz-regression` (13): `fuzz-odim-hdf5-local-heap-name-offset-overflow`, `fuzz-hdf5-chunk-offset-overflow`, `fuzz-cfradial-overlapping-sweep-ray-ranges`, `fuzz-level2-writer-nexrad-moment-nan-scale`, `fuzz-writers-l2-sweep-without-gates`, `fuzz-writers-l2-one-gate-sweep`, `fuzz-writers-l2-odim-rstart-beyond-20-km`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-l2-empty-field-name`, `fuzz-writers-odim-gate-spacing-below-float`, `fuzz-writers-dorade-absent-rows-without-fill`, `fuzz-writers-cfradial1-ray-time-near-float-max`, `fuzz-level3-rcm-centroid-non-ascii`
 - `golden-source` (1): `tmatrix-held-out-interpolation-report-v10`
@@ -1874,7 +1884,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `band:`
 
-- `band:s` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`
+- `band:s` (5): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-rain-sband-trim`
 
 #### `base-tilt:`
 
@@ -1988,7 +1998,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `derivation:gunzip` (1): `odim-itdes-20260924-2135-pvol-class`
 - `derivation:head-trim` (7): `dorade-cow2-20260521-225514-sur-head24`, `dorade-dow6-20211230-222139-rhi-head41`, `dorade-noxp-20090610-003210-ppi-head6`, `dorade-noxp-20090610-003222-ppi-head6`, `dorade-noxp-20090610-003226-ppi-head6`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`
 - `derivation:prefix` (2): `wrf-p3-lookup-table-1-v5.4-2momI-first-block`, `wrf-p3-lookup-table-1-v5.4-3momI-first-block`
-- `derivation:subset` (5): `odim-seang-20260924-2130-qcvol-dataset1-trim`, `odim-fianj-20260924-2130-pvol-dataset1-trim`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32`, `cfrad2-xradar-dow8-20211011-223602-rhi-r300`
+- `derivation:subset` (14): `odim-seang-20260924-2130-qcvol-dataset1-trim`, `odim-fianj-20260924-2130-pvol-dataset1-trim`, `cfrad1-irene-sr2-20110827-120420-sur-sweeps01`, `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32`, `cfrad2-xradar-dow8-20211011-223602-rhi-r300`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-dry-oblate-sband-trim-config`, `tmatrix-lut-property-dry-oblate-sband-trim-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim-config`, `tmatrix-lut-property-wet-oblate-sband-trim-trim`, `tmatrix-lut-property-rain-sband-trim`, `tmatrix-lut-property-rain-sband-trim-config`, `tmatrix-lut-property-rain-sband-trim-trim`
 
 #### `dorade:`
 
@@ -2103,7 +2113,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `generator:`
 
-- `generator:pytmatrix-0.3.3` (8): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`, `tmatrix-held-out-interpolation-report-v10`, `tmatrix-held-out-nodes-v10`
+- `generator:pytmatrix-0.3.3` (17): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`, `tmatrix-held-out-interpolation-report-v10`, `tmatrix-held-out-nodes-v10`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-dry-oblate-sband-trim-config`, `tmatrix-lut-property-dry-oblate-sband-trim-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim-config`, `tmatrix-lut-property-wet-oblate-sband-trim-trim`, `tmatrix-lut-property-rain-sband-trim`, `tmatrix-lut-property-rain-sband-trim-config`, `tmatrix-lut-property-rain-sband-trim-trim`
 
 #### `hdf5:`
 
@@ -2162,9 +2172,9 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `lut:`
 
-- `lut:generator-config` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`
-- `lut:generator-manifest` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`
-- `lut:schema-1` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`
+- `lut:generator-config` (5): `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-property-dry-oblate-sband-trim-config`, `tmatrix-lut-property-wet-oblate-sband-trim-config`, `tmatrix-lut-property-rain-sband-trim-config`
+- `lut:generator-manifest` (5): `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`, `tmatrix-lut-property-dry-oblate-sband-trim-trim`, `tmatrix-lut-property-wet-oblate-sband-trim-trim`, `tmatrix-lut-property-rain-sband-trim-trim`
+- `lut:schema-1` (5): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-rain-sband-trim`
 
 #### `meso-sails:`
 
@@ -2630,7 +2640,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 #### `status:`
 
-- `status:research-only-unvalidated` (2): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`
+- `status:research-only-unvalidated` (5): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-rain-sband-trim`
 
 #### `sweepset:`
 
@@ -2641,6 +2651,9 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 
 - `table:conventional-dry-ice-spheroids` (3): `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-dry-ice-sband-pytmatrix-0.3.3-manifest`
 - `table:conventional-liquid-rain` (3): `tmatrix-lut-rain-sband-pytmatrix-0.3.3`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-config`, `tmatrix-lut-rain-sband-pytmatrix-0.3.3-manifest`
+- `table:property-p3-ishmael-dry-oblate` (3): `tmatrix-lut-property-dry-oblate-sband-trim`, `tmatrix-lut-property-dry-oblate-sband-trim-config`, `tmatrix-lut-property-dry-oblate-sband-trim-trim`
+- `table:property-p3-ishmael-wet-oblate` (3): `tmatrix-lut-property-wet-oblate-sband-trim`, `tmatrix-lut-property-wet-oblate-sband-trim-config`, `tmatrix-lut-property-wet-oblate-sband-trim-trim`
+- `table:property-rain` (3): `tmatrix-lut-property-rain-sband-trim`, `tmatrix-lut-property-rain-sband-trim-config`, `tmatrix-lut-property-rain-sband-trim-trim`
 
 #### `validation:`
 

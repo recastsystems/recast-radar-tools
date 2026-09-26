@@ -32,15 +32,18 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+mod attenuation;
 mod availability;
 mod detect;
 mod gbvtd;
+mod kdp;
 mod shear;
 mod sweep;
 mod volume;
 mod vwp;
 pub mod wind;
 
+pub use attenuation::ZPhiAttenuation;
 pub use availability::{
     MIN_DISPLAYABLE_RADIALS, advanced_derived_product_for_name, displayable_radial_threshold,
     sweep_can_materialize_field, sweep_has_advanced_product_sources, sweep_has_field_source,
@@ -54,14 +57,15 @@ pub use detect::{
 pub use gbvtd::{
     PolarVelocityField, RingFit, TcCirculation, find_center_and_retrieve, retrieve_axisymmetric,
 };
+pub use kdp::{KdpMethod, MaesakaKdp, VulpianiKdp};
 pub use shear::{
     azimuthal_shear, azimuthal_shear_from_dealiased, radial_divergence,
     radial_divergence_from_dealiased,
 };
 pub use sweep::{
-    AttenuationConfig, DerivationConfig, DerivationReport, DerivedSweepProduct, DiagnosticConfig,
-    KdpConfig, MeteoMaskConfig, QpeConfig, RadarBand, SweepDerivationReport, TextureConfig,
-    derive_product, derive_sweep_in_place, derive_volume_in_place,
+    AttenuationConfig, AttenuationMethod, DerivationConfig, DerivationReport, DerivedSweepProduct,
+    DiagnosticConfig, KdpConfig, MeteoMaskConfig, QpeConfig, RadarBand, SweepDerivationReport,
+    TextureConfig, derive_product, derive_sweep_in_place, derive_volume_in_place,
 };
 pub use volume::{
     CappiInterpolation, cappi, column_max, column_mean, column_min, echo_base, echo_depth,

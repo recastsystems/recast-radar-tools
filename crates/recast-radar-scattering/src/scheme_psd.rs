@@ -182,10 +182,12 @@ pub enum PsdSourceCategory {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PsdFallSpeedAuthority {
+    /// The WRF ISHMAEL Mitchell-Heymsfield terminal-speed law, version 1.
     WrfIshmaelMitchellHeymsfieldV1,
+    /// The terminal-speed policy declared by the T-matrix table in use.
     TMatrixTableTerminalPolicyV1,
+    /// An external, versioned research law identified by its digest.
     ExternalVersionedResearch,
-    SyntheticTestOnly,
 }
 
 /// Exact implementation/config digest for the terminal-speed law. The PSD
@@ -3234,38 +3236,11 @@ mod tests {
         );
     }
 
-    /// Relative tolerance for [`assert_frozen_bits`] away from the platform
-    /// that froze the bits. These values pass through `powf`, `exp`, `ln` and
-    /// `cbrt`, which call the platform math library, and math libraries round
-    /// the last bits differently. On x86_64-unknown-linux-gnu (glibc 2.39,
-    /// Ubuntu 24.04) the largest difference in these tests is 70 ULPs (relative
-    /// 2e-14). Other math libraries have not been measured.
-    const OTHER_LIBM_RELATIVE_TOLERANCE: f64 = 1.0e-12;
-
-    /// Asserts a result against bits frozen on x86_64-pc-windows-msvc (UCRT
-    /// math library): the exact bits there, and agreement within
-    /// [`OTHER_LIBM_RELATIVE_TOLERANCE`] on other targets.
-    #[track_caller]
-    fn assert_frozen_bits(actual: f64, frozen_bits: u64) {
-        if cfg!(all(
-            target_arch = "x86_64",
-            target_os = "windows",
-            target_env = "msvc"
-        )) {
-            assert_eq!(
-                actual.to_bits(),
-                frozen_bits,
-                "actual={actual:e}, frozen={:e}",
-                f64::from_bits(frozen_bits)
-            );
-        } else {
-            assert_relative(
-                actual,
-                f64::from_bits(frozen_bits),
-                OTHER_LIBM_RELATIVE_TOLERANCE,
-            );
-        }
-    }
+    /// Tolerance against the mpmath references of `tools/scattering_golden.py`,
+    /// the same on every target: the crate's Lanczos log-gamma (about 1e-15
+    /// relative) and libm rounding in `powf`, `exp`, `ln` and `cbrt` stay well
+    /// inside it.
+    const REFERENCE_RELATIVE_TOLERANCE: f64 = 1.0e-12;
 
     fn input_from_scales(
         category: IshmaelIceCategory,
@@ -4198,21 +4173,34 @@ mod tests {
         assert!(!audit.source_axis_floor_applied);
         assert!(!audit.source_var_check_small_ice_applied);
         assert!(!audit.source_var_check_large_ice_applied);
-        assert_frozen_bits(checked.a_scale_m(), 0x3f12_abe1_2cdc_d7cc);
-        assert_frozen_bits(checked.c_at_a_scale_m(), 0x3ef6_312b_b658_2af7);
-        assert_frozen_bits(checked.aspect_power_delta(), 0x3fea_167c_939e_a245);
-        assert_eq!(checked.bulk_density_kg_m3().to_bits(), 50.0_f64.to_bits());
-        assert_frozen_bits(
-            audit.qvoli_source_projection_relative_change,
-            0xbfc4_ad7e_02a2_1f1c,
-        );
-        assert_frozen_bits(
-            audit.qaoli_source_projection_relative_change,
-            0x3fe6_c292_f813_1077,
-        );
-        assert_frozen_bits(
-            checked.mean_equivolume_diameter_sixth_m6(),
-            0x3bd7_1749_cab5_af82,
+        // Platform-independent reference: the documented reconstruction,
+        // var_check and cold-aggregate check evaluated with mpmath at 50 digits
+        // (exact log-gamma), `tools/scattering_golden.py`. The crate's Lanczos
+        // log-gamma and the platform libm keep it within 5e-14 relative.
+        let golden = crate::test_corpus::golden("ishmael_source_check.json");
+        let reference = |key: &str| crate::test_corpus::as_f64(&golden["values"][key]);
+        for (actual, key) in [
+            (checked.a_scale_m(), "a_scale_m"),
+            (checked.c_at_a_scale_m(), "c_at_a_scale_m"),
+            (checked.aspect_power_delta(), "aspect_power_delta"),
+            (
+                audit.qvoli_source_projection_relative_change,
+                "qvoli_source_projection_relative_change",
+            ),
+            (
+                audit.qaoli_source_projection_relative_change,
+                "qaoli_source_projection_relative_change",
+            ),
+            (
+                checked.mean_equivolume_diameter_sixth_m6(),
+                "mean_equivolume_diameter_sixth_m6",
+            ),
+        ] {
+            assert_relative(actual, reference(key), REFERENCE_RELATIVE_TOLERANCE);
+        }
+        assert_eq!(
+            checked.bulk_density_kg_m3().to_bits(),
+            reference("bulk_density_kg_m3").to_bits()
         );
         assert_eq!(
             checked.input().qice_kgkg().to_bits(),
@@ -4730,65 +4718,76 @@ mod tests {
     }
 
     #[test]
-    fn prepared_cpu_finish_is_bit_identical_to_frozen_pre_refactor_result() {
-        // Frozen from the first run of the prepared CPU finish over the
-        // committed dry-ice table with `table_oblate_distribution()` and
-        // `table_config()`: ZH 2.1421e6, ZV 1.8374e6 mm^6 m^-3, KDP 1.899
-        // deg/km, ZH-weighted fall moments 3.1027e7 and 4.6143e8; maximum
-        // additive convergence error 5.384e-3 on component 1 (ZV).
-        // Bit-identical on x86_64-pc-windows-msvc, where these were frozen;
-        // other targets compare within a tolerance (see `assert_frozen_bits`).
-        const EXPECTED_COMPONENT_BITS: [u64; AdditiveScattering::COMPONENT_COUNT] = [
-            4_701_854_596_218_879_931,
-            4_700_642_511_187_517_770,
-            4_701_263_243_177_457_375,
-            4_653_444_141_753_260_532,
-            4_611_231_953_337_178_844,
-            4_578_441_290_809_515_500,
-            4_577_409_422_140_062_759,
-            4_719_094_059_727_367_312,
-            4_736_521_044_202_777_272,
-        ];
-        const EXPECTED_CLOSURE_BITS: [u64; 3] = [
-            4_405_329_676_126_388_224,
-            4_428_441_410_542_239_744,
-            4_414_512_797_241_573_376,
-        ];
-        const EXPECTED_CONVERGENCE_BITS: u64 = 4_572_857_304_189_427_097;
-
+    fn prepared_cpu_finish_matches_the_reference_quadrature() {
+        // Platform-independent reference: the same quadrature (tail cutoff,
+        // support interval, composite GL8 on 8 and 16 panels, multilinear
+        // lookup in the committed table) evaluated with mpmath at 50 digits,
+        // `tools/scattering_golden.py`. The sums agree within 1.4e-15 relative
+        // on x86_64-pc-windows-msvc; the bits frozen there before the
+        // prepare/finish refactor were those values.
+        let golden = crate::test_corpus::golden("ishmael_table_quadrature.json");
+        let number = |value: &serde_json::Value| crate::test_corpus::as_f64(value);
+        let integer = |value: &serde_json::Value| {
+            value
+                .as_u64()
+                .and_then(|count| usize::try_from(count).ok())
+                .unwrap_or_else(|| panic!("{value} is not a count"))
+        };
         let table = dry_ice_table();
         let distribution = table_oblate_distribution();
         let config = table_config();
         let support = table.support();
         let fall_speed = dry_ice_fall_speed_provenance();
         let prepared = prepare_ishmael_psd(&distribution, config, support, fall_speed).unwrap();
+        assert_relative(
+            prepared.upper_scaled_a(),
+            number(&golden["upper_scaled_a"]),
+            REFERENCE_RELATIVE_TOLERANCE,
+        );
         let direct = prepared
             .finish(|_, _, node| table.per_particle(node))
             .unwrap();
-        for (actual, frozen) in direct
-            .additive()
-            .components()
-            .into_iter()
-            .zip(EXPECTED_COMPONENT_BITS)
-        {
-            assert_frozen_bits(actual, frozen);
+        for (index, actual) in direct.additive().components().into_iter().enumerate() {
+            assert_relative(
+                actual,
+                number(&golden["refined"][index]),
+                REFERENCE_RELATIVE_TOLERANCE,
+            );
         }
         let audit = direct.audit();
-        for (actual, frozen) in [
-            audit.number_closure_relative_error,
-            audit.mass_closure_relative_error,
-            audit.d6_closure_relative_error,
-        ]
-        .into_iter()
-        .zip(EXPECTED_CLOSURE_BITS)
-        {
-            assert_frozen_bits(actual, frozen);
-        }
-        assert_frozen_bits(
-            audit.maximum_additive_convergence_error,
-            EXPECTED_CONVERGENCE_BITS,
+        assert_eq!(audit.refinement_steps, 0);
+        assert_eq!(
+            audit.coarse_nodes_evaluated,
+            integer(&golden["nodes_evaluated"]["coarse"])
         );
-        assert_eq!(audit.maximum_additive_convergence_component, 1);
+        assert_eq!(
+            audit.refined_nodes_evaluated,
+            integer(&golden["nodes_evaluated"]["refined"])
+        );
+        // The convergence error is a difference of two sums 0.5 % apart, so
+        // its relative precision is about 200 times coarser than theirs.
+        assert_relative(
+            audit.maximum_additive_convergence_error,
+            number(&golden["convergence_errors"][1]),
+            1.0e-10,
+        );
+        assert_eq!(
+            audit.maximum_additive_convergence_component,
+            integer(&golden["maximum_convergence_component"])
+        );
+        // The closure errors are the rule's truncation error (3e-14 to 1.2e-12)
+        // plus the rounding of 136 binary64 fractions summed to one.
+        for (actual, key) in [
+            (audit.number_closure_relative_error, "number"),
+            (audit.mass_closure_relative_error, "mass"),
+            (audit.d6_closure_relative_error, "d6"),
+        ] {
+            let expected = number(&golden["closure_errors"][key]);
+            assert!(
+                (actual - expected).abs() <= 3.0e-14,
+                "{key} closure: actual={actual:e}, reference={expected:e}"
+            );
+        }
 
         let delegated = integrate_ishmael_psd(&distribution, config, support, fall_speed, |node| {
             table.per_particle(node)
