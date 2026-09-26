@@ -23,7 +23,10 @@
 //! `recast-radar-testdata` (committed fixtures, or sha256-verified downloads
 //! cached on first use), copied verbatim or cut down by the derivations in
 //! [`Derivation`]. No seed byte is synthesized: derived seeds are record-,
-//! block- or chunk-aligned selections and concatenations of real bytes.
+//! block- or chunk-aligned selections and concatenations of real bytes, and
+//! lossless whole-file bzip2 encodings of such a selection (no published
+//! Level II file in the manifests is whole-file bzip2, but the decoder
+//! reads that wrapper).
 
 use std::fs;
 use std::io;
@@ -78,6 +81,11 @@ enum Derivation {
     /// DORADE sweepfile: every descriptor block and the first `n` ray groups
     /// (RYIB/ASIB/RDAT...), cut at a block boundary.
     DoradeHead(usize),
+    /// [`Derivation::L2Sparse`] compressed whole as one bzip2 stream at this
+    /// level (1: 100 kB blocks, so the stream has several blocks and the
+    /// decoder's block-by-block path splits it), the way a whole-file
+    /// `.bz2` Level II volume is wrapped.
+    L2SparseBzip2(u32),
 }
 
 impl Derivation {
@@ -91,6 +99,7 @@ impl Derivation {
             Self::LdmPayload(n) => format!(".ldm-payload{n}"),
             Self::ConcatChunks(ids) => format!(".plus-{}-chunks", ids.len()),
             Self::DoradeHead(rays) => format!(".head{rays}"),
+            Self::L2SparseBzip2(level) => format!(".l2-sparse.bz2-{level}"),
         }
     }
 }
@@ -99,7 +108,8 @@ impl Derivation {
 type Seed = (&'static str, &'static str, Derivation);
 
 use Derivation::{
-    ConcatChunks, DoradeHead, L2BlockHead, L2Head, L2Sparse, LdmPayload, LdmRecord, Verbatim,
+    ConcatChunks, DoradeHead, L2BlockHead, L2Head, L2Sparse, L2SparseBzip2, LdmPayload, LdmRecord,
+    Verbatim,
 };
 
 const KIWA_CHUNK_S: &str = "l2chunk-kiwa-307-20260917-003629-001-s";
@@ -214,6 +224,31 @@ const SEEDS: &[Seed] = &[
         "level2_writer_router",
         "jma-n6-20191012-090000-rs47773",
         Verbatim,
+    ),
+    // Whole-file bzip2 around real record streams (message 31 and message
+    // 1), for the block-by-block parse of that wrapper.
+    ("level2_volume", "l2-kiwa-20260917-003629", L2SparseBzip2(1)),
+    ("level2_volume", "l2-klix-20050829-130035", L2SparseBzip2(1)),
+    // level2_metadata: the metadata record of every wrapper: LDM bzip2
+    // (status-only stub, real-time start chunk, a block-aligned head),
+    // uncompressed, whole-file gzip (ARCHIVE2 1999 without a metadata
+    // record, AR2V0001 2008) and whole-file bzip2 (several blocks at level
+    // 1, one at level 9).
+    ("level2_metadata", "l2-tbwi-20230601-175101-stub", Verbatim),
+    ("level2_metadata", KIWA_CHUNK_S, Verbatim),
+    ("level2_metadata", "l2-kbox-20220129-150537", L2BlockHead),
+    ("level2_metadata", "l2-kiwa-20260917-003629", L2Head),
+    ("level2_metadata", "l2-ktlx-19990503-230052", Verbatim),
+    ("level2_metadata", "l2-kvwx-20080415-235337", Verbatim),
+    (
+        "level2_metadata",
+        "l2-kiwa-20260917-003629",
+        L2SparseBzip2(1),
+    ),
+    (
+        "level2_metadata",
+        "l2-kbox-20220129-150537",
+        L2SparseBzip2(9),
     ),
     // io_router: one small real file per routed format, plus gzip and
     // block-bzip Level II.
@@ -632,7 +667,19 @@ fn derive(id: &str, derivation: Derivation) -> io::Result<Vec<u8>> {
             Ok(bytes)
         }
         Derivation::DoradeHead(rays) => dorade_head(&source, rays),
+        Derivation::L2SparseBzip2(level) => {
+            let normalized = normalize_l2(&source)?;
+            bzip2_whole(&l2_sparse(&normalized)?, level)
+        }
     }
+}
+
+/// `bytes` as one bzip2 stream at `level` (the `bzip2` crate's encoder).
+fn bzip2_whole(bytes: &[u8], level: u32) -> io::Result<Vec<u8>> {
+    use std::io::Write;
+    let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::new(level));
+    encoder.write_all(bytes)?;
+    encoder.finish()
 }
 
 fn normalize_l2(source: &[u8]) -> io::Result<Vec<u8>> {

@@ -478,7 +478,6 @@ fn roundtrip(
         assert!(written == messages, "{id}: data messages differ");
     }
     let expected = match (options.gzip, options.compression) {
-        (true, Compression::Bzip2LdmRecords) => "gzip-bzip2-blocks",
         (true, _) => "gzip",
         (false, Compression::None) => "uncompressed",
         (false, _) => "bzip2-blocks",

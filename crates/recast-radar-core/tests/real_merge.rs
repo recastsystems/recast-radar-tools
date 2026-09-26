@@ -5,6 +5,9 @@
 //! rules over sweep metadata from h5py (ODIM parts), MetPy (Level II) and a
 //! GRIB2 section walker (JMA), never from this workspace's readers.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::collections::BTreeSet;

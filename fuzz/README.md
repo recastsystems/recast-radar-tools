@@ -12,6 +12,7 @@ Linux. Run them there, or in the `nexbench` container (see below).
 | `level2_volume` | `recast-radar-io-nexrad` | `read_volume_from_bytes`, `read_gzip_volume_from_bytes_with_preview`, `read_volume_from_bytes_with_bzip_preview`, `read_gzip_preview_from_bytes`, `read_bzip_block_preview_from_bytes` (one per input, by length mod 4; the preview threshold is the last byte) |
 | `level2_writer` | `recast-radar-io-nexrad` | `read_volume_with_metadata`, then the writer: `write_volume_with_source` without the source metadata (LDM bzip2), with it (uncompressed), with it gzip-wrapped, or `write_realtime_chunks_with_source` with it (mode = input length mod 4; the last two drop gates before the radar and write site KTLX, so Message 1 volumes are written too); the written bytes must decode again with the reported sweeps and radials, the source's rays in their order (a ray left out only when no written moment has data on it), every radial's time (milliseconds since 1970) and angles, and every written moment's codes, gates and absent rays (a refused write is fine) |
 | `level2_writer_router` | `recast-radar-io`, `recast-radar-io-nexrad` | `read_supported_volume_bytes` (ODIM_H5, CfRadial, DORADE, JMA, Level II), then the writer: `write_volume_with_source` (mode = input length mod 8: the Precise (0 and 3), Compatible (1) or Standard (2) policy by length mod 4; lengths with `(len / 4) % 2 == 1` also drop gates before the radar, accept any range rounding, supply a Nyquist velocity and unambiguous range where the source has none and go through `write_realtime_chunks`); the written bytes must decode again with the reported sweeps and radials, each radial the source ray `WriteSummary::written_rays` names (every ray at most once, a ray left out only when no written moment has data on it) with its time (to the millisecond) and angles (bit for bit), and every written moment's gate count, first gate and spacing (to the metre), absent rays and values (each within the reported `max_abs_error`, sentinels as sentinels) |
+| `level2_metadata` | `recast-radar-io-nexrad` | `messages::metadata_record` (a whole-file gzip or bzip2 wrapper expanded only as far as the metadata record: a gzip prefix, or the first bzip2 blocks cut out of the stream) and `NexradMetadata::from_metadata_record` on its result; for even lengths also `read_volume_with_metadata` |
 | `io_router` | `recast-radar-io` | `sniff_supported_volume_format`, `read_supported_volume_bytes` (zip/gzip unwrapping, then Level II, HDF5 by content (ODIM, netCDF-4 CfRadial 1 or 2), classic CfRadial, DORADE or JMA) |
 | `odim` | `recast-radar-io-odim` | `looks_like_hdf5_bytes`, `read_odim_h5_volume`, `decode_odim_h5_cartesian_max`, then `read_odim_hdf5_volume` on the file opened without metadata checksums |
 | `hdf5` | `recast-radar-hdf5` | `looks_like_hdf5_bytes`, `H5File::open`, then `H5File::open_with` without metadata checksums (group walk and every attribute), per dataset `dataset_info`, `chunk_locations` and, up to 32 MiB, `dataset`, and the netCDF-4 model (`NcFile::from_hdf5`, `visible_dims`, `shape`, `read` up to 1 MiB) |
@@ -82,9 +83,15 @@ these derivations:
   Level II file or real-time chunk, without its control word.
 - `.ldm-payloadN`: the decompressed contents of LDM record `N`, the bytes a
   Level II writer compresses (the `bzip2_encode` seeds).
+- `.l2-sparse.bz2-N`: the `.l2-sparse` record stream compressed whole as one bzip2 stream at
+  level `N` (the `bzip2` crate's encoder), the wrapper of a whole-file `.bz2` Level II volume.
+  No published Level II file in the manifests is whole-file bzip2, so this lossless
+  re-encoding of real records is the only way the seeds reach that path (at level 1 the stream
+  has several blocks, which the decoder splits and decodes one at a time).
 
-No seed byte is synthesized. The seed list, with the reason for each file, is
-the `SEEDS` table in `tools/src/main.rs`.
+No seed byte is synthesized: the derivations select, concatenate or losslessly
+re-encode real bytes. The seed list, with the reason for each file, is the
+`SEEDS` table in `tools/src/main.rs`.
 
 ```bash
 cargo run --release --manifest-path fuzz/tools/Cargo.toml -- seeds
@@ -134,7 +141,7 @@ Prerequisites: Linux, `rustup toolchain install nightly`,
 `cargo install cargo-fuzz`, and a C++ compiler for libFuzzer.
 
 ```bash
-# All fourteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
+# All fifteen targets in parallel for 10 minutes each, one libFuzzer worker per target:
 fuzz/run.sh 600
 # A subset:
 fuzz/run.sh 120 level2_volume dorade
@@ -246,6 +253,12 @@ input panicked.
    ```bash
    cd fuzz && cargo +nightly fuzz run -s none <target> ../testdata/files/fuzz/<target> -- -runs=0 -rss_limit_mb=512 -timeout=10
    ```
+
+## Runs
+
+| Date | Targets | Build | Seeds | Result |
+|---|---|---|---|---|
+| 2026-09-25 (perf-p1 fix pass, `nexbench`) | `level2_metadata`, `level2_volume` | rustc 1.100.0-nightly (215a8af4b 2026-09-15), `cargo fuzz run` defaults (AddressSanitizer), `RAYON_NUM_THREADS=1`, `-max_len=400000 -rss_limit_mb=4096 -timeout=30`, 900 s each | `fuzz-tools seeds` of that commit (the whole-file bzip2 seeds included) | `level2_metadata` 129,413 inputs, `level2_volume` 100,998 inputs; no crash, timeout or OOM; peak RSS 520 and 498 MB |
 
 ## Regression inputs
 

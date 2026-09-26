@@ -382,6 +382,7 @@ dependencies = [
 name = "recast-radar-fuzz-tools"
 version = "0.0.0"
 dependencies = [
+ "bzip2",
  "recast-radar-bzip2",
  "recast-radar-fuzz",
  "recast-radar-io-nexrad",

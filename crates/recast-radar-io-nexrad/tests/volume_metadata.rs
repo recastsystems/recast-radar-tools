@@ -22,6 +22,9 @@
 //! volume's sweeps, returns the same volume as `read_volume_from_bytes`, and
 //! keeps decoding when a metadata message is broken.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::io::{Read, Write};

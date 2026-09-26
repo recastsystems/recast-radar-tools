@@ -60,6 +60,7 @@ pub const TARGETS: &[(&str, Harness)] = &[
     ("level2_volume", level2_volume),
     ("level2_writer", level2_writer),
     ("level2_writer_router", level2_writer_router),
+    ("level2_metadata", level2_metadata),
     ("io_router", io_router),
     ("odim", odim),
     ("hdf5", hdf5),
@@ -82,7 +83,8 @@ pub fn harness(name: &str) -> Option<Harness> {
 }
 
 /// NEXRAD Archive II / Level II volume decoding (`recast-radar-io-nexrad`):
-/// gzip, whole-file bzip2, LDM block-bzip2 and uncompressed record streams,
+/// gzip (parsed while it inflates), whole-file bzip2 (parsed block by block
+/// while it decodes), LDM block-bzip2 and uncompressed record streams,
 /// through the whole-buffer, streaming-gzip and first-cut preview entry
 /// points (mode = input length mod 4).
 pub fn level2_volume(data: &[u8]) -> bool {
@@ -471,6 +473,24 @@ fn codes(field: &recast_radar_core::model::Field, ray: usize) -> Option<Vec<u16>
         RowRef::U16(values) => Some(values.to_vec()),
         _ => None,
     }
+}
+
+/// The Level II metadata paths (`recast-radar-io-nexrad`): the metadata
+/// record through `messages::metadata_record`, which expands a whole-file
+/// gzip or bzip2 wrapper only as far as that record (a gzip prefix, or the
+/// first bzip2 blocks cut out of the stream), then parsed by
+/// `NexradMetadata::from_metadata_record`; and, for even lengths,
+/// `read_volume_with_metadata`, the whole volume with its metadata.
+pub fn level2_metadata(data: &[u8]) -> bool {
+    let record = match nexrad::messages::metadata_record(data) {
+        Ok(record) => {
+            let _ = nexrad::NexradMetadata::from_metadata_record(&record);
+            true
+        }
+        Err(_) => false,
+    };
+    let volume = data.len().is_multiple_of(2) && nexrad::read_volume_with_metadata(data).is_ok();
+    record || volume
 }
 
 /// The bzip2 stream decoder (`recast-radar-bzip2`): the input through

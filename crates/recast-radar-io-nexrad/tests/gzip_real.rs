@@ -201,7 +201,7 @@ fn trailing_padding_after_the_last_member_is_ignored_on_every_gzip_path() {
 fn assert_same_but_gzip(volume: &Volume, expected: &Volume, what: &str) {
     assert_eq!(
         volume.provenance.compression.as_deref(),
-        Some("gzip-bzip2-blocks"),
+        Some("gzip"),
         "{what}: compression"
     );
     let mut volume = volume.clone();
@@ -272,7 +272,7 @@ fn gzip_around_ldm_records_decodes_on_every_gzip_path() {
     // normalize_archive_bytes decodes the records too, as it does for LDM
     // records without the wrapper.
     let (normalized, compression) = normalize_archive_bytes(&stored).unwrap();
-    assert_eq!(compression, ArchiveCompression::GzipBzip2Blocks);
+    assert_eq!(compression, ArchiveCompression::Gzip);
     let (records, _) = normalize_archive_bytes(&inflated).unwrap();
     assert!(normalized == records, "normalized bytes differ");
     let volume = read_normalized_volume_bytes(&normalized, compression).unwrap();
@@ -322,7 +322,7 @@ fn truncated_ldm_records_are_an_error_or_the_records_before_the_cut() {
     ] {
         match read_volume_from_bytes(&bytes) {
             Err(NexradError::Truncated { what: kind, .. }) => {
-                assert_eq!(kind, "LDM bzip2 record", "{what}");
+                assert_eq!(kind, "LDM compressed record", "{what}");
             }
             other => panic!("{what}: {other:?}"),
         }
@@ -338,7 +338,7 @@ fn truncated_ldm_records_are_an_error_or_the_records_before_the_cut() {
     assert!(expected.provenance.decode.decoded_ray_count > 0);
     for (what, bytes, compression) in [
         ("plain", inflated[..cut].to_vec(), "bzip2-blocks"),
-        ("gzipped", gzipped(&inflated[..cut]), "gzip-bzip2-blocks"),
+        ("gzipped", gzipped(&inflated[..cut]), "gzip"),
     ] {
         let volume = read_volume_from_bytes(&bytes).unwrap();
         assert_eq!(
@@ -362,5 +362,46 @@ fn truncated_ldm_records_are_an_error_or_the_records_before_the_cut() {
                 "{what} sweep {index}"
             );
         }
+    }
+}
+
+/// `read_volume_from_bytes` parses gzip input while inflating it, through a
+/// window of about 1 MiB. It must give the volume the parser gives on the
+/// whole inflated buffer, and fail exactly when, and as, the one-shot
+/// inflate fails: a truncated file, a damaged CRC-32 trailer and a damaged
+/// deflate stream all return the one-shot's compression error.
+#[test]
+fn windowed_gzip_decode_equals_the_whole_buffer_parse_and_fails_as_the_one_shot() {
+    let Some(original) = real_gzip_volume() else {
+        return;
+    };
+    let (payload, compression) =
+        normalize_archive_bytes(&original).expect("real gzip volume inflates");
+    let expected = recast_radar_io_nexrad::read_normalized_volume_bytes(&payload, compression)
+        .expect("whole-buffer parse");
+    let volume = read_volume_from_bytes(&original).expect("windowed decode");
+    assert!(
+        without_nan(&volume) == without_nan(&expected),
+        "windowed decode differs from the whole-buffer parse"
+    );
+
+    let mut truncated = original.clone();
+    truncated.truncate(original.len() / 2);
+    let mut bad_crc = original.clone();
+    let crc_offset = bad_crc.len() - 8;
+    bad_crc[crc_offset] ^= 0x5a;
+    let mut bad_deflate = original.clone();
+    let middle = bad_deflate.len() / 3;
+    for byte in &mut bad_deflate[middle..middle + 64] {
+        *byte ^= 0xa5;
+    }
+    for (what, raw) in [
+        ("truncated", truncated),
+        ("bad CRC-32", bad_crc),
+        ("bad deflate", bad_deflate),
+    ] {
+        let one_shot = normalize_archive_bytes(&raw).expect_err(what).to_string();
+        let windowed = read_volume_from_bytes(&raw).expect_err(what).to_string();
+        assert_eq!(windowed, one_shot, "{what}");
     }
 }

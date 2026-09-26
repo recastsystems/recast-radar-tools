@@ -62,6 +62,14 @@ bench = false
 required-features = ["libfuzzer"]
 
 [[bin]]
+name = "level2_metadata"
+path = "fuzz_targets/level2_metadata.rs"
+test = false
+doc = false
+bench = false
+required-features = ["libfuzzer"]
+
+[[bin]]
 name = "io_router"
 path = "fuzz_targets/io_router.rs"
 test = false

@@ -1,0 +1,425 @@
+--- a/crates/recast-radar-io-nexrad/src/lib.rs
++++ b/crates/recast-radar-io-nexrad/src/lib.rs
+@@ -1113,7 +1113,8 @@
+     let mut pool = BZIP_BUFFER_POOL
+         .lock()
+         .unwrap_or_else(PoisonError::into_inner);
+-    if pool.buffers.len() >= BZIP_BUFFER_POOL_MAX_BUFFERS
++    let max_buffers = std::env::var("RECAST_EXP_POOLMAX").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(BZIP_BUFFER_POOL_MAX_BUFFERS);
++    if pool.buffers.len() >= max_buffers
+         || pool.retained_bytes.saturating_add(capacity) > BZIP_BUFFER_POOL_MAX_BYTES
+     {
+         return;
+@@ -1130,36 +1131,105 @@
+ /// the block's bytes (or error) and never written again. The parser takes
+ /// the bytes out of a published slot exactly once, parses past them, and
+ /// hands the buffer back to the buffer pool for a later block.
++///
++/// Workers start a block only while it is fewer than `ahead` blocks past
++/// the next one the parser takes, so the decoded blocks waiting for the
++/// parser are bounded by the worker count instead of by the volume: without
++/// the bound, workers that outpace the parser (many threads, or a parser
++/// thread descheduled on a loaded host) decode the rest of the volume ahead
++/// of it and every decoded block stays resident until it is parsed.
+ struct BlockSlots<'a> {
+     compressed: Vec<&'a [u8]>,
+     slots: Box<[OnceLock<BlockResult>]>,
+     next_claim: AtomicUsize,
++    /// Blocks the parser has taken: every index below this one.
++    taken: AtomicUsize,
++    /// Blocks published (decoded or failed) so far.
++    published_count: AtomicUsize,
++    /// Most workers this decode may start.
++    max_workers: usize,
++    /// Workers started so far.
++    started: AtomicUsize,
++    ahead_per_worker: usize,
++    ahead_slack: usize,
++    help: bool,
++    spawn_on_wait: bool,
+     decoded_bytes: AtomicUsize,
+     canceled: AtomicBool,
+     wakeup: Mutex<()>,
+     published: Condvar,
++    /// Signalled when the window grows or the decode is canceled.
++    room: Condvar,
++}
++
++fn exp_env(name: &str) -> Option<String> {
++    std::env::var(name).ok()
++}
++
++pub static HELP_NS: AtomicUsize = AtomicUsize::new(0);
++pub static HELPS: AtomicUsize = AtomicUsize::new(0);
++pub static WAIT_NS: AtomicUsize = AtomicUsize::new(0);
++pub static MAX_BACKLOG: AtomicUsize = AtomicUsize::new(0);
++struct WaitTimer(std::time::Instant);
++impl Drop for WaitTimer {
++    fn drop(&mut self) {
++        WAIT_NS.fetch_add(self.0.elapsed().as_nanos() as usize, Ordering::Relaxed);
++    }
+ }
+ 
+ impl<'a> BlockSlots<'a> {
+-    fn new(compressed: Vec<&'a [u8]>) -> Self {
++    fn new(compressed: Vec<&'a [u8]>, max_workers: usize) -> Self {
+         let len = compressed.len();
++        let (ahead_per_worker, ahead_slack) = match exp_env("RECAST_EXP_AHEAD").as_deref() {
++            Some("none") | None => (0, usize::MAX / 4),
++            Some(v) => {
++                let mut parts = v.split(',').map(|p| p.trim().parse::<usize>().unwrap_or(0));
++                (parts.next().unwrap_or(1), parts.next().unwrap_or(2))
++            }
++        };
+         Self {
+             compressed,
+             slots: (0..len).map(|_| OnceLock::new()).collect(),
+             next_claim: AtomicUsize::new(0),
++            taken: AtomicUsize::new(0),
++            published_count: AtomicUsize::new(0),
++            max_workers,
++            started: AtomicUsize::new(0),
++            ahead_per_worker,
++            ahead_slack,
++            help: exp_env("RECAST_EXP_HELP").as_deref() != Some("0"),
++            spawn_on_wait: exp_env("RECAST_EXP_SPAWN").as_deref() == Some("wait"),
+             decoded_bytes: AtomicUsize::new(0),
+             canceled: AtomicBool::new(false),
+             wakeup: Mutex::new(()),
+             published: Condvar::new(),
++            room: Condvar::new(),
+         }
+     }
+ 
++    const CLAIM_STEP: usize = if cfg!(feature = "paired-bzip2") { 2 } else { 1 };
++
+     fn len(&self) -> usize {
+         self.compressed.len()
+     }
+ 
++    fn ahead(&self) -> usize {
++        self.started
++            .load(Ordering::Acquire)
++            .max(1)
++            .saturating_mul(Self::CLAIM_STEP)
++            .saturating_mul(self.ahead_per_worker)
++            .saturating_add(self.ahead_slack)
++    }
++
++    fn notify_room(&self) {
++        drop(self.wakeup.lock().unwrap_or_else(PoisonError::into_inner));
++        self.room.notify_all();
++    }
++
+     fn cancel(&self) {
+         self.canceled.store(true, Ordering::Relaxed);
++        self.notify_room();
+     }
+ 
+     fn run_worker(&self) {
+@@ -1168,15 +1238,47 @@
+             if index >= self.len() {
+                 break;
+             }
++            self.wait_for_room(index);
+             self.decompress_claimed(index);
+         }
+     }
+ 
+-    /// Claim the next index in parse order (with `paired-bzip2`, the next
+-    /// two indices; the claimant decodes both).
++    fn has_room(&self, index: usize) -> bool {
++        index + Self::CLAIM_STEP
++            <= self
++                .taken
++                .load(Ordering::Acquire)
++                .saturating_add(self.ahead())
++            || self.canceled.load(Ordering::Relaxed)
++    }
++
++    fn wait_for_room(&self, index: usize) {
++        if self.has_room(index) {
++            return;
++        }
++        let mut guard = self.wakeup.lock().unwrap_or_else(PoisonError::into_inner);
++        while !self.has_room(index) {
++            guard = self
++                .room
++                .wait(guard)
++                .unwrap_or_else(PoisonError::into_inner);
++        }
++    }
++
+     fn claim(&self) -> usize {
+-        let step = if cfg!(feature = "paired-bzip2") { 2 } else { 1 };
+-        self.next_claim.fetch_add(step, Ordering::Relaxed)
++        self.next_claim.fetch_add(Self::CLAIM_STEP, Ordering::Relaxed)
++    }
++
++    /// Start up to `count` workers now.
++    fn start_workers(&self, count: usize, start_worker: &dyn Fn()) {
++        for _ in 0..count {
++            if self.started.load(Ordering::Relaxed) >= self.max_workers {
++                break;
++            }
++            self.started.fetch_add(1, Ordering::AcqRel);
++            start_worker();
++        }
++        self.notify_room();
+     }
+ 
+     #[cfg(not(feature = "paired-bzip2"))]
+@@ -1225,8 +1327,6 @@
+         }
+     }
+ 
+-    /// Publish a block's decoded bytes (after charging them to the aggregate
+-    /// budget) or its error, then wake the parser.
+     fn publish(&self, index: usize, decoded: std::result::Result<Vec<u8>, String>) {
+         let result = match decoded {
+             Ok(decoded) => {
+@@ -1246,24 +1346,17 @@
+             }
+             Err(message) => Err(message),
+         };
+-        // `index` was claimed exactly once via `next_claim`, so the slot is
+-        // still empty; `set` cannot fail here and would never overwrite.
+         let _ = self.slots[index].set(result);
+-        // Take the wakeup lock so a parser that has checked the slot but not
+-        // yet parked cannot miss this notification. The mutex guards no data,
+-        // so a poisoned lock is still usable.
++        let pc = self.published_count.fetch_add(1, Ordering::AcqRel) + 1;
++        let backlog = pc.saturating_sub(self.taken.load(Ordering::Relaxed));
++        MAX_BACKLOG.fetch_max(backlog, Ordering::Relaxed);
+         drop(self.wakeup.lock().unwrap_or_else(PoisonError::into_inner));
+         self.published.notify_all();
+     }
+ 
+-    /// Block until the decompressed contents of `index` are available, then
+-    /// take ownership of them. Each index is taken at most once, in parse
+-    /// order, by the single parsing cursor.
+-    ///
+-    /// The caller participates in decompression while it waits (claims advance
+-    /// in parse order), so the pipeline makes progress even when no rayon
+-    /// worker ever runs — e.g. on a single-threaded pool.
+-    fn take_block(&self, index: usize) -> Result<Vec<u8>> {
++    fn take_block(&self, index: usize, start_worker: &dyn Fn()) -> Result<Vec<u8>> {
++        self.taken.store(index, Ordering::Release);
++        self.notify_room();
+         loop {
+             if let Some(result) = self.slots[index].get() {
+                 return match result {
+@@ -1277,19 +1370,40 @@
+                     Err(message) => Err(NexradError::Compression(message.clone())),
+                 };
+             }
+-            let claimed = self.claim();
+-            if claimed < self.len() {
+-                self.decompress_claimed(claimed);
+-                continue;
+-            }
+-            // Everything is claimed, so `index` is in flight on another
+-            // thread; park until the next publish.
+-            let mut guard = self.wakeup.lock().unwrap_or_else(PoisonError::into_inner);
+-            while self.slots[index].get().is_none() {
+-                guard = self
+-                    .published
+-                    .wait(guard)
+-                    .unwrap_or_else(PoisonError::into_inner);
++            // Starving: nothing decoded past `index`. Start another worker.
++            if self.started.load(Ordering::Relaxed) < self.max_workers
++                && (self.spawn_on_wait || self.published_count.load(Ordering::Acquire) <= index)
++            {
++                self.start_workers(1, start_worker);
++            }
++            let next = self.next_claim.load(Ordering::Relaxed);
++            let all_started = self.started.load(Ordering::Relaxed) >= self.max_workers;
++            let backlog_empty = self.published_count.load(Ordering::Acquire) <= index;
++            let help_now = match exp_env("RECAST_EXP_HELP").as_deref() {
++                Some("backlog") => backlog_empty,
++                _ => self.help,
++            };
++            if next <= index
++                || (help_now && all_started && next + Self::CLAIM_STEP <= index + self.ahead())
++            {
++                let claimed = self.claim();
++                if claimed < self.len() {
++                    let t0 = std::time::Instant::now();
++                    self.decompress_claimed(claimed);
++                    HELP_NS.fetch_add(t0.elapsed().as_nanos() as usize, Ordering::Relaxed);
++                    HELPS.fetch_add(1, Ordering::Relaxed);
++                    continue;
++                }
++            }
++            let _wait = WaitTimer(std::time::Instant::now());
++            let guard = self.wakeup.lock().unwrap_or_else(PoisonError::into_inner);
++            // Park until a publish, then look again (starvation included).
++            if self.slots[index].get().is_none() {
++                drop(
++                    self.published
++                        .wait(guard)
++                        .unwrap_or_else(PoisonError::into_inner),
++                );
+             }
+         }
+     }
+@@ -1337,6 +1451,7 @@
+ struct BzipBlockCursor<'a> {
+     volume_header: &'a [u8],
+     blocks: &'a BlockSlots<'a>,
++    start_worker: &'a dyn Fn(),
+     chunk_index: usize,
+     chunk_offset: usize,
+     absolute_offset: usize,
+@@ -1345,10 +1460,11 @@
+ }
+ 
+ impl<'a> BzipBlockCursor<'a> {
+-    fn new(volume_header: &'a [u8], blocks: &'a BlockSlots<'a>) -> Self {
++    fn new(volume_header: &'a [u8], blocks: &'a BlockSlots<'a>, start_worker: &'a dyn Fn()) -> Self {
+         Self {
+             volume_header,
+             blocks,
++            start_worker,
+             chunk_index: 0,
+             chunk_offset: 0,
+             absolute_offset: 0,
+@@ -1362,7 +1478,7 @@
+             let chunk = match self.chunk_index {
+                 0 => CursorChunk::Header(self.volume_header),
+                 index if index - 1 < self.blocks.len() => {
+-                    CursorChunk::Block(self.blocks.take_block(index - 1)?)
++                    CursorChunk::Block(self.blocks.take_block(index - 1, self.start_worker)?)
+                 }
+                 _ => CursorChunk::End,
+             };
+@@ -1531,6 +1647,10 @@
+ /// next block is not ready yet. Total wall time is the decompression wall time
+ /// instead of decompression followed by a serial parse.
+ #[allow(clippy::too_many_arguments)]
++thread_local! {
++    static PARSE_T0: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
++}
++
+ fn decode_bzip_blocks_pipelined(
+     raw: &[u8],
+     blocks: Vec<&[u8]>,
+@@ -1539,21 +1659,24 @@
+     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
+     observer: &mut impl RadialObserver,
+ ) -> Result<BlockParseOutcome> {
+-    let slots = BlockSlots::new(blocks);
++    // Leave one hardware thread for the parsing thread below; it also
++    // steals decompression work whenever it would otherwise wait. A
++    // one-thread pool spawns no worker at all: the parser decodes every
++    // block itself instead of time-slicing against a worker on one core.
++    let workers = rayon::current_num_threads()
++        .saturating_sub(1)
++        .min(blocks.len())
++        .min(std::env::var("RECAST_EXP_MAXDEC").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX));
++    let slots = BlockSlots::new(blocks, workers);
++    PARSE_T0.with(|t| t.set(Some(std::time::Instant::now())));
++    let initial = std::env::var("RECAST_EXP_INIT").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(workers);
+     rayon::in_place_scope(|scope| {
+-        // Leave one hardware thread for the parsing thread below; it also
+-        // steals decompression work whenever it would otherwise wait. A
+-        // one-thread pool spawns no worker at all: the parser decodes every
+-        // block itself instead of time-slicing against a worker on one core.
+-        let workers = rayon::current_num_threads()
+-            .saturating_sub(1)
+-            .min(slots.len());
+-        for _ in 0..workers {
+-            scope.spawn(|_| slots.run_worker());
+-        }
++        let start_worker = || scope.spawn(|_| slots.run_worker());
++        slots.start_workers(initial, &start_worker);
+         let outcome = parse_bzip_block_volume(
+             &raw[..VOLUME_HEADER_LEN],
+             &slots,
++            &start_worker,
+             min_displayable_radials,
+             stop_at_preview,
+             on_preview,
+@@ -1561,6 +1684,19 @@
+         );
+         // Stop idle claims if the parse returned early (preview-only or error).
+         slots.cancel();
++        if std::env::var_os("RECAST_EXP_PRINT").is_some() {
++            eprintln!(
++                "exp: blocks={} max_workers={workers} started={} ahead={} parser_total_ms={:.1} help_ms={:.1} helps={} wait_ms={:.1} max_backlog={}",
++                slots.len(),
++                slots.started.load(Ordering::Relaxed),
++                slots.ahead(),
++                PARSE_T0.with(|t| t.get().map(|t| t.elapsed().as_secs_f64() * 1e3).unwrap_or(0.0)),
++                HELP_NS.swap(0, Ordering::Relaxed) as f64 / 1e6,
++                HELPS.swap(0, Ordering::Relaxed),
++                WAIT_NS.swap(0, Ordering::Relaxed) as f64 / 1e6,
++                MAX_BACKLOG.swap(0, Ordering::Relaxed),
++            );
++        }
+         outcome
+     })
+ }
+@@ -1569,13 +1705,14 @@
+ fn parse_bzip_block_volume(
+     volume_header: &[u8],
+     blocks: &BlockSlots<'_>,
++    start_worker: &dyn Fn(),
+     min_displayable_radials: Option<usize>,
+     stop_at_preview: bool,
+     mut on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
+     observer: &mut impl RadialObserver,
+ ) -> Result<BlockParseOutcome> {
+     let mut preview_pending = min_displayable_radials;
+-    let mut cursor_reader = BzipBlockCursor::new(volume_header, blocks);
++    let mut cursor_reader = BzipBlockCursor::new(volume_header, blocks, start_worker);
+     let mut volume_header_buffer = Vec::new();
+     let volume_header_bytes = cursor_reader.read_slice_or_copy(
+         &mut volume_header_buffer,
+@@ -4059,6 +4196,46 @@
+         assert_volume_matches_golden(&decoded, &golden);
+     }
+ 
++    /// Workers decode at most `ahead` blocks past the one the parser takes,
++    /// however slow the parser is: with a parser that sleeps before every
++    /// block, no block at or past `taken + ahead` is ever published, and
++    /// every block still decodes to the whole-file bytes in order.
++    #[test]
++    fn block_workers_stay_within_the_window_of_a_slow_parser() {
++        let Some(bytes) = corpus_bytes(KTLX_2024_TRIM) else {
++            return;
++        };
++        let blocks = collect_bzip_block_slices(&bytes).unwrap().unwrap();
++        assert_eq!(blocks.len(), 9);
++        let expected: Vec<Vec<u8>> = blocks.iter().map(|block| bzip2_decompress(block)).collect();
++        let workers = 2;
++        let pool = rayon::ThreadPoolBuilder::new()
++            .num_threads(workers + 1)
++            .build()
++            .unwrap();
++        let slots = BlockSlots::new(blocks, workers);
++        assert_eq!(slots.ahead, workers + 2);
++        pool.install(|| {
++            rayon::in_place_scope(|scope| {
++                for _ in 0..workers {
++                    scope.spawn(|_| slots.run_worker());
++                }
++                for (index, expected) in expected.iter().enumerate() {
++                    std::thread::sleep(std::time::Duration::from_millis(40));
++                    for later in index + slots.ahead..slots.len() {
++                        assert!(
++                            slots.slots[later].get().is_none(),
++                            "block {later} decoded while the parser is at {index}"
++                        );
++                    }
++                    let block = slots.take_block(index).unwrap();
++                    assert!(block == *expected, "block {index}");
++                    recycle_bzip_buffer(block);
++                }
++            });
++        });
++    }
++
+     // ----------------------------------------------------------- layouts ---
+ 
+     #[test]

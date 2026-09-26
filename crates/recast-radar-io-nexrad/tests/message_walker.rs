@@ -10,6 +10,9 @@
 //! The mutation tests start from the committed KIWA start chunk and change
 //! single header fields to exercise the error paths.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};

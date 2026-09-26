@@ -62,8 +62,9 @@ pub(crate) struct MomentBlock<'a> {
     pub offset: f32,
     pub row: MomentPayload<'a>,
     /// Message 31 moment-header values with no FM301 slot, carried into
-    /// [`FieldAttrs::other`] when the field is created. `None` for Message 1,
-    /// whose legacy moment header has no equivalent.
+    /// [`FieldAttrs::other`](recast_radar_core::model::FieldAttrs::other)
+    /// when the field is created. `None` for Message 1, whose legacy moment
+    /// header has no equivalent.
     pub extras: Option<MomentHeaderExtras>,
 }
 
@@ -956,6 +957,26 @@ fn push_row(
         budget
             .check(needed - before, "Level II moment grid")
             .map_err(NexradError::LimitExceeded)?;
+        // A sweep with more radials than its reservation (legacy 1-degree
+        // cuts carry 361-368) grows by an eighth of its rows, at least 16,
+        // instead of the vector doubling; a wider row than the field's
+        // gates keeps the vector's own growth. The budget check above and
+        // the charge below still cover what is allocated.
+        if row_gates <= field.ngates as usize {
+            let step = (rows / 8).max(16);
+            let missing_rows = rows.saturating_sub(field.nrays as usize);
+            if budget
+                .check(
+                    step.saturating_add(missing_rows)
+                        .saturating_mul(field.ngates as usize)
+                        .saturating_mul(word),
+                    "Level II moment grid",
+                )
+                .is_ok()
+            {
+                field.reserve_rows(missing_rows.saturating_add(step));
+            }
+        }
     }
     let pushed = match row {
         MomentPayload::U8(bytes) => field.push_row_u8(ray, bytes),

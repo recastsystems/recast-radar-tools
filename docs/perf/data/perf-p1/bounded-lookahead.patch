@@ -1,0 +1,225 @@
+diff --git a/crates/recast-radar-io-nexrad/src/lib.rs b/crates/recast-radar-io-nexrad/src/lib.rs
+--- a/crates/recast-radar-io-nexrad/src/lib.rs
++++ b/crates/recast-radar-io-nexrad/src/lib.rs
+@@ -1121,36 +1121,65 @@ fn recycle_bzip_buffer(mut buffer: Vec<u8>) {
+ /// the block's bytes (or error) and never written again. The parser takes
+ /// the bytes out of a published slot exactly once, parses past them, and
+ /// hands the buffer back to the buffer pool for a later block.
++///
++/// Workers start a block only while it is fewer than `ahead` blocks past
++/// the next one the parser takes, so the decoded blocks waiting for the
++/// parser are bounded by the worker count instead of by the volume: without
++/// the bound, workers that outpace the parser (many threads, or a parser
++/// thread descheduled on a loaded host) decode the rest of the volume ahead
++/// of it and every decoded block stays resident until it is parsed.
+ struct BlockSlots<'a> {
+     compressed: Vec<&'a [u8]>,
+     slots: Box<[OnceLock<BlockResult>]>,
+     next_claim: AtomicUsize,
++    /// Blocks the parser has taken: every index below this one.
++    taken: AtomicUsize,
++    /// How far past `taken` a block may start decoding.
++    ahead: usize,
+     decoded_bytes: AtomicUsize,
+     canceled: AtomicBool,
+     wakeup: Mutex<()>,
+     published: Condvar,
++    /// Signalled when `taken` grows or the decode is canceled.
++    room: Condvar,
+ }
+ 
+ impl<'a> BlockSlots<'a> {
+-    fn new(compressed: Vec<&'a [u8]>) -> Self {
++    /// Slots for `compressed`, decoded by `workers` threads besides the
++    /// parser.
++    fn new(compressed: Vec<&'a [u8]>, workers: usize) -> Self {
+         let len = compressed.len();
+         Self {
+             compressed,
+             slots: (0..len).map(|_| OnceLock::new()).collect(),
+             next_claim: AtomicUsize::new(0),
++            taken: AtomicUsize::new(0),
++            // Room for every worker's claim (two blocks each with
++            // `paired-bzip2`) plus two decoded blocks of slack, so a worker
++            // rarely waits while the parser keeps up. The block the parser
++            // waits for, `taken`, is always inside the window, so the
++            // parser never waits on a worker that waits for room.
++            ahead: workers.saturating_mul(Self::CLAIM_STEP).saturating_add(2),
+             decoded_bytes: AtomicUsize::new(0),
+             canceled: AtomicBool::new(false),
+             wakeup: Mutex::new(()),
+             published: Condvar::new(),
++            room: Condvar::new(),
+         }
+     }
+ 
++    /// Blocks claimed at once (two with `paired-bzip2`: the claimant
++    /// decodes both).
++    const CLAIM_STEP: usize = if cfg!(feature = "paired-bzip2") { 2 } else { 1 };
++
+     fn len(&self) -> usize {
+         self.compressed.len()
+     }
+ 
+     fn cancel(&self) {
+         self.canceled.store(true, Ordering::Relaxed);
++        drop(self.wakeup.lock().unwrap_or_else(PoisonError::into_inner));
++        self.room.notify_all();
+     }
+ 
+     fn run_worker(&self) {
+@@ -1159,15 +1188,40 @@ impl<'a> BlockSlots<'a> {
+             if index >= self.len() {
+                 break;
+             }
++            // A claimed block is always decoded, as before the bound:
++            // cancelling only stops new claims.
++            self.wait_for_room(index);
+             self.decompress_claimed(index);
+         }
+     }
+ 
++    /// `true` when the claim starting at `index` may be decoded now.
++    fn has_room(&self, index: usize) -> bool {
++        index + Self::CLAIM_STEP <= self.taken.load(Ordering::Acquire) + self.ahead
++            || self.canceled.load(Ordering::Relaxed)
++    }
++
++    /// Park until the claim starting at `index` is inside the window or the
++    /// decode is canceled.
++    fn wait_for_room(&self, index: usize) {
++        if self.has_room(index) {
++            return;
++        }
++        // `taken` grows before the parser takes this lock to notify, so a
++        // check made under the lock cannot miss the notification.
++        let mut guard = self.wakeup.lock().unwrap_or_else(PoisonError::into_inner);
++        while !self.has_room(index) {
++            guard = self
++                .room
++                .wait(guard)
++                .unwrap_or_else(PoisonError::into_inner);
++        }
++    }
++
+     /// Claim the next index in parse order (with `paired-bzip2`, the next
+     /// two indices; the claimant decodes both).
+     fn claim(&self) -> usize {
+-        let step = if cfg!(feature = "paired-bzip2") { 2 } else { 1 };
+-        self.next_claim.fetch_add(step, Ordering::Relaxed)
++        self.next_claim.fetch_add(Self::CLAIM_STEP, Ordering::Relaxed)
+     }
+ 
+     #[cfg(not(feature = "paired-bzip2"))]
+@@ -1253,8 +1307,14 @@ impl<'a> BlockSlots<'a> {
+     ///
+     /// The caller participates in decompression while it waits (claims advance
+     /// in parse order), so the pipeline makes progress even when no rayon
+-    /// worker ever runs — e.g. on a single-threaded pool.
++    /// worker ever runs — e.g. on a single-threaded pool. It helps only
++    /// inside the window of blocks workers may start ([`BlockSlots`]).
+     fn take_block(&self, index: usize) -> Result<Vec<u8>> {
++        // Every block before `index` was taken: workers may start blocks up
++        // to `ahead` past it.
++        self.taken.store(index, Ordering::Release);
++        drop(self.wakeup.lock().unwrap_or_else(PoisonError::into_inner));
++        self.room.notify_all();
+         loop {
+             if let Some(result) = self.slots[index].get() {
+                 return match result {
+@@ -1268,13 +1328,18 @@ impl<'a> BlockSlots<'a> {
+                     Err(message) => Err(NexradError::Compression(message.clone())),
+                 };
+             }
+-            let claimed = self.claim();
+-            if claimed < self.len() {
+-                self.decompress_claimed(claimed);
+-                continue;
++            // `index` is unclaimed only when the next claim is `index`
++            // itself, which is always inside the window.
++            if self.next_claim.load(Ordering::Relaxed) + Self::CLAIM_STEP <= index + self.ahead {
++                let claimed = self.claim();
++                if claimed < self.len() {
++                    self.decompress_claimed(claimed);
++                    continue;
++                }
+             }
+-            // Everything is claimed, so `index` is in flight on another
+-            // thread; park until the next publish.
++            // `index` is in flight on another thread (everything is claimed,
++            // or the next block is past the window); park until the next
++            // publish.
+             let mut guard = self.wakeup.lock().unwrap_or_else(PoisonError::into_inner);
+             while self.slots[index].get().is_none() {
+                 guard = self
+@@ -1530,15 +1595,15 @@ fn decode_bzip_blocks_pipelined(
+     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
+     observer: &mut impl RadialObserver,
+ ) -> Result<BlockParseOutcome> {
+-    let slots = BlockSlots::new(blocks);
++    // Leave one hardware thread for the parsing thread below; it also
++    // steals decompression work whenever it would otherwise wait. A
++    // one-thread pool spawns no worker at all: the parser decodes every
++    // block itself instead of time-slicing against a worker on one core.
++    let workers = rayon::current_num_threads()
++        .saturating_sub(1)
++        .min(blocks.len());
++    let slots = BlockSlots::new(blocks, workers);
+     rayon::in_place_scope(|scope| {
+-        // Leave one hardware thread for the parsing thread below; it also
+-        // steals decompression work whenever it would otherwise wait. A
+-        // one-thread pool spawns no worker at all: the parser decodes every
+-        // block itself instead of time-slicing against a worker on one core.
+-        let workers = rayon::current_num_threads()
+-            .saturating_sub(1)
+-            .min(slots.len());
+         for _ in 0..workers {
+             scope.spawn(|_| slots.run_worker());
+         }
+@@ -4010,6 +4075,46 @@ mod tests {
+         assert_volume_matches_golden(&decoded, &golden);
+     }
+ 
++    /// Workers decode at most `ahead` blocks past the one the parser takes,
++    /// however slow the parser is: with a parser that sleeps before every
++    /// block, no block at or past `taken + ahead` is ever published, and
++    /// every block still decodes to the whole-file bytes in order.
++    #[test]
++    fn block_workers_stay_within_the_window_of_a_slow_parser() {
++        let Some(bytes) = corpus_bytes(KTLX_2024_TRIM) else {
++            return;
++        };
++        let blocks = collect_bzip_block_slices(&bytes).unwrap().unwrap();
++        assert_eq!(blocks.len(), 9);
++        let expected: Vec<Vec<u8>> = blocks.iter().map(|block| bzip2_decompress(block)).collect();
++        let workers = 2;
++        let pool = rayon::ThreadPoolBuilder::new()
++            .num_threads(workers + 1)
++            .build()
++            .unwrap();
++        let slots = BlockSlots::new(blocks, workers);
++        assert_eq!(slots.ahead, workers + 2);
++        pool.install(|| {
++            rayon::in_place_scope(|scope| {
++                for _ in 0..workers {
++                    scope.spawn(|_| slots.run_worker());
++                }
++                for (index, expected) in expected.iter().enumerate() {
++                    std::thread::sleep(std::time::Duration::from_millis(40));
++                    for later in index + slots.ahead..slots.len() {
++                        assert!(
++                            slots.slots[later].get().is_none(),
++                            "block {later} decoded while the parser is at {index}"
++                        );
++                    }
++                    let block = slots.take_block(index).unwrap();
++                    assert!(block == *expected, "block {index}");
++                    recycle_bzip_buffer(block);
++                }
++            });
++        });
++    }
++
+     // ----------------------------------------------------------- layouts ---
+ 
+     #[test]

@@ -1,0 +1,20 @@
+[package]
+name = "nexrad-crate-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "danielway/nexrad decode harness for tools/xlib-bench (not part of the workspace)"
+
+# Standalone: not a member of the recast-radar-tools workspace.
+[workspace]
+
+[dependencies]
+# danielway/nexrad at 1591b64, the revision every earlier study measured.
+# Build with `--config` or edit the path to a local clone; build_linux.sh
+# points it at the nexbench clone.
+nexrad-data = { git = "https://github.com/danielway/nexrad", rev = "1591b64", default-features = false, features = ["nexrad-model", "parallel"] }
+rayon = "1.11"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

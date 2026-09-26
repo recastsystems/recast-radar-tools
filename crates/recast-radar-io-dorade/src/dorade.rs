@@ -116,7 +116,9 @@
 use std::path::Path;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
-use recast_radar_core::bounded_read::{DecodeBudget, check_gate_count, check_sweep_count};
+use recast_radar_core::bounded_read::{
+    DecodeBudget, MAX_GATES_PER_RADIAL, check_gate_count, check_sweep_count,
+};
 use recast_radar_core::model::{
     ArrayBuf, AttrValue, ExtraVariable, Field, FieldData, FieldName, FloatCoding, FollowMode,
     GateMapping, GeoreferencingCorrection, IntCoding, LinearTransform, Monitoring, PlatformTrack,
@@ -1115,13 +1117,17 @@ impl SweepParse {
         let mut row = match param.binary_format {
             1 => ParamRow::I8(payload.iter().map(|byte| *byte as i8).collect()),
             2 => {
-                let words: Vec<i16> = payload
-                    .chunks_exact(2)
-                    .map(|pair| match endian {
-                        Endian::Little => i16::from_le_bytes([pair[0], pair[1]]),
-                        Endian::Big => i16::from_be_bytes([pair[0], pair[1]]),
-                    })
-                    .collect();
+                // One loop per byte order, so each converts without a branch
+                // per word.
+                let pairs = payload.chunks_exact(2);
+                let words: Vec<i16> = match endian {
+                    Endian::Little => pairs
+                        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+                        .collect(),
+                    Endian::Big => pairs
+                        .map(|pair| i16::from_be_bytes([pair[0], pair[1]]))
+                        .collect(),
+                };
                 let words = if compressed {
                     let gates = gate_count.ok_or_else(|| {
                         invalid(
@@ -2025,6 +2031,11 @@ fn require(block: &[u8], needed: usize, offset: usize, what: &'static str) -> Re
 }
 
 fn validate_gate_count(gates: usize, offset: usize, descriptor: &'static str) -> Result<()> {
+    // The context text is built only for the error (this runs per field
+    // block of every ray).
+    if gates <= MAX_GATES_PER_RADIAL {
+        return Ok(());
+    }
     check_gate_count(gates, &format!("{descriptor} at offset {offset}"))
         .map_err(DoradeError::LimitExceeded)
 }

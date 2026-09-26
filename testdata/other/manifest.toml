@@ -635,6 +635,21 @@ tags = ["provider:opera-ord", "license:CC-BY-4.0", "era:2026", "site:nohur", "co
 description = "MET Norway Hurum PVOL 2026-06-12 14:46:48Z, VRADH part of the 14:45 scan: only the 8 sweeps from 2.6 deg up (the 0.5 and 1.0 deg sweeps have no velocity), same ray/gate geometry as the DBZH sweeps they match, /what/time later than the DBZH/TH parts; unmodified OPERA ORD archive object"
 
 # ---------------------------------------------------------------------------
+# ODIM_H5 per-ray `how` arrays without a typed slot (kept verbatim in
+# Sweep::other; they must move with their rays when rays are reordered)
+# ---------------------------------------------------------------------------
+
+[[file]]
+id = "odim-au02-20260921-0000-pvol-subset"
+format = "odim-h5"
+sha256 = "2a5ad4ac8daec406a16019f094f286d802579435e9d5552cd7a6575c677976b3"
+size = 141384
+committed = "files/other/odim/nci/2_20260921_000000.pvol.subset.h5"
+derivation = "subset: the NCI THREDDS response for https://thredds.nci.org.au/thredds/fileServer/rq0/2/2026/vol/2_20260921.pvol.zip/2_20260921_234000.pvol.h5 (fetched 2026-09-24; 4864856 bytes, sha256 5e8c56431efb80fd67589d056d6cd2f4bf5f2993ca06dfcfe294f43da9d3ca12) is one ZIP local-file record, as for odim-au24-20260610-000300-nci-zip-member: the zip's first member 2_20260921_000000.pvol.h5 (deflate, 4454006 compressed bytes, CRC-32 checked; 5899781 bytes, sha256 259439533e0bf4aa9926ec63db4981c67a96ed974c068487a5b12823699b4e4b); tools/derive_odim_subset.py with h5py 3.16.0 / HDF5 2.0.0 (2026-09-24, byte-reproducible) rebuilds its root what/where/how groups, /dataset2 (what/where/how, quality1, planes data1 DBZH and data2 VRADH) and /dataset3 (what/where/how, quality1, plane data1 DBZH); every attribute keeps its storage order, datatype and value, every dataset its datatype, shape, chunking, gzip level and values (all 151 attributes and every dataset checked with h5py against the member)"
+tags = ["provider:nci-thredds", "license:CC-BY-4.0", "era:2026", "site:au02", "country:AU", "object:pvol", "odim:h5rad-2.4", "hdf5:superblock-v0", "hdf5:gzip-chunked", "odim:quality-groups", "odim:per-ray-how-arrays", "moments:dbzh-vradh", "scan:ppi", "derived", "derivation:subset"]
+description = "Bureau of Meteorology Melbourne (site 2) PVOL 2026-09-21 00:00:18Z (RAINBOW 5.52.19), sweeps 2 and 3 of 14 (32 and 23 deg, 360 rays x 140/248 gates x 250 m, a1gate 225/307, rays stored in azimuth order): each sweep's how carries six 360-value per-ray arrays no typed slot holds (TXpower, dataflag, noisepowerh, noisepowerv, numpulses, startT) beside startazA/stopazA/startelA/stopelA, and no startazT/stopazT"
+
+# ---------------------------------------------------------------------------
 # NEXRAD Level III (carried over with the other BowEcho fixtures)
 # ---------------------------------------------------------------------------
 

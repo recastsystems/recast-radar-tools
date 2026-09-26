@@ -6,11 +6,14 @@
 //! headers), MetPy 1.7.1 (sweep layouts), netCDF4 1.7.4 (per-ray instrument
 //! variables) and a GRIB2 section walker (JMA sweep ladder).
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{
     array, as_f64, as_opt_f64, as_str, as_usize, assert_close, cfradial, field, field_names,
-    golden, jma, level2, nexrad_field, raw_code, raw_row_sums, time,
+    golden, jma, level2, nexrad_field, odim, raw_code, raw_row_sums, time,
 };
 use recast_radar_core::model::{Coding, SweepError};
 use recast_radar_core::{
@@ -824,4 +827,79 @@ fn find_prefers_horizontal_then_unspecified_then_vertical() {
     let found = sweep.find(Quantity::Reflectivity).expect("reflectivity");
     assert_eq!(found.data, source.data);
     assert_eq!((found.nrays, found.ngates), (source.nrays, source.ngates));
+}
+
+/// `to_physical` decodes per code (8-bit and large 16-bit fields through a
+/// decode table) and must equal `value` on every gate of every field: the
+/// full KTLX 2024 volume (u8 and large u16 fields, absent rows), KPAH 2008
+/// (legacy resolution), dkrom (ODIM u8/u16 with CF gain and offset) and the
+/// JMA TAKA station (float32).
+#[test]
+fn to_physical_equals_value_on_every_gate() {
+    let mut volumes = Vec::new();
+    for id in ["l2-ktlx-20240315-000217", "l2-kpah-20080415-235014"] {
+        let path = recast_radar_testdata::require_file!(id);
+        volumes.push((id, level2(&path)));
+    }
+    let path = recast_radar_testdata::require_file!("odim-dkrom-20260820-1130-pvol");
+    volumes.push(("odim-dkrom-20260820-1130-pvol", odim(&path)));
+    let path = recast_radar_testdata::require_file!("jma-n5-20191012-090000-rs47773");
+    volumes.push(("jma-n5-20191012-090000-rs47773", jma(&path)));
+    // Absent rows: KTLX 2024 sweep 0 with every field cut to its first half
+    // of rows, which `seal` pads back as trailing absent rows.
+    let mut edited = volumes[0].1.clone();
+    edited.sweeps.truncate(1);
+    let sweep = &mut edited.sweeps[0];
+    for field in &mut sweep.fields {
+        let keep = field.nrays as usize / 2;
+        let len = keep * field.ngates as usize;
+        match &mut field.data {
+            FieldData::U8 { values, .. } => values.truncate(len),
+            FieldData::U16 { values, .. } => values.truncate(len),
+            other => panic!("Level II field {}", other.dtype()),
+        }
+        field.nrays = keep as u32;
+    }
+    assert_eq!(sweep.seal(), Ok(()));
+    volumes.push(("l2-ktlx-20240315-000217 sweep 0 half rows", edited));
+
+    let mut kinds = std::collections::BTreeSet::new();
+    let mut large_u16 = 0;
+    let mut absent = 0;
+    for (id, volume) in &volumes {
+        for (sweep_index, sweep) in volume.sweeps.iter().enumerate() {
+            for field in &sweep.fields {
+                kinds.insert(field.data.dtype());
+                if matches!(&field.data, FieldData::U16 { values, .. } if values.len() >= 1 << 17) {
+                    large_u16 += 1;
+                }
+                absent += field.absent_rows.len();
+                let physical = field.to_physical();
+                let (rows, gates) = field.shape();
+                assert_eq!(
+                    physical.len(),
+                    rows * gates,
+                    "{id} sweep {sweep_index} {}",
+                    field.name
+                );
+                for row in 0..rows {
+                    for gate in 0..gates {
+                        let want = field.value(row, gate).unwrap_or(f32::NAN);
+                        assert_eq!(
+                            physical[row * gates + gate].to_bits(),
+                            want.to_bits(),
+                            "{id} sweep {sweep_index} {} [{row}, {gate}]",
+                            field.name
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(kinds.contains("uint8") && kinds.contains("uint16") && kinds.contains("float32"));
+    assert!(
+        large_u16 > 0,
+        "a u16 field large enough for the 16-bit table"
+    );
+    assert!(absent > 0, "absent rows");
 }

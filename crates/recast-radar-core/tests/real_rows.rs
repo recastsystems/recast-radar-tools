@@ -8,6 +8,9 @@
 //! pointer, a gate count or a word size, ICD 2620002 Tables XVII-A and
 //! XVII-B) and compares the decoded volume with the unmodified one.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use common::{field, level2_bytes, raw_code};

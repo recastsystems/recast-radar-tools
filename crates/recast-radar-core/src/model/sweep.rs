@@ -7,9 +7,9 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::field::{Field, FieldError, GateMapping};
+use super::field::{Field, FieldData, FieldError, GateMapping};
 use super::names::{FieldName, Polarization, Quantity};
-use super::values::{AttrValue, ExtraVariable};
+use super::values::{AttrValue, ExtraVariable, RayAlignment};
 use super::volume::SourceFormat;
 
 /// One FM301 sweep group: one physical elevation cut, numbered in acquisition
@@ -52,7 +52,10 @@ pub struct Sweep {
     pub platform_track: Option<Box<PlatformTrack>>,
     /// Sweep variables with no slot above, verbatim and in file order.
     pub extra_vars: Vec<ExtraVariable>,
-    /// Sweep group attributes with no slot above, verbatim.
+    /// Sweep group attributes with no slot above, verbatim. A per-ray array
+    /// ([`AttrValue::ray_alignment`], such as an ODIM `how/TXpower`) moves
+    /// with its ray in [`Sweep::permute_rays`] and follows the FM301 view's
+    /// ray order; any other value stays as stored.
     pub other: Vec<(Box<str>, AttrValue)>,
     /// Dataset variables, in source order.
     pub fields: Vec<Field>,
@@ -478,10 +481,23 @@ pub enum SweepError {
     DuplicateName { name: String },
     #[error("sweep at index {index} has sweep_number {sweep_number}")]
     SweepNumber { index: usize, sweep_number: u32 },
-    /// [`Sweep::reorder_rays`] was given an order that is not a
-    /// permutation of the sweep's rays.
-    #[error("a ray order that is not a permutation of the sweep's {nrays} rays")]
+    /// [`Sweep::permute_rays`] found a verbatim array attribute of the sweep
+    /// or of one of its fields with one entry per ray under a name not known
+    /// to be per ray ([`RayAlignment::Unknown`]): moving it could scramble
+    /// it and leaving it could misalign it, so the rays stay where they are.
+    #[error(
+        "attribute {name} has one entry per ray but is not known to be per ray; the rays were not reordered"
+    )]
+    UnknownRayAttribute {
+        /// The attribute's name, `field/name` for a field's.
+        name: String,
+    },
+    /// [`Sweep::permute_rays`] got an order that is not a permutation of the
+    /// sweep's rays.
+    #[error("a ray order of {len} entries is not a permutation of the sweep's {nrays} rays")]
     RayOrder {
+        /// Entries in the order.
+        len: usize,
         /// Rays in the sweep.
         nrays: usize,
     },
@@ -768,133 +784,6 @@ impl Sweep {
             .min_by_key(|field| rank(field.polarization))
     }
 
-    /// Put the rays in `order` (`order[i]` is the current row that becomes
-    /// row `i`; a permutation of `0..nrays`): the ray coordinates, every
-    /// per-ray variable, the monitoring and platform track vectors, the
-    /// per-ray extra variables and every field's rows (absent rows
-    /// included). Returns [`SweepError::RayOrder`] and leaves the sweep
-    /// unchanged when `order` is not a permutation of the rays. The sweep
-    /// must be sealed (every field has a row per ray).
-    pub fn reorder_rays(&mut self, order: &[usize]) -> Result<(), SweepError> {
-        let nrays = self.nrays();
-        let mut seen = vec![false; nrays];
-        if order.len() != nrays
-            || order
-                .iter()
-                .any(|row| *row >= nrays || std::mem::replace(&mut seen[*row], true))
-        {
-            return Err(SweepError::RayOrder { nrays });
-        }
-        if self
-            .fields
-            .iter()
-            .any(|field| field.nrays as usize != nrays)
-        {
-            return Err(SweepError::RayOrder { nrays });
-        }
-        fn take<T: Copy>(values: &mut Vec<T>, order: &[usize]) {
-            if values.len() == order.len() {
-                *values = order.iter().map(|row| values[*row]).collect();
-            }
-        }
-        fn take_opt<T: Copy>(values: &mut Option<Vec<T>>, order: &[usize]) {
-            if let Some(values) = values {
-                take(values, order);
-            }
-        }
-        fn take_rows<T: Copy>(values: &mut Vec<T>, row_len: usize, order: &[usize]) {
-            if row_len == 0 || values.len() != order.len() * row_len {
-                return;
-            }
-            let mut out = Vec::with_capacity(values.len());
-            for row in order {
-                out.extend_from_slice(&values[row * row_len..(row + 1) * row_len]);
-            }
-            *values = out;
-        }
-        take(&mut self.rays.time_s, order);
-        take(&mut self.rays.azimuth_deg, order);
-        take(&mut self.rays.elevation_deg, order);
-        let vars = &mut self.ray_vars;
-        take_opt(&mut vars.nyquist_velocity_mps, order);
-        take_opt(&mut vars.unambiguous_range_m, order);
-        take_opt(&mut vars.prt_s, order);
-        take_opt(&mut vars.prt_ratio, order);
-        take_opt(&mut vars.n_samples, order);
-        take_opt(&mut vars.pulse_width_s, order);
-        take_opt(&mut vars.scan_rate_deg_per_s, order);
-        take_opt(&mut vars.antenna_transition, order);
-        take_opt(&mut vars.calib_index, order);
-        take_opt(&mut vars.rx_range_resolution_m, order);
-        take_opt(&mut vars.independent_samples, order);
-        if let Some(sequence) = &mut vars.prt_sequence_s {
-            take_rows(&mut sequence.values_s, sequence.nprt as usize, order);
-        }
-        if let Some(monitoring) = &mut self.monitoring {
-            for values in [
-                &mut monitoring.radar_measured_transmit_power_h_dbm,
-                &mut monitoring.radar_measured_transmit_power_v_dbm,
-                &mut monitoring.radar_measured_sky_noise_dbm,
-                &mut monitoring.radar_measured_cold_noise_dbm,
-                &mut monitoring.radar_measured_hot_noise_dbm,
-                &mut monitoring.phase_difference_transmit_hv_deg,
-                &mut monitoring.antenna_pointing_accuracy_elev_deg,
-                &mut monitoring.antenna_pointing_accuracy_az_deg,
-                &mut monitoring.calibration_offset_h_db,
-                &mut monitoring.calibration_offset_v_db,
-                &mut monitoring.zdr_offset_db,
-            ] {
-                take_opt(values, order);
-            }
-        }
-        if let Some(track) = &mut self.platform_track {
-            take(&mut track.latitude_deg, order);
-            take(&mut track.longitude_deg, order);
-            take(&mut track.altitude_m, order);
-            take_opt(&mut track.altitude_agl_m, order);
-            for values in [
-                &mut track.heading_deg,
-                &mut track.roll_deg,
-                &mut track.pitch_deg,
-                &mut track.drift_deg,
-                &mut track.rotation_deg,
-                &mut track.tilt_deg,
-            ] {
-                take_opt(values, order);
-            }
-        }
-        let order_u32: Vec<u32> = order.iter().map(|row| *row as u32).collect();
-        for extra in &mut self.extra_vars {
-            if extra.is_per_ray() {
-                let row_len: usize = extra.shape.iter().skip(1).map(|n| *n as usize).product();
-                if let Some(values) = extra.values.take_rows(row_len.max(1), &order_u32) {
-                    extra.values = values;
-                }
-            }
-        }
-        // Where each old row went, for the absent rows.
-        let mut new_row = vec![0u32; nrays];
-        for (to, from) in order.iter().enumerate() {
-            new_row[*from] = to as u32;
-        }
-        for field in &mut self.fields {
-            let row_len = field.ngates as usize;
-            match &mut field.data {
-                super::field::FieldData::U8 { values, .. } => take_rows(values, row_len, order),
-                super::field::FieldData::U16 { values, .. } => take_rows(values, row_len, order),
-                super::field::FieldData::I8 { values, .. } => take_rows(values, row_len, order),
-                super::field::FieldData::I16 { values, .. } => take_rows(values, row_len, order),
-                super::field::FieldData::I32 { values, .. } => take_rows(values, row_len, order),
-                super::field::FieldData::F32 { values, .. } => take_rows(values, row_len, order),
-                super::field::FieldData::F64 { values, .. } => take_rows(values, row_len, order),
-            }
-            for row in &mut field.absent_rows {
-                *row = new_row[*row as usize];
-            }
-            field.absent_rows.sort_unstable();
-        }
-        Ok(())
-    }
 
     /// Append absent rows for rays at the end that a field never received, grow
     /// a uniform range to cover every field, then check the invariants
@@ -1007,12 +896,426 @@ impl Sweep {
         }
         Ok(())
     }
+
+    /// Reorder the rays in storage: ray `i` afterwards is ray `order[i]`
+    /// before. Every per-ray item moves with its ray (coordinates, the
+    /// `(time)` instrument variables, `monitoring`, the platform track,
+    /// per-ray `extra_vars`, every field row and its absent-row mark, and
+    /// every per-ray array among the verbatim attributes of the sweep and
+    /// its fields, [`AttrValue::ray_alignment`]); field rows move in place,
+    /// one row at a time, so no second copy of a field is allocated.
+    ///
+    /// Storage order is the source's order everywhere else in the model
+    /// (design note 12.1); this is for callers that hand field buffers to
+    /// another owner in a given ray order, such as a binding that moves them
+    /// into NumPy under xradar's azimuth order
+    /// ([`crate::fm301::order_rays_for_view`]). Reads that depend on storage
+    /// order, like the first ray's elevation in
+    /// [`Sweep::tilt_elevation_deg`], see the new order.
+    ///
+    /// # Errors
+    ///
+    /// [`SweepError::RayOrder`] when `order` is not a permutation of
+    /// `0..nrays`, [`SweepError::RayLength`] when a per-ray item does not
+    /// have one entry per ray, and [`SweepError::UnknownRayAttribute`] when a
+    /// verbatim array attribute has one entry per ray but is not known to be
+    /// per ray ([`RayAlignment::Unknown`]); the sweep is unchanged then.
+    pub fn permute_rays(&mut self, order: &[u32]) -> Result<(), SweepError> {
+        // Check everything before moving anything.
+        self.check_permutation(order)?;
+        let nrays = self.nrays();
+
+        // Exhaustive destructuring: a new per-ray item must be added here
+        // (and to `seal`) or this does not compile.
+        let Sweep {
+            sweep_number: _,
+            sweep_mode: _,
+            follow_mode: _,
+            prt_mode: _,
+            polarization_mode: _,
+            polarization_sequence: _,
+            fixed_angle_deg: _,
+            target_scan_rate_deg_per_s: _,
+            rays_are_indexed: _,
+            rays_angle_resolution_deg: _,
+            qc_procedures: _,
+            rays,
+            range: _,
+            ray_vars,
+            monitoring,
+            platform_track,
+            extra_vars,
+            other,
+            fields,
+            elevation_number: _,
+            complete: _,
+        } = self;
+        let Rays {
+            time_s,
+            azimuth_deg,
+            elevation_deg,
+        } = rays;
+        permute_rows(time_s, 1, order);
+        permute_rows(azimuth_deg, 1, order);
+        permute_rows(elevation_deg, 1, order);
+
+        let RayVariables {
+            nyquist_velocity_mps,
+            unambiguous_range_m,
+            prt_s,
+            prt_ratio,
+            prt_sequence_s,
+            n_samples,
+            pulse_width_s,
+            scan_rate_deg_per_s,
+            antenna_transition,
+            calib_index,
+            rx_range_resolution_m,
+            independent_samples,
+        } = ray_vars;
+        for values in [
+            nyquist_velocity_mps,
+            unambiguous_range_m,
+            prt_s,
+            prt_ratio,
+            pulse_width_s,
+            scan_rate_deg_per_s,
+            rx_range_resolution_m,
+            independent_samples,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            permute_rows(values, 1, order);
+        }
+        for values in [n_samples, calib_index].into_iter().flatten() {
+            permute_rows(values, 1, order);
+        }
+        if let Some(values) = antenna_transition {
+            permute_rows(values, 1, order);
+        }
+        if let Some(sequence) = prt_sequence_s {
+            permute_rows(&mut sequence.values_s, sequence.nprt as usize, order);
+        }
+
+        if let Some(monitoring) = monitoring {
+            let Monitoring {
+                radar_measured_transmit_power_h_dbm,
+                radar_measured_transmit_power_v_dbm,
+                radar_measured_sky_noise_dbm,
+                radar_measured_cold_noise_dbm,
+                radar_measured_hot_noise_dbm,
+                phase_difference_transmit_hv_deg,
+                antenna_pointing_accuracy_elev_deg,
+                antenna_pointing_accuracy_az_deg,
+                calibration_offset_h_db,
+                calibration_offset_v_db,
+                zdr_offset_db,
+            } = &mut **monitoring;
+            for values in [
+                radar_measured_transmit_power_h_dbm,
+                radar_measured_transmit_power_v_dbm,
+                radar_measured_sky_noise_dbm,
+                radar_measured_cold_noise_dbm,
+                radar_measured_hot_noise_dbm,
+                phase_difference_transmit_hv_deg,
+                antenna_pointing_accuracy_elev_deg,
+                antenna_pointing_accuracy_az_deg,
+                calibration_offset_h_db,
+                calibration_offset_v_db,
+                zdr_offset_db,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                permute_rows(values, 1, order);
+            }
+        }
+
+        if let Some(track) = platform_track {
+            let PlatformTrack {
+                latitude_deg,
+                longitude_deg,
+                altitude_m,
+                altitude_agl_m,
+                heading_deg,
+                roll_deg,
+                pitch_deg,
+                drift_deg,
+                rotation_deg,
+                tilt_deg,
+            } = &mut **track;
+            for values in [latitude_deg, longitude_deg, altitude_m] {
+                permute_rows(values, 1, order);
+            }
+            if let Some(values) = altitude_agl_m {
+                permute_rows(values, 1, order);
+            }
+            for values in [
+                heading_deg,
+                roll_deg,
+                pitch_deg,
+                drift_deg,
+                rotation_deg,
+                tilt_deg,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                permute_rows(values, 1, order);
+            }
+        }
+
+        for extra in extra_vars.iter_mut().filter(|extra| extra.is_per_ray()) {
+            let row_len = extra.shape.iter().skip(1).map(|n| *n as usize).product();
+            if let Some(values) = extra.values.take_rows(row_len, order) {
+                extra.values = values;
+            }
+        }
+
+        // Verbatim attributes: a per-ray array (an ODIM `how/TXpower` or
+        // `how/startT` the decoder has no slot for) moves too.
+        let attrs = other.iter_mut().chain(
+            fields
+                .iter_mut()
+                .flat_map(|field| field.attrs.other.iter_mut()),
+        );
+        for (name, value) in attrs {
+            if value.ray_alignment(name, nrays) == RayAlignment::PerRay {
+                *value = value.in_ray_order(nrays, order);
+            }
+        }
+
+        let mut was_absent = vec![false; nrays];
+        for field in fields.iter_mut() {
+            let row_len = field.ngates as usize;
+            match &mut field.data {
+                FieldData::U8 { values, .. } => permute_rows(values, row_len, order),
+                FieldData::U16 { values, .. } => permute_rows(values, row_len, order),
+                FieldData::I8 { values, .. } => permute_rows(values, row_len, order),
+                FieldData::I16 { values, .. } => permute_rows(values, row_len, order),
+                FieldData::I32 { values, .. } => permute_rows(values, row_len, order),
+                FieldData::F32 { values, .. } => permute_rows(values, row_len, order),
+                FieldData::F64 { values, .. } => permute_rows(values, row_len, order),
+            }
+            if !field.absent_rows.is_empty() {
+                was_absent.fill(false);
+                for &row in &field.absent_rows {
+                    if let Some(slot) = was_absent.get_mut(row as usize) {
+                        *slot = true;
+                    }
+                }
+                field.absent_rows = order
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, old)| was_absent[**old as usize])
+                    .map(|(new, _)| new as u32)
+                    .collect();
+            }
+        }
+        Ok(())
+    }
+
+    /// The first verbatim array attribute of this sweep or of its fields
+    /// that has one entry per ray but is not known to be per ray
+    /// ([`RayAlignment::Unknown`]), as `name` or `field/name`. Such a sweep
+    /// cannot be reordered ([`Sweep::permute_rays`]).
+    pub fn unknown_ray_attribute(&self) -> Option<String> {
+        let nrays = self.nrays();
+        let unknown = |(name, value): &&(Box<str>, AttrValue)| {
+            value.ray_alignment(name, nrays) == RayAlignment::Unknown
+        };
+        if let Some((name, _)) = self.other.iter().find(unknown) {
+            return Some(name.to_string());
+        }
+        self.fields.iter().find_map(|field| {
+            field
+                .attrs
+                .other
+                .iter()
+                .find(unknown)
+                .map(|(name, _)| format!("{}/{name}", field.name.as_str()))
+        })
+    }
+
+    /// Every check of [`Sweep::permute_rays`], without moving anything:
+    /// `order` is a permutation of `0..nrays`, every per-ray item has one
+    /// entry per ray, and no verbatim array attribute of unknown alignment
+    /// has one entry per ray. [`crate::fm301::order_rays_for_view`] checks
+    /// every sweep with it before reordering any, so a failure leaves the
+    /// whole volume unchanged.
+    pub(crate) fn check_permutation(&self, order: &[u32]) -> Result<(), SweepError> {
+        let nrays = self.nrays();
+        let invalid = || SweepError::RayOrder {
+            len: order.len(),
+            nrays,
+        };
+        if order.len() != nrays {
+            return Err(invalid());
+        }
+        let mut seen = vec![false; nrays];
+        for &ray in order {
+            match seen.get_mut(ray as usize) {
+                Some(slot) if !*slot => *slot = true,
+                _ => return Err(invalid()),
+            }
+        }
+        self.check_ray_lengths(nrays)?;
+        if let Some(name) = self.unknown_ray_attribute() {
+            return Err(SweepError::UnknownRayAttribute { name });
+        }
+        Ok(())
+    }
+
+    /// The per-ray length checks of [`Sweep::seal`] plus every field's row
+    /// count, so [`Sweep::permute_rays`] fails before moving anything.
+    fn check_ray_lengths(&self, nrays: usize) -> Result<(), SweepError> {
+        let ray_len = |what: &str, len: usize| -> Result<(), SweepError> {
+            if len == nrays {
+                Ok(())
+            } else {
+                Err(SweepError::RayLength {
+                    what: what.to_owned(),
+                    len,
+                    nrays,
+                })
+            }
+        };
+        ray_len("time", self.rays.time_s.len())?;
+        ray_len("elevation", self.rays.elevation_deg.len())?;
+        for (name, len) in self.ray_vars.lengths() {
+            ray_len(name, len)?;
+        }
+        if let Some(seq) = &self.ray_vars.prt_sequence_s {
+            ray_len(
+                "prt_sequence values",
+                seq.values_s.len() / (seq.nprt as usize).max(1),
+            )?;
+        }
+        if let Some(monitoring) = &self.monitoring {
+            for (name, values) in monitoring.variables() {
+                ray_len(name, values.len())?;
+            }
+        }
+        if let Some(track) = &self.platform_track {
+            ray_len("latitude", track.latitude_deg.len())?;
+            ray_len("longitude", track.longitude_deg.len())?;
+            ray_len("altitude", track.altitude_m.len())?;
+            for (name, len) in [
+                ("altitude_agl", track.altitude_agl_m.as_ref().map(Vec::len)),
+                ("heading", track.heading_deg.as_ref().map(Vec::len)),
+                ("roll", track.roll_deg.as_ref().map(Vec::len)),
+                ("pitch", track.pitch_deg.as_ref().map(Vec::len)),
+                ("drift", track.drift_deg.as_ref().map(Vec::len)),
+                ("rotation", track.rotation_deg.as_ref().map(Vec::len)),
+                ("tilt", track.tilt_deg.as_ref().map(Vec::len)),
+            ] {
+                if let Some(len) = len {
+                    ray_len(name, len)?;
+                }
+            }
+        }
+        for extra in self.extra_vars.iter().filter(|extra| extra.is_per_ray()) {
+            ray_len(&extra.name, extra.shape.first().map_or(0, |n| *n as usize))?;
+            let row_len: usize = extra.shape.iter().skip(1).map(|n| *n as usize).product();
+            if row_len > 0 {
+                ray_len(&extra.name, extra.values.len() / row_len)?;
+            }
+        }
+        for field in &self.fields {
+            ray_len(field.name.as_str(), field.nrays as usize)?;
+            let expected = nrays * field.ngates as usize;
+            if field.data.len() != expected {
+                return Err(SweepError::FieldLength {
+                    field: field.name.as_str().to_owned(),
+                    len: field.data.len(),
+                    expected,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Rows of `values` (`row_len` elements each) reordered in place so that row
+/// `i` becomes the old row `order[i]`. `order` is a permutation of the row
+/// indices and `values` holds exactly `order.len()` rows (checked by the
+/// caller). A rotation, which is what a sweep that starts mid-circle needs,
+/// moves as one block; any other order follows its cycles through one
+/// temporary row.
+fn permute_rows<T: Copy>(values: &mut [T], row_len: usize, order: &[u32]) {
+    let rows = order.len();
+    if row_len == 0 || values.len() != rows.saturating_mul(row_len) {
+        return;
+    }
+    if let Some(&first) = order.first() {
+        let shift = first as usize;
+        if order
+            .iter()
+            .enumerate()
+            .all(|(row, &source)| source as usize == (row + shift) % rows)
+        {
+            values.rotate_left(shift * row_len);
+            return;
+        }
+    }
+    let mut done = vec![false; rows];
+    let mut temp: Vec<T> = Vec::with_capacity(row_len);
+    for start in 0..rows {
+        if done[start] {
+            continue;
+        }
+        if order[start] as usize == start {
+            done[start] = true;
+            continue;
+        }
+        temp.clear();
+        temp.extend_from_slice(&values[start * row_len..(start + 1) * row_len]);
+        let mut target = start;
+        loop {
+            done[target] = true;
+            let source = order[target] as usize;
+            if source == start {
+                values[target * row_len..(target + 1) * row_len].copy_from_slice(&temp);
+                break;
+            }
+            values.copy_within(source * row_len..(source + 1) * row_len, target * row_len);
+            target = source;
+        }
+    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    /// In-place row permutation against taking the rows in order, for
+    /// rotations, cycles, the identity and a reversal.
+    #[test]
+    fn permute_rows_matches_taking_rows_in_order() {
+        let orders: [Vec<u32>; 5] = [
+            vec![0, 1, 2, 3, 4, 5],
+            vec![2, 3, 4, 5, 0, 1],
+            vec![5, 4, 3, 2, 1, 0],
+            vec![1, 0, 3, 2, 5, 4],
+            vec![3, 0, 4, 1, 5, 2],
+        ];
+        for order in &orders {
+            for row_len in [1usize, 3] {
+                let before: Vec<u16> = (0..(6 * row_len) as u16).collect();
+                let mut after = before.clone();
+                permute_rows(&mut after, row_len, order);
+                let want: Vec<u16> = order
+                    .iter()
+                    .flat_map(|&row| {
+                        before[row as usize * row_len..(row as usize + 1) * row_len].to_vec()
+                    })
+                    .collect();
+                assert_eq!(after, want, "{order:?} x {row_len}");
+            }
+        }
+    }
 
     #[test]
     fn mode_strings_parse_and_keep_unknown_spellings() {

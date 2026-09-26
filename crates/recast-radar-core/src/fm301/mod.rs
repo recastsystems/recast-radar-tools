@@ -25,7 +25,7 @@ use thiserror::Error;
 pub use build::volume_view;
 pub use layout::{DataRef, GroupLayout, VariableLayout, VolumeLayout};
 
-use crate::model::{ArrayBuf, AttrValue, GateMapping, Scalar, Volume};
+use crate::model::{ArrayBuf, AttrValue, GateMapping, Scalar, SweepError, Volume};
 
 /// Which reference the view reproduces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,7 +77,14 @@ pub enum Passthrough {
     Flavor,
     /// Also every `other`, `extra_vars` and `extra` item, verbatim, for lossless
     /// CfRadial 2 output (the global attributes of a CfRadial file, ODIM
-    /// `how` attributes, DORADE VOLD text).
+    /// `how` attributes, DORADE VOLD text). Verbatim except for ray order: a
+    /// per-ray attribute array ([`crate::model::AttrValue::ray_alignment`],
+    /// an ODIM `how/TXpower`) is written in the view's ray order, like the
+    /// per-ray variables, so that its entries line up with the ray
+    /// dimension; the same holds for a field's `other` attributes, which the
+    /// Xradar flavor writes. Every other attribute, an array of one entry
+    /// per ray under a name not known to be per ray included, is written as
+    /// stored.
     All,
 }
 
@@ -250,6 +257,82 @@ impl ArrayRef<'_> {
             Self::F64(v) => ArrayBuf::F64(v.to_vec()),
         }
     }
+}
+
+/// Reorder every sweep's rays in storage into the order a view with
+/// `options` shows them ([`crate::model::Sweep::permute_rays`]), so that the
+/// view afterwards has [`RowOrder::Identity`] and every field whose native
+/// gates are the sweep's range gates is zero-copy
+/// ([`DataRef::is_zero_copy`]).
+///
+/// This is for a binding that moves field buffers into NumPy under a ray
+/// order other than the storage order, xradar's default `first_dim="auto"`
+/// above all (design note 12.2): under it no Level II, CfRadial or JMA field
+/// is zero-copy, because those sweeps start at an arbitrary azimuth. After
+/// this call the moved buffer is the variable. The view built afterwards
+/// shows the same values and attributes as the one before, per-ray
+/// attribute arrays included (both show them in the view's ray order,
+/// [`crate::model::AttrValue::ray_alignment`]); rows move in place (a sweep
+/// that starts mid-circle is one block rotation per field), so memory does
+/// not double. Storage order no longer is the source order afterwards, so a
+/// caller that keeps using the volume in Rust should not call this.
+///
+/// A sweep that holds a verbatim array attribute with one entry per ray
+/// under a name not known to be per ray
+/// ([`crate::model::RayAlignment::Unknown`],
+/// [`crate::model::Sweep::unknown_ray_attribute`]) stays in storage order:
+/// reordering it could scramble or misalign that array. The view is the
+/// same either way; that sweep's fields are just not zero-copy. Such sweeps
+/// are returned, so a binding can report the copies they still need.
+///
+/// # Errors
+///
+/// A [`SweepError`] when a sweep's per-ray items do not have one entry per
+/// ray. Every sweep is checked before any is reordered, so the volume is
+/// unchanged then.
+pub fn order_rays_for_view(
+    volume: &mut Volume,
+    options: ViewOptions,
+) -> Result<Vec<UnorderedSweep>, SweepError> {
+    let source_format = volume.provenance.source_format;
+    let mut unordered = Vec::new();
+    // Check every sweep first (4 bytes per ray of the volume for the
+    // orders), then move rows: a failure leaves no sweep reordered.
+    let mut planned = Vec::new();
+    for (index, sweep) in volume.sweeps.iter().enumerate() {
+        if let (_, RowOrder::Permutation(order)) =
+            build::view_ray_order(sweep, source_format, options)
+        {
+            if let Some(attribute) = sweep.unknown_ray_attribute() {
+                unordered.push(UnorderedSweep {
+                    sweep: index,
+                    attribute,
+                });
+                continue;
+            }
+            sweep.check_permutation(&order)?;
+            planned.push((index, order));
+        }
+    }
+    for (index, order) in planned {
+        if let Some(sweep) = volume.sweeps.get_mut(index) {
+            sweep.permute_rays(&order)?;
+        }
+    }
+    Ok(unordered)
+}
+
+/// A sweep that [`order_rays_for_view`] left in storage order although the
+/// view shows its rays in another order, so its fields are not zero-copy
+/// in that view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct UnorderedSweep {
+    /// Index of the sweep in [`Volume::sweeps`].
+    pub sweep: usize,
+    /// The verbatim attribute that kept it in storage order, as `name` or
+    /// `field/name` ([`crate::model::Sweep::unknown_ray_attribute`]).
+    pub attribute: String,
 }
 
 /// Non-fatal conditions a CF writer reports.

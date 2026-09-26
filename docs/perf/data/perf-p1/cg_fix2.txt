@@ -1,0 +1,12 @@
+# Callgrind Ir of decode_bench's timed region (--toggle-collect='*timed_work*'), one decode,
+# one thread, --from-path, nexbench. head = a 79b932d build, final = the second fix pass.
+# name, collected Ir, field hash
+final-KLIX20050829_130035.gz 244856351 "hash":"d2752069a128f551"
+final-KTLX20130520_201643_V06.bz2 808570382 "hash":"8891e7f3167f759e"
+final-KTLX20130520_201643_V06.gz 433511351 "hash":"8891e7f3167f759e"
+final-KTLX20240315_000217_V06 1211407811 "hash":"8cc57ef6f26a6bb4"
+head-KLIX20050829_130035.gz 244754113 "hash":"d2752069a128f551"
+head-KTLX20130520_201643_V06.bz2 808461967 "hash":"8891e7f3167f759e"
+head-KTLX20130520_201643_V06.gz 433394321 "hash":"8891e7f3167f759e"
+head-KTLX20240315_000217_V06 1211396280 "hash":"8cc57ef6f26a6bb4"
+# tools/xlib-bench/cg_compare.sh's run function (the committed toggle), a 50e6629 build, BJAB:

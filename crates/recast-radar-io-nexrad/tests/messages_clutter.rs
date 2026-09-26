@@ -18,6 +18,9 @@
 //! it. Its only real-byte test relabels a real Message 15 and checks that
 //! the decoder rejects it.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use chrono::{DateTime, Datelike, Utc};

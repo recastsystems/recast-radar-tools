@@ -10,12 +10,26 @@ keywords = ["radar", "benchmark", "nexrad", "weather"]
 categories = ["development-tools::profiling", "science::geo"]
 # Benchmark harness binary; not a library to publish.
 publish = false
+default-run = "recast-radar-bench"
+
+[features]
+# A/B switch for the cross-library decode benchmark (src/bin/decode_bench.rs):
+# forwards to the Level II decoder's paired bzip2 record decode.
+paired-bzip2 = ["recast-radar-io-nexrad/paired-bzip2"]
 
 [dependencies]
 chrono.workspace = true
+rayon.workspace = true
 recast-radar-core = { path = "../recast-radar-core" }
 recast-radar-correct = { path = "../recast-radar-correct" }
 recast-radar-io = { path = "../recast-radar-io" }
+# The per-format readers, called directly by src/bin/decode_bench.rs.
+recast-radar-io-cfradial = { path = "../recast-radar-io-cfradial" }
+recast-radar-io-dorade = { path = "../recast-radar-io-dorade" }
+recast-radar-io-jma = { path = "../recast-radar-io-jma" }
+recast-radar-io-level3 = { path = "../recast-radar-io-level3" }
+recast-radar-io-nexrad = { path = "../recast-radar-io-nexrad" }
+recast-radar-io-odim = { path = "../recast-radar-io-odim" }
 recast-radar-render = { path = "../recast-radar-render" }
 serde.workspace = true
 serde_json.workspace = true

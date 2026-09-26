@@ -236,6 +236,98 @@ impl AttrValue {
             _ => None,
         }
     }
+
+    /// How this value, a verbatim attribute named `name` of a sweep of
+    /// `nrays` rays or of one of its fields ([`crate::model::Sweep::other`],
+    /// [`crate::model::FieldAttrs::other`]), lines up with the rays.
+    ///
+    /// Verbatim attributes are untyped, so length alone cannot tell a
+    /// per-ray array from another array that happens to have `nrays`
+    /// entries. An array of `nrays` entries (more than two rays: a
+    /// two-element attribute is far more often a range, CF `valid_range`)
+    /// is [`RayAlignment::PerRay`] when `name` is one of the per-ray `how`
+    /// arrays of ODIM_H5 (`startazA`, `stopazA`, `startazT`, `stopazT`,
+    /// `startelA`, `stopelA`, `startelT`, `stopelT`, `elangles`, `TXpower`)
+    /// or of a national ODIM feed (Bureau of Meteorology: `dataflag`,
+    /// `noisepowerh`, `noisepowerv`, `numpulses`, `startT`), and
+    /// [`RayAlignment::Unknown`] otherwise. The list is not part of the API:
+    /// it goes when io-odim gives these arrays a `time` dimension in
+    /// [`crate::model::Sweep::extra_vars`].
+    pub fn ray_alignment(&self, name: &str, nrays: usize) -> RayAlignment {
+        match self {
+            Self::Array(array) if nrays > 2 && array.len() == nrays => {
+                if PER_RAY_ATTRIBUTES.contains(&name) {
+                    RayAlignment::PerRay
+                } else {
+                    RayAlignment::Unknown
+                }
+            }
+            _ => RayAlignment::NotPerRay,
+        }
+    }
+
+    /// This value with an array of `nrays` entries taken in `order` (entry
+    /// `i` is entry `order[i]` before); any other value, or an `order` that
+    /// indexes past the array, unchanged. The caller decides that the array
+    /// is per ray ([`AttrValue::ray_alignment`]).
+    pub fn in_ray_order(&self, nrays: usize, order: &[u32]) -> AttrValue {
+        match self {
+            Self::Array(array) if array.len() == nrays && order.len() == nrays => array
+                .take_rows(1, order)
+                .map_or_else(|| self.clone(), Self::Array),
+            _ => self.clone(),
+        }
+    }
+}
+
+/// Names of the verbatim attribute arrays that hold one value per ray when
+/// they have one entry per ray of their sweep (`AttrValue::ray_alignment`):
+/// the ODIM_H5 per-ray `how` arrays (`startazA`, `stopazA`, `startazT`,
+/// `stopazT`, `startelA`, `stopelA`, `startelT`, `stopelT`, `elangles`,
+/// `TXpower`) and the ones national ODIM feeds add (Bureau of Meteorology:
+/// `dataflag`, `noisepowerh`, `noisepowerv`, `numpulses`, `startT`). In 130
+/// real ODIM files (the committed fixtures and the feed corpus) every `how`
+/// array with one entry per ray has one of these names, and every other
+/// `how` array (`key_values`, `resolution`) has another length. Sorted.
+pub(crate) const PER_RAY_ATTRIBUTES: &[&str] = &[
+    "TXpower",
+    "dataflag",
+    "elangles",
+    "noisepowerh",
+    "noisepowerv",
+    "numpulses",
+    "startT",
+    "startazA",
+    "startazT",
+    "startelA",
+    "startelT",
+    "stopazA",
+    "stopazT",
+    "stopelA",
+    "stopelT",
+];
+
+/// How a verbatim attribute lines up with the rays of its sweep
+/// ([`AttrValue::ray_alignment`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RayAlignment {
+    /// Not an array with one entry per ray: kept as stored everywhere.
+    NotPerRay,
+    /// A per-ray array (one of the names [`AttrValue::ray_alignment`]
+    /// lists): it moves with its rays in
+    /// [`crate::model::Sweep::permute_rays`], and the FM301 view writes it
+    /// in the view's ray order, so that entry `i` belongs to the view's ray
+    /// `i`.
+    PerRay,
+    /// An array with one entry per ray under a name not known to be per
+    /// ray. Moving it with the rays could scramble an array that is not per
+    /// ray, and leaving it could misalign one that is, so it is kept as
+    /// stored (the view writes it verbatim, in source order) and
+    /// [`crate::model::Sweep::permute_rays`] refuses to reorder its sweep.
+    /// A decoder that knows such an array is per ray puts it in
+    /// [`crate::model::Sweep::extra_vars`] with a `time` dimension instead.
+    Unknown,
 }
 
 impl From<Scalar> for AttrValue {

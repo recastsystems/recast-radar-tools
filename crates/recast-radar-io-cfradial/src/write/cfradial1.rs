@@ -748,8 +748,13 @@ fn in_time_order(
     let mut moved: Vec<Sweep> = Vec::with_capacity(sweeps.len());
     for (position, (index, order)) in sweeps.iter().zip(&rays).enumerate() {
         let mut sweep = volume.sweeps[*index].clone();
+        let order: Vec<u32> = order
+            .iter()
+            .map(|row| u32::try_from(*row))
+            .collect::<Result<_, _>>()
+            .map_err(|_| CfWriteError::Invalid(format!("sweep {index}: too many rays")))?;
         sweep
-            .reorder_rays(order)
+            .permute_rays(&order)
             .map_err(|err| CfWriteError::Invalid(format!("sweep {index}: {err}")))?;
         if position != *index {
             let original = sweep

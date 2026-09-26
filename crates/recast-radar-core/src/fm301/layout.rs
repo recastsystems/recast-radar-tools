@@ -228,28 +228,41 @@ struct MapSpec<'r> {
 }
 
 impl MapSpec<'_> {
+    /// Each output value is written once: per row, `fill` up to
+    /// `mapping.start`, the native gates (a block copy at stride 1, each gate
+    /// repeated `stride` times otherwise), then `fill` to `out_gates`. A row
+    /// whose source row is missing is all `fill`.
     fn apply<T: Copy>(&self, native: &[T], fill: T) -> Vec<T> {
-        let mut out = vec![fill; self.nrays.saturating_mul(self.out_gates)];
+        let out_gates = self.out_gates;
+        let mut out = Vec::with_capacity(self.nrays.saturating_mul(out_gates));
+        if out_gates == 0 {
+            return out;
+        }
         let stride = self.mapping.stride.max(1) as usize;
         let start = self.mapping.start as usize;
-        for (out_row, dest) in out.chunks_exact_mut(self.out_gates.max(1)).enumerate() {
-            if self.out_gates == 0 {
-                break;
-            }
-            let Some(source_row) = self.rows.source_row(out_row) else {
-                continue;
-            };
-            let begin = source_row.saturating_mul(self.native_gates);
-            let Some(row) = native.get(begin..begin.saturating_add(self.native_gates)) else {
-                continue;
-            };
-            for (gate, value) in row.iter().enumerate() {
-                let first = start + gate * stride;
-                if first >= self.out_gates {
-                    break;
+        for out_row in 0..self.nrays {
+            let row = self.rows.source_row(out_row).and_then(|source_row| {
+                let begin = source_row.saturating_mul(self.native_gates);
+                native.get(begin..begin.saturating_add(self.native_gates))
+            });
+            let row_start = out.len();
+            if let Some(row) = row
+                && start < out_gates
+            {
+                out.resize(row_start + start, fill);
+                // Native gates whose first output gate is inside the row.
+                let shown = (out_gates - start).div_ceil(stride).min(row.len());
+                if stride == 1 {
+                    out.extend_from_slice(&row[..shown]);
+                } else {
+                    for (gate, value) in row[..shown].iter().enumerate() {
+                        let first = start + gate * stride;
+                        let count = stride.min(out_gates - first);
+                        out.extend(std::iter::repeat_n(*value, count));
+                    }
                 }
-                dest[first..(first + stride).min(self.out_gates)].fill(*value);
             }
+            out.resize(row_start + out_gates, fill);
         }
         out
     }
@@ -278,5 +291,57 @@ mod tests {
             &RowOrder::Permutation(Arc::from(vec![1u32, 0])),
         );
         assert_eq!(out, ArrayBuf::U8(vec![0, 3, 3, 4, 4, 0, 0, 1, 1, 2, 2, 0]));
+    }
+
+    /// The row-wise writer against a direct per-gate construction, over
+    /// starts, strides, native and output widths that clip, pad and
+    /// repeat, and row orders with missing source rows.
+    #[test]
+    fn mapping_matches_a_per_gate_reference() {
+        let native: Vec<u16> = (1..=3 * 5).collect();
+        let orders = [
+            RowOrder::Identity,
+            RowOrder::Permutation(Arc::from(vec![2u32, 0, 1])),
+            RowOrder::Permutation(Arc::from(vec![1u32, 7, 0])),
+        ];
+        for rows in &orders {
+            for start in 0..8u32 {
+                for stride in 0..4u32 {
+                    for out_gates in 0..14usize {
+                        let mapping = GateMapping { start, stride };
+                        let got = apply_mapping(
+                            ArrayRef::U16(&native),
+                            3,
+                            5,
+                            mapping,
+                            out_gates,
+                            Scalar::U16(9),
+                            rows,
+                        );
+                        let mut want = vec![9u16; 3 * out_gates];
+                        let step = stride.max(1) as usize;
+                        for out_row in 0..3 {
+                            let Some(source) = rows.source_row(out_row).filter(|r| *r < 3) else {
+                                continue;
+                            };
+                            for gate in 0..5 {
+                                for rep in 0..step {
+                                    let position = start as usize + gate * step + rep;
+                                    if position < out_gates {
+                                        want[out_row * out_gates + position] =
+                                            native[source * 5 + gate];
+                                    }
+                                }
+                            }
+                        }
+                        assert_eq!(
+                            got,
+                            ArrayBuf::U16(want),
+                            "start {start} stride {stride} out {out_gates} rows {rows:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

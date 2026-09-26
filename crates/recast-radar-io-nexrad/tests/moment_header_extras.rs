@@ -9,6 +9,9 @@
 //! bytes with the message decoder and compares the attributes against the
 //! moment headers those radials carry.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,17 +58,17 @@ fn field_triple(other: &[(Box<str>, AttrValue)]) -> Option<Triple> {
     }
 }
 
+/// The first radial's triple per `(elevation number, field name)`.
+type FirstTriples = BTreeMap<(u8, FieldName), Triple>;
+/// Every triple of each field.
+type AllTriples = BTreeMap<FieldName, BTreeSet<Triple>>;
+
 /// From the message stream: the first radial of each elevation number gives
 /// `(elevation number, field name) -> triple`, and every radial contributes to
 /// the per-field set of triples the file contains.
-fn headers_from_messages(
-    bytes: &[u8],
-) -> (
-    BTreeMap<(u8, FieldName), Triple>,
-    BTreeMap<FieldName, BTreeSet<Triple>>,
-) {
-    let mut first: BTreeMap<(u8, FieldName), Triple> = BTreeMap::new();
-    let mut all: BTreeMap<FieldName, BTreeSet<Triple>> = BTreeMap::new();
+fn headers_from_messages(bytes: &[u8]) -> (FirstTriples, AllTriples) {
+    let mut first = FirstTriples::new();
+    let mut all = AllTriples::new();
     let records = messages::record_bytes(bytes).expect("decompress the records");
     for item in MessageWalker::new(&records) {
         let Ok((_, MessageBody::DigitalRadarDataGeneric(radial))) = item else {

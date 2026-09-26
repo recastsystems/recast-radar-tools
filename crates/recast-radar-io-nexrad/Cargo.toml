@@ -14,7 +14,9 @@ categories = ["science::geo", "parser-implementations", "encoding"]
 # `recast_radar_bzip2::Decoder::decode_two_into`, overlapping their
 # memory-latency-bound inverse-BWT chases. Same output; about 14% faster on
 # volumes with large records (KILX20260418) and no change on KTLX20240315 in
-# the single-core decode study. Doubles the per-thread decoder workspace.
+# the single-core decode study, but slower on the default thread pool (1.2x
+# over the Level II corpus, docs/perf/cross-library.md). Doubles the
+# per-thread decoder workspace.
 paired-bzip2 = []
 # The Level II writer (`write` module: Archive II files, real-time chunks,
 # GR2Analyst polling directories). Off by default so that decoding alone

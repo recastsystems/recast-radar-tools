@@ -9,7 +9,8 @@ use recast_radar_core::fm301::{
     ViewWarning,
 };
 use recast_radar_core::model::{
-    ArrayBuf, AttrValue, FieldData, FieldName, GateMapping, RangeCoord, Scalar, SweepMode, Volume,
+    ArrayBuf, AttrValue, FieldData, FieldName, GateMapping, RangeCoord, RayAlignment, Scalar,
+    Sweep, SweepError, SweepMode, Volume,
 };
 
 /// Decode a corpus file. A file that is neither committed nor cached and
@@ -427,7 +428,11 @@ fn passthrough_all_adds_the_verbatim_source_metadata() {
             assert_eq!(everything.root.attr(name), Some(value), "{id}: {name}");
             assert_eq!(flavor.root.attr(name), None, "{id}: {name}");
         }
-        for (index, sweep) in volume.sweeps.iter().enumerate() {
+        // The view writes per-ray attribute arrays in its own ray order: the
+        // volume with its rays in that order holds them as the view shows.
+        let mut ordered = volume.clone();
+        fm301::order_rays_for_view(&mut ordered, all).unwrap();
+        for (index, sweep) in ordered.sweeps.iter().enumerate() {
             let path = format!("sweep_{index}");
             let (flavor, everything) = (
                 flavor.group(&path).unwrap(),
@@ -756,4 +761,380 @@ fn int32_fields_stay_packed() {
         .unwrap()
         .data;
     assert!(data.is_zero_copy());
+}
+
+/// Every variable of a view as materialized values with its dims and
+/// attributes, and the view's warnings, keyed by group path.
+fn view_contents(volume: &Volume, options: ViewOptions) -> Vec<String> {
+    fn walk(group: &fm301::Group<'_>, path: &str, out: &mut Vec<String>) {
+        let path = format!("{path}/{}", group.name);
+        out.push(format!(
+            "{path} dims {:?} attrs {:?}",
+            group.dims, group.attrs
+        ));
+        for variable in &group.variables {
+            let values = match &variable.values {
+                Values::Scalar(scalar) => format!("{scalar:?}"),
+                Values::Text(text) => text.to_string(),
+                other => {
+                    // Length and an FNV-1a hash of every value's bits.
+                    let array = other.materialize().unwrap();
+                    let hash = (0..array.len()).fold(0xcbf2_9ce4_8422_2325_u64, |hash, index| {
+                        let bits = array.get_f64(index).map_or(u64::MAX, f64::to_bits);
+                        (hash ^ bits).wrapping_mul(0x0000_0100_0000_01b3)
+                    });
+                    format!("{} values, hash {hash:016x}", array.len())
+                }
+            };
+            out.push(format!(
+                "{path}/{} dims {:?} attrs {:?} = {values}",
+                variable.name, variable.dims, variable.attrs
+            ));
+        }
+        for child in &group.children {
+            walk(child, &path, out);
+        }
+    }
+    let view = fm301::volume_view(volume, options, None).unwrap();
+    let mut out = vec![format!("warnings {:?}", view.warnings)];
+    walk(&view.root, "", &mut out);
+    out
+}
+
+/// The view options the ray-ordering tests run under: the xradar default,
+/// `first_dim="time"` and the WMO flavor, each also with every verbatim
+/// source item (`Passthrough::All`, which writes `Sweep::other`).
+const VIEW_OPTIONS: [ViewOptions; 6] = [
+    ViewOptions::XRADAR,
+    TIME_ORDER,
+    ViewOptions::WMO,
+    ViewOptions {
+        passthrough: Passthrough::All,
+        ..ViewOptions::XRADAR
+    },
+    ViewOptions {
+        passthrough: Passthrough::All,
+        ..TIME_ORDER
+    },
+    ViewOptions {
+        passthrough: Passthrough::All,
+        ..ViewOptions::WMO
+    },
+];
+
+/// `order_rays_for_view` puts storage in the view's ray order: the view
+/// shows exactly the same variables, values, attributes and warnings as
+/// before, and every field whose gates are the sweep's range gates becomes
+/// zero-copy under that view (design note 12.2: none of the Level II,
+/// CfRadial or JMA fields is under the xradar default before). Covers
+/// Level II (SAILS, legacy resolution), CfRadial and DORADE RHIs, ODIM with
+/// per-ray times, the NOXP sweepfile with decreasing ray times and JMA,
+/// under the xradar default, `first_dim="time"` and the WMO flavor, with the
+/// flavor's items and with every verbatim source item.
+#[test]
+fn ordering_rays_for_the_view_keeps_it_and_makes_fields_zero_copy() {
+    // (id, zero-copy fields after ordering for the xradar default, fields)
+    let cases = [
+        ("l2-ktlx-20240315-000217", 76, 104),
+        ("l2-kpah-20080415-235014", 8, 15),
+        ("cfrad1-dow8-20211011-223602-rhi-trim3-classic", 3, 3),
+        ("dorade-dow6-20211230-222139-rhi-head41", 32, 32),
+        ("odim-norst-20170421-0908-pvol", 6, 6),
+        ("dorade-noxp-20090501-190244-ppi", 9, 9),
+        ("jma-n5-20191012-090000-rs47773", 26, 26),
+    ];
+    for (id, zero_copy_after, fields) in cases {
+        let Some(volume) = volume(id) else {
+            continue;
+        };
+        for options in VIEW_OPTIONS {
+            let before = view_contents(&volume, options);
+            let mut ordered = volume.clone();
+            let unordered = fm301::order_rays_for_view(&mut ordered, options).unwrap();
+            assert!(unordered.is_empty(), "{id} {options:?}: {unordered:?}");
+            let after = view_contents(&ordered, options);
+            assert_eq!(before.len(), after.len(), "{id} {options:?}");
+            for (b, a) in before.iter().zip(&after) {
+                assert!(
+                    b == a,
+                    "{id} {options:?}:\n before {b:.300}\n after  {a:.300}"
+                );
+            }
+            // A second ordering finds nothing to move.
+            let mut again = ordered.clone();
+            fm301::order_rays_for_view(&mut again, options).unwrap();
+            assert!(again == ordered, "{id} {options:?}: ordering is idempotent");
+        }
+        let mut ordered = volume.clone();
+        fm301::order_rays_for_view(&mut ordered, ViewOptions::XRADAR).unwrap();
+        assert_eq!(
+            zero_copy_fields(&ordered, FirstDim::Auto),
+            (zero_copy_after, fields),
+            "{id}: zero-copy under the xradar default after ordering"
+        );
+    }
+}
+
+/// A per-ray array among a sweep's verbatim attributes (an ODIM `how` array
+/// no typed slot holds) moves with its rays in `order_rays_for_view`, and the
+/// view writes it in its own ray order, so that entry `i` belongs to the
+/// view's ray `i` whether or not storage was reordered first.
+///
+/// Input: `odim-au02-20260921-0000-pvol-subset`, two sweeps of a RAINBOW
+/// PVOL whose `how` groups each carry six 360-value per-ray arrays that
+/// io-odim keeps verbatim in `Sweep::other` (h5py: `TXpower`, `dataflag`,
+/// `noisepowerh`, `noisepowerv`, `numpulses`, `startT`). Rays are stored in
+/// azimuth order and acquisition starts at ray `a1gate` (225 and 307), so
+/// every view order is a rotation of storage. Each stored ray is identified by its
+/// azimuth, which is unique within a sweep. The field-level case copies the
+/// file's own `TXpower` into the first field's attributes, where an ODIM
+/// data-level `how` array would be kept (none of the corpus files has one).
+#[test]
+fn per_ray_attribute_arrays_move_with_their_rays() {
+    const PER_RAY: [&str; 6] = [
+        "TXpower",
+        "dataflag",
+        "noisepowerh",
+        "noisepowerv",
+        "numpulses",
+        "startT",
+    ];
+    fn find<'v>(attrs: &'v [(Box<str>, AttrValue)], name: &str) -> &'v AttrValue {
+        attrs
+            .iter()
+            .find(|(key, _)| &**key == name)
+            .map(|(_, value)| value)
+            .unwrap_or_else(|| panic!("no {name}"))
+    }
+    fn array(value: &AttrValue) -> ArrayBuf {
+        match value {
+            AttrValue::Array(array) => array.clone(),
+            other => panic!("{other:?} is not an array"),
+        }
+    }
+    /// The stored ray of `sweep` with this azimuth.
+    fn source_ray(sweep: &Sweep, azimuth: f32) -> usize {
+        let matches: Vec<usize> = (0..sweep.nrays())
+            .filter(|&ray| sweep.rays.azimuth_deg[ray].to_bits() == azimuth.to_bits())
+            .collect();
+        assert_eq!(matches.len(), 1, "azimuth {azimuth} is not unique");
+        matches[0]
+    }
+
+    let Some(mut volume) = volume("odim-au02-20260921-0000-pvol-subset") else {
+        return;
+    };
+    assert_eq!(volume.sweeps.len(), 2);
+    for sweep in &mut volume.sweeps {
+        let nrays = sweep.nrays();
+        assert_eq!(nrays, 360);
+        for name in PER_RAY {
+            assert_eq!(
+                find(&sweep.other, name).ray_alignment(name, nrays),
+                RayAlignment::PerRay,
+                "{name}"
+            );
+        }
+        let tx_power = find(&sweep.other, "TXpower").clone();
+        sweep.fields[0]
+            .attrs
+            .other
+            .push(("TXpower".into(), tx_power));
+    }
+
+    let mut rotated = 0;
+    for options in VIEW_OPTIONS {
+        let mut ordered = volume.clone();
+        let unordered = fm301::order_rays_for_view(&mut ordered, options).unwrap();
+        assert!(unordered.is_empty(), "{options:?}: {unordered:?}");
+        let everything = ViewOptions {
+            passthrough: Passthrough::All,
+            ..options
+        };
+        let before_view = fm301::volume_view(&volume, everything, None).unwrap();
+        let after_view = fm301::volume_view(&ordered, everything, None).unwrap();
+        for (index, (source, moved)) in volume.sweeps.iter().zip(&ordered.sweeps).enumerate() {
+            if source.rays.azimuth_deg != moved.rays.azimuth_deg {
+                rotated += 1;
+            }
+            let path = format!("sweep_{index}");
+            // Stored ray of the source for each ray of the reordered sweep,
+            // and for each ray of the view.
+            let rays: Vec<usize> = moved
+                .rays
+                .azimuth_deg
+                .iter()
+                .map(|azimuth| source_ray(source, *azimuth))
+                .collect();
+            let (before_group, after_group) = (
+                before_view.group(&path).unwrap(),
+                after_view.group(&path).unwrap(),
+            );
+            let view_rays: Vec<usize> = match before_group
+                .variable("azimuth")
+                .unwrap()
+                .values
+                .materialize()
+                .unwrap()
+            {
+                ArrayBuf::F32(azimuths) => azimuths
+                    .iter()
+                    .map(|azimuth| source_ray(source, *azimuth))
+                    .collect(),
+                other => panic!("azimuth is {}", other.dtype()),
+            };
+            for name in PER_RAY {
+                let was = array(find(&source.other, name));
+                let now = array(find(&moved.other, name));
+                for (ray, &from) in rays.iter().enumerate() {
+                    assert_eq!(
+                        now.get_f64(ray),
+                        was.get_f64(from),
+                        "{options:?} {path} {name}[{ray}]"
+                    );
+                }
+                for group in [before_group, after_group] {
+                    let written = array(group.attr(name).unwrap());
+                    for (ray, &from) in view_rays.iter().enumerate() {
+                        assert_eq!(
+                            written.get_f64(ray),
+                            was.get_f64(from),
+                            "{options:?} {path} view {name}[{ray}]"
+                        );
+                    }
+                }
+            }
+            let was = array(find(&source.fields[0].attrs.other, "TXpower"));
+            let now = array(find(&moved.fields[0].attrs.other, "TXpower"));
+            for (ray, &from) in rays.iter().enumerate() {
+                assert_eq!(now.get_f64(ray), was.get_f64(from), "{options:?} {path}");
+            }
+        }
+        assert!(
+            view_contents(&volume, everything) == view_contents(&ordered, everything),
+            "{options:?}: the view changed"
+        );
+    }
+    // Every option moves both sweeps: time order is a rotation by `a1gate`,
+    // and azimuth order a rotation by one ray, because the first stored ray
+    // spans 359.5-0.5 deg (h5py `startazA`/`stopazA`) and is centred at
+    // 359.99 deg.
+    assert_eq!(rotated, 12);
+}
+
+/// `order_rays_for_view` checks every sweep before it moves any rows: a
+/// per-ray item with the wrong length in the last sweep of KTLX 2024 is an
+/// error, and the sweeps before it, which it would otherwise rotate, are
+/// left in storage order too.
+#[test]
+fn ordering_rays_for_the_view_changes_nothing_when_a_sweep_fails() {
+    let Some(volume) = volume("l2-ktlx-20240315-000217") else {
+        return;
+    };
+    let mut ordered = volume.clone();
+    fm301::order_rays_for_view(&mut ordered, ViewOptions::XRADAR).unwrap();
+    assert!(
+        ordered.sweeps[0].rays.azimuth_deg != volume.sweeps[0].rays.azimuth_deg,
+        "the first sweep is reordered when nothing fails"
+    );
+
+    let mut broken = volume.clone();
+    let last = broken.sweeps.len() - 1;
+    let nrays = broken.sweeps[last].nrays();
+    broken.sweeps[last].ray_vars.nyquist_velocity_mps = Some(vec![10.0; nrays + 1]);
+    let before = broken.clone();
+    assert_eq!(
+        fm301::order_rays_for_view(&mut broken, ViewOptions::XRADAR),
+        Err(SweepError::RayLength {
+            what: "nyquist_velocity".to_owned(),
+            len: nrays + 1,
+            nrays,
+        })
+    );
+    assert!(broken == before, "a failed ordering moved rows");
+}
+
+/// An array attribute with one entry per ray under a name not known to be
+/// per ray is neither moved nor left behind: `permute_rays` refuses the
+/// sweep, `order_rays_for_view` leaves that sweep in storage order (and
+/// orders the others), and the view writes the array as stored, the same
+/// before and after. The Melbourne subset's `how/TXpower` stands in for such
+/// an array under a name of no ODIM feed (on the second sweep only, and on
+/// the first field of the first sweep).
+#[test]
+fn unknown_per_ray_length_attributes_keep_their_sweep_in_storage_order() {
+    let Some(mut volume) = volume("odim-au02-20260921-0000-pvol-subset") else {
+        return;
+    };
+    let nrays = volume.sweeps[1].nrays();
+    let (_, tx_power) = volume.sweeps[1]
+        .other
+        .iter()
+        .find(|(name, _)| &**name == "TXpower")
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        tx_power.ray_alignment("vendor_array", nrays),
+        RayAlignment::Unknown
+    );
+    volume.sweeps[1]
+        .other
+        .push(("vendor_array".into(), tx_power.clone()));
+    let mut field_case = volume.sweeps[0].clone();
+    field_case.fields[0]
+        .attrs
+        .other
+        .push(("vendor_array".into(), tx_power.clone()));
+    let field_name = field_case.fields[0].name.as_str().to_owned();
+    assert_eq!(
+        field_case.unknown_ray_attribute(),
+        Some(format!("{field_name}/vendor_array"))
+    );
+    let before = field_case.clone();
+    let order: Vec<u32> = (0..nrays as u32).rev().collect();
+    assert_eq!(
+        field_case.permute_rays(&order),
+        Err(SweepError::UnknownRayAttribute {
+            name: format!("{field_name}/vendor_array")
+        })
+    );
+    assert_eq!(field_case, before, "a refused sweep is unchanged");
+
+    for options in VIEW_OPTIONS {
+        let everything = ViewOptions {
+            passthrough: Passthrough::All,
+            ..options
+        };
+        let mut ordered = volume.clone();
+        let unordered = fm301::order_rays_for_view(&mut ordered, options).unwrap();
+        assert!(
+            unordered
+                .iter()
+                .all(|kept| kept.sweep == 1 && kept.attribute == "vendor_array"),
+            "{options:?}: {unordered:?}"
+        );
+        assert!(
+            ordered.sweeps[1] == volume.sweeps[1],
+            "{options:?}: the sweep with the unknown array moved"
+        );
+        assert!(
+            view_contents(&volume, everything) == view_contents(&ordered, everything),
+            "{options:?}: the view changed"
+        );
+        let view = fm301::volume_view(&ordered, everything, None).unwrap();
+        let written = view.group("sweep_1").unwrap().attr("vendor_array").unwrap();
+        assert!(*written == tx_power, "{options:?}: not written as stored");
+    }
+    // The first sweep, without such an array, is still ordered for the
+    // view (a rotation under every option, as in the test above), and the
+    // sweep left in storage order is reported with the array that kept it
+    // there.
+    let mut ordered = volume.clone();
+    let unordered = fm301::order_rays_for_view(&mut ordered, ViewOptions::XRADAR).unwrap();
+    assert!(ordered.sweeps[0].rays.azimuth_deg != volume.sweeps[0].rays.azimuth_deg);
+    let kept: Vec<(usize, &str)> = unordered
+        .iter()
+        .map(|kept| (kept.sweep, kept.attribute.as_str()))
+        .collect();
+    assert_eq!(kept, [(1, "vendor_array")]);
 }

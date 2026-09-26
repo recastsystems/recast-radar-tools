@@ -1,0 +1,22 @@
+# callgrind Ir, decode_bench timed_work (--toggle-collect=*timed_work*), one thread, release builds
+# f6290b3 rows: d3 = d3257fc crates + current decode_bench.rs without --order-rays; head = 6786aae
+d3-dkrom-phys 774887071 "derived_hash":"3c09b740591895d0"
+d3-gz-phys 1902045768 "derived_hash":"559f16801f293eed"
+d3-ktlx-phys 3632809797 "derived_hash":"67eb301fbb4e518c"
+d3-ktlx-view 4121081970 "derived_hash":"f19bb65f16b2dd3e"
+head-dkrom-phys 353015703 "derived_hash":"3c09b740591895d0"
+head-gz-phys 588886372 "derived_hash":"559f16801f293eed"
+head-ktlx-phys 1488865382 "derived_hash":"67eb301fbb4e518c"
+head-ktlx-view 1231178840 "derived_hash":"f19bb65f16b2dd3e"
+# 6786aae whole-file bzip2: out-fix = 50e6629 (before), out-f/out-f2 = 6786aae scan/copy before and after their rewrite
+out-f-l2-meta 1135990725
+out-f-l2 1065090638
+out-f2-l2-meta 862200151
+out-f2-l2 808460850
+out-fix-l2-meta 847483734
+out-fix-l2 776926395
+# Level III, 6786aae: total and recast_radar_bzip2 self cost
+TLX_N0B_20260622_0806 28805497 27733708
+TLX_DPR_20260622_0806 27456434 22769902
+TLX_N0Q_20130520_2016 2778656 2133279
+TLX_N0U_20220503_0052 8579896 7373672

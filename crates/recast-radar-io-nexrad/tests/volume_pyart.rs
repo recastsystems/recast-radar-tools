@@ -14,6 +14,9 @@
 //! the KTLX 2024-03-15 benchmark volume (16-bit ZDR and PHI, CFP); the
 //! committed KIWA real-time chunks, which run offline.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::collections::BTreeSet;

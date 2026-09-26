@@ -658,7 +658,11 @@ pub fn record_bytes(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
 /// Files from before the metadata record existed (ARCHIVE2 headers, Message 1
 /// only) return their first frames, which then hold radials; the walker
 /// yields those as unparsed Message 1 bodies. Whole-file gzip and bzip2
-/// inputs of raw records are only expanded as far as the metadata record.
+/// inputs are only expanded as far as the metadata record: for raw records
+/// its frames, for LDM records the first record (the rest of the file is
+/// neither expanded nor checked, so a wrapper damaged past the metadata
+/// record still yields it). Of LDM records only the first is framed and
+/// decoded, so a file cut short or damaged after it yields it too.
 pub fn metadata_record(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
     let metadata_len = METADATA_RECORD_FRAMES * RECORD_BYTES;
     if let Some(prefix) = expand_whole_file_prefix(raw, VOLUME_HEADER_LEN + metadata_len)? {
@@ -669,14 +673,28 @@ pub fn metadata_record(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
             expanded.truncate(metadata_len);
             return Ok(Cow::Owned(expanded));
         }
-        // LDM records inside a whole-file wrapper: the first record may end
-        // past the prefix, so expand the wrapper.
-        let unwrapped = if prefix.complete {
-            expanded
-        } else {
-            expand_whole_file(raw, WHOLE_FILE_PAYLOAD)?.ok_or_else(|| {
-                NexradError::Compression("whole-file wrapper disappeared".to_owned())
-            })?
+        // LDM records inside a whole-file wrapper. The metadata record
+        // compresses to a small part of the prefix, so its LDM record is
+        // almost always inside it: keep exactly that record. Otherwise
+        // expand the wrapper whole, as before the prefix decode.
+        let first_end = first_ldm_record_end(&expanded[header_len..])
+            .and_then(|end| end.checked_add(header_len));
+        let unwrapped = match first_end {
+            _ if prefix.complete => expanded,
+            Some(end) if end <= expanded.len() => {
+                expanded.truncate(end);
+                expanded
+            }
+            _ => {
+                let context = if raw.starts_with(b"BZh") {
+                    WHOLE_FILE_METADATA
+                } else {
+                    WHOLE_FILE_PAYLOAD
+                };
+                expand_whole_file(raw, context)?.ok_or_else(|| {
+                    NexradError::Compression("whole-file wrapper disappeared".to_owned())
+                })?
+            }
         };
         let records = &unwrapped[volume_header_len(&unwrapped)..];
         return Ok(Cow::Owned(first_ldm_record(records)?));
@@ -689,10 +707,14 @@ pub fn metadata_record(raw: &[u8]) -> Result<Cow<'_, [u8]>> {
     Ok(Cow::Borrowed(&records[..records.len().min(metadata_len)]))
 }
 
-/// Decompress the first of the LDM records in `records`.
+/// Decompress the first of the LDM records in `records`. Only that record
+/// is framed, so a file cut short or damaged in a later record still
+/// yields it.
 fn first_ldm_record(records: &[u8]) -> Result<Vec<u8>> {
+    let first_end =
+        first_ldm_record_end(records).map_or(records.len(), |end| end.min(records.len()));
     let mut decoded = Vec::new();
-    if let Some([first, ..]) = ldm_blocks(records)?.as_deref() {
+    if let Some([first, ..]) = ldm_blocks(&records[..first_end])?.as_deref() {
         crate::decompress_bzip_block_into(first, &mut decoded)?;
     }
     Ok(decoded)
@@ -724,10 +746,11 @@ struct WholeFilePrefix {
     complete: bool,
 }
 
-/// The first `prefix_len` bytes of a whole-file wrapper's expansion, or
-/// `None` when `raw` has no wrapper. gzip is inflated only that far; bzip2
-/// has no streaming decoder here, so the whole stream is expanded (bounded
-/// by [`MAX_DECODED_RADAR_BYTES`]) and returned as `complete`.
+/// The first `prefix_len` bytes of a whole-file wrapper's expansion (or
+/// more), or `None` when `raw` has no wrapper. gzip is inflated only that
+/// far; bzip2 is decoded block by block until the prefix is covered
+/// ([`crate::bzip2_prefix`]), or whole (bounded by
+/// [`MAX_DECODED_RADAR_BYTES`]) when the stream cannot be cut into blocks.
 fn expand_whole_file_prefix(raw: &[u8], prefix_len: usize) -> Result<Option<WholeFilePrefix>> {
     if raw.starts_with(&[0x1f, 0x8b]) {
         let reader = crate::gzip::MultiGzReader::new(raw).take(prefix_len as u64);
@@ -738,6 +761,12 @@ fn expand_whole_file_prefix(raw: &[u8], prefix_len: usize) -> Result<Option<Whol
             complete: false,
         }))
     } else {
+        if raw.starts_with(b"BZh")
+            && let Some((bytes, complete)) =
+                crate::bzip2_prefix::decode_prefix(raw, prefix_len, WHOLE_FILE_METADATA)?
+        {
+            return Ok(Some(WholeFilePrefix { bytes, complete }));
+        }
         Ok(
             expand_whole_file(raw, WHOLE_FILE_METADATA)?.map(|bytes| WholeFilePrefix {
                 bytes,
@@ -751,8 +780,21 @@ fn expand_whole_file_prefix(raw: &[u8], prefix_len: usize) -> Result<Option<Whol
 const LDM_CONTROL_LEN: usize = 4;
 
 /// True when `records` starts with an LDM control word and a bzip2 stream.
-fn starts_with_ldm_record(records: &[u8]) -> bool {
+pub(crate) fn starts_with_ldm_record(records: &[u8]) -> bool {
     records.get(LDM_CONTROL_LEN..LDM_CONTROL_LEN + 3) == Some(b"BZh")
+}
+
+/// Where the first LDM record of `records` ends (its control word plus the
+/// byte count that word gives); `None` when `records` has no control word,
+/// or a zero one.
+fn first_ldm_record_end(records: &[u8]) -> Option<usize> {
+    let control = i32::from_be_bytes(records.get(..LDM_CONTROL_LEN)?.try_into().ok()?);
+    if control == 0 {
+        return None;
+    }
+    usize::try_from(control.unsigned_abs())
+        .ok()?
+        .checked_add(LDM_CONTROL_LEN)
 }
 
 /// Split LDM-compressed records: each is a big-endian `i32` byte count

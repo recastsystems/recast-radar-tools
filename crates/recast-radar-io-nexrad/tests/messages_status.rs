@@ -12,6 +12,9 @@
 //! the KIWA 2026-09-17 volume (Build 24.1) and against ICD ranges in every
 //! Build 19+ file.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::collections::BTreeMap;

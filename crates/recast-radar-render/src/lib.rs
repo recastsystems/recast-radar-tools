@@ -12,11 +12,11 @@
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
-use std::f32::consts::PI;
 use std::ops::Range;
 use std::path::Path;
 
 pub mod color;
+mod exact;
 
 pub use color::{ColorSampler, ColorTable, ColorTableFamily, ColorTableSet};
 use image::{ImageBuffer, ImageError, Rgba};
@@ -2355,13 +2355,13 @@ struct ViewportLookupRow {
 impl ViewportLookupRow {
     fn lookup(&self, x: u32, row_lookup: &AzimuthLookup) -> Option<SampleLookup> {
         let dx_km = (x as f32 + 0.5 - self.radar_x_px) * self.km_per_px_x;
-        let range_km_sq = dx_km.mul_add(dx_km, self.dy_km_sq);
+        let range_km_sq = exact::mul_add(dx_km, dx_km, self.dy_km_sq);
         if range_km_sq > self.max_range_km_sq {
             return None;
         }
 
         let range_m = range_km_sq.sqrt() * 1000.0;
-        let gate = ((range_m - self.first_gate_m) / self.gate_spacing_m).round() as isize;
+        let gate = exact::round_to_isize((range_m - self.first_gate_m) / self.gate_spacing_m);
         if gate < 0 || gate as usize >= self.gate_count {
             return None;
         }
@@ -2374,8 +2374,7 @@ impl ViewportLookupRow {
         // rotation-invariant, so the gate above stays raw.
         let east_km = dx_km * self.rot_cos - self.dy_km * self.rot_sin;
         let north_km = dx_km * self.rot_sin + self.dy_km * self.rot_cos;
-        let azimuth_deg = azimuth_from_xy(east_km, north_km);
-        let azimuth_bin = row_lookup.filled_bin_for_azimuth(azimuth_deg)?;
+        let azimuth_bin = row_lookup.filled_bin_for_xy(east_km, north_km)?;
         Some(SampleLookup {
             azimuth_bin,
             gate: gate as usize,
@@ -3490,20 +3489,19 @@ fn raster_lookup(
 ) -> Option<SampleLookup> {
     let dx = x as f32 - geometry.center_x;
     let dy = geometry.center_y - y as f32;
-    let radius_sq = dx.mul_add(dx, dy * dy);
+    let radius_sq = exact::mul_add(dx, dx, dy * dy);
     if radius_sq > geometry.radius_sq_px {
         return None;
     }
 
     let radius = radius_sq.sqrt();
     let range_m = radius / geometry.radius_px * geometry.max_range_m;
-    let gate = ((range_m - gates.first_gate_m()) / gates.lookup_spacing_m()).round() as isize;
+    let gate = exact::round_to_isize((range_m - gates.first_gate_m()) / gates.lookup_spacing_m());
     if gate < 0 || gate as usize >= gates.gate_count {
         return None;
     }
 
-    let azimuth_deg = azimuth_from_xy(dx, dy);
-    let azimuth_bin = row_lookup.filled_bin_for_azimuth(azimuth_deg)?;
+    let azimuth_bin = row_lookup.filled_bin_for_xy(dx, dy)?;
     Some(SampleLookup {
         azimuth_bin,
         gate: gate as usize,
@@ -3519,13 +3517,13 @@ fn viewport_lookup(
 ) -> Option<SampleLookup> {
     let dx_km = (x as f32 + 0.5 - geometry.radar_x_px) * geometry.km_per_px_x;
     let dy_km = (geometry.radar_y_px - (y as f32 + 0.5)) * geometry.km_per_px_y;
-    let range_km_sq = dx_km.mul_add(dx_km, dy_km * dy_km);
+    let range_km_sq = exact::mul_add(dx_km, dx_km, dy_km * dy_km);
     if range_km_sq > geometry.max_range_km_sq {
         return None;
     }
 
     let range_m = range_km_sq.sqrt() * 1000.0;
-    let gate = ((range_m - gates.first_gate_m()) / gates.lookup_spacing_m()).round() as isize;
+    let gate = exact::round_to_isize((range_m - gates.first_gate_m()) / gates.lookup_spacing_m());
     if gate < 0 || gate as usize >= gates.gate_count {
         return None;
     }
@@ -3535,8 +3533,7 @@ fn viewport_lookup(
     // n = dx·sinγ + dy·cosγ. Range is rotation-invariant.
     let east_km = dx_km * geometry.rot_cos - dy_km * geometry.rot_sin;
     let north_km = dx_km * geometry.rot_sin + dy_km * geometry.rot_cos;
-    let azimuth_deg = azimuth_from_xy(east_km, north_km);
-    let azimuth_bin = row_lookup.filled_bin_for_azimuth(azimuth_deg)?;
+    let azimuth_bin = row_lookup.filled_bin_for_xy(east_km, north_km)?;
     Some(SampleLookup {
         azimuth_bin,
         gate: gate as usize,
@@ -3618,12 +3615,9 @@ fn color_for_code<T: PackedInt>(coding: &IntCoding<T>, sampler: &ColorSampler, r
     }
 }
 
+#[cfg(test)]
 fn azimuth_from_xy(dx: f32, dy: f32) -> f32 {
-    let mut degrees = dx.atan2(dy) * 180.0 / PI;
-    if degrees < 0.0 {
-        degrees += 360.0;
-    }
-    degrees
+    exact::azimuth_from_xy(dx, dy)
 }
 
 struct AzimuthLookup {
@@ -3725,8 +3719,17 @@ impl AzimuthLookup {
             .map(|candidate| candidate.row)
     }
 
+    #[cfg(test)]
     fn filled_bin_for_azimuth(&self, azimuth_deg: f32) -> Option<usize> {
         let bin = azimuth_bin(azimuth_deg);
+        (!self.bins[bin].is_empty()).then_some(bin)
+    }
+
+    /// The filled bin of the azimuth of an east/north offset, through
+    /// [`exact::azimuth_bin`] (the plain `atan2f` bin, computed faster).
+    #[inline]
+    fn filled_bin_for_xy(&self, east: f32, north: f32) -> Option<usize> {
+        let bin = exact::azimuth_bin(east, north, AZIMUTH_BIN_WIDTH_DEG, AZIMUTH_BINS);
         (!self.bins[bin].is_empty()).then_some(bin)
     }
 
@@ -3816,7 +3819,7 @@ impl AzimuthBin {
 }
 
 fn azimuth_bin(azimuth_deg: f32) -> usize {
-    ((azimuth_deg.rem_euclid(360.0) / AZIMUTH_BIN_WIDTH_DEG).round() as usize) % AZIMUTH_BINS
+    exact::plain_azimuth_bin(azimuth_deg, AZIMUTH_BIN_WIDTH_DEG, AZIMUTH_BINS)
 }
 
 /// One past the last gate of `row` that is not blank (0 when none is).

@@ -1532,32 +1532,58 @@ fn decode_data(
         );
     }
 
-    let levels = run_length_decode(&section7[5..], num_bits, max_value, expected_points)
-        .map_err(|err| format!("{member}: {err}"))?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(expected_points)
-        .map_err(|err| format!("{member}: cannot reserve decoded value plane: {err}"))?;
-    for level in levels {
-        values.push(
-            level_values
-                .get(usize::from(level))
-                .copied()
-                .ok_or_else(|| format!("{member}: run-length level {level} exceeds level table"))?,
-        );
+    // Levels map straight to values while the stream is expanded: a run
+    // repeats its literal's value, so each literal is looked up once. A
+    // level past the table is reported only after the whole stream decoded,
+    // and as the first such level in output order, as a separate mapping
+    // pass over the levels would report it.
+    let mut first_bad_level = None;
+    let values = run_length_decode_mapped(
+        &section7[5..],
+        num_bits,
+        max_value,
+        expected_points,
+        |level| match level_values.get(usize::from(level)) {
+            Some(value) => *value,
+            None => {
+                first_bad_level.get_or_insert(level);
+                f32::NAN
+            }
+        },
+    )
+    .map_err(|err| format!("{member}: {err}"))?;
+    if let Some(level) = first_bad_level {
+        return Err(format!(
+            "{member}: run-length level {level} exceeds level table"
+        ));
     }
     Ok(values)
 }
 
-/// JMA run-length scheme (DRT 5.200): values `<= max_value` are literal
-/// levels; values above it are base-`lngu` digits of a repeat count for the
-/// previous literal, where `lngu = 2^num_bits - (max_value + 1)`.
+/// The raw levels of a run-length stream (`run_length_decode_mapped` with
+/// no mapping).
+#[cfg(test)]
 fn run_length_decode(
     bytes: &[u8],
     num_bits: u8,
     max_value: u16,
     expected_len: usize,
 ) -> Result<Vec<u16>, String> {
+    run_length_decode_mapped(bytes, num_bits, max_value, expected_len, |level| level)
+}
+
+/// JMA run-length scheme (DRT 5.200): values `<= max_value` are literal
+/// levels; values above it are base-`lngu` digits of a repeat count for the
+/// previous literal, where `lngu = 2^num_bits - (max_value + 1)`. Every
+/// literal level is passed through `map` once; a run repeats the mapped
+/// value of its literal.
+fn run_length_decode_mapped<T: Copy>(
+    bytes: &[u8],
+    num_bits: u8,
+    max_value: u16,
+    expected_len: usize,
+    map: impl FnMut(u16) -> T,
+) -> Result<Vec<T>, String> {
     if expected_len > MAX_GRID_POINTS {
         return Err(limit_error(format!(
             "run-length output requests {expected_len} values (limit {MAX_GRID_POINTS})"
@@ -1580,18 +1606,51 @@ fn run_length_decode(
         return Err("invalid run-length base".to_owned());
     }
 
-    let mut out: Vec<u16> = Vec::new();
+    let mut out: Vec<T> = Vec::new();
     out.try_reserve_exact(expected_len)
         .map_err(|err| format!("cannot reserve run-length output: {err}"))?;
-    let mut cached: Option<u16> = None;
+    // Byte-wide streams (the JMA products in the corpus) skip the bit
+    // reader.
+    if num_bits == 8 {
+        let values = bytes.iter().map(|byte| u16::from(*byte));
+        expand_runs(values, rlbase, lngu, expected_len, &mut out, map)?;
+    } else {
+        let mut reader = BitValues::new(bytes, num_bits);
+        let values = std::iter::from_fn(|| reader.next_value());
+        expand_runs(values, rlbase, lngu, expected_len, &mut out, map)?;
+    }
+
+    if out.len() != expected_len {
+        return Err(format!(
+            "run-length stream decoded {} values, expected {expected_len}",
+            out.len()
+        ));
+    }
+    Ok(out)
+}
+
+/// The run-length loop of [`run_length_decode_mapped`] over the stream's
+/// values, appending to `out` until it holds `expected_len` values or the
+/// stream ends.
+#[inline]
+fn expand_runs<T: Copy>(
+    values: impl Iterator<Item = u16>,
+    rlbase: u16,
+    lngu: usize,
+    expected_len: usize,
+    out: &mut Vec<T>,
+    mut map: impl FnMut(u16) -> T,
+) -> Result<(), String> {
+    let mut cached: Option<T> = None;
     let mut exp = 1usize;
-    for value in BitValues::new(bytes, num_bits) {
+    for value in values {
         if value < rlbase {
             if out.len() >= expected_len {
                 break;
             }
-            out.push(value);
-            cached = Some(value);
+            let mapped = map(value);
+            out.push(mapped);
+            cached = Some(mapped);
             exp = 1;
         } else {
             let prev = cached.ok_or_else(|| "first run-length value is a run marker".to_owned())?;
@@ -1616,48 +1675,57 @@ fn run_length_decode(
             break;
         }
     }
-
-    if out.len() != expected_len {
-        return Err(format!(
-            "run-length stream decoded {} values, expected {expected_len}",
-            out.len()
-        ));
-    }
-    Ok(out)
+    Ok(())
 }
 
-/// Big-endian fixed-width bit reader for the run-length stream.
+/// Big-endian fixed-width bit reader for the run-length stream: values are
+/// taken from the top of a 64-bit accumulator refilled a byte at a time.
+/// Yields `width`-bit values while at least `width` bits remain (a trailing
+/// partial value is ignored).
 struct BitValues<'a> {
     bytes: &'a [u8],
-    width: u8,
-    bit_pos: usize,
+    /// Next byte to load into `acc`.
+    next: usize,
+    /// Unread bits, left-aligned.
+    acc: u64,
+    /// Number of valid bits at the top of `acc`.
+    available: u32,
+    /// Value width, 1..=16 (checked by the caller).
+    width: u32,
 }
 
 impl<'a> BitValues<'a> {
     fn new(bytes: &'a [u8], width: u8) -> Self {
         Self {
             bytes,
-            width,
-            bit_pos: 0,
+            next: 0,
+            acc: 0,
+            available: 0,
+            width: u32::from(width),
         }
     }
-}
 
-impl Iterator for BitValues<'_> {
-    type Item = u16;
-
-    fn next(&mut self) -> Option<u16> {
-        let total_bits = self.bytes.len() * 8;
-        if self.bit_pos + usize::from(self.width) > total_bits {
+    #[inline]
+    fn next_value(&mut self) -> Option<u16> {
+        if self.width == 0 || self.width > 16 {
             return None;
         }
-        let mut value = 0u16;
-        for _ in 0..self.width {
-            let byte = self.bytes[self.bit_pos / 8];
-            let shift = 7 - (self.bit_pos % 8);
-            value = (value << 1) | u16::from((byte >> shift) & 1);
-            self.bit_pos += 1;
+        if self.available < self.width {
+            while self.available <= 56 {
+                let Some(&byte) = self.bytes.get(self.next) else {
+                    break;
+                };
+                self.acc |= u64::from(byte) << (56 - self.available);
+                self.available += 8;
+                self.next += 1;
+            }
+            if self.available < self.width {
+                return None;
+            }
         }
+        let value = (self.acc >> (64 - self.width)) as u16;
+        self.acc <<= self.width;
+        self.available -= self.width;
         Some(value)
     }
 }

@@ -1,0 +1,70 @@
+== KTLX20240315_000217_V06 threads=1 (0 = default, 32)
+exp: blocks=97 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=293.8 help_ms=277.7 helps=97 wait_ms=0.0 max_backlog=1
+exp: blocks=97 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=292.8 help_ms=270.6 helps=97 wait_ms=0.0 max_backlog=1
+exp: blocks=97 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=309.0 help_ms=284.6 helps=97 wait_ms=0.0 max_backlog=1
+exp: blocks=97 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=283.3 help_ms=265.6 helps=97 wait_ms=0.0 max_backlog=1
+== KTLX20240315_000217_V06 threads=2 (0 = default, 32)
+exp: blocks=97 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=141.9 help_ms=125.0 helps=43 wait_ms=0.3 max_backlog=9
+exp: blocks=97 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=138.7 help_ms=122.1 helps=40 wait_ms=0.3 max_backlog=10
+exp: blocks=97 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=154.5 help_ms=128.8 helps=48 wait_ms=0.4 max_backlog=11
+exp: blocks=97 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=156.3 help_ms=130.6 helps=46 wait_ms=0.4 max_backlog=8
+== KTLX20240315_000217_V06 threads=4 (0 = default, 32)
+exp: blocks=97 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=92.0 help_ms=67.2 helps=10 wait_ms=0.0 max_backlog=24
+exp: blocks=97 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=91.1 help_ms=54.5 helps=24 wait_ms=7.1 max_backlog=20
+exp: blocks=97 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=95.0 help_ms=67.8 helps=20 wait_ms=0.0 max_backlog=24
+exp: blocks=97 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=82.8 help_ms=63.7 helps=20 wait_ms=0.0 max_backlog=24
+== KTLX20240315_000217_V06 threads=8 (0 = default, 32)
+exp: blocks=97 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=51.9 help_ms=27.4 helps=4 wait_ms=6.4 max_backlog=38
+exp: blocks=97 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=62.1 help_ms=25.0 helps=10 wait_ms=3.0 max_backlog=47
+exp: blocks=97 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=50.9 help_ms=24.1 helps=3 wait_ms=4.5 max_backlog=36
+exp: blocks=97 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=47.7 help_ms=25.4 helps=6 wait_ms=4.3 max_backlog=42
+== KTLX20240315_000217_V06 threads=12 (0 = default, 32)
+exp: blocks=97 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=46.8 help_ms=18.6 helps=4 wait_ms=0.3 max_backlog=63
+exp: blocks=97 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=48.3 help_ms=25.2 helps=8 wait_ms=0.5 max_backlog=74
+exp: blocks=97 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=51.0 help_ms=24.6 helps=4 wait_ms=2.6 max_backlog=67
+exp: blocks=97 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=45.1 help_ms=19.1 helps=6 wait_ms=0.0 max_backlog=64
+== KTLX20240315_000217_V06 threads=16 (0 = default, 32)
+exp: blocks=97 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=52.9 help_ms=25.3 helps=3 wait_ms=0.6 max_backlog=88
+exp: blocks=97 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=61.1 help_ms=33.2 helps=4 wait_ms=0.0 max_backlog=91
+exp: blocks=97 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=52.3 help_ms=20.4 helps=6 wait_ms=0.0 max_backlog=79
+exp: blocks=97 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=67.2 help_ms=0.0 helps=0 wait_ms=0.0 max_backlog=86
+== KTLX20240315_000217_V06 threads=0 (0 = default, 32)
+exp: blocks=97 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=56.3 help_ms=18.9 helps=6 wait_ms=8.7 max_backlog=89
+exp: blocks=97 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=45.1 help_ms=0.0 helps=0 wait_ms=7.8 max_backlog=86
+exp: blocks=97 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=40.5 help_ms=9.7 helps=4 wait_ms=2.2 max_backlog=82
+exp: blocks=97 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=56.6 help_ms=13.5 helps=5 wait_ms=16.3 max_backlog=87
+== KILX20260418_013553_V06 threads=1 (0 = default, 32)
+exp: blocks=106 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=703.5 help_ms=681.8 helps=106 wait_ms=0.0 max_backlog=1
+exp: blocks=106 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=732.1 help_ms=710.8 helps=106 wait_ms=0.0 max_backlog=1
+exp: blocks=106 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=697.4 help_ms=673.8 helps=106 wait_ms=0.0 max_backlog=1
+exp: blocks=106 max_workers=0 started=0 ahead=4611686018427387903 parser_total_ms=671.5 help_ms=652.1 helps=106 wait_ms=0.0 max_backlog=1
+== KILX20260418_013553_V06 threads=2 (0 = default, 32)
+exp: blocks=106 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=383.0 help_ms=355.6 helps=52 wait_ms=0.9 max_backlog=8
+exp: blocks=106 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=438.4 help_ms=409.1 helps=53 wait_ms=0.1 max_backlog=10
+exp: blocks=106 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=337.0 help_ms=317.7 helps=51 wait_ms=0.3 max_backlog=8
+exp: blocks=106 max_workers=1 started=1 ahead=4611686018427387903 parser_total_ms=404.2 help_ms=377.9 helps=53 wait_ms=0.0 max_backlog=7
+== KILX20260418_013553_V06 threads=4 (0 = default, 32)
+exp: blocks=106 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=241.7 help_ms=212.8 helps=23 wait_ms=0.0 max_backlog=14
+exp: blocks=106 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=193.5 help_ms=167.6 helps=21 wait_ms=0.0 max_backlog=12
+exp: blocks=106 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=182.0 help_ms=161.2 helps=23 wait_ms=0.1 max_backlog=18
+exp: blocks=106 max_workers=3 started=3 ahead=4611686018427387903 parser_total_ms=166.6 help_ms=146.8 helps=25 wait_ms=0.2 max_backlog=11
+== KILX20260418_013553_V06 threads=8 (0 = default, 32)
+exp: blocks=106 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=174.0 help_ms=137.5 helps=14 wait_ms=0.0 max_backlog=53
+exp: blocks=106 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=151.3 help_ms=121.3 helps=10 wait_ms=1.1 max_backlog=38
+exp: blocks=106 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=141.2 help_ms=89.9 helps=8 wait_ms=15.2 max_backlog=37
+exp: blocks=106 max_workers=7 started=7 ahead=4611686018427387903 parser_total_ms=135.5 help_ms=97.8 helps=7 wait_ms=0.0 max_backlog=38
+== KILX20260418_013553_V06 threads=12 (0 = default, 32)
+exp: blocks=106 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=130.2 help_ms=90.9 helps=5 wait_ms=9.5 max_backlog=60
+exp: blocks=106 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=93.9 help_ms=59.8 helps=4 wait_ms=6.9 max_backlog=61
+exp: blocks=106 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=110.7 help_ms=87.2 helps=4 wait_ms=0.0 max_backlog=100
+exp: blocks=106 max_workers=11 started=11 ahead=4611686018427387903 parser_total_ms=77.2 help_ms=50.1 helps=8 wait_ms=2.0 max_backlog=50
+== KILX20260418_013553_V06 threads=16 (0 = default, 32)
+exp: blocks=106 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=89.2 help_ms=44.4 helps=7 wait_ms=17.4 max_backlog=54
+exp: blocks=106 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=80.6 help_ms=43.5 helps=5 wait_ms=10.9 max_backlog=51
+exp: blocks=106 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=86.6 help_ms=53.5 helps=5 wait_ms=9.8 max_backlog=90
+exp: blocks=106 max_workers=15 started=15 ahead=4611686018427387903 parser_total_ms=109.7 help_ms=66.7 helps=6 wait_ms=12.5 max_backlog=94
+== KILX20260418_013553_V06 threads=0 (0 = default, 32)
+exp: blocks=106 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=102.6 help_ms=60.9 helps=2 wait_ms=11.1 max_backlog=98
+exp: blocks=106 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=100.2 help_ms=49.7 helps=1 wait_ms=19.7 max_backlog=100
+exp: blocks=106 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=80.5 help_ms=47.7 helps=4 wait_ms=2.2 max_backlog=101
+exp: blocks=106 max_workers=31 started=31 ahead=4611686018427387903 parser_total_ms=67.3 help_ms=40.2 helps=5 wait_ms=0.0 max_backlog=100

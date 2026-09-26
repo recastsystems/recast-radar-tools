@@ -24,6 +24,9 @@
 //! intermediate chunk and change single fields to exercise unknown blocks,
 //! layout selection by size, compression and pointer errors.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::collections::BTreeMap;

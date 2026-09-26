@@ -20,6 +20,9 @@
 //! relabels a real message 5 frame as type 7 to check that the walker routes
 //! it to the same decoder.
 
+// A panic is how a test fails (clippy.toml), in helpers too.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::collections::BTreeSet;

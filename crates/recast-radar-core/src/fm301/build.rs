@@ -11,8 +11,8 @@ use super::{
 };
 use crate::model::{
     ArrayBuf, AttrValue, ExtraVariable, Field, FieldAttrs, FieldData, FloatCoding, FloatWidth,
-    GateMapping, IntCoding, LinearTransform, PackedInt, RangeCoord, Scalar, SourceFormat, Sweep,
-    SweepMode, Volume, floor_to_second,
+    GateMapping, IntCoding, LinearTransform, PackedInt, RangeCoord, RayAlignment, Scalar,
+    SourceFormat, Sweep, SweepMode, Volume, floor_to_second,
 };
 
 type Attrs<'a> = Vec<(Cow<'a, str>, AttrValue)>;
@@ -805,50 +805,24 @@ impl<'a> Builder<'a> {
 
     /// Ray dimension name and view order for a sweep (design note 12.1).
     fn ray_order(&mut self, index: usize, sweep: &Sweep) -> (&'static str, RowOrder) {
-        let first_dim = if self.wmo() {
-            FirstDim::Time
-        } else {
-            self.options.first_dim
-        };
-        match first_dim {
-            FirstDim::Time => {
-                let times = &sweep.rays.time_s;
-                let order = sort_order(
-                    times.len(),
-                    |a, b| times[a].total_cmp(&times[b]),
-                    |i| times[i],
-                );
-                let strictly_increasing = (1..times.len()).all(|position| {
-                    let (a, b) = match &order {
-                        RowOrder::Identity => (position - 1, position),
-                        RowOrder::Permutation(p) => {
-                            (p[position - 1] as usize, p[position] as usize)
-                        }
-                    };
-                    times[a] < times[b]
-                });
-                if !strictly_increasing {
-                    self.warnings.push(ViewWarning::NonMonotonicTime {
-                        sweep: index as u32,
-                    });
-                }
-                ("time", order)
-            }
-            FirstDim::Auto => {
-                let rhi = sweep.sweep_mode == SweepMode::Rhi && !self.is_cfradial();
-                let (dim, angles) = if rhi {
-                    ("elevation", &sweep.rays.elevation_deg)
-                } else {
-                    ("azimuth", &sweep.rays.azimuth_deg)
+        let (dim, order) =
+            view_ray_order(sweep, self.volume.provenance.source_format, self.options);
+        if dim == "time" {
+            let times = &sweep.rays.time_s;
+            let strictly_increasing = (1..times.len()).all(|position| {
+                let (a, b) = match &order {
+                    RowOrder::Identity => (position - 1, position),
+                    RowOrder::Permutation(p) => (p[position - 1] as usize, p[position] as usize),
                 };
-                let order = sort_order(
-                    angles.len(),
-                    |a, b| angles[a].total_cmp(&angles[b]),
-                    |i| f64::from(angles[i]),
-                );
-                (dim, order)
+                times[a] < times[b]
+            });
+            if !strictly_increasing {
+                self.warnings.push(ViewWarning::NonMonotonicTime {
+                    sweep: index as u32,
+                });
             }
         }
+        (dim, order)
     }
 
     fn sweep(&mut self, index: usize, sweep: &'a Sweep) -> Result<Group<'a>, ViewError> {
@@ -1112,12 +1086,9 @@ impl<'a> Builder<'a> {
 
         let mut attrs: Attrs<'a> = Vec::new();
         if self.all() {
-            attrs.extend(
-                sweep
-                    .other
-                    .iter()
-                    .map(|(name, value)| (Cow::Borrowed(&**name), value.clone())),
-            );
+            attrs.extend(sweep.other.iter().map(|(name, value)| {
+                (Cow::Borrowed(&**name), ray_attr(name, value, nrays, &order))
+            }));
         }
         if let Some(extra) = self.extra {
             attrs.extend(extra.sweep_attrs(index, self.options.flavor));
@@ -1349,7 +1320,7 @@ impl<'a> Builder<'a> {
             },
             dims: vec![Cow::Borrowed(ray_dim), "range".into()],
             values,
-            attrs: self.field_attrs(sweep_index, field, &sweep.range, form)?,
+            attrs: self.field_attrs(sweep_index, field, sweep, order, form)?,
             source: Some(source),
         })
     }
@@ -1380,7 +1351,7 @@ impl<'a> Builder<'a> {
             name: Cow::Borrowed(field.name.as_str()),
             dims: vec![Cow::Borrowed(ray_dim), "range".into()],
             values: Values::Owned(values),
-            attrs: self.field_attrs(sweep_index, field, &sweep.range, FieldForm::Decoded)?,
+            attrs: self.field_attrs(sweep_index, field, sweep, order, FieldForm::Decoded)?,
             source: None,
         })
     }
@@ -1389,9 +1360,11 @@ impl<'a> Builder<'a> {
         &self,
         sweep_index: usize,
         field: &'a Field,
-        range: &RangeCoord,
+        sweep: &Sweep,
+        order: &RowOrder,
         form: FieldForm,
     ) -> Result<Attrs<'a>, ViewError> {
+        let range = &sweep.range;
         let path = || format!("sweep_{sweep_index}/{}", field.name);
         let model = &field.attrs;
         let mut attrs: Attrs<'a> = Vec::new();
@@ -1531,7 +1504,10 @@ impl<'a> Builder<'a> {
                 if attrs.iter().any(|(key, _)| key == &**name) {
                     continue;
                 }
-                attrs.push((Cow::Borrowed(&**name), value.clone()));
+                attrs.push((
+                    Cow::Borrowed(&**name),
+                    ray_attr(name, value, sweep.nrays(), order),
+                ));
             }
         }
         Ok(attrs)
@@ -1654,6 +1630,65 @@ fn source_variable_attrs<'a>(volume: &'a Volume, group: &mut Group<'a>, path: &s
             format!("{path}/{}", child.name)
         };
         source_variable_attrs(volume, child, &child_path);
+    }
+}
+
+/// The ray dimension name and ray order of `sweep` in a view with `options`
+/// (design note 12.1): `time` in acquisition order for the WMO flavor and
+/// `FirstDim::Time`; under `FirstDim::Auto`, `azimuth` order, or `elevation`
+/// order for RHI sweeps of non-CfRadial sources.
+pub(super) fn view_ray_order(
+    sweep: &Sweep,
+    source_format: SourceFormat,
+    options: ViewOptions,
+) -> (&'static str, RowOrder) {
+    let first_dim = if options.flavor == Flavor::Wmo2022 {
+        FirstDim::Time
+    } else {
+        options.first_dim
+    };
+    match first_dim {
+        FirstDim::Time => {
+            let times = &sweep.rays.time_s;
+            let order = sort_order(
+                times.len(),
+                |a, b| times[a].total_cmp(&times[b]),
+                |i| times[i],
+            );
+            ("time", order)
+        }
+        FirstDim::Auto => {
+            let cfradial = matches!(
+                source_format,
+                SourceFormat::CfRadial1 | SourceFormat::CfRadial2
+            );
+            let rhi = sweep.sweep_mode == SweepMode::Rhi && !cfradial;
+            let (dim, angles) = if rhi {
+                ("elevation", &sweep.rays.elevation_deg)
+            } else {
+                ("azimuth", &sweep.rays.azimuth_deg)
+            };
+            let order = sort_order(
+                angles.len(),
+                |a, b| angles[a].total_cmp(&angles[b]),
+                |i| f64::from(angles[i]),
+            );
+            (dim, order)
+        }
+    }
+}
+
+/// A verbatim attribute for the view: a per-ray array
+/// ([`AttrValue::ray_alignment`]) in the view's ray order, so that it lines
+/// up with the ray dimension; anything else as stored.
+fn ray_attr(name: &str, value: &AttrValue, nrays: usize, order: &RowOrder) -> AttrValue {
+    match order {
+        RowOrder::Permutation(permutation)
+            if value.ray_alignment(name, nrays) == RayAlignment::PerRay =>
+        {
+            value.in_ray_order(nrays, permutation)
+        }
+        _ => value.clone(),
     }
 }
 

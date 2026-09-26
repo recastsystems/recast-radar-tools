@@ -879,9 +879,16 @@ name = "recast-radar-bench"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "rayon",
  "recast-radar-core",
  "recast-radar-correct",
  "recast-radar-io",
+ "recast-radar-io-cfradial",
+ "recast-radar-io-dorade",
+ "recast-radar-io-jma",
+ "recast-radar-io-level3",
+ "recast-radar-io-nexrad",
+ "recast-radar-io-odim",
  "recast-radar-render",
  "recast-radar-testdata",
  "serde",

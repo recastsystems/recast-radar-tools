@@ -10,6 +10,10 @@ use super::names::{FieldName, Polarization, Quantity};
 use super::sweep::RangeCoord;
 use super::values::{ArrayBuf, AttrValue, Scalar};
 
+/// Smallest 16-bit field [`Field::to_physical`] decodes through a 65,536-entry
+/// table: below it, resolving each value costs less than building the table.
+const LUT16_MIN_VALUES: usize = 1 << 17;
+
 /// One dataset variable of a sweep: `<name>(time, range)` in FM301.
 ///
 /// Values are stored row-major `[nrays × ngates]` in the source's encoding and
@@ -492,7 +496,10 @@ pub struct FieldAttrs {
     pub flag_masks: Vec<i64>,
     pub flag_meanings: Vec<Box<str>>,
     /// Source attributes with no slot above, verbatim, typed and in file order
-    /// (for example CfRadial `grid_mapping`).
+    /// (for example CfRadial `grid_mapping`). A per-ray array
+    /// ([`AttrValue::ray_alignment`]) moves with its ray in
+    /// [`crate::model::Sweep::permute_rays`] and follows the FM301 view's ray
+    /// order; any other value stays as stored.
     pub other: Vec<(Box<str>, AttrValue)>,
 }
 
@@ -899,16 +906,87 @@ impl Field {
 
     /// Explicit float expansion, row-major `[nrays × ngates]`, NaN for every
     /// sentinel. Decoders never call this.
+    ///
+    /// Every value is [`Field::value`] of its gate (NaN where that is `None`),
+    /// computed per code rather than per gate: 8-bit codes and large 16-bit
+    /// fields go through a decode table built with the coding's own
+    /// `resolve`, so the result is bit for bit the per-gate one.
     pub fn to_physical(&self) -> Vec<f32> {
         let (nrays, ngates) = self.shape();
-        let mut out = Vec::with_capacity(nrays.saturating_mul(ngates));
-        for ray in 0..nrays {
-            for gate in 0..ngates {
-                out.push(
-                    self.gate(ray, gate)
-                        .and_then(Gate::value)
-                        .unwrap_or(f32::NAN),
-                );
+        let len = nrays.saturating_mul(ngates);
+        let resolved = |gate: Gate| gate.value().unwrap_or(f32::NAN);
+        let mut out: Vec<f32> = match &self.data {
+            FieldData::U8 { values, coding } => {
+                let table: [f32; 256] =
+                    std::array::from_fn(|code| resolved(coding.resolve(code as u8)));
+                values
+                    .iter()
+                    .take(len)
+                    .map(|raw| table[usize::from(*raw)])
+                    .collect()
+            }
+            FieldData::I8 { values, coding } => {
+                let table: [f32; 256] =
+                    std::array::from_fn(|code| resolved(coding.resolve(code as u8 as i8)));
+                values
+                    .iter()
+                    .take(len)
+                    .map(|raw| table[usize::from(*raw as u8)])
+                    .collect()
+            }
+            FieldData::U16 { values, coding } => {
+                let values = &values[..values.len().min(len)];
+                if values.len() >= LUT16_MIN_VALUES {
+                    let table: Vec<f32> = (0..=u16::MAX)
+                        .map(|code| resolved(coding.resolve(code)))
+                        .collect();
+                    values.iter().map(|raw| table[usize::from(*raw)]).collect()
+                } else {
+                    values
+                        .iter()
+                        .map(|raw| resolved(coding.resolve(*raw)))
+                        .collect()
+                }
+            }
+            FieldData::I16 { values, coding } => {
+                let values = &values[..values.len().min(len)];
+                if values.len() >= LUT16_MIN_VALUES {
+                    let table: Vec<f32> = (0..=u16::MAX)
+                        .map(|code| resolved(coding.resolve(code as i16)))
+                        .collect();
+                    values
+                        .iter()
+                        .map(|raw| table[usize::from(*raw as u16)])
+                        .collect()
+                } else {
+                    values
+                        .iter()
+                        .map(|raw| resolved(coding.resolve(*raw)))
+                        .collect()
+                }
+            }
+            FieldData::I32 { values, coding } => values
+                .iter()
+                .take(len)
+                .map(|raw| resolved(coding.resolve(*raw)))
+                .collect(),
+            FieldData::F32 { values, coding } => values
+                .iter()
+                .take(len)
+                .map(|raw| resolved(coding.resolve(*raw)))
+                .collect(),
+            FieldData::F64 { values, coding } => values
+                .iter()
+                .take(len)
+                .map(|raw| resolved(coding.resolve(*raw)))
+                .collect(),
+        };
+        // Gates past the stored values have no value.
+        out.resize(len, f32::NAN);
+        for &row in &self.absent_rows {
+            let start = (row as usize).saturating_mul(ngates);
+            if let Some(slots) = out.get_mut(start..start.saturating_add(ngates)) {
+                slots.fill(f32::NAN);
             }
         }
         out
@@ -941,17 +1019,19 @@ impl Field {
         }
     }
 
-    /// Reserve storage for `rows` more rows of `ngates` values.
+    /// Reserve storage for exactly `rows` more rows of `ngates` values
+    /// (`Vec::reserve_exact`: no doubling, so a decoder that learns the row
+    /// count late can grow a field by a small step).
     pub fn reserve_rows(&mut self, rows: usize) {
         let additional = rows.saturating_mul(self.ngates as usize);
         match &mut self.data {
-            FieldData::U8 { values, .. } => values.reserve(additional),
-            FieldData::U16 { values, .. } => values.reserve(additional),
-            FieldData::I8 { values, .. } => values.reserve(additional),
-            FieldData::I16 { values, .. } => values.reserve(additional),
-            FieldData::I32 { values, .. } => values.reserve(additional),
-            FieldData::F32 { values, .. } => values.reserve(additional),
-            FieldData::F64 { values, .. } => values.reserve(additional),
+            FieldData::U8 { values, .. } => values.reserve_exact(additional),
+            FieldData::U16 { values, .. } => values.reserve_exact(additional),
+            FieldData::I8 { values, .. } => values.reserve_exact(additional),
+            FieldData::I16 { values, .. } => values.reserve_exact(additional),
+            FieldData::I32 { values, .. } => values.reserve_exact(additional),
+            FieldData::F32 { values, .. } => values.reserve_exact(additional),
+            FieldData::F64 { values, .. } => values.reserve_exact(additional),
         }
     }
 

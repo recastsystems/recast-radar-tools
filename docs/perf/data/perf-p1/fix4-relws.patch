@@ -1,0 +1,54 @@
+diff --git a/crates/recast-radar-io-nexrad/src/lib.rs b/crates/recast-radar-io-nexrad/src/lib.rs
+index addbb20..fc8dc1f 100644
+--- a/crates/recast-radar-io-nexrad/src/lib.rs
++++ b/crates/recast-radar-io-nexrad/src/lib.rs
+@@ -31,7 +31,9 @@
+ //! LDM block-bzip2 records and whole-file bzip2 volumes are decoded by
+ //! `recast-radar-bzip2` (this repository's decoder without unsafe code, one
+ //! reusable decoder per thread; the `paired-bzip2` feature decodes two
+-//! records at a time on one thread). Decoded record buffers are recycled
++//! records at a time on one thread). A rayon worker frees its decoder's
++//! buffers when no record of the volume is left to decode, so they are not
++//! resident beside the finished volume. Decoded record buffers are recycled
+ //! through a bounded process-wide pool. gzip volumes are inflated by
+ //! [`gzip`]: whole-buffer input in one pass into a buffer presized from the
+ //! gzip trailer, streaming input through a reader; both decode every member
+@@ -1322,6 +1324,12 @@ impl<'a> BlockSlots<'a> {
+             }
+             self.decompress_claimed(index);
+         }
++        // No record is left to claim. The parser is still taking the
++        // decoded records and the volume is still growing, so this thread's
++        // bzip2 workspace would stay resident beside it through the decode's
++        // peak (docs/perf/cross-library.md, "Level II peak RSS against the
++        // nexrad crate").
++        release_bzip2_workspace();
+     }
+ 
+     /// Claim the next index in parse order (with `paired-bzip2`, the next
+@@ -2041,11 +2049,24 @@ thread_local! {
+     /// Per-thread bzip2 decoder: its block work buffers (about 7 MiB of
+     /// address space, resident as far as the largest block touched them) are
+     /// reused across every LDM record and whole-file stream this thread
+-    /// decodes.
++    /// decodes, until a pool worker frees them when it runs out of records
++    /// ([`release_bzip2_workspace`]).
+     static BZIP2_DECODER: RefCell<recast_radar_bzip2::Decoder> =
+         RefCell::new(recast_radar_bzip2::Decoder::new());
+ }
+ 
++/// Free this thread's bzip2 work buffers; the thread's next decode allocates
++/// them again (a new `Decoder` allocates nothing until it decodes).
++fn release_bzip2_workspace() {
++    BZIP2_DECODER.with(|decoder| {
++        // Nothing on this thread holds the decoder between decodes, so the
++        // borrow succeeds; if it ever did not, keeping the buffers is safe.
++        if let Ok(mut decoder) = decoder.try_borrow_mut() {
++            *decoder = recast_radar_bzip2::Decoder::new();
++        }
++    });
++}
++
+ /// Wrap a decoder error for `context`. The output limit keeps the wording of
+ /// `bounded_read::read_to_end_limited`, which this path used before.
+ fn bzip2_error(err: recast_radar_bzip2::Error, limit: usize, context: &'static str) -> NexradError {

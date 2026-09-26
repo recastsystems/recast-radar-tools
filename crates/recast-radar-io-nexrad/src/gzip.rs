@@ -1,5 +1,7 @@
-//! gzip inflate for `.gz` Archive II volumes: a whole-buffer one-shot for
-//! bytes already in memory and a streaming reader for the preview paths.
+//! gzip inflate for `.gz` Archive II volumes: a sliding window the record
+//! parser reads while it inflates (`GzipRecordBytes`, the volume decode),
+//! a whole-buffer one-shot for callers that want the expanded bytes, and a
+//! streaming reader for the preview paths.
 //!
 //! Both decode every member of a multi-member gzip file and concatenate the
 //! outputs, as `gzip -d` does, and both ignore bytes after the last member
@@ -16,12 +18,18 @@
 //! compressed file is in memory, zlib-rs can write straight into one output
 //! buffer sized from the gzip ISIZE trailer, as zlib's `uncompress` does. On
 //! the 9.5 MB KTLX20130520 volume that removes about a sixth of the decode's
-//! instructions and about 5% of its wall time.
+//! instructions and about 5% of its wall time. The volume decode goes one
+//! step further: `GzipRecordBytes` inflates the same way into a reused
+//! window of about `WINDOW_CHUNK` (1 MiB) bytes that the parser consumes, so the
+//! expanded volume (45 MB for KTLX20130520) is neither held beside the
+//! decoded one nor zero-filled before inflating.
 
 use std::io::{self, BufRead, Read};
 
 use flate2::bufread::GzDecoder;
 use flate2::{Decompress, FlushDecompress, Status};
+
+use crate::{NexradError, RecordBytes};
 
 /// gzip member magic bytes (RFC 1952 ID1, ID2).
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
@@ -38,6 +46,11 @@ const MAX_DEFLATE_EXPANSION: usize = 1032;
 /// Minimum growth step when the ISIZE hint turns out to be too small
 /// (multi-member files, or a wrong or wrapped trailer).
 const MIN_GROWTH: usize = 64 * 1024;
+
+/// Output room given to each inflate call of [`GzipRecordBytes`]. zlib-rs
+/// keeps its own copy of the last 32 KiB when the output moves between
+/// calls, so a call costs a 32 KiB copy; 1 MiB windows keep that near 3%.
+pub(crate) const WINDOW_CHUNK: usize = 1 << 20;
 
 /// Inflate every gzip member in `raw` into one buffer of at most `limit`
 /// bytes.
@@ -146,6 +159,159 @@ fn resize_zeroed(output: &mut Vec<u8>, len: usize, context: &'static str) -> Res
         .map_err(|err| format!("{context}: cannot reserve decoded buffer: {err}"))?;
     output.resize(len, 0);
     Ok(())
+}
+
+/// A gzip file inflated on demand for the record parser: the bytes the
+/// parser has not released, in one window that inflate calls write into.
+///
+/// It inflates every member as [`inflate_gzip_members_limited`] does, with
+/// the same checks (header, CRC-32 and ISIZE of each member by zlib-rs, the
+/// output limit, truncation, trailing bytes that are not another member are
+/// ignored) and the same error messages, but keeps only about
+/// [`WINDOW_CHUNK`] bytes plus the message being parsed. Before each inflate
+/// call the released prefix is dropped, which moves only the partly read
+/// message, and the window's memory is reused: it is zero-filled once when
+/// it grows, not once per inflated byte. [`Self::finish_after`] inflates
+/// whatever the parser did not read, so a volume decodes exactly when its
+/// one-shot inflate would have succeeded.
+pub(crate) struct GzipRecordBytes<'a> {
+    /// Compressed input not yet consumed.
+    input: &'a [u8],
+    inflater: Decompress,
+    /// `window[..filled]` holds decoded bytes `base..base + filled`; the
+    /// rest is room for the next inflate call.
+    window: Vec<u8>,
+    filled: usize,
+    base: usize,
+    /// Offset before which the parser reads nothing again.
+    released: usize,
+    /// No more output: the last member ended, or `error` is set.
+    done: bool,
+    /// The first inflate error, returned again by later calls.
+    error: Option<String>,
+    limit: usize,
+    context: &'static str,
+}
+
+impl<'a> GzipRecordBytes<'a> {
+    pub(crate) fn new(raw: &'a [u8], limit: usize, context: &'static str) -> Self {
+        Self {
+            input: raw,
+            inflater: Decompress::new_gzip(15),
+            window: Vec::new(),
+            filled: 0,
+            base: 0,
+            released: 0,
+            done: false,
+            error: None,
+            limit,
+            context,
+        }
+    }
+
+    /// Decoded bytes so far.
+    fn produced(&self) -> usize {
+        self.base + self.filled
+    }
+
+    /// One inflate call into the window's room.
+    fn inflate_more(&mut self) -> Result<(), String> {
+        if let Some(error) = &self.error {
+            return Err(error.clone());
+        }
+        let result = self.inflate_call();
+        if let Err(error) = &result {
+            self.done = true;
+            self.error = Some(error.clone());
+        }
+        result
+    }
+
+    fn inflate_call(&mut self) -> Result<(), String> {
+        let context = self.context;
+        // Drop the released prefix first. Inflating is only needed when the
+        // parser wants bytes past the window, so what remains is the part of
+        // one message already inflated: moving it is cheap.
+        let release = self.released.saturating_sub(self.base).min(self.filled);
+        if release > 0 && release >= self.filled / 2 {
+            self.window.copy_within(release..self.filled, 0);
+            self.filled -= release;
+            self.base += release;
+        }
+        if self.window.len() - self.filled < WINDOW_CHUNK / 2 {
+            let grown = self.filled.saturating_add(WINDOW_CHUNK);
+            resize_zeroed(&mut self.window, grown, context)?;
+        }
+        let in_before = self.inflater.total_in();
+        let out_before = self.inflater.total_out();
+        let status = self
+            .inflater
+            .decompress(
+                self.input,
+                &mut self.window[self.filled..],
+                FlushDecompress::Finish,
+            )
+            .map_err(|err| format!("{context}: {err}"))?;
+        // Both deltas are bounded by the lengths of the slices just passed
+        // in, so they fit in usize.
+        let consumed = (self.inflater.total_in() - in_before) as usize;
+        self.input = &self.input[consumed..];
+        self.filled += (self.inflater.total_out() - out_before) as usize;
+        if self.produced() > self.limit {
+            let limit = self.limit;
+            return Err(format!("{context} expands beyond the {limit}-byte limit"));
+        }
+        match status {
+            Status::StreamEnd => {
+                if self.input.starts_with(&GZIP_MAGIC) {
+                    self.inflater = Decompress::new_gzip(15);
+                } else {
+                    self.done = true;
+                }
+            }
+            // Out of output room (the next call makes more), or input left
+            // and progress made: keep going, as the one-shot does.
+            _ if self.filled == self.window.len() => {}
+            _ if consumed != 0 && !self.input.is_empty() => {}
+            _ => return Err(format!("{context}: truncated gzip stream")),
+        }
+        Ok(())
+    }
+
+    /// Inflate the rest of the file, discarding it, and return `parsed`
+    /// unless the file fails a gzip check, whose error then wins (the
+    /// one-shot inflate reported it before any parsing).
+    pub(crate) fn finish_after<T>(mut self, parsed: crate::Result<T>) -> crate::Result<T> {
+        while !self.done {
+            self.base += self.filled;
+            self.released = self.base;
+            self.filled = 0;
+            if let Err(error) = self.inflate_more() {
+                return Err(NexradError::Compression(error));
+            }
+        }
+        match self.error {
+            Some(error) => Err(NexradError::Compression(error)),
+            None => parsed,
+        }
+    }
+}
+
+impl RecordBytes for GzipRecordBytes<'_> {
+    fn extend_to(&mut self, end: usize) -> crate::Result<usize> {
+        while self.produced() < end && !self.done {
+            self.inflate_more().map_err(NexradError::Compression)?;
+        }
+        Ok(end.min(self.produced()))
+    }
+
+    fn get(&self, start: usize, end: usize) -> crate::Result<&[u8]> {
+        crate::window_range(&self.window[..self.filled], self.base, start, end)
+    }
+
+    fn release_before(&mut self, offset: usize) {
+        self.released = self.released.max(offset);
+    }
 }
 
 /// Streaming reader over every member of a gzip file, for the preview
@@ -293,6 +459,40 @@ mod tests {
         assert_eq!(gzip_size_hint(&raw, LIMIT), out.len());
         assert_eq!(out.capacity(), out.len());
         assert_eq!(streamed(&raw).unwrap(), out);
+    }
+
+    /// The record source gives exactly the one-shot inflate's bytes, read
+    /// the parser's way (extend, read, release) through a window much
+    /// smaller than the archive; released bytes are an error to ask for
+    /// again, not a panic.
+    #[test]
+    fn record_bytes_match_the_one_shot_inflate() {
+        let Some(raw) = real_gzip_archive() else {
+            return;
+        };
+        let data = inflate_gzip_members_limited(&raw, LIMIT, CTX).unwrap();
+        assert!(data.len() > 4 * WINDOW_CHUNK, "{} bytes", data.len());
+        let mut source = GzipRecordBytes::new(&raw, LIMIT, CTX);
+        let mut out = Vec::new();
+        let step = 2432;
+        loop {
+            let start = out.len();
+            let end = source.extend_to(start + step).unwrap();
+            out.extend_from_slice(source.get(start, end).unwrap());
+            source.release_before(end);
+            assert!(source.window.len() <= 2 * WINDOW_CHUNK);
+            if end < start + step {
+                break;
+            }
+        }
+        assert!(out == data);
+        assert!(source.base > 0);
+        assert!(matches!(
+            source.get(0, 1),
+            Err(NexradError::InvalidMessage { offset: 0, .. })
+        ));
+        assert!(source.get(out.len(), out.len() + 1).is_err());
+        assert!(source.finish_after(Ok(())).is_ok());
     }
 
     #[test]

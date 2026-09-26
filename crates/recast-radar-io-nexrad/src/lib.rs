@@ -49,12 +49,12 @@
 //! through a bounded process-wide pool. gzip volumes are inflated by
 //! [`gzip`]: whole-buffer input in one pass into a buffer presized from the
 //! gzip trailer, streaming input through a reader; both decode every member
-//! of a multi-member file and ignore bytes after the last member. A gzip
-//! file whose records are LDM bzip2 records is inflated and then
-//! decoded record by record on every entry point, including
-//! [`read_normalized_volume_bytes`] given the inflated bytes; the streaming
-//! reader buffers such a file whole, as its records cannot be parsed while
-//! inflating. Its compression is [`ArchiveCompression::GzipBzip2Blocks`].
+//! of a multi-member file and ignore bytes after the last member. A gzip or
+//! whole-file bzip2 copy of an LDM-compressed file is expanded whole (about
+//! the size of the file inside) and its records decoded as the unwrapped
+//! file's are. An LDM-compressed file cut short inside a record decodes to
+//! the records before it, as a damaged record does (the first record cut
+//! short is a [`NexradError::Truncated`] error).
 //!
 //! # Limits
 //!
@@ -96,6 +96,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod builder;
+mod bzip2_prefix;
 mod fm301_attrs;
 pub mod gzip;
 pub mod messages;
@@ -153,11 +154,20 @@ const MAX_MESSAGE_31_MOMENTS: usize = 10;
 const MAX_BZIP_BLOCK_DECODED_BYTES: usize = 16 * 1024 * 1024;
 const MAX_BZIP_BLOCKS: usize = 4096;
 /// Decoded LDM block buffers kept for reuse by later blocks and later
-/// volumes. Operational blocks decode to about 0.3-1.2 MiB, so a bounded pool
-/// removes the allocate-and-page-fault cost of ~100 fresh block buffers per
-/// volume while retaining at most a few tens of MiB.
-const BZIP_BUFFER_POOL_MAX_BUFFERS: usize = 64;
-const BZIP_BUFFER_POOL_MAX_BYTES: usize = 64 * 1024 * 1024;
+/// volumes. Operational blocks decode to about 0.3-1.4 MiB; a one-thread
+/// decode cycles two or three buffers, so the pool removes the
+/// allocate-and-page-fault cost of ~100 fresh block buffers per volume.
+///
+/// The bound is small on purpose. On a thread pool the decoded blocks
+/// waiting for the parser can be most of the volume (the parser is the
+/// slower side from about a dozen threads on), and as the parser drains
+/// them every buffer it hands back would stay in a larger pool, resident
+/// beside the finished volume: with 64 buffers that kept 40-50 MiB more
+/// at the peak of a KTLX 2024 decode on the default pool
+/// (docs/perf/cross-library.md, "Level II peak RSS against the nexrad
+/// crate"). Buffers past the bound are freed as the parser finishes them.
+const BZIP_BUFFER_POOL_MAX_BUFFERS: usize = 8;
+const BZIP_BUFFER_POOL_MAX_BYTES: usize = 16 * 1024 * 1024;
 /// Buffers smaller than this are not worth pooling (they would be regrown by
 /// the next block anyway).
 const BZIP_BUFFER_POOL_MIN_CAPACITY: usize = 64 * 1024;
@@ -208,18 +218,19 @@ pub enum NexradError {
     LimitExceeded(String),
 }
 
-/// How an Archive II file is compressed.
+/// The outermost compression of a Level II input, as a decoded volume's
+/// `provenance.compression` names it. A gzip or whole-file bzip2 copy of an
+/// LDM-compressed file is [`Self::Gzip`] or [`Self::Bzip2WholeFile`]; its
+/// LDM records are decoded as the unwrapped file's are.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArchiveCompression {
-    /// A gzip wrapper (every member) around uncompressed records.
+    /// A gzip file (every member decoded).
     Gzip,
-    /// One bzip2 stream around the whole file.
+    /// One bzip2 stream around the whole Archive II file.
     Bzip2WholeFile,
-    /// LDM records, each a bzip2 stream (NEXRAD's own form).
+    /// LDM records: after the volume header, each record is a byte count
+    /// and a bzip2 stream (what NOAA's archive and real-time feed carry).
     Bzip2Blocks,
-    /// A gzip wrapper around LDM bzip2 records (Py-ART and MetPy read these
-    /// too).
-    GzipBzip2Blocks,
     /// Uncompressed records.
     Uncompressed,
 }
@@ -230,18 +241,7 @@ impl ArchiveCompression {
             Self::Gzip => "gzip",
             Self::Bzip2WholeFile => "bzip2-whole-file",
             Self::Bzip2Blocks => "bzip2-blocks",
-            Self::GzipBzip2Blocks => "gzip-bzip2-blocks",
             Self::Uncompressed => "uncompressed",
-        }
-    }
-
-    /// The compression of a file whose records turn out to be LDM bzip2
-    /// records after this wrapper was removed.
-    fn with_bzip2_records(self) -> Self {
-        match self {
-            Self::Gzip => Self::GzipBzip2Blocks,
-            Self::Uncompressed => Self::Bzip2Blocks,
-            other => other,
         }
     }
 }
@@ -327,76 +327,74 @@ fn builder_observed(bytes: &[u8], observer: &mut impl RadialObserver) -> Result<
         return decode_bzip_blocks_pipelined(
             bytes,
             blocks,
-            BlockDecode::full(ArchiveCompression::Bzip2Blocks, DecodeBudget::volume()),
+            BlockDecode::ldm(),
+            None,
+            false,
             |_| Ok(()),
             observer,
         )
         .map(|outcome| outcome.builder);
     }
+
     if bytes.starts_with(&[0x1f, 0x8b]) {
-        // Inflated only: records that are LDM bzip2 records (a gzip wrapper
-        // around LDM records) are decoded block by block from here.
-        let inflated = decompress_gzip_bytes(bytes)?;
-        return builder_from_normalized_observed(
-            &inflated,
-            ArchiveCompression::Gzip,
+        // Parse while inflating, through a window of about one inflate
+        // chunk, instead of holding the whole expanded volume beside the
+        // decoded one.
+        let mut source =
+            gzip::GzipRecordBytes::new(bytes, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
+        let parsed = parse_wrapped(&mut source, ArchiveCompression::Gzip, observer);
+        return source.finish_after(parsed);
+    }
+    if !bytes.starts_with(b"BZh") {
+        // Uncompressed records are parsed in place.
+        if bytes.len() > MAX_DECODED_RADAR_BYTES {
+            return Err(NexradError::Compression(format!(
+                "uncompressed radar payload is {} bytes (limit {MAX_DECODED_RADAR_BYTES})",
+                bytes.len()
+            )));
+        }
+        return parse_record_stream(
+            &mut SliceRecordBytes(bytes),
+            ArchiveCompression::Uncompressed,
             DecodeBudget::volume(),
             observer,
         );
     }
 
-    let (bytes, compression) = normalize_archive_bytes(bytes)?;
-    builder_from_normalized_observed(&bytes, compression, DecodeBudget::volume(), observer)
+    // Whole-file bzip2: parse while decoding block by block, instead of
+    // holding the whole expanded volume beside the decoded one.
+    let mut source = bzip2_prefix::Bzip2RecordBytes::new(
+        bytes,
+        MAX_DECODED_RADAR_BYTES,
+        "whole-file bzip2 radar payload",
+    );
+    let parsed = parse_wrapped(&mut source, ArchiveCompression::Bzip2WholeFile, observer);
+    source.finish_after(parsed)
 }
 
-/// The start of an inflated gzip Archive II stream, read ahead to tell its
-/// records apart: the volume header, an LDM record's byte count and the
-/// `BZh` of its bzip2 stream.
-const GZIP_PEEK_LEN: usize = VOLUME_HEADER_LEN + 4 + 3;
-
-/// An inflating gzip Archive II stream after [`peek_gzip_stream`].
-enum GzipStream {
-    /// The records are LDM bzip2 records, which
-    /// cannot be parsed while inflating: every byte of the stream, bounded
-    /// by the reader's limit.
-    Bzip2Records(Vec<u8>),
-    /// Uncompressed records: the bytes read so far, to parse ahead of the
-    /// rest of the stream.
-    Records(Vec<u8>),
-}
-
-fn peek_gzip_stream<R: Read>(reader: &mut R) -> Result<GzipStream> {
-    let mut head = [0u8; GZIP_PEEK_LEN];
-    let mut filled = 0;
-    while filled < head.len() {
-        let count = reader
-            .read(&mut head[filled..])
-            .map_err(|err| NexradError::Compression(err.to_string()))?;
-        if count == 0 {
-            break;
-        }
-        filled += count;
+/// Parse the Archive II file inside a whole-file gzip or bzip2 wrapper as
+/// the wrapper expands. When that file is made of LDM records (a gzip or
+/// bzip2 copy of an LDM-compressed file) its records are compressed
+/// already: the wrapper is expanded whole, which holds about the size of
+/// the file inside, and the records are decoded as the unwrapped file's
+/// are, with `compression` naming the wrapper.
+fn parse_wrapped(
+    source: &mut impl RecordBytes,
+    compression: ArchiveCompression,
+    observer: &mut impl RadialObserver,
+) -> Result<VolumeBuilder> {
+    let probed = source.extend_to(LDM_PROBE_LEN)?;
+    if !ldm_records_follow_header(source.get(0, probed)?) {
+        return parse_record_stream(source, compression, DecodeBudget::volume(), observer);
     }
-    let head = &head[..filled];
-    let bzip2_records = filled == GZIP_PEEK_LEN
-        && i32_at(head, VOLUME_HEADER_LEN)? != 0
-        && head[VOLUME_HEADER_LEN + 4..] == *b"BZh";
-    if !bzip2_records {
-        return Ok(GzipStream::Records(head.to_vec()));
-    }
-    let rest = bounded_read::read_to_end_limited(
-        reader,
-        MAX_DECODED_RADAR_BYTES - GZIP_PEEK_LEN,
-        "gzip radar payload",
+    // The source enforces MAX_DECODED_RADAR_BYTES on the expansion.
+    let expanded = source.extend_to(usize::MAX)?;
+    builder_from_normalized_observed(
+        source.get(0, expanded)?,
+        compression,
+        DecodeBudget::volume(),
+        observer,
     )
-    .map_err(NexradError::Compression)?;
-    let mut bytes = Vec::new();
-    bytes
-        .try_reserve_exact(GZIP_PEEK_LEN + rest.len())
-        .map_err(|err| NexradError::Compression(format!("cannot reserve gzip payload: {err}")))?;
-    bytes.extend_from_slice(head);
-    bytes.extend_from_slice(&rest);
-    Ok(GzipStream::Bzip2Records(bytes))
 }
 
 /// Decode a gzip-compressed Archive II stream into the FM301 model,
@@ -409,21 +407,52 @@ pub fn read_gzip_volume_from_reader(reader: impl Read) -> Result<Volume> {
 pub(crate) fn builder_from_gzip_reader(reader: impl Read) -> Result<VolumeBuilder> {
     let decoder = gzip::MultiGzReader::new(BufReader::new(reader));
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
-    let head = match peek_gzip_stream(&mut decoder)? {
-        GzipStream::Bzip2Records(bytes) => {
-            return builder_from_normalized(
-                &bytes,
-                ArchiveCompression::Gzip,
-                DecodeBudget::volume(),
-            );
-        }
-        GzipStream::Records(head) => head,
-    };
-    let mut stream = head.as_slice().chain(decoder);
+    let mut probe = [0; LDM_PROBE_LEN];
+    let probed = read_up_to(&mut decoder, &mut probe)?;
+    if ldm_records_follow_header(&probe[..probed]) {
+        // LDM records inside: expand the wrapper whole (see `parse_wrapped`).
+        let mut expanded = probe[..probed].to_vec();
+        decoder
+            .read_to_end(&mut expanded)
+            .map_err(|err| NexradError::Compression(err.to_string()))?;
+        return builder_from_normalized(
+            &expanded,
+            ArchiveCompression::Gzip,
+            DecodeBudget::volume(),
+        );
+    }
+    let mut stream = (&probe[..probed]).chain(decoder);
     decode_volume_from_stream_until(&mut stream, ArchiveCompression::Gzip, None).map(|result| {
         debug_assert!(!result.stopped_at_preview);
         result.builder
     })
+}
+
+/// Read into `buffer` until it is full or the reader ends; the byte count.
+fn read_up_to<R: Read>(reader: &mut R, buffer: &mut [u8]) -> Result<usize> {
+    let mut read = 0;
+    while read < buffer.len() {
+        let count = reader
+            .read(&mut buffer[read..])
+            .map_err(|err| NexradError::Compression(err.to_string()))?;
+        if count == 0 {
+            break;
+        }
+        read += count;
+    }
+    Ok(read)
+}
+
+/// The whole expansion of a gzip file whose Archive II file inside is made
+/// of LDM records, for the gzip preview decoders; `None` (after inflating
+/// only its first bytes) when it is not.
+fn inflate_gzip_wrapped_ldm(raw: &[u8]) -> Result<Option<Vec<u8>>> {
+    let mut probe = [0; LDM_PROBE_LEN];
+    let probed = read_up_to(&mut gzip::MultiGzReader::new(raw), &mut probe)?;
+    if !ldm_records_follow_header(&probe[..probed]) {
+        return Ok(None);
+    }
+    decompress_gzip_bytes(raw).map(Some)
 }
 
 /// Decode a gzip-wrapped volume, calling `on_preview` once with a sealed copy
@@ -457,19 +486,27 @@ pub(crate) fn builder_from_gzip_bytes_with_preview(
     if !raw.starts_with(&[0x1f, 0x8b]) {
         return builder_from_bytes(raw);
     }
+    if let Some(expanded) = inflate_gzip_wrapped_ldm(raw)? {
+        let blocks = ldm_blocks_of_wrapped(&expanded)?;
+        return decode_bzip_blocks_pipelined(
+            &expanded,
+            blocks,
+            BlockDecode {
+                compression: ArchiveCompression::Gzip,
+                budget: DecodeBudget::volume(),
+            },
+            Some(min_displayable_radials),
+            false,
+            on_preview,
+            &mut (),
+        )
+        .map(|outcome| outcome.builder);
+    }
 
     let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
-    let head = match peek_gzip_stream(&mut decoder)? {
-        GzipStream::Bzip2Records(bytes) => {
-            return gzip_bzip2_records_preview(&bytes, min_displayable_radials, false, on_preview)
-                .map(|outcome| outcome.builder);
-        }
-        GzipStream::Records(head) => head,
-    };
-    let mut stream = head.as_slice().chain(decoder);
     decode_volume_from_stream(
-        &mut stream,
+        &mut decoder,
         ArchiveCompression::Gzip,
         Some(min_displayable_radials),
         false,
@@ -479,31 +516,6 @@ pub(crate) fn builder_from_gzip_bytes_with_preview(
         debug_assert!(!result.stopped_at_preview);
         result.builder
     })
-}
-
-/// The block decode of an inflated gzip stream whose records are LDM bzip2
-/// records, with the preview rules of the gzip preview decoders.
-fn gzip_bzip2_records_preview(
-    bytes: &[u8],
-    min_displayable_radials: usize,
-    stop_at_preview: bool,
-    on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
-) -> Result<BlockParseOutcome> {
-    let blocks = collect_bzip_block_slices(bytes)?.ok_or_else(|| {
-        NexradError::Compression("gzip payload: malformed LDM bzip2 records".to_owned())
-    })?;
-    decode_bzip_blocks_pipelined(
-        bytes,
-        blocks,
-        BlockDecode {
-            compression: ArchiveCompression::GzipBzip2Blocks,
-            budget: DecodeBudget::volume(),
-            min_displayable_radials: Some(min_displayable_radials),
-            stop_at_preview,
-        },
-        on_preview,
-        &mut (),
-    )
 }
 
 /// Decode a gzip-wrapped volume only until its first displayable sweep
@@ -528,20 +540,27 @@ pub(crate) fn builder_gzip_preview(
     if !raw.starts_with(&[0x1f, 0x8b]) {
         return Ok(None);
     }
+    if let Some(expanded) = inflate_gzip_wrapped_ldm(raw)? {
+        let blocks = ldm_blocks_of_wrapped(&expanded)?;
+        let outcome = decode_bzip_blocks_pipelined(
+            &expanded,
+            blocks,
+            BlockDecode {
+                compression: ArchiveCompression::Gzip,
+                budget: DecodeBudget::volume(),
+            },
+            Some(min_displayable_radials),
+            true,
+            |_| Ok(()),
+            &mut (),
+        )?;
+        return Ok(outcome.stopped_at_preview.then_some(outcome.builder));
+    }
 
     let decoder = gzip::MultiGzReader::new(raw);
     let mut decoder = ReadLimit::new(decoder, MAX_DECODED_RADAR_BYTES, "gzip radar payload");
-    let head = match peek_gzip_stream(&mut decoder)? {
-        GzipStream::Bzip2Records(bytes) => {
-            let outcome =
-                gzip_bzip2_records_preview(&bytes, min_displayable_radials, true, |_| Ok(()))?;
-            return Ok(outcome.stopped_at_preview.then_some(outcome.builder));
-        }
-        GzipStream::Records(head) => head,
-    };
-    let mut stream = head.as_slice().chain(decoder);
     let result = decode_volume_from_stream_until(
-        &mut stream,
+        &mut decoder,
         ArchiveCompression::Gzip,
         Some(min_displayable_radials),
     )?;
@@ -552,8 +571,8 @@ pub(crate) fn builder_gzip_preview(
 /// bytes.
 ///
 /// This is intended for UI preview on low-core machines: it returns `None` for
-/// gzip, whole-file bzip, uncompressed, or malformed block-bzip inputs, and it
-/// never substitutes for the final full-volume decode.
+/// gzip, whole-file bzip2 or uncompressed input, and it never substitutes for
+/// the final full-volume decode.
 pub fn read_bzip_block_preview_from_bytes(
     raw: &[u8],
     min_displayable_radials: usize,
@@ -579,7 +598,9 @@ pub(crate) fn builder_bzip_block_preview(
     let outcome = decode_bzip_blocks_pipelined(
         raw,
         blocks,
-        BlockDecode::preview(min_displayable_radials, true),
+        BlockDecode::ldm(),
+        Some(min_displayable_radials),
+        true,
         |_| Ok(()),
         &mut (),
     )?;
@@ -625,14 +646,18 @@ pub(crate) fn builder_with_bzip_preview(
     let outcome = decode_bzip_blocks_pipelined(
         raw,
         blocks,
-        BlockDecode::preview(min_displayable_radials, false),
+        BlockDecode::ldm(),
+        Some(min_displayable_radials),
+        false,
         on_preview,
         &mut (),
     )?;
     Ok(outcome.builder)
 }
 
-/// Decompress or normalize an Archive II byte slice before Level II parsing.
+/// Decompress or normalize an Archive II byte slice before Level II parsing:
+/// the volume header and uncompressed records. LDM records inside a gzip or
+/// whole-file bzip2 wrapper are decoded too, and the wrapper is returned.
 pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompression)> {
     if raw.len() < VOLUME_HEADER_LEN {
         return Err(NexradError::ShortVolumeHeader { actual: raw.len() });
@@ -640,12 +665,7 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
 
     if raw.starts_with(&[0x1f, 0x8b]) {
         let decoded = decompress_gzip_bytes(raw)?;
-        // A gzip wrapper around LDM bzip2 records (Py-ART and MetPy read
-        // these too): expand the records as well.
-        if let Some(records) = try_decode_bzip_blocks(&decoded)? {
-            return Ok((records, ArchiveCompression::GzipBzip2Blocks));
-        }
-        return Ok((decoded, ArchiveCompression::Gzip));
+        return Ok((decode_wrapped_ldm(decoded)?, ArchiveCompression::Gzip));
     }
 
     if raw.starts_with(b"BZh") {
@@ -656,7 +676,10 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
             MAX_DECODED_RADAR_BYTES,
             "whole-file bzip2 radar payload",
         )?;
-        return Ok((decoded, ArchiveCompression::Bzip2WholeFile));
+        return Ok((
+            decode_wrapped_ldm(decoded)?,
+            ArchiveCompression::Bzip2WholeFile,
+        ));
     }
 
     if let Some(decoded) = try_decode_bzip_blocks(raw)? {
@@ -667,6 +690,20 @@ pub fn normalize_archive_bytes(raw: &[u8]) -> Result<(Vec<u8>, ArchiveCompressio
         copy_bytes_limited(raw, MAX_DECODED_RADAR_BYTES, "uncompressed radar payload")?,
         ArchiveCompression::Uncompressed,
     ))
+}
+
+/// The expansion of a whole-file wrapper with the LDM records inside it (if
+/// it holds any) decoded, so the result is uncompressed records.
+fn decode_wrapped_ldm(expanded: Vec<u8>) -> Result<Vec<u8>> {
+    Ok(try_decode_bzip_blocks(&expanded)?.unwrap_or(expanded))
+}
+
+/// The LDM records of a wrapper's expansion that [`ldm_records_follow_header`]
+/// accepted.
+fn ldm_blocks_of_wrapped(expanded: &[u8]) -> Result<Vec<&[u8]>> {
+    collect_bzip_block_slices(expanded)?.ok_or_else(|| {
+        NexradError::Compression("LDM records inside the wrapper disappeared".to_owned())
+    })
 }
 
 /// Inflate a whole in-memory gzip file (every member) into one buffer
@@ -812,6 +849,10 @@ fn skip_exact<R: Read>(
 }
 
 /// Parse already-normalized Archive II bytes into the FM301 model.
+///
+/// `compression` is what `provenance.compression` reports. Bytes that are
+/// still LDM records (the expansion of a gzip or bzip2 copy of an
+/// LDM-compressed file) are decoded as LDM records.
 pub fn read_normalized_volume_bytes(
     bytes: &[u8],
     compression: ArchiveCompression,
@@ -840,20 +881,83 @@ fn builder_from_normalized_observed(
     budget: DecodeBudget,
     observer: &mut impl RadialObserver,
 ) -> Result<VolumeBuilder> {
-    // Records that are still LDM bzip2 records: a gzip wrapper was removed
-    // around them (a gzip file, the router's gzip expansion), or the
-    // caller passed a raw file.
     if let Some(blocks) = collect_bzip_block_slices(bytes)? {
+        let decode = BlockDecode {
+            compression,
+            budget,
+        };
         return decode_bzip_blocks_pipelined(
             bytes,
             blocks,
-            BlockDecode::full(compression.with_bzip2_records(), budget),
+            decode,
+            None,
+            false,
             |_| Ok(()),
             observer,
         )
         .map(|outcome| outcome.builder);
     }
-    let volume_header = parse_volume_header(bytes)?;
+    parse_record_stream(&mut SliceRecordBytes(bytes), compression, budget, observer)
+}
+
+/// Normalized Archive II bytes (volume header and records) as the record
+/// parser reads them: by absolute offset, only near its cursor, with the
+/// input's end discovered by asking for more.
+pub(crate) trait RecordBytes {
+    /// Make the bytes up to `end` readable and return how far the stream
+    /// extends, at most `end`.
+    fn extend_to(&mut self, end: usize) -> Result<usize>;
+    /// Bytes `start..end`, which an earlier [`Self::extend_to`] made
+    /// readable and no [`Self::release_before`] released. A range outside
+    /// the readable bytes is an error, not a panic.
+    fn get(&self, start: usize, end: usize) -> Result<&[u8]>;
+    /// The parser reads nothing before `offset` again.
+    fn release_before(&mut self, _offset: usize) {}
+}
+
+/// A whole normalized buffer.
+struct SliceRecordBytes<'a>(&'a [u8]);
+
+impl RecordBytes for SliceRecordBytes<'_> {
+    #[inline]
+    fn extend_to(&mut self, end: usize) -> Result<usize> {
+        Ok(end.min(self.0.len()))
+    }
+
+    #[inline]
+    fn get(&self, start: usize, end: usize) -> Result<&[u8]> {
+        window_range(self.0, 0, start, end)
+    }
+}
+
+/// Bytes `start..end` of a stream of which `window` holds `base..`, or an
+/// error when the range is not inside the window. The record parser only
+/// asks for bytes it made readable and did not release, so the error means
+/// a parser bug, reported instead of a panic.
+pub(crate) fn window_range(window: &[u8], base: usize, start: usize, end: usize) -> Result<&[u8]> {
+    start
+        .checked_sub(base)
+        .zip(end.checked_sub(base))
+        .and_then(|(from, to)| window.get(from..to))
+        .ok_or_else(|| NexradError::InvalidMessage {
+            offset: start,
+            reason: format!(
+                "record bytes {start}..{end} are outside the readable bytes {base}..{}",
+                base.saturating_add(window.len())
+            ),
+        })
+}
+
+/// Parse normalized Archive II records (fixed 2432-byte frames and
+/// variable-length messages) into a volume.
+fn parse_record_stream(
+    source: &mut impl RecordBytes,
+    compression: ArchiveCompression,
+    budget: DecodeBudget,
+    observer: &mut impl RadialObserver,
+) -> Result<VolumeBuilder> {
+    let header_available = source.extend_to(VOLUME_HEADER_LEN)?;
+    let volume_header = parse_volume_header(source.get(0, header_available)?)?;
     let mut builder = VolumeBuilder::new(
         volume_header.icao,
         volume_header.archive_version,
@@ -870,10 +974,16 @@ fn builder_from_normalized_observed(
     // standard 134 fixed records. Detected once at the first early message
     // 31 and latched for the rest of the file.
     let mut early_variable_msg31 = false;
-    while cursor + CONTROL_WORD_LEN + MESSAGE_HEADER_LEN <= bytes.len() {
+    loop {
+        source.release_before(cursor);
+        let prefix_end = cursor + CONTROL_WORD_LEN + MESSAGE_HEADER_LEN;
+        if source.extend_to(prefix_end)? < prefix_end {
+            break;
+        }
         let header_offset = cursor + CONTROL_WORD_LEN;
-        let header =
-            parse_message_header_bytes(&bytes[header_offset..header_offset + MESSAGE_HEADER_LEN]);
+        let header = parse_message_header_bytes(
+            source.get(header_offset, header_offset + MESSAGE_HEADER_LEN)?,
+        );
 
         if header.size_halfwords == 0 && record_index < 134 {
             builder.count_skipped();
@@ -894,60 +1004,53 @@ fn builder_from_normalized_observed(
 
         builder.count_message();
         match header.message_type {
-            1 => {
+            1 | 31 => {
                 let message_end = header_offset + message_total_len;
-                if message_end > bytes.len() {
+                let available = source.extend_to(message_end)?;
+                if available < message_end {
                     if builder.decoded_radials() > 0 {
                         builder.count_skipped();
                         break;
                     }
                     return Err(NexradError::Truncated {
-                        what: "message 1 body",
+                        what: if header.message_type == 1 {
+                            "message 1 body"
+                        } else {
+                            "message 31 body"
+                        },
                         offset: header_offset,
                         needed: message_total_len,
-                        available: bytes.len().saturating_sub(header_offset),
+                        available: available.saturating_sub(header_offset),
                     });
                 }
-                let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
-                parse_message_1(body, &header, &mut builder)?;
-            }
-            31 => {
-                let message_end = header_offset + message_total_len;
-                if message_end > bytes.len() {
-                    if builder.decoded_radials() > 0 {
-                        builder.count_skipped();
-                        break;
-                    }
-                    return Err(NexradError::Truncated {
-                        what: "message 31 body",
-                        offset: header_offset,
-                        needed: message_total_len,
-                        available: bytes.len().saturating_sub(header_offset),
-                    });
+                let body = source.get(header_offset + MESSAGE_HEADER_LEN, message_end)?;
+                if header.message_type == 1 {
+                    parse_message_1(body, &header, &mut builder)?;
+                } else {
+                    let (sweep, ray) = parse_message_31(body, &header, &mut builder)?;
+                    observer.message_31(body, &builder.volume, sweep, ray);
                 }
-                let body = &bytes[header_offset + MESSAGE_HEADER_LEN..message_end];
-                let (sweep, ray) = parse_message_31(body, &header, &mut builder)?;
-                observer.message_31(body, &builder.volume, sweep, ray);
             }
             _ if variable_framing => {
                 // A non-radial message in variable framing (a size of 65535,
-                // or message 29): kept for the model when it fits the input
-                // and the builder's cap.
-                let message = header_offset
-                    .checked_add(message_total_len)
-                    .and_then(|end| bytes.get(header_offset..end));
-                match message {
-                    Some(message)
-                        if builder.keeps_variable_message(message.len() - MESSAGE_HEADER_LEN) =>
-                    {
+                // or message 29): kept for the model when it fits the
+                // builder's cap and the input; its bytes are not read when
+                // the cap refuses it.
+                let body_len = message_total_len - MESSAGE_HEADER_LEN;
+                if builder.keeps_variable_message(body_len) {
+                    let end = header_offset.saturating_add(message_total_len);
+                    if source.extend_to(end)? < end {
+                        builder.count_skipped();
+                    } else {
+                        let message = source.get(header_offset, end)?;
                         builder.variable_message(
                             &message[..MESSAGE_HEADER_LEN],
                             &header,
                             &message[MESSAGE_HEADER_LEN..],
                         );
                     }
-                    Some(_) => builder.variable_message_not_kept(),
-                    None => builder.count_skipped(),
+                } else {
+                    builder.variable_message_not_kept();
                 }
             }
             _ => {
@@ -956,15 +1059,15 @@ fn builder_from_normalized_observed(
                 // A Message 5 or 7 may run past its declared size within the
                 // frame (messages::vcp::fixed_frame_body_len).
                 let body_offset = header_offset + MESSAGE_HEADER_LEN;
-                let fixed_record_end = cursor.saturating_add(RECORD_BYTES).min(bytes.len());
-                let frame_body = &bytes[body_offset.min(fixed_record_end)..fixed_record_end];
+                let fixed_record_end = source.extend_to(cursor.saturating_add(RECORD_BYTES))?;
+                let frame_body = source.get(body_offset.min(fixed_record_end), fixed_record_end)?;
                 let body_len = messages::vcp::fixed_frame_body_len(
                     header.message_type,
                     message_total_len.saturating_sub(MESSAGE_HEADER_LEN),
                     frame_body,
                 );
                 builder.metadata_message(
-                    &bytes[header_offset..body_offset],
+                    source.get(header_offset, body_offset.min(fixed_record_end))?,
                     &header,
                     &frame_body[..body_len],
                     frame_body,
@@ -978,7 +1081,7 @@ fn builder_from_normalized_observed(
             RECORD_BYTES
         } else if record_index >= 134 || early_variable_msg31 {
             message_total_len + CONTROL_WORD_LEN
-        } else if message31_uses_variable_framing(bytes, cursor, message_total_len) {
+        } else if message31_uses_variable_framing(source, cursor, message_total_len)? {
             early_variable_msg31 = true;
             message_total_len + CONTROL_WORD_LEN
         } else {
@@ -997,18 +1100,23 @@ fn builder_from_normalized_observed(
 /// them back to back with no fixed-record padding. Returns `true` when the
 /// bytes directly after this message hold another message 31 (or the file
 /// ends exactly there), which fixed 2432-byte framing cannot produce.
-fn message31_uses_variable_framing(bytes: &[u8], cursor: usize, message_total_len: usize) -> bool {
+fn message31_uses_variable_framing(
+    source: &mut impl RecordBytes,
+    cursor: usize,
+    message_total_len: usize,
+) -> Result<bool> {
     let variable_next = cursor + CONTROL_WORD_LEN + message_total_len;
-    if variable_next == bytes.len() {
-        return true;
+    if source.extend_to(variable_next + 1)? == variable_next {
+        return Ok(true);
     }
     let header_offset = variable_next + CONTROL_WORD_LEN;
-    let Some(header_bytes) = bytes.get(header_offset..header_offset + MESSAGE_HEADER_LEN) else {
-        return false;
-    };
-    let header = parse_message_header_bytes(header_bytes);
-    header.message_type == 31
-        && usize::from(header.size_halfwords) * 2 >= MESSAGE_HEADER_LEN + MSG_31_HEADER_LEN
+    let header_end = header_offset + MESSAGE_HEADER_LEN;
+    if source.extend_to(header_end)? < header_end {
+        return Ok(false);
+    }
+    let header = parse_message_header_bytes(source.get(header_offset, header_end)?);
+    Ok(header.message_type == 31
+        && usize::from(header.size_halfwords) * 2 >= MESSAGE_HEADER_LEN + MSG_31_HEADER_LEN)
 }
 
 struct StreamDecodeResult {
@@ -1224,11 +1332,11 @@ where
         &raw,
         blocks,
         BlockDecode {
-            compression: compression.with_bzip2_records(),
+            compression,
             budget: DecodeBudget::volume(),
-            min_displayable_radials: preview_min_radials,
-            stop_at_preview,
         },
+        preview_min_radials,
+        stop_at_preview,
         on_preview,
         &mut (),
     )
@@ -1736,38 +1844,21 @@ struct BlockParseOutcome {
     stopped_at_preview: bool,
 }
 
-/// Decode a block-bzip volume by parsing in lockstep with the parallel block
-/// decompression: rayon workers fill `BlockSlots` while this thread parses
-/// blocks in order, waiting (or stealing decompression work) only when the
-/// next block is not ready yet. Total wall time is the decompression wall time
-/// instead of decompression followed by a serial parse.
-/// How [`decode_bzip_blocks_pipelined`] decodes: the compression the volume
-/// records, its output budget, and the preview rules.
+/// How a block-bzip volume is decoded: the wrapper its provenance names
+/// ([`ArchiveCompression::Bzip2Blocks`], or the whole-file wrapper around
+/// the LDM records) and its output budget.
+#[derive(Clone, Copy)]
 struct BlockDecode {
     compression: ArchiveCompression,
     budget: DecodeBudget,
-    min_displayable_radials: Option<usize>,
-    stop_at_preview: bool,
 }
 
 impl BlockDecode {
-    /// A full decode without a preview.
-    fn full(compression: ArchiveCompression, budget: DecodeBudget) -> Self {
-        Self {
-            compression,
-            budget,
-            min_displayable_radials: None,
-            stop_at_preview: false,
-        }
-    }
-
-    /// A decode of LDM records that previews the first displayable sweep.
-    fn preview(min_displayable_radials: usize, stop_at_preview: bool) -> Self {
+    /// An LDM-compressed file as it is, with the volume budget.
+    fn ldm() -> Self {
         Self {
             compression: ArchiveCompression::Bzip2Blocks,
             budget: DecodeBudget::volume(),
-            min_displayable_radials: Some(min_displayable_radials),
-            stop_at_preview,
         }
     }
 }
@@ -1775,7 +1866,9 @@ impl BlockDecode {
 fn decode_bzip_blocks_pipelined(
     raw: &[u8],
     blocks: Vec<&[u8]>,
-    options: BlockDecode,
+    decode: BlockDecode,
+    min_displayable_radials: Option<usize>,
+    stop_at_preview: bool,
     on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
@@ -1794,7 +1887,9 @@ fn decode_bzip_blocks_pipelined(
         let outcome = parse_bzip_block_volume(
             &raw[..VOLUME_HEADER_LEN],
             &slots,
-            options,
+            decode,
+            min_displayable_radials,
+            stop_at_preview,
             on_preview,
             observer,
         );
@@ -1807,16 +1902,12 @@ fn decode_bzip_blocks_pipelined(
 fn parse_bzip_block_volume(
     volume_header: &[u8],
     blocks: &BlockSlots<'_>,
-    options: BlockDecode,
+    decode: BlockDecode,
+    min_displayable_radials: Option<usize>,
+    stop_at_preview: bool,
     mut on_preview: impl FnMut(&VolumeBuilder) -> Result<()>,
     observer: &mut impl RadialObserver,
 ) -> Result<BlockParseOutcome> {
-    let BlockDecode {
-        compression,
-        budget,
-        min_displayable_radials,
-        stop_at_preview,
-    } = options;
     let mut preview_pending = min_displayable_radials;
     let mut cursor_reader = BzipBlockCursor::new(volume_header, blocks);
     let mut volume_header_buffer = Vec::new();
@@ -1831,8 +1922,8 @@ fn parse_bzip_block_volume(
         volume_header.icao,
         volume_header.archive_version,
         volume_header.volume_time,
-        compression,
-        budget,
+        decode.compression,
+        decode.budget,
     );
     builder.record_volume_header(volume_header.date, volume_header.milliseconds);
 
@@ -2053,19 +2144,21 @@ fn try_decompress_bzip_blocks(raw: &[u8]) -> Result<Option<Vec<Vec<u8>>>> {
     Ok(Some(decoded_blocks))
 }
 
-/// The LDM records (bzip2 streams) after the volume header, or `None` when
-/// the bytes after the header are not LDM records.
+/// The LDM records of an Archive II file held whole in memory: after the
+/// volume header, each record is a big-endian `i32` byte count (negative
+/// for the last record) and a bzip2 stream. `None` when the bytes after
+/// the volume header do not start with such a record (uncompressed
+/// records, or too few bytes to tell).
 ///
-/// Once the first record is a whole bzip2 stream, the rest is LDM records
-/// too: a record cut short by the end of the input, or one that does not
-/// start with a bzip2 header, is returned as the last block, whose decode
-/// then fails. The volume decoders keep the radials of the records before it
-/// (a partial volume, as for a truncated uncompressed file) or report the
-/// error when there are none, instead of reading the records as uncompressed
-/// frames and returning an empty volume. A zero-length record after whole
-/// records ends the list.
+/// Once the first record is an LDM record the file is read as LDM records
+/// to its end, never as uncompressed messages: a zero count, or a lone `-1`
+/// in the last four bytes, ends the records; a record that is not a bzip2
+/// stream is kept, and fails to decode as a damaged record does; a record
+/// that the end of the input cuts short is kept as far as it goes and fails
+/// the same way, so a truncated file decodes to the records before it
+/// (the first record cut short is a [`NexradError::Truncated`] error).
 fn collect_bzip_block_slices(raw: &[u8]) -> Result<Option<Vec<&[u8]>>> {
-    if raw.len() < VOLUME_HEADER_LEN + 4 {
+    if !ldm_records_follow_header(raw) {
         return Ok(None);
     }
 
@@ -2074,65 +2167,59 @@ fn collect_bzip_block_slices(raw: &[u8]) -> Result<Option<Vec<&[u8]>>> {
 
     while cursor + 4 <= raw.len() {
         let signed_block_size = i32_at(raw, cursor)?;
-        if signed_block_size == -1 && cursor + 4 == raw.len() {
-            break;
-        }
-        if signed_block_size == 0 {
-            if blocks.is_empty() {
-                return Ok(None);
-            }
+        if signed_block_size == 0 || (signed_block_size == -1 && cursor + 4 == raw.len()) {
             break;
         }
 
+        let control_offset = cursor;
         cursor += 4;
         let is_last_block = signed_block_size < 0;
         let block_size = usize::try_from(signed_block_size.unsigned_abs())
             .map_err(|_| NexradError::Compression("bzip2 block size overflow".to_owned()))?;
-        let whole = cursor
-            .checked_add(block_size)
-            .is_some_and(|end| end <= raw.len());
-        let compressed = if whole {
-            &raw[cursor..cursor + block_size]
-        } else {
-            &raw[cursor..]
-        };
-        let is_bzip2 = compressed.starts_with(b"BZh");
-        if blocks.is_empty() && !(whole && is_bzip2) {
-            // A first record that is not a whole bzip2 stream: not LDM
-            // records, or LDM records cut inside the first one.
-            if is_bzip2 {
-                return Err(NexradError::Truncated {
-                    what: "LDM bzip2 record",
-                    offset: cursor,
-                    needed: block_size,
-                    available: raw.len() - cursor,
-                });
-            }
-            return Ok(None);
+        let available = raw.len() - cursor;
+        if block_size > available && blocks.is_empty() {
+            return Err(NexradError::Truncated {
+                what: "LDM compressed record",
+                offset: control_offset,
+                needed: block_size,
+                available,
+            });
         }
-        if !whole || !is_bzip2 {
-            blocks.push(compressed);
-            break;
-        }
+        let end = cursor + block_size.min(available);
 
-        blocks.push(compressed);
+        blocks.push(&raw[cursor..end]);
         if blocks.len() > MAX_BZIP_BLOCKS {
             return Err(NexradError::Compression(format!(
                 "block-bzip volume contains more than {MAX_BZIP_BLOCKS} blocks"
             )));
         }
-        cursor += block_size;
+        cursor = end;
         if is_last_block {
             break;
         }
     }
 
     if blocks.is_empty() {
-        return Ok(None);
+        return Err(NexradError::Compression(
+            "LDM-compressed volume has no record: its first byte count is zero".to_owned(),
+        ));
     }
 
     Ok(Some(blocks))
 }
+
+/// True when the bytes after the 24-byte volume header start with an LDM
+/// record: a four-byte count, then a bzip2 stream header. Uncompressed
+/// records have the 12-byte control word there, which is never `BZh`.
+pub(crate) fn ldm_records_follow_header(bytes: &[u8]) -> bool {
+    bytes
+        .get(VOLUME_HEADER_LEN..)
+        .is_some_and(messages::starts_with_ldm_record)
+}
+
+/// Bytes a decoder must have expanded to tell LDM records from
+/// uncompressed ones ([`ldm_records_follow_header`]).
+const LDM_PROBE_LEN: usize = VOLUME_HEADER_LEN + 4 + 3;
 
 thread_local! {
     /// Per-thread bzip2 decoder: its block work buffers (about 7 MiB of
@@ -4207,6 +4294,76 @@ mod tests {
         assert!(decoded.is_empty(), "output restored on error");
     }
 
+    /// The metadata record of a whole-file bzip2 volume is decoded from the
+    /// stream's first blocks only (backlog: a bounded early stop instead of
+    /// expanding the whole stream): with 100 kB blocks it equals the
+    /// uncompressed record, and damage in the last quarter of the stream,
+    /// which fails the volume decode, leaves the metadata record readable.
+    #[test]
+    fn whole_file_bzip2_metadata_record_decodes_only_its_blocks() {
+        use std::io::Write;
+        let Some(file) = corpus_bytes(KTLX_2013_TRIM) else {
+            return;
+        };
+        let (bytes, _) = normalize_archive_bytes(&file).unwrap();
+        let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::new(1));
+        encoder.write_all(&bytes).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let record_len = 134 * RECORD_BYTES;
+        assert!(bytes.len() > VOLUME_HEADER_LEN + 3 * record_len);
+
+        let record = messages::metadata_record(&compressed).unwrap();
+        assert!(*record == bytes[VOLUME_HEADER_LEN..VOLUME_HEADER_LEN + record_len]);
+
+        let mut damaged = compressed.clone();
+        let len = damaged.len();
+        damaged[len * 7 / 8] ^= 0x55;
+        assert!(normalize_archive_bytes(&damaged).is_err());
+        assert!(read_volume_from_bytes(&damaged).is_err());
+        let record = messages::metadata_record(&damaged).unwrap();
+        assert!(*record == bytes[VOLUME_HEADER_LEN..VOLUME_HEADER_LEN + record_len]);
+    }
+
+    /// A whole-file bzip2 wrapper around LDM records: the metadata record
+    /// is the first LDM record, taken from the stream's first blocks, which
+    /// are decoded once. Damage or truncation past those blocks, which fails
+    /// the volume decode, leaves it readable; damage inside them fails with
+    /// the metadata record's context, as the whole decode did before.
+    #[test]
+    fn whole_file_bzip2_of_ldm_records_reads_the_first_record_from_its_blocks() {
+        use std::io::Write;
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let expected = messages::metadata_record(&file).unwrap().into_owned();
+        let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::new(1));
+        encoder.write_all(&file).unwrap();
+        let compressed = encoder.finish().unwrap();
+        // 100 kB blocks: the metadata prefix (325,936 bytes) is the first
+        // four of eight.
+        assert!(file.len() > 7 * 100_000, "{} bytes", file.len());
+        let len = compressed.len();
+
+        assert!(*messages::metadata_record(&compressed).unwrap() == expected[..]);
+
+        let mut damaged = compressed.clone();
+        damaged[len * 7 / 8] ^= 0x55;
+        assert!(read_volume_from_bytes(&damaged).is_err());
+        assert!(*messages::metadata_record(&damaged).unwrap() == expected[..]);
+        let truncated = &compressed[..len * 6 / 10];
+        assert!(read_volume_from_bytes(truncated).is_err());
+        assert!(*messages::metadata_record(truncated).unwrap() == expected[..]);
+
+        let mut early = compressed.clone();
+        early[64] ^= 0x55;
+        let error = messages::metadata_record(&early).unwrap_err();
+        assert!(
+            matches!(&error, NexradError::Compression(reason)
+                if reason.starts_with("whole-file compressed Level II metadata record: bzip2:")),
+            "{error}"
+        );
+    }
+
     #[test]
     fn whole_file_bzip2_archive_decodes_like_the_uncompressed_bytes() {
         // No corpus file is a whole-file bzip2 stream; the KTLX 2013 trim's
@@ -4241,6 +4398,172 @@ mod tests {
             &expected,
             "trailing bytes ignored",
         );
+    }
+
+    /// A gzip or whole-file bzip2 copy of an LDM-compressed file (the KTLX
+    /// 2024 trim wrapped whole) decodes as the unwrapped file does, through
+    /// every entry point, with the wrapper as its compression. Before, the
+    /// expanded LDM control words and bzip2 bytes were parsed as messages
+    /// and a few garbage radials came back without an error.
+    #[test]
+    fn ldm_records_inside_a_whole_file_wrapper_decode_like_the_unwrapped_file() {
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        let unwrapped = decode(&file).volume;
+        assert_eq!(
+            unwrapped.provenance.compression.as_deref(),
+            Some("bzip2-blocks")
+        );
+        let unwrapped_metadata = read_volume_with_metadata(&file).unwrap().metadata;
+        assert!(
+            unwrapped_metadata.errors.is_empty(),
+            "{:?}",
+            unwrapped_metadata.errors
+        );
+        let (normalized, _) = normalize_archive_bytes(&file).unwrap();
+
+        let mut gzip_encoder =
+            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gzip_encoder.write_all(&file).unwrap();
+        let gzipped = gzip_encoder.finish().unwrap();
+        let bzipped = bzip2_compress(&file);
+
+        for (wrapped, compression) in [
+            (&gzipped, ArchiveCompression::Gzip),
+            (&bzipped, ArchiveCompression::Bzip2WholeFile),
+        ] {
+            let name = compression.as_str();
+            let mut expected = unwrapped.clone();
+            expected.provenance.compression = Some(name.to_owned());
+
+            let decoded = decode(wrapped);
+            assert_same(&decoded.volume, &expected, name);
+            assert_volume_matches_golden(&decoded, &golden);
+
+            let with_metadata = read_volume_with_metadata(wrapped).unwrap();
+            assert_same(&with_metadata.volume, &expected, name);
+            assert_eq!(
+                with_metadata.metadata, unwrapped_metadata,
+                "{name} metadata"
+            );
+
+            let (wrapped_normalized, wrapped_compression) =
+                normalize_archive_bytes(wrapped).unwrap();
+            assert_eq!(wrapped_compression, compression);
+            assert!(wrapped_normalized == normalized, "{name} normalized bytes");
+
+            // What the router does with a gzip file: expand it to sniff the
+            // format, then parse the expansion.
+            let expanded = messages::record_bytes(wrapped).unwrap();
+            let mut with_header = file[..VOLUME_HEADER_LEN].to_vec();
+            with_header.extend_from_slice(&expanded);
+            assert!(with_header == normalized, "{name} record bytes");
+            let mut inner = Vec::new();
+            if compression == ArchiveCompression::Gzip {
+                inner =
+                    gzip::inflate_gzip_members_limited(wrapped, MAX_DECODED_RADAR_BYTES, "test")
+                        .unwrap();
+            } else {
+                decompress_bzip2_stream_into(wrapped, &mut inner, MAX_DECODED_RADAR_BYTES, "test")
+                    .unwrap();
+            }
+            assert!(inner == file);
+            let from_expansion = read_normalized_volume_bytes(&inner, compression).unwrap();
+            assert_same(&from_expansion, &expected, name);
+        }
+
+        let mut expected = unwrapped.clone();
+        expected.provenance.compression = Some("gzip".to_owned());
+        let streamed = read_gzip_volume_from_reader(&gzipped[..]).unwrap();
+        assert_same(&streamed, &expected, "gzip reader");
+
+        let mut previews = Vec::new();
+        let full = read_gzip_volume_from_bytes_with_preview(&gzipped, 100, |preview| {
+            previews.push(preview);
+        })
+        .unwrap();
+        assert_same(&full, &expected, "gzip decode with preview");
+        assert_eq!(previews.len(), 1);
+        assert_same(
+            &previews[0].sweeps[0],
+            &expected.sweeps[0],
+            "preview sweep 0",
+        );
+        let preview = read_gzip_preview_from_bytes(&gzipped, 100)
+            .unwrap()
+            .unwrap();
+        assert_same(
+            &preview.sweeps[0],
+            &expected.sweeps[0],
+            "gzip preview sweep 0",
+        );
+    }
+
+    /// An LDM-compressed file cut short inside a record decodes to the
+    /// records before the cut, as MetPy reads the file without its last
+    /// record (the golden's 480 + 360 radials), with the cut record counted
+    /// as skipped, as a damaged record is; its metadata record is still
+    /// read. A record that is not a bzip2 stream decodes the same way. A cut
+    /// inside the first record is a truncation error. Before, all three
+    /// were parsed as uncompressed messages: a few garbage radials, or an
+    /// empty volume, without an error.
+    #[test]
+    fn ldm_file_cut_short_decodes_the_records_before_the_cut() {
+        let Some(file) = corpus_bytes(KTLX_2024_TRIM) else {
+            return;
+        };
+        let golden = golden(KTLX_2024_TRIM);
+        let expected: Vec<usize> =
+            list(&golden["layout_checks"]["without_last_record_sweep_radials"])
+                .iter()
+                .map(count)
+                .collect();
+        let clean = decode(&file).volume;
+        let (offset, block) = *ldm_records(&file).last().unwrap();
+
+        let cut = &file[..offset + 4 + block.len() / 2];
+        let mut not_bzip2 = file.clone();
+        not_bzip2[offset + 4..offset + 7].fill(0);
+        for (bytes, what) in [(cut, "cut short"), (&not_bzip2[..], "not bzip2")] {
+            let volume = decode(bytes).volume;
+            let radials: Vec<usize> = volume.sweeps.iter().map(Sweep::nrays).collect();
+            assert_eq!(radials, expected, "{what}");
+            assert_same(&volume.sweeps[0], &clean.sweeps[0], what);
+            assert_eq!(
+                volume.provenance.decode.skipped_message_count,
+                clean.provenance.decode.skipped_message_count + 1,
+                "{what}"
+            );
+            let preview = read_bzip_block_preview_from_bytes(bytes, 100)
+                .unwrap()
+                .unwrap();
+            assert_same(&preview.sweeps[0], &clean.sweeps[0], what);
+            let metadata = read_volume_with_metadata(bytes).unwrap().metadata;
+            assert!(metadata.errors.is_empty(), "{what}: {:?}", metadata.errors);
+            assert!(metadata.vcp.is_some(), "{what}");
+        }
+
+        let first = &file[..VOLUME_HEADER_LEN + 4 + 1000];
+        for result in [
+            read_volume_from_bytes(first).map(|_| ()),
+            read_bzip_block_preview_from_bytes(first, 1).map(|_| ()),
+            normalize_archive_bytes(first).map(|_| ()),
+        ] {
+            assert!(
+                matches!(
+                    result,
+                    Err(NexradError::Truncated {
+                        what: "LDM compressed record",
+                        offset: VOLUME_HEADER_LEN,
+                        available: 1000,
+                        ..
+                    })
+                ),
+                "{result:?}"
+            );
+        }
     }
 
     #[test]

@@ -1,0 +1,22 @@
+diff --git a/crates/recast-radar-io-nexrad/src/builder.rs b/crates/recast-radar-io-nexrad/src/builder.rs
+index 87e9071..8d25e28 100644
+--- a/crates/recast-radar-io-nexrad/src/builder.rs
++++ b/crates/recast-radar-io-nexrad/src/builder.rs
+@@ -454,6 +454,17 @@ impl VolumeBuilder {
+ /// the VCP fixed angles, scan name and time coverage.
+ fn finalize(volume: &mut Volume, vcp_cut_angles_deg: &[f32]) -> Result<()> {
+     for sweep in &mut volume.sweeps {
++        for field in &mut sweep.fields {
++            match &mut field.data {
++                FieldData::U8 { values, .. } => values.shrink_to_fit(),
++                FieldData::U16 { values, .. } => values.shrink_to_fit(),
++                FieldData::I8 { values, .. } => values.shrink_to_fit(),
++                FieldData::I16 { values, .. } => values.shrink_to_fit(),
++                FieldData::I32 { values, .. } => values.shrink_to_fit(),
++                FieldData::F32 { values, .. } => values.shrink_to_fit(),
++                FieldData::F64 { values, .. } => values.shrink_to_fit(),
++            }
++        }
+         for values in [
+             &mut sweep.ray_vars.nyquist_velocity_mps,
+             &mut sweep.ray_vars.unambiguous_range_m,

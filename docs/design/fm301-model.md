@@ -2316,6 +2316,40 @@ the moved buffers; under `Time`, ODIM fields with per-ray times are. A caller th
 moved buffer itself as often as possible picks `Time` for NEXRAD and CfRadial and `Auto` for
 ODIM. The permutation is one `u32` per ray, shared by the sweep's variables.
 
+A binding that owns the decoded volume can instead put the storage in the view's order first:
+`fm301::order_rays_for_view(&mut volume, options)` (perf-p1, `Sweep::permute_rays`) moves
+every per-ray item of every sweep in place, a block rotation per field for a sweep that starts
+mid-circle, after which the view's ray order is the identity and the table's `Auto` column
+becomes its `Time` column for the formats that had a permutation (KTLX 2024 0 to 76 of 104,
+KPAH 8 of 15, DOW8 3 of 3, DOW6 32 of 32, JMA 26 of 26;
+`fm301_view::ordering_rays_for_the_view_keeps_it_and_makes_fields_zero_copy`). The view shows
+the same values, attributes and warnings as before. Per-ray items include the per-ray arrays
+among the verbatim attributes of a sweep and its fields (`Sweep::other`, `FieldAttrs::other`).
+Those attributes are untyped, so length alone cannot tell a per-ray array from another array
+that happens to have one entry per ray; `AttrValue::ray_alignment` uses the name as well. An
+array with one entry per ray (more than two rays) whose name is on a crate-private list (the
+ODIM_H5 per-ray `how` arrays `startazA` .. `stopelT`, `elangles` and `TXpower`, and the
+Bureau of Meteorology's `dataflag`, `noisepowerh`, `noisepowerv`, `numpulses` and `startT`;
+the list is not public API, so it can go once io-odim gives these arrays a `time` dimension;
+in 130 real ODIM files every `how` array of that length has one of these names and every other
+`how` array has another length) moves with its rays, and the view writes it in its own ray
+order under any `first_dim`, so that entry `i` belongs to the view's ray `i` (Passthrough::All
+for a sweep's, the Xradar flavor for a field's;
+`fm301_view::per_ray_attribute_arrays_move_with_their_rays`, on Melbourne sweeps whose `how`
+carries six such arrays). An array of that length under any other name (`RayAlignment::Unknown`)
+is neither moved nor left behind: `Sweep::permute_rays` refuses its sweep
+(`SweepError::UnknownRayAttribute`), `order_rays_for_view` leaves that sweep in storage order
+and returns it (`fm301::UnorderedSweep`: the sweep index and the attribute, so a binding can
+report that the sweep's fields still need a copy), and the view writes the array as stored, so nothing is scrambled and the view is the same
+before and after (`fm301_view::unknown_per_ray_length_attributes_keep_their_sweep_in_storage_order`).
+A decoder that knows an array is per ray can instead put it in `extra_vars` with a `time`
+dimension, which is exact; io-odim doing so for its `how` arrays is a post-merge item. It costs 29.9 M instructions for the 20
+sweeps of KTLX 2024 (against 1,211 M for the decode), once, instead of one permuted copy per
+field read. Storage order is then no longer the source order, so a volume that stays in Rust
+is not reordered. Every sweep is checked before any row moves, so an error (a per-ray item
+without one entry per ray, `SweepError::RayLength`) leaves the whole volume in storage order
+(`fm301_view::ordering_rays_for_the_view_changes_nothing_when_a_sweep_fails`).
+
 Some fields are lazy under either `first_dim`, because their gates are not the sweep's range
 gates: Level II dual-pol moments that end before the sweep's longest moment (padding; 28 of
 KTLX 2024's 104 fields) and 1 km reflectivity on a 250 m Doppler range (repetition, Message 1
