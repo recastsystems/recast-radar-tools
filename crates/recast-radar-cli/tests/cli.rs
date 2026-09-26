@@ -825,6 +825,259 @@ fn convert_writes_every_format_and_publish_a_polling_directory() {
     fs::remove_dir_all(&dir).expect("clean up");
 }
 
+const DKROM: &str = "odim-dkrom-20260820-1130-pvol";
+const KLIX_2005: &str = "l2-klix-20050829-130035-trim";
+const KLIX_2021: &str = "l2-klix-20210829-180425-trim";
+const JMA_N6_2019: &str = "jma-n6-20191012-090000-rs47773";
+const JMA_N5_ITOK: &str = "jma-n5-20260924-210000-rs47937";
+
+/// The values of `field` in each sweep of a file, as `dump --data` gives
+/// them (missing gates left out).
+fn sweep_values(path: &Path, field: &str) -> Vec<Vec<f64>> {
+    let report = json(&run([
+        OsStr::new("dump"),
+        OsStr::new("--json"),
+        OsStr::new("--data"),
+        OsStr::new("--field"),
+        OsStr::new(field),
+        path.as_os_str(),
+    ]));
+    report["volumes"][0]["sweeps"]
+        .as_array()
+        .expect("sweeps")
+        .iter()
+        .map(|sweep| {
+            let data = sweep["fields"][0]["data"].as_array().expect("data rows");
+            data.iter()
+                .flat_map(|row| row.as_array().expect("row").iter())
+                .filter_map(Value::as_f64)
+                .collect()
+        })
+        .collect()
+}
+
+/// DMI Romo's volume written as Level II by the command: every DBZH and
+/// VRAD value comes back as Py-ART reads the ODIM_H5 source (the committed
+/// FM301 golden: gate counts, minimum, maximum and mean of every sweep),
+/// the fields Level II cannot hold (TH, whose REF slot DBZH takes, and LDR)
+/// are reported on standard error, and `--strict` refuses the write,
+/// leaving no file.
+#[test]
+fn convert_to_level2_reports_what_it_leaves_out_and_keeps_the_values() {
+    let dir = scratch("level2-report");
+    let out = dir.join("dkrom.ar2v");
+    let output = run([
+        OsStr::new("convert"),
+        fixture(DKROM).as_os_str(),
+        OsStr::new("--to"),
+        OsStr::new("level2"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let messages = stderr(&output);
+    assert!(
+        messages.contains("left out: field TH (sweeps 0-9): REF carries DBZH instead"),
+        "{messages}"
+    );
+    assert!(
+        messages.contains("left out: field LDR (sweeps 0-9)"),
+        "{messages}"
+    );
+    assert!(
+        stdout(&output).contains("some fields or sweeps left out"),
+        "{}",
+        stdout(&output)
+    );
+
+    let golden = golden("pyart", DKROM);
+    for (field, pyart) in [("DBZH", "reflectivity_horizontal"), ("VRADH", "velocity")] {
+        let sweeps = sweep_values(&out, field);
+        let expected = golden["fields"][pyart]["per_sweep"]
+            .as_array()
+            .expect("per_sweep");
+        assert_eq!(sweeps.len(), expected.len(), "{field}");
+        for (values, expected) in sweeps.iter().zip(expected) {
+            let at = format!("{field} sweep {}", expected["sweep"]);
+            assert_eq!(
+                values.len() as u64,
+                expected["count_unmasked"].as_u64().expect("count"),
+                "{at}"
+            );
+            let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+            let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let mean = values.iter().sum::<f64>() / values.len() as f64;
+            for (value, key, tolerance) in
+                [(min, "min", 1e-6), (max, "max", 1e-6), (mean, "mean", 1e-6)]
+            {
+                let want = expected[key].as_f64().expect("statistic");
+                assert!(
+                    (value - want).abs() <= tolerance,
+                    "{at} {key}: {value} != {want}"
+                );
+            }
+        }
+    }
+
+    let strict = dir.join("strict.ar2v");
+    let output = run([
+        OsStr::new("convert"),
+        fixture(DKROM).as_os_str(),
+        OsStr::new("--to"),
+        OsStr::new("level2"),
+        OsStr::new("--strict"),
+        OsStr::new("-o"),
+        strict.as_os_str(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("--strict"), "{}", stderr(&output));
+    assert!(!strict.exists());
+    fs::remove_dir_all(&dir).expect("clean up");
+}
+
+/// The Level II options of `convert`: a Message 1 volume, which has no site
+/// position and Doppler gates from -375 m, is refused with the options that
+/// write it, then written with the position of a Message 31 file of the
+/// same radar and without the gates before the radar; JMA Okinawa's two
+/// 5-minute cycles (35 sweeps) are refused until one cycle's sweeps are
+/// selected, collected from the top down; and a JMA velocity volume, which
+/// has no Nyquist velocity, is noted as such, or written with the radar's
+/// and in NEXRAD's word sizes.
+#[test]
+fn convert_to_level2_takes_position_sweeps_and_coding_options() {
+    let dir = scratch("level2-options");
+    let convert = |input: &Path, out: &Path, extra: &[&str]| {
+        let mut args = vec![
+            OsStr::new("convert"),
+            input.as_os_str(),
+            OsStr::new("--to"),
+            OsStr::new("level2"),
+            OsStr::new("--force"),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ];
+        args.extend(extra.iter().map(OsStr::new));
+        run(args)
+    };
+    let info = |path: &Path| {
+        json(&run([
+            OsStr::new("info"),
+            OsStr::new("--json"),
+            path.as_os_str(),
+        ]))["volumes"][0]
+            .clone()
+    };
+
+    // Message 1: no position, then no gates before the radar.
+    let klix = fixture(KLIX_2005);
+    let out = dir.join("klix.ar2v");
+    let output = convert(&klix, &out, &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("--position-from"),
+        "{}",
+        stderr(&output)
+    );
+    let position_from = fixture(KLIX_2021);
+    let position_from = position_from.to_str().expect("UTF-8 path");
+    let output = convert(&klix, &out, &["--position-from", position_from]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("--drop-negative-range-gates"),
+        "{}",
+        stderr(&output)
+    );
+    let output = convert(
+        &klix,
+        &out,
+        &[
+            "--position-from",
+            position_from,
+            "--drop-negative-range-gates",
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("which lie before the radar, left out"),
+        "{}",
+        stderr(&output)
+    );
+    let written = info(&out);
+    let located = info(Path::new(position_from));
+    for key in ["latitude_deg", "longitude_deg", "altitude_m"] {
+        let (a, b) = (written[key].as_f64(), located[key].as_f64());
+        assert!(
+            a.zip(b).is_some_and(|(a, b)| (a - b).abs() < 1e-4),
+            "{key}: {a:?} {b:?}"
+        );
+    }
+    assert_eq!(written["sweep_count"], info(&klix)["sweep_count"]);
+
+    // JMA's 10-minute tar: one 5-minute cycle at a time.
+    let itok = fixture(JMA_N5_ITOK);
+    let out = dir.join("itok.ar2v");
+    let output = convert(&itok, &out, &[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("--sweeps"), "{}", stderr(&output));
+    let first_cycle = "0,2,3,6,7,10,11,14,16,18,20,22,24,26,28,30,32";
+    let output = convert(
+        &itok,
+        &out,
+        &["--sweeps", first_cycle, "--sweeps-in-time-order"],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let written = info(&out);
+    assert_eq!(written["sweep_count"], 17);
+    let angles: Vec<f64> = written["sweeps"]
+        .as_array()
+        .expect("sweeps")
+        .iter()
+        .filter_map(|sweep| sweep["fixed_angle_deg"].as_f64())
+        .collect();
+    // Collected from 25 degrees down to -0.1, then up again.
+    assert!((angles[0] - 25.0).abs() < 0.01, "{angles:?}");
+    assert!((angles[12] + 0.1).abs() < 0.01, "{angles:?}");
+    let output = convert(&itok, &out, &["--sweeps", "0,0"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    let output = convert(&itok, &out, &["--sweeps", "35"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+
+    // JMA velocity: the Nyquist velocity noted missing, or supplied.
+    let velocity = fixture(JMA_N6_2019);
+    let out = dir.join("n6.ar2v");
+    let output = convert(&velocity, &out, &[]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("without a Nyquist velocity"),
+        "{}",
+        stderr(&output)
+    );
+    let output = convert(
+        &velocity,
+        &out,
+        &["--nyquist", "26.48", "--quantization", "compatible"],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        !stderr(&output).contains("without a Nyquist velocity"),
+        "{}",
+        stderr(&output)
+    );
+    // Compatible codes the float velocities in 8 bits, coarser than the
+    // source: reported.
+    assert!(
+        stderr(&output).contains("VEL from VRADH: 8-bit"),
+        "{}",
+        stderr(&output)
+    );
+    let written = info(&out);
+    for sweep in written["sweeps"].as_array().expect("sweeps") {
+        let nyquist = sweep["nyquist_mps"].as_f64().expect("Nyquist velocity");
+        assert!((nyquist - 26.48).abs() < 1e-3, "{nyquist}");
+    }
+    fs::remove_dir_all(&dir).expect("clean up");
+}
+
 /// Every file under `dir`, at any depth.
 fn walk(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();

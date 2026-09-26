@@ -1,7 +1,9 @@
-//! `convert` and `publish`: decode, then hand the volume to a backend.
+//! `convert` and `publish`: decode, edit (sweep selection, site position),
+//! then hand the volume to a backend.
 //!
 //! Both check that the backend exists before reading any input, so a build
-//! without the writer fails at once with exit status 3.
+//! without the writer fails at once with exit status 3. What the writer
+//! leaves out or changes ([`WriteReport`]) goes to standard error.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -10,12 +12,12 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 
 use crate::backend::{
-    BackendError, Backends, ChunkedOutput, Level2Compression, PublishRequest, WriteInput,
-    WriteOptions,
+    BackendError, Backends, ChunkedOutput, Level2Compression, PublishRequest, SitePosition,
+    VolumeEdits, WriteInput, WriteOptions, WriteReport,
 };
 use crate::open::{self, OpenOptions};
 use crate::output::{AtomicFile, human_bytes, write_file_atomically};
-use crate::{CliError, ConvertArgs, PublishArgs};
+use crate::{CliError, ConvertArgs, EditArgs, InputArgs, Level2Args, PublishArgs};
 
 fn site_override(site: &Option<String>) -> Result<Option<String>, CliError> {
     match site {
@@ -26,12 +28,83 @@ fn site_override(site: &Option<String>) -> Result<Option<String>, CliError> {
     }
 }
 
+/// The writer options of the command line.
+fn write_options(level2: &Level2Args, site: Option<String>) -> WriteOptions {
+    let mut options = WriteOptions::new(level2.level2_compression, site);
+    options.level2_quantization = level2.quantization;
+    options.nyquist_velocity_mps = level2.nyquist;
+    options.unambiguous_range_m = level2.unambiguous_range;
+    options.drop_negative_range_gates = level2.drop_negative_range_gates;
+    options.strict = level2.strict;
+    options
+}
+
+/// The volume edits of the command line; `--position-from` decodes its file
+/// for the position.
+fn volume_edits(edit: &EditArgs, input: &InputArgs) -> Result<VolumeEdits, CliError> {
+    let mut edits = VolumeEdits {
+        sweeps: edit.sweeps.as_ref().map(|list| list.0.clone()),
+        sweeps_in_time_order: edit.sweeps_in_time_order,
+        position: edit.position,
+    };
+    if let Some(path) = &edit.position_from {
+        let loaded = open::load_one(
+            std::slice::from_ref(path),
+            &OpenOptions::from_args(input, false),
+            false,
+            None,
+        )?;
+        let position = SitePosition::of(&loaded.volume).ok_or_else(|| CliError::Decode {
+            path: path.clone(),
+            message: "has no site position (latitude, longitude and height) for --position-from"
+                .to_owned(),
+        })?;
+        edits.position = Some(position);
+    }
+    Ok(edits)
+}
+
+/// Run `f` on a pool of `threads` workers, or on the global pool.
+fn with_threads<T>(
+    threads: Option<u32>,
+    f: impl FnOnce() -> Result<T, CliError> + Send,
+) -> Result<T, CliError>
+where
+    T: Send,
+{
+    match threads {
+        None => f(),
+        Some(threads) => rayon::ThreadPoolBuilder::new()
+            .num_threads(threads as usize)
+            .build()
+            .map_err(|err| CliError::Failed(format!("--threads {threads}: {err}")))?
+            .install(f),
+    }
+}
+
+/// What the writer left out or changed, on standard error.
+fn print_report(report: &WriteReport) {
+    for line in &report.left_out {
+        eprintln!("recast-radar: left out: {line}");
+    }
+    for line in &report.notes {
+        eprintln!("recast-radar: note: {line}");
+    }
+}
+
 pub(crate) fn run(
     args: &ConvertArgs,
     backends: &Backends,
     out: &mut dyn Write,
 ) -> Result<(), CliError> {
-    if args.chunks && args.level2_compression != Level2Compression::Bzip2 {
+    let mut written = Vec::new();
+    with_threads(args.threads, || convert(args, backends, &mut written))?;
+    out.write_all(&written)?;
+    Ok(())
+}
+
+fn convert(args: &ConvertArgs, backends: &Backends, out: &mut Vec<u8>) -> Result<(), CliError> {
+    if args.chunks && args.level2.level2_compression != Level2Compression::Bzip2 {
         return Err(CliError::Usage(
             "real-time chunks are bzip2 LDM records: --chunks takes no --level2-compression none"
                 .to_owned(),
@@ -41,26 +114,29 @@ pub(crate) fn run(
     if args.chunks && !writer.supports_chunks() {
         return Err(BackendError::ChunksUnavailable(args.to).into());
     }
-    let options = WriteOptions::new(args.level2_compression, site_override(&args.site)?);
+    let options = write_options(&args.level2, site_override(&args.site)?);
+    let edits = volume_edits(&args.edit, &args.input)?;
     let loaded = open::load_one(
         &args.inputs,
         &OpenOptions::from_args(&args.input, true),
         args.merge,
         args.volume,
     )?;
+    let volume = edits.apply(&loaded.volume).map_err(CliError::Usage)?;
     let source_name = args
         .inputs
         .first()
         .and_then(|path| path.file_name())
         .map(|name| name.to_string_lossy().into_owned());
     let input = WriteInput {
-        volume: &loaded.volume,
+        volume: &volume,
         metadata: &loaded.metadata,
         source_name: source_name.as_deref(),
     };
     if args.chunks {
         let chunked = writer.write_chunks(&input, &options)?;
         let saved = save_chunks(&chunked, &args.output, args.force)?;
+        print_report(&chunked.report);
         writeln!(
             out,
             "wrote {} chunk(s) in {} ({})",
@@ -72,24 +148,31 @@ pub(crate) fn run(
     }
 
     let mut file = AtomicFile::create(&args.output, args.force)?;
-    if args.gzip {
+    let report = if args.gzip {
         let mut encoder = GzEncoder::new(file.writer(), Compression::default());
-        writer.write(&input, &options, &mut encoder)?;
+        let report = writer.write(&input, &options, &mut encoder)?;
         encoder
             .finish()
             .map_err(|err| CliError::io(&args.output, err))?;
+        report
     } else {
-        writer.write(&input, &options, file.writer())?;
-    }
+        writer.write(&input, &options, file.writer())?
+    };
     let path = file.commit()?;
     let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    print_report(&report);
     writeln!(
         out,
-        "wrote {} ({}, {} bytes, {} sweeps)",
+        "wrote {} ({}, {} bytes, {} sweeps{})",
         path.display(),
         args.to.label(),
         size,
-        loaded.volume.sweeps.len()
+        volume.sweeps.len(),
+        if report.left_out.is_empty() {
+            ""
+        } else {
+            "; some fields or sweeps left out, see above"
+        }
     )?;
     Ok(())
 }
@@ -158,12 +241,20 @@ pub(crate) fn publish(
     backends: &Backends,
     out: &mut dyn Write,
 ) -> Result<(), CliError> {
+    let mut written = Vec::new();
+    with_threads(args.threads, || publish_all(args, backends, &mut written))?;
+    out.write_all(&written)?;
+    Ok(())
+}
+
+fn publish_all(args: &PublishArgs, backends: &Backends, out: &mut Vec<u8>) -> Result<(), CliError> {
     let publisher = backends.publisher()?;
     let mut request = PublishRequest::new(args.dir.clone());
     request.site = site_override(&args.site)?;
     request.keep = args.keep as usize;
-    request.options = WriteOptions::new(args.level2_compression, request.site.clone());
+    request.options = write_options(&args.level2, request.site.clone());
     request.update_site_config = !args.no_site_config;
+    let edits = volume_edits(&args.edit, &args.input)?;
     let options = OpenOptions::from_args(&args.input, true);
 
     let batches: Vec<Vec<open::Loaded>> = if args.merge {
@@ -186,12 +277,14 @@ pub(crate) fn publish(
             let source_name = path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned());
+            let volume = edits.apply(&loaded.volume).map_err(CliError::Usage)?;
             let input = WriteInput {
-                volume: &loaded.volume,
+                volume: &volume,
                 metadata: &loaded.metadata,
                 source_name: source_name.as_deref(),
             };
             let published = publisher.publish(&input, &request)?;
+            print_report(&published.report);
             writeln!(
                 out,
                 "published {} ({}; dir.list {})",
@@ -337,8 +430,8 @@ mod tests {
                 _input: &WriteInput<'_>,
                 _options: &WriteOptions,
                 _out: &mut dyn Write,
-            ) -> Result<(), BackendError> {
-                Ok(())
+            ) -> Result<WriteReport, BackendError> {
+                Ok(WriteReport::default())
             }
         }
         // The input does not exist: each refusal comes before reading it.

@@ -284,6 +284,37 @@ netCDF-4). `gzip=True` wraps any format; `site` replaces the radar id (the
 4-character ICAO for Level II). Files are written through a temporary file
 and renamed into place.
 
+Every write function (`write`, `to_bytes`, `convert`, `publish`,
+`write_chunks`) also takes these keywords:
+
+| Keyword | Effect |
+|---|---|
+| `sweeps=[0, 2, 5]` | keep only these sweeps (0-based), in this order; Level II holds at most 32 |
+| `sweeps_in_time_order=True` | put the sweeps in the order their first rays were collected |
+| `position=(lat, lon, height_m)` | the site position to write (a Message 1 volume has none) |
+| `quantization="precise"` | Level II value coding: `"precise"` (never coarser than the source), `"compatible"` (NEXRAD's word sizes, which xradar 0.12 reads), `"standard"` (NOAA's codings where they hold every value) |
+| `nyquist_velocity=`, `unambiguous_range=` | the radar's own values (m/s, m) for Level II radials whose source has none (JMA) |
+| `drop_negative_range_gates=True` | leave out gates centred before the radar (Message 1 Doppler gates from -375 m) |
+| `strict=True` | refuse, writing nothing, a write that would leave out a field or sweep |
+
+What a writer leaves out (a field Level II has no moment for, a second
+reflectivity field) and its notes (a coding coarser than the source, radials
+reordered, a missing Nyquist velocity) come as `recast_radar.WriteWarning`s;
+`publish` also returns them under `"left_out"` and `"notes"`. For example,
+JMA's 10-minute tars hold two 5-minute cycles (the 2026 Okinawa member has
+35 sweeps, more than Level II holds); one cycle, from its top sweep down:
+
+```python
+itok = recast_radar.read("Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.RS47937.tar", station="ITOK")
+itok.write("ITOK.ar2v", "level2",
+           sweeps=[0, 2, 3, 6, 7, 10, 11, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32],
+           sweeps_in_time_order=True)
+klix = recast_radar.read("KLIX20050829_130035.V06")            # Message 1: no position
+ref = recast_radar.read("KLIX20210829_180425_V06")
+klix.write("KLIX.ar2v", "level2", position=(ref.latitude, ref.longitude, ref.altitude),
+           drop_negative_range_gates=True)
+```
+
 `write_chunks(volume, dest=None, *, site=None, overwrite=False)` writes a
 volume as NEXRAD Level II real-time chunks, laid out as the
 `unidata-nexrad-level2-chunks` bucket: the `S` chunk holds the volume header
@@ -297,9 +328,12 @@ implements `VolumeWriter::write_chunks`.
 These go through the same backend registry as the `recast-radar convert`
 and `publish` commands (`recast_radar_cli::backend::Backends::builtin`),
 which registers every writer and the polling-directory publisher. A writer
-that cannot represent a volume raises `UnrepresentableError` and leaves no
-file; `UnavailableError` (a `NotImplementedError`) is for a build without a
-writer or the publisher.
+that cannot represent a volume raises `UnrepresentableError`, whose message
+names the keyword that helps where there is one, and leaves no file;
+`UnavailableError` (a `NotImplementedError`) is for a build without a
+writer or the publisher. `pytests/test_write.py` reads written Level II and
+CfRadial 1 files with Py-ART and compares them with Py-ART's and h5py's
+reading of the source.
 
 ## `recast_radar.fetch`: downloads
 

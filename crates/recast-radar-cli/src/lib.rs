@@ -53,7 +53,9 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use thiserror::Error;
 
-use backend::{BackendError, Backends, Level2Compression, OutputFormat};
+use backend::{
+    BackendError, Backends, Level2Compression, Level2Quantization, OutputFormat, SitePosition,
+};
 
 /// Exit status of a failed command.
 pub const EXIT_FAILURE: u8 = 1;
@@ -129,8 +131,8 @@ pub struct InfoArgs {
     /// Merge the files into one volume first (parts of one scan) and summarize that.
     #[arg(long)]
     pub merge: bool,
+    /// What to decode from each input.
     #[command(flatten)]
-    #[allow(missing_docs)]
     pub input: InputArgs,
 }
 
@@ -172,8 +174,8 @@ pub struct DumpArgs {
     /// Conventions for --fm301.
     #[arg(long, value_enum, default_value_t, requires = "fm301")]
     pub flavor: Fm301Flavor,
+    /// What to decode from each input.
     #[command(flatten)]
-    #[allow(missing_docs)]
     pub input: InputArgs,
 }
 
@@ -208,8 +210,8 @@ pub struct RenderArgs {
     /// Render the field of every sweep that has it, into the --output directory.
     #[arg(long, conflicts_with = "sweep")]
     pub all_sweeps: bool,
+    /// What to decode from each input.
     #[command(flatten)]
-    #[allow(missing_docs)]
     pub input: InputArgs,
 }
 
@@ -228,8 +230,8 @@ pub struct ValidateArgs {
     /// Treat warnings as failures.
     #[arg(long)]
     pub strict: bool,
+    /// What to decode from each input.
     #[command(flatten)]
-    #[allow(missing_docs)]
     pub input: InputArgs,
 }
 
@@ -256,6 +258,89 @@ pub struct BenchArgs {
     pub json: bool,
 }
 
+/// Sweep indices given on the command line: `0,2,5-9` (0-based, in the
+/// order given).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SweepList(pub Vec<usize>);
+
+impl std::str::FromStr for SweepList {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        /// Most indices one list may name.
+        const MAX_INDICES: usize = 4096;
+        let bad = || format!("`{text}` is not a list of sweep indices such as 0,2,5-9");
+        let mut indices = Vec::new();
+        for part in text.split(',') {
+            let part = part.trim();
+            let (first, last) = match part.split_once('-') {
+                Some((first, last)) => (first.trim(), last.trim()),
+                None => (part, part),
+            };
+            let first: usize = first.parse().map_err(|_| bad())?;
+            let last: usize = last.parse().map_err(|_| bad())?;
+            if last < first || indices.len() + (last - first) >= MAX_INDICES {
+                return Err(bad());
+            }
+            indices.extend(first..=last);
+        }
+        Ok(Self(indices))
+    }
+}
+
+/// Options of the Level II writer, for `convert --to level2` and `publish`
+/// (`docs/level2/writer.md`).
+#[derive(Clone, Debug, Default, Args)]
+pub struct Level2Args {
+    /// Level II record packing.
+    #[arg(long, value_enum, default_value_t)]
+    pub level2_compression: Level2Compression,
+    /// Level II value coding: precise never codes a value more coarsely than its source; compatible
+    /// keeps NEXRAD's word sizes (what xradar 0.12 reads); standard writes NOAA's codings where they
+    /// hold every value. No policy clips a value.
+    #[arg(long, value_enum, default_value_t)]
+    pub quantization: Level2Quantization,
+    /// The radar's Nyquist velocity (m/s), written in every radial whose source has none (JMA
+    /// volumes have none). Without it such radials carry 0, which readers take as unknown.
+    #[arg(long, value_name = "M/S")]
+    pub nyquist: Option<f32>,
+    /// The radar's unambiguous range (m), written in every radial whose source has none.
+    #[arg(long, value_name = "M")]
+    pub unambiguous_range: Option<f32>,
+    /// Leave out gates centred before the radar instead of refusing the field (Message 1 volumes
+    /// place their Doppler gates from -375 m).
+    #[arg(long)]
+    pub drop_negative_range_gates: bool,
+    /// Fail, writing nothing, when the output would leave out a field or a sweep of the volume.
+    #[arg(long)]
+    pub strict: bool,
+}
+
+/// Changes made to the decoded volume before it is written.
+#[derive(Clone, Debug, Default, Args)]
+pub struct EditArgs {
+    /// Keep only these sweeps, in this order: 0-based indices and ranges such as 0,2,5-9 (the
+    /// numbers `info` lists). Level II holds at most 32.
+    #[arg(long, value_name = "LIST")]
+    pub sweeps: Option<SweepList>,
+    /// Put the sweeps in the order their first rays were collected.
+    #[arg(long)]
+    pub sweeps_in_time_order: bool,
+    /// Site position to write, as LAT,LON,HEIGHT: degrees north, degrees east, metres above sea
+    /// level (Message 1 volumes carry none).
+    #[arg(
+        long,
+        value_name = "LAT,LON,HEIGHT",
+        allow_hyphen_values = true,
+        conflicts_with = "position_from"
+    )]
+    pub position: Option<SitePosition>,
+    /// Take the site position from another file of the same radar (a Message 31 file for a
+    /// Message 1 volume, for example).
+    #[arg(long, value_name = "FILE")]
+    pub position_from: Option<PathBuf>,
+}
+
 /// `convert` arguments.
 #[derive(Debug, Args)]
 pub struct ConvertArgs {
@@ -278,9 +363,16 @@ pub struct ConvertArgs {
     /// Which volume of a multi-volume input (mobile archive, --all-stations tar), 0-based.
     #[arg(long, value_name = "N")]
     pub volume: Option<usize>,
-    /// Level II record packing.
-    #[arg(long, value_enum, default_value_t)]
-    pub level2_compression: Level2Compression,
+    /// Level II writer options.
+    #[command(flatten)]
+    pub level2: Level2Args,
+    /// Sweep selection and site position.
+    #[command(flatten)]
+    pub edit: EditArgs,
+    /// Worker threads for decoding and compressing (default: one per core). Each Level II
+    /// compressing thread holds about 18 MB.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..=1024))]
+    pub threads: Option<u32>,
     /// Wrap the output in gzip.
     #[arg(long)]
     pub gzip: bool,
@@ -290,8 +382,8 @@ pub struct ConvertArgs {
     /// Replace an existing output file (or chunk files).
     #[arg(short, long)]
     pub force: bool,
+    /// What to decode from each input.
     #[command(flatten)]
-    #[allow(missing_docs)]
     pub input: InputArgs,
 }
 
@@ -313,14 +405,21 @@ pub struct PublishArgs {
     /// Merge all inputs into one volume first (parts of one scan).
     #[arg(long)]
     pub merge: bool,
-    /// Level II record packing.
-    #[arg(long, value_enum, default_value_t)]
-    pub level2_compression: Level2Compression,
+    /// Level II writer options.
+    #[command(flatten)]
+    pub level2: Level2Args,
+    /// Sweep selection and site position.
+    #[command(flatten)]
+    pub edit: EditArgs,
+    /// Worker threads for decoding and compressing (default: one per core). Each Level II
+    /// compressing thread holds about 18 MB.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..=1024))]
+    pub threads: Option<u32>,
     /// Do not add the site to config.cfg and grlevel2.cfg.
     #[arg(long)]
     pub no_site_config: bool,
+    /// What to decode from each input.
     #[command(flatten)]
-    #[allow(missing_docs)]
     pub input: InputArgs,
 }
 

@@ -1508,7 +1508,14 @@ fn gate_geometry(
     } else {
         spacing.round().max(1.0)
     };
-    if !(0.0..=MAX_RANGE_FIELD_M).contains(&first_m) {
+    if first_m < 0.0 {
+        return Err(error(format!(
+            "first gate at {first} m, before the radar; Message 31 holds 0 to \
+             {MAX_RANGE_FIELD_M} m (WriteOptions::drop_negative_range_gates leaves out the gates \
+             before the radar)"
+        )));
+    }
+    if first_m > MAX_RANGE_FIELD_M {
         return Err(error(format!(
             "first gate at {first} m; Message 31 holds 0 to {MAX_RANGE_FIELD_M} m"
         )));

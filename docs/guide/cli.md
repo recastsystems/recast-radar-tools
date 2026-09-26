@@ -301,7 +301,11 @@ has; the size is then noted, not treated as an error.
 recast-radar convert FILE --to level2 -o out.ar2v              # also cfradial1, odim, fm301
 recast-radar convert FILE --to level2 --level2-compression none --gzip -o out.ar2v.gz
 recast-radar convert a.h5 b.h5 c.h5 --merge --to level2 -o merged.ar2v   # parts of one scan
-recast-radar convert tar --station ITOK --to level2 -o ITOK.ar2v
+recast-radar convert tar --station ITOK --to level2 --sweeps 0,2,3,6,7,10,11,14,16,18,20,22,24,26,28,30,32 \
+    --sweeps-in-time-order -o ITOK.ar2v                       # one 5-minute cycle of a 10-minute JMA tar
+recast-radar convert KLIX20050829_130035.V06 --to level2 --position-from KLIX20210829_180425_V06 \
+    --drop-negative-range-gates -o KLIX.ar2v                  # Message 1: no position, gates from -375 m
+recast-radar convert jma-n6.tar --to level2 --nyquist 26.48 --quantization compatible -o vel.ar2v
 recast-radar convert FILE --to level2 --chunks -o chunks/     # real-time chunks: chunks/SITE/VOLUME/YYYYMMDD-HHMMSS-NNN-S|I|E
 recast-radar publish FILE... --dir ./polling [--site XXXX] [--keep 30] [--merge]
 ```
@@ -319,21 +323,51 @@ LDM record of radials, and concatenated they are the Archive II file. It
 takes neither `--gzip` nor `--level2-compression none`, and needs a Level II
 writer with chunk output (`VolumeWriter::write_chunks`).
 
+Before writing, `--sweeps LIST` keeps only the listed sweeps (0-based
+indices and ranges such as `0,2,5-9`, the numbers `info` lists), in that
+order; `--sweeps-in-time-order` puts them in the order their first rays were
+collected; `--position LAT,LON,HEIGHT` or `--position-from FILE` (another
+file of the same radar) sets the site position. These apply to every
+format. Level II takes more:
+
+| Option | Effect |
+|---|---|
+| `--quantization precise\|compatible\|standard` | value coding: `precise` (default) never codes a value more coarsely than its source; `compatible` keeps NEXRAD's word sizes, which xradar 0.12 reads; `standard` writes NOAA's codings where they hold every value. No policy clips a value |
+| `--nyquist M/S`, `--unambiguous-range M` | the radar's own values for radials whose source has none (JMA volumes have no Nyquist velocity) |
+| `--drop-negative-range-gates` | leave out gates centred before the radar (Message 1 volumes place Doppler gates from -375 m) |
+| `--level2-compression bzip2\|none` | LDM bzip2 records (default) or uncompressed records |
+| `--strict` | fail, writing nothing, when a field or sweep would be left out |
+| `--threads N` | worker threads for decoding and compressing (default one per core; each compressing thread holds about 18 MB) |
+
+What the writer leaves out and its notes go to standard error:
+
+```text
+recast-radar: left out: field TH (sweeps 0-9): REF carries DBZH instead
+recast-radar: left out: field LDR (sweeps 0-9): no Message 31 moment for this quantity
+recast-radar: note: VEL from VRADH: 8-bit, scale 1.8880597, offset 134.16418: values within 0.26481938 of the source (sweeps 0-12)
+wrote dkrom.ar2v (NEXRAD Level II, 762853 bytes, 10 sweeps; some fields or sweeps left out, see above)
+```
+
+A refusal names the option that helps where there is one (`--position`,
+`--sweeps`, `--drop-negative-range-gates`).
+
 `publish` writes each input volume as a Level II file into a polling
-directory (see below), keeps the newest `--keep` in each site's `dir.list`,
+directory (see below), with the sweep, position and Level II options of
+`convert`, keeps the newest `--keep` in each site's `dir.list`,
 and adds the site to `config.cfg` and `grlevel2.cfg` unless
 `--no-site-config`. A file is named `SITEYYYYMMDD_HHMMSS_V06.ar2v` after the
-site and the volume time, as the NWS archive names its files, and every file and `dir.list` is written to a
-temporary name and renamed into place, so a polling client never reads a
-partial file.
+site and the volume time, as the NWS archive names its files, and every
+file and `dir.list` is written to a temporary name and renamed into place,
+so a polling client never reads a partial file.
 
 The writers are `recast-radar-io-nexrad`'s Level II writer (Archive II
 following ICD 2620010 and ICD 2620002, [docs/level2/writer.md](../level2/writer.md)),
 `recast-radar-io-cfradial`'s CfRadial 1 and FM301 writers and
 `recast-radar-io-odim`'s ODIM_H5 writer ([docs/design/writers.md](../design/writers.md)).
 A writer that cannot represent the volume (a Level II volume without a site
-position, an ODIM_H5 RHI, a Level III level table in CfRadial) refuses with a
-message and exit status 1, and leaves no output. The Python package's
+position or with more than 32 sweeps, an ODIM_H5 RHI, a Level III level
+table in CfRadial) refuses with a message and exit status 1, and leaves no
+output. The Python package's
 `write`, `convert` and `publish` ([Python guide](python.md#writers-and-the-polling-publisher))
 use the same registry (`recast_radar_cli::backend::Backends::builtin`).
 
@@ -401,7 +435,12 @@ program. The writers and the publisher plug into
 
 - `VolumeWriter`: `format()`, and `write(input, options, out)` encoding
   `input.volume` (and, for byte-identical Level II round trips,
-  `input.metadata`, the source's NEXRAD metadata messages) into `out`.
+  `input.metadata`, the source's NEXRAD metadata messages) into `out` and
+  returning a `WriteReport` (what the output leaves out, and notes).
+  `WriteOptions` carries the Level II options (`level2_quantization`,
+  `nyquist_velocity_mps`, `unambiguous_range_m`, `drop_negative_range_gates`,
+  `strict`), and `VolumeEdits` the sweep selection and site position the
+  front ends apply before writing.
 - `PollingPublisher`: `publish(input, request)` writing one Level II volume
   into the polling directory `request.root`, updating `dir.list` (keeping
   `request.keep`), and the site configuration when

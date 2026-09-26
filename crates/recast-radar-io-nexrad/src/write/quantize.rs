@@ -78,7 +78,9 @@ impl Coding {
         }
         let error = (f64::from(self.decode(code)) - f64::from(value)).abs();
         let tolerance = 0.5 / scale.abs() + f64::from(value).abs() * f64::from(f32::EPSILON);
-        (code, !(error <= tolerance))
+        // A NaN error (not reached with a usable coding) counts as lost.
+        let held = error <= tolerance;
+        (code, !held)
     }
 
     /// The value a decoder reads for `code` (evaluated in f32, as the ICD

@@ -25,8 +25,9 @@ Main entry points:
     Level III graphic and tabular products (storm tables, symbols).
 ``write(volume, path, format)``, ``to_bytes``, ``convert``, ``publish``
     Radar file writers (Level II, CfRadial 1, ODIM_H5, FM301) and the
-    GR2Analyst polling-directory publisher. Not available in this build yet:
-    they raise :class:`UnavailableError` (see ``writers()``).
+    GR2Analyst polling-directory publisher (see ``writers()``). What a
+    writer leaves out or codes more coarsely than the source comes as
+    :class:`WriteWarning`.
 ``recast_radar.fetch``
     Downloads from the AWS NEXRAD archives, international feeds and
     GR2Analyst polling servers.
@@ -37,7 +38,8 @@ User guide: ``docs/guide/python.md`` in the recast-radar-tools repository.
 from __future__ import annotations
 
 import os
-from typing import Any, Union
+import warnings
+from typing import Any, Sequence, Union
 
 from . import _native
 from ._native import (
@@ -58,12 +60,71 @@ __version__: str = _native.__version__
 
 Source = Union[str, "os.PathLike[str]", bytes, bytearray, memoryview]
 
+
+class WriteWarning(UserWarning):
+    """What a writer left out of a volume (a field or sweep the format
+    cannot hold) or changed (a coding coarser than the source, radials
+    reordered, a missing Nyquist velocity). Pass ``strict=True`` to refuse a
+    write that would leave something out."""
+
+
+def _warn(report: tuple[list[str], list[str]], stacklevel: int = 3) -> None:
+    left_out, notes = report
+    for line in left_out:
+        warnings.warn(f"left out: {line}", WriteWarning, stacklevel=stacklevel)
+    for line in notes:
+        warnings.warn(line, WriteWarning, stacklevel=stacklevel)
+
+
+def _write_options(
+    *,
+    quantization: str,
+    nyquist_velocity: float | None,
+    unambiguous_range: float | None,
+    drop_negative_range_gates: bool,
+    sweeps: Sequence[int] | None,
+    sweeps_in_time_order: bool,
+    position: tuple[float, float, float] | None,
+    strict: bool,
+) -> dict[str, Any]:
+    return {
+        "quantization": quantization,
+        "nyquist_velocity": nyquist_velocity,
+        "unambiguous_range": unambiguous_range,
+        "drop_negative_range_gates": drop_negative_range_gates,
+        "sweeps": None if sweeps is None else [int(index) for index in sweeps],
+        "sweeps_in_time_order": sweeps_in_time_order,
+        "position": None if position is None else tuple(float(value) for value in position),
+        "strict": strict,
+    }
+
+
+_WRITE_OPTIONS_DOC = """
+    Level II options (``docs/level2/writer.md``): ``quantization`` is
+    ``"precise"`` (the default: never coarser than the source),
+    ``"compatible"`` (NEXRAD's word sizes, which xradar 0.12 reads) or
+    ``"standard"`` (NOAA's codings where they hold every value); no policy
+    clips a value. ``nyquist_velocity`` (m/s) and ``unambiguous_range`` (m)
+    are the radar's own values for radials whose source has none (JMA);
+    ``drop_negative_range_gates`` leaves out gates centred before the radar
+    (Message 1 volumes).
+
+    Every format: ``sweeps`` keeps only those sweeps (0-based indices), in
+    that order (Level II holds at most 32); ``sweeps_in_time_order`` puts
+    them in the order their first rays were collected; ``position`` is the
+    site position ``(latitude_deg, longitude_deg, height_m)`` to write (a
+    Message 1 volume has none). ``strict`` refuses, writing nothing, a write
+    that would leave out a field or sweep; otherwise what is left out and
+    the writer's notes come as :class:`WriteWarning`.
+"""
+
 __all__ = [
     "DecodeError",
     "FetchError",
     "UnavailableError",
     "UnrepresentableError",
     "Volume",
+    "WriteWarning",
     "__version__",
     "convert",
     "dump",
@@ -255,8 +316,16 @@ def write(
     gzip: bool = False,
     site: str | None = None,
     overwrite: bool = False,
+    quantization: str = "precise",
+    nyquist_velocity: float | None = None,
+    unambiguous_range: float | None = None,
+    drop_negative_range_gates: bool = False,
+    sweeps: Sequence[int] | None = None,
+    sweeps_in_time_order: bool = False,
+    position: tuple[float, float, float] | None = None,
+    strict: bool = False,
 ):
-    """Write ``volume`` to ``path`` as ``format``.
+    """Write ``volume`` to ``path`` as ``format``; returns the path.
 
     ``format`` is ``"level2"`` (NEXRAD Archive II), ``"cfradial1"``,
     ``"odim"`` (ODIM_H5 PVOL) or ``"fm301"`` (CfRadial 2 in netCDF-4).
@@ -264,12 +333,12 @@ def write(
     ``gzip`` wraps any format in gzip, and ``site`` replaces the radar
     identifier (the 4-character ICAO for Level II). The file is written
     through a temporary file and renamed into place.
-
+    {options}
     Raises :class:`UnavailableError` when this build has no writer for the
     format (see :func:`writers`), and :class:`UnrepresentableError` when the
     format cannot hold the volume.
     """
-    return _native._write(
+    written, report = _native._write(
         volume,
         os.fspath(path),
         format,
@@ -277,7 +346,22 @@ def write(
         gzip=gzip,
         site=site,
         overwrite=overwrite,
+        **_write_options(
+            quantization=quantization,
+            nyquist_velocity=nyquist_velocity,
+            unambiguous_range=unambiguous_range,
+            drop_negative_range_gates=drop_negative_range_gates,
+            sweeps=sweeps,
+            sweeps_in_time_order=sweeps_in_time_order,
+            position=position,
+            strict=strict,
+        ),
     )
+    _warn(report)
+    return written
+
+
+write.__doc__ = (write.__doc__ or "").replace("{options}", _WRITE_OPTIONS_DOC)
 
 
 def write_chunks(
@@ -286,6 +370,14 @@ def write_chunks(
     *,
     site: str | None = None,
     overwrite: bool = False,
+    quantization: str = "precise",
+    nyquist_velocity: float | None = None,
+    unambiguous_range: float | None = None,
+    drop_negative_range_gates: bool = False,
+    sweeps: Sequence[int] | None = None,
+    sweeps_in_time_order: bool = False,
+    position: tuple[float, float, float] | None = None,
+    strict: bool = False,
 ):
     """``volume`` as NEXRAD Level II real-time chunks: the ``S``, ``I`` and
     ``E`` files of the ``unidata-nexrad-level2-chunks`` bucket. The start
@@ -298,12 +390,26 @@ def write_chunks(
     (``SITE/VOLUME/YYYYMMDD-HHMMSS-NNN-K``). With ``dest``, writes each chunk
     to ``dest/key`` (through a temporary file) and returns the paths; an
     existing chunk file is replaced only with ``overwrite``. ``site``
-    replaces the radar identifier.
+    replaces the radar identifier. The other options are :func:`write`'s.
 
     Raises :class:`UnavailableError` when this build has no Level II writer
     with real-time chunk output.
     """
-    chunks = _native._write_chunks(volume, site=site)
+    chunks, report = _native._write_chunks(
+        volume,
+        site=site,
+        **_write_options(
+            quantization=quantization,
+            nyquist_velocity=nyquist_velocity,
+            unambiguous_range=unambiguous_range,
+            drop_negative_range_gates=drop_negative_range_gates,
+            sweeps=sweeps,
+            sweeps_in_time_order=sweeps_in_time_order,
+            position=position,
+            strict=strict,
+        ),
+    )
+    _warn(report)
     rows = [
         {"key": key, "kind": kind, "number": number, "data": data}
         for key, kind, number, data in chunks
@@ -336,9 +442,35 @@ def to_bytes(
     compression: str = "bzip2",
     gzip: bool = False,
     site: str | None = None,
+    quantization: str = "precise",
+    nyquist_velocity: float | None = None,
+    unambiguous_range: float | None = None,
+    drop_negative_range_gates: bool = False,
+    sweeps: Sequence[int] | None = None,
+    sweeps_in_time_order: bool = False,
+    position: tuple[float, float, float] | None = None,
+    strict: bool = False,
 ) -> bytes:
     """``volume`` encoded as ``format``, in memory. See :func:`write`."""
-    return _native._to_bytes(volume, format, compression=compression, gzip=gzip, site=site)
+    data, report = _native._to_bytes(
+        volume,
+        format,
+        compression=compression,
+        gzip=gzip,
+        site=site,
+        **_write_options(
+            quantization=quantization,
+            nyquist_velocity=nyquist_velocity,
+            unambiguous_range=unambiguous_range,
+            drop_negative_range_gates=drop_negative_range_gates,
+            sweeps=sweeps,
+            sweeps_in_time_order=sweeps_in_time_order,
+            position=position,
+            strict=strict,
+        ),
+    )
+    _warn(report)
+    return data
 
 
 def convert(
@@ -352,8 +484,10 @@ def convert(
     overwrite: bool = False,
     station: str | None = None,
     volume: int = 0,
+    **options: Any,
 ):
-    """Read ``source`` and write it to ``path`` as ``format``.
+    """Read ``source`` and write it to ``path`` as ``format``; ``options``
+    are :func:`write`'s (``quantization``, ``sweeps``, ``position``, ...).
 
     Checks that the writer exists before decoding anything.
     """
@@ -367,6 +501,7 @@ def convert(
         gzip=gzip,
         site=site,
         overwrite=overwrite,
+        **options,
     )
 
 
@@ -378,26 +513,48 @@ def publish(
     keep: int = 30,
     compression: str = "bzip2",
     update_site_config: bool = True,
+    quantization: str = "precise",
+    nyquist_velocity: float | None = None,
+    unambiguous_range: float | None = None,
+    drop_negative_range_gates: bool = False,
+    sweeps: Sequence[int] | None = None,
+    sweeps_in_time_order: bool = False,
+    position: tuple[float, float, float] | None = None,
+    strict: bool = False,
 ) -> dict:
     """Place ``volume`` in a GR2Analyst polling directory (the GRLevelX
     polling conventions).
 
-    Writes the volume as Level II into ``<root>/<SITE>/``, updates the
-    site's ``dir.list`` (``<size> <name>`` lines, oldest first),
-    keeps the newest ``keep`` volumes and, with ``update_site_config``, adds
-    the site to ``config.cfg`` and ``grlevel2.cfg``. Returns ``{"site",
-    "path", "dir_list", "removed"}``.
+    Writes the volume as Level II into ``<root>/<SITE>/`` under the NWS
+    archive's name (``SITEYYYYMMDD_HHMMSS_V06.ar2v``), updates the site's
+    ``dir.list`` (``<size> <name>`` lines, oldest first), keeps the newest
+    ``keep`` volumes and, with ``update_site_config``, adds the site to
+    ``config.cfg`` and ``grlevel2.cfg``. The other options are
+    :func:`write`'s. Returns ``{"site", "path", "dir_list", "removed",
+    "left_out", "notes"}``.
 
     Raises :class:`UnavailableError` when this build has no publisher.
     """
-    return _native._publish(
+    result = _native._publish(
         volume,
         os.fspath(root),
         site=site,
         keep=keep,
         compression=compression,
         update_site_config=update_site_config,
+        **_write_options(
+            quantization=quantization,
+            nyquist_velocity=nyquist_velocity,
+            unambiguous_range=unambiguous_range,
+            drop_negative_range_gates=drop_negative_range_gates,
+            sweeps=sweeps,
+            sweeps_in_time_order=sweeps_in_time_order,
+            position=position,
+            strict=strict,
+        ),
     )
+    _warn((result["left_out"], result["notes"]))
+    return result
 
 
 from . import fetch  # noqa: E402 - needs the names above

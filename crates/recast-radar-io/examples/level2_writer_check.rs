@@ -10,7 +10,9 @@
 //! format), the variant, the quantisation policy (the writer's default
 //! unless `--quantization` names another), and for every written sweep the
 //! moments with their source field, coding and error as the writer reported
-//! them. Sources that are neither committed nor cached are skipped.
+//! them. Sources that are neither committed nor cached are skipped. The
+//! KLIX 2005 Message 1 volume, which carries no site position, takes the
+//! position of the KLIX 2021 Message 31 trim.
 
 use std::path::{Path, PathBuf};
 
@@ -83,6 +85,41 @@ const SOURCES: &[(&str, &str, &[&str])] = &[
         &["bzip2", "none"],
     ),
 ];
+
+/// A Message 31 file of the same radar whose site position a source
+/// without one (a Message 1 volume) is given, as `recast-radar convert
+/// --position-from` gives it.
+fn position_source(id: &str) -> Option<&'static str> {
+    id.starts_with("l2-klix-2005")
+        .then_some("l2-klix-20210829-180425-trim")
+}
+
+/// `volume` with the site position of its [`position_source`] when it has
+/// none.
+fn with_position(id: &str, mut volume: Volume) -> Volume {
+    let located = |volume: &Volume| {
+        let location = volume.location;
+        location.latitude_deg.is_some()
+            && location.longitude_deg.is_some()
+            && location.altitude_m.is_some()
+    };
+    if located(&volume) {
+        return volume;
+    }
+    let Some(other) = position_source(id) else {
+        return volume;
+    };
+    let decoded = recast_radar_testdata::bytes(other)
+        .ok()
+        .and_then(|bytes| recast_radar_io_nexrad::read_volume_from_bytes(&bytes).ok());
+    match decoded {
+        Some(located_volume) if located(&located_volume) => {
+            volume.location = located_volume.location;
+        }
+        _ => eprintln!("{id}: no position from {other}"),
+    }
+    volume
+}
 
 /// The volume a variant writes: the source, or for `no-sweep-1-fields` the
 /// source with sweep 1's fields removed (a sweep with nothing to write,
@@ -251,7 +288,12 @@ fn main() {
                 .map(|record| record.into_owned())
                 .ok();
             let messages = data_messages(&bytes).unwrap_or_default();
-            (decoded.volume, Some(decoded.metadata), record, messages)
+            (
+                with_position(id, decoded.volume),
+                Some(decoded.metadata),
+                record,
+                messages,
+            )
         } else {
             match recast_radar_io::read_supported_volume_bytes(&bytes) {
                 Ok(volume) => (volume, None, None, Vec::new()),

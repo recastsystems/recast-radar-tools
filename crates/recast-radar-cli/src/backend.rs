@@ -29,6 +29,7 @@
 //! [`VolumeWriter::supports_chunks`]; `convert --chunks` and
 //! `recast_radar.write_chunks` then use it.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -113,11 +114,30 @@ pub enum Level2Compression {
     None,
 }
 
+/// How a Level II writer codes field values as Message 31 gate codes
+/// (`recast_radar_io_nexrad::write::Quantization`, `docs/level2/writer.md`,
+/// "Quantisation"). No policy clips a value.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, clap::ValueEnum)]
+#[non_exhaustive]
+pub enum Level2Quantization {
+    /// Never coarser than the source: 16-bit moments for 16-bit and float
+    /// sources (xradar 0.12 misreads 16-bit REF, VEL and SW).
+    #[default]
+    Precise,
+    /// NEXRAD's word sizes (what xradar 0.12 reads); coarser than a 16-bit
+    /// or float source, with the error reported.
+    Compatible,
+    /// NOAA's current codings where they hold every value, else as
+    /// `compatible`.
+    Standard,
+}
+
 /// Options passed to a [`VolumeWriter`].
 ///
 /// The gzip wrapper is not an option here: the front end applies it to any
-/// format after the writer returns.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// format after the writer returns. Start from [`WriteOptions::new`] and
+/// set the fields you need.
+#[derive(Clone, Debug, Default, PartialEq)]
 #[non_exhaustive]
 pub struct WriteOptions {
     /// Level II record packing.
@@ -126,15 +146,193 @@ pub struct WriteOptions {
     /// `instrument_name` (for Level II, the 4-character ICAO of the volume
     /// header and Message 31).
     pub site_id: Option<String>,
+    /// Level II value coding.
+    pub level2_quantization: Level2Quantization,
+    /// Level II: the radar's Nyquist velocity (m/s), written in every
+    /// radial whose source has none (JMA volumes, for example); `None`
+    /// writes 0, which readers take as unknown.
+    pub nyquist_velocity_mps: Option<f32>,
+    /// Level II: the radar's unambiguous range (m), written in every radial
+    /// whose source has none.
+    pub unambiguous_range_m: Option<f32>,
+    /// Level II: leave out gates centred before the radar (Message 1
+    /// volumes place their Doppler gates from -375 m) instead of refusing
+    /// the field.
+    pub drop_negative_range_gates: bool,
+    /// Refuse, writing nothing, when the output would leave out a field or
+    /// a sweep of the volume ([`WriteReport::left_out`]).
+    pub strict: bool,
 }
 
 impl WriteOptions {
-    /// Options with the given Level II packing and site override.
+    /// Options with the given Level II packing and site override, and the
+    /// defaults for the rest.
     pub fn new(level2_compression: Level2Compression, site_id: Option<String>) -> Self {
         Self {
             level2_compression,
             site_id,
+            ..Self::default()
         }
+    }
+}
+
+/// What a writer reports beside the bytes it wrote: what the output leaves
+/// out of the volume, and remarks such as values coded more coarsely than
+/// the source stores them. The front ends show both (the command on
+/// standard error, the Python package as warnings).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WriteReport {
+    /// Fields and sweeps of the volume the output does not hold, each with
+    /// the reason ([`WriteOptions::strict`] refuses the write instead).
+    pub left_out: Vec<String>,
+    /// Other remarks: codings coarser than the source, radials reordered or
+    /// left out for having no data, a missing Nyquist velocity.
+    pub notes: Vec<String>,
+}
+
+impl WriteReport {
+    /// A report of `left_out` and `notes`.
+    pub fn new(left_out: Vec<String>, notes: Vec<String>) -> Self {
+        Self { left_out, notes }
+    }
+
+    /// Whether there is nothing to report.
+    pub fn is_empty(&self) -> bool {
+        self.left_out.is_empty() && self.notes.is_empty()
+    }
+}
+
+/// A radar site position.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SitePosition {
+    /// Latitude, degrees north.
+    pub latitude_deg: f64,
+    /// Longitude, degrees east.
+    pub longitude_deg: f64,
+    /// Height of the antenna above mean sea level, metres.
+    pub altitude_m: f64,
+}
+
+impl SitePosition {
+    /// The position of `volume`, when it has a latitude, longitude and
+    /// height.
+    pub fn of(volume: &Volume) -> Option<Self> {
+        let location = volume.location;
+        Some(Self {
+            latitude_deg: location.latitude_deg?,
+            longitude_deg: location.longitude_deg?,
+            altitude_m: location.altitude_m?,
+        })
+        .filter(|position| position.is_valid())
+    }
+
+    /// Whether every coordinate is finite and the latitude and longitude
+    /// are within 90 and 360 degrees.
+    pub fn is_valid(&self) -> bool {
+        self.latitude_deg.is_finite()
+            && self.longitude_deg.is_finite()
+            && self.altitude_m.is_finite()
+            && self.latitude_deg.abs() <= 90.0
+            && self.longitude_deg.abs() <= 360.0
+    }
+}
+
+impl std::str::FromStr for SitePosition {
+    type Err = String;
+
+    /// `LAT,LON,HEIGHT`: degrees north, degrees east, metres above sea
+    /// level.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let values: Vec<f64> = text
+            .split(',')
+            .map(|part| part.trim().parse::<f64>())
+            .collect::<Result<_, _>>()
+            .map_err(|_| format!("`{text}` is not LAT,LON,HEIGHT (three numbers)"))?;
+        let [latitude_deg, longitude_deg, altitude_m] = values[..] else {
+            return Err(format!("`{text}` is not LAT,LON,HEIGHT (three numbers)"));
+        };
+        let position = Self {
+            latitude_deg,
+            longitude_deg,
+            altitude_m,
+        };
+        if position.is_valid() {
+            Ok(position)
+        } else {
+            Err(format!(
+                "`{text}`: latitude within 90 degrees, longitude within 360 and a finite height"
+            ))
+        }
+    }
+}
+
+/// Changes a front end makes to a decoded volume before writing it: which
+/// sweeps, in what order, and the site position. Every format's writer
+/// gets the edited volume.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+pub struct VolumeEdits {
+    /// Keep only these sweeps (0-based indices into the decoded volume), in
+    /// this order; each at most once.
+    pub sweeps: Option<Vec<usize>>,
+    /// Put the sweeps in the order their first rays were collected (a JMA
+    /// cycle is collected from its top sweep down).
+    pub sweeps_in_time_order: bool,
+    /// Site position to set (a Message 1 volume has none).
+    pub position: Option<SitePosition>,
+}
+
+impl VolumeEdits {
+    /// Whether the edits leave a volume as it is.
+    pub fn is_empty(&self) -> bool {
+        self.sweeps.is_none() && !self.sweeps_in_time_order && self.position.is_none()
+    }
+
+    /// `volume` with the edits made; borrowed when there are none. A sweep
+    /// index past the volume's sweeps, or given twice, is refused.
+    pub fn apply<'v>(&self, volume: &'v Volume) -> Result<Cow<'v, Volume>, String> {
+        if self.is_empty() {
+            return Ok(Cow::Borrowed(volume));
+        }
+        let mut edited = volume.clone();
+        if let Some(indices) = &self.sweeps {
+            let mut taken = vec![false; volume.sweeps.len()];
+            let mut sweeps = Vec::with_capacity(indices.len());
+            for &index in indices {
+                match taken.get_mut(index) {
+                    Some(seen) if !*seen => *seen = true,
+                    Some(_) => return Err(format!("sweep {index} is selected twice")),
+                    None => {
+                        return Err(format!(
+                            "sweep {index} is not in the volume, which has {} sweeps (0 to {})",
+                            volume.sweeps.len(),
+                            volume.sweeps.len().saturating_sub(1)
+                        ));
+                    }
+                }
+                sweeps.push(volume.sweeps[index].clone());
+            }
+            edited.sweeps = sweeps;
+        }
+        if self.sweeps_in_time_order {
+            let start = |sweep: &recast_radar_core::model::Sweep| {
+                sweep
+                    .rays
+                    .time_s
+                    .first()
+                    .copied()
+                    .filter(|time| time.is_finite())
+                    .unwrap_or(f64::INFINITY)
+            };
+            edited.sweeps.sort_by(|a, b| start(a).total_cmp(&start(b)));
+        }
+        if let Some(position) = self.position {
+            edited.location.latitude_deg = Some(position.latitude_deg);
+            edited.location.longitude_deg = Some(position.longitude_deg);
+            edited.location.altitude_m = Some(position.altitude_m);
+        }
+        Ok(Cow::Owned(edited))
     }
 }
 
@@ -211,10 +409,13 @@ pub struct ChunkedOutput {
     pub volume_time: DateTime<Utc>,
     /// The chunks, in order.
     pub chunks: Vec<OutputChunk>,
+    /// What the writer reports.
+    pub report: WriteReport,
 }
 
 impl ChunkedOutput {
-    /// Chunks of volume `volume_number` of `site`, started at `volume_time`.
+    /// Chunks of volume `volume_number` of `site`, started at `volume_time`,
+    /// with nothing reported.
     pub fn new(
         site: String,
         volume_number: u16,
@@ -226,7 +427,14 @@ impl ChunkedOutput {
             volume_number,
             volume_time,
             chunks,
+            report: WriteReport::default(),
         }
+    }
+
+    /// The same chunks with `report`.
+    pub fn with_report(mut self, report: WriteReport) -> Self {
+        self.report = report;
+        self
     }
 
     /// The object key of `chunk` in the chunks bucket:
@@ -296,14 +504,15 @@ pub trait VolumeWriter: Send + Sync {
         true
     }
 
-    /// Encode `input` into `out`. The front end has already created the
-    /// output file; on error it removes the partial file.
+    /// Encode `input` into `out` and report what the output leaves out or
+    /// changes. The front end has already created the output file; on
+    /// error it removes the partial file.
     fn write(
         &self,
         input: &WriteInput<'_>,
         options: &WriteOptions,
         out: &mut dyn Write,
-    ) -> Result<(), BackendError>;
+    ) -> Result<WriteReport, BackendError>;
 
     /// Whether [`Self::write_chunks`] works. `false` unless a writer
     /// overrides it, so `convert --chunks` can refuse before it decodes the
@@ -328,7 +537,7 @@ pub trait VolumeWriter: Send + Sync {
 
 /// Where and how `publish` places a volume in a GR2Analyst polling
 /// directory.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct PublishRequest {
     /// Root of the polling directory (the directory that holds one
@@ -372,17 +581,26 @@ pub struct Published {
     pub dir_list: PathBuf,
     /// Files removed to honour [`PublishRequest::keep`].
     pub removed: Vec<PathBuf>,
+    /// What the Level II writer reports.
+    pub report: WriteReport,
 }
 
 impl Published {
-    /// A record of one published file.
+    /// A record of one published file, with nothing reported.
     pub fn new(site: String, path: PathBuf, dir_list: PathBuf, removed: Vec<PathBuf>) -> Self {
         Self {
             site,
             path,
             dir_list,
             removed,
+            report: WriteReport::default(),
         }
+    }
+
+    /// The same record with `report`.
+    pub fn with_report(mut self, report: WriteReport) -> Self {
+        self.report = report;
+        self
     }
 }
 
@@ -422,7 +640,7 @@ impl VolumeWriter for UnavailableWriter {
         _input: &WriteInput<'_>,
         _options: &WriteOptions,
         _out: &mut dyn Write,
-    ) -> Result<(), BackendError> {
+    ) -> Result<WriteReport, BackendError> {
         Err(BackendError::WriterUnavailable(self.0))
     }
 
@@ -598,9 +816,9 @@ mod tests {
             input: &WriteInput<'_>,
             _options: &WriteOptions,
             out: &mut dyn Write,
-        ) -> Result<(), BackendError> {
+        ) -> Result<WriteReport, BackendError> {
             write!(out, "{}", input.volume.attrs.instrument_name)?;
-            Ok(())
+            Ok(WriteReport::default())
         }
     }
 
