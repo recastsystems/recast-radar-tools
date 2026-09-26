@@ -72,8 +72,37 @@ share one version. Nothing has been published yet, so every entry is under
   (2^24) cells is `Level3Error::InvalidPacket`. Before, a 1.3 MB packet
   could make `read_level3_volume` build a grid of over 100 million cells.
 
+- `recast-radar-core`: `MergeReport` has `separate_sweeps` and
+  `separate_fields` in place of `skipped_geometry`. `merge_volumes` pairs
+  sweeps only when their first rays are at most `MERGE_TIME_TOLERANCE_S`
+  (60 s) apart, preferring the nearest in time, and keeps a sweep whose
+  azimuths or collection time match no sweep, and fields whose gates do
+  not align, as sweeps of their own instead of dropping them. A part's
+  sweep of another scan cycle (Hurum's 90 degree velocity sweep of the scan
+  before, Takayasu's rotated 0.3 degree velocity sweeps) no longer lends its
+  moments to this cycle's cut or goes missing.
+- `recast-radar-io-jma`: the grid's range start is the first bin's inner
+  bound (WMO template 3.120 octets 35-38, which JMA's template 3.50120
+  follows; ecCodes names them `offsetFromOriginToInnerBound`): the first
+  gate is centred half a spacing beyond it, 250 m for the corpus's 500 m
+  gates, instead of at the range start.
+- `recast-radar-io-nexrad` (`write`): a volume whose sweeps come from more
+  than one scan cycle is refused (`WriteError::MixedScanCycles`); a foreign
+  volume's cuts are written in the order their sweeps were collected
+  (`WriteSummary::written_sweeps`), and the volume header time is the
+  earliest written radial's.
+
 ### Added
 
+- `recast-radar-core`: `scan_cycles`, `split_scan_cycles`,
+  `collection_order` and `CycleTracker`: the scan cycles of a volume (a new
+  cycle where a cut is collected again, after a pause of more than
+  `MAX_SCAN_PAUSE_S`, or where a Level II radial begins a volume again) and
+  one volume per cycle. `recast-radar convert` and `publish` take
+  `--split-scan-cycles`, and the Python package has
+  `recast_radar.split_scan_cycles`. The Level II writer notes a file
+  Py-ART 2.3 cannot open because its moments' gate spacings are not 1, 2
+  or 4 times the smallest.
 - Writers. `recast-radar-io-nexrad` (feature `write`; facade feature
   `write`): any volume as NEXRAD Archive II following ICD 2620010 and ICD
   2620002 (uncompressed or bzip2 LDM records, optionally gzip), real-time

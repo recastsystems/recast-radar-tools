@@ -86,9 +86,11 @@ jobs:
         run: bash tools/ci/testdata-cache-list.sh > "$RUNNER_TEMP/testdata-before.txt"
       - run: cargo test --workspace --locked --no-fail-fast
       # `encode_many` and `EncoderPool` sit behind recast-radar-bzip2's
-      # `rayon` feature, which no workspace crate enables yet, so the run
-      # above never compiles them; clippy's --all-features build does not
-      # run their tests.
+      # `rayon` feature. The workspace run above has it on (recast-radar-cli
+      # enables recast-radar-io-nexrad's `write` feature, which enables
+      # `recast-radar-bzip2/rayon`); this step runs their tests with the
+      # crate built on its own, as a user of recast-radar-bzip2 alone would
+      # build it.
       - run: cargo test -p recast-radar-bzip2 --features rayon --locked --no-fail-fast -- encode_many EncoderPool
       # recast-radar-core with its serde feature, which the workspace run
       # leaves off: the serde round trip on real files (tests/serde_real.rs)
