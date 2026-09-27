@@ -29,6 +29,8 @@
 pub mod errors;
 #[cfg(feature = "net")]
 pub mod fetch;
+pub mod mapping;
+pub mod processing;
 pub mod source;
 pub mod tree;
 pub mod values;
@@ -45,6 +47,8 @@ fn native_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("NET", cfg!(feature = "net"))?;
     errors::register(module)?;
     volume::register(module)?;
+    processing::register(module)?;
+    mapping::register(module)?;
     tree::register(module)?;
     write::register(module)?;
     #[cfg(feature = "net")]

@@ -1,5 +1,7 @@
 # Processing
 
+For Python and CLI examples, see [Frontend processing](frontend-processing.md).
+
 The algorithm modules take model types in and give model types out: a
 function reads a `Sweep` or a `Volume` and returns a new `Field` (physical
 `f32` values, NaN for no data) on the same rays and gates, which you can add

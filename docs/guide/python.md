@@ -573,3 +573,8 @@ The crate keeps the workspace's `forbid(unsafe_code)`: PyO3 0.29's macros
 expand to code the lint accepts, and no `unsafe` is written by hand.
 `numpy::PyArray::borrow_from_array`, the one way to lend Rust-owned memory to
 NumPy, is `unsafe` and is not used.
+
+## Processing and native rendering
+
+See `docs/guide/frontend-processing.md` for the shared Python/CLI product API, rendering,
+and the CLI bundled in the Python wheel.

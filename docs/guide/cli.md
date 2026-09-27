@@ -474,3 +474,8 @@ program. The writers and the publisher plug into
 
 `recast_radar_cli::open::open_path` is the format detection and decoding
 every command uses, and `recast_radar_cli::serve::serve` the HTTP server.
+
+## Processing and native rendering
+
+See `docs/guide/frontend-processing.md` for the shared Python/CLI product API, rendering,
+and the CLI bundled in the Python wheel.

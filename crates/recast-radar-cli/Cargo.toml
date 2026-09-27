@@ -44,6 +44,9 @@ recast-radar-io-nexrad = { version = "0.1.0", path = "../recast-radar-io-nexrad"
 # The ODIM_H5 writer behind `convert --to odim`.
 recast-radar-io-odim = { version = "0.1.0", path = "../recast-radar-io-odim" }
 recast-radar-render = { version = "0.1.0", path = "../recast-radar-render" }
+recast-radar-correct = { version = "0.1.0", path = "../recast-radar-correct" }
+recast-radar-map = { version = "0.1.0", path = "../recast-radar-map" }
+recast-radar-retrieve = { version = "0.1.0", path = "../recast-radar-retrieve" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

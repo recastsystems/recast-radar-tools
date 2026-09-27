@@ -34,3 +34,8 @@ Exit status: 0 success, 1 failure, 2 invalid arguments, 3 not available in
 this build.
 
 The guide is [`docs/guide/cli.md`](../../docs/guide/cli.md) in the repository.
+
+## Processing and native rendering
+
+See `docs/guide/frontend-processing.md` for the shared Python/CLI product API, rendering,
+and the CLI bundled in the Python wheel.

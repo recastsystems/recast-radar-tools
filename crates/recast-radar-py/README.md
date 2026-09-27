@@ -21,3 +21,8 @@ The Rust crate `recast-radar-py` is the extension module
 in `pytests/`. Build a wheel with maturin (`maturin build --release`). The
 wheels are private build artifacts: the package metadata carries the
 `Private :: Do Not Upload` classifier, which PyPI rejects.
+
+## Processing and native rendering
+
+See `docs/guide/frontend-processing.md` for the shared Python/CLI product API, rendering,
+and the CLI bundled in the Python wheel.

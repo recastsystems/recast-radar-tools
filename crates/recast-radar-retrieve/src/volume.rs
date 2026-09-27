@@ -439,6 +439,14 @@ fn echo_boundary(volume: &Volume, threshold_dbz: f32, boundary: EchoBoundary) ->
     Some(product_field(base_field, id, Some("m"), out))
 }
 
+/// The sweep whose rays and gates are used by reflectivity column products.
+/// This uses the same source-dependent elevation and field-name selection as
+/// `echo_base`, `echo_depth`, `height_of_max_reflectivity`, and the low-level composite.
+pub fn reflectivity_column_base_sweep(volume: &Volume) -> Option<usize> {
+    let name = reflectivity_name(volume)?;
+    base_sweep(volume, &name).map(|(index, _)| index)
+}
+
 /// The name of the volume's reflectivity: the preferred reflectivity field
 /// ([`Sweep::find`]) of the lowest sweep ([`Sweep::tilt_elevation_deg`]) that
 /// has one.

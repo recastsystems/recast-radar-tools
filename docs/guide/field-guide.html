@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/><title>Recast Radar Field Guide</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<style>
+/* Recast Operations theme. Light tokens on :root, dark below. Square corners, no shadows. */
+:root{
+  --canvas:#ffffff; --panel:#f8fbfc; --control:#f1f7f9; --hover:#e2edf0; --active:#cbdce1;
+  --fg:#12191c; --strong:#000000; --muted:#476069; --subtle:#64818b;
+  --seam:#e2edf0; --seam-strong:#cbdce1; --boundary:#64818b;
+  --teal:#6bb8b8; --on-teal:#000000; --orange:#d95e26; --link:#354b53; --link-hover:#000000;
+  --ok:#16723a; --warn:#8a5a00; --bad:#b42318; --info:#0759aa;
+  --keyline:#000000;
+  --code-bg:#f1f7f9; --code-fg:#12191c;
+  --tk-key:#1f6f6f; --tk-str:#8a4a16; --tk-com:#64818b; --tk-num:#0759aa; --tk-fn:#12191c; --tk-type:#354b53;
+  --beam:#6bb8b8; --earth:#94afb8; --grid:#e2edf0;
+  --sans:"ABC Repro","Repro","Inter Variable","Inter","SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"ABC Repro Mono","Repro Mono","Berkeley Mono",ui-monospace,"SFMono-Regular","SF Mono",Menlo,Consolas,monospace;
+  --ease:cubic-bezier(0.25,0.46,0.45,0.94);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --canvas:#000000; --panel:#12191c; --control:#223137; --hover:#354b53; --active:#476069;
+    --fg:#e2edf0; --strong:#ffffff; --muted:#94afb8; --subtle:#64818b;
+    --seam:#223137; --seam-strong:#354b53; --boundary:#94afb8;
+    --link:#6bb8b8; --link-hover:#ffffff;
+    --ok:#27a644; --warn:#f0bf00; --bad:#f06c6c; --info:#4ea7fc;
+    --keyline:#ffffff;
+    --code-bg:#0b1113; --code-fg:#e2edf0;
+    --tk-key:#6bb8b8; --tk-str:#e8a57a; --tk-com:#64818b; --tk-num:#8cc4ff; --tk-fn:#ffffff; --tk-type:#cbdce1;
+    --beam:#6bb8b8; --earth:#476069; --grid:#223137;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --canvas:#000000; --panel:#12191c; --control:#223137; --hover:#354b53; --active:#476069;
+  --fg:#e2edf0; --strong:#ffffff; --muted:#94afb8; --subtle:#64818b;
+  --seam:#223137; --seam-strong:#354b53; --boundary:#94afb8;
+  --link:#6bb8b8; --link-hover:#ffffff;
+  --ok:#27a644; --warn:#f0bf00; --bad:#f06c6c; --info:#4ea7fc;
+  --keyline:#ffffff;
+  --code-bg:#0b1113; --code-fg:#e2edf0;
+  --tk-key:#6bb8b8; --tk-str:#e8a57a; --tk-com:#64818b; --tk-num:#8cc4ff; --tk-fn:#ffffff; --tk-type:#cbdce1;
+  --beam:#6bb8b8; --earth:#476069; --grid:#223137;
+}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+.skip-link{position:fixed;top:8px;left:16px;z-index:100;background:var(--canvas);padding:10px;transform:translateY(-160%)}
+.skip-link:focus{transform:none}
+.source-note{font-size:13px;color:var(--muted);max-width:76ch}
+@media(max-width:600px){.bar-in{gap:10px;padding-block:10px}.prefs{margin-left:0;width:100%;justify-content:space-between;gap:8px}.seg-label{display:none}.seg button{padding:9px 8px;font-size:12px}.hero{padding-top:28px;gap:24px}.anatomy code{overflow-wrap:anywhere}.readout div{padding:10px 7px}.readout b{font-size:18px}.nolang{flex-wrap:wrap}.code-tabs .fname{display:none}}
+@media print{.bar,.toc,.recipe-tools,.copy,.toast,.cta,.skip-link{display:none!important}.shell,.hero{display:block}.wrap{max-width:none}.recipe{break-inside:avoid}.code pre{white-space:pre-wrap;overflow-wrap:anywhere}.widget{break-inside:avoid}}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important}}
+body{margin:0;background:var(--canvas);color:var(--fg);font:400 15px/1.6 var(--sans);-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 0}
+a{color:var(--link);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+a:hover{color:var(--link-hover)}
+:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+code,kbd,.mono{font-family:var(--mono)}
+p code,li code,td code,summary code,h3 code{overflow-wrap:anywhere;font-size:.88em;background:var(--control);padding:.05em .35em;color:var(--strong)}
+h1,h2,h3,h4{color:var(--strong);text-wrap:balance;margin:0;font-weight:500;letter-spacing:-.01em}
+.eyebrow{font:500 11px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+/* ---------- top bar ---------- */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--canvas);border-bottom:1px solid var(--seam)}
+.bar-in{max-width:1320px;margin:0 auto;padding-inline:16px;min-height:61px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:14px;text-decoration:none;color:var(--strong)}
+.brand img{height:36px;width:auto;display:block}
+.brand .prod{font:500 13px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-left:1px solid var(--seam-strong);padding-left:14px}
+.brand .logo-light{display:block}.brand .logo-dark{display:none}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .logo-light{display:none}:root:not([data-theme="light"]) .logo-dark{display:block}}
+:root[data-theme="dark"] .logo-light{display:none}:root[data-theme="dark"] .logo-dark{display:block}
+.prefs{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--boundary)}
+.seg-label{font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--subtle);margin-right:6px}
+.seg button{appearance:none;border:0;background:transparent;color:var(--fg);font:500 13px/1 var(--sans);padding:9px 12px;cursor:pointer;min-height:34px}
+.seg button+button{border-left:1px solid var(--seam-strong)}
+.seg button:hover{background:var(--hover)}
+.seg button[aria-pressed="true"]{background:var(--teal);color:var(--on-teal)}
+.pref-group{display:flex;align-items:center}
+
+/* ---------- layout ---------- */
+.wrap{max-width:1320px;margin:0 auto;padding-inline:16px}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:48px;padding-block:32px 96px}
+@media (max-width:960px){.shell{grid-template-columns:minmax(0,1fr);gap:0}.toc{display:none}}
+.toc{position:sticky;top:88px;align-self:start;max-height:calc(100vh - 110px);overflow:auto;border-right:1px solid var(--seam);padding-right:16px}
+.toc ol{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:2px}
+.toc a{display:grid;grid-template-columns:28px 1fr;gap:4px;padding:6px 8px;color:var(--muted);text-decoration:none;font-size:13.5px;border-left:2px solid transparent}
+.toc a span{font:500 11px/1.9 var(--mono);color:var(--subtle)}
+.toc a:hover{color:var(--strong);background:var(--panel)}
+.toc a.on{color:var(--strong);border-left-color:var(--teal);background:var(--panel)}
+main{min-width:0}
+section.sec{padding-block:56px 8px;border-top:1px solid var(--seam)}
+section.sec:first-of-type{border-top:0;padding-top:8px}
+.sec-head{display:grid;gap:10px;margin-bottom:28px;max-width:72ch}
+.sec-head h2{font-size:30px;line-height:1.15}
+.sec-head p{margin:0;color:var(--muted);font-size:16px}
+.num{font:500 12px/1 var(--mono);color:var(--teal)}
+.prose{max-width:70ch}
+.prose p{margin:0 0 14px}
+
+/* ---------- hero ---------- */
+.hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:40px;align-items:start;padding-block:40px 48px}
+@media (max-width:1100px){.hero{grid-template-columns:minmax(0,1fr)}}
+.hero h1{font-size:clamp(36px,5.2vw,60px);line-height:1.02;letter-spacing:-.03em;font-weight:500;margin:14px 0 18px}
+.hero h1 em{font-style:normal;color:var(--teal)}
+.hero .lede{font-size:18px;color:var(--muted);max-width:56ch;margin:0 0 24px}
+.facts{display:flex;flex-wrap:wrap;border:1px solid var(--seam-strong);margin:0 0 24px}
+.fact{padding:12px 16px;border-right:1px solid var(--seam);flex:1 1 120px}
+.fact:last-child{border-right:0}
+.fact b{display:block;font:500 22px/1.1 var(--mono);color:var(--strong);font-variant-numeric:tabular-nums}
+.fact span{font-size:12.5px;color:var(--muted)}
+.cta{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;font:500 14px/1 var(--sans);text-decoration:none;border:1px solid transparent;cursor:pointer}
+.btn-primary{background:var(--teal);color:var(--on-teal)}
+.btn-primary:hover{background:#5aa7a7;color:#000}
+.btn-outline{border-color:var(--boundary);color:var(--strong);background:transparent}
+.btn-outline:hover{background:var(--hover);color:var(--strong)}
+
+/* ---------- code ---------- */
+.code{border:1px solid var(--seam-strong);background:var(--code-bg);min-width:0}
+.code-tabs{display:flex;align-items:stretch;border-bottom:1px solid var(--seam-strong);background:var(--panel);overflow-x:auto}
+.code-tabs button{appearance:none;border:0;border-right:1px solid var(--seam);background:transparent;color:var(--muted);font:500 12.5px/1 var(--mono);padding:11px 14px;cursor:pointer;white-space:nowrap}
+.code-tabs button:hover{color:var(--strong);background:var(--hover)}
+.code-tabs button[aria-selected="true"]{color:var(--strong);background:var(--code-bg);box-shadow:inset 0 2px 0 var(--teal)}
+.code-tabs .fname{margin-left:auto;padding:11px 12px;font:400 12px/1 var(--mono);color:var(--subtle);white-space:nowrap}
+.code-body{position:relative}
+.code pre{margin:0;padding:16px 76px 16px 18px;overflow-x:auto;font:400 13px/1.62 var(--mono);color:var(--code-fg);tab-size:4}
+.code pre code{font:inherit;background:none;padding:0;color:inherit}
+.copy{position:absolute;top:8px;right:8px;appearance:none;border:1px solid var(--seam-strong);background:var(--panel);color:var(--muted);font:500 11px/1 var(--mono);padding:6px 9px;cursor:pointer;letter-spacing:.06em;text-transform:uppercase}
+.copy:hover{color:var(--strong);border-color:var(--boundary)}
+.out{border-top:1px dashed var(--seam-strong);background:var(--panel)}
+.out-label{font:500 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--subtle);padding:12px 18px 0}
+.out pre{color:var(--muted);padding-top:8px}
+.nolang{padding:18px;color:var(--muted);font-size:14px;display:flex;gap:10px;align-items:flex-start}
+.nolang b{color:var(--strong);font-weight:500}
+.tk-k{color:var(--tk-key)}.tk-s{color:var(--tk-str)}.tk-c{color:var(--tk-com);font-style:italic}.tk-n{color:var(--tk-num)}.tk-t{color:var(--tk-type)}.tk-p{color:var(--subtle)}
+
+/* ---------- details: primer / deep ---------- */
+details.note{border:1px solid var(--seam-strong);background:var(--panel);margin:18px 0;max-width:78ch}
+details.note>summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;gap:12px;align-items:baseline;color:var(--strong);font-weight:500}
+details.note>summary::-webkit-details-marker{display:none}
+details.note>summary::after{content:"+";margin-left:auto;font:500 16px/1 var(--mono);color:var(--subtle)}
+details.note[open]>summary::after{content:"\2212"}
+details.note>summary:hover{background:var(--hover)}
+.tag{font:500 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:4px 6px;border:1px solid currentColor;flex:none}
+.tag-primer{color:var(--teal)}
+.tag-deep{color:var(--orange)}
+details.note .note-body{padding:0 16px 14px;color:var(--fg)}
+details.note .note-body p{margin:0 0 10px}
+details.note .note-body ul{margin:0 0 10px;padding-left:20px}
+
+/* ---------- tables ---------- */
+.tbl{overflow-x:auto;border:1px solid var(--seam-strong);margin:0 0 20px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--seam);vertical-align:top}
+th{font:500 11px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);background:var(--panel);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.win{color:var(--strong);font-weight:500}
+.yes{color:var(--ok);font-family:var(--mono);font-weight:500}
+.no{color:var(--subtle);font-family:var(--mono)}
+
+/* ---------- widgets (primer) ---------- */
+.lab{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:8px 0 24px}
+@media (max-width:820px){.lab{grid-template-columns:minmax(0,1fr)}}
+.widget{border:1px solid var(--keyline);background:var(--canvas);padding:18px;display:grid;gap:14px;min-width:0}
+.widget h3{font-size:17px}
+.widget .sub{margin:0;color:var(--muted);font-size:13.5px}
+.ctrl{display:grid;gap:6px}
+.ctrl label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.ctrl label output{font:500 13px/1 var(--mono);color:var(--strong)}
+input[type=range]{width:100%;accent-color:var(--teal);height:24px}
+.readout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--seam-strong)}
+.readout div{padding:10px 12px;border-right:1px solid var(--seam)}
+.readout div:last-child{border-right:0}
+.readout b{display:block;font:500 20px/1.15 var(--mono);color:var(--strong);font-variant-numeric:tabular-nums}
+.readout span{font:500 10.5px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--subtle)}
+svg.fig{width:100%;height:auto;display:block;max-width:100%}
+svg.fig text{font:500 10.5px var(--mono);fill:var(--muted)}
+
+.anatomy{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--seam-strong);margin:0 0 20px}
+@media (max-width:820px){.anatomy{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.anatomy div{padding:16px;border-right:1px solid var(--seam);display:grid;gap:6px;align-content:start}
+.anatomy div:last-child{border-right:0}
+.anatomy b{font:500 16px/1.2 var(--sans);color:var(--strong)}
+.anatomy code{font-size:12px;color:var(--teal);background:none;padding:0}
+.anatomy p{margin:0;font-size:13.5px;color:var(--muted)}
+
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:0;border:1px solid var(--seam-strong);margin:0 0 20px}
+.fields div{padding:12px 14px;border-right:1px solid var(--seam);border-bottom:1px solid var(--seam);display:grid;gap:3px}
+.fields code{font:500 14px/1.2 var(--mono);color:var(--strong);background:none;padding:0}
+.fields span{font:400 11.5px/1.2 var(--mono);color:var(--teal)}
+.fields p{margin:0;font-size:13px;color:var(--muted)}
+
+/* ---------- recipes ---------- */
+.recipe-tools{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:0 0 20px}
+.search{flex:1 1 280px;display:flex;align-items:center;border:1px solid var(--boundary);background:var(--control);min-height:40px}
+.search span{font:500 12px/1 var(--mono);color:var(--subtle);padding:0 10px 0 12px}
+.search input{flex:1;min-width:0;border:0;background:transparent;color:var(--strong);font:400 15px/1 var(--sans);padding:10px 12px 10px 0;outline:none}
+.search:focus-within{outline:2px solid var(--orange);outline-offset:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{appearance:none;border:1px solid var(--seam-strong);background:transparent;color:var(--muted);font:500 12px/1 var(--mono);padding:8px 10px;cursor:pointer;min-height:32px}
+.chip:hover{color:var(--strong);border-color:var(--boundary)}
+.chip[aria-pressed="true"]{background:var(--control);color:var(--strong);border-color:var(--teal)}
+.recipes{display:grid;gap:28px}
+.recipe{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:24px;padding-top:28px;border-top:1px solid var(--seam)}
+.recipe:first-child{border-top:0;padding-top:0}
+@media (max-width:1100px){.recipe{grid-template-columns:minmax(0,1fr)}}
+.recipe h3{font-size:20px;margin:6px 0 10px}
+.recipe .meta{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.pill{font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--seam-strong);padding:5px 6px}
+.recipe p{margin:0 0 10px;color:var(--fg)}
+.recipe .why{color:var(--muted);font-size:14px}
+.empty{padding:28px;border:1px dashed var(--seam-strong);color:var(--muted);text-align:center}
+
+/* ---------- misc ---------- */
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:0 0 20px}
+@media (max-width:1000px){.steps{grid-template-columns:minmax(0,1fr)}}
+.step{border:1px solid var(--seam-strong);background:var(--panel);padding:16px;display:grid;gap:10px;align-content:start;min-width:0}
+.step h3{font-size:16px}
+.step p{margin:0;font-size:14px;color:var(--muted)}
+.callout{border:1px solid var(--seam-strong);border-left:3px solid var(--orange);background:var(--panel);padding:12px 16px;margin:0 0 20px;max-width:78ch;font-size:14px}
+.callout b{color:var(--strong);font-weight:500}
+.status{display:inline-flex;align-items:center;gap:6px;font:500 12px/1 var(--mono)}
+.status::before{content:"";width:.5rem;height:.5rem;background:currentColor}
+.st-ok{color:var(--ok)}.st-warn{color:var(--warn)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.rule{border:1px solid var(--seam-strong);padding:16px;display:grid;gap:6px;align-content:start;background:var(--canvas)}
+.rule h3{font-size:15px}
+.rule p{margin:0;font-size:14px;color:var(--muted)}
+footer{border-top:1px solid var(--seam);padding-block:28px 40px;color:var(--subtle);font-size:13px}
+footer .wrap{display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--strong);color:var(--canvas);font:500 13px/1 var(--mono);padding:10px 14px;z-index:40}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to guide</a>
+<header class="bar">
+<div class="bar-in">
+<a aria-label="Recast Radar Tools, top of page" class="brand" href="#top">
+<img alt="Recast Systems" class="logo-light" height="45" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTc5IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgMTc5IDQ1IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHJvbGU9ImltZyIgYXJpYS1sYWJlbGxlZGJ5PSJ0aXRsZSI+DQo8dGl0bGUgaWQ9InRpdGxlIj5SZWNhc3QgU3lzdGVtcyBvbmUtbGluZSBuYXZiYXIgbG9nbzwvdGl0bGU+DQo8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNCA3KSI+DQo8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLjY1Njg5MSAwKSBzY2FsZSgwLjA4MjExMTQzNykiPg0KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzFfNjE4KSI+DQo8cGF0aCBkPSJNMTY0Ljk3NSA2OC4yNjU5QzE2Ni43NjUgNzguODczNCAxNTkuNjE3IDg4LjkyMzQgMTQ5LjAwOSA5MC43MTMxQzEzOC40MDIgOTIuNTAyOSAxMjguMzUyIDg1LjM1NDcgMTI2LjU2MiA3NC43NDcyQzEyNC43NzIgNjQuMTM5NyAxMzEuOTIgNTQuMDg5NyAxNDIuNTI4IDUyLjI5OTlDMTUzLjEzNSA1MC41MTAyIDE2My4xODUgNTcuNjU4NCAxNjQuOTc1IDY4LjI2NTlaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMTk4LjM2MiAyNjYuMTQzQzIwMC4xNTIgMjc2Ljc1IDE5My4wMDQgMjg2LjggMTgyLjM5NiAyODguNTlDMTcxLjc4OSAyOTAuMzggMTYxLjczOSAyODMuMjMyIDE1OS45NDkgMjcyLjYyNEMxNTguMTU5IDI2Mi4wMTcgMTY1LjMwNyAyNTEuOTY3IDE3NS45MTUgMjUwLjE3N0MxODYuNTIyIDI0OC4zODcgMTk2LjU3MiAyNTUuNTM1IDE5OC4zNjIgMjY2LjE0M1oiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik0yNTIuMjA5IDEyMS41MzJDMjQzLjkxNyAxMjguMzg2IDIzMS42NCAxMjcuMjIgMjI0Ljc4NiAxMTguOTI5QzIxNy45MzIgMTEwLjYzNyAyMTkuMDk4IDk4LjM1OTggMjI3LjM4OSA5MS41MDYxQzIzNS42ODEgODQuNjUyMyAyNDcuOTU4IDg1LjgxNzkgMjU0LjgxMiA5NC4xMDkzQzI2MS42NjYgMTAyLjQwMSAyNjAuNSAxMTQuNjc4IDI1Mi4yMDkgMTIxLjUzMloiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik05Ny41MzU0IDI0OS4zODVDODkuMjQzOSAyNTYuMjM4IDc2Ljk2NjIgMjU1LjA3MyA3MC4xMTI1IDI0Ni43ODFDNjMuMjU4OCAyMzguNDkgNjQuNDI0MyAyMjYuMjEyIDcyLjcxNTggMjE5LjM1OUM4MS4wMDczIDIxMi41MDUgOTMuMjg0OSAyMTMuNjcgMTAwLjEzOSAyMjEuOTYyQzEwNi45OTIgMjMwLjI1MyAxMDUuODI3IDI0Mi41MzEgOTcuNTM1NCAyNDkuMzg1WiIgZmlsbD0iI0ZCQkYyNyIvPg0KPHBhdGggZD0iTTI0OS42OTYgMjIzLjcxMUMyMzkuNjE0IDIxOS45NTcgMjM0LjQ4NSAyMDguNzQxIDIzOC4yMzkgMTk4LjY2QzI0MS45OTMgMTg4LjU3OSAyNTMuMjA4IDE4My40NSAyNjMuMjg5IDE4Ny4yMDNDMjczLjM3MSAxOTAuOTU3IDI3OC41IDIwMi4xNzMgMjc0Ljc0NiAyMTIuMjU0QzI3MC45OTIgMjIyLjMzNSAyNTkuNzc3IDIyNy40NjUgMjQ5LjY5NiAyMjMuNzExWiIgZmlsbD0iI0ZCQkYyNyIvPg0KPHBhdGggZD0iTTYxLjYzNTMgMTUzLjY4N0M1MS41NTQxIDE0OS45MzMgNDYuNDI0NiAxMzguNzE4IDUwLjE3ODQgMTI4LjYzNkM1My45MzIyIDExOC41NTUgNjUuMTQ3NyAxMTMuNDI2IDc1LjIyODkgMTE3LjE4Qzg1LjMxMDIgMTIwLjkzMyA5MC40Mzk2IDEzMi4xNDkgODYuNjg1OSAxNDIuMjNDODIuOTMyMSAxNTIuMzExIDcxLjcxNjYgMTU3LjQ0MSA2MS42MzUzIDE1My42ODdaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMTk4Ljg4NCA3NC45NDQyQzE5Ny4wMzYgODUuNTQxOCAxODYuOTQ3IDkyLjYzNSAxNzYuMzUgOTAuNzg3NEMxNjUuNzUyIDg4LjkzOTcgMTU4LjY1OSA3OC44NTA5IDE2MC41MDYgNjguMjUzM0MxNjIuMzU0IDU3LjY1NTcgMTcyLjQ0MyA1MC41NjI1IDE4My4wNDEgNTIuNDEwMUMxOTMuNjM4IDU0LjI1NzggMjAwLjczMSA2NC4zNDY2IDE5OC44ODQgNzQuOTQ0MloiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0xNjQuNDE3IDI3Mi42MzZDMTYyLjU2OSAyODMuMjM0IDE1Mi40OCAyOTAuMzI3IDE0MS44ODMgMjg4LjQ3OUMxMzEuMjg1IDI4Ni42MzIgMTI0LjE5MiAyNzYuNTQzIDEyNi4wNCAyNjUuOTQ1QzEyNy44ODcgMjU1LjM0OCAxMzcuOTc2IDI0OC4yNTQgMTQ4LjU3NCAyNTAuMTAyQzE1OS4xNzEgMjUxLjk1IDE2Ni4yNjQgMjYyLjAzOCAxNjQuNDE3IDI3Mi42MzZaIiBmaWxsPSIjNkJEMEVEIi8+DQo8cGF0aCBkPSJNMjYzLjM3OSAxNTQuMjM3QzI1My4yNzcgMTU3LjkzNiAyNDIuMDkgMTUyLjc0NSAyMzguMzkxIDE0Mi42NDRDMjM0LjY5MiAxMzIuNTQyIDIzOS44ODMgMTIxLjM1NSAyNDkuOTg1IDExNy42NTZDMjYwLjA4NiAxMTMuOTU3IDI3MS4yNzQgMTE5LjE0OCAyNzQuOTcyIDEyOS4yNDlDMjc4LjY3MSAxMzkuMzUxIDI3My40OCAxNTAuNTM4IDI2My4zNzkgMTU0LjIzN1oiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik03NC45Mzg3IDIyMy4yMzRDNjQuODM3MSAyMjYuOTMzIDUzLjY0OTggMjIxLjc0MiA0OS45NTExIDIxMS42NEM0Ni4yNTI0IDIwMS41MzkgNTEuNDQzIDE5MC4zNTIgNjEuNTQ0NiAxODYuNjUzQzcxLjY0NjIgMTgyLjk1NCA4Mi44MzM2IDE4OC4xNDUgODYuNTMyMiAxOTguMjQ2QzkwLjIzMDkgMjA4LjM0OCA4NS4wNDAzIDIxOS41MzUgNzQuOTM4NyAyMjMuMjM0WiIgZmlsbD0iIzZCRDBFRCIvPg0KPHBhdGggZD0iTTIyNi45NTcgMjQ5LjczOEMyMTguNzAzIDI0Mi44MzkgMjE3LjYwNCAyMzAuNTU1IDIyNC41MDMgMjIyLjMwMUMyMzEuNDAyIDIxNC4wNDcgMjQzLjY4NiAyMTIuOTQ5IDI1MS45NCAyMTkuODQ3QzI2MC4xOTQgMjI2Ljc0NiAyNjEuMjkyIDIzOS4wMyAyNTQuMzkzIDI0Ny4yODRDMjQ3LjQ5NSAyNTUuNTM4IDIzNS4yMTEgMjU2LjYzNyAyMjYuOTU3IDI0OS43MzhaIiBmaWxsPSIjNkJEMEVEIi8+DQo8cGF0aCBkPSJNNzIuOTgzNiAxMjEuMDQzQzY0LjcyOTYgMTE0LjE0NCA2My42MzExIDEwMS44NiA3MC41MyA5My42MDYxQzc3LjQyODkgODUuMzUyMiA4OS43MTI3IDg0LjI1MzcgOTcuOTY2NyA5MS4xNTI2QzEwNi4yMjEgOTguMDUxNSAxMDcuMzE5IDExMC4zMzUgMTAwLjQyIDExOC41ODlDOTMuNTIxMyAxMjYuODQzIDgxLjIzNzUgMTI3Ljk0MiA3Mi45ODM2IDEyMS4wNDNaIiBmaWxsPSIjNkJEMEVEIi8+DQo8cGF0aCBkPSJNMTkwLjM1OCA3Mi4xMTYyQzE4OS40NDggODIuODM1MSAxODAuMDIxIDkwLjc4NjcgMTY5LjMwMiA4OS44NzY3QzE1OC41ODMgODguOTY2NiAxNTAuNjMxIDc5LjUzOTUgMTUxLjU0MSA2OC44MjA2QzE1Mi40NTEgNTguMTAxNyAxNjEuODc4IDUwLjE1MDEgMTcyLjU5NyA1MS4wNjAyQzE4My4zMTYgNTEuOTcwMiAxOTEuMjY4IDYxLjM5NzQgMTkwLjM1OCA3Mi4xMTYyWiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTE3My4zODEgMjcyLjA3MUMxNzIuNDcxIDI4Mi43OSAxNjMuMDQ0IDI5MC43NDEgMTUyLjMyNSAyODkuODMxQzE0MS42MDYgMjg4LjkyMSAxMzMuNjU1IDI3OS40OTQgMTM0LjU2NSAyNjguNzc1QzEzNS40NzUgMjU4LjA1NiAxNDQuOTAyIDI1MC4xMDUgMTU1LjYyMSAyNTEuMDE1QzE2Ni4zNCAyNTEuOTI1IDE3NC4yOTEgMjYxLjM1MiAxNzMuMzgxIDI3Mi4wNzFaIiBmaWxsPSIjMkY1RURDIi8+DQo8cGF0aCBkPSJNMjYxLjU2NiAxNDUuNDRDMjUxLjgyOCAxNTAuMDEyIDI0MC4yMjggMTQ1LjgyMyAyMzUuNjU3IDEzNi4wODZDMjMxLjA4NSAxMjYuMzQ4IDIzNS4yNzQgMTE0Ljc0OCAyNDUuMDEyIDExMC4xNzZDMjU0Ljc0OSAxMDUuNjA1IDI2Ni4zNDkgMTA5Ljc5NCAyNzAuOTIxIDExOS41MzFDMjc1LjQ5MiAxMjkuMjY5IDI3MS4zMDQgMTQwLjg2OSAyNjEuNTY2IDE0NS40NFoiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik03OS45MTExIDIzMC43MTZDNzAuMTczMyAyMzUuMjg3IDU4LjU3MzQgMjMxLjA5OSA1NC4wMDIxIDIyMS4zNjFDNDkuNDMwOCAyMTEuNjIzIDUzLjYxOTEgMjAwLjAyMyA2My4zNTcgMTk1LjQ1MkM3My4wOTQ4IDE5MC44ODEgODQuNjk0NyAxOTUuMDY5IDg5LjI2NiAyMDQuODA3QzkzLjgzNzMgMjE0LjU0NSA4OS42NDkgMjI2LjE0NCA3OS45MTExIDIzMC43MTZaIiBmaWxsPSIjMkY1RURDIi8+DQo8cGF0aCBkPSJNMjMzLjY2OSAyNDMuNzdDMjI0Ljg0MSAyMzcuNjIyIDIyMi42NjkgMjI1LjQ4MiAyMjguODE2IDIxNi42NTVDMjM0Ljk2NCAyMDcuODI3IDI0Ny4xMDQgMjA1LjY1NCAyNTUuOTMyIDIxMS44MDJDMjY0Ljc1OSAyMTcuOTQ5IDI2Ni45MzIgMjMwLjA4OSAyNjAuNzg0IDIzOC45MTdDMjU0LjYzNyAyNDcuNzQ1IDI0Mi40OTcgMjQ5LjkxOCAyMzMuNjY5IDI0My43N1oiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik02OC45OTExIDEyOS4wOTFDNjAuMTYzNCAxMjIuOTQzIDU3Ljk5MDYgMTEwLjgwMyA2NC4xMzgyIDEwMS45NzVDNzAuMjg1OCA5My4xNDc2IDgyLjQyNTcgOTAuOTc0OCA5MS4yNTM1IDk3LjEyMjRDMTAwLjA4MSAxMDMuMjcgMTAyLjI1NCAxMTUuNDEgOTYuMTA2NCAxMjQuMjM4Qzg5Ljk1ODkgMTMzLjA2NSA3Ny44MTg5IDEzNS4yMzggNjguOTkxMSAxMjkuMDkxWiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTE0OS42MjIgMTkuNjE3M0MxNTEuOTA2IDMwLjEyOTQgMTQ1LjIzNiA0MC41MDMgMTM0LjcyNCA0Mi43ODczQzEyNC4yMTIgNDUuMDcxNiAxMTMuODM4IDM4LjQwMTYgMTExLjU1NCAyNy44ODk1QzEwOS4yNyAxNy4zNzc0IDExNS45NCA3LjAwMzgzIDEyNi40NTIgNC43MTk1M0MxMzYuOTY0IDIuNDM1MjQgMTQ3LjMzOCA5LjEwNTIxIDE0OS42MjIgMTkuNjE3M1oiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik0yMTMuMzc2IDMxMy4wMDhDMjE1LjY2IDMyMy41MiAyMDguOTkgMzMzLjg5NCAxOTguNDc4IDMzNi4xNzhDMTg3Ljk2NiAzMzguNDYyIDE3Ny41OTIgMzMxLjc5MiAxNzUuMzA4IDMyMS4yOEMxNzMuMDI0IDMxMC43NjggMTc5LjY5NCAzMDAuMzk1IDE5MC4yMDYgMjk4LjExQzIwMC43MTggMjk1LjgyNiAyMTEuMDkxIDMwMi40OTYgMjEzLjM3NiAzMTMuMDA4WiIgZmlsbD0iI0ZCQkYyNyIvPg0KPHBhdGggZD0iTTI4Ni42NjYgODMuOTEwNUMyNzguNzA0IDkxLjE0NDggMjY2LjM4NiA5MC41NTUyIDI1OS4xNTEgODIuNTkzNkMyNTEuOTE3IDc0LjYzMiAyNTIuNTA3IDYyLjMxMzMgMjYwLjQ2OCA1NS4wNzlDMjY4LjQzIDQ3Ljg0NDcgMjgwLjc0OSA0OC40MzQzIDI4Ny45ODMgNTYuMzk1OUMyOTUuMjE3IDY0LjM1NzUgMjk0LjYyOCA3Ni42NzYyIDI4Ni42NjYgODMuOTEwNVoiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik02NC40NTg5IDI4NS44MTlDNTYuNDk3MyAyOTMuMDUzIDQ0LjE3ODYgMjkyLjQ2NCAzNi45NDQzIDI4NC41MDJDMjkuNzA5OSAyNzYuNTQgMzAuMjk5NSAyNjQuMjIyIDM4LjI2MTEgMjU2Ljk4N0M0Ni4yMjI4IDI0OS43NTMgNTguNTQxNSAyNTAuMzQzIDY1Ljc3NTggMjU4LjMwNEM3My4wMTAxIDI2Ni4yNjYgNzIuNDIwNSAyNzguNTg1IDY0LjQ1ODkgMjg1LjgxOVoiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik0yOTkuNTA5IDIzNC43NDJDMjg5LjI2MyAyMzEuNDY0IDI4My42MTQgMjIwLjUwMSAyODYuODkyIDIxMC4yNTVDMjkwLjE3IDIwMC4wMDkgMzAxLjEzMyAxOTQuMzYgMzExLjM3OSAxOTcuNjM4QzMyMS42MjUgMjAwLjkxNiAzMjcuMjc0IDIxMS44NzkgMzIzLjk5NiAyMjIuMTI1QzMyMC43MTggMjMyLjM3MSAzMDkuNzU1IDIzOC4wMiAyOTkuNTA5IDIzNC43NDJaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMTMuNTQ4MyAxNDMuMjZDMy4zMDI0MiAxMzkuOTgyIC0yLjM0NjM0IDEyOS4wMTkgMC45MzE0NTggMTE4Ljc3M0M0LjIwOTI2IDEwOC41MjcgMTUuMTcyNCAxMDIuODc4IDI1LjQxODMgMTA2LjE1NkMzNS42NjQyIDEwOS40MzQgNDEuMzEzIDEyMC4zOTcgMzguMDM1MSAxMzAuNjQzQzM0Ljc1NzMgMTQwLjg4OSAyMy43OTQyIDE0Ni41MzggMTMuNTQ4MyAxNDMuMjZaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMTY1LjM1OSAxOS4wOTU3QzE2Ni41MzkgMjkuNzg4MyAxNTguODI4IDM5LjQxMjcgMTQ4LjEzNSA0MC41OTI2QzEzNy40NDMgNDEuNzcyNCAxMjcuODE4IDM0LjA2MDggMTI2LjYzOCAyMy4zNjgzQzEyNS40NTggMTIuNjc1OCAxMzMuMTcgMy4wNTEyNCAxNDMuODYyIDEuODcxNEMxNTQuNTU1IDAuNjkxNTYgMTY0LjE3OSA4LjQwMzEyIDE2NS4zNTkgMTkuMDk1N1oiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik0xOTguMjg5IDMxNy41MjJDMTk5LjQ2OSAzMjguMjE1IDE5MS43NTcgMzM3LjgzOSAxODEuMDY0IDMzOS4wMTlDMTcwLjM3MiAzNDAuMTk5IDE2MC43NDcgMzMyLjQ4NyAxNTkuNTY4IDMyMS43OTVDMTU4LjM4OCAzMTEuMTAyIDE2Ni4wOTkgMzAxLjQ3OCAxNzYuNzkyIDMwMC4yOThDMTg3LjQ4NCAyOTkuMTE4IDE5Ny4xMDkgMzA2LjgzIDE5OC4yODkgMzE3LjUyMloiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik0yOTQuOTgzIDk3LjI3ODNDMjg2LjMxMyAxMDMuNjQ2IDI3NC4xMjIgMTAxLjc4IDI2Ny43NTQgOTMuMTEwMUMyNjEuMzg2IDg0LjQzOTkgMjYzLjI1MiA3Mi4yNDkyIDI3MS45MjIgNjUuODgxMkMyODAuNTkyIDU5LjUxMzEgMjkyLjc4MyA2MS4zNzkzIDI5OS4xNTEgNzAuMDQ5NEMzMDUuNTE5IDc4LjcxOTUgMzAzLjY1MyA5MC45MTAyIDI5NC45ODMgOTcuMjc4M1oiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik01My4wMDI0IDI3NS4wMDlDNDQuMzMyMyAyODEuMzc3IDMyLjE0MTQgMjc5LjUxMSAyNS43NzM0IDI3MC44NDFDMTkuNDA1NCAyNjIuMTcxIDIxLjI3MTUgMjQ5Ljk4IDI5Ljk0MTYgMjQzLjYxMkMzOC42MTE3IDIzNy4yNDQgNTAuODAyNSAyMzkuMTEgNTcuMTcwNiAyNDcuNzhDNjMuNTM4NiAyNTYuNDUgNjEuNjcyNCAyNjguNjQxIDUzLjAwMjQgMjc1LjAwOVoiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik0yOTIuMDg3IDI0OC42MjhDMjgyLjIzNyAyNDQuMzAzIDI3Ny43NTggMjMyLjgxMyAyODIuMDgyIDIyMi45NjNDMjg2LjQwNyAyMTMuMTEzIDI5Ny44OTcgMjA4LjYzNCAzMDcuNzQ3IDIxMi45NThDMzE3LjU5NyAyMTcuMjgzIDMyMi4wNzcgMjI4Ljc3MyAzMTcuNzUyIDIzOC42MjNDMzEzLjQyOCAyNDguNDczIDMwMS45MzcgMjUyLjk1MiAyOTIuMDg3IDI0OC42MjhaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNMTcuMTc3MiAxMjcuOTMyQzcuMzI3MjYgMTIzLjYwOCAyLjg0OCAxMTIuMTE3IDcuMTcyNSAxMDIuMjY3QzExLjQ5NyA5Mi40MTcxIDIyLjk4NzYgODcuOTM3OSAzMi44Mzc2IDkyLjI2MjRDNDIuNjg3NSA5Ni41ODY5IDQ3LjE2NjggMTA4LjA3NyA0Mi44NDIzIDExNy45MjdDMzguNTE3OCAxMjcuNzc3IDI3LjAyNzEgMTMyLjI1NyAxNy4xNzcyIDEyNy45MzJaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNMjEzLjIgMjcuODI0N0MyMTAuOTI5IDM4LjMzOTYgMjAwLjU2NCA0NS4wMjIyIDE5MC4wNDkgNDIuNzUwN0MxNzkuNTM0IDQwLjQ3OTMgMTcyLjg1MSAzMC4xMTM5IDE3NS4xMjMgMTkuNTk5QzE3Ny4zOTQgOS4wODQxMyAxODcuNzU5IDIuNDAxNTEgMTk4LjI3NCA0LjY3Mjk3QzIwOC43ODkgNi45NDQ0MyAyMTUuNDcyIDE3LjMwOTggMjEzLjIgMjcuODI0N1oiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0xNDkuODA1IDMyMS4yOTNDMTQ3LjUzMyAzMzEuODA3IDEzNy4xNjggMzM4LjQ5IDEyNi42NTMgMzM2LjIxOUMxMTYuMTM4IDMzMy45NDcgMTA5LjQ1NSAzMjMuNTgyIDExMS43MjcgMzEzLjA2N0MxMTMuOTk4IDMwMi41NTIgMTI0LjM2NCAyOTUuODY5IDEzNC44NzggMjk4LjE0MUMxNDUuMzkzIDMwMC40MTIgMTUyLjA3NiAzMTAuNzc4IDE0OS44MDUgMzIxLjI5M1oiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0zMTEuMzQ0IDE0My4wNzRDMzAxLjEwMiAxNDYuMzY1IDI5MC4xMzIgMTQwLjcyOSAyODYuODQyIDEzMC40ODdDMjgzLjU1MiAxMjAuMjQ1IDI4OS4xODcgMTA5LjI3NSAyOTkuNDI5IDEwNS45ODVDMzA5LjY3MSAxMDIuNjk1IDMyMC42NDEgMTA4LjMzIDMyMy45MzEgMTE4LjU3MkMzMjcuMjIxIDEyOC44MTQgMzIxLjU4NiAxMzkuNzg0IDMxMS4zNDQgMTQzLjA3NFoiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0yNS40OTUxIDIzNC45MDZDMTUuMjUzMiAyMzguMTk2IDQuMjgzMjMgMjMyLjU2MSAwLjk5MjkyMiAyMjIuMzE5Qy0yLjI5NzM4IDIxMi4wNzcgMy4zMzggMjAxLjEwNyAxMy41Nzk4IDE5Ny44MTdDMjMuODIxNyAxOTQuNTI2IDM0Ljc5MTcgMjAwLjE2MiAzOC4wODIxIDIxMC40MDRDNDEuMzcyNCAyMjAuNjQ2IDM1LjczNyAyMzEuNjE2IDI1LjQ5NTEgMjM0LjkwNloiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0yNjAuNjA3IDI4NS42OTZDMjUyLjYzNyAyNzguNDcxIDI1Mi4wMzIgMjY2LjE1MyAyNTkuMjU3IDI1OC4xODNDMjY2LjQ4MSAyNTAuMjEyIDI3OC43OTkgMjQ5LjYwOCAyODYuNzcgMjU2LjgzMkMyOTQuNzQgMjY0LjA1NyAyOTUuMzQ1IDI3Ni4zNzUgMjg4LjEyIDI4NC4zNDVDMjgwLjg5NiAyOTIuMzE2IDI2OC41NzggMjkyLjkyIDI2MC42MDcgMjg1LjY5NloiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0zOC4xNTQzIDg0LjA1OTJDMzAuMTgzOCA3Ni44MzQ2IDI5LjU3OTIgNjQuNTE2NiAzNi44MDM4IDU2LjU0NjFDNDQuMDI4NCA0OC41NzU3IDU2LjM0NjQgNDcuOTcxMSA2NC4zMTY4IDU1LjE5NTdDNzIuMjg3MyA2Mi40MjAyIDcyLjg5MTkgNzQuNzM4MiA2NS42NjczIDgyLjcwODdDNTguNDQyNyA5MC42NzkxIDQ2LjEyNDcgOTEuMjgzNyAzOC4xNTQzIDg0LjA1OTJaIiBmaWxsPSIjNkJEMEVEIi8+DQo8cGF0aCBkPSJNMTk3LjY4NyAyMy4yMjM4QzE5Ni41NTEgMzMuOTIxMSAxODYuOTU4IDQxLjY3MTkgMTc2LjI2IDQwLjUzNThDMTY1LjU2MyAzOS4zOTk3IDE1Ny44MTIgMjkuODA2OCAxNTguOTQ4IDE5LjEwOTVDMTYwLjA4NSA4LjQxMjI4IDE2OS42NzcgMC42NjE0MjYgMTgwLjM3NSAxLjc5NzU1QzE5MS4wNzIgMi45MzM2NyAxOTguODIzIDEyLjUyNjUgMTk3LjY4NyAyMy4yMjM4WiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTE2NS45NzggMzIxLjc4M0MxNjQuODQyIDMzMi40OCAxNTUuMjQ5IDM0MC4yMzEgMTQ0LjU1MiAzMzkuMDk1QzEzMy44NTQgMzM3Ljk1OCAxMjYuMTAzIDMyOC4zNjYgMTI3LjI0IDMxNy42NjhDMTI4LjM3NiAzMDYuOTcxIDEzNy45NjkgMjk5LjIyIDE0OC42NjYgMzAwLjM1NkMxNTkuMzYzIDMwMS40OTIgMTY3LjExNCAzMTEuMDg1IDE2NS45NzggMzIxLjc4M1oiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik0zMDcuNTcyIDEyNy4zMzlDMjk3Ljc0IDEzMS43MDQgMjg2LjIzMSAxMjcuMjcyIDI4MS44NjYgMTE3LjQzOUMyNzcuNTAxIDEwNy42MDcgMjgxLjkzNCA5Ni4wOTg0IDI5MS43NjYgOTEuNzMzN0MzMDEuNTk4IDg3LjM2OSAzMTMuMTA3IDkxLjgwMTIgMzE3LjQ3MSAxMDEuNjMzQzMyMS44MzYgMTExLjQ2NiAzMTcuNDA0IDEyMi45NzQgMzA3LjU3MiAxMjcuMzM5WiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTMzLjE1NzQgMjQ5LjE1OEMyMy4zMjUzIDI1My41MjMgMTEuODE2NCAyNDkuMDkgNy40NTE2OSAyMzkuMjU4QzMuMDg2OTYgMjI5LjQyNiA3LjUxOTIgMjE3LjkxNyAxNy4zNTE0IDIxMy41NTNDMjcuMTgzNSAyMDkuMTg4IDM4LjY5MjQgMjEzLjYyIDQzLjA1NzEgMjIzLjQ1MkM0Ny40MjE5IDIzMy4yODQgNDIuOTg5NiAyNDQuNzkzIDMzLjE1NzQgMjQ5LjE1OFoiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik0yNzIuMzQ4IDI3NC41NjFDMjYzLjY1MiAyNjguMjI5IDI2MS43MzYgMjU2LjA0NiAyNjguMDY5IDI0Ny4zNUMyNzQuNDAxIDIzOC42NTQgMjg2LjU4NCAyMzYuNzM4IDI5NS4yOCAyNDMuMDdDMzAzLjk3NiAyNDkuNDAzIDMwNS44OTIgMjYxLjU4NiAyOTkuNTYgMjcwLjI4MkMyOTMuMjI3IDI3OC45NzggMjgxLjA0NCAyODAuODk0IDI3Mi4zNDggMjc0LjU2MVoiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik0yOS42NDMyIDk3LjgyMTRDMjAuOTQ3MiA5MS40ODg5IDE5LjAzMTIgNzkuMzA1OCAyNS4zNjM3IDcwLjYwOTdDMzEuNjk2MyA2MS45MTM3IDQzLjg3OTQgNTkuOTk3NyA1Mi41NzU0IDY2LjMzMDJDNjEuMjcxNSA3Mi42NjI4IDYzLjE4NzUgODQuODQ1OSA1Ni44NTQ5IDkzLjU0MTlDNTAuNTIyNCAxMDIuMjM4IDM4LjMzOTMgMTA0LjE1NCAyOS42NDMyIDk3LjgyMTRaIiBmaWxsPSIjMkY1RURDIi8+DQo8cGF0aCBkPSJNMTgxLjk0IDExOS45MjFDMTgxLjk0IDEzMC42NzggMTczLjIxOSAxMzkuMzk5IDE2Mi40NjEgMTM5LjM5OUMxNTEuNzA0IDEzOS4zOTkgMTQyLjk4MyAxMzAuNjc4IDE0Mi45ODMgMTE5LjkyMUMxNDIuOTgzIDEwOS4xNjMgMTUxLjcwNCAxMDAuNDQyIDE2Mi40NjEgMTAwLjQ0MkMxNzMuMjE5IDEwMC40NDIgMTgxLjk0IDEwOS4xNjMgMTgxLjk0IDExOS45MjFaIiBmaWxsPSJibGFjayIvPg0KPHBhdGggZD0iTTE4MS45MzkgMjIwLjk3QzE4MS45MzkgMjMxLjcyNyAxNzMuMjE5IDI0MC40NDggMTYyLjQ2MSAyNDAuNDQ4QzE1MS43MDQgMjQwLjQ0OCAxNDIuOTgzIDIzMS43MjcgMTQyLjk4MyAyMjAuOTdDMTQyLjk4MyAyMTAuMjEyIDE1MS43MDQgMjAxLjQ5MiAxNjIuNDYxIDIwMS40OTJDMTczLjIxOSAyMDEuNDkyIDE4MS45MzkgMjEwLjIxMiAxODEuOTM5IDIyMC45N1oiIGZpbGw9ImJsYWNrIi8+DQo8cGF0aCBkPSJNMTk2LjQ4NSAyMTIuNTc2QzE4Ny4xNjkgMjA3LjE5NyAxODMuOTc3IDE5NS4yODUgMTg5LjM1NSAxODUuOTY4QzE5NC43MzQgMTc2LjY1MiAyMDYuNjQ3IDE3My40NiAyMTUuOTYzIDE3OC44MzlDMjI1LjI3OSAxODQuMjE4IDIyOC40NzEgMTk2LjEzIDIyMy4wOTIgMjA1LjQ0NkMyMTcuNzE0IDIxNC43NjMgMjA1LjgwMSAyMTcuOTU1IDE5Ni40ODUgMjEyLjU3NloiIGZpbGw9ImJsYWNrIi8+DQo8cGF0aCBkPSJNMTA4Ljk3NCAxNjIuMDUxQzk5LjY1NzYgMTU2LjY3MyA5Ni40NjU2IDE0NC43NiAxMDEuODQ0IDEzNS40NDRDMTA3LjIyMyAxMjYuMTI4IDExOS4xMzYgMTIyLjkzNiAxMjguNDUyIDEyOC4zMTRDMTM3Ljc2OCAxMzMuNjkzIDE0MC45NiAxNDUuNjA2IDEzNS41ODEgMTU0LjkyMkMxMzAuMjAzIDE2NC4yMzggMTE4LjI5IDE2Ny40MyAxMDguOTc0IDE2Mi4wNTFaIiBmaWxsPSJibGFjayIvPg0KPHBhdGggZD0iTTIxNS45NjMgMTYyLjA1MUMyMDYuNjQ3IDE2Ny40MyAxOTQuNzM0IDE2NC4yMzggMTg5LjM1NSAxNTQuOTIyQzE4My45NzcgMTQ1LjYwNiAxODcuMTY5IDEzMy42OTMgMTk2LjQ4NSAxMjguMzE0QzIwNS44MDEgMTIyLjkzNiAyMTcuNzE0IDEyNi4xMjggMjIzLjA5MiAxMzUuNDQ0QzIyOC40NzEgMTQ0Ljc2IDIyNS4yNzkgMTU2LjY3MyAyMTUuOTYzIDE2Mi4wNTFaIiBmaWxsPSJibGFjayIvPg0KPHBhdGggZD0iTTEyOC40NTEgMjEyLjU3NkMxMTkuMTM1IDIxNy45NTUgMTA3LjIyMyAyMTQuNzYzIDEwMS44NDQgMjA1LjQ0NkM5Ni40NjUgMTk2LjEzIDk5LjY1NyAxODQuMjE4IDEwOC45NzMgMTc4LjgzOUMxMTguMjkgMTczLjQ2IDEzMC4yMDIgMTc2LjY1MiAxMzUuNTgxIDE4NS45NjhDMTQwLjk2IDE5NS4yODUgMTM3Ljc2OCAyMDcuMTk3IDEyOC40NTEgMjEyLjU3NloiIGZpbGw9ImJsYWNrIi8+DQo8cGF0aCBkPSJNMTczLjQ0NSA2OC44Mjc1QzE3NC4zNDggNzkuNTQ3IDE2Ni4zOTEgODguOTY5MSAxNTUuNjcyIDg5Ljg3MjVDMTQ0Ljk1MiA5MC43NzU5IDEzNS41MyA4Mi44MTg0IDEzNC42MjYgNzIuMDk5QzEzMy43MjMgNjEuMzc5NiAxNDEuNjgxIDUxLjk1NzQgMTUyLjQgNTEuMDU0QzE2My4xMTkgNTAuMTUwNiAxNzIuNTQyIDU4LjEwODEgMTczLjQ0NSA2OC44Mjc1WiIgZmlsbD0iI0RBNUUxNSIvPg0KPHBhdGggZD0iTTE5MC4yOTcgMjY4Ljc5M0MxOTEuMjAxIDI3OS41MTIgMTgzLjI0MyAyODguOTM0IDE3Mi41MjQgMjg5LjgzOEMxNjEuODA0IDI5MC43NDEgMTUyLjM4MiAyODIuNzg0IDE1MS40NzkgMjcyLjA2NEMxNTAuNTc1IDI2MS4zNDUgMTU4LjUzMyAyNTEuOTIzIDE2OS4yNTIgMjUxLjAxOUMxNzkuOTcyIDI1MC4xMTYgMTg5LjM5NCAyNTguMDczIDE5MC4yOTcgMjY4Ljc5M1oiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik0yNTUuOTU4IDEyOS4xNDlDMjQ3LjEyNiAxMzUuMjkxIDIzNC45ODggMTMzLjExMSAyMjguODQ2IDEyNC4yNzlDMjIyLjcwMyAxMTUuNDQ3IDIyNC44ODQgMTAzLjMwOSAyMzMuNzE1IDk3LjE2NjdDMjQyLjU0NyA5MS4wMjQ2IDI1NC42ODUgOTMuMjA0OSAyNjAuODI4IDEwMi4wMzdDMjY2Ljk3IDExMC44NjggMjY0Ljc4OSAxMjMuMDA3IDI1NS45NTggMTI5LjE0OVoiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik05MS4yMDg0IDI0My43MjZDODIuMzc2OCAyNDkuODY4IDcwLjIzODIgMjQ3LjY4NyA2NC4wOTYxIDIzOC44NTZDNTcuOTU0MSAyMzAuMDI0IDYwLjEzNDQgMjE3Ljg4NiA2OC45NjYgMjExLjc0NEM3Ny43OTc2IDIwNS42MDIgODkuOTM2MSAyMDcuNzgyIDk2LjA3ODIgMjE2LjYxM0MxMDIuMjIxIDIyNS40NDUgMTAwLjA0IDIzNy41ODQgOTEuMjA4NCAyNDMuNzI2WiIgZmlsbD0iI0RBNUUxNSIvPg0KPHBhdGggZD0iTTI0NC45NzUgMjMwLjc2NkMyMzUuMjQgMjI2LjE4OSAyMzEuMDU5IDIxNC41ODcgMjM1LjYzNiAyMDQuODUyQzI0MC4yMTMgMTk1LjExNyAyNTEuODE2IDE5MC45MzYgMjYxLjU1MSAxOTUuNTEzQzI3MS4yODYgMjAwLjA5IDI3NS40NjcgMjExLjY5MyAyNzAuODg5IDIyMS40MjhDMjY2LjMxMiAyMzEuMTYzIDI1NC43MSAyMzUuMzQ0IDI0NC45NzUgMjMwLjc2NloiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik02My4zNzM0IDE0NS4zNzlDNTMuNjM4NCAxNDAuODAyIDQ5LjQ1NzMgMTI5LjE5OSA1NC4wMzQ2IDExOS40NjRDNTguNjEyIDEwOS43MjkgNzAuMjE0NCAxMDUuNTQ4IDc5Ljk0OTQgMTEwLjEyNUM4OS42ODQ0IDExNC43MDMgOTMuODY1NSAxMjYuMzA1IDg5LjI4ODIgMTM2LjA0Qzg0LjcxMDggMTQ1Ljc3NSA3My4xMDg0IDE0OS45NTYgNjMuMzczNCAxNDUuMzc5WiIgZmlsbD0iI0RBNUUxNSIvPg0KPHBhdGggZD0iTTE4MS45NDEgMjAuMzI2N0MxODEuOTQxIDMxLjA4NDEgMTczLjIyIDM5LjgwNDggMTYyLjQ2MiAzOS44MDQ4QzE1MS43MDUgMzkuODA0OCAxNDIuOTg0IDMxLjA4NDEgMTQyLjk4NCAyMC4zMjY3QzE0Mi45ODQgOS41NjkyNiAxNTEuNzA1IDAuODQ4NjMzIDE2Mi40NjIgMC44NDg2MzNDMTczLjIyIDAuODQ4NjMzIDE4MS45NDEgOS41NjkyNiAxODEuOTQxIDIwLjMyNjdaIiBmaWxsPSJibGFjayIvPg0KPHBhdGggZD0iTTE4MS45NDEgMzIwLjU2NEMxODEuOTQxIDMzMS4zMjIgMTczLjIyIDM0MC4wNDIgMTYyLjQ2MiAzNDAuMDQyQzE1MS43MDUgMzQwLjA0MiAxNDIuOTg0IDMzMS4zMjIgMTQyLjk4NCAzMjAuNTY0QzE0Mi45ODQgMzA5LjgwNyAxNTEuNzA1IDMwMS4wODYgMTYyLjQ2MiAzMDEuMDg2QzE3My4yMiAzMDEuMDg2IDE4MS45NDEgMzA5LjgwNyAxODEuOTQxIDMyMC41NjRaIiBmaWxsPSJibGFjayIvPg0KPHBhdGggZD0iTTMwMi4yMDcgMTEyLjI1NUMyOTIuODkxIDExNy42MzMgMjgwLjk3OCAxMTQuNDQxIDI3NS41OTkgMTA1LjEyNUMyNzAuMjIgOTUuODA4OSAyNzMuNDEyIDgzLjg5NjMgMjgyLjcyOSA3OC41MTc2QzI5Mi4wNDUgNzMuMTM4OSAzMDMuOTU3IDc2LjMzMDkgMzA5LjMzNiA4NS42NDcxQzMxNC43MTUgOTQuOTYzMyAzMTEuNTIzIDEwNi44NzYgMzAyLjIwNyAxMTIuMjU1WiIgZmlsbD0iYmxhY2siLz4NCjxwYXRoIGQ9Ik00Mi4xOTM1IDI2Mi4zNzNDMzIuODc3MyAyNjcuNzUyIDIwLjk2NDcgMjY0LjU2IDE1LjU4NTkgMjU1LjI0NEMxMC4yMDcyIDI0NS45MjggMTMuMzk5MiAyMzQuMDE1IDIyLjcxNTQgMjI4LjYzNkMzMi4wMzE2IDIyMy4yNTggNDMuOTQ0MiAyMjYuNDUgNDkuMzIyOSAyMzUuNzY2QzU0LjcwMTcgMjQ1LjA4MiA1MS41MDk3IDI1Ni45OTUgNDIuMTkzNSAyNjIuMzczWiIgZmlsbD0iYmxhY2siLz4NCjxwYXRoIGQ9Ik0yODIuNzI5IDI2Mi4zNzNDMjczLjQxMiAyNTYuOTk1IDI3MC4yMiAyNDUuMDgyIDI3NS41OTkgMjM1Ljc2NkMyODAuOTc4IDIyNi40NSAyOTIuODkxIDIyMy4yNTggMzAyLjIwNyAyMjguNjM2QzMxMS41MjMgMjM0LjAxNSAzMTQuNzE1IDI0NS45MjggMzA5LjMzNiAyNTUuMjQ0QzMwMy45NTcgMjY0LjU2IDI5Mi4wNDUgMjY3Ljc1MiAyODIuNzI5IDI2Mi4zNzNaIiBmaWxsPSJibGFjayIvPg0KPHBhdGggZD0iTTIyLjcxNTQgMTEyLjI1NUMxMy4zOTkyIDEwNi44NzYgMTAuMjA3MiA5NC45NjMzIDE1LjU4NTkgODUuNjQ3MUMyMC45NjQ3IDc2LjMzMDkgMzIuODc3MyA3My4xMzg5IDQyLjE5MzUgNzguNTE3NkM1MS41MDk3IDgzLjg5NjMgNTQuNzAxNiA5NS44MDg5IDQ5LjMyMjkgMTA1LjEyNUM0My45NDQyIDExNC40NDEgMzIuMDMxNiAxMTcuNjMzIDIyLjcxNTQgMTEyLjI1NVoiIGZpbGw9ImJsYWNrIi8+DQo8cGF0aCBkPSJNMTgxLjkzOSA3MC4xMDkyQzE4MS45MzkgODAuODY2NiAxNzMuMjE5IDg5LjU4NzIgMTYyLjQ2MSA4OS41ODcyQzE1MS43MDQgODkuNTg3MiAxNDIuOTgzIDgwLjg2NjYgMTQyLjk4MyA3MC4xMDkyQzE0Mi45ODMgNTkuMzUxNyAxNTEuNzA0IDUwLjYzMTEgMTYyLjQ2MSA1MC42MzExQzE3My4yMTkgNTAuNjMxMSAxODEuOTM5IDU5LjM1MTcgMTgxLjkzOSA3MC4xMDkyWiIgZmlsbD0iYmxhY2siLz4NCjxwYXRoIGQ9Ik0xODEuOTM5IDI3MC43ODNDMTgxLjkzOSAyODEuNTQxIDE3My4yMTkgMjkwLjI2MSAxNjIuNDYxIDI5MC4yNjFDMTUxLjcwNCAyOTAuMjYxIDE0Mi45ODMgMjgxLjU0MSAxNDIuOTgzIDI3MC43ODNDMTQyLjk4MyAyNjAuMDI2IDE1MS43MDQgMjUxLjMwNSAxNjIuNDYxIDI1MS4zMDVDMTczLjIxOSAyNTEuMzA1IDE4MS45MzkgMjYwLjAyNiAxODEuOTM5IDI3MC43ODNaIiBmaWxsPSJibGFjayIvPg0KPHBhdGggZD0iTTI1OS4wOTUgMTM3LjE0NkMyNDkuNzc5IDE0Mi41MjUgMjM3Ljg2NiAxMzkuMzMzIDIzMi40ODcgMTMwLjAxN0MyMjcuMTA5IDEyMC43MDEgMjMwLjMwMSAxMDguNzg4IDIzOS42MTcgMTAzLjQwOUMyNDguOTMzIDk4LjAzMDUgMjYwLjg0NiAxMDEuMjIzIDI2Ni4yMjQgMTEwLjUzOUMyNzEuNjAzIDExOS44NTUgMjY4LjQxMSAxMzEuNzY4IDI1OS4wOTUgMTM3LjE0NloiIGZpbGw9ImJsYWNrIi8+DQo8cGF0aCBkPSJNODUuMzA1OCAyMzcuNDgzQzc1Ljk4OTYgMjQyLjg2MiA2NC4wNzcgMjM5LjY3IDU4LjY5ODMgMjMwLjM1NEM1My4zMTk2IDIyMS4wMzggNTYuNTExNSAyMDkuMTI1IDY1LjgyNzcgMjAzLjc0NkM3NS4xNDQgMTk4LjM2OCA4Ny4wNTY2IDIwMS41NiA5Mi40MzUzIDIxMC44NzZDOTcuODE0IDIyMC4xOTIgOTQuNjIyIDIzMi4xMDUgODUuMzA1OCAyMzcuNDgzWiIgZmlsbD0iYmxhY2siLz4NCjxwYXRoIGQ9Ik0yMzkuNjE3IDIzNy40ODNDMjMwLjMwMSAyMzIuMTA1IDIyNy4xMDkgMjIwLjE5MiAyMzIuNDg3IDIxMC44NzZDMjM3Ljg2NiAyMDEuNTYgMjQ5Ljc3OSAxOTguMzY4IDI1OS4wOTUgMjAzLjc0NkMyNjguNDExIDIwOS4xMjUgMjcxLjYwMyAyMjEuMDM4IDI2Ni4yMjQgMjMwLjM1NEMyNjAuODQ2IDIzOS42NyAyNDguOTMzIDI0Mi44NjIgMjM5LjYxNyAyMzcuNDgzWiIgZmlsbD0iYmxhY2siLz4NCjxwYXRoIGQ9Ik02NS44Mjc3IDEzNy4xNDZDNTYuNTExNSAxMzEuNzY4IDUzLjMxOTYgMTE5Ljg1NSA1OC42OTgzIDExMC41MzlDNjQuMDc3IDEwMS4yMjMgNzUuOTg5NiA5OC4wMzA1IDg1LjMwNTggMTAzLjQwOUM5NC42MjIgMTA4Ljc4OCA5Ny44MTQgMTIwLjcwMSA5Mi40MzUzIDEzMC4wMTdDODcuMDU2NSAxMzkuMzMzIDc1LjE0NCAxNDIuNTI1IDY1LjgyNzcgMTM3LjE0NloiIGZpbGw9ImJsYWNrIi8+DQo8L2c+DQo8ZGVmcz4NCjxjbGlwUGF0aCBpZD0iY2xpcDBfMV82MTgiPg0KPHJlY3Qgd2lkdGg9IjMyNSIgaGVpZ2h0PSIzNDEiIGZpbGw9IndoaXRlIi8+DQo8L2NsaXBQYXRoPg0KPC9kZWZzPg0KPC9nPg0KPC9nPg0KPGcgYXJpYS1sYWJlbD0iUmVjYXN0IFN5c3RlbXMiPg0KPHBhdGggZD0iTTgzIDBIMTgxVjMxN0gyODVMNDg1IDBINjAzTDM5NCAzMThDNDkzIDMyOCA1NzMgMzk3IDU3MyA1MTBDNTczIDYzMCA0ODkgNzA1IDM2NyA3MDVIODNaTTM1MiA0MDBIMTgxVjYyMEgzNTJDNDM1IDYyMCA0NjkgNTc5IDQ2OSA1MTBDNDY5IDQ0MSA0MzUgNDAwIDM1MiA0MDBaIiBmaWxsPSIjMjAyMTI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg1MiAyNC40NSkgc2NhbGUoMC4wMSAtMC4wMSkiLz4NCjxwYXRoIGQ9Ik0xMDEgMEg1NjlWODZIMTk5VjMxOEg1MzZWNDAySDE5OVY2MjBINTY5VjcwNUgxMDFaIiBmaWxsPSIjMjAyMTI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg1OS42IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTMyNSAtMTVDNDcxIC0xNSA1ODEgOTYgNTk1IDI2M0g0OTJDNDc3IDE0MyA0MTYgNzIgMzI1IDcyQzIxOSA3MiAxNTQgMTc5IDE1NCAzNTJDMTU0IDUyNSAyMTkgNjMzIDMyNSA2MzNDNDE1IDYzMyA0NzYgNTYzIDQ5MSA0NDRINTk0QzU4MCA2MTAgNDcwIDcyMCAzMjUgNzIwQzE2NiA3MjAgNTEgNTY3IDUxIDM1MkM1MSAxMzcgMTY2IC0xNSAzMjUgLTE1WiIgZmlsbD0iIzIwMjEyNCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNjcuMiAyNC40NSkgc2NhbGUoMC4wMSAtMC4wMSkiLz4NCjxwYXRoIGQ9Ik0yMiAwSDExOUwxNzggMTg4SDQ1NEw1MTUgMEg2MThMMzc2IDcwNUgyNThaTTIwNCAyNzAgMzE0IDYxNSA0MjcgMjcwWiIgZmlsbD0iIzIwMjEyNCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNzQuOCAyNC40NSkgc2NhbGUoMC4wMSAtMC4wMSkiLz4NCjxwYXRoIGQ9Ik0zMjIgLTE1QzQ3OSAtMTUgNTc3IDczIDU3NyAxOTRDNTc3IDMxMSA1MDAgMzc5IDM2OSA0MDRMMzAyIDQxN0MyMTEgNDM1IDE4MiA0NjUgMTgyIDUyOEMxODIgNTc3IDIxOSA2MzggMzEyIDYzOEM0MTEgNjM4IDQ1MyA1ODkgNDY0IDUxOEg1NjJDNTUyIDYyMCA0ODIgNzIwIDMxMSA3MjBDMTcyIDcyMCA4OCA2MjQgODggNTIwQzg4IDQxMiAxNDMgMzQ4IDI4MyAzMjBMMzQ5IDMwN0M0NDcgMjg4IDQ3NCAyNDcgNDc0IDE4N0M0NzQgMTMwIDQzMCA2OSAzMjIgNjlDMjA3IDY5IDE2NSAxNDEgMTU4IDE5N0g2MUM2OCA4MSAxNTcgLTE1IDMyMiAtMTVaIiBmaWxsPSIjMjAyMTI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg4Mi40IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTI3MSAwSDM3MFY2MjBINTg3VjcwNUg1NFY2MjBIMjcxWiIgZmlsbD0iIzIwMjEyNCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoOTAgMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNMzIyIC0xNUM0NzkgLTE1IDU3NyA3MyA1NzcgMTk0QzU3NyAzMTEgNTAwIDM3OSAzNjkgNDA0TDMwMiA0MTdDMjExIDQzNSAxODIgNDY1IDE4MiA1MjhDMTgyIDU3NyAyMTkgNjM4IDMxMiA2MzhDNDExIDYzOCA0NTMgNTg5IDQ2NCA1MThINTYyQzU1MiA2MjAgNDgyIDcyMCAzMTEgNzIwQzE3MiA3MjAgODggNjI0IDg4IDUyMEM4OCA0MTIgMTQzIDM0OCAyODMgMzIwTDM0OSAzMDdDNDQ3IDI4OCA0NzQgMjQ3IDQ3NCAxODdDNDc0IDEzMCA0MzAgNjkgMzIyIDY5QzIwNyA2OSAxNjUgMTQxIDE1OCAxOTdINjFDNjggODEgMTU3IC0xNSAzMjIgLTE1WiIgZmlsbD0iIzIwMjEyNCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTA1LjIgMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNMjcyIDBIMzcwVjMwMkw2MTQgNzA1SDUxMEwzMjMgMzkyTDEzNCA3MDVIMjhMMjcyIDMwMloiIGZpbGw9IiMyMDIxMjQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDExMi44IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTMyMiAtMTVDNDc5IC0xNSA1NzcgNzMgNTc3IDE5NEM1NzcgMzExIDUwMCAzNzkgMzY5IDQwNEwzMDIgNDE3QzIxMSA0MzUgMTgyIDQ2NSAxODIgNTI4QzE4MiA1NzcgMjE5IDYzOCAzMTIgNjM4QzQxMSA2MzggNDUzIDU4OSA0NjQgNTE4SDU2MkM1NTIgNjIwIDQ4MiA3MjAgMzExIDcyMEMxNzIgNzIwIDg4IDYyNCA4OCA1MjBDODggNDEyIDE0MyAzNDggMjgzIDMyMEwzNDkgMzA3QzQ0NyAyODggNDc0IDI0NyA0NzQgMTg3QzQ3NCAxMzAgNDMwIDY5IDMyMiA2OUMyMDcgNjkgMTY1IDE0MSAxNTggMTk3SDYxQzY4IDgxIDE1NyAtMTUgMzIyIC0xNVoiIGZpbGw9IiMyMDIxMjQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDEyMC40IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTI3MSAwSDM3MFY2MjBINTg3VjcwNUg1NFY2MjBIMjcxWiIgZmlsbD0iIzIwMjEyNCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTI4IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTEwMSAwSDU2OVY4NkgxOTlWMzE4SDUzNlY0MDJIMTk5VjYyMEg1NjlWNzA1SDEwMVoiIGZpbGw9IiMyMDIxMjQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDEzNS42IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTc1IDBIMTY4TDE2NSA2MzZMMjY1IDE5OEgzNzVMNDc1IDYzNkw0NzEgMEg1NjVWNzA1SDQxNUwzMjIgMjc5TDIzMSA3MDVINzVaIiBmaWxsPSIjMjAyMTI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNDMuMiAyNC40NSkgc2NhbGUoMC4wMSAtMC4wMSkiLz4NCjxwYXRoIGQ9Ik0zMjIgLTE1QzQ3OSAtMTUgNTc3IDczIDU3NyAxOTRDNTc3IDMxMSA1MDAgMzc5IDM2OSA0MDRMMzAyIDQxN0MyMTEgNDM1IDE4MiA0NjUgMTgyIDUyOEMxODIgNTc3IDIxOSA2MzggMzEyIDYzOEM0MTEgNjM4IDQ1MyA1ODkgNDY0IDUxOEg1NjJDNTUyIDYyMCA0ODIgNzIwIDMxMSA3MjBDMTcyIDcyMCA4OCA2MjQgODggNTIwQzg4IDQxMiAxNDMgMzQ4IDI4MyAzMjBMMzQ5IDMwN0M0NDcgMjg4IDQ3NCAyNDcgNDc0IDE4N0M0NzQgMTMwIDQzMCA2OSAzMjIgNjlDMjA3IDY5IDE2NSAxNDEgMTU4IDE5N0g2MUM2OCA4MSAxNTcgLTE1IDMyMiAtMTVaIiBmaWxsPSIjMjAyMTI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNTAuOCAyNC40NSkgc2NhbGUoMC4wMSAtMC4wMSkiLz4NCjwvZz4NCjwvc3ZnPg0K" width="179"/>
+<img alt="Recast Systems" class="logo-dark" height="45" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTc5IiBoZWlnaHQ9IjQ1IiB2aWV3Qm94PSIwIDAgMTc5IDQ1IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHJvbGU9ImltZyIgYXJpYS1sYWJlbGxlZGJ5PSJ0aXRsZSI+DQo8dGl0bGUgaWQ9InRpdGxlIj5SZWNhc3QgU3lzdGVtcyBvbmUtbGluZSBuYXZiYXIgbG9nbzwvdGl0bGU+DQo8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNCA3KSI+DQo8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLjY1Njg5MSAwKSBzY2FsZSgwLjA4MjExMTQzNykiPg0KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzFfMTA5NSkiPg0KPHBhdGggZD0iTTE2NC45NzUgNjcuNDYwM0MxNjYuNzY1IDc4LjA2NzggMTU5LjYxNyA4OC4xMTc4IDE0OS4wMDkgODkuOTA3NkMxMzguNDAyIDkxLjY5NzMgMTI4LjM1MiA4NC41NDkxIDEyNi41NjIgNzMuOTQxNkMxMjQuNzcyIDYzLjMzNDEgMTMxLjkyIDUzLjI4NDEgMTQyLjUyOCA1MS40OTQ0QzE1My4xMzUgNDkuNzA0NiAxNjMuMTg1IDU2Ljg1MjggMTY0Ljk3NSA2Ny40NjAzWiIgZmlsbD0iI0RBNUUxNSIvPg0KPHBhdGggZD0iTTE5OC4zNjIgMjY1LjMzN0MyMDAuMTUyIDI3NS45NDUgMTkzLjAwNCAyODUuOTk1IDE4Mi4zOTYgMjg3Ljc4NEMxNzEuNzg5IDI4OS41NzQgMTYxLjczOSAyODIuNDI2IDE1OS45NDkgMjcxLjgxOEMxNTguMTU5IDI2MS4yMTEgMTY1LjMwNyAyNTEuMTYxIDE3NS45MTUgMjQ5LjM3MUMxODYuNTIyIDI0Ny41ODEgMTk2LjU3MiAyNTQuNzMgMTk4LjM2MiAyNjUuMzM3WiIgZmlsbD0iI0RBNUUxNSIvPg0KPHBhdGggZD0iTTI1Mi4yMDkgMTIwLjcyNkMyNDMuOTE3IDEyNy41OCAyMzEuNjQgMTI2LjQxNSAyMjQuNzg2IDExOC4xMjNDMjE3LjkzMiAxMDkuODMyIDIxOS4wOTggOTcuNTU0IDIyNy4zODkgOTAuNzAwM0MyMzUuNjgxIDgzLjg0NjYgMjQ3Ljk1OCA4NS4wMTIxIDI1NC44MTIgOTMuMzAzNkMyNjEuNjY2IDEwMS41OTUgMjYwLjUgMTEzLjg3MyAyNTIuMjA5IDEyMC43MjZaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNOTcuNTM1NCAyNDguNTc5Qzg5LjI0MzkgMjU1LjQzMyA3Ni45NjYyIDI1NC4yNjcgNzAuMTEyNSAyNDUuOTc2QzYzLjI1ODggMjM3LjY4NCA2NC40MjQzIDIyNS40MDcgNzIuNzE1OCAyMTguNTUzQzgxLjAwNzMgMjExLjY5OSA5My4yODQ5IDIxMi44NjUgMTAwLjEzOSAyMjEuMTU2QzEwNi45OTIgMjI5LjQ0OCAxMDUuODI3IDI0MS43MjUgOTcuNTM1NCAyNDguNTc5WiIgZmlsbD0iI0RBNUUxNSIvPg0KPHBhdGggZD0iTTI0OS42OTYgMjIyLjkwNUMyMzkuNjE0IDIxOS4xNTEgMjM0LjQ4NSAyMDcuOTM2IDIzOC4yMzkgMTk3Ljg1NUMyNDEuOTkzIDE4Ny43NzMgMjUzLjIwOCAxODIuNjQ0IDI2My4yODkgMTg2LjM5OEMyNzMuMzcxIDE5MC4xNTEgMjc4LjUgMjAxLjM2NyAyNzQuNzQ2IDIxMS40NDhDMjcwLjk5MiAyMjEuNTI5IDI1OS43NzcgMjI2LjY1OSAyNDkuNjk2IDIyMi45MDVaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNNjEuNjM1MyAxNTIuODgxQzUxLjU1NDEgMTQ5LjEyOCA0Ni40MjQ2IDEzNy45MTIgNTAuMTc4NCAxMjcuODMxQzUzLjkzMjIgMTE3Ljc1IDY1LjE0NzcgMTEyLjYyIDc1LjIyODkgMTE2LjM3NEM4NS4zMTAyIDEyMC4xMjggOTAuNDM5NiAxMzEuMzQzIDg2LjY4NTkgMTQxLjQyNEM4Mi45MzIxIDE1MS41MDYgNzEuNzE2NiAxNTYuNjM1IDYxLjYzNTMgMTUyLjg4MVoiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik0xOTguODg0IDc0LjEzODVDMTk3LjAzNiA4NC43MzYgMTg2Ljk0NyA5MS44MjkzIDE3Ni4zNSA4OS45ODE2QzE2NS43NTIgODguMTM0IDE1OC42NTkgNzguMDQ1MSAxNjAuNTA2IDY3LjQ0NzVDMTYyLjM1NCA1Ni44NDk5IDE3Mi40NDMgNDkuNzU2NyAxODMuMDQxIDUxLjYwNDRDMTkzLjYzOCA1My40NTIgMjAwLjczMSA2My41NDA5IDE5OC44ODQgNzQuMTM4NVoiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik0xNjQuNDE3IDI3MS44M0MxNjIuNTY5IDI4Mi40MjggMTUyLjQ4IDI4OS41MjEgMTQxLjg4MyAyODcuNjc0QzEzMS4yODUgMjg1LjgyNiAxMjQuMTkyIDI3NS43MzcgMTI2LjA0IDI2NS4xMzlDMTI3Ljg4NyAyNTQuNTQyIDEzNy45NzYgMjQ3LjQ0OSAxNDguNTc0IDI0OS4yOTZDMTU5LjE3MSAyNTEuMTQ0IDE2Ni4yNjQgMjYxLjIzMyAxNjQuNDE3IDI3MS44M1oiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik0yNjMuMzc5IDE1My40MzFDMjUzLjI3NyAxNTcuMTMgMjQyLjA5IDE1MS45MzkgMjM4LjM5MSAxNDEuODM4QzIzNC42OTIgMTMxLjczNiAyMzkuODgzIDEyMC41NDkgMjQ5Ljk4NSAxMTYuODVDMjYwLjA4NiAxMTMuMTUyIDI3MS4yNzQgMTE4LjM0MiAyNzQuOTcyIDEyOC40NDRDMjc4LjY3MSAxMzguNTQ1IDI3My40OCAxNDkuNzMzIDI2My4zNzkgMTUzLjQzMVoiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik03NC45Mzg3IDIyMi40MjhDNjQuODM3MSAyMjYuMTI3IDUzLjY0OTggMjIwLjkzNiA0OS45NTExIDIxMC44MzVDNDYuMjUyNCAyMDAuNzMzIDUxLjQ0MyAxODkuNTQ2IDYxLjU0NDYgMTg1Ljg0N0M3MS42NDYyIDE4Mi4xNDggODIuODMzNiAxODcuMzM5IDg2LjUzMjIgMTk3LjQ0MUM5MC4yMzA5IDIwNy41NDIgODUuMDQwMyAyMTguNzMgNzQuOTM4NyAyMjIuNDI4WiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTIyNi45NTcgMjQ4LjkzMkMyMTguNzAzIDI0Mi4wMzMgMjE3LjYwNCAyMjkuNzQ5IDIyNC41MDMgMjIxLjQ5NUMyMzEuNDAyIDIxMy4yNDEgMjQzLjY4NiAyMTIuMTQzIDI1MS45NCAyMTkuMDQyQzI2MC4xOTQgMjI1Ljk0MSAyNjEuMjkyIDIzOC4yMjUgMjU0LjM5MyAyNDYuNDc4QzI0Ny40OTUgMjU0LjczMiAyMzUuMjExIDI1NS44MzEgMjI2Ljk1NyAyNDguOTMyWiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTcyLjk4MzYgMTIwLjIzN0M2NC43Mjk2IDExMy4zMzggNjMuNjMxMSAxMDEuMDU0IDcwLjUzIDkyLjgwMDRDNzcuNDI4OSA4NC41NDY0IDg5LjcxMjcgODMuNDQ3OSA5Ny45NjY3IDkwLjM0NjhDMTA2LjIyMSA5Ny4yNDU3IDEwNy4zMTkgMTA5LjUzIDEwMC40MiAxMTcuNzgzQzkzLjUyMTMgMTI2LjAzNyA4MS4yMzc1IDEyNy4xMzYgNzIuOTgzNiAxMjAuMjM3WiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTE5MC4zNTggNzEuMzEwMkMxODkuNDQ4IDgyLjAyOTEgMTgwLjAyMSA4OS45ODA3IDE2OS4zMDIgODkuMDcwN0MxNTguNTgzIDg4LjE2MDYgMTUwLjYzMSA3OC43MzM1IDE1MS41NDIgNjguMDE0NkMxNTIuNDUyIDU3LjI5NTcgMTYxLjg3OSA0OS4zNDQxIDE3Mi41OTggNTAuMjU0MkMxODMuMzE2IDUxLjE2NDIgMTkxLjI2OCA2MC41OTEzIDE5MC4zNTggNzEuMzEwMloiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0xNzMuMzgyIDI3MS4yNjVDMTcyLjQ3MSAyODEuOTg0IDE2My4wNDQgMjg5LjkzNSAxNTIuMzI1IDI4OS4wMjVDMTQxLjYwNyAyODguMTE1IDEzMy42NTUgMjc4LjY4OCAxMzQuNTY1IDI2Ny45NjlDMTM1LjQ3NSAyNTcuMjUgMTQ0LjkwMiAyNDkuMjk5IDE1NS42MjEgMjUwLjIwOUMxNjYuMzQgMjUxLjExOSAxNzQuMjkyIDI2MC41NDYgMTczLjM4MiAyNzEuMjY1WiIgZmlsbD0iIzZCRDBFRCIvPg0KPHBhdGggZD0iTTI2MS41NjYgMTQ0LjYzNEMyNTEuODI4IDE0OS4yMDYgMjQwLjIyOCAxNDUuMDE3IDIzNS42NTcgMTM1LjI4QzIzMS4wODYgMTI1LjU0MiAyMzUuMjc0IDExMy45NDIgMjQ1LjAxMiAxMDkuMzcxQzI1NC43NSAxMDQuNzk5IDI2Ni4zNSAxMDguOTg4IDI3MC45MjEgMTE4LjcyNUMyNzUuNDkyIDEyOC40NjMgMjcxLjMwNCAxNDAuMDYzIDI2MS41NjYgMTQ0LjYzNFoiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik03OS45MTE3IDIyOS45MUM3MC4xNzM4IDIzNC40ODEgNTguNTczOSAyMzAuMjkzIDU0LjAwMjYgMjIwLjU1NUM0OS40MzEzIDIxMC44MTcgNTMuNjE5NiAxOTkuMjE3IDYzLjM1NzUgMTk0LjY0NkM3My4wOTUzIDE5MC4wNzUgODQuNjk1MiAxOTQuMjYzIDg5LjI2NjUgMjA0LjAwMUM5My44Mzc4IDIxMy43MzkgODkuNjQ5NSAyMjUuMzM5IDc5LjkxMTcgMjI5LjkxWiIgZmlsbD0iIzZCRDBFRCIvPg0KPHBhdGggZD0iTTIzMy42NjkgMjQyLjk2NEMyMjQuODQyIDIzNi44MTYgMjIyLjY2OSAyMjQuNjc3IDIyOC44MTYgMjE1Ljg0OUMyMzQuOTY0IDIwNy4wMjEgMjQ3LjEwNCAyMDQuODQ4IDI1NS45MzIgMjEwLjk5NkMyNjQuNzYgMjE3LjE0MyAyNjYuOTMyIDIyOS4yODMgMjYwLjc4NSAyMzguMTExQzI1NC42MzcgMjQ2LjkzOSAyNDIuNDk3IDI0OS4xMTIgMjMzLjY2OSAyNDIuOTY0WiIgZmlsbD0iIzZCRDBFRCIvPg0KPHBhdGggZD0iTTY4Ljk5MTIgMTI4LjI4NUM2MC4xNjM0IDEyMi4xMzcgNTcuOTkwNiAxMDkuOTk3IDY0LjEzODIgMTAxLjE2OUM3MC4yODU4IDkyLjM0MTcgODIuNDI1NyA5MC4xNjg5IDkxLjI1MzUgOTYuMzE2NUMxMDAuMDgxIDEwMi40NjQgMTAyLjI1NCAxMTQuNjA0IDk2LjEwNjUgMTIzLjQzMkM4OS45NTg5IDEzMi4yNiA3Ny44MTkgMTM0LjQzMiA2OC45OTEyIDEyOC4yODVaIiBmaWxsPSIjNkJEMEVEIi8+DQo8cGF0aCBkPSJNMTQ5LjYyMiAxOC44MTE4QzE1MS45MDYgMjkuMzIzOSAxNDUuMjM2IDM5LjY5NzQgMTM0LjcyNCA0MS45ODE3QzEyNC4yMTIgNDQuMjY2IDExMy44MzggMzcuNTk2IDExMS41NTQgMjcuMDgzOUMxMDkuMjcgMTYuNTcxOCAxMTUuOTQgNi4xOTgyOCAxMjYuNDUyIDMuOTEzOTlDMTM2Ljk2NCAxLjYyOTY5IDE0Ny4zMzggOC4yOTk2NiAxNDkuNjIyIDE4LjgxMThaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNMjEzLjM3NiAzMTIuMjAzQzIxNS42NiAzMjIuNzE1IDIwOC45OSAzMzMuMDg4IDE5OC40NzggMzM1LjM3MkMxODcuOTY2IDMzNy42NTcgMTc3LjU5MiAzMzAuOTg3IDE3NS4zMDggMzIwLjQ3NUMxNzMuMDI0IDMwOS45NjMgMTc5LjY5NCAyOTkuNTg5IDE5MC4yMDYgMjk3LjMwNUMyMDAuNzE4IDI5NS4wMiAyMTEuMDkxIDMwMS42OSAyMTMuMzc2IDMxMi4yMDNaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNMjg2LjY2NiA4My4xMDQ5QzI3OC43MDQgOTAuMzM5MyAyNjYuMzg2IDg5Ljc0OTcgMjU5LjE1MSA4MS43ODgxQzI1MS45MTcgNzMuODI2NCAyNTIuNTA3IDYxLjUwNzcgMjYwLjQ2OCA1NC4yNzM0QzI2OC40MyA0Ny4wMzkxIDI4MC43NDkgNDcuNjI4NyAyODcuOTgzIDU1LjU5MDNDMjk1LjIxNyA2My41NTE5IDI5NC42MjggNzUuODcwNiAyODYuNjY2IDgzLjEwNDlaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNNjQuNDU4OSAyODUuMDEzQzU2LjQ5NzMgMjkyLjI0NyA0NC4xNzg2IDI5MS42NTggMzYuOTQ0MyAyODMuNjk2QzI5LjcwOTkgMjc1LjczNSAzMC4yOTk1IDI2My40MTYgMzguMjYxMiAyNTYuMTgyQzQ2LjIyMjggMjQ4Ljk0NyA1OC41NDE1IDI0OS41MzcgNjUuNzc1OCAyNTcuNDk5QzczLjAxMDEgMjY1LjQ2IDcyLjQyMDUgMjc3Ljc3OSA2NC40NTg5IDI4NS4wMTNaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNMjk5LjUwOSAyMzMuOTM2QzI4OS4yNjMgMjMwLjY1OCAyODMuNjE0IDIxOS42OTUgMjg2Ljg5MiAyMDkuNDQ5QzI5MC4xNyAxOTkuMjAzIDMwMS4xMzMgMTkzLjU1NSAzMTEuMzc5IDE5Ni44MzJDMzIxLjYyNSAyMDAuMTEgMzI3LjI3NCAyMTEuMDczIDMyMy45OTYgMjIxLjMxOUMzMjAuNzE4IDIzMS41NjUgMzA5Ljc1NSAyMzcuMjE0IDI5OS41MDkgMjMzLjkzNloiIGZpbGw9IiNEQTVFMTUiLz4NCjxwYXRoIGQ9Ik0xMy41NDgzIDE0Mi40NTRDMy4zMDI0MiAxMzkuMTc2IC0yLjM0NjM0IDEyOC4yMTMgMC45MzE0NTggMTE3Ljk2N0M0LjIwOTI2IDEwNy43MjEgMTUuMTcyNCAxMDIuMDczIDI1LjQxODMgMTA1LjM1QzM1LjY2NDIgMTA4LjYyOCA0MS4zMTMgMTE5LjU5MSAzOC4wMzUxIDEyOS44MzdDMzQuNzU3MyAxNDAuMDgzIDIzLjc5NDIgMTQ1LjczMiAxMy41NDgzIDE0Mi40NTRaIiBmaWxsPSIjREE1RTE1Ii8+DQo8cGF0aCBkPSJNMTY1LjM1OSAxOC4yOUMxNjYuNTM5IDI4Ljk4MjUgMTU4LjgyOCAzOC42MDcgMTQ4LjEzNSAzOS43ODY4QzEzNy40NDMgNDAuOTY2NyAxMjcuODE4IDMzLjI1NTEgMTI2LjYzOCAyMi41NjI1QzEyNS40NTggMTEuODcgMTMzLjE3IDIuMjQ1NTIgMTQzLjg2MiAxLjA2NTY4QzE1NC41NTUgLTAuMTE0MTY4IDE2NC4xNzkgNy41OTc0IDE2NS4zNTkgMTguMjlaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMTk4LjI4OSAzMTYuNzE2QzE5OS40NjkgMzI3LjQwOSAxOTEuNzU3IDMzNy4wMzMgMTgxLjA2NCAzMzguMjEzQzE3MC4zNzIgMzM5LjM5MyAxNjAuNzQ3IDMzMS42ODIgMTU5LjU2OCAzMjAuOTg5QzE1OC4zODggMzEwLjI5NiAxNjYuMDk5IDMwMC42NzIgMTc2Ljc5MiAyOTkuNDkyQzE4Ny40ODQgMjk4LjMxMiAxOTcuMTA5IDMwNi4wMjQgMTk4LjI4OSAzMTYuNzE2WiIgZmlsbD0iI0ZCQkYyNyIvPg0KPHBhdGggZD0iTTI5NC45ODMgOTYuNDcyNkMyODYuMzEzIDEwMi44NDEgMjc0LjEyMiAxMDAuOTc0IDI2Ny43NTQgOTIuMzA0NEMyNjEuMzg2IDgzLjYzNDMgMjYzLjI1MiA3MS40NDM1IDI3MS45MjIgNjUuMDc1NEMyODAuNTkyIDU4LjcwNzQgMjkyLjc4MyA2MC41NzM2IDI5OS4xNTEgNjkuMjQzNkMzMDUuNTE5IDc3LjkxMzcgMzAzLjY1MyA5MC4xMDQ2IDI5NC45ODMgOTYuNDcyNloiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik01My4wMDI0IDI3NC4yMDNDNDQuMzMyMyAyODAuNTcxIDMyLjE0MTQgMjc4LjcwNSAyNS43NzM0IDI3MC4wMzVDMTkuNDA1NCAyNjEuMzY1IDIxLjI3MTUgMjQ5LjE3NCAyOS45NDE2IDI0Mi44MDZDMzguNjExNyAyMzYuNDM4IDUwLjgwMjUgMjM4LjMwNCA1Ny4xNzA2IDI0Ni45NzRDNjMuNTM4NiAyNTUuNjQ0IDYxLjY3MjUgMjY3LjgzNSA1My4wMDI0IDI3NC4yMDNaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMjkyLjA4NyAyNDcuODIyQzI4Mi4yMzcgMjQzLjQ5OCAyNzcuNzU4IDIzMi4wMDcgMjgyLjA4MiAyMjIuMTU3QzI4Ni40MDcgMjEyLjMwNyAyOTcuODk3IDIwNy44MjggMzA3Ljc0NyAyMTIuMTUyQzMxNy41OTcgMjE2LjQ3NyAzMjIuMDc3IDIyNy45NjggMzE3Ljc1MiAyMzcuODE4QzMxMy40MjggMjQ3LjY2NyAzMDEuOTM3IDI1Mi4xNDcgMjkyLjA4NyAyNDcuODIyWiIgZmlsbD0iI0ZCQkYyNyIvPg0KPHBhdGggZD0iTTE3LjE3NzIgMTI3LjEyNkM3LjMyNzI2IDEyMi44MDIgMi44NDgwMSAxMTEuMzExIDcuMTcyNTEgMTAxLjQ2MUMxMS40OTcgOTEuNjExNCAyMi45ODc2IDg3LjEzMjEgMzIuODM3NiA5MS40NTY2QzQyLjY4NzUgOTUuNzgxMSA0Ny4xNjY4IDEwNy4yNzIgNDIuODQyMyAxMTcuMTIyQzM4LjUxNzggMTI2Ljk3MiAyNy4wMjcxIDEzMS40NTEgMTcuMTc3MiAxMjcuMTI2WiIgZmlsbD0iI0ZCQkYyNyIvPg0KPHBhdGggZD0iTTIxMy4yIDI3LjAxOUMyMTAuOTI5IDM3LjUzMzkgMjAwLjU2NCA0NC4yMTY1IDE5MC4wNDkgNDEuOTQ1MUMxNzkuNTM0IDM5LjY3MzYgMTcyLjg1MSAyOS4zMDgyIDE3NS4xMjMgMTguNzkzM0MxNzcuMzk0IDguMjc4NDEgMTg3Ljc1OSAxLjU5NTc4IDE5OC4yNzQgMy44NjcyNEMyMDguNzg5IDYuMTM4NyAyMTUuNDcyIDE2LjUwNDEgMjEzLjIgMjcuMDE5WiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTE0OS44MDUgMzIwLjQ4N0MxNDcuNTMzIDMzMS4wMDIgMTM3LjE2OCAzMzcuNjg0IDEyNi42NTMgMzM1LjQxM0MxMTYuMTM4IDMzMy4xNDEgMTA5LjQ1NSAzMjIuNzc2IDExMS43MjcgMzEyLjI2MUMxMTMuOTk4IDMwMS43NDYgMTI0LjM2NCAyOTUuMDY0IDEzNC44NzggMjk3LjMzNUMxNDUuMzkzIDI5OS42MDcgMTUyLjA3NiAzMDkuOTcyIDE0OS44MDUgMzIwLjQ4N1oiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik0zMTEuMzQ0IDE0Mi4yNjlDMzAxLjEwMiAxNDUuNTU5IDI5MC4xMzIgMTM5LjkyNCAyODYuODQyIDEyOS42ODJDMjgzLjU1MiAxMTkuNDQgMjg5LjE4NyAxMDguNDcgMjk5LjQyOSAxMDUuMTc5QzMwOS42NzEgMTAxLjg4OSAzMjAuNjQxIDEwNy41MjQgMzIzLjkzMSAxMTcuNzY2QzMyNy4yMjEgMTI4LjAwOCAzMjEuNTg2IDEzOC45NzggMzExLjM0NCAxNDIuMjY5WiIgZmlsbD0iIzJGNUVEQyIvPg0KPHBhdGggZD0iTTI1LjQ5NTEgMjM0LjFDMTUuMjUzMiAyMzcuMzkxIDQuMjgzMjIgMjMxLjc1NSAwLjk5MjkyMyAyMjEuNTEzQy0yLjI5NzM5IDIxMS4yNzEgMy4zMzc5OSAyMDAuMzAxIDEzLjU3OTggMTk3LjAxMUMyMy44MjE3IDE5My43MjEgMzQuNzkxOCAxOTkuMzU2IDM4LjA4MjEgMjA5LjU5OEM0MS4zNzI0IDIxOS44NCAzNS43MzcgMjMwLjgxIDI1LjQ5NTEgMjM0LjFaIiBmaWxsPSIjMkY1RURDIi8+DQo8cGF0aCBkPSJNMjYwLjYwNyAyODQuODlDMjUyLjYzNyAyNzcuNjY2IDI1Mi4wMzIgMjY1LjM0OCAyNTkuMjU3IDI1Ny4zNzdDMjY2LjQ4MSAyNDkuNDA3IDI3OC43OTkgMjQ4LjgwMiAyODYuNzcgMjU2LjAyN0MyOTQuNzQgMjYzLjI1MSAyOTUuMzQ1IDI3NS41NjkgMjg4LjEyIDI4My41NEMyODAuODk2IDI5MS41MSAyNjguNTc4IDI5Mi4xMTUgMjYwLjYwNyAyODQuODlaIiBmaWxsPSIjMkY1RURDIi8+DQo8cGF0aCBkPSJNMzguMTU0MyA4My4yNTM1QzMwLjE4MzggNzYuMDI4OSAyOS41NzkyIDYzLjcxMDkgMzYuODAzOCA1NS43NDA1QzQ0LjAyODQgNDcuNzcgNTYuMzQ2NCA0Ny4xNjU0IDY0LjMxNjggNTQuMzlDNzIuMjg3MyA2MS42MTQ2IDcyLjg5MTkgNzMuOTMyNiA2NS42NjczIDgxLjkwM0M1OC40NDI3IDg5Ljg3MzQgNDYuMTI0NyA5MC40NzgxIDM4LjE1NDMgODMuMjUzNVoiIGZpbGw9IiMyRjVFREMiLz4NCjxwYXRoIGQ9Ik0xOTcuNjg3IDIyLjQxODJDMTk2LjU1MSAzMy4xMTU1IDE4Ni45NTggNDAuODY2MyAxNzYuMjYgMzkuNzMwMkMxNjUuNTYzIDM4LjU5NDEgMTU3LjgxMiAyOS4wMDEyIDE1OC45NDggMTguMzA0QzE2MC4wODUgNy42MDY2NyAxNjkuNjc3IC0wLjE0NDE3NSAxODAuMzc1IDAuOTkxOTQ0QzE5MS4wNzIgMi4xMjgwNiAxOTguODIzIDExLjcyMDkgMTk3LjY4NyAyMi40MTgyWiIgZmlsbD0iIzZCRDBFRCIvPg0KPHBhdGggZD0iTTE2NS45NzggMzIwLjk3N0MxNjQuODQyIDMzMS42NzQgMTU1LjI0OSAzMzkuNDI1IDE0NC41NTIgMzM4LjI4OUMxMzMuODU0IDMzNy4xNTMgMTI2LjEwMyAzMjcuNTYgMTI3LjI0IDMxNi44NjNDMTI4LjM3NiAzMDYuMTY1IDEzNy45NjkgMjk4LjQxNCAxNDguNjY2IDI5OS41NTFDMTU5LjM2MyAzMDAuNjg3IDE2Ny4xMTQgMzEwLjI4IDE2NS45NzggMzIwLjk3N1oiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0zMDcuNTcyIDEyNi41MzNDMjk3Ljc0IDEzMC44OTggMjg2LjIzMSAxMjYuNDY2IDI4MS44NjYgMTE2LjYzNEMyNzcuNTAxIDEwNi44MDIgMjgxLjkzNCA5NS4yOTI4IDI5MS43NjYgOTAuOTI4QzMwMS41OTggODYuNTYzMyAzMTMuMTA3IDkwLjk5NTUgMzE3LjQ3MSAxMDAuODI4QzMyMS44MzYgMTEwLjY2IDMxNy40MDQgMTIyLjE2OSAzMDcuNTcyIDEyNi41MzNaIiBmaWxsPSIjNkJEMEVEIi8+DQo8cGF0aCBkPSJNMzMuMTU3NCAyNDguMzUyQzIzLjMyNTMgMjUyLjcxNyAxMS44MTY0IDI0OC4yODUgNy40NTE2OSAyMzguNDUzQzMuMDg2OTYgMjI4LjYyIDcuNTE5MiAyMTcuMTEyIDE3LjM1MTQgMjEyLjc0N0MyNy4xODM1IDIwOC4zODIgMzguNjkyNCAyMTIuODE0IDQzLjA1NzEgMjIyLjY0N0M0Ny40MjE5IDIzMi40NzkgNDIuOTg5NiAyNDMuOTg4IDMzLjE1NzQgMjQ4LjM1MloiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0yNzIuMzQ4IDI3My43NTZDMjYzLjY1MiAyNjcuNDIzIDI2MS43MzYgMjU1LjI0IDI2OC4wNjkgMjQ2LjU0NEMyNzQuNDAxIDIzNy44NDggMjg2LjU4NCAyMzUuOTMyIDI5NS4yOCAyNDIuMjY0QzMwMy45NzYgMjQ4LjU5NyAzMDUuODkyIDI2MC43OCAyOTkuNTYgMjY5LjQ3NkMyOTMuMjI3IDI3OC4xNzIgMjgxLjA0NCAyODAuMDg4IDI3Mi4zNDggMjczLjc1NloiIGZpbGw9IiM2QkQwRUQiLz4NCjxwYXRoIGQ9Ik0yOS42NDMyIDk3LjAxNTlDMjAuOTQ3MiA5MC42ODMzIDE5LjAzMTIgNzguNTAwMiAyNS4zNjM3IDY5LjgwNDJDMzEuNjk2MyA2MS4xMDgxIDQzLjg3OTQgNTkuMTkyMSA1Mi41NzU0IDY1LjUyNDdDNjEuMjcxNSA3MS44NTcyIDYzLjE4NzUgODQuMDQwMyA1Ni44NTQ5IDkyLjczNjRDNTAuNTIyNCAxMDEuNDMyIDM4LjMzOTMgMTAzLjM0OCAyOS42NDMyIDk3LjAxNTlaIiBmaWxsPSIjNkJEMEVEIi8+DQo8cGF0aCBkPSJNMTgxLjk0IDExOS4xMTVDMTgxLjk0IDEyOS44NzIgMTczLjIxOSAxMzguNTkzIDE2Mi40NjEgMTM4LjU5M0MxNTEuNzA0IDEzOC41OTMgMTQyLjk4MyAxMjkuODcyIDE0Mi45ODMgMTE5LjExNUMxNDIuOTgzIDEwOC4zNTcgMTUxLjcwNCA5OS42MzY4IDE2Mi40NjEgOTkuNjM2OEMxNzMuMjE5IDk5LjYzNjggMTgxLjk0IDEwOC4zNTcgMTgxLjk0IDExOS4xMTVaIiBmaWxsPSJ3aGl0ZSIvPg0KPHBhdGggZD0iTTE4MS45MzkgMjIwLjE2NEMxODEuOTM5IDIzMC45MjEgMTczLjIxOSAyMzkuNjQyIDE2Mi40NjEgMjM5LjY0MkMxNTEuNzA0IDIzOS42NDIgMTQyLjk4MyAyMzAuOTIxIDE0Mi45ODMgMjIwLjE2NEMxNDIuOTgzIDIwOS40MDcgMTUxLjcwNCAyMDAuNjg2IDE2Mi40NjEgMjAwLjY4NkMxNzMuMjE5IDIwMC42ODYgMTgxLjkzOSAyMDkuNDA3IDE4MS45MzkgMjIwLjE2NFoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMTk2LjQ4NSAyMTEuNzdDMTg3LjE2OSAyMDYuMzkxIDE4My45NzcgMTk0LjQ3OSAxODkuMzU1IDE4NS4xNjNDMTk0LjczNCAxNzUuODQ2IDIwNi42NDcgMTcyLjY1NCAyMTUuOTYzIDE3OC4wMzNDMjI1LjI3OSAxODMuNDEyIDIyOC40NzEgMTk1LjMyNSAyMjMuMDkyIDIwNC42NDFDMjE3LjcxNCAyMTMuOTU3IDIwNS44MDEgMjE3LjE0OSAxOTYuNDg1IDIxMS43N1oiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMTA4Ljk3NCAxNjEuMjQ2Qzk5LjY1NzYgMTU1Ljg2NyA5Ni40NjU2IDE0My45NTQgMTAxLjg0NCAxMzQuNjM4QzEwNy4yMjMgMTI1LjMyMiAxMTkuMTM2IDEyMi4xMyAxMjguNDUyIDEyNy41MDlDMTM3Ljc2OCAxMzIuODg3IDE0MC45NiAxNDQuOCAxMzUuNTgxIDE1NC4xMTZDMTMwLjIwMyAxNjMuNDMyIDExOC4yOSAxNjYuNjI0IDEwOC45NzQgMTYxLjI0NloiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMjE1Ljk2MyAxNjEuMjQ2QzIwNi42NDcgMTY2LjYyNCAxOTQuNzM0IDE2My40MzIgMTg5LjM1NSAxNTQuMTE2QzE4My45NzcgMTQ0LjggMTg3LjE2OSAxMzIuODg3IDE5Ni40ODUgMTI3LjUwOUMyMDUuODAxIDEyMi4xMyAyMTcuNzE0IDEyNS4zMjIgMjIzLjA5MiAxMzQuNjM4QzIyOC40NzEgMTQzLjk1NCAyMjUuMjc5IDE1NS44NjcgMjE1Ljk2MyAxNjEuMjQ2WiIgZmlsbD0id2hpdGUiLz4NCjxwYXRoIGQ9Ik0xMjguNDUxIDIxMS43N0MxMTkuMTM1IDIxNy4xNDkgMTA3LjIyMyAyMTMuOTU3IDEwMS44NDQgMjA0LjY0MUM5Ni40NjUxIDE5NS4zMjUgOTkuNjU3IDE4My40MTIgMTA4Ljk3MyAxNzguMDMzQzExOC4yOSAxNzIuNjU0IDEzMC4yMDIgMTc1Ljg0NiAxMzUuNTgxIDE4NS4xNjNDMTQwLjk2IDE5NC40NzkgMTM3Ljc2OCAyMDYuMzkxIDEyOC40NTEgMjExLjc3WiIgZmlsbD0id2hpdGUiLz4NCjxwYXRoIGQ9Ik0xNzMuNDQ1IDY4LjAyMTlDMTc0LjM0OCA3OC43NDEzIDE2Ni4zOTEgODguMTYzNSAxNTUuNjcyIDg5LjA2NjlDMTQ0Ljk1MiA4OS45NzAzIDEzNS41MyA4Mi4wMTI4IDEzNC42MjYgNzEuMjkzM0MxMzMuNzIzIDYwLjU3MzkgMTQxLjY4MSA1MS4xNTE3IDE1Mi40IDUwLjI0ODNDMTYzLjExOSA0OS4zNDQ5IDE3Mi41NDIgNTcuMzAyNCAxNzMuNDQ1IDY4LjAyMTlaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMTkwLjI5NyAyNjcuOTg3QzE5MS4yMDEgMjc4LjcwNyAxODMuMjQzIDI4OC4xMjkgMTcyLjUyNCAyODkuMDMyQzE2MS44MDQgMjg5LjkzNiAxNTIuMzgyIDI4MS45NzggMTUxLjQ3OSAyNzEuMjU5QzE1MC41NzUgMjYwLjUzOSAxNTguNTMzIDI1MS4xMTcgMTY5LjI1MiAyNTAuMjE0QzE3OS45NzIgMjQ5LjMxIDE4OS4zOTQgMjU3LjI2OCAxOTAuMjk3IDI2Ny45ODdaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNMjU1Ljk1OCAxMjguMzQzQzI0Ny4xMjYgMTM0LjQ4NSAyMzQuOTg4IDEzMi4zMDUgMjI4Ljg0NiAxMjMuNDczQzIyMi43MDMgMTE0LjY0MiAyMjQuODg0IDEwMi41MDMgMjMzLjcxNSA5Ni4zNjExQzI0Mi41NDcgOTAuMjE5IDI1NC42ODUgOTIuMzk5MyAyNjAuODI4IDEwMS4yMzFDMjY2Ljk3IDExMC4wNjMgMjY0Ljc4OSAxMjIuMjAxIDI1NS45NTggMTI4LjM0M1oiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik05MS4yMDg0IDI0Mi45MkM4Mi4zNzY4IDI0OS4wNjIgNzAuMjM4MiAyNDYuODgyIDY0LjA5NjEgMjM4LjA1QzU3Ljk1NDEgMjI5LjIxOSA2MC4xMzQ0IDIxNy4wOCA2OC45NjYgMjEwLjkzOEM3Ny43OTc2IDIwNC43OTYgODkuOTM2MSAyMDYuOTc2IDk2LjA3ODIgMjE1LjgwOEMxMDIuMjIgMjI0LjYzOSAxMDAuMDQgMjM2Ljc3OCA5MS4yMDg0IDI0Mi45MloiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik0yNDQuOTc1IDIyOS45NjFDMjM1LjI0IDIyNS4zODMgMjMxLjA1OSAyMTMuNzgxIDIzNS42MzYgMjA0LjA0NkMyNDAuMjEzIDE5NC4zMTEgMjUxLjgxNiAxOTAuMTMgMjYxLjU1MSAxOTQuNzA3QzI3MS4yODYgMTk5LjI4NSAyNzUuNDY3IDIxMC44ODcgMjcwLjg4OSAyMjAuNjIyQzI2Ni4zMTIgMjMwLjM1NyAyNTQuNzEgMjM0LjUzOCAyNDQuOTc1IDIyOS45NjFaIiBmaWxsPSIjRkJCRjI3Ii8+DQo8cGF0aCBkPSJNNjMuMzczNCAxNDQuNTczQzUzLjYzODQgMTM5Ljk5NiA0OS40NTczIDEyOC4zOTMgNTQuMDM0NiAxMTguNjU4QzU4LjYxMiAxMDguOTIzIDcwLjIxNDQgMTA0Ljc0MiA3OS45NDk0IDEwOS4zMkM4OS42ODQ0IDExMy44OTcgOTMuODY1NSAxMjUuNDk5IDg5LjI4ODIgMTM1LjIzNEM4NC43MTA4IDE0NC45NjkgNzMuMTA4NCAxNDkuMTUxIDYzLjM3MzQgMTQ0LjU3M1oiIGZpbGw9IiNGQkJGMjciLz4NCjxwYXRoIGQ9Ik0xODEuOTQxIDE5LjUyMUMxODEuOTQxIDMwLjI3ODUgMTczLjIyIDM4Ljk5OTEgMTYyLjQ2MiAzOC45OTkxQzE1MS43MDUgMzguOTk5MSAxNDIuOTg0IDMwLjI3ODUgMTQyLjk4NCAxOS41MjFDMTQyLjk4NCA4Ljc2MzYgMTUxLjcwNSAwLjA0Mjk2ODggMTYyLjQ2MiAwLjA0Mjk2ODhDMTczLjIyIDAuMDQyOTY4OCAxODEuOTQxIDguNzYzNiAxODEuOTQxIDE5LjUyMVoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMTgxLjk0MSAzMTkuNzU5QzE4MS45NDEgMzMwLjUxNiAxNzMuMjIgMzM5LjIzNyAxNjIuNDYyIDMzOS4yMzdDMTUxLjcwNSAzMzkuMjM3IDE0Mi45ODQgMzMwLjUxNiAxNDIuOTg0IDMxOS43NTlDMTQyLjk4NCAzMDkuMDAxIDE1MS43MDUgMzAwLjI4MSAxNjIuNDYyIDMwMC4yODFDMTczLjIyIDMwMC4yODEgMTgxLjk0MSAzMDkuMDAxIDE4MS45NDEgMzE5Ljc1OVoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMzAyLjIwNyAxMTEuNDQ5QzI5Mi44OTEgMTE2LjgyOCAyODAuOTc4IDExMy42MzYgMjc1LjU5OSAxMDQuMzE5QzI3MC4yMiA5NS4wMDMzIDI3My40MTIgODMuMDkwNyAyODIuNzI5IDc3LjcxMTlDMjkyLjA0NSA3Mi4zMzMyIDMwMy45NTcgNzUuNTI1MiAzMDkuMzM2IDg0Ljg0MTRDMzE0LjcxNSA5NC4xNTc2IDMxMS41MjMgMTA2LjA3IDMwMi4yMDcgMTExLjQ0OVoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNNDIuMTkzNSAyNjEuNTY4QzMyLjg3NzMgMjY2Ljk0NyAyMC45NjQ3IDI2My43NTUgMTUuNTg1OSAyNTQuNDM4QzEwLjIwNzIgMjQ1LjEyMiAxMy4zOTkyIDIzMy4yMSAyMi43MTU0IDIyNy44MzFDMzIuMDMxNiAyMjIuNDUyIDQzLjk0NDIgMjI1LjY0NCA0OS4zMjI5IDIzNC45NkM1NC43MDE3IDI0NC4yNzYgNTEuNTA5NyAyNTYuMTg5IDQyLjE5MzUgMjYxLjU2OFoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMjgyLjcyOSAyNjEuNTY4QzI3My40MTIgMjU2LjE4OSAyNzAuMjIgMjQ0LjI3NiAyNzUuNTk5IDIzNC45NkMyODAuOTc4IDIyNS42NDQgMjkyLjg5MSAyMjIuNDUyIDMwMi4yMDcgMjI3LjgzMUMzMTEuNTIzIDIzMy4yMSAzMTQuNzE1IDI0NS4xMjIgMzA5LjMzNiAyNTQuNDM4QzMwMy45NTcgMjYzLjc1NSAyOTIuMDQ1IDI2Ni45NDcgMjgyLjcyOSAyNjEuNTY4WiIgZmlsbD0id2hpdGUiLz4NCjxwYXRoIGQ9Ik0yMi43MTU0IDExMS40NDlDMTMuMzk5MiAxMDYuMDcgMTAuMjA3MiA5NC4xNTc2IDE1LjU4NTkgODQuODQxNEMyMC45NjQ3IDc1LjUyNTIgMzIuODc3MyA3Mi4zMzMyIDQyLjE5MzUgNzcuNzExOUM1MS41MDk3IDgzLjA5MDcgNTQuNzAxNyA5NS4wMDMzIDQ5LjMyMjkgMTA0LjMxOUM0My45NDQyIDExMy42MzYgMzIuMDMxNiAxMTYuODI4IDIyLjcxNTQgMTExLjQ0OVoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMTgxLjkzOSA2OS4zMDM0QzE4MS45MzkgODAuMDYwOCAxNzMuMjE5IDg4Ljc4MTUgMTYyLjQ2MSA4OC43ODE1QzE1MS43MDQgODguNzgxNSAxNDIuOTgzIDgwLjA2MDggMTQyLjk4MyA2OS4zMDM0QzE0Mi45ODMgNTguNTQ2IDE1MS43MDQgNDkuODI1MyAxNjIuNDYxIDQ5LjgyNTNDMTczLjIxOSA0OS44MjUzIDE4MS45MzkgNTguNTQ2IDE4MS45MzkgNjkuMzAzNFoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMTgxLjkzOSAyNjkuOTc3QzE4MS45MzkgMjgwLjczNSAxNzMuMjE5IDI4OS40NTYgMTYyLjQ2MSAyODkuNDU2QzE1MS43MDQgMjg5LjQ1NiAxNDIuOTgzIDI4MC43MzUgMTQyLjk4MyAyNjkuOTc3QzE0Mi45ODMgMjU5LjIyIDE1MS43MDQgMjUwLjQ5OSAxNjIuNDYxIDI1MC40OTlDMTczLjIxOSAyNTAuNDk5IDE4MS45MzkgMjU5LjIyIDE4MS45MzkgMjY5Ljk3N1oiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNMjU5LjA5NSAxMzYuMzQxQzI0OS43NzkgMTQxLjcxOSAyMzcuODY2IDEzOC41MjcgMjMyLjQ4NyAxMjkuMjExQzIyNy4xMDkgMTE5Ljg5NSAyMzAuMzAxIDEwNy45ODIgMjM5LjYxNyAxMDIuNjA0QzI0OC45MzMgOTcuMjI0OSAyNjAuODQ2IDEwMC40MTcgMjY2LjIyNCAxMDkuNzMzQzI3MS42MDMgMTE5LjA0OSAyNjguNDExIDEzMC45NjIgMjU5LjA5NSAxMzYuMzQxWiIgZmlsbD0id2hpdGUiLz4NCjxwYXRoIGQ9Ik04NS4zMDU4IDIzNi42NzhDNzUuOTg5NiAyNDIuMDU2IDY0LjA3NyAyMzguODY0IDU4LjY5ODMgMjI5LjU0OEM1My4zMTk2IDIyMC4yMzIgNTYuNTExNSAyMDguMzE5IDY1LjgyNzcgMjAyLjk0MUM3NS4xNDQgMTk3LjU2MiA4Ny4wNTY2IDIwMC43NTQgOTIuNDM1MyAyMTAuMDdDOTcuODE0IDIxOS4zODYgOTQuNjIyIDIzMS4yOTkgODUuMzA1OCAyMzYuNjc4WiIgZmlsbD0id2hpdGUiLz4NCjxwYXRoIGQ9Ik0yMzkuNjE3IDIzNi42NzhDMjMwLjMwMSAyMzEuMjk5IDIyNy4xMDkgMjE5LjM4NiAyMzIuNDg3IDIxMC4wN0MyMzcuODY2IDIwMC43NTQgMjQ5Ljc3OSAxOTcuNTYyIDI1OS4wOTUgMjAyLjk0MUMyNjguNDExIDIwOC4zMTkgMjcxLjYwMyAyMjAuMjMyIDI2Ni4yMjQgMjI5LjU0OEMyNjAuODQ2IDIzOC44NjQgMjQ4LjkzMyAyNDIuMDU2IDIzOS42MTcgMjM2LjY3OFoiIGZpbGw9IndoaXRlIi8+DQo8cGF0aCBkPSJNNjUuODI3NyAxMzYuMzQxQzU2LjUxMTUgMTMwLjk2MiA1My4zMTk2IDExOS4wNDkgNTguNjk4MyAxMDkuNzMzQzY0LjA3NyAxMDAuNDE3IDc1Ljk4OTYgOTcuMjI0OSA4NS4zMDU4IDEwMi42MDRDOTQuNjIyIDEwNy45ODIgOTcuODE0IDExOS44OTUgOTIuNDM1MyAxMjkuMjExQzg3LjA1NjYgMTM4LjUyNyA3NS4xNDQgMTQxLjcxOSA2NS44Mjc3IDEzNi4zNDFaIiBmaWxsPSJ3aGl0ZSIvPg0KPC9nPg0KPGRlZnM+DQo8Y2xpcFBhdGggaWQ9ImNsaXAwXzFfMTA5NSI+DQo8cmVjdCB3aWR0aD0iMzI1IiBoZWlnaHQ9IjM0MCIgZmlsbD0id2hpdGUiLz4NCjwvY2xpcFBhdGg+DQo8L2RlZnM+DQo8L2c+DQo8L2c+DQo8ZyBhcmlhLWxhYmVsPSJSZWNhc3QgU3lzdGVtcyI+DQo8cGF0aCBkPSJNODMgMEgxODFWMzE3SDI4NUw0ODUgMEg2MDNMMzk0IDMxOEM0OTMgMzI4IDU3MyAzOTcgNTczIDUxMEM1NzMgNjMwIDQ4OSA3MDUgMzY3IDcwNUg4M1pNMzUyIDQwMEgxODFWNjIwSDM1MkM0MzUgNjIwIDQ2OSA1NzkgNDY5IDUxMEM0NjkgNDQxIDQzNSA0MDAgMzUyIDQwMFoiIGZpbGw9IiNGMUVGRTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDUyIDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTEwMSAwSDU2OVY4NkgxOTlWMzE4SDUzNlY0MDJIMTk5VjYyMEg1NjlWNzA1SDEwMVoiIGZpbGw9IiNGMUVGRTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDU5LjYgMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNMzI1IC0xNUM0NzEgLTE1IDU4MSA5NiA1OTUgMjYzSDQ5MkM0NzcgMTQzIDQxNiA3MiAzMjUgNzJDMjE5IDcyIDE1NCAxNzkgMTU0IDM1MkMxNTQgNTI1IDIxOSA2MzMgMzI1IDYzM0M0MTUgNjMzIDQ3NiA1NjMgNDkxIDQ0NEg1OTRDNTgwIDYxMCA0NzAgNzIwIDMyNSA3MjBDMTY2IDcyMCA1MSA1NjcgNTEgMzUyQzUxIDEzNyAxNjYgLTE1IDMyNSAtMTVaIiBmaWxsPSIjRjFFRkU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg2Ny4yIDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTIyIDBIMTE5TDE3OCAxODhINDU0TDUxNSAwSDYxOEwzNzYgNzA1SDI1OFpNMjA0IDI3MCAzMTQgNjE1IDQyNyAyNzBaIiBmaWxsPSIjRjFFRkU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg3NC44IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTMyMiAtMTVDNDc5IC0xNSA1NzcgNzMgNTc3IDE5NEM1NzcgMzExIDUwMCAzNzkgMzY5IDQwNEwzMDIgNDE3QzIxMSA0MzUgMTgyIDQ2NSAxODIgNTI4QzE4MiA1NzcgMjE5IDYzOCAzMTIgNjM4QzQxMSA2MzggNDUzIDU4OSA0NjQgNTE4SDU2MkM1NTIgNjIwIDQ4MiA3MjAgMzExIDcyMEMxNzIgNzIwIDg4IDYyNCA4OCA1MjBDODggNDEyIDE0MyAzNDggMjgzIDMyMEwzNDkgMzA3QzQ0NyAyODggNDc0IDI0NyA0NzQgMTg3QzQ3NCAxMzAgNDMwIDY5IDMyMiA2OUMyMDcgNjkgMTY1IDE0MSAxNTggMTk3SDYxQzY4IDgxIDE1NyAtMTUgMzIyIC0xNVoiIGZpbGw9IiNGMUVGRTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDgyLjQgMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNMjcxIDBIMzcwVjYyMEg1ODdWNzA1SDU0VjYyMEgyNzFaIiBmaWxsPSIjRjFFRkU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg5MCAyNC40NSkgc2NhbGUoMC4wMSAtMC4wMSkiLz4NCjxwYXRoIGQ9Ik0zMjIgLTE1QzQ3OSAtMTUgNTc3IDczIDU3NyAxOTRDNTc3IDMxMSA1MDAgMzc5IDM2OSA0MDRMMzAyIDQxN0MyMTEgNDM1IDE4MiA0NjUgMTgyIDUyOEMxODIgNTc3IDIxOSA2MzggMzEyIDYzOEM0MTEgNjM4IDQ1MyA1ODkgNDY0IDUxOEg1NjJDNTUyIDYyMCA0ODIgNzIwIDMxMSA3MjBDMTcyIDcyMCA4OCA2MjQgODggNTIwQzg4IDQxMiAxNDMgMzQ4IDI4MyAzMjBMMzQ5IDMwN0M0NDcgMjg4IDQ3NCAyNDcgNDc0IDE4N0M0NzQgMTMwIDQzMCA2OSAzMjIgNjlDMjA3IDY5IDE2NSAxNDEgMTU4IDE5N0g2MUM2OCA4MSAxNTcgLTE1IDMyMiAtMTVaIiBmaWxsPSIjRjFFRkU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxMDUuMiAyNC40NSkgc2NhbGUoMC4wMSAtMC4wMSkiLz4NCjxwYXRoIGQ9Ik0yNzIgMEgzNzBWMzAyTDYxNCA3MDVINTEwTDMyMyAzOTJMMTM0IDcwNUgyOEwyNzIgMzAyWiIgZmlsbD0iI0YxRUZFOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTEyLjggMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNMzIyIC0xNUM0NzkgLTE1IDU3NyA3MyA1NzcgMTk0QzU3NyAzMTEgNTAwIDM3OSAzNjkgNDA0TDMwMiA0MTdDMjExIDQzNSAxODIgNDY1IDE4MiA1MjhDMTgyIDU3NyAyMTkgNjM4IDMxMiA2MzhDNDExIDYzOCA0NTMgNTg5IDQ2NCA1MThINTYyQzU1MiA2MjAgNDgyIDcyMCAzMTEgNzIwQzE3MiA3MjAgODggNjI0IDg4IDUyMEM4OCA0MTIgMTQzIDM0OCAyODMgMzIwTDM0OSAzMDdDNDQ3IDI4OCA0NzQgMjQ3IDQ3NCAxODdDNDc0IDEzMCA0MzAgNjkgMzIyIDY5QzIwNyA2OSAxNjUgMTQxIDE1OCAxOTdINjFDNjggODEgMTU3IC0xNSAzMjIgLTE1WiIgZmlsbD0iI0YxRUZFOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTIwLjQgMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNMjcxIDBIMzcwVjYyMEg1ODdWNzA1SDU0VjYyMEgyNzFaIiBmaWxsPSIjRjFFRkU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxMjggMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNMTAxIDBINTY5Vjg2SDE5OVYzMThINTM2VjQwMkgxOTlWNjIwSDU2OVY3MDVIMTAxWiIgZmlsbD0iI0YxRUZFOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTM1LjYgMjQuNDUpIHNjYWxlKDAuMDEgLTAuMDEpIi8+DQo8cGF0aCBkPSJNNzUgMEgxNjhMMTY1IDYzNkwyNjUgMTk4SDM3NUw0NzUgNjM2TDQ3MSAwSDU2NVY3MDVINDE1TDMyMiAyNzlMMjMxIDcwNUg3NVoiIGZpbGw9IiNGMUVGRTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDE0My4yIDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPHBhdGggZD0iTTMyMiAtMTVDNDc5IC0xNSA1NzcgNzMgNTc3IDE5NEM1NzcgMzExIDUwMCAzNzkgMzY5IDQwNEwzMDIgNDE3QzIxMSA0MzUgMTgyIDQ2NSAxODIgNTI4QzE4MiA1NzcgMjE5IDYzOCAzMTIgNjM4QzQxMSA2MzggNDUzIDU4OSA0NjQgNTE4SDU2MkM1NTIgNjIwIDQ4MiA3MjAgMzExIDcyMEMxNzIgNzIwIDg4IDYyNCA4OCA1MjBDODggNDEyIDE0MyAzNDggMjgzIDMyMEwzNDkgMzA3QzQ0NyAyODggNDc0IDI0NyA0NzQgMTg3QzQ3NCAxMzAgNDMwIDY5IDMyMiA2OUMyMDcgNjkgMTY1IDE0MSAxNTggMTk3SDYxQzY4IDgxIDE1NyAtMTUgMzIyIC0xNVoiIGZpbGw9IiNGMUVGRTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDE1MC44IDI0LjQ1KSBzY2FsZSgwLjAxIC0wLjAxKSIvPg0KPC9nPg0KPC9zdmc+DQo=" width="179"/>
+<span class="prod">Radar Tools</span>
+</a>
+<div class="prefs">
+<div class="pref-group"><span class="seg-label">Notes</span>
+<div aria-label="Expand explanatory notes" class="seg" role="group">
+<button aria-pressed="false" data-level="new" type="button">Basics</button>
+<button aria-pressed="false" data-level="pro" type="button">Details</button>
+</div>
+</div>
+<div class="pref-group"><span class="seg-label">Code</span>
+<div aria-label="Preferred language" class="seg" role="group">
+<button aria-pressed="true" data-lang="py" type="button">Python</button>
+<button aria-pressed="false" data-lang="rs" type="button">Rust</button>
+<button aria-pressed="false" data-lang="sh" type="button">CLI</button>
+</div>
+</div>
+</div>
+</div>
+</header>
+<div class="wrap" id="top">
+<div class="hero">
+<div>
+<div class="eyebrow">Recast Radar Tools / Field guide / Local frontend preview</div>
+<h1>Recast Radar<br/><em>Field Guide</em></h1>
+<p class="lede">Read radar volumes, inspect fields, and convert files with Recast Radar Tools. This guide covers the Python package, Rust library, and command line, with examples for NEXRAD, ODIM_H5, CfRadial, DORADE, and JMA data.</p>
+<div class="cta">
+<a class="btn btn-primary" href="#first">Read a volume</a>
+<a class="btn btn-outline" href="#cookbook">Find a recipe</a>
+</div>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 1 language" class="code-tabs" role="tablist">
+<button aria-controls="example-0-py-pane-0" data-tab="py" id="example-0-py" role="tab">Python</button>
+<button aria-controls="example-0-rs-pane-0" data-tab="rs" id="example-0-rs" role="tab">Rust</button>
+<button aria-controls="example-0-sh-pane-0 example-0-sh-pane-1" data-tab="sh" id="example-0-sh" role="tab">CLI</button>
+<span class="fname">open a Level II volume</span>
+</div>
+<div aria-labelledby="example-0-py" class="code-body" data-pane="py" id="example-0-py-pane-0" role="tabpanel"><pre><code>import recast_radar
+
+tree = recast_radar.open("KTLX20240315_000217_V06")   # xarray.DataTree
+dbz = tree["sweep_0"]["DBZH"]                         # dBZ, NaN where no echo
+print(float(dbz.max()), "dBZ")
+
+radar = recast_radar.to_pyart("KTLX20240315_000217_V06")  # a pyart Radar</code></pre></div>
+<div aria-labelledby="example-0-rs" class="code-body" data-pane="rs" hidden="" id="example-0-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::nexrad;
+
+let volume = nexrad::read_volume_from_path("KTLX20240315_000217_V06")?;
+println!("{} at {}", volume.attrs.instrument_name, volume.time_reference);
+for sweep in &amp;volume.sweeps {
+    println!("{:5.2} deg, {} rays", sweep.fixed_angle_deg, sweep.nrays());
+}</code></pre></div>
+<div aria-labelledby="example-0-sh" class="code-body" data-pane="sh" hidden="" id="example-0-sh-pane-0" role="tabpanel"><pre><code>recast-radar info KTLX20240315_000217.trim.V06</code></pre></div>
+<div aria-labelledby="example-0-sh" class="out" data-pane="sh" hidden="" id="example-0-sh-pane-1" role="tabpanel">
+<div class="out-label">Output</div>
+<pre><code>KTLX20240315_000217.trim.V06  741 kB  NEXRAD Level II
+  site      KTLX  35.3334 N  -97.2778 E  389 m
+  time      2024-03-15T00:02:17Z
+  source    NEXRAD Level II, AR2V0006.626, bzip2-blocks
+  scan      VCP 212, VCP-212
+  sweeps    2 sweeps, 960 rays
+  sweep  angle  mode                  rays gates gate_m nyq_m/s  fields
+      0   0.48  azimuth_surveillance   480  1832    250     8.3  DBZH ZDR PHIDP RHOHV CCORH
+      1   0.48  azimuth_surveillance   480  1192    250    23.8  DBZH VRADH WRADH</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="wrap">
+<div class="shell">
+<nav aria-label="On this page" class="toc">
+<div class="eyebrow">On this page</div>
+<ol>
+<li><a href="#install"><span>01</span>Install</a></li>
+<li><a href="#primer"><span>02</span>Radar basics</a></li>
+<li><a href="#first"><span>03</span>Read a volume</a></li>
+<li><a href="#model"><span>04</span>Data model</a></li>
+<li><a href="#cookbook"><span>05</span>Cookbook</a></li>
+<li><a href="#cli"><span>06</span>Command line</a></li>
+<li><a href="#formats"><span>07</span>Formats</a></li>
+<li><a href="#speed"><span>08</span>Benchmarks</a></li>
+<li><a href="#rules"><span>09</span>Implementation notes</a></li>
+<li><a href="#errors"><span>10</span>Troubleshooting</a></li>
+</ol>
+</nav>
+<main id="main" tabindex="-1">
+<!-- ===================== 01 INSTALL ===================== -->
+<section class="sec" id="install">
+<div class="sec-head">
+<span class="num">01</span>
+<h2>Install</h2>
+<p>The Python wheel and prebuilt command-line program do not require a Rust installation. Building from source or using the Rust library requires Rust 1.94 or later.</p>
+</div>
+<div class="steps">
+<div class="step">
+<span class="eyebrow">Python 3.10+</span>
+<h3>Python package</h3>
+<p>Use the wheel for your operating system and architecture. The accompanying build is for Windows x64 and CPython 3.10 or later.</p>
+<div class="code"><div class="code-body"><pre><code>python -m pip install --force-reinstall recast_radar-0.1.0-cp310-abi3-win_amd64.whl
+python -m recast_radar --help</code></pre></div></div>
+<p>Requires Python 3.10+, <code>numpy</code>, and <code>xarray</code> 2024.10+. Install these dependencies if needed. <code>arm_pyart</code> is optional for Py-ART integration.</p>
+</div>
+<div class="step">
+<span class="eyebrow">Command line</span>
+<h3>Command-line program</h3>
+<p>Download the <code>recast-radar</code> executable for your platform and add its directory to <code>PATH</code>.</p>
+<div class="code"><div class="code-body"><pre><code>recast-radar --help
+recast-radar info my_radar_file</code></pre></div></div>
+<p>From a source checkout: <code>cargo install --path crates/recast-radar-cli</code>.</p>
+</div>
+<div class="step">
+<span class="eyebrow">Rust 1.94+</span>
+<h3>Rust crate</h3>
+<p>Add the crate to your project and enable the optional features you need.</p>
+<div class="code"><div class="code-body"><pre><code>[dependencies]
+recast-radar-tools = { git = "https://github.com/recastsystems/recast-radar-tools", features = ["render", "net"] }</code></pre></div></div>
+<p>Default features include the supported readers and core algorithms. Add <code>render</code>, <code>net</code>, <code>write</code>, <code>track</code>, or <code>full</code>.</p>
+</div>
+</div>
+<div class="callout"><b>Local preview build.</b> The accompanying Windows wheel includes these Python APIs and the <code>recast-radar</code> command. You can also run <code>python -m recast_radar</code>. These additions are not present in older 0.1.0 wheels; install the accompanying build to use the new examples.</div>
+</section>
+<!-- ===================== 02 PRIMER ===================== -->
+<section class="sec" id="primer">
+<div class="sec-head">
+<span class="num">02</span>
+<h2>Radar basics</h2>
+<p>The diagrams below show beam height and velocity aliasing. For file-reading examples, go to <a href="#first">Read a volume</a>.</p>
+</div>
+<div class="prose">
+<p>In a typical PPI scan, a weather radar rotates at one elevation angle, then tilts to the next. Each rotation is a <b>sweep</b>; a sequence of sweeps forms a <b>volume</b>. A sweep contains <b>rays</b> at successive pointing directions, and each ray contains <b>gates</b> at successive ranges. Scan duration, angular sampling, and gate spacing depend on the radar and scan strategy. RHI and sector scans cover different paths.</p>
+</div>
+<div class="lab">
+<div class="widget" id="beam-widget">
+<div>
+<div class="eyebrow">Beam geometry</div>
+<h3>How high is the beam?</h3>
+<p class="sub">Beam height increases with range as the Earth curves beneath it. This diagram uses the standard 4/3 Earth-radius approximation and a 0.95° beam width. Heights are relative to radar altitude; terrain is not included.</p>
+</div>
+<svg aria-label="Beam height over range" class="fig" id="beam-svg" role="img" viewbox="0 0 520 190"></svg>
+<div class="ctrl"><label for="elev">Elevation angle <output id="elev-out">0.5°</output></label>
+<input id="elev" max="19.5" min="0" step="0.1" type="range" value="0.5"/></div>
+<div class="ctrl"><label for="rng">Distance along the beam <output id="rng-out">150 km</output></label>
+<input id="rng" max="460" min="1" step="1" type="range" value="150"/></div>
+<div class="readout">
+<div><b id="r-h">0</b><span>height, m</span></div>
+<div><b id="r-g">0</b><span>ground distance, km</span></div>
+<div><b id="r-w">0</b><span>beam width, m</span></div>
+</div>
+</div>
+<div class="widget" id="fold-widget">
+<div>
+<div class="eyebrow">Velocity aliasing</div>
+<h3>Why velocity folds</h3>
+<p class="sub">Radial velocities outside the <b>Nyquist interval</b> wrap into it. With a Nyquist velocity of 23.8 m/s, +30 m/s is reported as −17.6 m/s. Dealiasing estimates the number of wraps from other observations; the measured value alone is ambiguous.</p>
+</div>
+<svg aria-label="Reported radial velocity versus input velocity; an aliasing illustration, not a dealiasing algorithm" class="fig" id="fold-svg" role="img" viewbox="0 0 520 190"></svg>
+<div class="ctrl"><label for="vtrue">Input radial velocity <output id="vtrue-out">30 m/s</output></label>
+<input id="vtrue" max="70" min="-70" step="0.5" type="range" value="30"/></div>
+<div class="ctrl"><label for="vnyq">Nyquist velocity <output id="vnyq-out">23.8 m/s</output></label>
+<input id="vnyq" max="35" min="8" step="0.1" type="range" value="23.8"/></div>
+<div class="readout">
+<div><b id="f-m">0</b><span>radar reports, m/s</span></div>
+<div><b id="f-k">0</b><span>times folded</span></div>
+<div><b id="f-d">0</b><span>input velocity, m/s</span></div>
+</div>
+</div>
+</div>
+<div class="prose"><p>Radar measurements are stored as <b>fields</b>, also called moments. Common field names and units are listed below; availability depends on the source file.</p></div>
+<div class="fields">
+<div><code>DBZH</code><span>dBZ</span><p>Reflectivity factor at horizontal polarization, expressed in dBZ. Echoes can come from precipitation or non-weather targets.</p></div>
+<div><code>VRADH</code><span>m/s</span><p>Radial velocity: the component of target motion along the beam. Negative is toward the radar; positive is away.</p></div>
+<div><code>WRADH</code><span>m/s</span><p>Spectrum width: the spread of radial velocities within a sample volume. Shear, turbulence, and signal quality can affect it.</p></div>
+<div><code>ZDR</code><span>dB</span><p>Differential reflectivity: the ratio of horizontal to vertical reflectivity, in dB. Large, flattened raindrops generally produce positive values.</p></div>
+<div><code>RHOHV</code><span>unitless</span><p>Correlation between horizontal and vertical returns. Lower values can indicate mixed particles, non-weather echoes, or poor signal quality.</p></div>
+<div><code>PHIDP</code><span>degrees</span><p>Differential phase: the phase difference between horizontal and vertical returns. Its propagation component accumulates along the beam.</p></div>
+<div><code>KDP</code><span>deg/km</span><p>Specific differential phase: a measure of how propagation phase changes with range. Used in rainfall estimation; it is not a rain rate.</p></div>
+<div><code>VRADDH</code><span>m/s</span><p>Dealiased velocity, added by the library when you unfold <code>VRADH</code>.</p></div>
+</div>
+<p class="source-note">Radar background: <a href="https://www.weather.gov/jan/dualpolupgrade-products">NWS dual-polarization products</a> and <a href="https://forecast.weather.gov/glossary.php?word=SPECTRUM+WIDTH">spectrum width</a>.</p>
+<details class="note" data-kind="deep">
+<summary><span class="tag tag-deep">Details</span>Beam geometry and sweep elevation</summary>
+<div class="note-body">
+<p>Beam height is <code>h = sqrt(r² + (k·a)² + 2·r·k·a·sinθ) − k·a</code> with <code>a</code> = 6371 km and <code>k</code> = 4/3 (Doviak and Zrnić). <code>trace_refracted_beam</code> and <code>RefractivityProfile</code> replace the 4/3 assumption with a supplied refractivity profile, and <code>propagation_regime</code> classifies it as subrefractive, standard, superrefractive or ducting.</p>
+<p>Use <code>volume.tilt_elevation_deg(i)</code> for the elevation the antenna actually scanned at. It can differ from <code>fixed_angle_deg</code>, the cut angle the scan strategy asked for, and the column products pick their base sweep by it.</p>
+</div>
+</details>
+</section>
+<!-- ===================== 03 FIRST VOLUME ===================== -->
+<section class="sec" id="first">
+<div class="sec-head">
+<span class="num">03</span>
+<h2>Read a volume</h2>
+<p>Pass a file in a <a href="#formats">supported format</a>. The reader detects the format from its contents and unwraps gzip or single-file ZIP compression.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 2 language" class="code-tabs" role="tablist">
+<button aria-controls="example-1-py-pane-0" data-tab="py" id="example-1-py" role="tab">Python</button>
+<button aria-controls="example-1-rs-pane-0" data-tab="rs" id="example-1-rs" role="tab">Rust</button>
+<button aria-controls="example-1-sh-pane-0" data-tab="sh" id="example-1-sh" role="tab">CLI</button>
+<span class="fname">read a supported format</span>
+</div>
+<div aria-labelledby="example-1-py" class="code-body" data-pane="py" id="example-1-py-pane-0" role="tabpanel"><pre><code>import recast_radar
+
+# NEXRAD, ODIM_H5, CfRadial 1 or 2, DORADE, JMA: the format is detected.
+tree = recast_radar.open("bejab.pvol.hdf")          # xarray.DataTree, FM301 layout
+
+tree["/"].attrs["instrument_name"]
+tree["sweep_0"]["DBZH"].sel(azimuth=slice(90, 100)).load()
+
+# Or keep the volume in Rust and look at its metadata without loading values.
+volume = recast_radar.read("bejab.pvol.hdf")
+volume.source_format, volume.nsweeps, volume.field_names
+for sweep in volume.sweeps:
+    print(sweep["fixed_angle"], sweep["nrays"], sweep["gate_spacing"], sweep["fields"])</code></pre></div>
+<div aria-labelledby="example-1-rs" class="code-body" data-pane="rs" hidden="" id="example-1-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::io;
+
+fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let bytes = std::fs::read("bejab.pvol.hdf")?;
+    // Level II, Level III, ODIM_H5, CfRadial 1/2, DORADE or a JMA tar,
+    // also inside gzip or a single-file ZIP.
+    let volume = io::read_supported_volume_bytes(&amp;bytes)?;
+
+    println!("{} ({:?})", volume.attrs.instrument_name, volume.provenance.source_format);
+    for (i, sweep) in volume.sweeps.iter().enumerate() {
+        let names: Vec&lt;&amp;str&gt; = sweep.fields.iter().map(|f| f.name.as_str()).collect();
+        println!("sweep {i}: {:.2} deg, {} rays, {}",
+            sweep.fixed_angle_deg, sweep.nrays(), names.join(" "));
+    }
+    Ok(())
+}</code></pre></div>
+<div aria-labelledby="example-1-sh" class="code-body" data-pane="sh" hidden="" id="example-1-sh-pane-0" role="tabpanel"><pre><code>recast-radar info bejab.pvol.hdf             # summary
+recast-radar info --json bejab.pvol.hdf      # the same as JSON
+recast-radar dump --sweep 0 --field DBZH bejab.pvol.hdf   # every decoded value
+recast-radar dump --fm301 bejab.pvol.hdf     # the FM301 tree, ncdump -h style</code></pre></div>
+</div>
+<details class="note" data-kind="primer">
+<summary><span class="tag tag-primer">Basics</span>Choosing a Python representation</summary>
+<div class="note-body">
+<ul>
+<li><b><code>open()</code> returns an xarray DataTree.</b> Start here if you use xarray, numpy or matplotlib. Packed field values are converted to physical values on access; file parsing happens when you open the file.</li>
+<li><b><code>read()</code> returns a <code>Volume</code> kept in Rust.</b> Use it to check metadata, merge files, split scan cycles or write another format without converting any values in Python.</li>
+<li><b><code>to_pyart()</code> returns a <code>pyart.core.Radar</code>.</b> Use it with Py-ART's plotting and algorithms. Field values and masks are checked against Py-ART on the project's test files.</li>
+</ul>
+</div>
+</details>
+<details class="note" data-kind="deep">
+<summary><span class="tag tag-deep">Details</span>xradar conventions and compatibility</summary>
+<div class="note-body">
+<p>The tree uses FM301 with xradar 0.12's naming conventions. Check the differences below when replacing <code>xradar.io.open_*_datatree()</code>. Useful options: <code>first_dim="time"</code> keeps rays in acquisition order, <code>decode=False</code> keeps the packed integers, <code>flavor="wmo"</code> uses FM301-2022 names, and <code>passthrough="all"</code> keeps source attributes xradar drops.</p>
+<p>Deliberate differences from xradar: NEXRAD fields are NaN where there is no echo (xradar reads −33 dBZ), each NEXRAD sweep has one range at its finest gate spacing, and FM301 items like <code>sweep_group_name</code> and per-ray <code>nyquist_velocity</code> are always present. The engine also registers with xarray: <code>xr.open_datatree(path, engine="recast_radar")</code>.</p>
+</div>
+</details>
+</section>
+<!-- ===================== 04 MODEL ===================== -->
+<section class="sec" id="model">
+<div class="sec-head">
+<span class="num">04</span>
+<h2>Data model</h2>
+<p>Supported volume readers use a shared model based on WMO FM301 (CfRadial 2). Source formats still differ in their fields, geometry, and available metadata.</p>
+</div>
+<div class="anatomy">
+<div><span class="eyebrow">Volume</span><b>A collection of sweeps</b><code>volume.sweeps</code><p>Site location, times, scan strategy (for example, a NEXRAD VCP), radar parameters, calibration, and source format.</p></div>
+<div><span class="eyebrow">Sweep</span><b>One scan path</b><code>sweep.fields</code><p>Mode (PPI, RHI), fixed angle, the range coordinate and per-ray variables such as Nyquist velocity.</p></div>
+<div><span class="eyebrow">Ray</span><b>One pointing direction</b><code>sweep.rays.azimuth_deg[i]</code><p>Time, azimuth and elevation of each ray, stored as parallel arrays on the sweep.</p></div>
+<div><span class="eyebrow">Gate</span><b>One range sample</b><code>field.gate(ray, gate)</code><p>A physical value, or a reason there is none.</p></div>
+</div>
+<div class="prose"><p>The Rust model distinguishes valid measurements from undetect, range-folded, and missing gates. Conversion to floating-point arrays can collapse these states to NaN:</p></div>
+<div class="tbl"><table>
+<thead><tr><th>Gate</th><th>Means</th><th>In Python</th></tr></thead>
+<tbody>
+<tr><td><code>Gate::Value(v)</code></td><td>A measurement in physical units (dBZ, m/s, ...)</td><td>the number</td></tr>
+<tr><td><code>Gate::Undetect</code></td><td>Below the source's detection threshold; this does not establish that the sampled air is clear</td><td>NaN</td></tr>
+<tr><td><code>Gate::RangeFolded</code></td><td>Flagged as range ambiguous by the source</td><td>NaN, or flag 1 in <code>&lt;FIELD&gt;_flags</code></td></tr>
+<tr><td><code>Gate::Missing</code></td><td>No usable value is available</td><td>NaN</td></tr>
+</tbody>
+</table></div>
+<div class="code" data-group="">
+<div aria-label="Example 3 language" class="code-tabs" role="tablist">
+<button aria-controls="example-2-py-pane-0" data-tab="py" id="example-2-py" role="tab">Python</button>
+<button aria-controls="example-2-rs-pane-0 example-2-rs-pane-1" data-tab="rs" id="example-2-rs" role="tab">Rust</button>
+<span class="fname">physical_values.rs, shortened</span>
+</div>
+<div aria-labelledby="example-2-py" class="code-body" data-pane="py" id="example-2-py-pane-0" role="tabpanel"><pre><code>tree = recast_radar.open("KTLX20240315_000217_V06", range_folded_variable=True)
+sweep = tree["sweep_0"]
+dbz = sweep["DBZH"]                 # float32 dBZ, NaN for every non-value
+folded = sweep["DBZH_flags"] == 1   # where range folding hid the echo
+
+raw = recast_radar.open("KTLX20240315_000217_V06", decode=False)
+raw["sweep_0"]["DBZH"].encoding     # the packing: scale_factor, add_offset, _FillValue</code></pre></div>
+<div aria-labelledby="example-2-rs" class="code-body" data-pane="rs" hidden="" id="example-2-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::model::{Gate, Quantity};
+
+let field = sweep.find(Quantity::Reflectivity).ok_or("no reflectivity")?;
+let (mut values, mut undetect, mut missing, mut folded) = (0, 0, 0, 0);
+let (rays, gates) = field.shape();
+for ray in 0..rays {
+    for gate in 0..gates {
+        match field.gate(ray, gate) {
+            Some(Gate::Value(_dbz)) =&gt; values += 1,
+            Some(Gate::Undetect) =&gt; undetect += 1,
+            Some(Gate::RangeFolded) =&gt; folded += 1,
+            _ =&gt; missing += 1, // Gate is #[non_exhaustive]
+        }
+    }
+}
+// Or everything at once, NaN for every sentinel:
+let physical: Vec&lt;f32&gt; = field.to_physical();</code></pre></div>
+<div aria-labelledby="example-2-rs" class="out" data-pane="rs" hidden="" id="example-2-rs-pane-1" role="tabpanel">
+<div class="out-label">Output of the full example on KTLX20240315_000217_V06</div>
+<pre><code>sweep 4 at 0.41 deg: DBZH (720 x 1832 gates)
+283642 values, 1035398 no echo, 0 missing, 0 range folded
+strongest: 70.5 dBZ at azimuth 140.2 deg, 94.4 km, beam centre 1709 m above sea level
+ray time 2024-03-15 00:03:52.922 UTC</code></pre>
+</div>
+</div>
+<details class="note" data-kind="deep">
+<summary><span class="tag tag-deep">Details</span>Packed values and native gate spacing</summary>
+<div class="note-body">
+<p>A field keeps the source's own encoding: 8- or 16-bit codes with a scale and offset (NEXRAD, ODIM, most CfRadial) or floats. Keeping packed values avoids allocating a floating-point copy of each field during decoding. You convert what you need: <code>gate()</code> and <code>value()</code> for single gates, <code>to_physical()</code> for a whole field, and <code>lut8</code> for 8-bit codes through a lookup table.</p>
+<p>A field can have coarser gates than its sweep (NEXRAD's 1 km legacy reflectivity on a 250 m range). <code>field.native_geometry(&amp;sweep.range)</code> gives its first gate and spacing, for use by the renderer and algorithms. Values the model has no typed slot for are kept in <code>other</code>, <code>extra_vars</code> and <code>variable_attrs</code>.</p>
+</div>
+</details>
+</section>
+<!-- ===================== 05 COOKBOOK ===================== -->
+<section class="sec" id="cookbook">
+<div class="sec-head">
+<span class="num">05</span>
+<h2>Cookbook</h2>
+<p>Examples for common tasks, including native processing and rendering from Python. Some snippets assume an existing volume, sweep, or field; replace the sample paths with your files. Output blocks marked as full examples come from the project's longer test examples.</p>
+</div>
+<div class="recipe-tools">
+<label class="search" for="q"><span>/</span><input aria-label="Search recipes" autocomplete="off" id="q" placeholder="Search recipes: dealias, composite, ODIM, GR2Analyst..." type="search"/></label>
+<div aria-label="Filter by topic" class="chips" role="group">
+<button aria-pressed="true" class="chip" data-topic="all" type="button">All</button>
+<button aria-pressed="false" class="chip" data-topic="data" type="button">Get data</button>
+<button aria-pressed="false" class="chip" data-topic="science" type="button">Science</button>
+<button aria-pressed="false" class="chip" data-topic="output" type="button">Images &amp; files</button>
+<button aria-pressed="false" class="chip" data-topic="interop" type="button">Other tools</button>
+</div>
+</div>
+<div class="recipes" id="recipes">
+<!-- R1 -->
+<article class="recipe" data-keys="aws download latest newest nexrad level2 fetch archive s3 bucket" data-topic="data">
+<div>
+<span class="eyebrow">Get data</span>
+<h3>Download the newest NEXRAD volume</h3>
+<div class="meta"><span class="pill">AWS</span><span class="pill">Level II</span><span class="pill">feature net</span></div>
+<p>The public <a href="https://registry.opendata.aws/noaa-nexrad/">NEXRAD archive on AWS</a> uses the <code>unidata-nexrad-level2</code> bucket. This example downloads the latest available volume and reuses a local copy on subsequent calls.</p>
+<p class="why"><code>fetch.realtime("KTLX")</code> assembles the volume being scanned right now from the real-time chunks, and <code>fetch.level3</code> gets Level III products.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 4 language" class="code-tabs" role="tablist"><button aria-controls="example-3-py-pane-0" data-tab="py" id="example-3-py" role="tab">Python</button><button aria-controls="example-3-rs-pane-0" data-tab="rs" id="example-3-rs" role="tab">Rust</button><button aria-controls="example-3-sh-pane-0" data-tab="sh" id="example-3-sh" role="tab">CLI</button></div>
+<div aria-labelledby="example-3-py" class="code-body" data-pane="py" id="example-3-py-pane-0" role="tabpanel"><pre><code>from datetime import datetime
+from recast_radar import fetch
+import recast_radar
+
+paths = fetch.level2("KTLX", count=1, dest="data")        # newest volume
+tree = recast_radar.open(paths[0])
+
+# A moment in history (times are UTC):
+fetch.level2("KTLX", datetime(2024, 3, 15, 0, 5), dest="data", count=2)
+data, info = fetch.realtime("KTLX")                        # the scan in progress</code></pre></div>
+<div aria-labelledby="example-3-rs" class="code-body" data-pane="rs" hidden="" id="example-3-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::{data, nexrad};
+
+let object = data::latest_level2_object("KTLX", 1)?;
+let saved = data::download_object(data::LEVEL2_ARCHIVE_BUCKET, object, "data".as_ref())?;
+println!("{} {}", if saved.cache_hit { "found" } else { "downloaded" },
+    saved.path.display());
+let volume = nexrad::read_volume_from_path(&amp;saved.path)?;</code></pre></div>
+<div aria-labelledby="example-3-sh" class="code-body" data-pane="sh" hidden="" id="example-3-sh-pane-0" role="tabpanel"><pre><code>recast-radar fetch level2 KTLX                                  # newest volume
+recast-radar fetch level2 KTLX --date 2024-03-15 --list         # a whole day
+recast-radar fetch level2 KTLX --date 2024-03-15 --time 00:02 -n 2
+recast-radar fetch chunks KMKX                                  # the scan in progress
+recast-radar fetch level3 TLX N0B --date 2024-03-15 --time 00:02</code></pre></div>
+</div>
+</article>
+<!-- R2 -->
+<article class="recipe" data-keys="strongest max maximum peak reflectivity physical values beam height location where" data-topic="science">
+<div>
+<span class="eyebrow">Science</span>
+<h3>Locate peak reflectivity</h3>
+<div class="meta"><span class="pill">Any format</span><span class="pill">Geometry</span></div>
+<p>The Python snippet finds peak reflectivity in sweep 0. The Rust snippet converts a selected ray and gate to ground range and beam height. Sweep 0 is not necessarily the lowest elevation in a volume.</p>
+<p class="why">The sample output places the beam centre 1.7 km above sea level at 94 km range. Beam height depends on range, elevation, radar altitude, and the refraction model.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 5 language" class="code-tabs" role="tablist"><button aria-controls="example-4-py-pane-0" data-tab="py" id="example-4-py" role="tab">Python</button><button aria-controls="example-4-rs-pane-0 example-4-rs-pane-1" data-tab="rs" id="example-4-rs" role="tab">Rust</button><button aria-controls="example-4-sh-pane-0" data-tab="sh" id="example-4-sh" role="tab">CLI</button></div>
+<div aria-labelledby="example-4-py" class="code-body" data-pane="py" id="example-4-py-pane-0" role="tabpanel"><pre><code>tree = recast_radar.open("KTLX20240315_000217_V06")
+dbz = tree["sweep_0"]["DBZH"].load()
+
+peak = dbz.where(dbz == dbz.max(), drop=True)
+print(f"{float(dbz.max()):.1f} dBZ at azimuth",
+      peak.azimuth.values, "range", peak.range.values / 1000, "km")</code></pre></div>
+<div aria-labelledby="example-4-rs" class="code-body" data-pane="rs" hidden="" id="example-4-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::model::{beam_ground_range_m, beam_height_above_radar_m};
+
+let (first_m, spacing_m) = field.native_geometry(&amp;sweep.range).ok_or("no geometry")?;
+let slant_m = first_m + gate as f64 * spacing_m;
+let elev = f64::from(sweep.rays.elevation_deg[ray]);
+let ground_km = beam_ground_range_m(slant_m, elev) / 1000.0;
+let height_m = beam_height_above_radar_m(slant_m, elev)
+    + volume.location.altitude_m.unwrap_or(0.0);</code></pre></div>
+<div aria-labelledby="example-4-rs" class="out" data-pane="rs" hidden="" id="example-4-rs-pane-1" role="tabpanel"><div class="out-label">Output on KTLX20240315_000217_V06</div><pre><code>strongest: 70.5 dBZ at azimuth 140.2 deg, 94.4 km, beam centre 1709 m above sea level</code></pre></div>
+<div aria-labelledby="example-4-sh" class="code-body" data-pane="sh" hidden="" id="example-4-sh-pane-0" role="tabpanel"><pre><code># Gate statistics per field: valid, missing, no-echo and range-folded
+# counts, with the minimum, maximum and mean.
+recast-radar dump --sweep 0 --field DBZH KTLX20240315_000217_V06</code></pre></div>
+</div>
+</article>
+<!-- R3 -->
+<article class="recipe" data-keys="dealias unfold velocity nyquist fold aliasing vraddh" data-topic="science">
+<div>
+<span class="eyebrow">Science</span>
+<h3>Dealias radial velocity</h3>
+<div class="meta"><span class="pill">Doppler</span><span class="pill">feature correct</span></div>
+<p>Apply region-based dealiasing to sweeps containing radial velocity. The result is a new field, <code>VRADDH</code>, on the same rays and gates, kept beside the raw velocity.</p>
+<p class="why">Choose <code>dealias_method="region"</code>, <code>"pyart"</code>, or <code>"volume"</code>. The volume method accepts optional <code>previous</code> and <code>environment</code> inputs and reports whether they were used. Its confidence field ranges from 0 (no opinion) to 255.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 6 language" class="code-tabs" role="tablist"><button aria-controls="example-5-rs-pane-0 example-5-rs-pane-1" data-tab="rs" id="example-5-rs" role="tab">Rust</button><button aria-controls="example-5-sh-pane-0" data-tab="sh" id="example-5-sh" role="tab">CLI</button><button aria-controls="example-5-py-pane-0" data-tab="py" id="example-5-py" role="tab">Python</button></div>
+<div aria-labelledby="example-5-rs" class="code-body" data-pane="rs" id="example-5-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::model::Quantity;
+use recast_radar_tools::{correct, nexrad};
+
+let mut volume = nexrad::read_volume_from_path("KTLX20240315_000217_V06")?;
+for sweep in &amp;mut volume.sweeps {
+    let Some(raw) = sweep.find(Quantity::RadialVelocity) else { continue };
+    let dealiased = correct::dealias_velocity(sweep, raw);   // VRADDH
+    sweep.add_field(dealiased)?;
+}</code></pre></div>
+<div aria-labelledby="example-5-rs" class="out" data-pane="rs" id="example-5-rs-pane-1" role="tabpanel"><div class="out-label">Output of the full example (first lines)</div><pre><code> 0.48 deg: Nyquist 23.8 m/s, 1833 gates unfolded
+ 0.88 deg: Nyquist 23.8 m/s, 2459 gates unfolded
+ 0.48 deg: Nyquist 23.8 m/s, 1878 gates unfolded</code></pre></div>
+<div aria-labelledby="example-5-sh" class="code-body" data-pane="sh" hidden="" id="example-5-sh-pane-0" role="tabpanel"><pre><code>recast-radar process FILE --products VRADDH -o velocity.nc
+recast-radar process FILE --products VRADDH --dealias-method volume -o velocity.nc
+# Add --previous PREVIOUS_FILE and --environment-profile winds.json as needed.
+recast-radar render velocity.nc --field VRADDH -o velocity.png</code></pre></div>
+<div aria-labelledby="example-5-py" class="code-body" data-pane="py" hidden="" id="example-5-py-pane-0" role="tabpanel"><pre><code>import recast_radar as radar
+
+result = radar.process("KTLX20240315_000217_V06", "VRADDH")
+print(result.report)  # inserted, skipped, and unavailable fields
+result.volume.write("velocity.nc", "fm301")
+
+# Whole-volume solver; also adds VRADDH_CONFIDENCE.
+result = radar.process("KTLX20240315_000217_V06", "VRADDH",
+                       dealias_method="volume")</code></pre></div>
+</div>
+</article>
+<!-- R4 -->
+<article class="recipe" data-keys="composite reflectivity echo top tops vil hail column products cref mesh" data-topic="science">
+<div>
+<span class="eyebrow">Science</span>
+<h3>Composite reflectivity, echo tops and VIL</h3>
+<div class="meta"><span class="pill">Column products</span><span class="pill">feature map</span></div>
+<p>Column products combine measurements across elevation angles. Composite reflectivity, echo tops, and vertically integrated liquid (VIL) are returned on the base sweep's geometry and can be added to that sweep for rendering.</p>
+<p class="why">The default echo-top threshold comes from Rust: 18.3 dBZ. Set <code>threshold_dbz</code> in Python or <code>--threshold-dbz</code> in the CLI to change it. <code>products()</code> / <code>recast-radar products</code> lists the available products.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 7 language" class="code-tabs" role="tablist"><button aria-controls="example-6-rs-pane-0 example-6-rs-pane-1" data-tab="rs" id="example-6-rs" role="tab">Rust</button><button aria-controls="example-6-py-pane-0" data-tab="py" id="example-6-py" role="tab">Python</button><button aria-controls="example-6-sh-pane-0" data-tab="sh" id="example-6-sh" role="tab">CLI</button></div>
+<div aria-labelledby="example-6-rs" class="code-body" data-pane="rs" id="example-6-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::{io, map};
+
+let volume = io::read_supported_volume_bytes(&amp;std::fs::read(path)?)?;
+let base = map::column_base_sweep(&amp;volume).ok_or("no tilt has reflectivity")?;
+let cref = map::composite_reflectivity(&amp;volume).ok_or("no composite")?;
+let tops = map::echo_top(&amp;volume, map::ECHO_TOP_THRESHOLD_DBZ).ok_or("no tops")?;
+let vil  = map::vil(&amp;volume).ok_or("no VIL")?;</code></pre></div>
+<div aria-labelledby="example-6-rs" class="out" data-pane="rs" id="example-6-rs-pane-1" role="tabpanel"><div class="out-label">Output of the full example on KTLX20240315_000217_V06</div><pre><code>column base: sweep 4 at 0.41 deg
+CREF: maximum 72.5 dBZ at azimuth 135.8 deg, 95.6 km
+ET: maximum 19366.5 m at azimuth 97.7 deg, 362.9 km
+VIL: maximum 75.3 kg m-2 at azimuth 167.7 deg, 236.1 km</code></pre></div>
+<div aria-labelledby="example-6-py" class="code-body" data-pane="py" hidden="" id="example-6-py-pane-0" role="tabpanel"><pre><code>import recast_radar as radar
+
+result = radar.process("KTLX20240315_000217_V06", ["CREF", "ET", "VIL"])
+print(result.report)
+tree = result.volume.to_datatree()
+result.volume.write("products.nc", "fm301")
+radar.render(result.volume, "composite.png", field="CREF")</code></pre></div>
+<div aria-labelledby="example-6-sh" class="code-body" data-pane="sh" hidden="" id="example-6-sh-pane-0" role="tabpanel"><pre><code>recast-radar process FILE --products CREF,ET,VIL -o products.nc
+recast-radar render products.nc --field CREF -o composite.png
+recast-radar products</code></pre></div></div>
+</article>
+<!-- R5 -->
+<article class="recipe" data-keys="render png image picture plot map palette pal gr2analyst color" data-topic="output">
+<div>
+<span class="eyebrow">Images &amp; files</span>
+<h3>Render a sweep to PNG</h3>
+<div class="meta"><span class="pill">feature render</span><span class="pill">GR .pal palettes</span></div>
+<p>The default output is a 1024×1024 RGBA image with a transparent background and the radar at the centre. For packed fields, the renderer maps codes through a palette without expanding the full field to floats.</p>
+<p class="why">For maps, <code>ViewportRasterOptions</code> places the radar at a pixel with a km-per-pixel scale, and a <code>ViewportFieldCache</code> reuses field data across frames.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 8 language" class="code-tabs" role="tablist"><button aria-controls="example-7-sh-pane-0" data-tab="sh" id="example-7-sh" role="tab">CLI</button><button aria-controls="example-7-rs-pane-0" data-tab="rs" id="example-7-rs" role="tab">Rust</button><button aria-controls="example-7-py-pane-0" data-tab="py" id="example-7-py" role="tab">Python</button></div>
+<div aria-labelledby="example-7-sh" class="code-body" data-pane="sh" id="example-7-sh-pane-0" role="tabpanel"><pre><code>recast-radar render FILE -o dbz.png                    # first sweep with reflectivity
+recast-radar render FILE --sweep 3 --field ZDR -o zdr.png
+recast-radar render FILE --all-sweeps --field DBZH -o ./frames/
+recast-radar render FILE --palette BR.pal --size 2048 -o dbz.png</code></pre></div>
+<div aria-labelledby="example-7-rs" class="code-body" data-pane="rs" hidden="" id="example-7-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::render::{self, RasterOptions};
+
+render::render_field_png(&amp;volume, index, &amp;name, "reflectivity.png".as_ref(),
+    RasterOptions::default())?;   // 1024 x 1024</code></pre></div>
+<div aria-labelledby="example-7-py" class="code-body" data-pane="py" hidden="" id="example-7-py-pane-0" role="tabpanel"><pre><code>import recast_radar as radar
+
+rgba = radar.render("KTLX20240315_000217_V06", "dbz.png",
+                    field="DBZH", size=1024)
+print(rgba.shape, rgba.dtype)  # (1024, 1024, 4), uint8
+
+# Use a GR .pal file with the same renderer as the CLI.
+rgba = radar.render("KTLX20240315_000217_V06",
+                    field="DBZH", palette="BR.pal")</code></pre></div>
+</div>
+</article>
+<!-- R6 -->
+<article class="recipe" data-keys="convert write level2 cfradial odim fm301 netcdf hdf5 export format ar2v" data-topic="output">
+<div>
+<span class="eyebrow">Images &amp; files</span>
+<h3>Convert between formats</h3>
+<div class="meta"><span class="pill">Level II</span><span class="pill">CfRadial 1</span><span class="pill">FM301</span><span class="pill">ODIM_H5</span></div>
+<p>Convert supported inputs to NEXRAD Level II, CfRadial 1, CfRadial 2 / FM301, or ODIM_H5. The output format may not represent all of the source fields or metadata; review the writer's report.</p>
+<p class="why">The Level II writer reports omitted fields and unsupported values. Use <code>strict=True</code> in Python or <code>--strict</code> on the command line to reject omissions; see <a href="#errors">Troubleshooting</a> for other writer errors.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 9 language" class="code-tabs" role="tablist"><button aria-controls="example-8-py-pane-0" data-tab="py" id="example-8-py" role="tab">Python</button><button aria-controls="example-8-sh-pane-0 example-8-sh-pane-1" data-tab="sh" id="example-8-sh" role="tab">CLI</button><button aria-controls="example-8-rs-pane-0" data-tab="rs" id="example-8-rs" role="tab">Rust</button></div>
+<div aria-labelledby="example-8-py" class="code-body" data-pane="py" id="example-8-py-pane-0" role="tabpanel"><pre><code>recast_radar.convert("dkrom.pvol.h5", "dkrom.ar2v", "level2")
+
+volume = recast_radar.read("dkrom.pvol.h5")
+volume.write("dkrom.cf1.nc", "cfradial1")
+volume.write("dkrom.fm301.nc", "fm301")
+data = volume.to_bytes("odim")                 # bytes in memory
+recast_radar.writers()                         # which writers this build has</code></pre></div>
+<div aria-labelledby="example-8-sh" class="code-body" data-pane="sh" hidden="" id="example-8-sh-pane-0" role="tabpanel"><pre><code>recast-radar convert dkrom.pvol.h5 --to level2 -o dkrom.ar2v   # also cfradial1, odim, fm301
+recast-radar convert a.h5 b.h5 c.h5 --merge --to level2 -o merged.ar2v
+recast-radar convert FILE --to level2 --chunks -o chunks/     # real-time chunks</code></pre></div>
+<div aria-labelledby="example-8-sh" class="out" data-pane="sh" hidden="" id="example-8-sh-pane-1" role="tabpanel"><div class="out-label">Output</div><pre><code>recast-radar: left out: field TH (sweeps 0-9): REF carries DBZH instead
+recast-radar: left out: field LDR (sweeps 0-9): no Message 31 moment for this quantity
+wrote dkrom.ar2v (NEXRAD Level II, 762853 bytes, 10 sweeps; some fields or sweeps left out, see above)</code></pre></div>
+<div aria-labelledby="example-8-rs" class="code-body" data-pane="rs" hidden="" id="example-8-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::{cfradial, nexrad, odim};
+
+let opts = nexrad::write::WriteOptions::default();
+let (level2, summary) = nexrad::write::write_volume_with_source(
+    &amp;volume, nexrad::write::SourceMetadata::default(), &amp;opts)?;
+let cf1  = cfradial::write_cfradial1(&amp;volume, &amp;cfradial::Cfradial1Options::default())?;
+let fm   = cfradial::write_cfradial2(&amp;volume, &amp;cfradial::Cfradial2Options::default())?;
+let h5   = odim::write_odim_h5_volume(&amp;volume, &amp;odim::OdimWriteOptions::default())?;
+// feature "write" for Level II</code></pre></div>
+</div>
+</article>
+<!-- R7 -->
+<article class="recipe" data-keys="gr2analyst polling publish serve dir.list grlevel2 grlevelx server" data-topic="output">
+<div>
+<span class="eyebrow">Images &amp; files</span>
+<h3>Publish a GR2Analyst polling feed</h3>
+<div class="meta"><span class="pill">GRLevelX</span><span class="pill">dir.list</span></div>
+<p>Write volumes into a polling directory that GR2Analyst can read: <code>config.cfg</code>, <code>grlevel2.cfg</code>, one folder per site and a <code>dir.list</code> of the newest files. Then serve it over HTTP.</p>
+<p class="why">The publisher writes each file and <code>dir.list</code> under a temporary name, then renames it after the write completes.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 10 language" class="code-tabs" role="tablist"><button aria-controls="example-9-sh-pane-0" data-tab="sh" id="example-9-sh" role="tab">CLI</button><button aria-controls="example-9-py-pane-0" data-tab="py" id="example-9-py" role="tab">Python</button></div>
+<div aria-labelledby="example-9-sh" class="code-body" data-pane="sh" id="example-9-sh-pane-0" role="tabpanel"><pre><code>recast-radar publish bejab.pvol.h5 --dir ./polling --site EBJB --keep 30
+recast-radar serve ./polling --bind 0.0.0.0:8080     # point GR2Analyst here</code></pre></div>
+<div aria-labelledby="example-9-py" class="code-body" data-pane="py" hidden="" id="example-9-py-pane-0" role="tabpanel"><pre><code>volume = recast_radar.read("bejab.pvol.h5")
+report = volume.publish("polling", site="EBJB", keep=30)
+report["left_out"], report["notes"]</code></pre></div>
+</div>
+</article>
+<!-- R8 -->
+<article class="recipe" data-keys="international europe odim dmi smhi dwd fmi jma japan ord eumetnet australia intl" data-topic="data">
+<div>
+<span class="eyebrow">Get data</span>
+<h3>Fetch international radar data</h3>
+<div class="meta"><span class="pill">14 providers</span><span class="pill">ODIM</span><span class="pill">JMA</span></div>
+<p>SMHI, NCI Australia, DMI, GeoSphere Austria, FMI, SHMU, DWD, CHMI, ARPA Piemonte and Lombardia, JMA, KAIA Estonia, Meteo Romania and EUMETNET ORD. The fetcher merges frames distributed across several files.</p>
+<p class="why">The SMHI, NCI, and ORD integrations support archived queries with <code>date=</code> and <code>when=</code>. Use the provider listing to check available sources.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 11 language" class="code-tabs" role="tablist"><button aria-controls="example-10-py-pane-0" data-tab="py" id="example-10-py" role="tab">Python</button><button aria-controls="example-10-sh-pane-0" data-tab="sh" id="example-10-sh" role="tab">CLI</button></div>
+<div aria-labelledby="example-10-py" class="code-body" data-pane="py" id="example-10-py-pane-0" role="tabpanel"><pre><code>from recast_radar import fetch
+
+fetch.intl_providers()                           # dmi, fmi, smhi, dwd, ord, jma, ...
+site = fetch.intl_sites("dmi")[0]["id"]          # "06036" (Sindal)
+volumes = fetch.intl("dmi", site)                # decoded, split frames merged
+fetch.intl_frames("ord", "bejab", date="2026-09-24")   # a day of archived frames</code></pre></div>
+<div aria-labelledby="example-10-sh" class="code-body" data-pane="sh" hidden="" id="example-10-sh-pane-0" role="tabpanel"><pre><code>recast-radar fetch intl                               # list the providers
+recast-radar fetch intl smhi --list-sites
+recast-radar fetch intl smhi hemse -n 3               # newest frames of a site
+recast-radar fetch intl ord bejab --date 2026-09-24 --time 21:39:06</code></pre></div>
+</div>
+</article>
+<!-- R9 -->
+<article class="recipe" data-keys="pyart py-art xradar xarray datatree engine wradlib metpy handoff" data-topic="interop">
+<div>
+<span class="eyebrow">Other tools</span>
+<h3>Use Py-ART and xarray</h3>
+<div class="meta"><span class="pill">Py-ART</span><span class="pill">xradar</span><span class="pill">xarray engine</span></div>
+<p>Use Recast to decode files for Py-ART and xarray workflows. <code>to_pyart</code> accepts a path, bytes, a <code>Volume</code> or a DataTree, including one from xradar.</p>
+<p class="why"><code>field_names="config"</code> gives Py-ART's default names (<code>reflectivity</code>, <code>velocity</code>, ...), which its algorithms look for.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 12 language" class="code-tabs" role="tablist"><button aria-controls="example-11-py-pane-0" data-tab="py" id="example-11-py" role="tab">Python</button></div>
+<div aria-labelledby="example-11-py" class="code-body" data-pane="py" id="example-11-py-pane-0" role="tabpanel"><pre><code>import xarray as xr, pyart, recast_radar
+
+radar = recast_radar.to_pyart("KTLX20240315_000217_V06")
+gatefilter = pyart.filters.GateFilter(radar)
+
+tree = xr.open_datatree("KTLX20240315_000217_V06", engine="recast_radar")
+ds = xr.open_dataset("KTLX20240315_000217_V06", engine="recast_radar", group="sweep_0")
+
+# Save with xarray: use the WMO flavor, which netCDF can hold.
+recast_radar.open(path, flavor="wmo", first_dim="time").to_netcdf("out.nc")</code></pre></div>
+</div>
+</article>
+<!-- R10 -->
+<article class="recipe" data-keys="jma japan scan cycle split merge level2 tar sweeps" data-topic="science">
+<div>
+<span class="eyebrow">Science</span>
+<h3>Split a file into scan cycles</h3>
+<div class="meta"><span class="pill">JMA</span><span class="pill">merge</span></div>
+<p>The Level II writer expects one scan cycle per volume. The JMA tar in this example contains two cycles; split them before writing separate Level II files.</p>
+<p class="why"><code>merge</code> joins per-moment or per-sweep files of one scan (ODIM, DWD) and pairs sweeps only when their first rays are within 60 s.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 13 language" class="code-tabs" role="tablist"><button aria-controls="example-12-py-pane-0" data-tab="py" id="example-12-py" role="tab">Python</button><button aria-controls="example-12-sh-pane-0" data-tab="sh" id="example-12-sh" role="tab">CLI</button></div>
+<div aria-labelledby="example-12-py" class="code-body" data-pane="py" id="example-12-py-pane-0" role="tabpanel"><pre><code>itok = recast_radar.read(
+    "Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.RS47937.tar", station="ITOK")
+for n, cycle in enumerate(recast_radar.split_scan_cycles(itok), start=1):
+    cycle.write(f"ITOK_{n}.ar2v", "level2")
+
+merged = recast_radar.merge([recast_radar.read(p) for p in parts])</code></pre></div>
+<div aria-labelledby="example-12-sh" class="code-body" data-pane="sh" hidden="" id="example-12-sh-pane-0" role="tabpanel"><pre><code>recast-radar convert tar --station ITOK --to level2 --split-scan-cycles -o ITOK.ar2v
+# writes ITOK_1.ar2v and ITOK_2.ar2v
+recast-radar info --merge bejab_DBZH.h5 bejab_VRAD.h5</code></pre></div>
+</div>
+</article>
+<!-- R11 -->
+<article class="recipe" data-keys="level3 storm tracking nst scit hail mesocyclone tvs dump json" data-topic="interop">
+<div>
+<span class="eyebrow">Other tools</span>
+<h3>Read Level III storm tracks</h3>
+<div class="meta"><span class="pill">Level III</span><span class="pill">NST</span></div>
+<p>Graphic and tabular Level III products (storm tracking, hail, mesocyclone, TVS) contain structured product data rather than a volume of gate measurements. Use <code>dump</code> to inspect packets, storm identifiers, and positions as dictionaries.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 14 language" class="code-tabs" role="tablist"><button aria-controls="example-13-py-pane-0" data-tab="py" id="example-13-py" role="tab">Python</button><button aria-controls="example-13-sh-pane-0" data-tab="sh" id="example-13-sh" role="tab">CLI</button></div>
+<div aria-labelledby="example-13-py" class="code-body" data-pane="py" id="example-13-py-pane-0" role="tabpanel"><pre><code>nst = recast_radar.dump("KDVN_SDUS33_NSTDVN_202008101804")
+for layer in nst["level3"]["symbology"]["layers"]:
+    for packet in layer:
+        for storm in packet["packet"].get("StormIds", []):
+            print(storm["id"], storm["i"] / 4, storm["j"] / 4)   # km east, north</code></pre></div>
+<div aria-labelledby="example-13-sh" class="code-body" data-pane="sh" hidden="" id="example-13-sh-pane-0" role="tabpanel"><pre><code>recast-radar dump --json KDVN_SDUS33_NSTDVN_202008101804 &gt; nst.json</code></pre></div>
+</div>
+</article>
+<!-- R12 -->
+<article class="recipe" data-keys="validate check folder corpus bad corrupt qc quality" data-topic="data">
+<div>
+<span class="eyebrow">Get data</span>
+<h3>Check a folder of files</h3>
+<div class="meta"><span class="pill">QC</span></div>
+<p>Validate files in a directory for model consistency, site location, ray coordinates, and plausible field values. Results are reported as OK, WARN, or FAIL.</p>
+</div>
+<div class="code" data-group="">
+<div aria-label="Example 15 language" class="code-tabs" role="tablist"><button aria-controls="example-14-sh-pane-0 example-14-sh-pane-1" data-tab="sh" id="example-14-sh" role="tab">CLI</button></div>
+<div aria-labelledby="example-14-sh" class="code-body" data-pane="sh" id="example-14-sh-pane-0" role="tabpanel"><pre><code>recast-radar validate -r ./archive          # --json for a report, --strict to fail on warnings</code></pre></div>
+<div aria-labelledby="example-14-sh" class="out" data-pane="sh" id="example-14-sh-pane-1" role="tabpanel"><div class="out-label">Output</div><pre><code>OK    KTLX20240315_000217.trim.V06  (NEXRAD Level II: KTLX 2024-03-15T00:02:17Z 2 sweep(s))
+WARN  KLIX20050829_130035.trim.V06  (NEXRAD Level II: KLIX 2005-08-29T13:00:12Z 2 sweep(s))
+      warning: has no location
+FAIL  config.cfg
+      error: does not decode: not a recognised radar file (...)
+3 file(s): 1 ok, 1 with warnings, 1 failed</code></pre></div>
+</div>
+</article>
+<article class="recipe" data-keys="derive products kdp phase attenuation qpe rain rate texture quality band" data-topic="science"><div><span class="eyebrow">Science</span><h3>Compute sweep products</h3><div class="meta"><span class="pill">Derived fields</span><span class="pill">Python &amp; CLI</span></div><p>Use the Rust retrievals for KDP, attenuation corrections, rain-rate estimates, textures, gradients, and quality diagnostics. Specify the radar band for products that require it.</p><p class="why">Inputs remain unchanged. Results report missing source fields, existing fields kept, and actual output names. Use <code>strict=True</code> / <code>--strict</code> to reject unavailable products.</p></div><div class="code" data-group=""><div aria-label="Example 16 language" class="code-tabs" role="tablist"><button aria-controls="example-15-py-pane-0" data-tab="py" id="example-15-py" role="tab">Python</button><button aria-controls="example-15-sh-pane-0" data-tab="sh" id="example-15-sh" role="tab">CLI</button></div><div aria-labelledby="example-15-py" class="code-body" data-pane="py" hidden="" id="example-15-py-pane-0" role="tabpanel"><pre><code>import recast_radar as radar
+
+result = radar.process("volume.ar2v", ["KDP", "RATE", "REF_TEX"], band="s")
+print(result.report)
+result.volume.write("derived.nc", "fm301")
+# REF_TEX is stored using the input field name, for example DBZH_TEX.</code></pre></div><div aria-labelledby="example-15-sh" class="code-body" data-pane="sh" hidden="" id="example-15-sh-pane-0" role="tabpanel"><pre><code>recast-radar products
+recast-radar process FILE --products KDP,RATE,REF_TEX --band s -o derived.nc</code></pre></div></div></article><article class="recipe" data-keys="cross section rhi vertical transect geometry height range" data-topic="science"><div><span class="eyebrow">Science</span><h3>Create a vertical section or RHI panel</h3><div class="meta"><span class="pill">Sections</span><span class="pill">Python &amp; CLI</span></div><p>Cross sections sample a path through a volume. RHI panels sample an existing vertical scan. Python returns an xarray DataArray with height and distance coordinates in metres; heights are relative to radar altitude.</p><p class="why">Endpoints are kilometres east and north of the radar. For the CLI, save these options: <code>{"field":"DBZH","start_km":[0,0],"end_km":[100,-100],"width":512,"height":256,"top_m":12000}</code>. The output contains coordinates, shape, units, and values; missing values are JSON null.</p></div><div class="code" data-group=""><div aria-label="Example 17 language" class="code-tabs" role="tablist"><button aria-controls="example-16-py-pane-0" data-tab="py" id="example-16-py" role="tab">Python</button><button aria-controls="example-16-sh-pane-0" data-tab="sh" id="example-16-sh" role="tab">CLI</button></div><div aria-labelledby="example-16-py" class="code-body" data-pane="py" hidden="" id="example-16-py-pane-0" role="tabpanel"><pre><code>import recast_radar as radar
+
+section = radar.cross_section("volume.ar2v", field="DBZH",
+    start_km=(0, 0), end_km=(100, -100),
+    width=512, height=256, top_m=12000)
+
+# For a file containing a native RHI scan:
+panel = radar.rhi_panel("native-rhi.nc", sweep=0, field="DBZH")</code></pre></div><div aria-labelledby="example-16-sh" class="code-body" data-pane="sh" hidden="" id="example-16-sh-pane-0" role="tabpanel"><pre><code># Save the JSON below as section-options.json first.
+recast-radar section FILE --options section-options.json -o section.json</code></pre></div></div></article><article class="recipe" data-keys="grid cartesian multi radar mosaic barnes cressman nearest radius" data-topic="science"><div><span class="eyebrow">Science</span><h3>Grid one or more radars</h3><div class="meta"><span class="pill">Grids</span><span class="pill">Python &amp; CLI</span></div><p>Map gates onto a Cartesian grid with the existing Rust weighting and geometry. Python returns an xarray Dataset with coordinates, field units, projection metadata when available, and radius of influence.</p><p class="why">CLI options: <code>{"fields":["DBZH"],"shape":[10,101,101],"limits_m":[[0,9000],[-100000,100000],[-100000,100000]]}</code>. Both interfaces accept <code>origin</code>, <code>weighting</code>, and <code>radius_m</code>.</p></div><div class="code" data-group=""><div aria-label="Example 18 language" class="code-tabs" role="tablist"><button aria-controls="example-17-py-pane-0" data-tab="py" id="example-17-py" role="tab">Python</button><button aria-controls="example-17-sh-pane-0" data-tab="sh" id="example-17-sh" role="tab">CLI</button></div><div aria-labelledby="example-17-py" class="code-body" data-pane="py" hidden="" id="example-17-py-pane-0" role="tabpanel"><pre><code>import recast_radar as radar
+
+grid = radar.grid(["site-a.ar2v", "site-b.ar2v"], fields=["DBZH"],
+    shape=(10, 101, 101),
+    limits_m=((0, 9000), (-100000, 100000), (-100000, 100000)))
+# Axis order: z, y (north), x (east). Limits are inclusive, in metres.
+# The default origin is the first radar's location and altitude.</code></pre></div><div aria-labelledby="example-17-sh" class="code-body" data-pane="sh" hidden="" id="example-17-sh-pane-0" role="tabpanel"><pre><code># Save the JSON below as grid-options.json first.
+recast-radar grid site-a.ar2v site-b.ar2v --options grid-options.json -o grid.json</code></pre></div></div></article><div class="empty" hidden="" id="no-recipes">No recipe matches. Try <b>velocity</b>, <b>ODIM</b> or <b>PNG</b>.</div>
+</div>
+</section>
+<!-- ===================== 06 CLI ===================== -->
+<section class="sec" id="cli">
+<div class="sec-head">
+<span class="num">06</span>
+<h2>Command line</h2>
+<p>Use <code>recast-radar &lt;command&gt; --help</code> for command options. Prefix the examples in the table with <code>recast-radar</code>.</p>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>Command</th><th>What it does</th><th>Example arguments</th></tr></thead>
+<tbody>
+<tr><td><code>info</code></td><td>Summary: site, times, scan strategy, a table of sweeps</td><td><code>info --merge a.h5 b.h5</code></td></tr>
+<tr><td><code>dump</code></td><td>Every decoded value, as text or JSON</td><td><code>dump --json --data --sweep 0 --field DBZH</code></td></tr>
+<tr><td><code>render</code></td><td>One field of one sweep to PNG</td><td><code>render FILE --field velocity --dealias</code></td></tr>
+<tr><td><code>validate</code></td><td>Decode and check files or folders</td><td><code>validate -r ./archive --strict</code></td></tr>
+<tr><td><code>bench</code></td><td>Time decodes of your own files</td><td><code>bench --threads 1 -n 5 FILE</code></td></tr>
+<tr><td><code>fetch</code></td><td>AWS Level II, chunks, Level III, international, polling servers, site list</td><td><code>fetch level2 KTLX -n 3</code></td></tr>
+<tr><td><code>convert</code></td><td>Write Level II, CfRadial 1, ODIM_H5 or FM301</td><td><code>convert FILE --to fm301 -o out.nc</code></td></tr>
+<tr><td><code>publish</code></td><td>Add volumes to a GR2Analyst polling directory</td><td><code>publish FILE --dir ./polling</code></td></tr>
+<tr><td><code>serve</code></td><td>Serve a directory over HTTP (GET and HEAD, no TLS)</td><td><code>serve ./polling --bind 0.0.0.0:8080</code></td></tr>
+<tr><td><code>products</code></td><td>List products available to the Python and CLI processing API</td><td><code>products</code></td></tr><tr><td><code>process</code></td><td>Compute products and write an augmented volume</td><td><code>process FILE --products CREF,ET,VIL -o products.nc</code></td></tr><tr><td><code>section</code></td><td>Create a vertical section or native RHI panel</td><td><code>section FILE --options section-options.json -o section.json</code></td></tr><tr><td><code>grid</code></td><td>Grid one or more radar volumes</td><td><code>grid FILE --options grid-options.json -o grid.json</code></td></tr></tbody>
+</table></div>
+<details class="note" data-kind="deep">
+<summary><span class="tag tag-deep">Details</span>Exit status and Level II writer options</summary>
+<div class="note-body">
+<p>Exit codes: <code>0</code> success, <code>1</code> a file failed, <code>2</code> bad usage, <code>3</code> the feature is not in this build. Inputs over 1 GiB are refused.</p>
+<p><code>--quantization precise|compatible|standard</code>: <code>precise</code> (default) never codes a value more coarsely than its source, <code>compatible</code> keeps NEXRAD's word sizes that xradar 0.12 reads, <code>standard</code> writes NOAA's codings where they hold every value. No policy clips. Also <code>--nyquist</code>, <code>--unambiguous-range</code>, <code>--position LAT,LON,HEIGHT</code>, <code>--position-from FILE</code>, <code>--sweeps 0,2,5-9</code>, <code>--sweeps-in-time-order</code>, <code>--drop-negative-range-gates</code>, <code>--level2-compression none</code>, <code>--strict</code> and <code>--threads N</code>.</p>
+</div>
+</details>
+</section>
+<!-- ===================== 07 FORMATS ===================== -->
+<section class="sec" id="formats">
+<div class="sec-head">
+<span class="num">07</span>
+<h2>Formats</h2>
+<p>Detected from the bytes. gzip and single-file ZIP wrappers are removed first.</p>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>Format</th><th>Read</th><th>Write</th><th>Covers</th></tr></thead>
+<tbody>
+<tr><td>NEXRAD Level II</td><td class="yes">yes</td><td class="yes">yes</td><td>Archive II back to 1991 (<code>ARCHIVE2</code>, <code>AR2V</code>), Message 1 and 31, uncompressed, gzip, bzip2, LDM records, files cut short; every metadata message</td></tr>
+<tr><td>Level II real-time chunks</td><td class="yes">yes</td><td class="yes">yes</td><td>The <code>unidata-nexrad-level2-chunks</code> layout: S, I and E chunks</td></tr>
+<tr><td>NEXRAD and TDWR Level III</td><td class="yes">yes</td><td class="no">no</td><td>95 product codes: radial, raster, generic, graphic and tabular products, status and text messages</td></tr>
+<tr><td>ODIM_H5</td><td class="yes">yes</td><td class="yes">yes</td><td>Polar volumes and scans, v2.2 to 2.4, any HDF5 superblock; Cartesian grids through the Rust API</td></tr>
+<tr><td>CfRadial 1</td><td class="yes">yes</td><td class="yes">yes</td><td>Classic netCDF and netCDF-4</td></tr>
+<tr><td>CfRadial 2 / FM301</td><td class="yes">yes</td><td class="yes">yes</td><td>netCDF-4, one group per sweep</td></tr>
+<tr><td>DORADE</td><td class="yes">yes</td><td class="no">no</td><td>Sweep files, airborne scans, mobile-radar ZIP archives (DOW, COW, RaXPol)</td></tr>
+<tr><td>JMA radar GRIB2</td><td class="yes">yes</td><td class="no">no</td><td>NICT <code>RDR_JMAGPV</code> tars, every station, or pick one</td></tr>
+<tr><td>GR2Analyst polling directory</td><td class="yes">yes</td><td class="yes">yes</td><td><code>config.cfg</code>, <code>grlevel2.cfg</code>, <code>dir.list</code></td></tr>
+<tr><td>PNG</td><td class="no">–</td><td class="yes">yes</td><td>Any field, radar-centred or map viewport; GR <code>.pal</code> palettes</td></tr>
+</tbody>
+</table></div>
+<details class="note" data-kind="deep">
+<summary><span class="tag tag-deep">Details</span>Unsupported formats and encodings</summary>
+<div class="note-body"><p>Sigmet/IRIS RAW, Rainbow 5, Universal Format, GAMIC HDF5, Furuno, NCAR MDV, CSU-CHILL, RAPIC, CINRAD, MRMS GRIB2 and Level 1 I/Q. CDF-5 netCDF, and HDF5 filters other than deflate, shuffle and Fletcher-32 (szip, LZF, n-bit, scale-offset).</p></div>
+</details>
+</section>
+<!-- ===================== 08 SPEED ===================== -->
+<section class="sec" id="speed">
+<div class="sec-head">
+<span class="num">08</span>
+<h2>Benchmarks</h2>
+<p>Preliminary whole-file decode timings retained from the original project guide, in milliseconds. These are not measurements of the accompanying build. Multipliers compare each reader's elapsed time with Recast's in that test.</p>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>File</th><th class="n">Recast</th><th class="n">nexrad crate</th><th class="n">MetPy</th><th class="n">Py-ART</th><th class="n">xradar</th></tr></thead>
+<tbody>
+<tr><td>Level II, KTLX 2024 (bzip2)</td><td class="n win">423</td><td class="n">1,052  2.5×</td><td class="n">2,635  6.2×</td><td class="n">3,247  7.7×</td><td class="n">6,257  15×</td></tr>
+<tr><td>Level II, KTLX 2013 (gzip)</td><td class="n win">55</td><td class="n">146  2.7×</td><td class="n">1,157  21×</td><td class="n">1,175  21×</td><td class="n">cannot read</td></tr>
+<tr><td>Real-time, 35 chunks</td><td class="n win">278</td><td class="n">538  1.9×</td><td class="n">1,021  3.7×</td><td class="n">1,107  4.0×</td><td class="n">2,217  8.0×</td></tr>
+<tr><td>Level III, N0B</td><td class="n win">12</td><td class="n">–</td><td class="n">27  2.3×</td><td class="n">43  3.6×</td><td class="n">–</td></tr>
+</tbody>
+</table></div>
+<div class="tbl"><table>
+<thead><tr><th>File</th><th class="n">Recast</th><th class="n">h5py / netCDF4</th><th class="n">wradlib</th><th class="n">Py-ART</th><th class="n">xradar</th></tr></thead>
+<tbody>
+<tr><td>ODIM_H5 volume, DWD Rostock</td><td class="n win">18</td><td class="n">62  3.5×</td><td class="n">99  5.5×</td><td class="n">348  19×</td><td class="n">457  26×</td></tr>
+<tr><td>CfRadial 1, NCAR S-Pol</td><td class="n win">29</td><td class="n">61  2.1×</td><td class="n">264  9.1×</td><td class="n">135  4.6×</td><td class="n">181  6.2×</td></tr>
+</tbody>
+</table></div>
+<div class="prose"><p>The same benchmark notes report 1.7× higher bzip2 compression throughput than C libbzip2 on Level II records, with identical output bytes. Reported Python speedups are 3.5–7.3× for <code>open().load()</code> against xradar and 1.3–4× for <code>to_pyart</code> against Py-ART's reader. libdeflate was about 13% faster for gzip decompression.</p></div>
+<div class="callout"><b>Measurement context.</b> Windows 11, AMD Ryzen 9 9950X3D, one pinned core, and five interleaved rounds, with decoded values compared before timing. The machine was busy and the measurements preceded a later merge. Background load can affect both timings and ratios. Library versions, the source revision, and raw timings are not recorded here, so these results cannot be reproduced from this guide alone.</div>
+</section>
+<!-- ===================== 09 RULES ===================== -->
+<section class="sec" id="rules">
+<div class="sec-head">
+<span class="num">09</span>
+<h2>Implementation notes</h2>
+<p>Error handling, metadata storage, and runtime configuration.</p>
+</div>
+<div class="grid2">
+<div class="rule"><h3>Input validation and fuzzing</h3><p>Project crates forbid <code>unsafe</code>, and library code avoids <code>unwrap</code> and <code>expect</code>. Parsers return errors for malformed inputs and are exercised by fuzz tests.</p></div>
+<div class="rule"><h3>Decoder limits</h3><p>Decoders limit decompressed size, ray counts, gates per ray, sweeps, and archive members. Inputs that exceed a limit return an error.</p></div>
+<div class="rule"><h3>Additional metadata</h3><p>Values without a typed slot stay in <code>other</code>, <code>extra_vars</code> and <code>variable_attrs</code>. Level II metadata messages and per-radial values are retained alongside the volume.</p></div>
+<div class="rule"><h3>Function naming</h3><p><code>read_*</code> returns a <code>Volume</code>, <code>decode_*</code> returns a format's own structures, <code>looks_like_*</code> sniffs without decoding. </p></div>
+<div class="rule"><h3>Thread pool</h3><p>Decoders and algorithms use rayon's global pool. Set <code>RAYON_NUM_THREADS</code>, or run inside your own pool's <code>install</code>.</p></div>
+<div class="rule"><h3>WebAssembly</h3><p>Every crate builds for <code>wasm32-unknown-unknown</code> except network access. Use the byte entry points there, such as <code>read_supported_volume_bytes</code>.</p></div>
+</div>
+<details class="note" data-kind="deep">
+<summary><span class="tag tag-deep">Details</span>Features, enums and errors</summary>
+<div class="note-body">
+<p>Features: the defaults (<code>io</code>, <code>correct</code>, <code>filters</code>, <code>retrieve</code>, <code>map</code>) read every format and run the algorithms. Add <code>write</code>, <code>render</code>, <code>net</code>, <code>track</code>, <code>scattering</code>, <code>serde</code>, or <code>full</code>. Only <code>net</code> makes network requests or compiles C.</p>
+<p>Public enums and errors are <code>#[non_exhaustive]</code>, so a <code>match</code> needs a wildcard arm. The storage types (<code>FieldData</code>, <code>Coding</code>, <code>LinearTransform</code>, ...) are deliberately closed so a writer or renderer must handle every one. Each crate has its own <code>thiserror</code> error enum, and all of them work with <code>?</code> and <code>Box&lt;dyn Error&gt;</code>.</p>
+</div>
+</details>
+</section>
+<!-- ===================== 10 ERRORS ===================== -->
+<section class="sec" id="errors">
+<div class="sec-head">
+<span class="num">10</span>
+<h2>Troubleshooting</h2>
+<p>Common errors and the options to check.</p>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>You see</th><th>It means</th><th>Do this</th></tr></thead>
+<tbody>
+<tr><td><code>DecodeError</code></td><td>Not a radar file this library reads, or it is damaged. Also raised for Level III products with no data array</td><td>Run <code>recast-radar validate FILE</code>; use <code>dump</code> for graphic and tabular Level III</td></tr>
+<tr><td><code>UnrepresentableError</code></td><td>The output format cannot hold something in the volume</td><td>Read the message: it names the keyword that helps, like <code>position=</code> or <code>sweeps=</code></td></tr>
+<tr><td>Level II refuses a volume</td><td>No site position, more than 32 sweeps, an RHI, or sweeps from two scan cycles</td><td><code>position=</code>, <code>sweeps=</code>, <code>split_scan_cycles</code></td></tr>
+<tr><td><code>WriteWarning</code></td><td>A field was left out, or coded more coarsely than the source</td><td>Pass <code>strict=True</code> to make it an error instead</td></tr>
+<tr><td><code>UnavailableError</code></td><td>This build has no writer, publisher or network support</td><td>Use a full build; check <code>recast_radar.writers()</code></td></tr>
+<tr><td><code>FetchError</code></td><td>A download or listing failed</td><td>Check the provider, site, time, and network response. The SMHI, NCI, and ORD integrations support archived queries</td></tr>
+</tbody>
+</table></div>
+</section>
+</main>
+</div>
+</div>
+<footer>
+<div class="wrap">
+<span>Recast Radar Tools 0.1.0 / local frontend preview / Recast Systems</span>
+<span class="mono">Examples use real NWS and European radar files from the test corpus.</span>
+</div>
+</footer>
+<div class="toast" hidden="" id="toast" role="status"></div>
+<script>
+(function(){
+  var store = {
+    get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
+    set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+  };
+
+  /* ---------- syntax colouring (small, dependency free) ---------- */
+  var KW = {
+    py:/\b(import|from|as|for|in|if|else|def|return|with|print|True|False|None|and|or|not|lambda)\b/g,
+    rs:/\b(use|let|mut|fn|for|in|if|else|match|return|Some|None|Ok|Err|Box|dyn|as|impl|pub|struct|continue|loop|while|ref)\b/g,
+    sh:/(^|\s)(recast-radar|pip|cargo)(?=\s)/gm
+  };
+  function colour(code, lang){
+    var src = code.textContent, out = '', i = 0;
+    var rx = lang === 'sh'
+      ? /(#[^\n]*)|("(?:[^"\\]|\\.)*")|(\s--?[a-zA-Z][\w-]*)/g
+      : lang === 'rs'
+        ? /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*")|(\b\d[\d_.]*\b)|(\b[A-Z][A-Za-z0-9]+\b)|(\b(?:use|let|mut|fn|for|in|if|else|match|return|dyn|as|impl|pub|continue|loop|while)\b)/g
+        : /(#[^\n]*)|(f?"(?:[^"\\]|\\.)*")|(\b\d[\d_.]*\b)|(\b(?:import|from|as|for|in|if|else|def|return|with|True|False|None|and|or|not)\b)/g;
+    var m;
+    function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+    while((m = rx.exec(src))){
+      out += esc(src.slice(i, m.index));
+      var t = m[0], cls;
+      if (lang === 'sh'){ cls = m[1] ? 'tk-c' : m[2] ? 'tk-s' : 'tk-k'; }
+      else if (lang === 'rs'){ cls = m[1] ? 'tk-c' : m[2] ? 'tk-s' : m[3] ? 'tk-n' : m[4] ? 'tk-t' : 'tk-k'; }
+      else { cls = m[1] ? 'tk-c' : m[2] ? 'tk-s' : m[3] ? 'tk-n' : 'tk-k'; }
+      out += '<span class="'+cls+'">'+esc(t)+'</span>';
+      i = m.index + t.length;
+    }
+    out += esc(src.slice(i));
+    code.innerHTML = out;
+  }
+  function langOf(pre){
+    var pane = pre.closest('[data-pane]');
+    if (pane) return pane.getAttribute('data-pane');
+    var t = pre.textContent;
+    if (/^\s*\[dependencies\]/.test(t)) return 'toml';
+    if (/^\s*(pip|recast-radar|cargo)\b/.test(t)) return 'sh';
+    return 'py';
+  }
+  document.querySelectorAll('.code-body pre code').forEach(function(c){
+    var l = langOf(c.parentNode);
+    if (l === 'py' || l === 'rs' || l === 'sh') colour(c, l);
+  });
+
+  /* ---------- copy buttons ---------- */
+  var toast = document.getElementById('toast'), toastT;
+  function say(msg){toast.textContent = msg; toast.hidden = false; clearTimeout(toastT); toastT = setTimeout(function(){toast.hidden = true}, 1400);}
+  document.querySelectorAll('.code-body').forEach(function(body){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'copy'; b.textContent = 'Copy';
+    b.addEventListener('click', function(){
+      var text = body.querySelector('pre').textContent;
+      var done = function(){ b.textContent = 'Copied'; say('Copied to clipboard'); setTimeout(function(){b.textContent='Copy'}, 1200); };
+      var fallback = function(){
+        var r = document.createRange(); r.selectNodeContents(body.querySelector('code'));
+        var s = getSelection(); s.removeAllRanges(); s.addRange(r); say('Selected. Press Ctrl+C to copy');
+      };
+      try { navigator.clipboard.writeText(text).then(done, fallback); } catch(e){ fallback(); }
+    });
+    body.appendChild(b);
+  });
+
+  /* ---------- language tabs ---------- */
+  var groups = Array.prototype.slice.call(document.querySelectorAll('[data-group]'));
+  function show(group, lang){
+    var tabs = group.querySelectorAll('[role=tab]');
+    var have = Array.prototype.map.call(tabs, function(t){return t.getAttribute('data-tab')});
+    if (have.indexOf(lang) < 0) lang = have[0];
+    tabs.forEach(function(t){ var selected = t.getAttribute('data-tab') === lang; t.setAttribute('aria-selected', String(selected)); t.tabIndex = selected ? 0 : -1; });
+    group.querySelectorAll('[data-pane]').forEach(function(p){ p.hidden = p.getAttribute('data-pane') !== lang; });
+  }
+  function setLang(lang, save){
+    groups.forEach(function(g){ show(g, lang); });
+    document.querySelectorAll('[data-lang]').forEach(function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-lang') === lang)); });
+    if (save) store.set('rrt-lang', lang);
+  }
+  groups.forEach(function(g){
+    g.querySelectorAll('[role=tab]').forEach(function(t){
+      t.addEventListener('click', function(){ show(g, t.getAttribute('data-tab')); });
+      t.addEventListener('keydown', function(e){
+        var tabs = Array.from(g.querySelectorAll('[role=tab]')), i = tabs.indexOf(t), next;
+        if(e.key === 'ArrowRight') next = (i + 1) % tabs.length;
+        else if(e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+        else if(e.key === 'Home') next = 0;
+        else if(e.key === 'End') next = tabs.length - 1;
+        else return;
+        e.preventDefault(); show(g, tabs[next].getAttribute('data-tab')); tabs[next].focus();
+      });
+    });
+  });
+  document.querySelectorAll('[data-lang]').forEach(function(b){
+    b.addEventListener('click', function(){ setLang(b.getAttribute('data-lang'), true); });
+  });
+  setLang(store.get('rrt-lang') || 'py', false);
+
+  /* ---------- experience level ---------- */
+  function setLevel(level, save){
+    document.querySelectorAll('[data-level]').forEach(function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-level') === level)); });
+    document.querySelectorAll('details.note').forEach(function(d){
+      var k = d.getAttribute('data-kind');
+      d.open = level === 'new' ? k === 'primer' : level === 'pro' ? k === 'deep' : false;
+    });
+    if (save) store.set('rrt-level', level);
+  }
+  document.querySelectorAll('[data-level]').forEach(function(b){
+    b.addEventListener('click', function(){ setLevel(b.getAttribute('data-level'), true); });
+  });
+  setLevel(store.get('rrt-level') || 'new', false);
+
+  /* ---------- recipe filter ---------- */
+  var q = document.getElementById('q'), topic = 'all';
+  var recipes = document.querySelectorAll('.recipe');
+  function filter(){
+    var words = q.value.toLowerCase().split(/\s+/).filter(Boolean), shown = 0;
+    recipes.forEach(function(r){
+      var hay = (r.getAttribute('data-keys') + ' ' + r.textContent).toLowerCase();
+      var ok = (topic === 'all' || r.getAttribute('data-topic') === topic) && words.every(function(w){ return hay.indexOf(w) >= 0; });
+      r.hidden = !ok; if (ok) shown++;
+    });
+    document.getElementById('no-recipes').hidden = shown > 0;
+  }
+  q.addEventListener('input', filter);
+  document.querySelectorAll('.chip').forEach(function(c){
+    c.addEventListener('click', function(){
+      topic = c.getAttribute('data-topic');
+      document.querySelectorAll('.chip').forEach(function(x){ x.setAttribute('aria-pressed', String(x === c)); });
+      filter();
+    });
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement !== q && !document.activeElement.isContentEditable && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){ e.preventDefault(); q.focus(); }
+  });
+
+  /* ---------- table of contents highlight ---------- */
+  var links = document.querySelectorAll('.toc a');
+  if ('IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting){
+          links.forEach(function(a){ a.classList.toggle('on', a.getAttribute('href') === '#' + en.target.id); });
+        }
+      });
+    }, {rootMargin:'-30% 0px -60% 0px'});
+    document.querySelectorAll('section.sec').forEach(function(s){ io.observe(s); });
+  }
+
+  /* ---------- instrument 1: beam height (4/3 Earth) ---------- */
+  var KA = 4/3 * 6371000, BW = 0.95 * Math.PI / 180;
+  function beam(rM, elDeg){
+    var el = elDeg * Math.PI / 180;
+    var h = Math.sqrt(rM*rM + KA*KA + 2*rM*KA*Math.sin(el)) - KA;
+    var s = KA * Math.asin(rM * Math.cos(el) / (KA + h));
+    return {h:h, s:s};
+  }
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, text){ var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+  var beamSvg = document.getElementById('beam-svg');
+  var elev = document.getElementById('elev'), rng = document.getElementById('rng');
+  function drawBeam(){
+    var e = +elev.value, r = +rng.value * 1000;
+    var W = 520, H = 190, L = 64, R = 12, T = 12, B = 30;
+    var maxS = 460000;
+    var maxH = Math.max(20000, Math.ceil(beam(maxS, e + 0.475).h / 5000) * 5000);
+    var x = function(s){ return L + (W - L - R) * s / maxS; };
+    var y = function(h){ return H - B - (H - B - T) * Math.min(h, maxH) / maxH; };
+    beamSvg.textContent = '';
+    var heightStep = maxH / 4000;
+    for (var hk = 0; hk <= maxH / 1000; hk += heightStep){
+      beamSvg.appendChild(el('line', {x1:L, x2:W-R, y1:y(hk*1000), y2:y(hk*1000), stroke:'var(--grid)', 'stroke-width':1}));
+      beamSvg.appendChild(el('text', {x:L-6, y:y(hk*1000)+3.5, 'text-anchor':'end'}, Number(hk.toFixed(1)) + ' km'));
+    }
+    for (var sk = 0; sk <= 400; sk += 100){
+      beamSvg.appendChild(el('text', {x:x(sk*1000), y:H-B+16, 'text-anchor':'middle'}, sk + ' km'));
+    }
+    var up = '', lo = '', mid = '';
+    for (var i = 0; i <= 92; i++){
+      var rr = maxS * i / 92;
+      var c = beam(rr, e), a = beam(rr, e + 0.475), b = beam(rr, Math.max(e - 0.475, -1));
+      if (c.s > maxS) break;
+      mid += (i ? 'L' : 'M') + x(c.s).toFixed(1) + ' ' + y(c.h).toFixed(1);
+      up += (i ? 'L' : 'M') + x(a.s).toFixed(1) + ' ' + y(a.h).toFixed(1);
+      lo = 'L' + x(b.s).toFixed(1) + ' ' + y(Math.max(b.h,0)).toFixed(1) + lo;
+    }
+    beamSvg.appendChild(el('path', {d: up + lo + 'Z', fill:'var(--beam)', 'fill-opacity':.22, stroke:'none'}));
+    beamSvg.appendChild(el('path', {d: mid, fill:'none', stroke:'var(--beam)', 'stroke-width':1.5}));
+    beamSvg.appendChild(el('line', {x1:L, x2:W-R, y1:y(0), y2:y(0), stroke:'var(--earth)', 'stroke-width':1.5}));
+    var p = beam(r, e);
+    beamSvg.appendChild(el('line', {x1:x(p.s), x2:x(p.s), y1:y(0), y2:y(p.h), stroke:'var(--orange)', 'stroke-width':1, 'stroke-dasharray':'3 3'}));
+    beamSvg.appendChild(el('rect', {x:x(p.s)-4, y:y(p.h)-4, width:8, height:8, fill:'var(--orange)'}));
+    document.getElementById('elev-out').textContent = e.toFixed(1) + '°';
+    document.getElementById('rng-out').textContent = (+rng.value) + ' km';
+    document.getElementById('r-h').textContent = Math.round(p.h).toLocaleString('en-US');
+    document.getElementById('r-g').textContent = (p.s/1000).toFixed(1);
+    document.getElementById('r-w').textContent = Math.round(r * BW).toLocaleString('en-US');
+  }
+  elev.addEventListener('input', drawBeam); rng.addEventListener('input', drawBeam); drawBeam();
+
+  /* ---------- instrument 2: velocity folding ---------- */
+  var foldSvg = document.getElementById('fold-svg');
+  var vt = document.getElementById('vtrue'), vn = document.getElementById('vnyq');
+  function fold(v, n){ var w = 2*n; var m = ((v + n) % w + w) % w - n; return {m:m, k:Math.round((v - m)/w)}; }
+  function drawFold(){
+    var v = +vt.value, n = +vn.value, f = fold(v, n);
+    var W = 520, H = 190, L = 40, R = 12, T = 14, B = 30, V = 70;
+    var x = function(a){ return L + (W - L - R) * (a + V) / (2*V); };
+    var y = function(a){ return T + (H - T - B) * (V - a) / (2*V); };
+    foldSvg.textContent = '';
+    foldSvg.appendChild(el('rect', {x:L, y:y(n), width:W-L-R, height:y(-n)-y(n), fill:'var(--beam)', 'fill-opacity':.12}));
+    [-60,-30,0,30,60].forEach(function(t){
+      foldSvg.appendChild(el('line', {x1:L, x2:W-R, y1:y(t), y2:y(t), stroke:'var(--grid)', 'stroke-width':1}));
+      foldSvg.appendChild(el('text', {x:L-6, y:y(t)+3.5, 'text-anchor':'end'}, t));
+      foldSvg.appendChild(el('text', {x:x(t), y:H-B+16, 'text-anchor':'middle'}, t + (t===0?' m/s':'')));
+    });
+    var d = '', prev = null;
+    for (var i = 0; i <= 560; i++){
+      var a = -V + 2*V*i/560, m = fold(a, n).m;
+      d += (prev === null || Math.abs(m - prev) > n ? 'M' : 'L') + x(a).toFixed(1) + ' ' + y(m).toFixed(1);
+      prev = m;
+    }
+    foldSvg.appendChild(el('line', {x1:x(-V), y1:y(-V), x2:x(V), y2:y(V), stroke:'var(--subtle)', 'stroke-width':1, 'stroke-dasharray':'4 4'}));
+    foldSvg.appendChild(el('path', {d:d, fill:'none', stroke:'var(--beam)', 'stroke-width':1.6}));
+    foldSvg.appendChild(el('text', {x:x(n)+6, y:y(n)-5}, '+Nyquist'));
+    foldSvg.appendChild(el('line', {x1:x(v), x2:x(v), y1:y(v), y2:y(f.m), stroke:'var(--orange)', 'stroke-width':1, 'stroke-dasharray':'3 3'}));
+    foldSvg.appendChild(el('rect', {x:x(v)-4, y:y(f.m)-4, width:8, height:8, fill:'var(--orange)'}));
+    document.getElementById('vtrue-out').textContent = (v > 0 ? '+' : '') + v + ' m/s';
+    document.getElementById('vnyq-out').textContent = n.toFixed(1) + ' m/s';
+    document.getElementById('f-m').textContent = (f.m > 0 ? '+' : '') + f.m.toFixed(1);
+    document.getElementById('f-k').textContent = Math.abs(f.k);
+    document.getElementById('f-d').textContent = (v > 0 ? '+' : '') + v.toFixed(1);
+  }
+  vt.addEventListener('input', drawFold); vn.addEventListener('input', drawFold); drawFold();
+})();
+</script>
+</body></html>

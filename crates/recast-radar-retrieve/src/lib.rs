@@ -70,6 +70,7 @@ pub use sweep::{
 pub use volume::{
     CappiInterpolation, cappi, column_max, column_mean, column_min, echo_base, echo_depth,
     echo_top_height, height_of_max_reflectivity, low_level_composite_reflectivity,
+    reflectivity_column_base_sweep,
 };
 pub use vwp::{
     VwpCandidateDiagnostics, VwpConfig, VwpError, VwpLevel, VwpLevelOutcome, VwpProfile,

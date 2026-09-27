@@ -36,10 +36,12 @@ pub mod dump;
 mod fetch;
 pub mod frames;
 mod info;
+pub mod mapping;
 pub mod open;
 mod output;
+pub mod process;
 pub mod records;
-mod render;
+pub mod render;
 pub mod serve;
 mod summary;
 mod validate;
@@ -94,6 +96,14 @@ pub enum Command {
     Dump(DumpArgs),
     /// Render one field of one sweep to a PNG image.
     Render(RenderArgs),
+    /// Compute products and write the augmented volume.
+    Process(process::ProcessArgs),
+    /// List product IDs available to process in the CLI and Python.
+    Products,
+    /// Reconstruct a vertical cross section or sample a native RHI (JSON options).
+    Section(mapping::MappingArgs),
+    /// Grid one or more radar volumes (JSON options).
+    Grid(mapping::MappingArgs),
     /// Download radar data: AWS Level II, real-time chunks, Level III, international feeds, polling servers.
     Fetch(FetchArgs),
     /// Decode files and check them; exits 1 when any file fails.
@@ -671,26 +681,35 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
+    ExitCode::from(exit_status_with_args(args))
+}
+
+/// Run the CLI without exiting the host process; used by Python's console entry point.
+pub fn exit_status_with_args<I, T>(args: I) -> u8
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(err) => {
             let code = if err.use_stderr() { EXIT_USAGE } else { 0 };
             // Help and version go to stdout, errors to stderr.
             let _ = err.print();
-            return ExitCode::from(code);
+            return code;
         }
     };
     let backends = Backends::builtin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
     match run(cli, &backends, &mut out) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         // The reader went away (`recast-radar dump FILE | head`): stop quietly.
-        Err(CliError::Output(err)) if err.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(CliError::Output(err)) if err.kind() == io::ErrorKind::BrokenPipe => 0,
         Err(err) => {
             let _ = out.flush();
             eprintln!("recast-radar: {err}");
-            ExitCode::from(err.exit_code())
+            err.exit_code()
         }
     }
 }
@@ -702,6 +721,15 @@ pub fn run(cli: Cli, backends: &Backends, out: &mut dyn Write) -> Result<(), Cli
         Command::Info(args) => info::run(&args, out),
         Command::Dump(args) => dump::run(&args, out),
         Command::Render(args) => render::run(&args, out),
+        Command::Section(args) => mapping::run(&args, false, out),
+        Command::Grid(args) => mapping::run(&args, true, out),
+        Command::Process(args) => process::run(&args, backends, out),
+        Command::Products => {
+            let products = serde_json::to_string_pretty(&process::products())
+                .map_err(|e| CliError::Failed(e.to_string()))?;
+            writeln!(out, "{products}")?;
+            Ok(())
+        }
         Command::Fetch(args) => run_fetch(args, out),
         Command::Validate(args) => validate::run(&args, out),
         Command::Bench(args) => bench::run(&args, out),

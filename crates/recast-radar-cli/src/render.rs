@@ -117,6 +117,41 @@ pub(crate) fn run(args: &RenderArgs, out: &mut dyn Write) -> Result<(), CliError
     Ok(())
 }
 
+/// Render a decoded volume with the same field selection, palettes, and dealiasing as the CLI.
+/// `args.file` and `args.output` are unused; this function performs no image write.
+pub fn image_from_volume(volume: &Volume, args: &RenderArgs) -> Result<RgbaImage, CliError> {
+    if !(64..=8192).contains(&args.size) || !(1..=100).contains(&args.range_fraction) {
+        return Err(CliError::Usage(
+            "size must be 64..8192 and range_fraction 1..100".into(),
+        ));
+    }
+    if args.all_sweeps {
+        return Err(CliError::Usage("render one sweep at a time".into()));
+    }
+    let index = match args.sweep {
+        Some(i) => i,
+        None => volume
+            .sweeps
+            .iter()
+            .position(|s| pick_field(s, args.field.as_deref()).is_some())
+            .ok_or_else(|| CliError::Usage("no sweep has the requested field".into()))?,
+    };
+    let sweep = volume
+        .sweeps
+        .get(index)
+        .ok_or_else(|| CliError::Usage("sweep index out of range".into()))?;
+    let name = pick_field(sweep, args.field.as_deref())
+        .ok_or_else(|| CliError::Usage("requested field is not in this sweep".into()))?;
+    let palette = args.palette.as_deref().map(load_palette).transpose()?;
+    if args.dealias {
+        let mut copy = volume.clone();
+        let name = dealias(&mut copy, index, &name)?;
+        render_image(&copy, index, &name, args, palette.as_ref())
+    } else {
+        render_image(volume, index, &name, args, palette.as_ref())
+    }
+}
+
 fn field_list(sweep: &Sweep) -> String {
     let names: Vec<&str> = sweep.fields.iter().map(|f| f.name.as_str()).collect();
     if names.is_empty() {
@@ -284,7 +319,8 @@ fn render_raster(
     Ok(image)
 }
 
-fn save_png(image: &RgbaImage, path: &Path) -> Result<(), CliError> {
+/// Save a rendered image as PNG using the CLI's atomic writer.
+pub fn save_png(image: &RgbaImage, path: &Path) -> Result<(), CliError> {
     let mut bytes = Vec::new();
     image
         .write_to(

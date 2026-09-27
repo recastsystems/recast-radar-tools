@@ -56,6 +56,8 @@ from ._native import (
     split_scan_cycles,
 )
 from ._tree import build_datatree
+from .mapping import cross_section, grid, rhi_panel
+from .processing import ProcessingResult, process, products, render
 
 __version__: str = _native.__version__
 
@@ -120,6 +122,13 @@ _WRITE_OPTIONS_DOC = """
 """
 
 __all__ = [
+    "cross_section",
+    "grid",
+    "rhi_panel",
+    "ProcessingResult",
+    "process",
+    "products",
+    "render",
     "DecodeError",
     "FetchError",
     "UnavailableError",

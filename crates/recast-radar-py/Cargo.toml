@@ -23,7 +23,7 @@ doctest = false
 default = ["net"]
 # `recast_radar.fetch`: AWS Level II and Level III, international feeds and
 # GR2Analyst polling servers (recast-radar-data, reqwest + rustls).
-net = ["dep:recast-radar-data"]
+net = ["dep:recast-radar-data", "recast-radar-cli/net"]
 
 [dependencies]
 chrono.workspace = true

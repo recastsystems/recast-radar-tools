@@ -48,7 +48,11 @@ tracking, `scattering` the scattering tables and `serde` serialization of the
 data model; `full` turns everything on. Every module is also its own crate
 (`recast-radar-io-nexrad`, `recast-radar-render`, ...), for callers who want
 only one. The command-line tool ([cli.md](cli.md)) and the Python package
-([python.md](python.md)) have guides of their own. The facade's modules are those crates: `recast_radar_tools::model`
+([python.md](python.md)) have guides of their own, and
+[frontend-processing.md](frontend-processing.md) covers processing, rendering,
+sections and gridding from both. [field-guide.html](field-guide.html) is a
+single-page tour of the whole toolkit for Python, Rust and command-line users,
+beginners included; open it in a browser. The facade's modules are those crates: `recast_radar_tools::model`
 is `recast_radar_core`, `recast_radar_tools::nexrad` is
 `recast_radar_io_nexrad`, and so on.
 
