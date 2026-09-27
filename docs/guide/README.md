@@ -52,7 +52,8 @@ only one. The command-line tool ([cli.md](cli.md)) and the Python package
 [frontend-processing.md](frontend-processing.md) covers processing, rendering,
 sections and gridding from both. [field-guide.html](field-guide.html) is a
 single-page tour of the whole toolkit for Python, Rust and command-line users,
-beginners included; open it in a browser. The facade's modules are those crates: `recast_radar_tools::model`
+beginners included, and [how-radar-sees.html](how-radar-sees.html) teaches radar
+hands-on with one real KTLX scan; open either in a browser. The facade's modules are those crates: `recast_radar_tools::model`
 is `recast_radar_core`, `recast_radar_tools::nexrad` is
 `recast_radar_io_nexrad`, and so on.
 
