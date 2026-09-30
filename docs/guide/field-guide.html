@@ -161,6 +161,8 @@ th{font:500 11px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;co
 tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 td.win{color:var(--strong);font-weight:500}
+.bench-h{font-size:17px;margin:24px 0 6px}
+.bench-h + .source-note{margin:0 0 12px}
 .yes{color:var(--ok);font-family:var(--mono);font-weight:500}
 .no{color:var(--subtle);font-family:var(--mono)}
 
@@ -995,26 +997,37 @@ recast-radar grid site-a.ar2v site-b.ar2v --options grid-options.json -o grid.js
 <div class="sec-head">
 <span class="num">08</span>
 <h2>Benchmarks</h2>
-<p>Preliminary whole-file decode timings retained from the original project guide, in milliseconds. These are not measurements of the accompanying build. Multipliers compare each reader's elapsed time with Recast's in that test.</p>
+<p>Time to decode a whole file into memory from Python, in milliseconds: every field of every sweep, file read included. Each reader is pinned to one CPU core with one thread. Lower is better; the multiplier is how long the other reader takes relative to recast-radar.</p>
 </div>
+<h3 class="bench-h">Into xarray and NumPy</h3>
+<p class="source-note">recast-radar <code>open(path).load()</code>, which returns an xarray DataTree with every field as floats, against xradar's <code>open_*_datatree(path).load()</code>, MetPy's <code>Level2File</code> / <code>Level3File</code> and wradlib's readers.</p>
 <div class="tbl"><table>
-<thead><tr><th>File</th><th class="n">Recast</th><th class="n">nexrad crate</th><th class="n">MetPy</th><th class="n">Py-ART</th><th class="n">xradar</th></tr></thead>
+<thead><tr><th>File</th><th class="n">recast-radar</th><th class="n">xradar</th><th class="n">MetPy</th><th class="n">wradlib</th></tr></thead>
 <tbody>
-<tr><td>Level II, KTLX 2024 (bzip2)</td><td class="n win">423</td><td class="n">1,052  2.5×</td><td class="n">2,635  6.2×</td><td class="n">3,247  7.7×</td><td class="n">6,257  15×</td></tr>
-<tr><td>Level II, KTLX 2013 (gzip)</td><td class="n win">55</td><td class="n">146  2.7×</td><td class="n">1,157  21×</td><td class="n">1,175  21×</td><td class="n">cannot read</td></tr>
-<tr><td>Real-time, 35 chunks</td><td class="n win">278</td><td class="n">538  1.9×</td><td class="n">1,021  3.7×</td><td class="n">1,107  4.0×</td><td class="n">2,217  8.0×</td></tr>
-<tr><td>Level III, N0B</td><td class="n win">12</td><td class="n">–</td><td class="n">27  2.3×</td><td class="n">43  3.6×</td><td class="n">–</td></tr>
+<tr><td>Level II, KTLX 2024 (bzip2 records)</td><td class="n win">744</td><td class="n">3,686 5.0×</td><td class="n">1,573 2.1×</td><td class="n">–</td></tr>
+<tr><td>Level II, KTLX 2013 (gzip file)</td><td class="n win">313</td><td class="n">fails</td><td class="n">731 2.3×</td><td class="n">–</td></tr>
+<tr><td>Level III, TLX N0B</td><td class="n">16</td><td class="n">–</td><td class="n">18 ≈</td><td class="n">–</td></tr>
+<tr><td>ODIM_H5 volume, DMI Rømø (dual-pol)</td><td class="n">76</td><td class="n">259 3.4×</td><td class="n">–</td><td class="n">60*</td></tr>
+<tr><td>CfRadial 1, NCAR S-Pol</td><td class="n win">134</td><td class="n">3,204 24×</td><td class="n">–</td><td class="n">222 1.7×</td></tr>
 </tbody>
 </table></div>
+<h3 class="bench-h">Into a Py-ART Radar</h3>
+<p class="source-note">recast-radar <code>to_pyart(path)</code> against Py-ART's own readers (<code>read_nexrad_archive</code>, <code>read_nexrad_level3</code>, <code>aux_io.read_odim_h5</code>, <code>read_cfradial</code>). Both return the same Py-ART <code>Radar</code> object with masked float fields.</p>
 <div class="tbl"><table>
-<thead><tr><th>File</th><th class="n">Recast</th><th class="n">h5py / netCDF4</th><th class="n">wradlib</th><th class="n">Py-ART</th><th class="n">xradar</th></tr></thead>
+<thead><tr><th>File</th><th class="n">recast-radar</th><th class="n">Py-ART</th></tr></thead>
 <tbody>
-<tr><td>ODIM_H5 volume, DWD Rostock</td><td class="n win">18</td><td class="n">62  3.5×</td><td class="n">99  5.5×</td><td class="n">348  19×</td><td class="n">457  26×</td></tr>
-<tr><td>CfRadial 1, NCAR S-Pol</td><td class="n win">29</td><td class="n">61  2.1×</td><td class="n">264  9.1×</td><td class="n">135  4.6×</td><td class="n">181  6.2×</td></tr>
+<tr><td>Level II, KTLX 2024 (bzip2 records)</td><td class="n win">806</td><td class="n">1,716 2.1×</td></tr>
+<tr><td>Level II, KTLX 2013 (gzip file)</td><td class="n win">387</td><td class="n">634 1.6×</td></tr>
+<tr><td>Level III, TLX N0B</td><td class="n win">16</td><td class="n">24 1.4×</td></tr>
+<tr><td>ODIM_H5 volume, DMI Rømø (dual-pol)</td><td class="n win">71</td><td class="n">167 2.3×</td></tr>
+<tr><td>CfRadial 1, NCAR S-Pol</td><td class="n win">115</td><td class="n">157 1.4×</td></tr>
 </tbody>
 </table></div>
-<div class="prose"><p>The same benchmark notes report 1.7× higher bzip2 compression throughput than C libbzip2 on Level II records, with identical output bytes. Reported Python speedups are 3.5–7.3× for <code>open().load()</code> against xradar and 1.3–4× for <code>to_pyart</code> against Py-ART's reader. libdeflate was about 13% faster for gzip decompression.</p></div>
-<div class="callout"><b>Measurement context.</b> Windows 11, AMD Ryzen 9 9950X3D, one pinned core, and five interleaved rounds, with decoded values compared before timing. The machine was busy and the measurements preceded a later merge. Background load can affect both timings and ratios. Library versions, the source revision, and raw timings are not recorded here, so these results cannot be reproduced from this guide alone.</div>
+<div class="prose">
+<p>≈ means the two readers' round timings overlap, so neither is faster. * wradlib's ODIM reader returns the stored bytes (<code>uint8</code>) without converting them to physical values, so it does less work than the other readers. xradar 0.12 raises a <code>TypeError</code> on the gzip-compressed Level II file.</p>
+<p>These timings use one core. By default recast-radar also spreads the decode over several cores, which helps most on large Level II files; the other readers run on one thread either way.</p>
+</div>
+<div class="callout"><b>How this was measured.</b> 29 September 2026. Windows 11, AMD Ryzen 9 9950X3D, reader pinned to one core, idle machine. recast-radar 0.1.0 (release build), xradar 0.12.0, Py-ART 2.3.0, MetPy 1.7.1, wradlib 2.9.6, Python 3.13.7. Each reader runs in its own process: one warm-up decode, then 5 timed decodes, repeated over 5 rounds in rotating order. Each cell is the median of the round medians. The script and the public input files are in <code>bench/decode_bench.py</code>; run <code>python decode_bench.py fetch</code>, then <code>python decode_bench.py run</code>.</div>
 </section>
 <!-- ===================== 09 RULES ===================== -->
 <section class="sec" id="rules">
