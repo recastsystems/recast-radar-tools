@@ -105,8 +105,15 @@ fn ids_are_valid_file_names() {
 fn every_entry_has_a_source_and_size() {
     let mut bad = Vec::new();
     for e in entries() {
-        if e.committed.is_none() && e.urls.is_empty() {
+        let not_redistributed = e.tags.iter().any(|t| t == "not-redistributed");
+        if e.committed.is_none() && e.urls.is_empty() && !not_redistributed {
             bad.push(format!("{}: neither committed nor urls", e.id));
+        }
+        if not_redistributed && (e.committed.is_some() || !e.urls.is_empty()) {
+            bad.push(format!(
+                "{}: not-redistributed but committed or downloadable",
+                e.id
+            ));
         }
         for url in &e.urls {
             if !url.starts_with("https://") && !url.starts_with("http://") {

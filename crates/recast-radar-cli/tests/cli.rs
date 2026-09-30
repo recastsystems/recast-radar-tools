@@ -177,10 +177,14 @@ fn info_reads_every_committed_format() {
             "NEXRAD Level II records",
         ),
     ] {
+        // The COW2 and JMA files are not redistributed: skipped unless cached.
+        let Some(path) = recast_radar_testdata::path_if_available(id) else {
+            continue;
+        };
         let report = json(&run([
             OsStr::new("info"),
             OsStr::new("--json"),
-            fixture(id).as_os_str(),
+            path.as_os_str(),
         ]));
         assert_eq!(report["format"], format, "{id}");
     }
@@ -189,7 +193,7 @@ fn info_reads_every_committed_format() {
 /// Manifest: TAKA, 26 sweeps of 512 radials.
 #[test]
 fn a_jma_station_is_chosen_with_station() {
-    let path = fixture("jma-n5-20191012-090000-rs47773");
+    let path = recast_radar_testdata::require_file!("jma-n5-20191012-090000-rs47773");
     let report = json(&run([
         OsStr::new("info"),
         OsStr::new("--json"),
@@ -647,10 +651,14 @@ fn validate_passes_radar_files_and_fails_other_files() {
     assert_eq!(report["failed"], 0, "{report}");
     assert_eq!(report["files"].as_array().map(Vec::len), Some(4));
 
-    let listing = fixture("polling-ndswc-kxwa-dir-list-20260925");
-    let output = run([OsStr::new("validate"), listing.as_os_str()]);
-    assert_eq!(output.status.code(), Some(1));
-    assert!(stdout(&output).contains("FAIL"), "{}", stdout(&output));
+    // The listing is not redistributed: checked only when cached.
+    if let Some(listing) =
+        recast_radar_testdata::path_if_available("polling-ndswc-kxwa-dir-list-20260925")
+    {
+        let output = run([OsStr::new("validate"), listing.as_os_str()]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(stdout(&output).contains("FAIL"), "{}", stdout(&output));
+    }
 }
 
 #[test]
@@ -1014,105 +1022,108 @@ fn convert_to_level2_takes_position_sweeps_and_coding_options() {
     }
     assert_eq!(written["sweep_count"], info(&klix)["sweep_count"]);
 
-    // JMA's 10-minute tar: one 5-minute cycle at a time.
-    let itok = fixture(JMA_N5_ITOK);
-    let out = dir.join("itok.ar2v");
-    let output = convert(&itok, &out, &[]);
-    assert_eq!(output.status.code(), Some(1));
-    for advice in [
-        "more than one scan cycle",
-        "--split-scan-cycles",
-        "--sweeps",
-    ] {
-        assert!(stderr(&output).contains(advice), "{}", stderr(&output));
-    }
-    assert!(!out.exists());
-    let output = convert(&itok, &out, &["--split-scan-cycles"]);
-    assert!(output.status.success(), "{}", stderr(&output));
-    for (name, sweeps) in [("itok_1.ar2v", 17), ("itok_2.ar2v", 18)] {
-        let written = info(&dir.join(name));
-        assert_eq!(written["sweep_count"], sweeps, "{name}");
-        let first = written["sweeps"][0]["fixed_angle_deg"].as_f64();
-        assert!(
-            first.is_some_and(|angle| (angle - 25.0).abs() < 0.01),
-            "{name}"
+    // JMA's 10-minute tar: one 5-minute cycle at a time. The JMA files are
+    // not redistributed: checked only when cached.
+    if let Some(itok) = recast_radar_testdata::path_if_available(JMA_N5_ITOK) {
+        let out = dir.join("itok.ar2v");
+        let output = convert(&itok, &out, &[]);
+        assert_eq!(output.status.code(), Some(1));
+        for advice in [
+            "more than one scan cycle",
+            "--split-scan-cycles",
+            "--sweeps",
+        ] {
+            assert!(stderr(&output).contains(advice), "{}", stderr(&output));
+        }
+        assert!(!out.exists());
+        let output = convert(&itok, &out, &["--split-scan-cycles"]);
+        assert!(output.status.success(), "{}", stderr(&output));
+        for (name, sweeps) in [("itok_1.ar2v", 17), ("itok_2.ar2v", 18)] {
+            let written = info(&dir.join(name));
+            assert_eq!(written["sweep_count"], sweeps, "{name}");
+            let first = written["sweeps"][0]["fixed_angle_deg"].as_f64();
+            assert!(
+                first.is_some_and(|angle| (angle - 25.0).abs() < 0.01),
+                "{name}"
+            );
+        }
+        let output = run([
+            OsStr::new("convert"),
+            itok.as_os_str(),
+            OsStr::new("--to"),
+            OsStr::new("level2"),
+            OsStr::new("--chunks"),
+            OsStr::new("--split-scan-cycles"),
+            OsStr::new("-o"),
+            dir.join("chunks").as_os_str(),
+        ]);
+        assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+        let first_cycle = "0,2,3,6,7,10,11,14,16,18,20,22,24,26,28,30,32";
+        let output = convert(
+            &itok,
+            &out,
+            &["--sweeps", first_cycle, "--sweeps-in-time-order"],
         );
+        assert!(output.status.success(), "{}", stderr(&output));
+        let written = info(&out);
+        assert_eq!(written["sweep_count"], 17);
+        let angles: Vec<f64> = written["sweeps"]
+            .as_array()
+            .expect("sweeps")
+            .iter()
+            .filter_map(|sweep| sweep["fixed_angle_deg"].as_f64())
+            .collect();
+        // Collected from 25 degrees down to -0.1, then up again.
+        assert!((angles[0] - 25.0).abs() < 0.01, "{angles:?}");
+        assert!((angles[12] + 0.1).abs() < 0.01, "{angles:?}");
+        let output = convert(&itok, &out, &["--sweeps", "0,0"]);
+        assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+        let output = convert(&itok, &out, &["--sweeps", "35"]);
+        assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
     }
-    let output = run([
-        OsStr::new("convert"),
-        itok.as_os_str(),
-        OsStr::new("--to"),
-        OsStr::new("level2"),
-        OsStr::new("--chunks"),
-        OsStr::new("--split-scan-cycles"),
-        OsStr::new("-o"),
-        dir.join("chunks").as_os_str(),
-    ]);
-    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
-    let first_cycle = "0,2,3,6,7,10,11,14,16,18,20,22,24,26,28,30,32";
-    let output = convert(
-        &itok,
-        &out,
-        &["--sweeps", first_cycle, "--sweeps-in-time-order"],
-    );
-    assert!(output.status.success(), "{}", stderr(&output));
-    let written = info(&out);
-    assert_eq!(written["sweep_count"], 17);
-    let angles: Vec<f64> = written["sweeps"]
-        .as_array()
-        .expect("sweeps")
-        .iter()
-        .filter_map(|sweep| sweep["fixed_angle_deg"].as_f64())
-        .collect();
-    // Collected from 25 degrees down to -0.1, then up again.
-    assert!((angles[0] - 25.0).abs() < 0.01, "{angles:?}");
-    assert!((angles[12] + 0.1).abs() < 0.01, "{angles:?}");
-    let output = convert(&itok, &out, &["--sweeps", "0,0"]);
-    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
-    let output = convert(&itok, &out, &["--sweeps", "35"]);
-    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
 
     // JMA velocity: the Nyquist velocity noted missing, or supplied (the
     // tar's first 5-minute cycle: sweeps 0, 2, 4, 6 and 8 to 12).
-    let velocity = fixture(JMA_N6_2019);
-    let out = dir.join("n6.ar2v");
-    let first_cycle = ["--sweeps", "0,2,4,6,8-12"];
-    let output = convert(&velocity, &out, &first_cycle);
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert!(
-        stderr(&output).contains("without a Nyquist velocity"),
-        "{}",
-        stderr(&output)
-    );
-    let output = convert(
-        &velocity,
-        &out,
-        &[
-            first_cycle[0],
-            first_cycle[1],
-            "--nyquist",
-            "26.48",
-            "--quantization",
-            "compatible",
-        ],
-    );
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert!(
-        !stderr(&output).contains("without a Nyquist velocity"),
-        "{}",
-        stderr(&output)
-    );
-    // Compatible codes the float velocities in 8 bits, coarser than the
-    // source: reported.
-    assert!(
-        stderr(&output).contains("VEL from VRADH: 8-bit"),
-        "{}",
-        stderr(&output)
-    );
-    let written = info(&out);
-    for sweep in written["sweeps"].as_array().expect("sweeps") {
-        let nyquist = sweep["nyquist_mps"].as_f64().expect("Nyquist velocity");
-        assert!((nyquist - 26.48).abs() < 1e-3, "{nyquist}");
+    if let Some(velocity) = recast_radar_testdata::path_if_available(JMA_N6_2019) {
+        let out = dir.join("n6.ar2v");
+        let first_cycle = ["--sweeps", "0,2,4,6,8-12"];
+        let output = convert(&velocity, &out, &first_cycle);
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains("without a Nyquist velocity"),
+            "{}",
+            stderr(&output)
+        );
+        let output = convert(
+            &velocity,
+            &out,
+            &[
+                first_cycle[0],
+                first_cycle[1],
+                "--nyquist",
+                "26.48",
+                "--quantization",
+                "compatible",
+            ],
+        );
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert!(
+            !stderr(&output).contains("without a Nyquist velocity"),
+            "{}",
+            stderr(&output)
+        );
+        // Compatible codes the float velocities in 8 bits, coarser than the
+        // source: reported.
+        assert!(
+            stderr(&output).contains("VEL from VRADH: 8-bit"),
+            "{}",
+            stderr(&output)
+        );
+        let written = info(&out);
+        for sweep in written["sweeps"].as_array().expect("sweeps") {
+            let nyquist = sweep["nyquist_mps"].as_f64().expect("Nyquist velocity");
+            assert!((nyquist - 26.48).abs() < 1e-3, "{nyquist}");
+        }
     }
     fs::remove_dir_all(&dir).expect("clean up");
 }
@@ -1146,8 +1157,8 @@ fn http_get(address: &str, path: &str) -> (String, Vec<u8>) {
 
 #[test]
 fn serve_answers_like_a_polling_server() {
+    let listing = recast_radar_testdata::require_file!("polling-ndswc-kxwa-dir-list-20260925");
     let dir = scratch("serve");
-    let listing = fixture("polling-ndswc-kxwa-dir-list-20260925");
     fs::create_dir_all(dir.join("KXWA")).expect("site folder");
     fs::copy(&listing, dir.join("KXWA/dir.list")).expect("copy listing");
 

@@ -753,8 +753,18 @@ mod tests {
 
         // Per instrument: the same sweeps next to the COW2 sweep in a
         // deployment folder give one volume per radar, in scan-time order.
+        // The COW2 sweep is not redistributed: checked only when cached, and
+        // copied under its sweepfile name (the cached copy is named by id).
+        let Some(cow2) = recast_radar_testdata::path_if_available(COW2) else {
+            return;
+        };
         let dir = scratch_dir("per_instrument");
-        copy_into(&dir, &[NOXP_0610_20, COW2, NOXP_0610_05, NOXP_0610_10]);
+        copy_into(&dir, &[NOXP_0610_20, NOXP_0610_05, NOXP_0610_10]);
+        std::fs::copy(
+            &cow2,
+            dir.join("swp.1260521225514.COW2.229.1.0_SUR_v215.head24"),
+        )
+        .unwrap();
         let volumes = read_mobile_dir_from_path(&dir, no_level2_members).unwrap();
         let summary: Vec<(&str, usize, usize)> = volumes
             .iter()
@@ -952,17 +962,20 @@ mod tests {
         assert_eq!(&eocd[..4], b"PK\x05\x06");
         assert!(!looks_like_zip_bytes(eocd));
         assert!(!looks_like_zip_bytes(&bytes[..3]));
-        // A real DORADE sweep and a real tar are not zips.
-        assert!(!looks_like_zip_bytes(
-            &std::fs::read(corpus_path(COW2)).unwrap()
-        ));
-
         assert!(looks_like_zip_path(&path));
         assert!(looks_like_zip_path(&path.with_extension("ZIP")));
-        assert!(!looks_like_zip_path(&corpus_path(
-            "jma-n5-20191012-090000-rs47773"
-        )));
-        assert!(!looks_like_zip_path(&corpus_path(COW2)));
+
+        // A real DORADE sweep and a real tar are not zips. Neither file is
+        // redistributed: each is checked only when cached.
+        if let Some(cow2) = recast_radar_testdata::path_if_available(COW2) {
+            assert!(!looks_like_zip_bytes(&std::fs::read(&cow2).unwrap()));
+            assert!(!looks_like_zip_path(&cow2));
+        }
+        if let Some(tar) =
+            recast_radar_testdata::path_if_available("jma-n5-20191012-090000-rs47773")
+        {
+            assert!(!looks_like_zip_path(&tar));
+        }
     }
 
     #[test]

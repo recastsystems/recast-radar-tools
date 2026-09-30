@@ -617,6 +617,7 @@ dependencies = [
  "image",
  "rayon",
  "recast-radar-core",
+ "recast-radar-correct",
  "recast-radar-io",
  "recast-radar-io-cfradial",
  "recast-radar-io-dorade",
@@ -624,7 +625,9 @@ dependencies = [
  "recast-radar-io-level3",
  "recast-radar-io-nexrad",
  "recast-radar-io-odim",
+ "recast-radar-map",
  "recast-radar-render",
+ "recast-radar-retrieve",
  "serde",
  "serde_json",
  "thiserror",
@@ -657,6 +660,14 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "recast-radar-filters"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "recast-radar-core",
 ]
 
 [[package]]
@@ -777,10 +788,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-radar-map"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "recast-radar-core",
+ "recast-radar-correct",
+ "recast-radar-filters",
+ "thiserror",
+]
+
+[[package]]
 name = "recast-radar-render"
 version = "0.1.0"
 dependencies = [
  "image",
+ "rayon",
+ "recast-radar-core",
+ "recast-radar-correct",
+ "thiserror",
+]
+
+[[package]]
+name = "recast-radar-retrieve"
+version = "0.1.0"
+dependencies = [
+ "chrono",
  "rayon",
  "recast-radar-core",
  "recast-radar-correct",

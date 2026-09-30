@@ -1819,8 +1819,10 @@ mod tests {
     use super::*;
 
     // Real inputs: corpus entries `jma-n5-20191012-090000-rs47773` and
-    // `jma-n6-20191012-090000-rs47773` (committed single-member tars of the
-    // Osaka/Takayasu TAKA station, Typhoon Hagibis) and the full NICT tars
+    // `jma-n6-20191012-090000-rs47773` (single-member tars of the
+    // Osaka/Takayasu TAKA station, Typhoon Hagibis; not redistributed, so
+    // their tests skip unless they are in the testdata cache) and the full
+    // NICT tars
     // `jma-n5-20191012-090000` / `jma-n6-20191012-090000` (downloads, 20
     // stations each).
     //
@@ -1836,6 +1838,17 @@ mod tests {
         recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
     }
 
+    /// A single-member TAKA tar's bytes, or skip the test when it is not in
+    /// the testdata cache.
+    macro_rules! taka {
+        ($id:expr) => {
+            match recast_radar_testdata::bytes_if_available($id) {
+                Some(bytes) => bytes,
+                None => return,
+            }
+        };
+    }
+
     /// The member's header block plus its padded data blocks (no end-of-archive
     /// zero blocks), cut from a real single-member tar.
     fn member_blocks(tar: &[u8]) -> &[u8] {
@@ -1844,13 +1857,14 @@ mod tests {
     }
 
     /// A tar holding the real N5 (reflectivity) member followed by the real N6
-    /// (velocity) member of TAKA, exactly as both appear in their NICT tars.
-    fn taka_n5_then_n6() -> Vec<u8> {
-        let n5 = corpus(N5_TAKA);
-        let n6 = corpus(N6_TAKA);
+    /// (velocity) member of TAKA, exactly as both appear in their NICT tars,
+    /// or `None` when either is not in the testdata cache.
+    fn taka_n5_then_n6() -> Option<Vec<u8>> {
+        let n5 = recast_radar_testdata::bytes_if_available(N5_TAKA)?;
+        let n6 = recast_radar_testdata::bytes_if_available(N6_TAKA)?;
         let mut tar = member_blocks(&n5).to_vec();
         tar.extend_from_slice(&n6);
-        tar
+        Some(tar)
     }
 
     /// Stations of both full tars in `jma-n5-20191012-090000` member order
@@ -2084,7 +2098,7 @@ mod tests {
         // First GRIB2 section 3 of the TAKA N5 member: member data at tar
         // offset 512, section at message offset 37 (golden
         // n5_rs47773.sweeps[0].grid.section3_offset).
-        let tar = corpus(N5_TAKA);
+        let tar = taka!(N5_TAKA);
         let start = TAR_BLOCK_LEN + 37;
         let length = u32::from_be_bytes(tar[start..start + 4].try_into().unwrap()) as usize;
         let mut section = tar[start..start + length].to_vec();
@@ -2112,7 +2126,7 @@ mod tests {
 
     #[test]
     fn oversized_tar_member_is_rejected_from_its_header() {
-        let mut tar = corpus(N5_TAKA);
+        let mut tar = taka!(N5_TAKA);
         // golden n5_rs47773.tar.members[0].size = 1752093.
         let members = ustar_members(&tar).expect("real tar");
         assert_eq!(members.len(), 1);
@@ -2130,10 +2144,10 @@ mod tests {
     fn sniffs_jma_tar_bytes() {
         // Manifest format jma-grib2-tar; ustar magic at byte 257 and a
         // Z__C_RJTD_*_RDR_JMAGPV member name.
-        let n5 = corpus(N5_TAKA);
+        let n5 = taka!(N5_TAKA);
         assert_eq!(&n5[TAR_MAGIC_OFFSET..TAR_MAGIC_OFFSET + 5], b"ustar");
         assert!(looks_like_jma_tar_bytes(&n5));
-        assert!(looks_like_jma_tar_bytes(&corpus(N6_TAKA)));
+        assert!(looks_like_jma_tar_bytes(&taka!(N6_TAKA)));
         // Too short for one header block.
         assert!(!looks_like_jma_tar_bytes(&n5[..TAR_BLOCK_LEN - 1]));
         // The same real ustar header naming a non-JMA member.
@@ -2155,7 +2169,10 @@ mod tests {
     /// first with sequential numbering.
     #[test]
     fn sweeps_sort_lowest_elevation_first_across_members() {
-        let volumes = read_jma_tar_volumes(&taka_n5_then_n6(), None).expect("decode TAKA N5 + N6");
+        let Some(tar) = taka_n5_then_n6() else {
+            return;
+        };
+        let volumes = read_jma_tar_volumes(&tar, None).expect("decode TAKA N5 + N6");
         assert_eq!(volumes.len(), 1, "same station must merge");
         let sweeps = &volumes[0].sweeps;
         assert_eq!(sweeps.len(), 26 + 13);
@@ -2183,7 +2200,7 @@ mod tests {
 
     #[test]
     fn decodes_single_station_member_with_real_gate_values() {
-        let volumes = read_jma_tar_volumes(&corpus(N5_TAKA), None).expect("decode TAKA N5");
+        let volumes = read_jma_tar_volumes(&taka!(N5_TAKA), None).expect("decode TAKA N5");
         assert_eq!(volumes.len(), 1);
         let volume = &volumes[0];
         assert_station(volume, "TAKA");
@@ -2226,7 +2243,7 @@ mod tests {
         // N6 velocity: level 0 = missing (NaN). Sorted sweep 0 is scan index
         // 3 (0.3 deg, 500 gates, per-ray elevation table missing -> product
         // angle, first valid gate [0,1] = -4.0 m/s, 66708 valid gates).
-        let velocity_volume = &read_jma_tar_volumes(&corpus(N6_TAKA), None).unwrap()[0];
+        let velocity_volume = &read_jma_tar_volumes(&taka!(N6_TAKA), None).unwrap()[0];
         let low = &velocity_volume.sweeps[0];
         assert_eq!(low.rays.elevation_deg[0], 0.3);
         assert_eq!(low.rays.azimuth_deg[0], 243.98);
@@ -2275,11 +2292,12 @@ mod tests {
                     .all(|sweep| sweep.field(&FieldName::Vradh).is_some())
             );
         }
-        // The TAKA member decodes exactly as the committed single-member tar.
-        let taka = read_jma_tar_volumes(&corpus(N6_TAKA), None)
-            .unwrap()
-            .remove(0);
-        assert_same_sweeps(&volumes[12], &taka);
+        // The TAKA member decodes exactly as the single-member tar, when
+        // that is in the testdata cache.
+        if let Some(taka) = recast_radar_testdata::bytes_if_available(N6_TAKA) {
+            let taka = read_jma_tar_volumes(&taka, None).unwrap().remove(0);
+            assert_same_sweeps(&volumes[12], &taka);
+        }
     }
 
     #[test]
@@ -2319,7 +2337,10 @@ mod tests {
     #[test]
     fn station_headers_skip_gate_data_and_dedupe() {
         // Committed members: the TAKA N5 and N6 members name one station.
-        let stations = jma_tar_station_headers(&taka_n5_then_n6()).expect("station headers");
+        let Some(tar) = taka_n5_then_n6() else {
+            return;
+        };
+        let stations = jma_tar_station_headers(&tar).expect("station headers");
         assert_eq!(stations.len(), 1);
         assert_eq!(
             (stations[0].id.as_str(), stations[0].number),
@@ -2357,7 +2378,10 @@ mod tests {
 
     #[test]
     fn repeated_station_members_merge_into_one_volume() {
-        let volumes = read_jma_tar_volumes(&taka_n5_then_n6(), None).expect("merged decode");
+        let Some(tar) = taka_n5_then_n6() else {
+            return;
+        };
+        let volumes = read_jma_tar_volumes(&tar, None).expect("merged decode");
         assert_eq!(volumes.len(), 1);
         let volume = &volumes[0];
         assert_station(volume, "TAKA");
@@ -2379,14 +2403,14 @@ mod tests {
     #[test]
     fn corrupt_member_is_skipped_but_alone_is_an_error() {
         // A lone TAKA member whose GRIB indicator is overwritten.
-        let mut lone = corpus(N5_TAKA);
+        let mut lone = taka!(N5_TAKA);
         assert_eq!(&lone[TAR_BLOCK_LEN..TAR_BLOCK_LEN + 4], GRIB_MAGIC);
         lone[TAR_BLOCK_LEN..TAR_BLOCK_LEN + 4].fill(0);
         let err = read_jma_tar_volumes(&lone, None).unwrap_err();
         assert!(err.to_string().contains("GRIB"), "unexpected error: {err}");
 
         // The same tar whose only member is no longer a JMA data member.
-        let mut renamed = corpus(N5_TAKA);
+        let mut renamed = taka!(N5_TAKA);
         renamed[..10].copy_from_slice(b"notjma.bin");
         let err = read_jma_tar_volumes(&renamed, None).unwrap_err();
         assert!(
@@ -2395,7 +2419,9 @@ mod tests {
         );
 
         // TAKA N5 + N6 with the N5 member corrupted: the N6 member survives.
-        let mut mixed = taka_n5_then_n6();
+        let Some(mut mixed) = taka_n5_then_n6() else {
+            return;
+        };
         mixed[TAR_BLOCK_LEN..TAR_BLOCK_LEN + 4].fill(0);
         let volumes = read_jma_tar_volumes(&mixed, None).expect("good member survives");
         assert_eq!(volumes.len(), 1);
@@ -2433,7 +2459,7 @@ mod tests {
 
     #[test]
     fn truncated_tar_member_is_an_error_not_a_panic() {
-        let tar = corpus(N5_TAKA);
+        let tar = taka!(N5_TAKA);
         let err = read_jma_tar_volumes(&tar[..TAR_BLOCK_LEN + 17], None).unwrap_err();
         assert!(
             err.to_string().contains("overruns"),

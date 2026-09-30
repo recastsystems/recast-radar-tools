@@ -99,7 +99,10 @@ fn jma_ten_minute_tars_hold_two_cycles() {
         ("jma_itok_n5", "jma-n5-20260924-210000-rs47937"),
         ("jma_itok_n6", "jma-n6-20260924-210000-rs47937"),
     ] {
-        let volume = jma(&recast_radar_testdata::require_file!(id));
+        let Some(path) = recast_radar_testdata::path_if_available(id) else {
+            continue;
+        };
+        let volume = jma(&path);
         let cycles = scan_cycles(&volume);
         assert_cycles(&volume, &cycles, &expected["scan_cycles"][key], key);
         assert_eq!(cycles.len(), 2, "{key}");

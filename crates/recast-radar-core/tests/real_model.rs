@@ -843,8 +843,11 @@ fn to_physical_equals_value_on_every_gate() {
     }
     let path = recast_radar_testdata::require_file!("odim-dkrom-20260820-1130-pvol");
     volumes.push(("odim-dkrom-20260820-1130-pvol", odim(&path)));
-    let path = recast_radar_testdata::require_file!("jma-n5-20191012-090000-rs47773");
-    volumes.push(("jma-n5-20191012-090000-rs47773", jma(&path)));
+    // The JMA file is not redistributed: checked only when cached.
+    let jma_path = recast_radar_testdata::path_if_available("jma-n5-20191012-090000-rs47773");
+    if let Some(path) = &jma_path {
+        volumes.push(("jma-n5-20191012-090000-rs47773", jma(path)));
+    }
     // Absent rows: KTLX 2024 sweep 0 with every field cut to its first half
     // of rows, which `seal` pads back as trailing absent rows.
     let mut edited = volumes[0].1.clone();
@@ -896,7 +899,8 @@ fn to_physical_equals_value_on_every_gate() {
             }
         }
     }
-    assert!(kinds.contains("uint8") && kinds.contains("uint16") && kinds.contains("float32"));
+    assert!(kinds.contains("uint8") && kinds.contains("uint16"));
+    assert!(kinds.contains("float32") || jma_path.is_none());
     assert!(
         large_u16 > 0,
         "a u16 field large enough for the 16-bit table"

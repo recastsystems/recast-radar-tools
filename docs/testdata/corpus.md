@@ -6,12 +6,15 @@ The last section is generated from the manifests. It lists every entry and index
 
 The corpus is defined by `testdata/manifest.toml` plus every `testdata/*/manifest.toml`, and the
 `recast-radar-testdata` crate serves it. Small files are committed under `testdata/files/`. Full volumes
-and archives are downloaded on first use, checked against their sha256 and cached.
+and archives are downloaded on first use, checked against their sha256 and cached. Files the repository
+may not redistribute (tag `not-redistributed`) are neither committed nor downloaded: their tests run when
+a copy has been placed in the cache and are skipped otherwise.
 
 ## Using the corpus
 
 - `recast_radar_testdata::require_file!("<id>")` returns the path of a verified copy. When the file cannot
-  be fetched (no network, `RECAST_RADAR_TESTDATA_OFFLINE` set, or an expired ephemeral URL), it prints the
+  be fetched (no network, `RECAST_RADAR_TESTDATA_OFFLINE` set, an expired ephemeral URL, or a
+  `not-redistributed` file that is not in the cache), it prints the
   reason and returns from the test, so the test is skipped. Other failures panic: an unknown id, an HTTP
   error on a permanent URL, or a sha256 mismatch.
 - `path(id)` and `bytes(id)` return a `Result`. `local_path(id)` never touches the network.
@@ -496,7 +499,9 @@ on first use (123,175,908 bytes). Five of the committed entries (the NOXP 2009-0
 zip, and the NCI THREDDS zip response) were added by the io-formats test conversion (plan task C.2).
 Later additions are not in these counts (the generated totals at the end of this page are current),
 among them the four NOAA P-3 N42RF entries of the metadata-complete stream (2026-09-25): two airborne
-sweepfiles downloaded on first use (6,020,260 bytes) and their committed head trims (655,332 bytes).
+sweepfiles downloaded on first use (6,020,260 bytes) and their head trims (655,332 bytes). Since then the
+single-station JMA tars, the COW2 head trim and the N42RF head trims are no longer committed: they are
+tagged `not-redistributed` (marked "N" below).
 
 Checked when the files were curated (2026-09-16):
 
@@ -512,9 +517,9 @@ Checked when the files were curated (2026-09-16):
   - A standalone Python DORADE block walker and a JMA GRIB2 section and
     run-length walker checked the DORADE and JMA files.
   - Later (2026-09-25), LROSE RadxPrint (release 20250811, in the `nexbench`
-    container) read seven of the committed DORADE sweepfiles and both full
+    container) read seven of the DORADE sweepfiles and both full
     N42RF sweepfiles (`tools/dorade_radx_golden.py`), and `RadxPrint -native`
-    printed the descriptor blocks of all ten committed sweepfiles
+    printed the descriptor blocks of all ten sweepfiles
     (`tools/dorade_radx_native_golden.py`).
 
 ### Layout
@@ -527,12 +532,12 @@ Checked when the files were curated (2026-09-16):
 | `files/other/odim/nci/` | NCI THREDDS responses for members of daily ODIM_H5 zips (zip local-file records), and a sweep subset of one member |
 | `files/other/cfradial/` | CfRadial 1.x in classic netCDF and netCDF-4 containers |
 | `files/other/dorade/` | DORADE sweep files |
-| `files/other/jma/` | JMA polar GRIB2 tars with one station each |
 | `files/other/nexrad-level3/` | NEXRAD Level III VWP (Product 48) carried over from BowEcho |
 
 ### Entries
 
 "C" means the file is committed. "D" means it is downloaded on first use.
+"N" means it is not redistributed: its tests run only from a copy in the cache.
 "derived" means the bytes come from a real file by a recipe in the
 Derivation recipes section below.
 
@@ -568,7 +573,7 @@ Derivation recipes section below.
 
 | id | C/D | bytes | what it covers | source (license) |
 |---|---|---|---|---|
-| `dorade-cow2-20260521-225514-sur-head24` | C, derived | 37380 | Big-endian, HRD RLE, CSFD, antenna-transition rays, staggered PRT; first 24 of 719 rays | CSWR COW2 deployment; source URL and license unknown |
+| `dorade-cow2-20260521-225514-sur-head24` | N, derived | 37380 | Big-endian, HRD RLE, CSFD, antenna-transition rays, staggered PRT; first 24 of 719 rays | CSWR COW2 deployment; source URL and license unknown |
 | `dorade-noxp-20090501-sweeps-tgz` | D | 324596 | Zenodo archive holding the next two entries | Zenodo 10.5281/zenodo.14194361 (CC BY 4.0) |
 | `dorade-noxp-20090501-190244-ppi`, `dorade-noxp-20090501-190324-ppi` | C, derived | 939268 each | **new** consecutive single-tilt set: little-endian, uncompressed, CSFD, 51 rays over 360 deg, RADD lat/lon written as 0 | archive member, unmodified |
 | `dorade-noxp-20090525-sweeps-tgz` | D | 5813887 | Zenodo archive holding the next entry | Zenodo 10.5281/zenodo.14194361 (CC BY 4.0) |
@@ -577,7 +582,7 @@ Derivation recipes section below.
 | `dorade-noxp-20090610-{003210,003222,003226}-ppi-head6` | C, derived | 131596 each | **new** three sweeps (0.5, 1.0, 2.0 deg) of one **multi-elevation** NOXP volume (NOX090610003210.RAWAL8D): little-endian, uncompressed, CSFD 1174 x 75 m, real site coordinates; first 6 rays each | head trims of members of Zenodo 10.5281/zenodo.14194361 `2009.NOX.sweep.0609.tar.gz` (CC BY 4.0) |
 | `dorade-noxp-20090610-003210-heads-zip` | C, derived | 44980 | **new** zip of that volume directory: the three head trims (stored 1.0, 0.5, 2.0 deg) and the directory's three text files, under their tar paths | container conversion (CC BY 4.0) |
 | `dorade-n42rf-ts-20181010-122951-air`, `dorade-n42rf-tm-20181010-123925-air` | D | 2919700, 3100560 | **new** first **airborne DORADE**: NOAA P-3 N42RF tail radar (aft and fore antennas) in Hurricane Michael, RADD radar type 3 and scan mode 9 (AIR), little-endian HRD RLE, CELV 627 x 75 m, 17 fields, 360 rays; every ASIB motion and attitude value set; each ends with NULL, RKTB and a SEDS (Solo II edit history) block; the fore sweep has non-zero CFAC corrections | GitHub `Alex-DesRosiers/radarqc_scans` at 0dc45a2, unmodified; NOAA AOC P-3 data edited in Solo II (no license stated) |
-| `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48` | C, derived | 432440, 222892 | **new** head trims of those two: the first 24 and 48 rays | head trims (no license stated) |
+| `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48` | N, derived | 432440, 222892 | **new** head trims of those two: the first 24 and 48 rays | head trims (no license stated) |
 
 #### JMA GRIB2 tar
 
@@ -585,8 +590,8 @@ Derivation recipes section below.
 |---|---|---|---|---|
 | `jma-n5-20191012-090000` | D | 39106560 | **new** full N5 (reflectivity) tar at Typhoon Hagibis landfall, 20 stations | NICT mirror of JMA (terms not stated) |
 | `jma-n6-20191012-090000` | D | 13209600 | **new** full N6 (radial velocity) tar at the same time, 20 stations | NICT mirror of JMA (terms not stated) |
-| `jma-n5-20191012-090000-rs47773` | C, derived | 1761280 | Station TAKA (Osaka) N5 member: 26 sweeps, four descending elevation ladders | derived |
-| `jma-n6-20191012-090000-rs47773` | C, derived | 624640 | Station TAKA N6 member: 13 sweeps, 25% of velocity gates non-missing | derived |
+| `jma-n5-20191012-090000-rs47773` | N, derived | 1761280 | Station TAKA (Osaka) N5 member: 26 sweeps, four descending elevation ladders | derived |
+| `jma-n6-20191012-090000-rs47773` | N, derived | 624640 | Station TAKA N6 member: 13 sweeps, 25% of velocity gates non-missing | derived |
 
 #### NEXRAD Level III (carried over)
 
@@ -622,7 +627,7 @@ The files were extracted with `git -C radar-bow archive 66ceb9c`.
 | `cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc` | `cfradial/` (same name) | sha256 equals Py-ART `example_cfradial_ppi.nc` at commit 1edc407 |
 | `cfrad.xsapr_sgp_ppi_20110520.classic.nc` | `cfradial/` (same name) | Rebuilt from the Py-ART file with `convert_cfradial.py`. The output matches byte for byte |
 | `cfrad.20211011_223602_DOW8_RHI.trim3.nc` | `cfradial/` (same name) | Rebuilt from the open-radar-data DOW8 RHI with `convert_cfradial.py ... DBZHC,VEL,WIDTH`. The output matches byte for byte |
-| `swp.1260521225514.COW2.229.1.0_SUR_v215.head24` | `dorade/` (same name) | `dorade_real.rs` describes it as the first 37,380 bytes of a real COW2 sweep file from 2026-05-21. BowEcho recorded neither the full file nor a public source, and it was not found locally |
+| `swp.1260521225514.COW2.229.1.0_SUR_v215.head24` | not redistributed (no longer committed) | `dorade_real.rs` describes it as the first 37,380 bytes of a real COW2 sweep file from 2026-05-21. BowEcho recorded neither the full file nor a public source, and it was not found locally |
 | `nexrad_vwp/KBMX_SDUS54_NVWBMX_199804160006` | `nexrad-level3/` (same name) | Extracted from the Google Cloud copy of the NCEI archive named in `nexrad_vwp/README.md`. sha256 matches |
 
 These files were not carried over:
@@ -904,8 +909,8 @@ hard links to the same files. For the Level III file, run
   (`license:unknown`), and the terms of the N42RF sweepfiles
   (`license:unknown`): the GitHub repository `Alex-DesRosiers/radarqc_scans`
   states no license. The data are NOAA AOC P-3 tail radar data, edited in
-  Solo II by the repository's author. Review all three before publishing
-  the repository.
+  Solo II by the repository's author. Until they are reviewed, the files
+  cut from them are not redistributed (tag `not-redistributed`).
 
 ## Gaps
 
@@ -1089,39 +1094,39 @@ Everything below the marker is generated from the manifests by
 
 ### Totals
 
-| manifest | entries | committed files | committed bytes | download files | download bytes |
-|---|---:|---:|---:|---:|---:|
-| `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 |
-| `testdata/feeds/manifest.toml` | 5 | 4 | 224,523 | 1 | 20,616,906 |
-| `testdata/fuzz/manifest.toml` | 15 | 15 | 2,001,890 | 0 | 0 |
-| `testdata/level2/manifest.toml` | 125 | 24 | 10,426,272 | 101 | 332,296,252 |
-| `testdata/level3/manifest.toml` | 269 | 269 | 8,200,268 | 0 | 0 |
-| `testdata/other/manifest.toml` | 75 | 62 | 27,023,383 | 13 | 187,735,375 |
-| `testdata/scattering/manifest.toml` | 21 | 19 | 763,095 | 2 | 19,492,076 |
-| **all** | **510** | **393** | **48,639,431** | **117** | **560,140,609** |
+| manifest | entries | committed files | committed bytes | download files | download bytes | not redistributed files | not redistributed bytes |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `testdata/manifest.toml` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `testdata/feeds/manifest.toml` | 5 | 0 | 0 | 1 | 20,616,906 | 4 | 224,523 |
+| `testdata/fuzz/manifest.toml` | 15 | 13 | 1,642,099 | 0 | 0 | 2 | 359,791 |
+| `testdata/level2/manifest.toml` | 125 | 24 | 10,426,272 | 101 | 332,296,252 | 0 | 0 |
+| `testdata/level3/manifest.toml` | 269 | 269 | 8,200,268 | 0 | 0 | 0 | 0 |
+| `testdata/other/manifest.toml` | 75 | 54 | 23,386,820 | 13 | 187,735,375 | 8 | 3,636,563 |
+| `testdata/scattering/manifest.toml` | 21 | 19 | 763,095 | 2 | 19,492,076 | 0 | 0 |
+| **all** | **510** | **379** | **44,418,554** | **117** | **560,140,609** | **14** | **4,220,877** |
 
-| format | committed | download |
-|---|---:|---:|
-| `brslut-v1` | 5 | 0 |
-| `cfradial1` | 11 | 2 |
-| `cfradial2` | 4 | 1 |
-| `dorade` | 12 | 2 |
-| `gr2-polling-dir-list` | 1 | 0 |
-| `gr2-polling-site-config` | 2 | 0 |
-| `http-request-head` | 3 | 0 |
-| `jma-grib2-tar` | 4 | 4 |
-| `json` | 12 | 0 |
-| `nexrad-level2` | 22 | 34 |
-| `nexrad-level2-chunk` | 8 | 67 |
-| `nexrad-level2-feed` | 1 | 1 |
-| `nexrad-level3` | 277 | 0 |
-| `odim-h5` | 26 | 0 |
-| `tar-gz` | 0 | 2 |
-| `tar-z` | 0 | 2 |
-| `wmo-text` | 1 | 0 |
-| `wrf-p3-lookup-table` | 2 | 2 |
-| `zip` | 1 | 0 |
-| `zip-local-member` | 1 | 0 |
+| format | committed | download | not redistributed |
+|---|---:|---:|---:|
+| `brslut-v1` | 5 | 0 | 0 |
+| `cfradial1` | 11 | 2 | 0 |
+| `cfradial2` | 4 | 1 | 0 |
+| `dorade` | 8 | 2 | 4 |
+| `gr2-polling-dir-list` | 0 | 0 | 1 |
+| `gr2-polling-site-config` | 0 | 0 | 2 |
+| `http-request-head` | 3 | 0 | 0 |
+| `jma-grib2-tar` | 0 | 4 | 4 |
+| `json` | 12 | 0 | 0 |
+| `nexrad-level2` | 22 | 34 | 0 |
+| `nexrad-level2-chunk` | 8 | 67 | 0 |
+| `nexrad-level2-feed` | 0 | 1 | 1 |
+| `nexrad-level3` | 277 | 0 | 0 |
+| `odim-h5` | 24 | 0 | 2 |
+| `tar-gz` | 0 | 2 | 0 |
+| `tar-z` | 0 | 2 | 0 |
+| `wmo-text` | 1 | 0 | 0 |
+| `wrf-p3-lookup-table` | 2 | 2 | 0 |
+| `zip` | 1 | 0 | 0 |
+| `zip-local-member` | 1 | 0 | 0 |
 
 ### Entries
 
@@ -1134,10 +1139,10 @@ No entries.
 | id | format | where | bytes | derived from |
 |---|---|---|---:|---|
 | `ndswc-kxwa-20260924-214316` | `nexrad-level2-feed` | download (ephemeral URL) | 20,616,906 |  |
-| `ndswc-kxwa-20260924-214316-head41` | `nexrad-level2-feed` | committed `files/feeds/ndswc/KXWA20260924_214316_V06.head41.ar2v` | 181,437 | `ndswc-kxwa-20260924-214316` |
-| `polling-ndswc-kxwa-dir-list-20260925` | `gr2-polling-dir-list` | committed `files/other/polling/ndswc-KXWA-dir.list-20260925T0318Z` | 40,635 |  |
-| `polling-iem-config-cfg-20260926` | `gr2-polling-site-config` | committed `files/other/polling/iem-config.cfg-20260926T0213Z` | 2,440 |  |
-| `polling-ewr-laredo-grlevel2-cfg-20260925` | `gr2-polling-site-config` | committed `files/other/polling/ewr-Laredo-grlevel2.cfg-20260925T0301Z` | 11 |  |
+| `ndswc-kxwa-20260924-214316-head41` | `nexrad-level2-feed` | not redistributed (cache only) | 181,437 | `ndswc-kxwa-20260924-214316` |
+| `polling-ndswc-kxwa-dir-list-20260925` | `gr2-polling-dir-list` | not redistributed (cache only) | 40,635 |  |
+| `polling-iem-config-cfg-20260926` | `gr2-polling-site-config` | not redistributed (cache only) | 2,440 |  |
+| `polling-ewr-laredo-grlevel2-cfg-20260925` | `gr2-polling-site-config` | not redistributed (cache only) | 11 |  |
 
 #### `testdata/fuzz/manifest.toml`
 
@@ -1150,9 +1155,9 @@ No entries.
 | `fuzz-writers-l2-sweep-without-gates` | `nexrad-level2` | committed `files/fuzz/writers/crash-l2-sweep-without-gates` | 130 | `l2-kvnx-20110315-000203` |
 | `fuzz-writers-l2-one-gate-sweep` | `nexrad-level2` | committed `files/fuzz/writers/crash-l2-one-gate-sweep` | 60,461 | `l2-kvnx-20110315-000203` |
 | `fuzz-writers-l2-odim-rstart-beyond-20-km` | `nexrad-level2` | committed `files/fuzz/writers/crash-l2-odim-rstart-beyond-20-km` | 312 | `l2-kvnx-20110315-000203` |
-| `fuzz-writers-dorade-ray-without-time` | `dorade` | committed `files/fuzz/writers/crash-dorade-ray-without-time` | 37,380 | `dorade-cow2-20260521-225514-sur-head24` |
+| `fuzz-writers-dorade-ray-without-time` | `dorade` | not redistributed (cache only) | 37,380 | `dorade-cow2-20260521-225514-sur-head24` |
 | `fuzz-writers-l2-empty-field-name` | `nexrad-level2` | committed `files/fuzz/writers/crash-l2-empty-field-name` | 98,116 | `l2-kvnx-20110315-000203` |
-| `fuzz-writers-odim-gate-spacing-below-float` | `odim-h5` | committed `files/fuzz/writers/crash-odim-gate-spacing-below-float` | 322,411 | `odim-itdes-20260924-2135-pvol-class` |
+| `fuzz-writers-odim-gate-spacing-below-float` | `odim-h5` | not redistributed (cache only) | 322,411 | `odim-itdes-20260924-2135-pvol-class` |
 | `fuzz-writers-dorade-absent-rows-without-fill` | `dorade` | committed `files/fuzz/writers/crash-dorade-absent-rows-without-fill` | 31,428 | `dorade-noxp-20090501-190244-ppi` |
 | `fuzz-writers-cfradial1-ray-time-near-float-max` | `cfradial1` | committed `files/fuzz/writers/crash-cfradial1-ray-time-near-float-max` | 13,624 | `cfrad1-xsapr-sgp-20110520-ppi-classic` |
 | `fuzz-writers-odim-ray-time-step-beyond-precision` | `cfradial1` | committed `files/fuzz/writers/crash-odim-ray-time-step-beyond-precision` | 13,626 | `cfrad1-xsapr-sgp-20110520-ppi-classic` |
@@ -1584,7 +1589,7 @@ No entries.
 | `odim-seang-20260924-2130-qcvol-dataset1-trim` | `odim-h5` | committed `files/other/odim/smhi/seang.qcvol.20260924T2130.dataset1-trim.h5` | 156,364 |  |
 | `odim-fianj-20260924-2130-pvol-dataset1-trim` | `odim-h5` | committed `files/other/odim/fmi/fianj.pvol.20260924T2130.dataset1-trim.h5` | 454,704 |  |
 | `odim-deboo-20260924-2130-sweep-th-00` | `odim-h5` | committed `files/other/odim/dwd/ras07-vol5minng01_sweeph5onem_th_00-2026092421305800-boo-10132-hd5` | 166,090 |  |
-| `odim-itdes-20260924-2135-pvol-class` | `odim-h5` | committed `files/other/odim/lombardia/Desio.20260924T213500Z_CLASS.h5` | 322,411 |  |
+| `odim-itdes-20260924-2135-pvol-class` | `odim-h5` | not redistributed (cache only) | 322,411 |  |
 | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` | `cfradial1` | committed `files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.netcdf4.nc` | 75,587 |  |
 | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-user-types` | `cfradial1` | committed `files/other/cfradial/cfrad.xsapr_sgp_ppi_20110520.netcdf4.user-types.nc` | 85,569 | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` |
 | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4-szip-lzf` | `cfradial1` | committed `files/other/cfradial/filters/cfrad.xsapr_sgp_ppi_20110520.netcdf4-szip-lzf.nc` | 98,074 | `cfrad1-xsapr-sgp-20110520-ppi-netcdf4` |
@@ -1598,7 +1603,7 @@ No entries.
 | `cfrad2-radx-iesha-20260305-0115-sweeps7-10-int32` | `cfradial2` | committed `files/other/cfradial/cfrad2.radx.iesha.20260305_0115.sweeps7-10.int32.nc` | 612,876 | `odim-iesha-20260305-0115-pvol` |
 | `cfrad2-xradar-xsapr-sgp-20110520-ppi` | `cfradial2` | committed `files/other/cfradial/cfrad2.xradar.xsapr_sgp_ppi_20110520.nc` | 34,396 | `cfrad1-xsapr-sgp-20110520-ppi-classic` |
 | `cfrad2-xradar-dow8-20211011-223602-rhi-r300` | `cfradial2` | committed `files/other/cfradial/cfrad2.xradar.20211011_223602_DOW8_RHI.r300.nc` | 315,407 | `cfrad1-dow8-20211011-223602-rhi-trim3-classic` |
-| `dorade-cow2-20260521-225514-sur-head24` | `dorade` | committed `files/other/dorade/swp.1260521225514.COW2.229.1.0_SUR_v215.head24` | 37,380 |  |
+| `dorade-cow2-20260521-225514-sur-head24` | `dorade` | not redistributed (cache only) | 37,380 |  |
 | `dorade-noxp-20090501-sweeps-tgz` | `tar-gz` | download | 324,596 |  |
 | `dorade-noxp-20090525-sweeps-tgz` | `tar-gz` | download | 5,813,887 |  |
 | `dorade-noxp-20090501-190244-ppi` | `dorade` | committed `files/other/dorade/swp.1090501190244.NOXPRVP.0.0.5_PPI_v1` | 939,268 | `dorade-noxp-20090501-sweeps-tgz` |
@@ -1610,17 +1615,17 @@ No entries.
 | `dorade-noxp-20090610-003226-ppi-head6` | `dorade` | committed `files/other/dorade/swp.1090610003226.NOXPRVP.0.2.0_PPI_v1.head6` | 131,596 |  |
 | `dorade-noxp-20090610-003210-heads-zip` | `zip` | committed `files/other/dorade/NOX090610003210.RAWAL8D.head6.zip` | 44,980 |  |
 | `dorade-n42rf-ts-20181010-122951-air` | `dorade` | download | 2,919,700 |  |
-| `dorade-n42rf-ts-20181010-122951-air-head24` | `dorade` | committed `files/other/dorade/swp.1181010122951.N42RF-TS.196.-20.0_AIR_v3394.head24` | 432,440 | `dorade-n42rf-ts-20181010-122951-air` |
+| `dorade-n42rf-ts-20181010-122951-air-head24` | `dorade` | not redistributed (cache only) | 432,440 | `dorade-n42rf-ts-20181010-122951-air` |
 | `dorade-n42rf-tm-20181010-123925-air` | `dorade` | download | 3,100,560 |  |
-| `dorade-n42rf-tm-20181010-123925-air-head48` | `dorade` | committed `files/other/dorade/swp.1181010123925.N42RF-TM.137.20.0_AIR_v3532.head48` | 222,892 | `dorade-n42rf-tm-20181010-123925-air` |
+| `dorade-n42rf-tm-20181010-123925-air-head48` | `dorade` | not redistributed (cache only) | 222,892 | `dorade-n42rf-tm-20181010-123925-air` |
 | `jma-n5-20191012-090000` | `jma-grib2-tar` | download | 39,106,560 |  |
 | `jma-n6-20191012-090000` | `jma-grib2-tar` | download | 13,209,600 |  |
-| `jma-n5-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N5_grib2.RS47773.tar` | 1,761,280 | `jma-n5-20191012-090000` |
-| `jma-n6-20191012-090000-rs47773` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N6_grib2.RS47773.tar` | 624,640 | `jma-n6-20191012-090000` |
+| `jma-n5-20191012-090000-rs47773` | `jma-grib2-tar` | not redistributed (cache only) | 1,761,280 | `jma-n5-20191012-090000` |
+| `jma-n6-20191012-090000-rs47773` | `jma-grib2-tar` | not redistributed (cache only) | 624,640 | `jma-n6-20191012-090000` |
 | `jma-n5-20260924-210000` | `jma-grib2-tar` | download | 4,014,080 |  |
 | `jma-n6-20260924-210000` | `jma-grib2-tar` | download | 2,498,560 |  |
-| `jma-n5-20260924-210000-rs47937` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.RS47937.tar` | 153,600 | `jma-n5-20260924-210000` |
-| `jma-n6-20260924-210000-rs47937` | `jma-grib2-tar` | committed `files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N6_grib2.RS47937.tar` | 81,920 | `jma-n6-20260924-210000` |
+| `jma-n5-20260924-210000-rs47937` | `jma-grib2-tar` | not redistributed (cache only) | 153,600 | `jma-n5-20260924-210000` |
+| `jma-n6-20260924-210000-rs47937` | `jma-grib2-tar` | not redistributed (cache only) | 81,920 | `jma-n6-20260924-210000` |
 | `odim-bejab-20260612-1450-dbzh` | `odim-h5` | committed `files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@DBZH.h5` | 243,054 |  |
 | `odim-bejab-20260612-1450-vrad` | `odim-h5` | committed `files/other/odim/ord-parts/bejab@20260612T1450@0.5_1.2_2.1_3.4_4.8_6.5_9.0_13.0_25.0@VRAD.h5` | 219,191 |  |
 | `odim-nohur-20260612-1445-dbzh` | `odim-h5` | committed `files/other/odim/ord-parts/nohur@20260612T1445@0.5_1.0_2.6_5.2_8.6_13.0_18.6_25.8_35.0_90.0@DBZH.h5` | 773,343 |  |
@@ -1687,6 +1692,7 @@ Tags are grouped by the part before `:`. Ids are in manifest order. `prefix{a..b
 - `mpda` (4): `l2-klix-20210829-180425`, `l2-klix-20210829-173117`, `l2-klix-20210829-175748`, `l2-klix-20210829-180425-trim`
 - `no-metadata-record` (2): `l2-ktlx-19910605-162126`, `l2-ktlx-19910605-162126-trim`
 - `no-msg5` (1): `l2-kvwx-20080415-235337`
+- `not-redistributed` (14): `ndswc-kxwa-20260924-214316-head41`, `polling-ndswc-kxwa-dir-list-20260925`, `polling-iem-config-cfg-20260926`, `polling-ewr-laredo-grlevel2-cfg-20260925`, `fuzz-writers-dorade-ray-without-time`, `fuzz-writers-odim-gate-spacing-below-float`, `odim-itdes-20260924-2135-pvol-class`, `dorade-cow2-20260521-225514-sur-head24`, `dorade-n42rf-ts-20181010-122951-air-head24`, `dorade-n42rf-tm-20181010-123925-air-head48`, `jma-n5-20191012-090000-rs47773`, `jma-n6-20191012-090000-rs47773`, `jma-n5-20260924-210000-rs47937`, `jma-n6-20260924-210000-rs47937`
 - `part-of-scan` (5): `odim-bejab-20260612-1450-dbzh`, `odim-bejab-20260612-1450-vrad`, `odim-nohur-20260612-1445-dbzh`, `odim-nohur-20260612-1445-th`, `odim-nohur-20260612-1446-vradh`
 - `partial-sweeps` (10): `l2-ktlx-20130520-201643-trim`, `l2-koax-20140616-205305-trim`, `l2-kewx-20160413-022531-trim`, `l2-kdvn-20200810-180401-trim`, `l2-klix-20210829-180425-trim`, `l2-kbox-20220129-150537-trim`, `l2-pgua-20230524-030945-trim`, `l2-kmtx-20240301-212827-trim`, `l2-ktlx-20240315-000217-trim`, `l2-kilx-20260418-013553-trim`
 - `polling-server` (6): `polling-ndswc-kxwa-dir-list-20260925`, `polling-iem-config-cfg-20260926`, `polling-ewr-laredo-grlevel2-cfg-20260925`, `http-request-head-curl-8.21.0`, `http-request-head-python-urllib-3.13`, `http-request-head-recast-radar-fetch`

@@ -8,6 +8,10 @@
 //! filter only, skip gaps of 100 rays/gates, dynamic network reduction, and
 //! centered sweep offset.  It does not apply v4 volume evidence, environmental
 //! winds, temporal priors, couplet freeze, or repair passes.
+//!
+//! Derived from Py-ART (Copyright (c) 2013, UChicago Argonne, LLC; BSD
+//! 3-Clause); modified from the original. The license is in
+//! `THIRD_PARTY_NOTICES.md` at the repository root.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};

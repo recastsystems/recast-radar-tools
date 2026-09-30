@@ -477,7 +477,10 @@ mod tests {
             "jma-n5-20191012-090000-rs47773",
             "l3-byx-n0q-20150124-2106",
         ] {
-            let path = recast_radar_testdata::path(id).unwrap_or_else(|err| panic!("{err}"));
+            // The JMA file is not redistributed: skipped unless cached.
+            let Some(path) = recast_radar_testdata::path_if_available(id) else {
+                continue;
+            };
             let report = validate_file(&path, &OpenOptions::default());
             assert!(report.errors.is_empty(), "{id}: {:?}", report.errors);
         }

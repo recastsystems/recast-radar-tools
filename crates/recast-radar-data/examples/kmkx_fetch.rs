@@ -19,7 +19,10 @@ fn main() {
         .collect();
     picked.sort_by(|a, b| a.key.cmp(&b.key));
     println!("{} volumes", picked.len());
-    let dir = Path::new("~/radar-work/data/kmkx-debug");
+    let out = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "kmkx-debug".to_owned());
+    let dir = Path::new(&out);
     for o in picked {
         let key = o.key.clone();
         match recast_radar_data::download_object(recast_radar_data::LEVEL2_ARCHIVE_BUCKET, o, dir) {

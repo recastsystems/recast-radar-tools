@@ -44,9 +44,6 @@ const XSAPR_PPI_NETCDF4: &[u8] = include_bytes!(
 const DOW8_RHI: &[u8] = include_bytes!(
     "../../recast-radar-io-cfradial/tests/data/cfrad.20211011_223602_DOW8_RHI.trim3.nc"
 );
-const COW2_SWEEP: &[u8] = include_bytes!(
-    "../../recast-radar-io-dorade/tests/data/swp.1260521225514.COW2.229.1.0_SUR_v215.head24"
-);
 
 fn corpus(id: &str) -> Vec<u8> {
     recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
@@ -203,9 +200,12 @@ fn router_matches_direct_cfradial_decoder_on_classic_netcdf() {
 
 #[test]
 fn router_matches_direct_dorade_decoder_on_real_cow2_sweep() {
+    // Not redistributed: skips unless the file is in the testdata cache.
+    let path = recast_radar_testdata::require_file!("dorade-cow2-20260521-225514-sur-head24");
+    let cow2 = std::fs::read(path).expect("read COW2 sweep");
     assert_routed_matches_direct(
-        COW2_SWEEP,
-        recast_radar_io_dorade::dorade::read_dorade_sweep_volume(COW2_SWEEP)
+        &cow2,
+        recast_radar_io_dorade::dorade::read_dorade_sweep_volume(&cow2)
             .map_err(|err| err.to_string()),
         "COW2",
         "COW2 sweepfile head24",

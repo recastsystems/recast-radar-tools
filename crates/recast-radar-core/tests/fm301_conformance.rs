@@ -1,8 +1,7 @@
 //! F.4 conformance: the FM301 view of every golden case against what xradar
 //! 0.12.0 and arm_pyart 2.2.5 return for the same file
 //! (`testdata/conformance/fm301/`, written by `tools/fm301_golden.py`; plan
-//! `docs/superpowers/plans/2026-09-16-wave2.md` F.4, spec 4.3, design note
-//! `docs/design/fm301-model.md` section 12).
+//! F.4, spec 4.3, design note `docs/design/fm301-model.md` section 12).
 //!
 //! For each case in `index.json` the volume is decoded natively, the
 //! `Flavor::Xradar012` view is built twice (`FirstDim::Time` against the

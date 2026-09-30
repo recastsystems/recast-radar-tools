@@ -235,7 +235,7 @@ and `odim-au24-20260610-000300-nci-zip-member` (an unmodified NCI THREDDS respon
 | | `tests::distinct_velocity_sentinels_are_never_reflectivity_gated` | espdg with dataset2 VRADH `what/nodata` rewritten to -9999 and its v2 object-header checksum recomputed (libhdf5 reads the edited file) | h5py on the edited file |
 | `recast-radar-io-odim/tests/odim_real.rs` | `decodes_real_iesha_pvol` (`decodes_synthetic_odim_pvol`) | `odim-iesha-20260305-0115-pvol` | h5py attributes and raw planes; xradar sweep sizes, range and azimuth |
 | | `non_odim_hdf5_is_rejected_with_guidance` | xsapr netCDF-4 (superblock 2); `odim-imgw-ram-20260711-0015-kdp-max` (IMAGE) | error text |
-| `recast-radar-io/src/lib.rs` | `tests::sniffs_supported_volume_formats_in_router_order` | committed DORADE, ODIM, netCDF-4, CfRadial, JMA, Level II and NCI zip files; mutated CDF-3 and renamed JMA header | manifest formats |
+| `recast-radar-io/src/lib.rs` | `tests::sniffs_supported_volume_formats_in_router_order` | committed DORADE, ODIM, netCDF-4, CfRadial, Level II and NCI zip files, and the COW2 and JMA files (not redistributed, read when cached); mutated CDF-3 and renamed JMA header | manifest formats |
 | | `tests::sniffs_gzip_archive_and_generic_tar_as_level2_fallthrough` (new) | `l2-kvwx-20080415-235337` (gzip); first tar header of `dorade-noxp-20090501-sweeps-tgz` | gzip and ustar signatures |
 | | `tests::unwraps_zip_local_member_stream_without_central_directory` | `odim-au24-20260610-000300-nci-zip-member` | `struct` + `zlib` unwrap, CRC-32, member sha256, h5py |
 | `recast-radar-io/tests/router_real_files.rs` | `router_matches_direct_odim_decoder_on_real_pvols` | bejab, bewid, norst, espdg, iesha, dkrom | routed equals direct; NOD site ids |
@@ -723,10 +723,10 @@ are named `fabricate*` so the scanner flags them and their tests.
   frame as messages 6, 9, 11 and 12 for `relabelled_real_frames_carry_messages_6_9_11_and_12`, because no
   real file has any of them (they go from the RPG to the RDA or test the wideband link). The values are
   compared with the inserted bytes and with what the source volume carries alone.
-- io-formats, `grib2_sections_real.rs`: `tar_of` repacks the two committed RS47773 members into one tar and
+- io-formats, `grib2_sections_real.rs`: `tar_of` repacks the two RS47773 members (not redistributed) into one tar and
   `with_local_use` gives each a GRIB2 section 2, for `merged_members_keep_each_members_values`. No real tar
   holds two members of one station, no real JMA message has a section 2 and no real station's members
-  differ in sections 0 and 1 (the committed RS47773 tars and the 2026-09-24 21Z national N5 and N6 tars, 40
+  differ in sections 0 and 1 (the RS47773 tars and the 2026-09-24 21Z national N5 and N6 tars, 40
   messages of 20 stations, were checked).
 
 ### `crates/recast-radar-core/tests/real_model.rs`

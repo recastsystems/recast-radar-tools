@@ -96,7 +96,12 @@ fn cfradial_gate_limit_error_is_routed() {
 
 #[test]
 fn dorade_gate_limit_error_is_routed() {
-    let mut bytes = read_testdata("dorade-cow2-20260521-225514-sur-head24");
+    // Not redistributed: skipped unless the sweep is in the testdata cache.
+    let Some(mut bytes) =
+        recast_radar_testdata::bytes_if_available("dorade-cow2-20260521-225514-sur-head24")
+    else {
+        return;
+    };
     // Big-endian COW2 sweep: CSFD descriptor at byte 1944, num_cells[0] at +48.
     assert_eq!(&bytes[1944..1948], b"CSFD");
     bytes[1944 + 48..1944 + 50].copy_from_slice(&i16::MAX.to_be_bytes());
@@ -105,7 +110,12 @@ fn dorade_gate_limit_error_is_routed() {
 
 #[test]
 fn jma_member_limit_error_is_routed() {
-    let mut bytes = read_testdata("jma-n5-20191012-090000-rs47773");
+    // Not redistributed: skipped unless the tar is in the testdata cache.
+    let Some(mut bytes) =
+        recast_radar_testdata::bytes_if_available("jma-n5-20191012-090000-rs47773")
+    else {
+        return;
+    };
     // ustar size field of the first member: 32 MiB + 1 byte, octal.
     bytes[124..136].copy_from_slice(b"00200000001\0");
     assert_limit(read_supported_volume_bytes(&bytes), "JMA 32 MiB + 1 member");

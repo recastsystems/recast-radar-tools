@@ -1,4 +1,5 @@
-//! `scan_cycles` over every committed radar volume of the corpus: a file of
+//! `scan_cycles` over every committed radar volume of the corpus (and every
+//! one not redistributed, when it is in the testdata cache): a file of
 //! one volume scan (a Level II file, an ODIM polar volume, a CfRadial or
 //! DORADE volume) is one scan cycle. The files known to hold more are JMA's
 //! 10-minute tars (two 5-minute cycles each, `real_cycles.rs` in
@@ -28,7 +29,8 @@ fn committed_volumes_hold_one_scan_cycle_but_the_known_ones() {
     let mut wrong = Vec::new();
     for entry in &recast_radar_testdata::manifest().files {
         // Fuzz regressions are mutated inputs, not scans.
-        if entry.committed.is_none()
+        let not_redistributed = entry.tags.iter().any(|tag| tag == "not-redistributed");
+        if (entry.committed.is_none() && !not_redistributed)
             || entry.id.starts_with("fuzz-")
             || !matches!(
                 entry.format,
@@ -42,7 +44,9 @@ fn committed_volumes_hold_one_scan_cycle_but_the_known_ones() {
         {
             continue;
         }
-        let bytes = recast_radar_testdata::bytes(&entry.id).unwrap();
+        let Some(bytes) = recast_radar_testdata::bytes_if_available(&entry.id) else {
+            continue;
+        };
         // Committed malformed inputs (fuzz regressions, refusal tests) do
         // not decode; they hold no scan to count.
         let Ok(volume) = read_supported_volume_bytes(&bytes) else {

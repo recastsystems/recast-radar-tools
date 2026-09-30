@@ -1,6 +1,6 @@
 # WASM (wave 2, stream G.3)
 
-Goal (plan `docs/superpowers/plans/2026-09-16-wave2.md` G.3; spec section 9,
+Goal (wave 2 plan, G.3; spec section 9,
 criterion 7): every non-`net` library crate passes
 `cargo check --target wasm32-unknown-unknown`.
 

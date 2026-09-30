@@ -1,7 +1,8 @@
 //! Resource limits against real DORADE sweepfiles mutated to claim more data
 //! than the documented caps allow (crate docs, `# Limits`). Every mutation
-//! starts from committed real bytes: the big-endian, run-length-encoded CSWR
-//! COW2 sweep (24 rays) and the little-endian, uncompressed NOAA NOXP sweep.
+//! starts from real bytes: the big-endian, run-length-encoded CSWR COW2 sweep
+//! (24 rays; not redistributed, so its tests skip unless it is in the
+//! testdata cache) and the little-endian, uncompressed NOAA NOXP sweep.
 
 use recast_radar_core::bounded_read::{MAX_GATES_PER_RADIAL, MAX_SWEEPS_PER_VOLUME};
 use recast_radar_io_dorade::DoradeError;
@@ -19,6 +20,11 @@ enum Endian {
 fn read_testdata(id: &str) -> Vec<u8> {
     let path = recast_radar_testdata::path(id).unwrap_or_else(|e| panic!("{e}"));
     std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+/// The COW2 sweep, or `None` when it is not in the testdata cache.
+fn cow2() -> Option<Vec<u8>> {
+    recast_radar_testdata::bytes_if_available(COW2)
 }
 
 fn read_i32(bytes: &[u8], at: usize, endian: Endian) -> i32 {
@@ -75,15 +81,19 @@ fn assert_limit_error<T>(result: Result<T, DoradeError>, what: &str) {
 #[test]
 fn unmodified_real_sweeps_decode_within_limits() {
     for id in [COW2, NOXP] {
-        let volume =
-            read_dorade_sweep_volume(&read_testdata(id)).unwrap_or_else(|e| panic!("{id}: {e}"));
+        let Some(bytes) = recast_radar_testdata::bytes_if_available(id) else {
+            continue;
+        };
+        let volume = read_dorade_sweep_volume(&bytes).unwrap_or_else(|e| panic!("{id}: {e}"));
         assert_eq!(volume.sweeps.len(), 1);
     }
 }
 
 #[test]
 fn cell_spacing_descriptor_claiming_too_many_cells_is_rejected() {
-    let mut bytes = read_testdata(COW2);
+    let Some(mut bytes) = cow2() else {
+        return;
+    };
     let csfd = find_block(&bytes, b"CSFD", Endian::Big);
     // num_cells[0] (i16 at +48): the real 375 becomes 32,767.
     assert_eq!(
@@ -128,7 +138,9 @@ fn uncompressed_ray_longer_than_the_gate_limit_is_rejected() {
 
 #[test]
 fn volume_with_more_sweeps_than_the_limit_is_rejected() {
-    let sweep = read_testdata(COW2);
+    let Some(sweep) = cow2() else {
+        return;
+    };
     let sweeps = vec![sweep.as_slice(); MAX_SWEEPS_PER_VOLUME + 1];
     assert_limit_error(
         read_dorade_volume_from_slices(&sweeps),

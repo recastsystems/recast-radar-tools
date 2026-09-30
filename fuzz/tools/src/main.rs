@@ -1145,8 +1145,14 @@ fn replay_regressions() -> io::Result<bool> {
         if !targets.contains(&"io-router") {
             targets.push("io-router");
         }
-        let path = recast_radar_testdata::path(id)
-            .map_err(|err| other_error(format!("testdata `{id}`: {err}")))?;
+        let path = match recast_radar_testdata::path(id) {
+            Ok(path) => path,
+            Err(err) if err.is_offline() => {
+                eprintln!("SKIP {id}: {err}");
+                continue;
+            }
+            Err(err) => return Err(other_error(format!("testdata `{id}`: {err}"))),
+        };
         for target in targets {
             let harness = harness(target).ok_or_else(|| {
                 other_error(format!("testdata `{id}`: unknown target `{target}`"))

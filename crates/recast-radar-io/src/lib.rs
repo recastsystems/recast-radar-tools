@@ -580,7 +580,12 @@ mod tests {
                 SupportedVolumeFormat::NexradLevel2,
             ),
         ] {
-            assert_eq!(sniff_supported_volume_format(&corpus(id)), expected, "{id}");
+            // The COW2 and JMA files are not redistributed: each is checked
+            // only when cached.
+            let Some(bytes) = recast_radar_testdata::bytes_if_available(id) else {
+                continue;
+            };
+            assert_eq!(sniff_supported_volume_format(&bytes), expected, "{id}");
         }
 
         // Telling HDF5 containers apart needs the whole file: a netCDF-4
@@ -591,20 +596,23 @@ mod tests {
             SupportedVolumeFormat::OdimH5
         );
         // A JMA tar needs its first 512-byte header block.
-        let jma = corpus("jma-n5-20191012-090000-rs47773");
-        assert_eq!(
-            sniff_supported_volume_format(&jma[..511]),
-            SupportedVolumeFormat::NexradLevel2
-        );
-        // The same real ustar header with the member name no longer a
-        // Z__C_RJTD_*_RDR_JMAGPV name is a generic tar and falls through.
-        let mut renamed = jma.clone();
-        assert_eq!(&renamed[..10], b"Z__C_RJTD_");
-        renamed[..2].copy_from_slice(b"X_");
-        assert_eq!(
-            sniff_supported_volume_format(&renamed),
-            SupportedVolumeFormat::NexradLevel2
-        );
+        if let Some(jma) =
+            recast_radar_testdata::bytes_if_available("jma-n5-20191012-090000-rs47773")
+        {
+            assert_eq!(
+                sniff_supported_volume_format(&jma[..511]),
+                SupportedVolumeFormat::NexradLevel2
+            );
+            // The same real ustar header with the member name no longer a
+            // Z__C_RJTD_*_RDR_JMAGPV name is a generic tar and falls through.
+            let mut renamed = jma.clone();
+            assert_eq!(&renamed[..10], b"Z__C_RJTD_");
+            renamed[..2].copy_from_slice(b"X_");
+            assert_eq!(
+                sniff_supported_volume_format(&renamed),
+                SupportedVolumeFormat::NexradLevel2
+            );
+        }
         // CDF-3 does not exist: the classic header relabelled as version 3.
         let mut cdf3 = corpus("cfrad1-xsapr-sgp-20110520-ppi-classic");
         cdf3[3] = 3;

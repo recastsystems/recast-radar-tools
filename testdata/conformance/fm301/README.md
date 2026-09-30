@@ -1,7 +1,7 @@
 # FM301 conformance goldens
 
 Golden summaries of what xradar 0.12.0 and arm_pyart 2.2.5 return for real radar files, for the
-FM301 conformance tests of plan F.4 (`docs/superpowers/plans/2026-09-16-wave2.md`, stream F) and
+FM301 conformance tests of plan F.4 (wave 2, stream F) and
 spec 4.3. The Rust side builds the FM301 view of the same file (`docs/design/fm301-model.md`
 section 12) and compares names, dimensions, attributes and values against these files.
 

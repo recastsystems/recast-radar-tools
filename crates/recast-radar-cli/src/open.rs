@@ -451,7 +451,11 @@ mod tests {
             ("l3-byx-n0q-20150124-2106", "NEXRAD Level III"),
             ("odim-au24-20260610-000300-nci-zip-member", "ODIM_H5"),
         ] {
-            let input = open_path(&committed(id), &OpenOptions::default())
+            // The JMA file is not redistributed: skipped unless cached.
+            let Some(path) = recast_radar_testdata::path_if_available(id) else {
+                continue;
+            };
+            let input = open_path(&path, &OpenOptions::default())
                 .unwrap_or_else(|err| panic!("{id}: {err}"));
             assert_eq!(input.format_name(), format, "{id}");
             assert!(!input.volumes().is_empty(), "{id}");
@@ -475,7 +479,7 @@ mod tests {
 
     #[test]
     fn a_jma_station_is_selected_by_id_or_number() {
-        let path = committed("jma-n5-20191012-090000-rs47773");
+        let path = recast_radar_testdata::require_file!("jma-n5-20191012-090000-rs47773");
         let options = OpenOptions {
             station: Some("47773".to_owned()),
             ..OpenOptions::default()

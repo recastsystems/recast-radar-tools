@@ -46,9 +46,10 @@ fn ids(slug: &str) -> Vec<&'static str> {
     ids
 }
 
-/// A manifest entry's real bytes (committed, or checksum-pinned and cached).
-fn load(id: &str) -> Vec<u8> {
-    recast_radar_testdata::bytes(id).unwrap_or_else(|error| panic!("{id}: {error}"))
+/// A manifest entry's real bytes (committed, or checksum-pinned and cached),
+/// or `None` when it is not redistributed and not in the testdata cache.
+fn load(id: &str) -> Option<Vec<u8>> {
+    recast_radar_testdata::bytes_if_available(id)
 }
 
 #[test]
@@ -132,7 +133,10 @@ fn level2_ldm_block_limit() {
 #[test]
 fn kxwa_head_holds_one_radial_per_ldm_record() {
     let id = "ndswc-kxwa-20260924-214316-head41";
-    let raw = load(id);
+    // Not redistributed: skipped unless the head is in the testdata cache.
+    let Some(raw) = load(id) else {
+        return;
+    };
     let volume = recast_radar_io_nexrad::read_volume_from_bytes(&raw)
         .unwrap_or_else(|error| panic!("{id}: {error}"));
     let rays: usize = volume.sweeps.iter().map(|sweep| sweep.nrays()).sum();
@@ -142,22 +146,25 @@ fn kxwa_head_holds_one_radial_per_ldm_record() {
     assert_eq!(rays, golden::KXWA_HEAD41_RAYS, "{id}");
 }
 
-/// Every committed feed fixture cut from a larger file (`derived_from`; the
-/// KXWA head) is a byte prefix of it: its `derivation` starts with "First N
-/// bytes", N being its size, and where the shared testdata cache holds the
-/// source (the source is pinned, not committed, and never downloaded here)
-/// the committed bytes are the source's first N bytes. Without the cache (CI)
-/// only the first part runs, and the test prints "checked 0 of 1".
+/// Every committed or not redistributed feed fixture cut from a larger file
+/// (`derived_from`; the KXWA head) is a byte prefix of it: its `derivation`
+/// starts with "First N bytes", N being its size, and where the shared
+/// testdata cache holds the source (the source is pinned, not committed, and
+/// never downloaded here) and the fixture, the fixture's bytes are the
+/// source's first N bytes. Without the cache (CI) only the first part runs,
+/// and the test prints "checked 0 of 1".
 #[test]
 fn committed_prefixes_are_prefixes_of_their_sources() {
     let derived: Vec<_> = manifest()
         .files
         .iter()
         .filter(|entry| {
-            entry
+            let committed = entry
                 .committed
                 .as_deref()
-                .is_some_and(|path| path.starts_with("files/feeds/"))
+                .is_some_and(|path| path.starts_with("files/feeds/"));
+            let not_redistributed = entry.tags.iter().any(|tag| tag == "not-redistributed");
+            committed || (not_redistributed && entry.format.as_str() == "nexrad-level2-feed")
         })
         .filter_map(|entry| Some((entry, entry.derived_from.as_deref()?)))
         .collect();
@@ -184,7 +191,9 @@ fn committed_prefixes_are_prefixes_of_their_sources() {
             Err(error) => panic!("{source_id}: {error}"),
         };
         let whole = std::fs::read(&path).unwrap_or_else(|error| panic!("{source_id}: {error}"));
-        let prefix = load(id);
+        let Some(prefix) = load(id) else {
+            continue;
+        };
         assert!(
             whole.starts_with(&prefix),
             "{id}: not a prefix of {source_id}"
@@ -225,7 +234,10 @@ fn thousands(n: u64) -> String {
 #[test]
 fn jma_lowest_level_valid() {
     for id in ids("jma-lowest-level-valid") {
-        let raw = load(id);
+        // The JMA fixture is not redistributed: skipped unless cached.
+        let Some(raw) = load(id) else {
+            continue;
+        };
         // One ustar member: its header block, then one GRIB2 message whose
         // first section 5 holds the level table.
         assert_eq!(&raw[512..516], b"GRIB", "{id}");

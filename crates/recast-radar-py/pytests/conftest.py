@@ -7,7 +7,9 @@ the download cache (``$RECAST_RADAR_TESTDATA``, else
 ``$XDG_CACHE_HOME`` or ``~/.cache``), downloading from the manifest URLs when
 the file is missing. Every file is checked against its SHA-256. With
 ``RECAST_RADAR_TESTDATA_OFFLINE`` set, a test whose file is not available is
-skipped instead of downloading.
+skipped instead of downloading. Entries tagged ``not-redistributed`` are
+neither committed nor downloadable: their tests run when a copy is in the
+cache and are skipped otherwise.
 
 Network tests (``@pytest.mark.network``) run only with
 ``RECAST_RADAR_NETWORK_TESTS=1``.
@@ -85,6 +87,19 @@ def _download(entry: dict, path: Path) -> None:
     pytest.skip(f"{entry['id']}: download failed ({'; '.join(errors) or 'no urls'})")
 
 
+def not_redistributed(file_id: str) -> bool:
+    """The entry is tagged ``not-redistributed``: only a cached copy runs."""
+    return "not-redistributed" in MANIFEST[file_id].get("tags", [])
+
+
+def cached_data_path(file_id: str) -> Path | None:
+    """``data_path`` of a file that is not redistributed, or ``None`` when it
+    is not in the cache, for a test that checks it alongside other files."""
+    if not_redistributed(file_id) and not (cache_dir() / file_id).is_file():
+        return None
+    return data_path(file_id)
+
+
 def data_path(file_id: str) -> Path:
     """The verified local path of testdata file ``file_id``."""
     entry = MANIFEST.get(file_id)
@@ -96,6 +111,8 @@ def data_path(file_id: str) -> Path:
     else:
         path = cache_dir() / file_id
         if not path.is_file():
+            if not_redistributed(file_id):
+                pytest.skip(f"{file_id}: not redistributed; place a copy at {path} to run this test")
             if os.environ.get("RECAST_RADAR_TESTDATA_OFFLINE"):
                 pytest.skip(f"{file_id}: not cached and RECAST_RADAR_TESTDATA_OFFLINE is set")
             _download(entry, path)

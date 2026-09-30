@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 import recast_radar
-from conftest import data_path
+from conftest import cached_data_path, data_path
 
 FORMATS = ["level2", "cfradial1", "odim", "fm301"]
 
@@ -164,22 +164,25 @@ def test_strict_refuses_and_options_reach_the_writer(tmp_path):
         dkrom.write(tmp_path / "strict.ar2v", "level2", strict=True)
     assert not (tmp_path / "strict.ar2v").exists()
 
-    itok = recast_radar.read(data_path("jma-n5-20260924-210000-rs47937"))
-    with pytest.raises(recast_radar.UnrepresentableError, match="split_scan_cycles"):
-        itok.to_bytes("level2")
-    cycles = recast_radar.split_scan_cycles(itok)
-    assert [cycle.nsweeps for cycle in cycles] == [17, 18]
-    for cycle in cycles:
-        again = recast_radar.read(cycle.to_bytes("level2"))
-        assert again.nsweeps == cycle.nsweeps
+    # The JMA tars are not redistributed: checked only when cached.
+    itok_path = cached_data_path("jma-n5-20260924-210000-rs47937")
+    if itok_path is not None:
+        itok = recast_radar.read(itok_path)
+        with pytest.raises(recast_radar.UnrepresentableError, match="split_scan_cycles"):
+            itok.to_bytes("level2")
+        cycles = recast_radar.split_scan_cycles(itok)
+        assert [cycle.nsweeps for cycle in cycles] == [17, 18]
+        for cycle in cycles:
+            again = recast_radar.read(cycle.to_bytes("level2"))
+            assert again.nsweeps == cycle.nsweeps
+            assert abs(again.sweeps[0]["fixed_angle"] - 25.0) < 0.01
+        cycle = [0, 2, 3, 6, 7, 10, 11, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]
+        data = itok.to_bytes("level2", sweeps=cycle, sweeps_in_time_order=True)
+        again = recast_radar.read(data)
+        assert again.nsweeps == 17
         assert abs(again.sweeps[0]["fixed_angle"] - 25.0) < 0.01
-    cycle = [0, 2, 3, 6, 7, 10, 11, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]
-    data = itok.to_bytes("level2", sweeps=cycle, sweeps_in_time_order=True)
-    again = recast_radar.read(data)
-    assert again.nsweeps == 17
-    assert abs(again.sweeps[0]["fixed_angle"] - 25.0) < 0.01
-    with pytest.raises(ValueError):
-        itok.to_bytes("level2", sweeps=[40])
+        with pytest.raises(ValueError):
+            itok.to_bytes("level2", sweeps=[40])
 
     klix = recast_radar.read(data_path("l2-klix-20050829-130035-trim"))
     located = recast_radar.read(data_path("l2-klix-20210829-180425-trim"))
@@ -194,10 +197,12 @@ def test_strict_refuses_and_options_reach_the_writer(tmp_path):
     assert abs(again.latitude - located.latitude) < 1e-4
     assert again.nsweeps == klix.nsweeps
 
-    velocity = recast_radar.split_scan_cycles(recast_radar.read(data_path("jma-n6-20191012-090000-rs47773")))[0]
-    with pytest.warns(recast_radar.WriteWarning, match="without a Nyquist velocity"):
-        velocity.to_bytes("level2")
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        data = velocity.to_bytes("level2", nyquist_velocity=26.48)
-    assert recast_radar.read(data).nsweeps == velocity.nsweeps
+    velocity_path = cached_data_path("jma-n6-20191012-090000-rs47773")
+    if velocity_path is not None:
+        velocity = recast_radar.split_scan_cycles(recast_radar.read(velocity_path))[0]
+        with pytest.warns(recast_radar.WriteWarning, match="without a Nyquist velocity"):
+            velocity.to_bytes("level2")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            data = velocity.to_bytes("level2", nyquist_velocity=26.48)
+        assert recast_radar.read(data).nsweeps == velocity.nsweeps

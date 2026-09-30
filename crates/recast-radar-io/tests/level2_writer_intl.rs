@@ -63,6 +63,13 @@ fn decoded(id: &str) -> Volume {
     read_supported_volume_bytes(&corpus(id)).unwrap_or_else(|err| panic!("{id}: {err}"))
 }
 
+/// Like `decoded`, for a file that is not redistributed (the COW2 and JMA
+/// ones): `None` unless it is in the testdata cache.
+fn cached(id: &str) -> Option<Volume> {
+    let bytes = recast_radar_testdata::bytes_if_available(id)?;
+    Some(read_supported_volume_bytes(&bytes).unwrap_or_else(|err| panic!("{id}: {err}")))
+}
+
 /// The NOXP DORADE sweeps name their dual-polarization fields `DB_ZDR`,
 /// `DB_PHIDP`, `DB_RHOHV` (and, in 2009-05-01, every field `DB_*`), which
 /// no name table classifies; map them explicitly.
@@ -493,7 +500,9 @@ fn cfradial_volumes_come_back_within_the_quantisation_step() {
 
 #[test]
 fn dorade_sweeps_come_back_within_the_quantisation_step() {
-    let volume = decoded("dorade-cow2-20260521-225514-sur-head24");
+    let Some(volume) = cached("dorade-cow2-20260521-225514-sur-head24") else {
+        return;
+    };
     let summary = assert_round_trip("cow2", &volume, &compatible(), "COW2");
     let moments: Vec<Moment> = summary.moments.iter().map(|m| m.moment).collect();
     assert_eq!(
@@ -555,8 +564,12 @@ fn assert_refused_as_mixed(what: &str, volume: &Volume) {
 
 #[test]
 fn jma_volumes_come_back_within_the_quantisation_step() {
-    let reflectivity = decoded("jma-n5-20191012-090000-rs47773");
-    let velocity = decoded("jma-n6-20191012-090000-rs47773");
+    let (Some(reflectivity), Some(velocity)) = (
+        cached("jma-n5-20191012-090000-rs47773"),
+        cached("jma-n6-20191012-090000-rs47773"),
+    ) else {
+        return;
+    };
     // Reflectivity and velocity merged by elevation and collection time.
     let (merged, _) = merge_volumes(vec![reflectivity.clone(), velocity.clone()]).unwrap();
     for (what, volume) in [
@@ -670,7 +683,10 @@ fn record_layouts_and_streamed_chunks() {
     use recast_radar_io_nexrad::write::realtime::{ChunkWriter, write_realtime_chunks};
 
     // The first 5-minute cycle of the tar: 9 cuts of 512 radials.
-    let volume = split_scan_cycles(decoded("jma-n6-20191012-090000-rs47773")).remove(0);
+    let Some(volume) = cached("jma-n6-20191012-090000-rs47773") else {
+        return;
+    };
+    let volume = split_scan_cycles(volume).remove(0);
     assert_eq!(volume.sweeps.len(), 9);
     assert!(volume.sweeps.iter().all(|sweep| sweep.nrays() == 512));
     // Elevation number of every radial of each radial chunk.
@@ -771,7 +787,10 @@ fn radial_dumps(bytes: &[u8]) -> Vec<RadialDump> {
 fn missing_nyquist_velocities_are_noted_or_supplied() {
     let id = "jma-n6-20191012-090000-rs47773";
     // The first 5-minute cycle of the tar.
-    let volume = split_scan_cycles(decoded(id)).remove(0);
+    let Some(volume) = cached(id) else {
+        return;
+    };
+    let volume = split_scan_cycles(volume).remove(0);
     assert!(
         volume
             .sweeps
@@ -850,7 +869,9 @@ fn chunk_writer_refuses_values_outside_the_planned_coding() {
 
     // The tar's two 5-minute cycles, each from its 25 deg sweep (JMA
     // collects from the top down, then up again), in the order collected.
-    let volume = decoded("jma-n5-20260924-210000-rs47937");
+    let Some(volume) = cached("jma-n5-20260924-210000-rs47937") else {
+        return;
+    };
     let [first, second]: [Volume; 2] = split_scan_cycles(volume).try_into().unwrap();
     assert_eq!((first.sweeps.len(), second.sweeps.len()), (17, 18));
     for cycle in [&first, &second] {

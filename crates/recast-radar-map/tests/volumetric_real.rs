@@ -470,21 +470,24 @@ fn derived_products_handle_degraded_inputs_without_panicking() {
         assert!(row_stats(&grid).iter().all(|(count, _)| *count == 0));
     }
 
-    let path = recast_radar_testdata::require_file!("jma-n6-20191012-090000-rs47773");
-    let velocity_only = common::jma(&path);
-    assert!(!velocity_only.sweeps.is_empty());
-    assert!(products::composite_reflectivity(&velocity_only).is_none());
-    assert!(products::echo_top(&velocity_only, ECHO_TOP_THRESHOLD_DBZ).is_none());
-    assert!(products::vil(&velocity_only).is_none());
-    assert!(
-        reflectivity_section(&velocity_only, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0).is_none()
-    );
-    let section = velocity_section(&velocity_only, (0.0, 5.0), (60.0, 5.0), 64, 32, 12_000.0)
-        .expect("velocity section");
-    assert!(
-        section.values.iter().any(|v| v.is_finite()),
-        "Hagibis velocity on the path"
-    );
+    // The JMA tar is not redistributed: checked only when cached.
+    if let Some(path) = recast_radar_testdata::path_if_available("jma-n6-20191012-090000-rs47773") {
+        let velocity_only = common::jma(&path);
+        assert!(!velocity_only.sweeps.is_empty());
+        assert!(products::composite_reflectivity(&velocity_only).is_none());
+        assert!(products::echo_top(&velocity_only, ECHO_TOP_THRESHOLD_DBZ).is_none());
+        assert!(products::vil(&velocity_only).is_none());
+        assert!(
+            reflectivity_section(&velocity_only, (0.0, 0.0), (50.0, 0.0), 64, 32, 18_000.0)
+                .is_none()
+        );
+        let section = velocity_section(&velocity_only, (0.0, 5.0), (60.0, 5.0), 64, 32, 12_000.0)
+            .expect("velocity section");
+        assert!(
+            section.values.iter().any(|v| v.is_finite()),
+            "Hagibis velocity on the path"
+        );
+    }
 
     let path = recast_radar_testdata::require_file!("l2-ktlx-20240315-000217-trim");
     let two_cuts = common::level2(&path);

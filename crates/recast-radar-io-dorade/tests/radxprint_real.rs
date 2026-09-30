@@ -2,7 +2,8 @@
 //!
 //! `testdata/golden/dorade/radxprint.json` holds what `RadxPrint -rays`
 //! (LROSE release 20250811; `tools/dorade_radx_golden.py`) prints for each
-//! ray of seven committed sweepfiles. Radx keeps the antenna-transition rays
+//! ray of seven sweepfiles (the COW2 and N42RF ones are not redistributed
+//! and are checked only when in the testdata cache). Radx keeps the antenna-transition rays
 //! and flags them, so the model must hold the same rays in the same order,
 //! with the same `antenna_transition` flags, and the per-ray values Radx
 //! reads from the RYIB and ASIB blocks: time, azimuth, elevation, true scan
@@ -354,8 +355,12 @@ fn every_ray_matches_radxprint_in_the_model_and_the_view() {
     let golden = golden();
     let mut compared = 0;
     let mut georeference_values = 0;
+    let mut skipped = 0;
     for (id, file) in golden["files"].as_object().unwrap() {
-        let bytes = recast_radar_testdata::bytes(id).unwrap();
+        let Some(bytes) = recast_radar_testdata::bytes_if_available(id) else {
+            skipped += 1;
+            continue;
+        };
         let volume = read_dorade_sweep_volume(&bytes).unwrap();
         let sweep = &volume.sweeps[0];
         let rays = file["rays"].as_array().unwrap();
@@ -447,34 +452,45 @@ fn every_ray_matches_radxprint_in_the_model_and_the_view() {
             compared += 1;
         }
     }
-    assert_eq!(compared, 24 + 41 + 51 + 100 + 6 + 24 + 48);
     // The ground-based files store the position only; the airborne ones
     // every ASIB value of every ray.
     eprintln!("{georeference_values} georeference values compared");
-    assert!(
-        georeference_values >= 18 * (24 + 48),
-        "{georeference_values}"
-    );
+    // The totals are those of every sweepfile.
+    if skipped == 0 {
+        assert_eq!(compared, 24 + 41 + 51 + 100 + 6 + 24 + 48);
+        assert!(
+            georeference_values >= 18 * (24 + 48),
+            "{georeference_values}"
+        );
+    }
 }
 
 #[test]
 fn mobility_and_georeferencing_corrections_match_radxconvert() {
     let golden = golden();
     let (mut mobile, mut corrections) = (0, 0);
+    let mut skipped = 0;
     for (id, file) in golden["files"].as_object().unwrap() {
-        let bytes = recast_radar_testdata::bytes(id).unwrap();
+        let Some(bytes) = recast_radar_testdata::bytes_if_available(id) else {
+            skipped += 1;
+            continue;
+        };
         let volume = read_dorade_sweep_volume(&bytes).unwrap();
         corrections += check_mobility_and_corrections(id, &volume, file);
         mobile += usize::from(volume.attrs.platform_is_mobile);
     }
     // The two airborne sweeps are mobile; every file but the COW2 one (no
     // CFAC block) has corrections, and the N42RF-TM sweep's are not zero.
-    assert_eq!(mobile, 2);
-    assert_eq!(corrections, 6 * 10);
-    let tm = read_dorade_sweep_volume(
-        &recast_radar_testdata::bytes("dorade-n42rf-tm-20181010-123925-air-head48").unwrap(),
-    )
-    .unwrap();
+    if skipped == 0 {
+        assert_eq!(mobile, 2);
+        assert_eq!(corrections, 6 * 10);
+    }
+    let Some(tm) =
+        recast_radar_testdata::bytes_if_available("dorade-n42rf-tm-20181010-123925-air-head48")
+    else {
+        return;
+    };
+    let tm = read_dorade_sweep_volume(&tm).unwrap();
     let correction = tm.georeferencing_correction.unwrap();
     assert!(correction.rotation_correction.unwrap() != 0.0);
     assert!(correction.pressure_altitude_correction.unwrap() != 0.0);

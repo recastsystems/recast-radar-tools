@@ -1,9 +1,10 @@
 //! The JMA decoder against ecCodes, an independent GRIB2 reader.
 //!
 //! `testdata/golden/jma/eccodes.json` (`tools/jma_eccodes_golden.py`, ecCodes
-//! 2.48.0) holds what ecCodes decodes from every field of the two committed
+//! 2.48.0) holds what ecCodes decodes from every field of the two
 //! single-station tars (RS47773 Osaka, N5 reflectivity with 26 sweeps and N6
-//! radial velocity with 13): the section 0 and 1 keys, the section 3 header
+//! radial velocity with 13; not redistributed, so each is checked only when
+//! it is in the testdata cache): the section 0 and 1 keys, the section 3 header
 //! keys, the data representation template 5.200 keys with the level values,
 //! the bitmap indicator, and a summary of the decoded values. ecCodes has no
 //! definition for JMA's local templates 3.50120 and 4.51022; the script gives
@@ -236,8 +237,12 @@ fn every_field_matches_eccodes() {
     assert_eq!(golden["eccodes"], "2.48.0");
     let files = golden["files"].as_object().unwrap();
     let mut fields_checked = 0;
+    let mut skipped = 0;
     for (id, file) in files {
-        let tar = recast_radar_testdata::bytes(id).unwrap();
+        let Some(tar) = recast_radar_testdata::bytes_if_available(id) else {
+            skipped += 1;
+            continue;
+        };
         let volumes = read_jma_tar_volumes(&tar, None).unwrap();
         assert_eq!(volumes.len(), 1, "{id}");
         let volume = &volumes[0];
@@ -280,7 +285,10 @@ fn every_field_matches_eccodes() {
             fields_checked += 1;
         }
     }
-    assert_eq!(fields_checked, 26 + 13);
+    // The total is that of both tars.
+    if skipped == 0 {
+        assert_eq!(fields_checked, 26 + 13);
+    }
 }
 
 /// JMA's local grid template 3.50120 follows the WMO azimuth-range template

@@ -18,8 +18,7 @@ xarray DataTrees and Py-ART radars.
 
 Status: version 0.1.0, not published to crates.io, and the API is not stable
 (see [CHANGELOG.md](CHANGELOG.md)). The data model is checked against xradar
-and Py-ART goldens. Design:
-[docs/superpowers/specs/2026-09-16-recast-radar-tools-design.md](docs/superpowers/specs/2026-09-16-recast-radar-tools-design.md).
+and Py-ART goldens. Design notes: [docs/design](docs/design).
 
 ## Quick start
 

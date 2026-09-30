@@ -26,7 +26,15 @@ fn source(id: &str) -> Volume {
     read_supported_volume_bytes(&bytes).unwrap_or_else(|err| panic!("{id}: {err}"))
 }
 
-/// Sources of every format (committed fixtures).
+/// Like `source`, but `None` for a source that is not redistributed and not
+/// in the testdata cache (the COW2 sweep), which the loops skip.
+fn source_if_available(id: &str) -> Option<Volume> {
+    let bytes = recast_radar_testdata::bytes_if_available(id)?;
+    Some(read_supported_volume_bytes(&bytes).unwrap_or_else(|err| panic!("{id}: {err}")))
+}
+
+/// Sources of every format (committed fixtures, and the COW2 sweep, which is
+/// not redistributed).
 const SOURCES: &[&str] = &[
     // NEXRAD Level II: super-resolution dual-pol (2024), Message 1 (2005),
     // a 2020 volume with split cuts, Guam (2023).
@@ -79,7 +87,9 @@ fn odim_rows(sweep: &Sweep) -> Vec<usize> {
 fn odim_writer_keeps_every_gate_of_every_source_format() {
     let mut total = Tally::default();
     for id in SOURCES {
-        let volume = source(id);
+        let Some(volume) = source_if_available(id) else {
+            continue;
+        };
         let written = write_odim_h5_volume(&volume, &OdimWriteOptions::default())
             .unwrap_or_else(|err| panic!("{id}: {err}"));
         let read =
@@ -220,7 +230,9 @@ fn cfradial1_writer_keeps_every_gate_of_every_source_format() {
     let mut total = Tally::default();
     let (mut ragged, mut reordered) = (0, 0);
     for id in SOURCES.iter().chain(RHI_SOURCES) {
-        let volume = source(id);
+        let Some(volume) = source_if_available(id) else {
+            continue;
+        };
         let written = write_cfradial1(&volume, &Cfradial1Options::default())
             .unwrap_or_else(|err| panic!("{id}: {err}"));
         assert_eq!(&written[..4], b"CDF\x02", "{id}");
@@ -480,7 +492,9 @@ fn cfradial1_files_read_back_unchanged() {
 fn cfradial2_writer_keeps_every_gate_of_every_source_format() {
     let mut total = Tally::default();
     for id in SOURCES.iter().chain(RHI_SOURCES) {
-        let volume = source(id);
+        let Some(volume) = source_if_available(id) else {
+            continue;
+        };
         let written = write_cfradial2(&volume, &Cfradial2Options::default())
             .unwrap_or_else(|err| panic!("{id}: {err}"));
         let read =
@@ -515,7 +529,9 @@ fn every_writer_output_reads_back_unchanged_when_written_again() {
     ];
     let mut failures = Vec::new();
     for id in SOURCES.iter().chain(RHI_SOURCES) {
-        let volume = source(id);
+        let Some(volume) = source_if_available(id) else {
+            continue;
+        };
         for (format, write) in writers {
             // A writer that refuses the source (ODIM and RHIs) has no output.
             let Ok(first) = write(&volume) else {

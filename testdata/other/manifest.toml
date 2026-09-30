@@ -196,9 +196,8 @@ id = "odim-itdes-20260924-2135-pvol-class"
 format = "odim-h5"
 sha256 = "bd6f7abc30260cc8dda9d0f5e8237459f82df304433e995a6be626bf033a57ee"
 size = 322411
-committed = "files/other/odim/lombardia/Desio.20260924T213500Z_CLASS.h5"
 derivation = "gunzip of the published https://radarlive.arpalombardia.it/Volumi/DES/Desio.20260924T213500Z_CLASS.h5.gz (68052 bytes, sha256 d9a76de7ebdce7364cbbc02e8490f695a94e85d9b6830ecc4e42a7259a0424d6; the service keeps a rolling window)"
-tags = ["provider:arpa-lombardia", "license:unknown", "era:2026", "site:itdes", "country:IT", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:compound-char-array", "odim:legend", "moments:class", "scan:ppi", "derived", "derivation:gunzip"]
+tags = ["not-redistributed", "provider:arpa-lombardia", "license:unknown", "era:2026", "site:itdes", "country:IT", "object:pvol", "odim:h5rad-2.2", "hdf5:superblock-v0", "hdf5:compound-char-array", "odim:legend", "moments:class", "scan:ppi", "derived", "derivation:gunzip"]
 description = "ARPA Lombardia Desio hydrometeor classification PVOL 2026-09-24 21:35Z: 8 sweeps of CLASS (uint16 codes 0-25), each with an ODIM_H5 v2.4 legend dataset (compound of 64- and 32-character key/value strings: class name, code)"
 
 # ---------------------------------------------------------------------------
@@ -349,9 +348,8 @@ id = "dorade-cow2-20260521-225514-sur-head24"
 format = "dorade"
 sha256 = "0609c4fe11b584f9b46254c4f6a3c481d72d93d2c09f0c02456e7ca518afcc9a"
 size = 37380
-committed = "files/other/dorade/swp.1260521225514.COW2.229.1.0_SUR_v215.head24"
 derivation = "head trim: first 37380 bytes (all descriptor blocks + first 24 RYIB/ASIB/RDAT ray groups, cut at a block boundary) of the CSWR COW2 sweepfile swp.1260521225514.COW2.229.1.0_SUR_v215 from the 2026-05-21 deployment; carried over from radar-bow@66ceb9c crates/nexrad_io/tests/data, where neither the full sweepfile nor its public source URL was recorded"
-tags = ["carryover:bowecho", "provider:cswr", "license:unknown", "era:2026", "site:cow2", "platform:mobile", "dorade:rle", "dorade:csfd", "endian:big", "writer:radx", "scan:sur", "quirk:transition-rays", "quirk:staggered-prt", "derived", "derivation:head-trim"]
+tags = ["not-redistributed", "carryover:bowecho", "provider:cswr", "license:unknown", "era:2026", "site:cow2", "platform:mobile", "dorade:rle", "dorade:csfd", "endian:big", "writer:radx", "scan:sur", "quirk:transition-rays", "quirk:staggered-prt", "derived", "derivation:head-trim"]
 description = "CSWR COW2 single-tilt surveillance sweep 2026-05-21 22:55:14Z, 1.0 deg, volume 215 sweep 6; big-endian, HRD RLE, CSFD gates (375 x 100 m from 50 m), 4 fields (DBZHC_F VEL_F ZDR_F RHOHV_F); 24 of 719 rays (3 transition rays)"
 
 [[file]]
@@ -469,10 +467,9 @@ id = "dorade-n42rf-ts-20181010-122951-air-head24"
 format = "dorade"
 sha256 = "eee18202118cfd6f1b74ae59f59c47917edba42507a8e3189375ae5e9e6b4d35"
 size = 432440
-committed = "files/other/dorade/swp.1181010122951.N42RF-TS.196.-20.0_AIR_v3394.head24"
 derived_from = "dorade-n42rf-ts-20181010-122951-air"
 derivation = "head trim: first 432440 bytes (SSWB VOLD RADD 17xPARM CELV CFAC SWIB COMM + first 24 RYIB/ASIB/RDAT ray groups, cut at the ray-group boundary before ray 24)"
-tags = ["provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "derived", "derivation:head-trim"]
+tags = ["not-redistributed", "provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "derived", "derivation:head-trim"]
 description = "First 24 of 360 rays of dorade-n42rf-ts-20181010-122951-air: the NOAA P-3 aft tail radar in the eye of Hurricane Michael, with real platform velocities, heading, roll, pitch, drift, rotation, tilt, winds and heading and pitch change rates in every ASIB"
 
 [[file]]
@@ -489,10 +486,9 @@ id = "dorade-n42rf-tm-20181010-123925-air-head48"
 format = "dorade"
 sha256 = "70a9b7ad832bc6d2fcd9282a07fdc18d42393adf977609a88bfe293723fcd723"
 size = 222892
-committed = "files/other/dorade/swp.1181010123925.N42RF-TM.137.20.0_AIR_v3532.head48"
 derived_from = "dorade-n42rf-tm-20181010-123925-air"
 derivation = "head trim: first 222892 bytes (SSWB VOLD RADD 17xPARM CELV CFAC SWIB COMM + first 48 RYIB/ASIB/RDAT ray groups, cut at the ray-group boundary before ray 48)"
-tags = ["provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "quirk:cfac-corrections", "derived", "derivation:head-trim"]
+tags = ["not-redistributed", "provider:github-radarqc-scans", "license:unknown", "era:2018", "site:n42rf", "platform:aircraft", "regime:hurricane", "dorade:rle", "dorade:celv", "endian:little", "writer:radx", "scan:air", "quirk:cfac-corrections", "derived", "derivation:head-trim"]
 description = "First 48 of 360 rays of dorade-n42rf-tm-20181010-123925-air: the NOAA P-3 fore tail radar in Hurricane Michael's inner core, with real ASIB motion and attitude values and non-zero CFAC corrections"
 
 # ---------------------------------------------------------------------------
@@ -522,10 +518,9 @@ id = "jma-n5-20191012-090000-rs47773"
 format = "jma-grib2-tar"
 sha256 = "01def3095deefd9545142d94f1b9f0495a37c403a22fdf3ef5ba09a7d9cd57bb"
 size = 1761280
-committed = "files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N5_grib2.RS47773.tar"
 derived_from = "jma-n5-20191012-090000"
 derivation = "single-member tar: the ustar header block and data blocks of member Z__C_RJTD_20191012090000_RDR_JMAGPV_RS47773_Gar0p5km0p7deg_Pze_ANAL_grib2.bin (1752093 bytes, sha256 e0b44c0a6f150d7f682b2765b5fc5c939db06759fccaf5b332bfc46402266e2c) copied verbatim from the source tar, then zero blocks to the next 10240-byte record (tarslice.py in docs/testdata/corpus.md)"
-tags = ["provider:nict-jma", "license:unknown", "era:2019", "country:JP", "network:jma", "site:taka", "moments:reflectivity", "regime:typhoon", "quirk:repeated-elevations", "derived", "derivation:archive-member", "known-failure:jma-lowest-level-valid"]
+tags = ["not-redistributed", "provider:nict-jma", "license:unknown", "era:2019", "country:JP", "network:jma", "site:taka", "moments:reflectivity", "regime:typhoon", "quirk:repeated-elevations", "derived", "derivation:archive-member", "known-failure:jma-lowest-level-valid"]
 description = "JMA Osaka/Takayasu (TAKA, RS47773, 34.6164N 135.6564E) reflectivity member of the Hagibis N5 tar: 26 sweeps in four descending elevation ladders (5.0-0.3, 1.8-0.0, 25.0-0.3, 5.0-0.0 deg) with repeated angles, 512 radials x 300 gates. Known failure (docs/testdata/feeds-survey.md section 3.2): level 1 of the level table, 0.00 below the 0.32 dB ladder that starts at 0.16 dBZ, decodes as a valid 0.0 dBZ, so no gate is below threshold; crates/recast-radar-data/tests/feeds_known_failures.rs checks it"
 
 [[file]]
@@ -533,10 +528,9 @@ id = "jma-n6-20191012-090000-rs47773"
 format = "jma-grib2-tar"
 sha256 = "c087c9e14d6d6e6083a1e8ae0e1630b2947a4433ee0ae7e68c27bd4bac24487e"
 size = 624640
-committed = "files/other/jma/Z__C_RJTD_20191012090000_RDR_JMAGPV_N6_grib2.RS47773.tar"
 derived_from = "jma-n6-20191012-090000"
 derivation = "single-member tar: the ustar header block and data blocks of member Z__C_RJTD_20191012090000_RDR_JMAGPV_RS47773_Gar0p5km0p7deg_Pvr_ANAL_grib2.bin (615296 bytes, sha256 a58eabcea3d707ae90542520fe10e632fee66d5888a317dc486b2d4541f7bc18) copied verbatim from the source tar, then zero blocks to the next 10240-byte record (tarslice.py in docs/testdata/corpus.md)"
-tags = ["provider:nict-jma", "license:unknown", "era:2019", "country:JP", "network:jma", "site:taka", "moments:velocity", "regime:typhoon", "derived", "derivation:archive-member"]
+tags = ["not-redistributed", "provider:nict-jma", "license:unknown", "era:2019", "country:JP", "network:jma", "site:taka", "moments:velocity", "regime:typhoon", "derived", "derivation:archive-member"]
 description = "JMA Osaka/Takayasu (TAKA, RS47773) radial-velocity member of the Hagibis N6 tar: 13 sweeps, 512 radials x 300 gates, 547108 of 2201600 gates non-missing"
 
 [[file]]
@@ -562,10 +556,9 @@ id = "jma-n5-20260924-210000-rs47937"
 format = "jma-grib2-tar"
 sha256 = "3b9c222a5a4f17a21bcd5e6c094f5614686067c667f991649e3eb5c1b53009ff"
 size = 153600
-committed = "files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N5_grib2.RS47937.tar"
 derived_from = "jma-n5-20260924-210000"
 derivation = "single-member tar: the ustar header block and data blocks of member Z__C_RJTD_20260924210000_RDR_JMAGPV_RS47937_Gar0p5km0p7deg_Pze_ANAL_grib2.bin (141941 bytes, sha256 9d463c19931773aa4991ad1e8b531e3d359087853fc3900386d0468a92aa66b1) copied verbatim from the source tar, then zero blocks to the next 10240-byte record (tarslice.py in docs/testdata/corpus.md)"
-tags = ["provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "site:itok", "moments:reflectivity", "quirk:repeated-elevations", "derived", "derivation:archive-member"]
+tags = ["not-redistributed", "provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "site:itok", "moments:reflectivity", "quirk:repeated-elevations", "derived", "derivation:archive-member"]
 description = "JMA Okinawa (ITOK, RS47937) reflectivity member of the 2026-09-24 21:00Z N5 tar: 35 sweeps of 512 radials and 128 to 800 gates of 500 m from range start 0, in two 5-minute cycles"
 
 [[file]]
@@ -573,10 +566,9 @@ id = "jma-n6-20260924-210000-rs47937"
 format = "jma-grib2-tar"
 sha256 = "58d628a4a6479e42f08264c6bc308a005914cb94812eaf7efcb6aa68785abd41"
 size = 81920
-committed = "files/other/jma/Z__C_RJTD_20260924210000_RDR_JMAGPV_N6_grib2.RS47937.tar"
 derived_from = "jma-n6-20260924-210000"
 derivation = "single-member tar: the ustar header block and data blocks of member Z__C_RJTD_20260924210000_RDR_JMAGPV_RS47937_Gar0p5km0p7deg_Pvr_ANAL_grib2.bin (73775 bytes, sha256 0807e28c89af92aea9251256ff85a457d1e7caa2d564af42525cca92a34807f7) copied verbatim from the source tar, then zero blocks to the next 10240-byte record (tarslice.py in docs/testdata/corpus.md)"
-tags = ["provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "site:itok", "moments:velocity", "derived", "derivation:archive-member"]
+tags = ["not-redistributed", "provider:nict-jma", "license:unknown", "era:2026", "country:JP", "network:jma", "site:itok", "moments:velocity", "derived", "derivation:archive-member"]
 description = "JMA Okinawa (ITOK, RS47937) radial-velocity member of the 2026-09-24 21:00Z N6 tar: 23 sweeps of 512 radials and 128 to 500 gates of 500 m (the Doppler ladder of each 5-minute cycle and one 90 deg sweep), no Nyquist velocity"
 
 # ---------------------------------------------------------------------------

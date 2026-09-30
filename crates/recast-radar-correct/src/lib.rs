@@ -677,28 +677,28 @@ mod tests {
 
         // JMA: 547,108 of 2,201,600 velocity gates are non-missing (manifest
         // description of the member, from the JMA GRIB2 run-length walker).
-        let bytes = match recast_radar_testdata::bytes("jma-n6-20191012-090000-rs47773") {
-            Ok(bytes) => bytes,
-            Err(error) if error.is_offline() => return,
-            Err(error) => panic!("{error}"),
-        };
-        let jma = recast_radar_io_jma::read_jma_tar_first_station(&bytes).expect("decode JMA");
-        assert_eq!(jma.sweeps.len(), 13);
-        let mut valid = 0;
-        for jma_cut in &jma.sweeps {
-            let grid = real_data::velocity(jma_cut);
-            assert!(dealias_skipped_no_nyquist(jma_cut, grid));
-            let jma_sweep = VelocitySweep::of_sweep(jma_cut);
-            let finite = jma_sweep.finite_gates();
-            assert_pass_through(&jma_sweep, &dealias_velocity(jma_cut, grid), finite);
-            assert_pass_through(
-                &jma_sweep,
-                &dealias_velocity_pyart_region(jma_cut, grid),
-                finite,
-            );
-            valid += finite;
+        // Not redistributed: checked only when the tar is in the cache.
+        if let Some(bytes) =
+            recast_radar_testdata::bytes_if_available("jma-n6-20191012-090000-rs47773")
+        {
+            let jma = recast_radar_io_jma::read_jma_tar_first_station(&bytes).expect("decode JMA");
+            assert_eq!(jma.sweeps.len(), 13);
+            let mut valid = 0;
+            for jma_cut in &jma.sweeps {
+                let grid = real_data::velocity(jma_cut);
+                assert!(dealias_skipped_no_nyquist(jma_cut, grid));
+                let jma_sweep = VelocitySweep::of_sweep(jma_cut);
+                let finite = jma_sweep.finite_gates();
+                assert_pass_through(&jma_sweep, &dealias_velocity(jma_cut, grid), finite);
+                assert_pass_through(
+                    &jma_sweep,
+                    &dealias_velocity_pyart_region(jma_cut, grid),
+                    finite,
+                );
+                valid += finite;
+            }
+            assert_eq!(valid, 547_108);
         }
-        assert_eq!(valid, 547_108);
 
         // Positive control: the KDVN Doppler cut carries Nyquist 21.03 m/s.
         let Some((control, control_golden)) = golden_volume("kdvn_20200810_trim_s1") else {

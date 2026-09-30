@@ -1,8 +1,7 @@
 # Packaging and CI (wave 2, stream G)
 
 Scope: the `recast-radar-tools` facade crate, crate metadata, CI, WASM checks,
-and the root README (plan `docs/superpowers/plans/2026-09-16-wave2.md`,
-Stream G; spec section 4.1).
+and the root README (wave 2 plan, Stream G; spec section 4.1).
 
 ## Facade (G.1)
 

@@ -1,8 +1,9 @@
 //! Every GRIB2 section value of the JMA polar radar format reaches the model
 //! and the FM301 view.
 //!
-//! The two committed single-station tars (RS47773 Osaka, N5 reflectivity
-//! and N6 radial velocity, 2019-10-12 09:00Z) are decoded, and every value
+//! The two single-station tars (RS47773 Osaka, N5 reflectivity and N6
+//! radial velocity, 2019-10-12 09:00Z; not redistributed, so these tests
+//! skip unless both are in the testdata cache) are decoded, and every value
 //! is read twice: from the model (root attributes, the WMO originating
 //! centre, `radar_parameters`, each sweep's attributes and `prt`, each
 //! field's attributes) and from the FM301 view with every passthrough item
@@ -85,6 +86,14 @@ fn view_text(view: &VolumeView<'_>, name: &str) -> String {
         Values::Text(text) => text.to_string(),
         _ => panic!("{name} is not text"),
     }
+}
+
+/// Skip the test unless both RS47773 tars are available.
+macro_rules! require_both_tars {
+    () => {
+        recast_radar_testdata::require_file!("jma-n5-20191012-090000-rs47773");
+        recast_radar_testdata::require_file!("jma-n6-20191012-090000-rs47773");
+    };
 }
 
 /// The GRIB2 message of the first member of the real tar `id`: the message
@@ -565,6 +574,7 @@ fn check_tar(id: &str) -> (usize, usize) {
 
 #[test]
 fn every_grib2_section_value_reaches_the_model_and_the_view() {
+    require_both_tars!();
     let n5 = check_tar("jma-n5-20191012-090000-rs47773");
     let n6 = check_tar("jma-n6-20191012-090000-rs47773");
     assert_eq!((n5.0, n6.0), (26, 13));
@@ -572,8 +582,7 @@ fn every_grib2_section_value_reaches_the_model_and_the_view() {
     assert!(n5.1 + n6.1 > 0, "no sweep lacks a radial elevation");
 }
 
-/// The tar header and GRIB2 message of the single member of the committed
-/// tar `id`.
+/// The tar header and GRIB2 message of the single member of the tar `id`.
 fn member(id: &str) -> (Vec<u8>, Vec<u8>) {
     let tar = recast_radar_testdata::bytes(id).unwrap();
     let (message, _) = sections(id);
@@ -610,7 +619,7 @@ fn tar_of(members: &[(Vec<u8>, Vec<u8>)]) -> Vec<u8> {
     tar
 }
 
-/// The two committed RS47773 members in one archive merge into one TAKA
+/// The two RS47773 members in one archive merge into one TAKA
 /// volume (26 reflectivity then 13 velocity sweeps). Their sections 0 and 1
 /// hold the same values (read from the bytes here), so the volume's
 /// attributes are them and no sweep carries its own.
@@ -623,6 +632,7 @@ fn tar_of(members: &[(Vec<u8>, Vec<u8>)]) -> Vec<u8> {
 /// use section is `jma_grib2_local_use_0_member1`, on its own dimension.
 #[test]
 fn merged_members_keep_each_members_values() {
+    require_both_tars!();
     let reflectivity = member("jma-n5-20191012-090000-rs47773");
     let velocity = member("jma-n6-20191012-090000-rs47773");
     let identification = |message: &[u8]| message[16..16 + be32(message, 16) as usize].to_vec();

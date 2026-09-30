@@ -529,11 +529,12 @@ fn ldm_records_without_header(bytes: &[u8]) -> usize {
     count
 }
 
-/// A committed capture of a GRLevelX-style polling server (manifest
-/// `testdata/feeds/manifest.toml`).
-fn polling_capture(id: &str) -> String {
-    let bytes = recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{id}: {err}"));
-    String::from_utf8(bytes).unwrap_or_else(|err| panic!("{id}: {err}"))
+/// A capture of a GRLevelX-style polling server (manifest
+/// `testdata/feeds/manifest.toml`), or `None` when it is not in the testdata
+/// cache (the captures are not redistributed).
+fn polling_capture(id: &str) -> Option<String> {
+    let bytes = recast_radar_testdata::bytes_if_available(id)?;
+    Some(String::from_utf8(bytes).unwrap_or_else(|err| panic!("{id}: {err}")))
 }
 
 /// The polling directory follows the GRLevelX-style servers captured in the
@@ -555,21 +556,22 @@ fn polling_directory_follows_the_grlevelx_conventions() {
 
     // The captured KXWA listing: every name is the one the default name
     // format gives for its site and time, and the listing reads back as
-    // written, LF line ends.
-    let kxwa = polling_capture("polling-ndswc-kxwa-dir-list-20260925");
-    let entries = parse_dir_list(&kxwa);
-    assert_eq!(entries.len(), 1161);
-    assert_eq!(format_dir_list(&entries), kxwa);
-    for entry in &entries {
-        let stamp = entry
-            .name
-            .strip_prefix("KXWA")
-            .and_then(|rest| rest.strip_suffix("_V06.ar2v"))
-            .unwrap_or_else(|| panic!("{}", entry.name));
-        let time = chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%d_%H%M%S")
-            .unwrap_or_else(|err| panic!("{}: {err}", entry.name))
-            .and_utc();
-        assert_eq!(directory.file_name("KXWA", time, b"AR2V0006."), entry.name);
+    // written, LF line ends. Each capture is checked when cached.
+    if let Some(kxwa) = polling_capture("polling-ndswc-kxwa-dir-list-20260925") {
+        let entries = parse_dir_list(&kxwa);
+        assert_eq!(entries.len(), 1161);
+        assert_eq!(format_dir_list(&entries), kxwa);
+        for entry in &entries {
+            let stamp = entry
+                .name
+                .strip_prefix("KXWA")
+                .and_then(|rest| rest.strip_suffix("_V06.ar2v"))
+                .unwrap_or_else(|| panic!("{}", entry.name));
+            let time = chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%d_%H%M%S")
+                .unwrap_or_else(|err| panic!("{}: {err}", entry.name))
+                .and_utc();
+            assert_eq!(directory.file_name("KXWA", time, b"AR2V0006."), entry.name);
+        }
     }
 
     let published = directory
@@ -625,25 +627,28 @@ fn polling_directory_follows_the_grlevelx_conventions() {
 
     // The captured site lists as a root's own: a site already listed leaves
     // them byte for byte; a new one is added at the end.
-    let iem = polling_capture("polling-iem-config-cfg-20260926");
-    let laredo = polling_capture("polling-ewr-laredo-grlevel2-cfg-20260925");
-    assert!(iem.starts_with(&format!("{LIST_FILE_LINE}\n")));
-    let captured = root.join("captured");
-    std::fs::create_dir_all(&captured).unwrap();
-    std::fs::write(captured.join("config.cfg"), &iem).unwrap();
-    std::fs::write(captured.join("grlevel2.cfg"), &laredo).unwrap();
-    let hand_kept = PollingDirectory::new(&captured);
-    hand_kept.list_site("KTLX").unwrap();
-    hand_kept.list_site("LARE").unwrap();
-    assert!(iem.contains("\nSite: KTLX\n") && !iem.contains("LARE"));
-    assert_eq!(
-        std::fs::read_to_string(captured.join("config.cfg")).unwrap(),
-        format!("{iem}Site: LARE\n")
-    );
-    assert_eq!(
-        std::fs::read_to_string(captured.join("grlevel2.cfg")).unwrap(),
-        format!("{laredo}Site: KTLX\n")
-    );
+    if let (Some(iem), Some(laredo)) = (
+        polling_capture("polling-iem-config-cfg-20260926"),
+        polling_capture("polling-ewr-laredo-grlevel2-cfg-20260925"),
+    ) {
+        assert!(iem.starts_with(&format!("{LIST_FILE_LINE}\n")));
+        let captured = root.join("captured");
+        std::fs::create_dir_all(&captured).unwrap();
+        std::fs::write(captured.join("config.cfg"), &iem).unwrap();
+        std::fs::write(captured.join("grlevel2.cfg"), &laredo).unwrap();
+        let hand_kept = PollingDirectory::new(&captured);
+        hand_kept.list_site("KTLX").unwrap();
+        hand_kept.list_site("LARE").unwrap();
+        assert!(iem.contains("\nSite: KTLX\n") && !iem.contains("LARE"));
+        assert_eq!(
+            std::fs::read_to_string(captured.join("config.cfg")).unwrap(),
+            format!("{iem}Site: LARE\n")
+        );
+        assert_eq!(
+            std::fs::read_to_string(captured.join("grlevel2.cfg")).unwrap(),
+            format!("{laredo}Site: KTLX\n")
+        );
+    }
 
     // gzip bytes are named .ar2v.gz; a fixed suffix names every file so.
     let mut gzip = WriteOptions::default();

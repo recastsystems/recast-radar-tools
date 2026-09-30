@@ -2075,6 +2075,12 @@ mod tests {
         recast_radar_testdata::bytes(id).unwrap_or_else(|err| panic!("{err}"))
     }
 
+    /// The COW2 sweep's bytes, or `None` when it is not in the testdata
+    /// cache (the file is not redistributed).
+    fn cow2() -> Option<Vec<u8>> {
+        recast_radar_testdata::bytes_if_available(COW2)
+    }
+
     /// The field with the DORADE parameter name `name`.
     fn field<'s>(sweep: &'s Sweep, name: &str) -> &'s Field {
         sweep
@@ -2131,7 +2137,9 @@ mod tests {
 
     #[test]
     fn decodes_big_endian_real_cow2_sweep() {
-        let bytes = corpus(COW2);
+        let Some(bytes) = cow2() else {
+            return;
+        };
         assert!(looks_like_dorade_bytes(&bytes));
         assert_eq!(detect_endian(&bytes).unwrap(), Endian::Big);
 
@@ -2350,7 +2358,9 @@ mod tests {
     fn rejects_extended_parm_with_absurd_gate_count() {
         // COW2 PARM DBZHC_F: 216-byte extended block at offset 1080,
         // number_cells 375 at block offset 200 (big-endian).
-        let mut bytes = corpus(COW2);
+        let Some(mut bytes) = cow2() else {
+            return;
+        };
         const PARM: usize = 1080;
         assert_eq!(&bytes[PARM..PARM + 4], b"PARM");
         assert_eq!(Endian::Big.i32(&bytes, PARM + 4), 216);
@@ -2410,7 +2420,9 @@ mod tests {
                 3196,
             ),
         ] {
-            let bytes = corpus(id);
+            let Some(bytes) = recast_radar_testdata::bytes_if_available(id) else {
+                continue;
+            };
             // Only the descriptor blocks before the first ray are needed.
             let header = peek_dorade_sweep(&bytes[..first_ray]).expect("peek");
             assert_eq!(header.instrument, instrument, "{id}");
@@ -2473,8 +2485,10 @@ mod tests {
 
     #[test]
     fn mismatched_instruments_are_rejected() {
-        let err =
-            read_dorade_volume_from_slices(&[corpus(COW2), corpus(NOXP_0610_05)]).unwrap_err();
+        let Some(cow2) = cow2() else {
+            return;
+        };
+        let err = read_dorade_volume_from_slices(&[cow2, corpus(NOXP_0610_05)]).unwrap_err();
         assert!(err.to_string().contains("does not match"), "{err}");
         assert!(err.to_string().contains("NOXPRVP"), "{err}");
     }
@@ -2535,7 +2549,10 @@ mod tests {
         // COW2 PARM (binary_format 2 = i16): DBZHC_F scale 100, RHOHV_F scale
         // 10000, bias 0, bad_data -32768; the words stay i16 with the
         // (raw - bias) / scale transform and bad_data as the fill value.
-        let volume = read_dorade_sweep_volume(&corpus(COW2)).expect("decode");
+        let Some(bytes) = cow2() else {
+            return;
+        };
+        let volume = read_dorade_sweep_volume(&bytes).expect("decode");
         let sweep = &volume.sweeps[0];
         for (name, scale) in [
             ("DBZHC_F", 100.0),

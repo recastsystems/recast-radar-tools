@@ -713,12 +713,11 @@ struct Counts {
     legends: usize,
 }
 
-fn check(id: &str) -> Counts {
+/// The counts for `id`, or `None` when the file is not redistributed and
+/// not in the testdata cache.
+fn check(id: &str) -> Option<Counts> {
     let golden = golden(id);
-    let bytes = match recast_radar_testdata::bytes(id) {
-        Ok(bytes) => bytes,
-        Err(err) => panic!("{id}: {err}"),
-    };
+    let bytes = recast_radar_testdata::bytes_if_available(id)?;
     let volume = read_odim_h5_volume(&bytes).unwrap_or_else(|err| panic!("{id}: {err}"));
     // The FM301 view takes every field (quality fields and their flags
     // included) in each flavor, and with every passthrough item.
@@ -812,7 +811,7 @@ fn check(id: &str) -> Counts {
         failures.len(),
         failures.join("\n")
     );
-    counts
+    Some(counts)
 }
 
 macro_rules! every_value_tests {
@@ -820,7 +819,9 @@ macro_rules! every_value_tests {
         $(
             #[test]
             fn $name() {
-                let counts = check($id);
+                let Some(counts) = check($id) else {
+                    return;
+                };
                 eprintln!("{}: {counts:?}", $id);
                 assert!(counts.planes > 0);
             }

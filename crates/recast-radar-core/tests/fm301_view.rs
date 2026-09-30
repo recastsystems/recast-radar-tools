@@ -15,12 +15,12 @@ use recast_radar_core::model::{
 
 /// Decode a corpus file. A file that is neither committed nor cached and
 /// cannot be downloaded skips the calling test only when
-/// `RECAST_RADAR_TESTDATA_OFFLINE` is set; otherwise the test fails, so the
-/// download-only cases never pass vacuously.
+/// `RECAST_RADAR_TESTDATA_OFFLINE` is set or the file is not redistributed;
+/// otherwise the test fails, so the download-only cases never pass vacuously.
 fn volume(id: &str) -> Option<Volume> {
     let path = match recast_radar_testdata::path(id) {
         Ok(path) => path,
-        Err(err) if err.is_offline() && offline_requested() => {
+        Err(err) if err.is_offline() && (offline_requested() || not_redistributed(id)) => {
             eprintln!("skipping: {err}");
             return None;
         }
@@ -31,6 +31,13 @@ fn volume(id: &str) -> Option<Volume> {
     };
     let bytes = std::fs::read(path).unwrap();
     Some(recast_radar_io::read_supported_volume_bytes(&bytes).unwrap())
+}
+
+/// The manifest tags `id` `not-redistributed`: it runs only from a cached
+/// copy.
+fn not_redistributed(id: &str) -> bool {
+    recast_radar_testdata::entry(id)
+        .is_some_and(|entry| entry.tags.iter().any(|tag| tag == "not-redistributed"))
 }
 
 /// `RECAST_RADAR_TESTDATA_OFFLINE` is set (as `recast-radar-testdata` reads

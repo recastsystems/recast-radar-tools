@@ -540,16 +540,17 @@ mod tests {
     const LISTING: &str = "polling-ndswc-kxwa-dir-list-20260925";
 
     /// A served directory holding the real North Dakota SWC KXWA `dir.list`
-    /// capture.
-    fn served_dir(name: &str) -> PathBuf {
+    /// capture, or `None` when the capture (not redistributed) is not in the
+    /// testdata cache.
+    fn served_dir(name: &str) -> Option<PathBuf> {
+        let listing = recast_radar_testdata::path_if_available(LISTING)?;
         let dir =
             std::env::temp_dir().join(format!("recast-radar-serve-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let site = dir.join("KXWA");
         fs::create_dir_all(&site).unwrap();
-        let listing = recast_radar_testdata::path(LISTING).unwrap_or_else(|err| panic!("{err}"));
         fs::copy(listing, site.join("dir.list")).unwrap();
-        fs::canonicalize(dir).unwrap()
+        Some(fs::canonicalize(dir).unwrap())
     }
 
     fn body(response: &Response) -> Vec<u8> {
@@ -574,7 +575,9 @@ mod tests {
 
     #[test]
     fn files_and_listings_are_served() {
-        let root = served_dir("files");
+        let Some(root) = served_dir("files") else {
+            return;
+        };
         let response = respond(&root, "GET", "/KXWA/dir.list");
         assert_eq!(response.status, 200);
         let listing = recast_radar_testdata::bytes(LISTING).unwrap();
@@ -601,7 +604,9 @@ mod tests {
 
     #[test]
     fn paths_outside_the_directory_are_refused() {
-        let root = served_dir("escape");
+        let Some(root) = served_dir("escape") else {
+            return;
+        };
         for target in [
             "/../Cargo.toml",
             "/KXWA/../../x",
@@ -623,7 +628,9 @@ mod tests {
 
     #[test]
     fn real_client_requests_are_answered() {
-        let root = served_dir("clients");
+        let Some(root) = served_dir("clients") else {
+            return;
+        };
         for id in [
             "http-request-head-curl-8.21.0",
             "http-request-head-python-urllib-3.13",
@@ -643,7 +650,9 @@ mod tests {
 
     #[test]
     fn a_slow_request_head_is_cut_off_at_the_deadline() {
-        let root = served_dir("slow");
+        let Some(root) = served_dir("slow") else {
+            return;
+        };
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let mut config = ServeConfig::new(&root, 1).unwrap();

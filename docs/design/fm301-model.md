@@ -7,8 +7,8 @@ with branch `testdata` merged).
 
 Inputs:
 
-- Spec `docs/superpowers/specs/2026-09-16-recast-radar-tools-design.md`, sections 2, 4.2 and 4.3.
-- Plan `docs/superpowers/plans/2026-09-16-wave2.md`: Stream F, and the Global Constraints of
+- The design spec, sections 2, 4.2 and 4.3.
+- The wave 2 plan: Stream F, and the Global Constraints of
   wave 2 and wave 1.
 - WMO-No. 306 *Manual on Codes*, Volume I.2, 2023 edition (updated 2024), Part B section c,
   "WMO-CF Extensions". That covers the General Regulations WMO-CF.1 to WMO-CF.7 (Tables

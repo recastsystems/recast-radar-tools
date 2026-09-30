@@ -1,11 +1,13 @@
 //! Golden-fixture tests for the DORADE decoder against real radar bytes.
 //!
-//! `tests/data/swp.1260521225514.COW2.229.1.0_SUR_v215.head24` is the first
+//! `dorade-cow2-20260521-225514-sur-head24` is the first
 //! 37,380 bytes (all descriptor blocks + the first 24 ray groups, cut at a
 //! block boundary) of a real CSWR COW2 sweepfile from the 2026-05-21
 //! deployment (Radx-written, big-endian, HRD RLE compressed, CSFD gate
 //! geometry, staggered PRT). Expected values below were extracted with an
-//! independent Python block walker + RLE decoder, not with this crate.
+//! independent Python block walker + RLE decoder, not with this crate. The
+//! file is not redistributed with the repository (its license is unknown),
+//! so these tests skip unless a copy is in the testdata cache.
 
 use chrono::{TimeZone, Utc};
 use recast_radar_core::model::Quantity;
@@ -13,7 +15,15 @@ use recast_radar_io_dorade::dorade::{
     looks_like_dorade_bytes, peek_dorade_sweep, read_dorade_sweep_volume,
 };
 
-const FIXTURE: &[u8] = include_bytes!("data/swp.1260521225514.COW2.229.1.0_SUR_v215.head24");
+/// The COW2 sweep's bytes, or skip the test when the file is not available.
+macro_rules! fixture {
+    () => {
+        std::fs::read(recast_radar_testdata::require_file!(
+            "dorade-cow2-20260521-225514-sur-head24"
+        ))
+        .expect("read COW2 fixture")
+    };
+}
 
 fn assert_close(actual: f32, expected: f32, tolerance: f32, what: &str) {
     assert!(
@@ -24,8 +34,9 @@ fn assert_close(actual: f32, expected: f32, tolerance: f32, what: &str) {
 
 #[test]
 fn real_cow2_sweep_decodes_site_and_geometry() {
-    assert!(looks_like_dorade_bytes(FIXTURE));
-    let volume = read_dorade_sweep_volume(FIXTURE).expect("decode COW2 fixture");
+    let fixture = fixture!();
+    assert!(looks_like_dorade_bytes(&fixture));
+    let volume = read_dorade_sweep_volume(&fixture).expect("decode COW2 fixture");
 
     // Site identity and deployment coordinates come from RADD.
     assert_eq!(volume.attrs.instrument_name, "COW2");
@@ -111,7 +122,8 @@ fn real_cow2_sweep_decodes_site_and_geometry() {
 
 #[test]
 fn real_cow2_sweep_decodes_known_moment_values() {
-    let volume = read_dorade_sweep_volume(FIXTURE).expect("decode COW2 fixture");
+    let fixture = fixture!();
+    let volume = read_dorade_sweep_volume(&fixture).expect("decode COW2 fixture");
     let sweep = &volume.sweeps[0];
 
     for quantity in [
@@ -169,7 +181,8 @@ fn real_cow2_sweep_decodes_known_moment_values() {
 
 #[test]
 fn real_cow2_sweep_header_peek_matches_full_decode() {
-    let header = peek_dorade_sweep(FIXTURE).expect("peek COW2 fixture");
+    let fixture = fixture!();
+    let header = peek_dorade_sweep(&fixture).expect("peek COW2 fixture");
     assert_eq!(header.instrument, "COW2");
     assert_eq!(header.volume_number, 215);
     assert_eq!(header.sweep_number, 6);
@@ -184,11 +197,13 @@ fn real_cow2_sweep_header_peek_matches_full_decode() {
 /// under the local mobile-radar corpus (DOW7 Goshen 2009, RaXPol Sulphur
 /// 2016, COW2/DOW7low Goodland + COW2 deployment 2026, GR2 msg31 twins).
 #[test]
-#[ignore = "requires BOWECHO_MOBILE_RADAR_DIR or ~\\Downloads\\obscure_radar"]
+#[ignore = "requires BOWECHO_MOBILE_RADAR_DIR"]
 fn mobile_radar_corpus_decodes_every_archive() {
-    let corpus = std::env::var_os("BOWECHO_MOBILE_RADAR_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from(r"~\Downloads\obscure_radar"));
+    let Some(corpus) = std::env::var_os("BOWECHO_MOBILE_RADAR_DIR").map(std::path::PathBuf::from)
+    else {
+        eprintln!("skipping corpus test; BOWECHO_MOBILE_RADAR_DIR is not set");
+        return;
+    };
     if !corpus.is_dir() {
         eprintln!("skipping corpus test; {} not found", corpus.display());
         return;

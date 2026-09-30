@@ -152,7 +152,15 @@ fn compact_ids(ids: &[&str]) -> String {
     parts.join(", ")
 }
 
+/// Tagged `not-redistributed`: neither committed nor downloadable.
+fn not_redistributed(e: &Entry) -> bool {
+    e.tags.iter().any(|t| t == "not-redistributed")
+}
+
 fn location(e: &Entry) -> String {
+    if not_redistributed(e) {
+        return "not redistributed (cache only)".to_owned();
+    }
     match (&e.committed, e.ephemeral) {
         (Some(path), _) => format!("committed `{path}`"),
         (None, true) => "download (ephemeral URL)".to_owned(),
@@ -170,52 +178,68 @@ fn render() -> String {
     let _ = writeln!(w, "### Totals\n");
     let _ = writeln!(
         w,
-        "| manifest | entries | committed files | committed bytes | download files | download bytes |"
+        "| manifest | entries | committed files | committed bytes | download files | download bytes | not redistributed files | not redistributed bytes |"
     );
-    let _ = writeln!(w, "|---|---:|---:|---:|---:|---:|");
-    let mut grand = [0u64; 5];
+    let _ = writeln!(w, "|---|---:|---:|---:|---:|---:|---:|---:|");
+    let mut grand = [0u64; 7];
     for (name, m) in &manifests {
         let committed: Vec<&Entry> = m.files.iter().filter(|e| e.committed.is_some()).collect();
-        let downloads: Vec<&Entry> = m.files.iter().filter(|e| e.committed.is_none()).collect();
+        let downloads: Vec<&Entry> = m
+            .files
+            .iter()
+            .filter(|e| e.committed.is_none() && !not_redistributed(e))
+            .collect();
+        let withheld: Vec<&Entry> = m.files.iter().filter(|e| not_redistributed(e)).collect();
         let row = [
             m.files.len() as u64,
             committed.len() as u64,
             committed.iter().map(|e| e.size).sum(),
             downloads.len() as u64,
             downloads.iter().map(|e| e.size).sum(),
+            withheld.len() as u64,
+            withheld.iter().map(|e| e.size).sum(),
         ];
         for (g, r) in grand.iter_mut().zip(row) {
             *g += r;
         }
         let _ = writeln!(
             w,
-            "| `{name}` | {} | {} | {} | {} | {} |",
+            "| `{name}` | {} | {} | {} | {} | {} | {} | {} |",
             row[0],
             row[1],
             bytes(row[2]),
             row[3],
-            bytes(row[4])
+            bytes(row[4]),
+            row[5],
+            bytes(row[6])
         );
     }
     let _ = writeln!(
         w,
-        "| **all** | **{}** | **{}** | **{}** | **{}** | **{}** |\n",
+        "| **all** | **{}** | **{}** | **{}** | **{}** | **{}** | **{}** | **{}** |\n",
         grand[0],
         grand[1],
         bytes(grand[2]),
         grand[3],
-        bytes(grand[4])
+        bytes(grand[4]),
+        grand[5],
+        bytes(grand[6])
     );
 
-    let mut formats: BTreeMap<&str, [u64; 2]> = BTreeMap::new();
+    let mut formats: BTreeMap<&str, [u64; 3]> = BTreeMap::new();
     for e in all {
         let slot = formats.entry(e.format.as_str()).or_default();
-        slot[usize::from(e.committed.is_none())] += 1;
+        let column = if not_redistributed(e) {
+            2
+        } else {
+            usize::from(e.committed.is_none())
+        };
+        slot[column] += 1;
     }
-    let _ = writeln!(w, "| format | committed | download |");
-    let _ = writeln!(w, "|---|---:|---:|");
-    for (format, [committed, download]) in &formats {
-        let _ = writeln!(w, "| `{format}` | {committed} | {download} |");
+    let _ = writeln!(w, "| format | committed | download | not redistributed |");
+    let _ = writeln!(w, "|---|---:|---:|---:|");
+    for (format, [committed, download, withheld]) in &formats {
+        let _ = writeln!(w, "| `{format}` | {committed} | {download} | {withheld} |");
     }
     let _ = writeln!(w);
 

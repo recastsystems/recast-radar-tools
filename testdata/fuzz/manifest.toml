@@ -96,10 +96,9 @@ id = "fuzz-writers-dorade-ray-without-time"
 format = "dorade"
 sha256 = "d985ced534efbc4bb7a38de44806fe9d0bb4f4f3a1fc9fe6c0dd3c132bc4c0eb"
 size = 37380
-committed = "files/fuzz/writers/crash-dorade-ray-without-time"
 derived_from = "dorade-cow2-20260521-225514-sur-head24"
 derivation = "Stable mutation of the seed (the writers harness under catch_unwind with overflow checks, driven by a byte and value mutator during the review of the hdf5-netcdf branch, 2026-09-25), committed as found: 73 of its 37380 bytes differ from the seed at the same offsets. Ray 5 of the sweep decodes without a time (NaN). The ODIM writer then left startazT/stopazT out of the whole dataset and wrote whole-second what/starttime and endtime, so every other ray read back at 22:55:14 instead of 0.280 to 0.609 s later"
-tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "endian:big"]
+tags = ["not-redistributed", "fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "endian:big"]
 description = "Writers fuzz crash: a COW2 DORADE sweep with one ray without a time, whose ODIM output lost the sub-second times of every other ray"
 
 [[file]]
@@ -118,10 +117,9 @@ id = "fuzz-writers-odim-gate-spacing-below-float"
 format = "odim-h5"
 sha256 = "27b10651994f7f9132bba4fde3201ab65b3857e331e5ddfb83fefb262cf39c35"
 size = 322411
-committed = "files/fuzz/writers/crash-odim-gate-spacing-below-float"
 derived_from = "odim-itdes-20260924-2135-pvol-class"
 derivation = "fuzz-tools mutate writers 12000 1 (stable mutator, hdf5-netcdf branch, 2026-09-25), run 3020 from the seed as committed, committed as found: 31 of its 322411 bytes differ from the seed at the same offsets (superblock v0: no metadata checksums). Dataset 2's where/rscale became 1.41e-100 m. With RangeLayout::PerRay the CfRadial 1 writer stated that sweep's geometry in float ray_gate_spacing, where it is 0; readers take a spacing that is not positive as fill, so the sweep read back on range(range) (300 m gates from 300 m) instead of its 416 gates centred at 150 m"
-tags = ["fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "hdf5:superblock-v0"]
+tags = ["not-redistributed", "fuzz-regression", "fuzz-target:writers", "fuzz-finding:crash", "derived", "derivation:fuzz-mutation", "hdf5:superblock-v0"]
 description = "Writers fuzz crash: an ODIM sweep whose gate spacing is below the float range, which the CfRadial 1 per-ray layout wrote as a spacing of 0"
 
 [[file]]

@@ -40,7 +40,8 @@ use recast_radar_core::model::{
 };
 use recast_radar_io_dorade::{read_dorade_sweep_volume, read_dorade_volume_from_slices};
 
-/// Every committed DORADE sweepfile.
+/// Every committed DORADE sweepfile, and the ones not redistributed (the
+/// COW2 and N42RF head trims), which are checked only when cached.
 const SWEEPFILES: &[&str] = &[
     "dorade-cow2-20260521-225514-sur-head24",
     "dorade-noxp-20090501-190244-ppi",
@@ -831,8 +832,12 @@ fn platform_type(code: i16) -> PlatformType {
 #[test]
 fn every_descriptor_and_ray_block_reaches_the_model_and_the_view() {
     let (mut values, mut rays, mut corrections) = (0, 0, 0);
+    let mut skipped = 0;
     for id in SWEEPFILES {
-        let bytes = recast_radar_testdata::bytes(id).unwrap();
+        let Some(bytes) = recast_radar_testdata::bytes_if_available(id) else {
+            skipped += 1;
+            continue;
+        };
         let volume: Volume = read_dorade_sweep_volume(&bytes).unwrap();
         let view = fm301::volume_view(&volume, ALL, None).unwrap();
         values += check_descriptors(id, &volume.sweeps[0], &view, 0);
@@ -840,9 +845,12 @@ fn every_descriptor_and_ray_block_reaches_the_model_and_the_view() {
         corrections += check_platform_and_corrections(id, &volume, &view);
     }
     eprintln!("{values} descriptor values, {rays} rays and {corrections} corrections compared");
-    assert!(values > 600, "{values}");
-    assert!(rays > 250, "{rays}");
-    assert!(corrections >= 60, "{corrections}");
+    // The totals are those of every sweepfile.
+    if skipped == 0 {
+        assert!(values > 600, "{values}");
+        assert!(rays > 250, "{rays}");
+        assert!(corrections >= 60, "{corrections}");
+    }
 }
 
 #[test]
@@ -1229,9 +1237,13 @@ fn descriptors_match_radxprint_native() {
     let files = golden["files"].as_object().unwrap();
     assert_eq!(files.len(), SWEEPFILES.len());
     let mut compared = 0;
+    let mut skipped = 0;
     for id in SWEEPFILES {
         let printed = files[*id].as_object().unwrap();
-        let bytes = recast_radar_testdata::bytes(id).unwrap();
+        let Some(bytes) = recast_radar_testdata::bytes_if_available(id) else {
+            skipped += 1;
+            continue;
+        };
         let volume: Volume = read_dorade_sweep_volume(&bytes).unwrap();
         let view = fm301::volume_view(&volume, ALL, None).unwrap();
         let sweep = &volume.sweeps[0];
@@ -1388,5 +1400,8 @@ fn descriptors_match_radxprint_native() {
         }
     }
     eprintln!("{compared} descriptor values compared with RadxPrint -native");
-    assert!(compared > 1500, "{compared}");
+    // The total is that of every sweepfile.
+    if skipped == 0 {
+        assert!(compared > 1500, "{compared}");
+    }
 }

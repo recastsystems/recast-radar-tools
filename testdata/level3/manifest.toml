@@ -1,5 +1,5 @@
 # NEXRAD and TDWR Level III real product corpus (recast-radar-tools Task L3.1).
-# Schema: see Task TD.2 of docs/superpowers/plans/2026-09-16-wave1.md.
+# Schema: see the comment at the top of testdata/manifest.toml.
 # Every file is committed byte-for-byte as obtained under testdata/files/level3/<id>
 # (`committed` is relative to testdata/). `urls` is the direct public download of the
 # same bytes; NCEI archive members have no direct URL, their tarball is named in

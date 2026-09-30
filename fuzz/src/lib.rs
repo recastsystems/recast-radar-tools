@@ -980,17 +980,20 @@ pub fn level2_records(data: &[u8]) -> bool {
 /// `serve::status_for_request`): the bounded request-head reader, the
 /// request line, percent-decoding and path resolution under a served
 /// directory, without sending anything. The directory
-/// (`<temp>/recast-radar-fuzz-serve`) holds `KXWA/dir.list`, a copy of the
-/// committed North Dakota SWC capture, the file the seed requests ask for.
+/// (`<temp>/recast-radar-fuzz-serve`) holds `KXWA/dir.list`, a short
+/// listing in the polling-directory layout, the file the seed requests ask
+/// for.
 /// `true` for a 200 answer.
 pub fn serve_request(data: &[u8]) -> bool {
     static ROOT: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
     let root = ROOT.get_or_init(|| {
-        let listing = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../testdata/files/other/polling/ndswc-KXWA-dir.list-20260925T0318Z");
         let root = std::env::temp_dir().join("recast-radar-fuzz-serve");
         std::fs::create_dir_all(root.join("KXWA")).ok()?;
-        std::fs::copy(listing, root.join("KXWA/dir.list")).ok()?;
+        std::fs::write(
+            root.join("KXWA/dir.list"),
+            "40288 KXWA20260924_214316_V06.ar2v\n40301 KXWA20260924_214848_V06.ar2v\n",
+        )
+        .ok()?;
         std::fs::canonicalize(root).ok()
     });
     match root {

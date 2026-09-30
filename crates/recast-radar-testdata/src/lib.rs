@@ -7,6 +7,10 @@
 //! [`cache_dir`]). Every file handed out is verified against the manifest
 //! SHA-256.
 //!
+//! Entries tagged `not-redistributed` are neither committed nor downloadable
+//! (the repository may not redistribute them): their tests run when a copy
+//! is in the cache and skip otherwise.
+//!
 //! The `download` feature (on by default) fetches entries that are not
 //! committed. Without it only committed and already-cached files resolve,
 //! and the others report [`TestdataError::Offline`], so tests skip.
@@ -157,6 +161,27 @@ pub fn bytes(id: &str) -> Result<Vec<u8>, TestdataError> {
     fs::read(&path).map_err(|e| TestdataError::Io(cache::io_context(&path, &e)))
 }
 
+/// Like [`path`], for tests that check several files and skip only the
+/// unavailable ones: `None`, after printing a `skipping:` line, when the file
+/// is unavailable offline; panics on any other error.
+pub fn path_if_available(id: &str) -> Option<PathBuf> {
+    match path(id) {
+        Ok(path) => Some(path),
+        Err(error) if error.is_offline() => {
+            eprintln!("skipping: {error}");
+            None
+        }
+        Err(error) => panic!("{error}"),
+    }
+}
+
+/// Contents of the verified file for `id`, or `None` when it is unavailable
+/// offline (see [`path_if_available`]).
+pub fn bytes_if_available(id: &str) -> Option<Vec<u8>> {
+    let path = path_if_available(id)?;
+    Some(fs::read(&path).unwrap_or_else(|e| panic!("{}", cache::io_context(&path, &e))))
+}
+
 /// Ids of all entries carrying `tag`, in manifest order.
 pub fn ids_with_tag(tag: &str) -> Vec<&'static str> {
     manifest()
@@ -173,13 +198,9 @@ pub fn ids_with_tag(tag: &str) -> Vec<&'static str> {
 #[macro_export]
 macro_rules! require_file {
     ($id:expr) => {
-        match $crate::path($id) {
-            Ok(p) => p,
-            Err(e) if e.is_offline() => {
-                eprintln!("skipping: {e}");
-                return;
-            }
-            Err(e) => panic!("{e}"),
+        match $crate::path_if_available($id) {
+            Some(p) => p,
+            None => return,
         }
     };
 }
@@ -215,6 +236,18 @@ fn resolve(id: &str, network: bool) -> Result<PathBuf, TestdataError> {
         if path.is_file() {
             verify(entry, &path)?;
         } else {
+            // Files the repository may not redistribute have neither a
+            // committed copy nor a download URL: tests run when a copy has
+            // been placed in the cache, and skip otherwise.
+            if entry.urls.is_empty() {
+                return Err(TestdataError::Offline {
+                    id: id.to_owned(),
+                    source: format!(
+                        "not redistributed with the repository; place a copy at {} to run this test",
+                        path.display()
+                    ),
+                });
+            }
             if !network || cache::offline_forced() || !cfg!(feature = "download") {
                 let reason = if !network {
                     "network access not requested".to_owned()

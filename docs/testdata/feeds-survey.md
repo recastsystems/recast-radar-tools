@@ -29,12 +29,12 @@ part of gap G12. Two questions were asked:
      without a committed fixture: no part of the volume under the 2 MB cap reaches the limit (its radial
      records are 3,074 to 4,693 bytes, so any 4,097 of its records take at least 17.6 MB), and the
      smallest prefix that does (17.8 MB) does not fit the 60 MB total (section 4). Its check, and the
-     check of the committed head against its source, run only where the shared testdata cache holds the
+     check of the head (not redistributed) against its source, run only where the shared testdata cache holds the
      whole file, so CI never runs them. Committing the prefix is an owner decision (section 4).
   2. `jma-lowest-level-valid`: the JMA decoder gives level 1 of the reflectivity level table, which
      JMA's format description of the product defines as "No Echo" (value 0.00), as a valid 0.0 dBZ, so no
-     gate is ever below threshold (section 3.2). The tag is on the committed TAKA member of the Hagibis
-     N5 tar.
+     gate is ever below threshold (section 3.2). The tag is on the TAKA member of the Hagibis N5 tar
+     (not redistributed: its check runs only where the testdata cache holds it).
 - **recast-radar-data changes**: a reader for GR2Analyst polling directories (`polling`: `dir.list`,
   `config.cfg`; listed names that are not plain file names are refused; a root whose `grlevel2.cfg` names
   one site stands for that site; the same API as the `frontends` branch's module, so the two merge into
@@ -89,7 +89,7 @@ same host:
 - IMGW: one listing and two files (the CMAX images of section 2.1).
 - North Dakota SWC (`level2.swc.nd.gov`), at least 2 s apart: the KXWA `dir.list` and the `/raw/` index
   (2026-09-25 01:55-02:00Z), KXWA's `dir.list` once more (03:18Z, cached as
-  `feeds/polling/KXWA/dir.list.20260925` and committed as a polling capture), and `HEAD` requests for the
+  `feeds/polling/KXWA/dir.list.20260925` and kept as a polling capture, not redistributed), and `HEAD` requests for the
   surveyed KXWA volume (01:58Z, 09:03Z, 09:37:45Z, 10:30:34Z and 11:05Z: each 200, with the same
   `Last-Modified` and size) and the newest one.
 - Laredo EWR (`LARE`, section 2.1): six requests by hand, at least 2 s apart (the root's `grlevel2.cfg`,
@@ -102,7 +102,7 @@ same host:
 - JMA's format description of the per-radar polar reflectivity product, once, from `www.mri-jma.go.jp`
   (10:17Z, section 3.2; a copy under `feeds/jma/docs/`).
 - The Iowa Environmental Mesonet's polling root `config.cfg`, once (2026-09-26 02:13:28Z, when the stream
-  was merged; cached under `feeds/polling/iem-root/` and committed as a polling capture).
+  was merged; cached under `feeds/polling/iem-root/` and kept as a polling capture, not redistributed).
 
 Independent readers (Python venv `~/radar-ref-venv`): Py-ART 2.3.0 (`read_nexrad_archive`),
 h5py 3.16.0. The local steps (sections 2.1 and 3.1) were rerun with the committed scripts on the cached
@@ -186,7 +186,7 @@ each first gate centre with `rstart + rscale / 2`, except in one case: AEMET's f
 
 In our decoders (for the decoder streams to judge):
 
-- **JMA** (`recast-radar-io-jma`; **known failure 2**, `jma-lowest-level-valid`, tagged on the committed
+- **JMA** (`recast-radar-io-jma`; **known failure 2**, `jma-lowest-level-valid`, tagged on the
   TAKA member `jma-n5-20191012-090000-rs47773`): every gate of every ITOK sweep of the 21:40Z tar decodes
   as valid, minimum 0.0 dBZ. JMA's format description of this product ("レーダー毎極座標レーダーエコー強度
   GPVフォーマット (GRIB2形式 Ver.2.00)", 2007-05-17, table ※3; published for JMA's weather business
@@ -226,24 +226,25 @@ In the feeds:
 
 Fixtures (`testdata/feeds/manifest.toml`, 5 entries, every one tagged `license:unknown` for the license
 review before publishing): the KXWA volume, checksum-pinned and not committed, and its first 41 LDM
-records, committed (181,437 bytes), which are the one `derived_from` prefix; and three polling-directory
-captures, committed (43 KB: ND SWC's KXWA `dir.list`, the Iowa Environmental Mesonet's root `config.cfg`
-and the Laredo EWR root's `grlevel2.cfg`), which recast-radar-data's polling tests and the
-`polling-listing` fuzz seeds read. Known failure 2 is a tag on the TAKA member of
+records (181,437 bytes), which are the one `derived_from` prefix; and three polling-directory captures
+(43 KB: ND SWC's KXWA `dir.list`, the Iowa Environmental Mesonet's root `config.cfg` and the Laredo EWR
+root's `grlevel2.cfg`), which recast-radar-data's polling tests and the `polling-listing` fuzz seeds
+read. The head and the captures are not redistributed (tag `not-redistributed`): the tests that read
+them run only where the testdata cache holds them. Known failure 2 is a tag on the TAKA member of
 `testdata/other/manifest.toml`. `crates/recast-radar-data/tests/feeds_known_failures.rs` checks each
 failure. For KXWA it pins what an independent reader makes of the same bytes (its `golden` module:
-Py-ART 2.3.0's rays per sweep of the whole volume and of the committed head, printed by
+Py-ART 2.3.0's rays per sweep of the whole volume and of the head, printed by
 `tools/feeds_survey/fixture_goldens.py`) and compares the raw bytes with it, so a fixed decoder's own
 test has its expected values; for JMA it pins the file's own level table. It also checks that the
-committed head is the start of its source where the shared testdata cache holds the source; the check
+head is the start of its source where the shared testdata cache holds the source; the check
 reads the cache only and never downloads. Two of its checks therefore run only on a machine whose
 testdata cache holds the whole KXWA volume (the survey machine's does): known failure 1, and the prefix
 check. Elsewhere, CI included, they print `skipping ...` and `checked 0 of 1 committed prefix` and pass.
 
 | # | Tag | Fixture | Failure | Where to fix |
 |---|---|---|---|---|
-| 1 | `level2-ldm-block-limit` | `ndswc-kxwa-20260924-214316` (the whole 20.6 MB volume, checksum-pinned, not committed: the check reads it from the shared testdata cache and skips where the cache lacks it; its URL still answered on 2026-09-25 11:05Z, `Last-Modified` 2026-09-24 21:48:37Z, and should roll off around 2026-09-28); `ndswc-kxwa-20260924-214316-head41` (41 of 4,760 records, committed) samples the layout | real volumes may have more than 4,096 LDM records | `recast-radar-io-nexrad` `MAX_BZIP_BLOCKS`; the fix's regression test needs the whole volume or its first 4,097 records (17,819,782 bytes, sha256 `bf30ddcf67b75904c1278d0ee44d743b91dc56a389198f10210b45204c6c066b`), both over the 2 MB cap: every radial carries SW, ZDR and RHO noise on all 3,218 gates, about 4.3 KB per record, though REF and VEL are nearly empty. The prefix does not fit the 60 MB total either (open items). Committing it is the owner's decision |
-| 2 | `jma-lowest-level-valid` | `jma-n5-20191012-090000-rs47773` (TAKA member of the Hagibis N5 tar, committed, `testdata/other/manifest.toml`) | level 1 of the reflectivity level table, "No Echo" in JMA's format description (value 0.00), decodes as a valid 0.0 dBZ: all 7,526,400 DBZH gates valid, 5,905,836 of them 0.0 dBZ (3.2) | `recast-radar-io-jma` level table (level 1 as below threshold, a gate state the model keeps, distinct from level 0's missing) |
+| 1 | `level2-ldm-block-limit` | `ndswc-kxwa-20260924-214316` (the whole 20.6 MB volume, checksum-pinned, not committed: the check reads it from the shared testdata cache and skips where the cache lacks it; its URL still answered on 2026-09-25 11:05Z, `Last-Modified` 2026-09-24 21:48:37Z, and should roll off around 2026-09-28); `ndswc-kxwa-20260924-214316-head41` (41 of 4,760 records, not redistributed) samples the layout | real volumes may have more than 4,096 LDM records | `recast-radar-io-nexrad` `MAX_BZIP_BLOCKS`; the fix's regression test needs the whole volume or its first 4,097 records (17,819,782 bytes, sha256 `bf30ddcf67b75904c1278d0ee44d743b91dc56a389198f10210b45204c6c066b`), both over the 2 MB cap: every radial carries SW, ZDR and RHO noise on all 3,218 gates, about 4.3 KB per record, though REF and VEL are nearly empty. The prefix does not fit the 60 MB total either (open items). Committing it is the owner's decision |
+| 2 | `jma-lowest-level-valid` | `jma-n5-20191012-090000-rs47773` (TAKA member of the Hagibis N5 tar, not redistributed, `testdata/other/manifest.toml`) | level 1 of the reflectivity level table, "No Echo" in JMA's format description (value 0.00), decodes as a valid 0.0 dBZ: all 7,526,400 DBZH gates valid, 5,905,836 of them 0.0 dBZ (3.2) | `recast-radar-io-jma` level table (level 1 as below threshold, a gate state the model keeps, distinct from level 0's missing) |
 
 Changes in `recast-radar-data` (this stream):
 
@@ -265,8 +266,8 @@ Changes in `recast-radar-data` (this stream):
   name such as `CON` or `nul.ar2v`), and the client views keep each name once whatever its letter case,
   so a hostile `dir.list` cannot steer a request or a local file name with `\`, `/`, `?`, `#`, `%` or
   `:`, open a Windows device, or make two listed names one local file; a byte-order mark is ignored in a
-  site configuration as in a listing. Tests on the committed ND SWC, IEM and Laredo captures
-  (`testdata/files/other/polling/`); a `polling-listing` fuzz target (same name and wrapper as
+  site configuration as in a listing. Tests on the ND SWC, IEM and Laredo captures (not
+  redistributed: they run where the testdata cache holds them); a `polling-listing` fuzz target (same name and wrapper as
   `frontends`'; it also checks that no two usable names differ only in case), whose seeds are those three
   captures.
 - Provider options are chainable setters that take a `bool` and apply in any order

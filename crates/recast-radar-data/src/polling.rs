@@ -641,11 +641,11 @@ pub fn latest_volume_or_single_site(poll_url: &str) -> Result<SiteVolume, Pollin
 mod tests {
     use super::*;
 
-    /// A committed capture (`testdata/files/other/polling/`), as text.
-    fn capture(id: &str) -> String {
-        let bytes =
-            recast_radar_testdata::bytes(id).unwrap_or_else(|error| panic!("{id}: {error}"));
-        String::from_utf8(bytes).unwrap_or_else(|error| panic!("{id}: {error}"))
+    /// A polling capture, as text, or `None` when it is not in the testdata
+    /// cache (the captures are not redistributed).
+    fn capture(id: &str) -> Option<String> {
+        let bytes = recast_radar_testdata::bytes_if_available(id)?;
+        Some(String::from_utf8(bytes).unwrap_or_else(|error| panic!("{id}: {error}")))
     }
 
     /// North Dakota SWC's KXWA `dir.list`, 2026-09-25 03:18Z: 1,161 LF lines.
@@ -660,7 +660,9 @@ mod tests {
 
     #[test]
     fn a_real_dir_list_parses_oldest_first() {
-        let text = capture(KXWA);
+        let Some(text) = capture(KXWA) else {
+            return;
+        };
         let list = DirList::parse(&text).unwrap();
         assert!(list.skipped.is_empty());
         // Every LF line of the capture is an entry, and every name is usable.
@@ -741,7 +743,9 @@ mod tests {
 
     #[test]
     fn a_real_site_config_lists_every_site_once() {
-        let text = capture(IEM);
+        let Some(text) = capture(IEM) else {
+            return;
+        };
         let sites = SiteConfig::parse(&text).unwrap().sites;
         assert_eq!(sites.len(), 220);
         // Every line but the first (`ListFile: dir.list`) names a site.
@@ -848,14 +852,17 @@ mod tests {
         // A single-site root must still name its one site.
         let config = SiteConfig::parse("\u{feff}Site: KXWA\r\nSite: KBPP\r\n").unwrap();
         assert_eq!(config.sites, ["KXWA", "KBPP"]);
+        // The Laredo capture is not redistributed: checked when cached.
         let root = "http://offsitevpn.ewradar.com/Laredo/archive2.trans";
-        let bom = format!("\u{feff}{}", capture(LAREDO));
-        let sites = SiteConfig::parse(&bom).unwrap().sites;
-        assert_eq!(
-            single_site_url(root, &sites).unwrap(),
-            format!("{root}/LARE")
-        );
-        assert_eq!(parse_site_config(&bom), ["LARE"]);
+        if let Some(laredo) = capture(LAREDO) {
+            let bom = format!("\u{feff}{laredo}");
+            let sites = SiteConfig::parse(&bom).unwrap().sites;
+            assert_eq!(
+                single_site_url(root, &sites).unwrap(),
+                format!("{root}/LARE")
+            );
+            assert_eq!(parse_site_config(&bom), ["LARE"]);
+        }
     }
 
     #[test]
@@ -905,29 +912,34 @@ mod tests {
     #[test]
     fn a_root_naming_one_site_stands_for_that_site() {
         let root = "http://offsitevpn.ewradar.com/Laredo/archive2.trans";
-        let sites = SiteConfig::parse(&capture(LAREDO)).unwrap().sites;
-        assert_eq!(sites, ["LARE"]);
         assert_eq!(
             grlevel2_config_url(&format!("{root}/")),
             format!("{root}/grlevel2.cfg")
         );
-        assert_eq!(
-            single_site_url(&format!("{root}/"), &sites).unwrap(),
-            format!("{root}/LARE")
-        );
+        // The captures are not redistributed: each is checked when cached.
+        if let Some(laredo) = capture(LAREDO) {
+            let sites = SiteConfig::parse(&laredo).unwrap().sites;
+            assert_eq!(sites, ["LARE"]);
+            assert_eq!(
+                single_site_url(&format!("{root}/"), &sites).unwrap(),
+                format!("{root}/LARE")
+            );
+        }
         // The Iowa Environmental Mesonet's root names 220 sites: it is not
         // one site directory.
-        let iem_root = "https://mesonet-nexrad.agron.iastate.edu/level2/raw";
-        let iem = SiteConfig::parse(&capture(IEM)).unwrap().sites;
-        let error = single_site_url(iem_root, &iem).unwrap_err();
-        assert!(
-            matches!(error, PollingError::NotSingleSite { sites: 220, .. }),
-            "{error}"
-        );
-        assert_eq!(
-            error.to_string(),
-            format!("{iem_root}/grlevel2.cfg names 220 sites, not one site directory")
-        );
+        if let Some(iem) = capture(IEM) {
+            let iem_root = "https://mesonet-nexrad.agron.iastate.edu/level2/raw";
+            let iem = SiteConfig::parse(&iem).unwrap().sites;
+            let error = single_site_url(iem_root, &iem).unwrap_err();
+            assert!(
+                matches!(error, PollingError::NotSingleSite { sites: 220, .. }),
+                "{error}"
+            );
+            assert_eq!(
+                error.to_string(),
+                format!("{iem_root}/grlevel2.cfg names 220 sites, not one site directory")
+            );
+        }
         assert!(matches!(
             single_site_url(root, &[]),
             Err(PollingError::NotSingleSite { sites: 0, .. })
@@ -1133,6 +1145,8 @@ mod tests {
     #[cfg(feature = "net")]
     #[test]
     fn oversized_listings_are_refused_while_streaming() {
+        // The KXWA capture is not redistributed: skipped unless cached.
+        let _ = recast_radar_testdata::require_file!(KXWA);
         // No Content-Length: the body is cut off at the 32 MiB listing limit,
         // not read whole.
         let copies = (32 << 20) / 40_635 + 2;

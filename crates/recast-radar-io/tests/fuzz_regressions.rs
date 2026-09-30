@@ -50,6 +50,13 @@ fn volume(id: &str) -> Volume {
     read_supported_volume_bytes(&bytes).unwrap_or_else(|err| panic!("{id}: {err}"))
 }
 
+/// Like `volume`, for an input that is not redistributed: `None` unless it
+/// is in the testdata cache.
+fn cached_volume(id: &str) -> Option<Volume> {
+    let bytes = recast_radar_testdata::bytes_if_available(id)?;
+    Some(read_supported_volume_bytes(&bytes).unwrap_or_else(|err| panic!("{id}: {err}")))
+}
+
 /// Rays per sweep, sorted (the CfRadial 1 writer stores sweeps in time
 /// order).
 fn rays(volume: &Volume) -> Vec<usize> {
@@ -198,7 +205,9 @@ const RAY_WITHOUT_TIME: &str = "fuzz-writers-dorade-ray-without-time";
 /// ODIM_H5: `startazT`/`stopazT` hold NaN for that ray only.
 #[test]
 fn an_odim_sweep_keeps_ray_times_beside_a_ray_without_one() {
-    let volume = volume(RAY_WITHOUT_TIME);
+    let Some(volume) = cached_volume(RAY_WITHOUT_TIME) else {
+        return;
+    };
     let times = &volume.sweeps[0].rays.time_s;
     let unknown = times.iter().filter(|time| time.is_nan()).count();
     assert_eq!(unknown, 1, "{times:?}");
@@ -269,7 +278,9 @@ const SPACING_BELOW_FLOAT: &str = "fuzz-writers-odim-gate-spacing-below-float";
 fn a_gate_spacing_below_float_is_refused_by_the_per_ray_layout() {
     use recast_radar_core::model::RangeCoord;
 
-    let volume = volume(SPACING_BELOW_FLOAT);
+    let Some(volume) = cached_volume(SPACING_BELOW_FLOAT) else {
+        return;
+    };
     assert!(volume.sweeps.iter().any(|sweep| matches!(
         sweep.range,
         RangeCoord::Uniform { spacing_m, .. } if spacing_m > 0.0 && (spacing_m as f32) == 0.0
