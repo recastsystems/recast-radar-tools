@@ -41,6 +41,12 @@ recast_radar = "recast_radar._backend:RecastRadarBackendEntrypoint"
 python-source = "python"
 module-name = "recast_radar._native"
 manifest-path = "Cargo.toml"
+# The workspace source distribution keeps this crate under crates/; copy the
+# license files to its root, where the License-File metadata points.
+include = [
+    { path = "LICENSE-APACHE", format = "sdist" },
+    { path = "LICENSE-MIT", format = "sdist" },
+]
 # abi3-py310 is set on the pyo3 dependency: one wheel per platform serves
 # CPython 3.10 and later.
 

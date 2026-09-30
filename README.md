@@ -1,5 +1,18 @@
 # recast-radar-tools
 
+[![PyPI](https://img.shields.io/pypi/v/recast-radar)](https://pypi.org/project/recast-radar/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/recast-radar/)
+[![Docs](https://img.shields.io/badge/docs-field%20guide-6BB8B8)](https://recastsystems.github.io/recast-radar-docs/)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+
+```sh
+pip install recast-radar
+```
+
+Prebuilt for Windows, Linux and macOS; no Rust toolchain needed. The
+[field guide](https://recastsystems.github.io/recast-radar-docs/) walks
+through Python, the command line and Rust with real data.
+
 Pure-Rust weather radar libraries. They read NEXRAD Level II, NEXRAD and TDWR
 Level III, ODIM_H5, CfRadial 1 and 2 (classic netCDF and netCDF-4), DORADE and
 JMA radar GRIB2 files into one data model that follows WMO FM301 (CfRadial 2),
@@ -16,7 +29,9 @@ Python package `recast_radar` ([`crates/recast-radar-py`](crates/recast-radar-py
 guide [docs/guide/python.md](docs/guide/python.md)) opens radar files as
 xarray DataTrees and Py-ART radars.
 
-Status: version 0.1.0, not published to crates.io, and the API is not stable
+Status: version 0.1.1. The Python package is on
+[PyPI](https://pypi.org/project/recast-radar/); the crates are not on
+crates.io yet, and the API is not stable
 (see [CHANGELOG.md](CHANGELOG.md)). The data model is checked against xradar
 and Py-ART goldens. Design notes: [docs/design](docs/design).
 

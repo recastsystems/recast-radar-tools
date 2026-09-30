@@ -31,22 +31,22 @@ flate2.workspace = true
 image.workspace = true
 rayon.workspace = true
 # `summary` serializes the model (`--json`, `dump`).
-recast-radar-core = { version = "0.1.0", path = "../recast-radar-core", features = ["serde"] }
-recast-radar-data = { version = "0.1.0", path = "../recast-radar-data", optional = true }
-recast-radar-io = { version = "0.1.0", path = "../recast-radar-io" }
+recast-radar-core = { version = "0.1.1", path = "../recast-radar-core", features = ["serde"] }
+recast-radar-data = { version = "0.1.1", path = "../recast-radar-data", optional = true }
+recast-radar-io = { version = "0.1.1", path = "../recast-radar-io" }
 # The CfRadial 1 and FM301 writers behind `convert --to cfradial1|fm301`.
-recast-radar-io-cfradial = { version = "0.1.0", path = "../recast-radar-io-cfradial" }
-recast-radar-io-dorade = { version = "0.1.0", path = "../recast-radar-io-dorade" }
-recast-radar-io-jma = { version = "0.1.0", path = "../recast-radar-io-jma" }
-recast-radar-io-level3 = { version = "0.1.0", path = "../recast-radar-io-level3" }
+recast-radar-io-cfradial = { version = "0.1.1", path = "../recast-radar-io-cfradial" }
+recast-radar-io-dorade = { version = "0.1.1", path = "../recast-radar-io-dorade" }
+recast-radar-io-jma = { version = "0.1.1", path = "../recast-radar-io-jma" }
+recast-radar-io-level3 = { version = "0.1.1", path = "../recast-radar-io-level3" }
 # The Level II writer behind `convert --to level2` and `publish`.
-recast-radar-io-nexrad = { version = "0.1.0", path = "../recast-radar-io-nexrad", features = ["write"] }
+recast-radar-io-nexrad = { version = "0.1.1", path = "../recast-radar-io-nexrad", features = ["write"] }
 # The ODIM_H5 writer behind `convert --to odim`.
-recast-radar-io-odim = { version = "0.1.0", path = "../recast-radar-io-odim" }
-recast-radar-render = { version = "0.1.0", path = "../recast-radar-render" }
-recast-radar-correct = { version = "0.1.0", path = "../recast-radar-correct" }
-recast-radar-map = { version = "0.1.0", path = "../recast-radar-map" }
-recast-radar-retrieve = { version = "0.1.0", path = "../recast-radar-retrieve" }
+recast-radar-io-odim = { version = "0.1.1", path = "../recast-radar-io-odim" }
+recast-radar-render = { version = "0.1.1", path = "../recast-radar-render" }
+recast-radar-correct = { version = "0.1.1", path = "../recast-radar-correct" }
+recast-radar-map = { version = "0.1.1", path = "../recast-radar-map" }
+recast-radar-retrieve = { version = "0.1.1", path = "../recast-radar-retrieve" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

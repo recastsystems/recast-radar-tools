@@ -13,13 +13,13 @@ categories = ["science::geo", "parser-implementations", "encoding"]
 exclude = ["tests/"]
 
 [dependencies]
-recast-radar-bzip2 = { version = "0.1.0", path = "../recast-radar-bzip2" }
+recast-radar-bzip2 = { version = "0.1.1", path = "../recast-radar-bzip2" }
 # Not the workspace entry: that one adds the `now` feature, which this crate
 # does not use.
 chrono = { version = "0.4", default-features = false }
 # zlib-rs backend (pure Rust): NOAAPort distributions wrap products in zlib frames.
 flate2.workspace = true
-recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
+recast-radar-core = { version = "0.1.1", path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]

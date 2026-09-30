@@ -30,11 +30,11 @@ chrono.workspace = true
 flate2.workspace = true
 numpy = "0.29"
 pyo3 = { version = "0.29", features = ["abi3-py310"] }
-recast-radar-cli = { version = "0.1.0", path = "../recast-radar-cli", default-features = false }
-recast-radar-core = { version = "0.1.0", path = "../recast-radar-core" }
-recast-radar-data = { version = "0.1.0", path = "../recast-radar-data", optional = true }
-recast-radar-io = { version = "0.1.0", path = "../recast-radar-io" }
-recast-radar-io-nexrad = { version = "0.1.0", path = "../recast-radar-io-nexrad" }
+recast-radar-cli = { version = "0.1.1", path = "../recast-radar-cli", default-features = false }
+recast-radar-core = { version = "0.1.1", path = "../recast-radar-core" }
+recast-radar-data = { version = "0.1.1", path = "../recast-radar-data", optional = true }
+recast-radar-io = { version = "0.1.1", path = "../recast-radar-io" }
+recast-radar-io-nexrad = { version = "0.1.1", path = "../recast-radar-io-nexrad" }
 serde_json.workspace = true
 
 [build-dependencies]

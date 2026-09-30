@@ -1,11 +1,21 @@
 # Changelog
 
 Changes to the recast-radar-tools crates that affect callers. All crates
-share one version. Nothing has been published yet, so every entry is under
-"Unreleased"; the first release will be 0.1.0. The format follows
+share one version. The Python package is published to PyPI as
+`recast-radar`; the Rust crates are not on crates.io yet. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.1.1 - 2026-09-30
+
+### Fixed
+
+- The Python source distribution carries its license files at the root,
+  where its `License-File` metadata points; PyPI refused the 0.1.0 one.
+
+## 0.1.0 - 2026-09-30
+
+First public release: the Python package (wheels for Linux x86_64, Windows
+x64 and macOS) on PyPI. Everything below is in it.
 
 ### Breaking
 
