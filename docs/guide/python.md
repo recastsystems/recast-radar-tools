@@ -25,9 +25,15 @@ module (`recast_radar._native`) and the Python code around it
 
 ## Install
 
-The package is not on PyPI. Build a wheel from a checkout with
-[maturin](https://www.maturin.rs/) (1.9.4 or later) and a Rust toolchain
-(1.94 or later):
+```sh
+pip install recast-radar             # or "recast-radar[pyart]" for Py-ART
+```
+
+PyPI has abi3 wheels for Linux (x86_64, manylinux2014), Windows (x64) and
+macOS (Apple silicon and Intel), one per platform for CPython 3.10 and later,
+so no Rust toolchain is needed. On other platforms pip builds the source
+distribution, which needs Rust 1.94 or later. To build from a checkout, use
+[maturin](https://www.maturin.rs/) (1.9.4 or later):
 
 ```sh
 cd crates/recast-radar-py
@@ -36,16 +42,10 @@ pip install <the wheel>
 maturin develop --release            # or build and install into the active virtualenv
 ```
 
-The [Python wheels workflow](../../.github/workflows/python-wheels.yml) is set
-to build abi3 wheels for Linux (x86_64, manylinux2014), Windows (x64) and
-macOS (Apple silicon and Intel) on pushes to `main` and on manual dispatch,
-and to keep them as workflow artifacts of the private repository. One wheel
-per platform serves CPython 3.10 and later. It has not run on GitHub yet:
-until a push or a dispatch runs it, there are no such artifacts, and the
-macOS wheels have not been built anywhere (the README's CI section lists what
-was checked locally). The wheels are never uploaded anywhere: there is no
-publish step, and the package metadata carries the `Private :: Do Not
-Upload` classifier, which PyPI refuses.
+The [Python wheels workflow](../../.github/workflows/python-wheels.yml)
+builds the wheels and the source distribution on pushes to `main`, tests
+every wheel, and on a version tag (`v*`) publishes them to PyPI through
+trusted publishing.
 
 Requirements: `numpy` and `xarray` 2024.10 or later (the release with
 `DataTree`). `to_pyart` needs `arm_pyart`. The `net` Cargo feature (on by

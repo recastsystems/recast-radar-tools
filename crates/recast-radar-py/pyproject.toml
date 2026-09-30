@@ -17,10 +17,13 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Atmospheric Science",
-    # PyPI refuses uploads that carry this classifier: the wheels are built
-    # as private CI artifacts only.
-    "Private :: Do Not Upload",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
 ]
+
+[project.urls]
+Documentation = "https://recastsystems.github.io/recast-radar-docs/"
+Repository = "https://github.com/recastsystems/recast-radar-tools"
 
 [project.scripts]
 recast-radar = "recast_radar._cli:main"

@@ -298,8 +298,8 @@ is set to build the Python package as abi3 wheels for Linux (manylinux2014),
 Windows and macOS (Apple silicon and Intel) on pushes to `main` and on
 manual dispatch, run the pytest suite against xradar, Py-ART and MetPy with
 each wheel (Python 3.10 and 3.12 on Linux), and keep the wheels as workflow
-artifacts. Nothing is uploaded to PyPI, and the package carries the
-`Private :: Do Not Upload` classifier, which PyPI rejects. The suite
+artifacts. A version tag (`v*`) also publishes the wheels and a source
+distribution to PyPI as `recast-radar`, through trusted publishing. The suite
 (`crates/recast-radar-py/pytests`) also runs locally after
 `maturin develop` or with a built wheel installed.
 
@@ -307,7 +307,7 @@ artifacts. Nothing is uploaded to PyPI, and the package carries the
 is set to build the `recast-radar` command with the release profile for
 Linux, Windows and macOS (Apple silicon and Intel) on pushes to `main` and on
 manual dispatch, run it on committed test files, and keep the binaries as
-workflow artifacts, which only people with access to the repository can
+workflow artifacts, which signed-in GitHub users can
 download. Nothing is released.
 
 Neither of these two workflows has run on GitHub yet: the branch that adds
