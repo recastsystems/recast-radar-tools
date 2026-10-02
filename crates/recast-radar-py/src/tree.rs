@@ -104,6 +104,7 @@ pub(crate) fn source_format_id(format: SourceFormat) -> &'static str {
         SourceFormat::CfRadial2 => "cfradial2",
         SourceFormat::Dorade => "dorade",
         SourceFormat::JmaGrib2 => "jma_grib2",
+        SourceFormat::MeteoFranceBufr => "meteofrance_bufr",
         SourceFormat::Simulated => "simulated",
         _ => "unknown",
     }
@@ -118,6 +119,7 @@ fn parse_source_format(id: &str) -> SourceFormat {
         "cfradial2" => SourceFormat::CfRadial2,
         "dorade" => SourceFormat::Dorade,
         "jma_grib2" => SourceFormat::JmaGrib2,
+        "meteofrance_bufr" => SourceFormat::MeteoFranceBufr,
         "simulated" => SourceFormat::Simulated,
         _ => SourceFormat::Unknown,
     }

@@ -412,7 +412,7 @@ fn split_scan_cycles(py: Python<'_>, volume: Py<PyVolume>) -> Vec<PyVolume> {
 /// The format of a radar file's bytes, from its first bytes: `"dorade"`,
 /// `"odim_h5"`, `"cfradial"` (classic netCDF), `"cfradial_netcdf4"`
 /// (netCDF-4 CfRadial 1), `"cfradial2"` (netCDF-4 CfRadial 2 / FM301),
-/// `"jma_grib2_tar"`, `"nexrad_level3"` or `"nexrad_level2"` (the router's
+/// `"jma_grib2_tar"`, `"meteofrance_bufr"`, `"nexrad_level3"` or `"nexrad_level2"` (the router's
 /// fallback, also for bytes it does not recognise).
 #[pyfunction]
 fn sniff(data: &[u8]) -> &'static str {
@@ -423,6 +423,7 @@ fn sniff(data: &[u8]) -> &'static str {
         SupportedVolumeFormat::CfRadialNetcdf4 => "cfradial_netcdf4",
         SupportedVolumeFormat::CfRadial2 => "cfradial2",
         SupportedVolumeFormat::JmaGrib2Tar => "jma_grib2_tar",
+        SupportedVolumeFormat::MeteoFranceBufr => "meteofrance_bufr",
         SupportedVolumeFormat::NexradLevel3 => "nexrad_level3",
         SupportedVolumeFormat::NexradLevel2 => "nexrad_level2",
         _ => "other",

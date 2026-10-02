@@ -32,6 +32,7 @@ use recast_radar_core::bounded_read::{
     MAX_DECODED_RADAR_BYTES, copy_bytes_limited, read_to_end_limited,
 };
 use recast_radar_core::model::Volume;
+use recast_radar_io_bufr::BufrError;
 use recast_radar_io_cfradial::CfRadialError;
 use recast_radar_io_dorade::mobile_archive::{self, MobileVolume};
 use recast_radar_io_dorade::{DoradeError, dorade};
@@ -88,6 +89,9 @@ pub enum IoError {
     /// JMA radar GRIB2 tar decode failure.
     #[error(transparent)]
     Jma(#[from] JmaError),
+    /// Meteo-France BUFR decode failure.
+    #[error(transparent)]
+    Bufr(#[from] BufrError),
     /// NEXRAD / TDWR Level III decode failure.
     #[error(transparent)]
     Level3(#[from] Level3Error),
@@ -139,6 +143,10 @@ pub enum SupportedVolumeFormat {
     /// ustar magic at byte 257, JMA GRIB2 templates 3.50120/4.51022/5.200
     /// per the JMA technical format documentation).
     JmaGrib2Tar,
+    /// WMO BUFR (`BUFR` at the start, or in gzip or compress members):
+    /// Meteo-France PAG and PAM polar radar images
+    /// ([`recast_radar_io_bufr::read_meteofrance_volume`]).
+    MeteoFranceBufr,
     /// NEXRAD / TDWR Level III product: NOAAPort or WMO/AWIPS framing, or a
     /// bare message (Message Header Block with the block divider at halfword
     /// 10 and the product code repeated at halfword 16), per
@@ -169,7 +177,9 @@ pub enum SupportedVolumeFormat {
 /// [`SupportedVolumeFormat::NexradLevel2`] so the error surfaces from the
 /// Archive II decoder, matching the historical routing chains.
 pub fn sniff_supported_volume_format(head: &[u8]) -> SupportedVolumeFormat {
-    if dorade::looks_like_dorade_bytes(head) {
+    if recast_radar_io_bufr::looks_like_bufr_bytes(head) {
+        SupportedVolumeFormat::MeteoFranceBufr
+    } else if dorade::looks_like_dorade_bytes(head) {
         SupportedVolumeFormat::Dorade
     } else if hdf5::looks_like_hdf5_bytes(head) {
         match hdf5::H5File::open(head) {
@@ -323,6 +333,14 @@ pub(crate) fn unwrap_containers(raw: &[u8]) -> Result<Unwrapped, IoError> {
 }
 
 fn route(original: &[u8], with_metadata: bool) -> Result<Decoded, IoError> {
+    // BUFR first: Meteo-France files are gzip members whose last may be a
+    // compress member, which the whole-file gzip expansion below refuses.
+    if recast_radar_io_bufr::looks_like_bufr_bytes(original) {
+        return Ok(Decoded {
+            volume: recast_radar_io_bufr::read_meteofrance_volume(original)?,
+            metadata: FormatMetadata::None,
+        });
+    }
     let unwrapped = unwrap_containers(original)?;
     let raw = unwrapped.raw(original);
     let sniff_bytes = unwrapped.sniff(original);
@@ -345,6 +363,9 @@ fn route(original: &[u8], with_metadata: bool) -> Result<Decoded, IoError> {
         }
         SupportedVolumeFormat::JmaGrib2Tar => {
             recast_radar_io_jma::read_jma_tar_first_station(sniff_bytes)?
+        }
+        SupportedVolumeFormat::MeteoFranceBufr => {
+            recast_radar_io_bufr::read_meteofrance_volume(sniff_bytes)?
         }
         SupportedVolumeFormat::NexradLevel3 => {
             let product = match recast_radar_io_level3::decode_message(sniff_bytes)? {

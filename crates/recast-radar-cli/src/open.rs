@@ -155,6 +155,7 @@ pub fn source_format_name(volume: &Volume) -> &'static str {
         SourceFormat::CfRadial2 => "CfRadial 2",
         SourceFormat::Dorade => "DORADE",
         SourceFormat::JmaGrib2 => "JMA GRIB2",
+        SourceFormat::MeteoFranceBufr => "Meteo-France BUFR",
         SourceFormat::Simulated => "simulated",
         _ => "unknown",
     }

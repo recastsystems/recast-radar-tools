@@ -14,8 +14,8 @@ Prebuilt for Windows, Linux and macOS; no Rust toolchain needed. The
 through Python, the command line and Rust with real data.
 
 Pure-Rust weather radar libraries. They read NEXRAD Level II, NEXRAD and TDWR
-Level III, ODIM_H5, CfRadial 1 and 2 (classic netCDF and netCDF-4), DORADE and
-JMA radar GRIB2 files into one data model that follows WMO FM301 (CfRadial 2),
+Level III, ODIM_H5, CfRadial 1 and 2 (classic netCDF and netCDF-4), DORADE,
+JMA radar GRIB2 and Meteo-France radar BUFR files into one data model that follows WMO FM301 (CfRadial 2),
 and write that model as NEXRAD Level II, CfRadial 1, CfRadial 2 / FM301 and
 ODIM_H5. They download NEXRAD Level II
 volumes and real-time chunks from AWS, and data from other public feeds. They
@@ -29,7 +29,7 @@ Python package `recast_radar` ([`crates/recast-radar-py`](crates/recast-radar-py
 guide [docs/guide/python.md](docs/guide/python.md)) opens radar files as
 xarray DataTrees and Py-ART radars.
 
-Status: version 0.1.2. The Python package is on
+Status: version 0.1.3. The Python package is on
 [PyPI](https://pypi.org/project/recast-radar/); the crates are not on
 crates.io yet, and the API is not stable
 (see [CHANGELOG.md](CHANGELOG.md)). The data model is checked against xradar
@@ -103,7 +103,7 @@ sweep  2:  0.88 deg, 720 rays, DBZH ZDR PHIDP RHOHV CCORH
 For a file of any supported format, `io::read_supported_volume_bytes(&bytes)`
 sniffs the format and calls the matching decoder: DORADE, an HDF5 container by
 content (ODIM_H5, netCDF-4 CfRadial 1 or CfRadial 2), classic-netCDF CfRadial
-1, JMA GRIB2 tar, NEXRAD Level III, or Level II. It also unwraps gzip and
+1, JMA GRIB2 tar, Meteo-France BUFR, NEXRAD Level III, or Level II. It also unwraps gzip and
 single-file ZIP archives. A Level III product becomes one sweep per data array;
 `io::read_supported_volume_with_metadata` also returns the decoded product.
 `level3::decode_message(&bytes)` (feature `level3`, part of `io`) decodes any
@@ -151,6 +151,7 @@ file.
 | `recast-radar-io-cfradial` | `cfradial` | CfRadial 1 (classic netCDF CDF-1/CDF-2 or netCDF-4) and CfRadial 2 / FM301 (netCDF-4), through readers written in Rust; CfRadial 1 (CDF-2) and CfRadial 2 / FM301 writers |
 | `recast-radar-io-dorade` | `dorade` | DORADE sweepfiles and mobile-radar (DOW, COW, RaXPol) archives |
 | `recast-radar-io-jma` | `jma` | Japan Meteorological Agency polar-coordinate radar GRIB2 tar archives |
+| `recast-radar-io-bufr` | `bufr` | WMO BUFR (editions 2 to 4, written from the WMO specification, with the WMO and Meteo-France tables embedded) and Meteo-France PAG and PAM polar radar files (gzip and compress members) |
 | `recast-radar-io` | `io` | Format sniffing: routes a byte buffer to the matching decoder |
 | `recast-radar-data` | `data` | NEXRAD Level II archive and real-time chunks on AWS, site catalogs, international and community feeds |
 | `recast-radar-correct` | `correct` | Doppler velocity dealiasing |
@@ -188,8 +189,9 @@ dependency, and a LICENSE file in the package).
 | `cfradial` | `cfradial` | `recast-radar-io-cfradial` | `hdf5` | via `io` |
 | `dorade` | `dorade` | `recast-radar-io-dorade` | | via `io` |
 | `jma` | `jma` | `recast-radar-io-jma` | | via `io` |
+| `bufr` | `bufr` | `recast-radar-io-bufr` | | via `io` |
 | `hdf5` | `hdf5` | `recast-radar-hdf5` | | via `io` |
-| `io` | `io` | `recast-radar-io` | `nexrad` `level3` `odim` `cfradial` `dorade` `jma` | yes |
+| `io` | `io` | `recast-radar-io` | `nexrad` `level3` `odim` `cfradial` `dorade` `jma` `bufr` | yes |
 | `net` | `data` | `recast-radar-data` | | |
 | `correct` | `correct` | `recast-radar-correct` | | yes |
 | `filters` | `filters` | `recast-radar-filters` | | yes |

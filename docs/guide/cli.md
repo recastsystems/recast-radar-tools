@@ -56,6 +56,7 @@ The format of a file is detected from its contents, never from its name:
 | CfRadial 2 / FM301 | netCDF-4, one group per sweep |
 | DORADE | Sweep files, and mobile-radar ZIP archives of sweep files and `.msg31` members (several volumes) |
 | JMA radar GRIB2 | NICT `Z__C_RJTD_*_RDR_JMAGPV_*` tars; one tar holds every station of the network: `--station ID` picks one (JMA id such as `ITOK`, or station number), `--all-stations` reads them all, the default is the first |
+| Meteo-France radar BUFR | PAG (Doppler: reflectivity, its standard deviation, radial velocity) and PAM (dual polarization: reflectivity, RHOHV, PHIDP, ZDR) files, one elevation each, as gzip members (a PAM file ends with a compress member). `--merge` joins a scan's files: each elevation becomes the PAM sweep (240 m) and the PAG Doppler sweep (1 km), the PAM reflectivity kept over the PAG one whatever the order of the files |
 
 gzip wrappers and single-record ZIP responses (NCI THREDDS) are removed first.
 Files larger than 1 GiB are refused. Not read: ODIM Cartesian products
@@ -310,6 +311,8 @@ recast-radar convert KLIX20050829_130035.V06 --to level2 --position-from KLIX202
 recast-radar convert jma-n6.tar --to level2 --nyquist 26.48 --quantization compatible -o vel.ar2v
 recast-radar convert CASKR_volume.h5 --to level2 --site CSKR --sweeps-by-elevation \
     --fields DBZH,VRADH,ZDR,UPHIDP,RHOHV --map UPHIDP=PHI -o CSKR.ar2v   # ECCC: PHI from UPHIDP
+recast-radar convert --merge PAG?65EODC191200.gz PAM?65LFPW191200.gz --to level2 --site LFBH \
+    --sweeps-by-elevation --fields DBZH,VRADH,ZDR,PHIDP,RHOHV -o LFBH.ar2v   # a Meteo-France 5-minute scan
 recast-radar convert FILE --to level2 --chunks -o chunks/     # real-time chunks: chunks/SITE/VOLUME/YYYYMMDD-HHMMSS-NNN-S|I|E
 recast-radar publish FILE... --dir ./polling [--site XXXX] [--keep 30] [--merge]
 ```

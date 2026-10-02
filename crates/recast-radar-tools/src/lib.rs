@@ -57,6 +57,7 @@
 //! | `hdf5` | `hdf5` | `recast-radar-hdf5` | HDF5 reader and writer, the netCDF-4 data model |
 //! | `dorade` | `dorade` | `recast-radar-io-dorade` | DORADE, mobile-radar archives |
 //! | `jma` | `jma` | `recast-radar-io-jma` | JMA polar GRIB2 tar |
+//! | `bufr` | `bufr` | `recast-radar-io-bufr` | WMO BUFR, Meteo-France PAG and PAM radar files |
 //! | `io` | `io` | `recast-radar-io` | format-sniffing router; enables every format feature |
 //! | `net` | `data` | `recast-radar-data` | AWS archive and real-time chunks, feeds |
 //! | `correct` | `correct` | `recast-radar-correct` | velocity dealiasing |
@@ -97,6 +98,8 @@ pub use recast_radar_core as model;
 pub use recast_radar_hdf5 as hdf5;
 #[cfg(feature = "io")]
 pub use recast_radar_io as io;
+#[cfg(feature = "bufr")]
+pub use recast_radar_io_bufr as bufr;
 #[cfg(feature = "cfradial")]
 pub use recast_radar_io_cfradial as cfradial;
 #[cfg(feature = "dorade")]

@@ -609,6 +609,8 @@ pub enum SourceFormat {
     Dorade,
     /// Japan Meteorological Agency polar radar GRIB2.
     JmaGrib2,
+    /// Meteo-France polar radar BUFR (PAG, PAM).
+    MeteoFranceBufr,
     /// A simulated volume (a forward operator's output).
     Simulated,
     /// Not known (the default of a volume built by hand).

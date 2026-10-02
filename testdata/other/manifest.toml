@@ -810,3 +810,49 @@ size = 129
 committed = "files/other/http/request-head-recast-radar-fetch"
 tags = ["http-request", "polling-server"]
 description = "The request head `recast-radar fetch polling http://127.0.0.1:<port>/ KXWA --list` (recast-radar-data's reqwest client) sent for the site's dir.list, captured byte for byte on 2026-09-26: lower-case accept, user-agent and host headers. Input of the `serve` tests and seed of the `serve-request` fuzz target."
+
+# ---------------------------------------------------------------------------
+# Meteo-France polar radar BUFR (PAG, PAM). Received from a user as part of
+# a 2013-06-19 archive whose original distribution is unknown: kept out of
+# the repository; tests run when a copy is in the testdata cache.
+# ---------------------------------------------------------------------------
+
+[[file]]
+id = "meteofrance-pag-07168-20130619-1200-c"
+format = "meteofrance-bufr"
+sha256 = "5b93edb924cf6e377a4ba4d9dd9d1a4006b1219f0a3c1dbac99136e9febd2775"
+size = 140640
+tags = ["not-redistributed", "provider:meteo-france", "license:unknown", "era:2013", "country:FR", "network:meteo-france", "site:07168", "product:pag", "bufr:edition-2", "bufr:local-v12", "container:gzip-members", "moments:reflectivity", "moments:velocity"]
+description = "Meteo-France Arcis-sur-Aube (WMO 07168) PAG file PAGC52EODC191200: 0.4 deg at 2013-06-19 12:00:05Z; three gzip members, one BUFR edition 2 message each: reflectivity (720 x 256 of 1 km, class table), its standard deviation and radial velocity (360 x 256)"
+
+[[file]]
+id = "meteofrance-pag-07274-20130619-1200-e"
+format = "meteofrance-bufr"
+sha256 = "3699b2759153f4a1a3304ac94b785f7f568c32bf5b4f15e6266a018a500a1e45"
+size = 144785
+tags = ["not-redistributed", "provider:meteo-france", "license:unknown", "era:2013", "country:FR", "network:meteo-france", "site:07274", "product:pag", "bufr:edition-2", "bufr:local-v12", "container:gzip-members", "moments:reflectivity", "moments:velocity"]
+description = "Meteo-France Blaisy-Haut (WMO 07274) PAG file PAGE65EODC191200: 0.5 deg at 2013-06-19 12:00:15Z"
+
+[[file]]
+id = "meteofrance-pag-07274-20130619-1200-a"
+format = "meteofrance-bufr"
+sha256 = "48a70464cde943be54d969be866150d33fa4c35467ddfdd992461ecaa625e816"
+size = 54034
+tags = ["not-redistributed", "provider:meteo-france", "license:unknown", "era:2013", "country:FR", "network:meteo-france", "site:07274", "product:pag", "bufr:edition-2", "bufr:local-v12", "container:gzip-members", "moments:reflectivity", "moments:velocity"]
+description = "Meteo-France Blaisy-Haut (WMO 07274) PAG file PAGA65EODC191200: 6 deg at 2013-06-19 11:56:10Z, the PAG half of meteofrance-pam-07274-20130619-1200-a"
+
+[[file]]
+id = "meteofrance-pam-07274-20130619-1200-a"
+format = "meteofrance-bufr"
+sha256 = "3430be46c1207a6ae47831b77a255df7862ae4acaa9133d9f9487e03f46dfc4a"
+size = 518407
+tags = ["not-redistributed", "provider:meteo-france", "license:unknown", "era:2013", "country:FR", "network:meteo-france", "site:07274", "product:pam", "bufr:edition-2", "bufr:local-v12", "container:gzip-members", "container:compress", "moments:reflectivity", "moments:dual-pol"]
+description = "Meteo-France Blaisy-Haut (WMO 07274) PAM file PAMA65LFPW191200: 6 deg at 2013-06-19 11:56:10Z, 720 x 1066 gates of 240 m; five gzip members (reflectivity, RHOHV, PHIDP in 16 bits, ZDR, a Cartesian image) and a final compress (.Z) member (a rain accumulation)"
+
+[[file]]
+id = "meteofrance-pag-07274-20130619-1205-a"
+format = "meteofrance-bufr"
+sha256 = "c8fb46af7cf0507f667868b0851ab64358be45e4580ddc32ed2475116a4fee0e"
+size = 13622
+tags = ["not-redistributed", "provider:meteo-france", "license:unknown", "era:2013", "country:FR", "network:meteo-france", "site:07274", "product:pag", "bufr:edition-2", "bufr:local-v12", "container:gzip-members", "scan:vertical"]
+description = "Meteo-France Blaisy-Haut (WMO 07274) PAG file PAGA65EODC191205: the vertically pointing (90 deg) scan of the 15-minute cycle, 2013-06-19 12:01:10Z"

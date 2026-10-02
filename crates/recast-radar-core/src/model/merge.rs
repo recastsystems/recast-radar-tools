@@ -93,7 +93,25 @@ pub enum MergeError {
 ///   matched a fixed angle); nothing is dropped but a field whose name the
 ///   matched sweep already has. The result is sorted by fixed angle (stable)
 ///   and renumbered: `sweep_number = i`, `elevation_number = i + 1`.
+/// - Meteo-France parts (all [`SourceFormat::MeteoFranceBufr`]) are taken
+///   finest gates first, whatever the order given: a PAM file's 240 m
+///   reflectivity then wins over the PAG file's 1 km one at the same
+///   elevation, which is left out as a field the sweep already has.
 pub fn merge_volumes(parts: Vec<Volume>) -> Result<(Volume, MergeReport), MergeError> {
+    let mut parts = parts;
+    if parts
+        .iter()
+        .all(|part| part.provenance.source_format == SourceFormat::MeteoFranceBufr)
+    {
+        let finest = |volume: &Volume| {
+            volume
+                .sweeps
+                .iter()
+                .filter_map(|sweep| sweep.range.spacing_m())
+                .fold(f64::INFINITY, f64::min)
+        };
+        parts.sort_by(|a, b| finest(a).total_cmp(&finest(b)));
+    }
     let mut parts = parts.into_iter();
     let Some(mut base) = parts.next() else {
         return Err(MergeError::NoParts);

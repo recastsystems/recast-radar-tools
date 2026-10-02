@@ -89,6 +89,8 @@ pub enum Format {
     Dorade,
     /// `jma-grib2-tar`: JMA radar GRIB2 tar archive.
     JmaGrib2Tar,
+    /// `meteofrance-bufr`: Meteo-France radar BUFR (PAG, PAM).
+    MeteoFranceBufr,
     /// Any other format string, kept verbatim.
     Other(String),
 }
@@ -105,6 +107,7 @@ impl Format {
             Self::CfRadial2 => "cfradial2",
             Self::Dorade => "dorade",
             Self::JmaGrib2Tar => "jma-grib2-tar",
+            Self::MeteoFranceBufr => "meteofrance-bufr",
             Self::Other(other) => other,
         }
     }
@@ -121,6 +124,7 @@ impl From<&str> for Format {
             "cfradial2" | "cf-radial2" | "cfradial-2" => Self::CfRadial2,
             "dorade" => Self::Dorade,
             "jma-grib2-tar" => Self::JmaGrib2Tar,
+            "meteofrance-bufr" => Self::MeteoFranceBufr,
             other => Self::Other(other.to_owned()),
         }
     }
@@ -323,6 +327,7 @@ description = "KTLX 2024-03-15 00:02Z; radrs/nexrad comparison volume"
             Format::CfRadial2,
             Format::Dorade,
             Format::JmaGrib2Tar,
+            Format::MeteoFranceBufr,
         ];
         for format in known {
             assert_eq!(Format::from(format.as_str()), format);

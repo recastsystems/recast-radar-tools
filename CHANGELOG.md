@@ -5,6 +5,22 @@ share one version. The Python package is published to PyPI as
 `recast-radar`; the Rust crates are not on crates.io yet. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.3 - 2026-10-02
+
+### Added
+
+- `recast-radar-io-bufr` (facade feature and module `bufr`, part of `io`): a
+  WMO BUFR decoder (editions 2 to 4, uncompressed data), written from the
+  WMO specification, with the WMO master tables and Meteo-France's local
+  tables embedded; and Meteo-France PAG (reflectivity, its standard
+  deviation, radial velocity) and PAM (reflectivity, RHOHV, PHIDP, ZDR)
+  polar radar files, one elevation each, as gzip members with a final
+  compress (`.Z`) member. `read_supported_volume_bytes`, `recast_radar.read`
+  and the command read them (format `meteofrance_bufr`); `merge` (`--merge`)
+  joins a scan's files, the PAM 240 m reflectivity kept over the PAG 1 km
+  one whatever the order of the files.
+- `SourceFormat::MeteoFranceBufr`, `SupportedVolumeFormat::MeteoFranceBufr`.
+
 ## 0.1.2 - 2026-10-02
 
 ### Changed

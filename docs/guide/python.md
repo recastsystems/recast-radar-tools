@@ -82,8 +82,9 @@ Archive II variant, whatever the file name says), NEXRAD and
 TDWR Level III products with a data array (a one-sweep volume), ODIM_H5
 polar volumes, CfRadial 1 (classic netCDF or netCDF-4) and CfRadial 2 /
 FM301 (netCDF-4), DORADE sweep files and mobile-radar ZIP archives (paths
-only), and JMA radar GRIB2 tars. gzip and single-file ZIP wrappers are
-removed first.
+only), JMA radar GRIB2 tars, and Meteo-France PAG and PAM radar BUFR files
+(one elevation each; `merge` joins a scan's files, the PAM 240 m reflectivity
+over the PAG 1 km one). gzip and single-file ZIP wrappers are removed first.
 
 Not read: ODIM Cartesian products, and Level III products without a data
 array (graphic, tabular and text products raise `DecodeError`; `dump` reads
@@ -329,6 +330,11 @@ klix.write("KLIX.ar2v", "level2", position=(ref.latitude, ref.longitude, ref.alt
 caskr = recast_radar.read("CASKR_volume.h5")                    # ECCC: the WMO heading is skipped
 caskr.write("CSKR.ar2v", "level2", site="CSKR", sweeps_by_elevation=True,
             fields=["DBZH", "VRADH", "ZDR", "UPHIDP", "RHOHV"], field_map={"UPHIDP": "PHI"})
+# Meteo-France: one file per elevation and product; merge a 5-minute scan's files.
+from pathlib import Path
+scan = recast_radar.merge([recast_radar.read(p) for p in sorted(Path(".").glob("P*65*191200.gz"))])
+scan.write("LFBH.ar2v", "level2", site="LFBH", sweeps_by_elevation=True,
+           fields=["DBZH", "VRADH", "ZDR", "PHIDP", "RHOHV"])
 ```
 
 `write_chunks(volume, dest=None, *, site=None, overwrite=False)` writes a
