@@ -5,6 +5,35 @@ share one version. The Python package is published to PyPI as
 `recast-radar`; the Rust crates are not on crates.io yet. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.2 - 2026-10-02
+
+### Changed
+
+- The Level II writer's default value coding is `Standard` (NOAA's current
+  codings wherever they hold the values) instead of `Precise`, in
+  `recast-radar-io-nexrad`, the command (`--quantization`) and the Python
+  package (`quantization=`). `Precise` wrote PHI codes up to 65535 and
+  16-bit REF, VEL and SW for 16-bit and float sources: readers that keep
+  NEXRAD's bits (GR2Analyst for a user's ECCC PHIDP, xradar 0.12) misread
+  them, and the files were about three times larger. Pass
+  `--quantization precise` (`quantization="precise"`) for the old coding.
+  Rounding to NOAA's own coding is no longer reported as a note under
+  `Standard`.
+
+### Added
+
+- HDF5 files with a header of up to 64 KiB before the signature, at an
+  offset the HDF5 user-block rule does not allow, open as the bare file
+  does: ECCC volume scans start with a WMO bulletin heading.
+- `--fields DBZH,VRADH,...` (Python `fields=[...]`) keeps only the fields
+  named, for every output format.
+- `--map FIELD=MOMENT` (Python `field_map={"UPHIDP": "PHI"}`) writes a field
+  as the Level II moment named, ahead of the field the writer would pick.
+- `--sweeps-by-elevation` (Python `sweeps_by_elevation=True`) orders the
+  sweeps from the lowest elevation angle up.
+- `recast_radar_io_nexrad::write::Moment::parse` and
+  `Moment::standard_coding`.
+
 ## 0.1.1 - 2026-09-30
 
 ### Fixed

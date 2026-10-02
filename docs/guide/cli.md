@@ -308,6 +308,8 @@ recast-radar convert tar --station ITOK --to level2 --sweeps 0,2,3,6,7,10,11,14,
 recast-radar convert KLIX20050829_130035.V06 --to level2 --position-from KLIX20210829_180425_V06 \
     --drop-negative-range-gates -o KLIX.ar2v                  # Message 1: no position, gates from -375 m
 recast-radar convert jma-n6.tar --to level2 --nyquist 26.48 --quantization compatible -o vel.ar2v
+recast-radar convert CASKR_volume.h5 --to level2 --site CSKR --sweeps-by-elevation \
+    --fields DBZH,VRADH,ZDR,UPHIDP,RHOHV --map UPHIDP=PHI -o CSKR.ar2v   # ECCC: PHI from UPHIDP
 recast-radar convert FILE --to level2 --chunks -o chunks/     # real-time chunks: chunks/SITE/VOLUME/YYYYMMDD-HHMMSS-NNN-S|I|E
 recast-radar publish FILE... --dir ./polling [--site XXXX] [--keep 30] [--merge]
 ```
@@ -328,7 +330,10 @@ writer with chunk output (`VolumeWriter::write_chunks`).
 Before writing, `--sweeps LIST` keeps only the listed sweeps (0-based
 indices and ranges such as `0,2,5-9`, the numbers `info` lists), in that
 order; `--sweeps-in-time-order` puts them in the order their first rays were
-collected; `--split-scan-cycles` writes each scan cycle of the input as a
+collected; `--sweeps-by-elevation` in order of elevation angle, lowest first
+(sweeps at one angle keep their order); `--fields DBZH,VRADH,...` keeps only
+the fields named (as `info` lists them; a name no sweep has is refused);
+`--split-scan-cycles` writes each scan cycle of the input as a
 volume of its own, its sweeps in the order they were collected (`convert`
 writes cycle N to the output name with `_N` before its extension:
 `out.ar2v` gives `out_1.ar2v`, `out_2.ar2v`; `publish` publishes each;
@@ -350,7 +355,8 @@ its earliest radial. Level II takes more:
 
 | Option | Effect |
 |---|---|
-| `--quantization precise\|compatible\|standard` | value coding: `precise` (default) never codes a value more coarsely than its source; `compatible` keeps NEXRAD's word sizes, which xradar 0.12 reads; `standard` writes NOAA's codings where they hold every value. No policy clips a value |
+| `--quantization standard\|compatible\|precise` | value coding: `standard` (default) writes NOAA's codings where they hold every value, which GR2Analyst and every Level II reader expect; `compatible` keeps NEXRAD's word sizes, which xradar 0.12 reads; `precise` never codes a value more coarsely than its source (16-bit moments, PHI codes past 1023, files about three times larger). No policy clips a value |
+| `--map FIELD=MOMENT` | write a field as the moment named (`REF`, `VEL`, `SW`, `ZDR`, `PHI`, `RHO`, `CFP`), ahead of the field the writer would pick: `--map UPHIDP=PHI`. Repeat or separate with commas |
 | `--nyquist M/S`, `--unambiguous-range M` | the radar's own values for radials whose source has none (JMA volumes have no Nyquist velocity) |
 | `--drop-negative-range-gates` | leave out gates centred before the radar (Message 1 volumes place Doppler gates from -375 m) |
 | `--level2-compression bzip2\|none` | LDM bzip2 records (default) or uncompressed records |
@@ -363,13 +369,14 @@ What the writer leaves out and its notes go to standard error:
 $ recast-radar convert dkrom.pvol.20260820T1130.dualpol.h5 --to level2 -o dkrom.ar2v
 recast-radar: left out: field TH (sweeps 0-9): REF carries DBZH instead
 recast-radar: left out: field LDR (sweeps 0-9): no Message 31 moment for this quantity
-wrote dkrom.ar2v (NEXRAD Level II, 762853 bytes, 10 sweeps; some fields or sweeps left out, see above)
+wrote dkrom.ar2v (NEXRAD Level II, 646543 bytes, 10 sweeps; some fields or sweeps left out, see above)
 ```
 
 A coding coarser than the source is a note, for example `recast-radar: note:
 VEL from VRADH: 8-bit, scale 1.8880597, offset 134.16418: values within
 0.26481938 of the source (sweeps 0-12)` for JMA's float velocities under
-`--quantization compatible`. A refusal names the option that helps where
+`--quantization compatible`; under `standard`, rounding to NOAA's own coding
+is not noted. A refusal names the option that helps where
 there is one (`--position`, `--sweeps`, `--drop-negative-range-gates`).
 
 `publish` writes each input volume as a Level II file into a polling

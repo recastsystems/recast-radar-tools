@@ -16,8 +16,8 @@ exclude = ["tests/", "examples/"]
 [dependencies]
 chrono.workspace = true
 rayon.workspace = true
-recast-radar-core = { version = "0.1.1", path = "../recast-radar-core" }
-recast-radar-correct = { version = "0.1.1", path = "../recast-radar-correct" }
+recast-radar-core = { version = "0.1.2", path = "../recast-radar-core" }
+recast-radar-correct = { version = "0.1.2", path = "../recast-radar-correct" }
 thiserror.workspace = true
 
 [dev-dependencies]

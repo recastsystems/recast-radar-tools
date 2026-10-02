@@ -15,10 +15,10 @@ exclude = ["tests/", "examples/"]
 
 [dependencies]
 chrono.workspace = true
-recast-radar-core = { version = "0.1.1", path = "../recast-radar-core" }
-recast-radar-correct = { version = "0.1.1", path = "../recast-radar-correct" }
-recast-radar-map = { version = "0.1.1", path = "../recast-radar-map" }
-recast-radar-retrieve = { version = "0.1.1", path = "../recast-radar-retrieve" }
+recast-radar-core = { version = "0.1.2", path = "../recast-radar-core" }
+recast-radar-correct = { version = "0.1.2", path = "../recast-radar-correct" }
+recast-radar-map = { version = "0.1.2", path = "../recast-radar-map" }
+recast-radar-retrieve = { version = "0.1.2", path = "../recast-radar-retrieve" }
 
 [dev-dependencies]
 # Real-data tests: corpus files decoded with the real readers, goldens as

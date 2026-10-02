@@ -22,7 +22,7 @@
 use std::borrow::Cow;
 use std::io::Write;
 
-use recast_radar_core::model::Volume;
+use recast_radar_core::model::{FieldName, Volume};
 use recast_radar_io::FormatMetadata;
 use recast_radar_io_cfradial::{CfWriteError, Cfradial1Options, Cfradial2Options};
 use recast_radar_io_nexrad::write::{
@@ -62,12 +62,17 @@ fn level2_options(options: &WriteOptions) -> level2::WriteOptions {
     out.icao = options.site_id.clone();
     out.quantization = match options.level2_quantization {
         Level2Quantization::Compatible => Quantization::Compatible,
-        Level2Quantization::Standard => Quantization::Standard,
-        _ => Quantization::Precise,
+        Level2Quantization::Precise => Quantization::Precise,
+        _ => Quantization::Standard,
     };
     out.nyquist_velocity_mps = options.nyquist_velocity_mps;
     out.unambiguous_range_m = options.unambiguous_range_m;
     out.drop_negative_range_gates = options.drop_negative_range_gates;
+    out.field_map = options
+        .level2_field_map
+        .iter()
+        .map(|mapping| (FieldName::parse(&mapping.field), mapping.moment))
+        .collect();
     out
 }
 
@@ -103,7 +108,7 @@ fn range_text(first: usize, last: usize) -> String {
 
 /// The Level II writer's summary as a report. Sweep indices are those of
 /// the volume given to the writer.
-pub(crate) fn level2_report(summary: &WriteSummary) -> WriteReport {
+pub(crate) fn level2_report(summary: &WriteSummary, options: &WriteOptions) -> WriteReport {
     // One line per field and reason, with the sweeps it applies to.
     let mut skipped: Vec<(String, &str, Vec<usize>)> = Vec::new();
     for field in &summary.skipped_fields {
@@ -130,9 +135,16 @@ pub(crate) fn level2_report(summary: &WriteSummary) -> WriteReport {
     }
     let mut notes = Vec::new();
     // Codings that do not give back every source value, one line per
-    // moment, field and coding.
+    // moment, field and coding. Under the standard policy, rounding to
+    // NOAA's own coding is what was asked for: only a moment that had to
+    // take another coding is noted.
+    let standard = matches!(options.level2_quantization, Level2Quantization::Standard);
     let mut inexact: Vec<(String, Vec<usize>, f32)> = Vec::new();
-    for report in summary.moments.iter().filter(|report| !report.exact) {
+    for report in summary.moments.iter().filter(|report| {
+        let rounded_to_standard = standard
+            && (report.word_size, report.scale, report.offset) == report.moment.standard_coding();
+        !report.exact && !rounded_to_standard
+    }) {
         let key = format!(
             "{} from {}: {}-bit, scale {}, offset {}",
             report.moment, report.field, report.word_size, report.scale, report.offset
@@ -303,7 +315,7 @@ impl VolumeWriter for Level2Writer {
             &mut out,
         )
         .map_err(level2_error)?;
-        let report = level2_report(&summary);
+        let report = level2_report(&summary, options);
         check_strict(options, &report)?;
         Ok(report)
     }
@@ -323,7 +335,7 @@ impl VolumeWriter for Level2Writer {
             &level2_options(options),
         )
         .map_err(level2_error)?;
-        let report = level2_report(&chunked.summary);
+        let report = level2_report(&chunked.summary, options);
         check_strict(options, &report)?;
         let chunks = chunked
             .chunks
@@ -449,7 +461,7 @@ impl PollingPublisher for PollingDirectoryPublisher {
             &mut bytes,
         )
         .map_err(level2_error)?;
-        let report = level2_report(&summary);
+        let report = level2_report(&summary, &request.options);
         check_strict(&request.options, &report)?;
         let time = summary
             .volume_time

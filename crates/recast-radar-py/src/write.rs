@@ -20,8 +20,8 @@ use pyo3::exceptions::{PyFileExistsError, PyOSError, PyRuntimeError, PyValueErro
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use recast_radar_cli::backend::{
-    BackendError, Backends, Level2Compression, Level2Quantization, OutputFormat, PublishRequest,
-    SitePosition, VolumeEdits, WriteInput, WriteOptions, WriteReport,
+    BackendError, Backends, FieldMapping, Level2Compression, Level2Quantization, OutputFormat,
+    PublishRequest, SitePosition, VolumeEdits, WriteInput, WriteOptions, WriteReport,
 };
 
 use crate::errors::{UnavailableError, UnrepresentableError};
@@ -88,6 +88,9 @@ impl WriteArgs {
         drop_negative_range_gates: bool,
         sweeps: Option<Vec<usize>>,
         sweeps_in_time_order: bool,
+        sweeps_by_elevation: bool,
+        fields: Option<Vec<String>>,
+        field_map: Option<Vec<(String, String)>>,
         position: Option<(f64, f64, f64)>,
         strict: bool,
     ) -> PyResult<Self> {
@@ -97,9 +100,17 @@ impl WriteArgs {
         options.unambiguous_range_m = unambiguous_range;
         options.drop_negative_range_gates = drop_negative_range_gates;
         options.strict = strict;
+        options.level2_field_map = field_map
+            .unwrap_or_default()
+            .iter()
+            .map(|(field, moment)| FieldMapping::new(field, moment))
+            .collect::<Result<_, _>>()
+            .map_err(PyValueError::new_err)?;
         let mut edits = VolumeEdits::default();
         edits.sweeps = sweeps;
         edits.sweeps_in_time_order = sweeps_in_time_order;
+        edits.sweeps_by_elevation = sweeps_by_elevation;
+        edits.fields = fields;
         edits.position = match position {
             Some((latitude_deg, longitude_deg, altitude_m)) => {
                 let position = SitePosition {
@@ -213,8 +224,9 @@ fn write_atomically(path: &Path, bytes: &[u8], overwrite: bool) -> PyResult<()> 
 #[pyfunction]
 #[pyo3(signature = (
     volume, path, format, *, compression="bzip2", gzip=false, site=None, overwrite=false,
-    quantization="precise", nyquist_velocity=None, unambiguous_range=None,
-    drop_negative_range_gates=false, sweeps=None, sweeps_in_time_order=false, position=None,
+    quantization="standard", nyquist_velocity=None, unambiguous_range=None,
+    drop_negative_range_gates=false, sweeps=None, sweeps_in_time_order=false, sweeps_by_elevation=false,
+    fields=None, field_map=None, position=None,
     strict=false
 ))]
 #[allow(clippy::too_many_arguments)]
@@ -233,6 +245,9 @@ fn _write(
     drop_negative_range_gates: bool,
     sweeps: Option<Vec<usize>>,
     sweeps_in_time_order: bool,
+    sweeps_by_elevation: bool,
+    fields: Option<Vec<String>>,
+    field_map: Option<Vec<(String, String)>>,
     position: Option<(f64, f64, f64)>,
     strict: bool,
 ) -> PyResult<(PathBuf, Report)> {
@@ -246,6 +261,9 @@ fn _write(
         drop_negative_range_gates,
         sweeps,
         sweeps_in_time_order,
+        sweeps_by_elevation,
+        fields,
+        field_map,
         position,
         strict,
     )?;
@@ -258,9 +276,10 @@ fn _write(
 /// writer's report.
 #[pyfunction]
 #[pyo3(signature = (
-    volume, format, *, compression="bzip2", gzip=false, site=None, quantization="precise",
+    volume, format, *, compression="bzip2", gzip=false, site=None, quantization="standard",
     nyquist_velocity=None, unambiguous_range=None, drop_negative_range_gates=false, sweeps=None,
-    sweeps_in_time_order=false, position=None, strict=false
+    sweeps_in_time_order=false, sweeps_by_elevation=false,
+    fields=None, field_map=None, position=None, strict=false
 ))]
 #[allow(clippy::too_many_arguments)]
 fn _to_bytes<'py>(
@@ -276,6 +295,9 @@ fn _to_bytes<'py>(
     drop_negative_range_gates: bool,
     sweeps: Option<Vec<usize>>,
     sweeps_in_time_order: bool,
+    sweeps_by_elevation: bool,
+    fields: Option<Vec<String>>,
+    field_map: Option<Vec<(String, String)>>,
     position: Option<(f64, f64, f64)>,
     strict: bool,
 ) -> PyResult<(Bound<'py, PyBytes>, Report)> {
@@ -289,6 +311,9 @@ fn _to_bytes<'py>(
         drop_negative_range_gates,
         sweeps,
         sweeps_in_time_order,
+        sweeps_by_elevation,
+        fields,
+        field_map,
         position,
         strict,
     )?;
@@ -305,8 +330,9 @@ type ChunkRow<'py> = (String, char, u16, Bound<'py, PyBytes>);
 /// and `kind` its letter (`S`, `I` or `E`), and the writer's report.
 #[pyfunction]
 #[pyo3(signature = (
-    volume, *, site=None, quantization="precise", nyquist_velocity=None, unambiguous_range=None,
-    drop_negative_range_gates=false, sweeps=None, sweeps_in_time_order=false, position=None,
+    volume, *, site=None, quantization="standard", nyquist_velocity=None, unambiguous_range=None,
+    drop_negative_range_gates=false, sweeps=None, sweeps_in_time_order=false, sweeps_by_elevation=false,
+    fields=None, field_map=None, position=None,
     strict=false
 ))]
 #[allow(clippy::too_many_arguments)]
@@ -320,6 +346,9 @@ fn _write_chunks<'py>(
     drop_negative_range_gates: bool,
     sweeps: Option<Vec<usize>>,
     sweeps_in_time_order: bool,
+    sweeps_by_elevation: bool,
+    fields: Option<Vec<String>>,
+    field_map: Option<Vec<(String, String)>>,
     position: Option<(f64, f64, f64)>,
     strict: bool,
 ) -> PyResult<(Vec<ChunkRow<'py>>, Report)> {
@@ -341,6 +370,9 @@ fn _write_chunks<'py>(
         drop_negative_range_gates,
         sweeps,
         sweeps_in_time_order,
+        sweeps_by_elevation,
+        fields,
+        field_map,
         position,
         strict,
     )?;
@@ -380,8 +412,9 @@ fn _write_chunks<'py>(
 #[pyfunction]
 #[pyo3(signature = (
     volume, root, *, site=None, keep=30, compression="bzip2", update_site_config=true,
-    quantization="precise", nyquist_velocity=None, unambiguous_range=None,
-    drop_negative_range_gates=false, sweeps=None, sweeps_in_time_order=false, position=None,
+    quantization="standard", nyquist_velocity=None, unambiguous_range=None,
+    drop_negative_range_gates=false, sweeps=None, sweeps_in_time_order=false, sweeps_by_elevation=false,
+    fields=None, field_map=None, position=None,
     strict=false
 ))]
 #[allow(clippy::too_many_arguments)]
@@ -399,6 +432,9 @@ fn _publish<'py>(
     drop_negative_range_gates: bool,
     sweeps: Option<Vec<usize>>,
     sweeps_in_time_order: bool,
+    sweeps_by_elevation: bool,
+    fields: Option<Vec<String>>,
+    field_map: Option<Vec<(String, String)>>,
     position: Option<(f64, f64, f64)>,
     strict: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
@@ -413,6 +449,9 @@ fn _publish<'py>(
         drop_negative_range_gates,
         sweeps,
         sweeps_in_time_order,
+        sweeps_by_elevation,
+        fields,
+        field_map,
         position,
         strict,
     )?;

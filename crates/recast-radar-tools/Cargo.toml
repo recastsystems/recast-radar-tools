@@ -67,23 +67,23 @@ scattering = ["dep:recast-radar-scattering"]
 serde = ["recast-radar-core/serde"]
 
 [dependencies]
-recast-radar-core = { version = "0.1.1", path = "../recast-radar-core" }
-recast-radar-correct = { version = "0.1.1", path = "../recast-radar-correct", optional = true }
-recast-radar-data = { version = "0.1.1", path = "../recast-radar-data", optional = true }
-recast-radar-filters = { version = "0.1.1", path = "../recast-radar-filters", optional = true }
-recast-radar-hdf5 = { version = "0.1.1", path = "../recast-radar-hdf5", optional = true }
-recast-radar-io = { version = "0.1.1", path = "../recast-radar-io", optional = true }
-recast-radar-io-cfradial = { version = "0.1.1", path = "../recast-radar-io-cfradial", optional = true }
-recast-radar-io-dorade = { version = "0.1.1", path = "../recast-radar-io-dorade", optional = true }
-recast-radar-io-jma = { version = "0.1.1", path = "../recast-radar-io-jma", optional = true }
-recast-radar-io-level3 = { version = "0.1.1", path = "../recast-radar-io-level3", optional = true }
-recast-radar-io-nexrad = { version = "0.1.1", path = "../recast-radar-io-nexrad", optional = true }
-recast-radar-io-odim = { version = "0.1.1", path = "../recast-radar-io-odim", optional = true }
-recast-radar-map = { version = "0.1.1", path = "../recast-radar-map", optional = true }
-recast-radar-render = { version = "0.1.1", path = "../recast-radar-render", optional = true }
-recast-radar-retrieve = { version = "0.1.1", path = "../recast-radar-retrieve", optional = true }
-recast-radar-scattering = { version = "0.1.1", path = "../recast-radar-scattering", optional = true }
-recast-radar-track = { version = "0.1.1", path = "../recast-radar-track", optional = true }
+recast-radar-core = { version = "0.1.2", path = "../recast-radar-core" }
+recast-radar-correct = { version = "0.1.2", path = "../recast-radar-correct", optional = true }
+recast-radar-data = { version = "0.1.2", path = "../recast-radar-data", optional = true }
+recast-radar-filters = { version = "0.1.2", path = "../recast-radar-filters", optional = true }
+recast-radar-hdf5 = { version = "0.1.2", path = "../recast-radar-hdf5", optional = true }
+recast-radar-io = { version = "0.1.2", path = "../recast-radar-io", optional = true }
+recast-radar-io-cfradial = { version = "0.1.2", path = "../recast-radar-io-cfradial", optional = true }
+recast-radar-io-dorade = { version = "0.1.2", path = "../recast-radar-io-dorade", optional = true }
+recast-radar-io-jma = { version = "0.1.2", path = "../recast-radar-io-jma", optional = true }
+recast-radar-io-level3 = { version = "0.1.2", path = "../recast-radar-io-level3", optional = true }
+recast-radar-io-nexrad = { version = "0.1.2", path = "../recast-radar-io-nexrad", optional = true }
+recast-radar-io-odim = { version = "0.1.2", path = "../recast-radar-io-odim", optional = true }
+recast-radar-map = { version = "0.1.2", path = "../recast-radar-map", optional = true }
+recast-radar-render = { version = "0.1.2", path = "../recast-radar-render", optional = true }
+recast-radar-retrieve = { version = "0.1.2", path = "../recast-radar-retrieve", optional = true }
+recast-radar-scattering = { version = "0.1.2", path = "../recast-radar-scattering", optional = true }
+recast-radar-track = { version = "0.1.2", path = "../recast-radar-track", optional = true }
 
 [dev-dependencies]
 # Without `download`: the facade tests read committed fixtures only, and the

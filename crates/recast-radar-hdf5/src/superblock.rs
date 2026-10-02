@@ -21,8 +21,25 @@ pub(crate) struct Superblock {
     pub(crate) root: u64,
 }
 
-/// Offset of the HDF5 signature: 0, 512, 1024, 2048, ... (section II).
+/// Longest prefix searched for a signature at an offset section II does not
+/// allow: a WMO bulletin heading (`IRVX40 CWAO 012240`) or another short
+/// text header that a distributor puts before the file.
+pub(crate) const MAX_PREFIX: usize = 64 * 1024;
+
+/// Offset of the HDF5 signature: 0, 512, 1024, 2048, ... (section II); else
+/// the first offset within [`MAX_PREFIX`] bytes where it starts, for files
+/// some distributor has put a header in front of (ECCC volume scans carry a
+/// text heading). Every address is relative to the signature either way.
 pub(crate) fn signature_offset(bytes: &[u8]) -> Option<usize> {
+    standard_signature_offset(bytes).or_else(|| {
+        let end = bytes.len().min(MAX_PREFIX + SIGNATURE.len());
+        bytes[..end]
+            .windows(SIGNATURE.len())
+            .position(|window| window == SIGNATURE)
+    })
+}
+
+fn standard_signature_offset(bytes: &[u8]) -> Option<usize> {
     let mut at = 0usize;
     loop {
         if bytes.get(at..at.checked_add(SIGNATURE.len())?) == Some(&SIGNATURE[..]) {
@@ -35,8 +52,9 @@ pub(crate) fn signature_offset(bytes: &[u8]) -> Option<usize> {
     }
 }
 
-/// Find the superblock (at 0, 512, 1024, 2048, ... per section II) and parse
-/// it; `verify` checks the version 2/3 checksum.
+/// Find the superblock (at 0, 512, 1024, 2048, ... per section II, or after
+/// a short header; see [`signature_offset`]) and parse it; `verify` checks
+/// the version 2/3 checksum.
 pub(crate) fn find(bytes: &[u8], verify: bool) -> Result<Superblock> {
     match signature_offset(bytes) {
         Some(at) => parse(bytes, at, verify),

@@ -56,7 +56,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use thiserror::Error;
 
 use backend::{
-    BackendError, Backends, Level2Compression, Level2Quantization, OutputFormat, SitePosition,
+    BackendError, Backends, FieldMapping, Level2Compression, Level2Quantization, OutputFormat,
+    SitePosition,
 };
 
 /// Exit status of a failed command.
@@ -305,11 +306,16 @@ pub struct Level2Args {
     /// Level II record packing.
     #[arg(long, value_enum, default_value_t)]
     pub level2_compression: Level2Compression,
-    /// Level II value coding: precise never codes a value more coarsely than its source; compatible
-    /// keeps NEXRAD's word sizes (what xradar 0.12 reads); standard writes NOAA's codings where they
-    /// hold every value. No policy clips a value.
+    /// Level II value coding: standard (the default) writes NOAA's codings where they hold every
+    /// value, which GR2Analyst and every Level II reader expect; compatible keeps NEXRAD's word sizes
+    /// (what xradar 0.12 reads); precise never codes a value more coarsely than its source (16-bit
+    /// moments, PHI codes past 1023). No policy clips a value.
     #[arg(long, value_enum, default_value_t)]
     pub quantization: Level2Quantization,
+    /// Level II: write FIELD as MOMENT (REF, VEL, SW, ZDR, PHI, RHO or CFP), ahead of the field
+    /// the writer would pick for it, such as UPHIDP=PHI. Repeat or separate with commas.
+    #[arg(long = "map", value_name = "FIELD=MOMENT", value_delimiter = ',')]
+    pub field_map: Vec<FieldMapping>,
     /// The radar's Nyquist velocity (m/s), written in every radial whose source has none (JMA
     /// volumes have none). Without it such radials carry 0, which readers take as unknown.
     #[arg(long, value_name = "M/S")]
@@ -336,6 +342,14 @@ pub struct EditArgs {
     /// Put the sweeps in the order their first rays were collected.
     #[arg(long)]
     pub sweeps_in_time_order: bool,
+    /// Put the sweeps in order of elevation angle, lowest first (sweeps at the same angle stay in
+    /// the order they were in).
+    #[arg(long)]
+    pub sweeps_by_elevation: bool,
+    /// Keep only these fields (names as `info` lists them, such as DBZH,VRADH,UPHIDP); a name no
+    /// sweep has is refused.
+    #[arg(long, value_name = "NAMES", value_delimiter = ',')]
+    pub fields: Option<Vec<String>>,
     /// Write each scan cycle of the input as its own volume, its sweeps in the order they were
     /// collected (a JMA 10-minute tar holds two 5-minute cycles; a Level II file holds one):
     /// convert writes cycle N to --output with _N before its extension (out_1.ar2v), publish

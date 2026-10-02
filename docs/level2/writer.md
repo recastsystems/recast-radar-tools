@@ -51,7 +51,7 @@ the bzip2 encoder, "Compression seam" below):
 | `gzip` | `false` | wrap the whole file in gzip |
 | `icao` | `None` | site identifier, 1 to 4 of `[A-Za-z0-9_]`, padded with `_` |
 | `vcp` | `None` | VCP number for the VOL blocks and Messages 2 and 5 |
-| `quantization` | `Precise` | value coding policy (below) |
+| `quantization` | `Standard` | value coding policy (below) |
 | `radials_per_record` | 120 | radials per record, 1 to 65535 |
 | `record_layout` | `Continuous` | `Continuous`: records run on across cuts; `WithinCuts`: each cut's last record holds the rest of its radials (below) |
 | `volume_number` | `None` | the header's `.NNN`, 1 to 999; a Level II source's own, else 1 |
@@ -284,9 +284,9 @@ Py-ART decodes every sweep of a moment with the first sweep's scale and offset.
 
 | Policy | Coding |
 |---|---|
-| `Precise` (default) | no value coded more coarsely than its source stores it. The ICD's typical coding when every value lies on it; else an exact coding of the values' own evenly spaced grid: its step is the storage step of integer sources, else estimated from the gaps between float values, else the coarsest of 1, 0.5, 0.25, 0.1, 0.05, 0.01, ..., 0.0001 that holds every value (JMA's uneven level tables are hundredths); 8-bit words when the grid has at most 254 levels, else 16-bit. Only float data on no such grid (more than 65534 levels) is coded with the finest 16-bit coding that covers it, with the error reported. |
+| `Precise` | no value coded more coarsely than its source stores it. The ICD's typical coding when every value lies on it; else an exact coding of the values' own evenly spaced grid: its step is the storage step of integer sources, else estimated from the gaps between float values, else the coarsest of 1, 0.5, 0.25, 0.1, 0.05, 0.01, ..., 0.0001 that holds every value (JMA's uneven level tables are hundredths); 8-bit words when the grid has at most 254 levels, else 16-bit. Only float data on no such grid (more than 65534 levels) is coded with the finest 16-bit coding that covers it, with the error reported. |
 | `Compatible` | the same choices within the word sizes NEXRAD files use: REF, VEL, SW, RHO and CFP 8-bit, ZDR and PHI 8-bit or 16-bit with codes up to 2047 and 1023. What does not fit is coded with the finest such coding that covers every value, coarser than a 16-bit or float source. |
-| `Standard` | the ICD's typical codings as NOAA's current files carry them (KTLX 2024, KILX 2026): REF 8-bit at scale 2 and offset 66, VEL and SW 8-bit at 2 and 129, ZDR 16-bit at 32 and 418, PHI 16-bit at 2.8361 and 2, RHO 8-bit at 300 and -60.5, CFP 8-bit at 1 and 8, rounding to the nearest code. It never clips: a moment with any value outside its typical coding's range (DMI's RHOHV from 0, below the RHO coding's 0.208 floor) is coded as `Compatible` codes it instead. |
+| `Standard` (default) | the ICD's typical codings as NOAA's current files carry them (KTLX 2024, KILX 2026): REF 8-bit at scale 2 and offset 66, VEL and SW 8-bit at 2 and 129, ZDR 16-bit at 32 and 418, PHI 16-bit at 2.8361 and 2, RHO 8-bit at 300 and -60.5, CFP 8-bit at 1 and 8, rounding to the nearest code. It never clips: a moment with any value outside its typical coding's range (DMI's RHOHV from 0, below the RHO coding's 0.208 floor) is coded as `Compatible` codes it instead. |
 
 `MomentReport::max_abs_error` is the largest difference between a source value and the value a
 reader decodes; `exact` is set when that is float rounding of the coding.
@@ -297,8 +297,12 @@ moment, and a volume with a value its coding cannot hold is refused
 them; the refusal is met under the real-time `ChunkWriter`, whose codings the planned volume fixes
 before the data arrives ("Real-time chunks" below).
 
-**Which policy.** `Precise` is the default because a converter should not lose precision it was
-given. Where every value fits 8 bits exactly it writes what `Compatible` writes; this is the case
+**Which policy.** `Standard` is the default: it writes what NOAA's radars send, which every Level
+II reader expects. Under `Precise`, a 16-bit or float PHIDP (ECCC's, for one) is coded with PHI
+codes up to 65535, which readers that keep NEXRAD's 10 PHI bits (xradar 0.12, and GR2Analyst as a
+user reported) misread, and its 16-bit REF, VEL and SW files are about three times larger. Choose
+`Precise` to keep a source's precision for readers that take any coding. Where every value fits 8
+bits exactly it writes what `Compatible` writes; this is the case
 for most ODIM feeds (8-bit data at one gain and offset per moment). The two differ for 16-bit and float sources, and for 8-bit sources with 255 or 256 levels
 or with different gains in different sweeps. Sweep 0 of the committed fixtures (step = 1 / scale):
 
@@ -319,9 +323,10 @@ dBZ, 156 m/s and 41 dB). The independent-reader check below confirms that its va
 the masked codes, and that Py-ART, MetPy, RSL, LROSE Radx, the `nexrad` crate and this decoder read
 the true values. GR2Analyst was not run, so how it reads a 16-bit REF, VEL or SW, or a scale and
 offset NOAA does not write (the exact-grid codings of `Precise` and `Compatible`, such as BEJAB's
-VEL at scale 2.3827), has not been checked. Choose `Compatible` for files that must read in xradar
-0.12, and `Standard` for NOAA's current codings wherever they hold the values. The precision each
-gives up is in `max_abs_error`. Which one is the default is an owner decision (Open items).
+VEL at scale 2.3827), has not been checked. `Compatible` also reads in xradar 0.12, and keeps more
+of a source's precision than `Standard` where a source's grid fits NEXRAD's word sizes. The
+precision each gives up is in `max_abs_error`; the command and the Python package note it, except
+where `Standard` rounds to NOAA's own coding, which is what it is for.
 
 ### Site, VCP, time, location
 
@@ -733,13 +738,10 @@ against milliseconds without it), so the router target runs at 16 to 50 inputs a
 **Decisions for the owner.** Each is a default where the ICD leaves a choice. The writer does
 what the list says; each other choice is one option away.
 
-1. **Quantisation default.** `Precise` (the default) never codes a value more coarsely than its
-   source: it writes 16-bit REF, VEL and SW for 16-bit and float sources (JMA's REF, CfRadial and
-   DORADE fields), and exact-grid scales and offsets for 8-bit sources off NOAA's grid (BEJAB's
-   VEL at 2.3827). xradar 0.12 misreads those 16-bit moments, and whether GR2Analyst reads them
-   has not been checked. `Compatible` keeps NEXRAD's word sizes (xradar reads it right; the
-   precision lost is reported). `Standard` writes NOAA's current codings wherever they hold the
-   values.
+1. **Quantisation default.** `Standard` (since 0.1.2; `Precise` before): NOAA's current codings
+   wherever they hold the values. `Precise` wrote 16-bit REF, VEL and SW and PHI codes up to
+   65535 for 16-bit and float sources, which readers that keep NEXRAD's bits misread (a user's
+   GR2Analyst showed ECCC's PHIDP wrongly), in files about three times the size.
 2. **VCP.** 0 (no pattern) when neither `options.vcp` nor the volume names one.
 3. **Record layout.** `Continuous` (the default) runs records across cuts that are not multiples
    of 120 radials; `WithinCuts` ends each record with its cut, as NOAA's chunks happen to (their

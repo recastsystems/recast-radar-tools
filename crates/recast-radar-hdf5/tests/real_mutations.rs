@@ -50,11 +50,35 @@ fn magic_sniffer_matches_signature_only() {
     assert!(looks_like_hdf5_bytes(&latest[512..]));
     assert!(!looks_like_hdf5_bytes(&latest[..519]));
     assert!(H5File::open(&latest).is_ok());
-    // Only power-of-two offsets from 512 count: shifted by 256 bytes, the
-    // same file is not HDF5.
-    let mut shifted = vec![0u8; 256];
-    shifted.extend_from_slice(&bejab);
-    assert!(!looks_like_hdf5_bytes(&shifted));
+    // A header at an offset section II does not allow (a WMO bulletin
+    // heading, as ECCC volume scans carry) is skipped when it is at most
+    // 64 KiB long: the file opens with every address relative to the
+    // signature, and holds what the bare file holds.
+    let mut headed = b"IRVX40 CWAO 012240\r\r\n".to_vec();
+    headed.extend_from_slice(&bejab);
+    assert!(looks_like_hdf5_bytes(&headed));
+    let bare_file = H5File::open(&bejab).expect("open BEJAB");
+    let headed_file = H5File::open(&headed).expect("open BEJAB behind a WMO heading");
+    let paths = |file: &H5File| -> Vec<String> {
+        file.objects().map(|(path, _)| path.to_owned()).collect()
+    };
+    assert_eq!(paths(&headed_file), paths(&bare_file));
+    assert_eq!(
+        headed_file
+            .dataset("/dataset1/data1/data")
+            .expect("read")
+            .values,
+        bare_file
+            .dataset("/dataset1/data1/data")
+            .expect("read")
+            .values
+    );
+    let mut long_header = vec![b' '; 64 * 1024];
+    long_header.extend_from_slice(&bejab);
+    assert!(looks_like_hdf5_bytes(&long_header));
+    let mut too_long = vec![b' '; 64 * 1024 + 1];
+    too_long.extend_from_slice(&bejab);
+    assert!(!looks_like_hdf5_bytes(&too_long));
 }
 
 /// Root group object header at 96 (h5py): its first message block starts at

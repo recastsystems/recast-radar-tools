@@ -76,6 +76,23 @@ impl Moment {
         }
     }
 
+    /// The moment named `name` ([`Moment::name`], ASCII case-insensitive,
+    /// surrounding spaces ignored), or `None`.
+    pub fn parse(name: &str) -> Option<Moment> {
+        let name = name.trim();
+        Moment::ALL
+            .into_iter()
+            .find(|moment| moment.name().eq_ignore_ascii_case(name))
+    }
+
+    /// The ICD's typical coding of the moment, as NOAA's current files carry
+    /// it and [`super::Quantization::Standard`] writes it: word size in bits,
+    /// scale and offset (`value = (code - offset) / scale`).
+    pub fn standard_coding(self) -> (u8, f32, f32) {
+        let coding = quantize::standard_codings(self)[0];
+        (coding.word_size, coding.scale, coding.offset)
+    }
+
     /// The name without padding.
     pub fn name(self) -> &'static str {
         match self {

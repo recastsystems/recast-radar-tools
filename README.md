@@ -29,7 +29,7 @@ Python package `recast_radar` ([`crates/recast-radar-py`](crates/recast-radar-py
 guide [docs/guide/python.md](docs/guide/python.md)) opens radar files as
 xarray DataTrees and Py-ART radars.
 
-Status: version 0.1.1. The Python package is on
+Status: version 0.1.2. The Python package is on
 [PyPI](https://pypi.org/project/recast-radar/); the crates are not on
 crates.io yet, and the API is not stable
 (see [CHANGELOG.md](CHANGELOG.md)). The data model is checked against xradar

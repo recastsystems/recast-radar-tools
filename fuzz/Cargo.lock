@@ -602,14 +602,14 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-bzip2"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rayon",
 ]
 
 [[package]]
 name = "recast-radar-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "clap",
@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "serde",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-correct"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "rayon",
@@ -653,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-data"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "quick-xml",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-filters"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rayon",
  "recast-radar-core",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-hdf5"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "flate2",
  "thiserror",
@@ -711,7 +711,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-io"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "flate2",
  "recast-radar-core",
@@ -726,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-io-cfradial"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "recast-radar-core",
@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-io-dorade"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "rayon",
@@ -747,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-io-jma"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "recast-radar-core",
@@ -756,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-io-level3"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "flate2",
@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-io-nexrad"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "flate2",
@@ -779,7 +779,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-io-odim"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "recast-radar-core",
@@ -789,7 +789,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-map"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rayon",
  "recast-radar-core",
@@ -800,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-render"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "image",
  "rayon",
@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-retrieve"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "rayon",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "recast-radar-testdata"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bzip2",
  "flate2",

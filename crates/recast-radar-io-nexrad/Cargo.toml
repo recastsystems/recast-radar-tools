@@ -33,8 +33,8 @@ write = ["recast-radar-bzip2/rayon"]
 chrono.workspace = true
 flate2.workspace = true
 rayon.workspace = true
-recast-radar-bzip2 = { version = "0.1.1", path = "../recast-radar-bzip2" }
-recast-radar-core = { version = "0.1.1", path = "../recast-radar-core" }
+recast-radar-bzip2 = { version = "0.1.2", path = "../recast-radar-bzip2" }
+recast-radar-core = { version = "0.1.2", path = "../recast-radar-core" }
 thiserror.workspace = true
 
 [dev-dependencies]

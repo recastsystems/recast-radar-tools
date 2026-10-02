@@ -777,7 +777,7 @@ recast-radar convert a.h5 b.h5 c.h5 --merge --to level2 -o merged.ar2v
 recast-radar convert FILE --to level2 --chunks -o chunks/     # real-time chunks</code></pre></div>
 <div aria-labelledby="example-8-sh" class="out" data-pane="sh" hidden="" id="example-8-sh-pane-1" role="tabpanel"><div class="out-label">Output</div><pre><code>recast-radar: left out: field TH (sweeps 0-9): REF carries DBZH instead
 recast-radar: left out: field LDR (sweeps 0-9): no Message 31 moment for this quantity
-wrote dkrom.ar2v (NEXRAD Level II, 762853 bytes, 10 sweeps; some fields or sweeps left out, see above)</code></pre></div>
+wrote dkrom.ar2v (NEXRAD Level II, 646543 bytes, 10 sweeps; some fields or sweeps left out, see above)</code></pre></div>
 <div aria-labelledby="example-8-rs" class="code-body" data-pane="rs" hidden="" id="example-8-rs-pane-0" role="tabpanel"><pre><code>use recast_radar_tools::{cfradial, nexrad, odim};
 
 let opts = nexrad::write::WriteOptions::default();
@@ -961,7 +961,7 @@ recast-radar grid site-a.ar2v site-b.ar2v --options grid-options.json -o grid.js
 <summary><span class="tag tag-deep">Details</span>Exit status and Level II writer options</summary>
 <div class="note-body">
 <p>Exit codes: <code>0</code> success, <code>1</code> a file failed, <code>2</code> bad usage, <code>3</code> the feature is not in this build. Inputs over 1 GiB are refused.</p>
-<p><code>--quantization precise|compatible|standard</code>: <code>precise</code> (default) never codes a value more coarsely than its source, <code>compatible</code> keeps NEXRAD's word sizes that xradar 0.12 reads, <code>standard</code> writes NOAA's codings where they hold every value. No policy clips. Also <code>--nyquist</code>, <code>--unambiguous-range</code>, <code>--position LAT,LON,HEIGHT</code>, <code>--position-from FILE</code>, <code>--sweeps 0,2,5-9</code>, <code>--sweeps-in-time-order</code>, <code>--drop-negative-range-gates</code>, <code>--level2-compression none</code>, <code>--strict</code> and <code>--threads N</code>.</p>
+<p><code>--quantization standard|compatible|precise</code>: <code>standard</code> (default) writes NOAA's codings where they hold every value, which GR2Analyst and every Level II reader expect; <code>compatible</code> keeps NEXRAD's word sizes that xradar 0.12 reads; <code>precise</code> never codes a value more coarsely than its source (16-bit moments, PHI codes past 1023). No policy clips. <code>--map UPHIDP=PHI</code> picks the field a moment carries and <code>--fields DBZH,VRADH,...</code> keeps only those fields. Also <code>--nyquist</code>, <code>--unambiguous-range</code>, <code>--position LAT,LON,HEIGHT</code>, <code>--position-from FILE</code>, <code>--sweeps 0,2,5-9</code>, <code>--sweeps-in-time-order</code>, <code>--sweeps-by-elevation</code>, <code>--drop-negative-range-gates</code>, <code>--level2-compression none</code>, <code>--strict</code> and <code>--threads N</code>.</p>
 </div>
 </details>
 </section>

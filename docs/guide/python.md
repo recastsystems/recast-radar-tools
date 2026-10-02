@@ -298,8 +298,11 @@ Every write function (`write`, `to_bytes`, `convert`, `publish`,
 |---|---|
 | `sweeps=[0, 2, 5]` | keep only these sweeps (0-based), in this order; Level II holds at most 32 |
 | `sweeps_in_time_order=True` | put the sweeps in the order their first rays were collected |
+| `sweeps_by_elevation=True` | put the sweeps in order of elevation angle, lowest first |
+| `fields=["DBZH", "VRADH", "UPHIDP"]` | keep only these fields (names as `field_names` lists them); a name no sweep has is a `ValueError` |
 | `position=(lat, lon, height_m)` | the site position to write (a Message 1 volume has none) |
-| `quantization="precise"` | Level II value coding: `"precise"` (never coarser than the source), `"compatible"` (NEXRAD's word sizes, which xradar 0.12 reads), `"standard"` (NOAA's codings where they hold every value) |
+| `quantization="standard"` | Level II value coding: `"standard"` (the default: NOAA's codings where they hold every value, which GR2Analyst and every Level II reader expect), `"compatible"` (NEXRAD's word sizes, which xradar 0.12 reads), `"precise"` (never coarser than the source: 16-bit moments and PHI codes past 1023, which readers keeping NEXRAD's bits misread) |
+| `field_map={"UPHIDP": "PHI"}` | Level II: write a field as the moment named (`REF`, `VEL`, `SW`, `ZDR`, `PHI`, `RHO`, `CFP`), ahead of the field the writer would pick |
 | `nyquist_velocity=`, `unambiguous_range=` | the radar's own values (m/s, m) for Level II radials whose source has none (JMA) |
 | `drop_negative_range_gates=True` | leave out gates centred before the radar (Message 1 Doppler gates from -375 m) |
 | `strict=True` | refuse, writing nothing, a write that would leave out a field or sweep |
@@ -323,6 +326,9 @@ klix = recast_radar.read("KLIX20050829_130035.V06")            # Message 1: no p
 ref = recast_radar.read("KLIX20210829_180425_V06")
 klix.write("KLIX.ar2v", "level2", position=(ref.latitude, ref.longitude, ref.altitude),
            drop_negative_range_gates=True)
+caskr = recast_radar.read("CASKR_volume.h5")                    # ECCC: the WMO heading is skipped
+caskr.write("CSKR.ar2v", "level2", site="CSKR", sweeps_by_elevation=True,
+            fields=["DBZH", "VRADH", "ZDR", "UPHIDP", "RHOHV"], field_map={"UPHIDP": "PHI"})
 ```
 
 `write_chunks(volume, dest=None, *, site=None, overwrite=False)` writes a

@@ -15,13 +15,13 @@ exclude = ["tests/", "examples/"]
 
 [dependencies]
 flate2.workspace = true
-recast-radar-core = { version = "0.1.1", path = "../recast-radar-core" }
-recast-radar-io-cfradial = { version = "0.1.1", path = "../recast-radar-io-cfradial" }
-recast-radar-io-dorade = { version = "0.1.1", path = "../recast-radar-io-dorade" }
-recast-radar-io-jma = { version = "0.1.1", path = "../recast-radar-io-jma" }
-recast-radar-io-level3 = { version = "0.1.1", path = "../recast-radar-io-level3" }
-recast-radar-io-nexrad = { version = "0.1.1", path = "../recast-radar-io-nexrad" }
-recast-radar-io-odim = { version = "0.1.1", path = "../recast-radar-io-odim" }
+recast-radar-core = { version = "0.1.2", path = "../recast-radar-core" }
+recast-radar-io-cfradial = { version = "0.1.2", path = "../recast-radar-io-cfradial" }
+recast-radar-io-dorade = { version = "0.1.2", path = "../recast-radar-io-dorade" }
+recast-radar-io-jma = { version = "0.1.2", path = "../recast-radar-io-jma" }
+recast-radar-io-level3 = { version = "0.1.2", path = "../recast-radar-io-level3" }
+recast-radar-io-nexrad = { version = "0.1.2", path = "../recast-radar-io-nexrad" }
+recast-radar-io-odim = { version = "0.1.2", path = "../recast-radar-io-odim" }
 thiserror.workspace = true
 
 [dev-dependencies]

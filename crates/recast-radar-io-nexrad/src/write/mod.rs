@@ -132,13 +132,13 @@ pub enum RecordLayout {
 /// volume (Py-ART decodes every sweep of a moment with the first sweep's
 /// scale and offset).
 ///
-/// The default, [`Quantization::Precise`], never codes a value more coarsely
-/// than its source stores it, and uses 8-bit words wherever they hold every
-/// value exactly (at most 254 levels on one grid, as 8-bit ODIM data at one
-/// gain and offset has); there it writes what `Compatible` writes. Choose
-/// [`Quantization::Compatible`] when the files must also read in xradar 0.12,
-/// which reads only NEXRAD's word sizes (see `docs/level2/writer.md`,
-/// "Quantisation").
+/// The default, [`Quantization::Standard`], writes the codings NOAA's
+/// current files carry, which every Level II reader (GR2Analyst among them)
+/// expects: PHI in codes up to 1023, REF, VEL and SW in 8 bits.
+/// [`Quantization::Precise`] never codes a value more coarsely than its
+/// source stores it, which for 16-bit and float sources means 16-bit moments
+/// and PHI codes up to 65535 that readers keeping only NEXRAD's bits misread
+/// (see `docs/level2/writer.md`, "Quantisation").
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 #[non_exhaustive]
 pub enum Quantization {
@@ -152,9 +152,9 @@ pub enum Quantization {
     /// in `docs/level2/writer.md`). xradar 0.12 keeps only the low 8 bits of
     /// 16-bit moments other than ZDR and PHI, and the low 11 and 10 bits of
     /// those two, so it misreads the 16-bit moments this policy writes for
-    /// 16-bit and float sources. Whether GR2Analyst reads a 16-bit REF, VEL
+    /// 16-bit and float sources, as do readers that keep only NEXRAD's PHI
+    /// bits (codes above 1023). Whether GR2Analyst reads a 16-bit REF, VEL
     /// or SW has not been checked.
-    #[default]
     Precise,
     /// Every moment in the word size NEXRAD files use: REF, VEL, SW, RHO and
     /// CFP in 8 bits, ZDR and PHI in 8 bits or in 16 bits up to codes 2047
@@ -171,7 +171,8 @@ pub enum Quantization {
     /// 8-bit at 300 and -60.5, CFP 8-bit at 1 and 8), rounding each value to
     /// the nearest code. It never clips: a moment with a value outside its
     /// typical coding's range is coded as [`Quantization::Compatible`]
-    /// codes it instead.
+    /// codes it instead. The default.
+    #[default]
     Standard,
 }
 

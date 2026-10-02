@@ -171,6 +171,16 @@ fn router_matches_direct_odim_decoder_on_real_pvols() {
             id,
         );
     }
+    // Behind a WMO bulletin heading (ECCC volume scans carry one), the file
+    // routes to the ODIM decoder and decodes as the bare file does.
+    let mut headed = b"IRVX40 CWAO 012240\r\r\n".to_vec();
+    headed.extend_from_slice(BEJAB);
+    assert_routed_matches_direct(
+        &headed,
+        recast_radar_io_odim::odim::read_odim_h5_volume(BEJAB).map_err(|err| err.to_string()),
+        "BEJAB",
+        "bejab.pvol.hdf behind a WMO heading",
+    );
 }
 
 #[test]

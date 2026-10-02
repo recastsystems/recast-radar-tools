@@ -874,11 +874,15 @@ fn sweep_values(path: &Path, field: &str) -> Vec<Vec<f64>> {
 fn convert_to_level2_reports_what_it_leaves_out_and_keeps_the_values() {
     let dir = scratch("level2-report");
     let out = dir.join("dkrom.ar2v");
+    // Precise: the float values come back exact (the default, standard,
+    // rounds them to NOAA's codings).
     let output = run([
         OsStr::new("convert"),
         fixture(DKROM).as_os_str(),
         OsStr::new("--to"),
         OsStr::new("level2"),
+        OsStr::new("--quantization"),
+        OsStr::new("precise"),
         OsStr::new("-o"),
         out.as_os_str(),
     ]);
@@ -940,6 +944,79 @@ fn convert_to_level2_reports_what_it_leaves_out_and_keeps_the_values() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).contains("--strict"), "{}", stderr(&output));
     assert!(!strict.exists());
+    fs::remove_dir_all(&dir).expect("clean up");
+}
+
+/// Choosing what DMI Romo's volume becomes: `--map TH=REF` writes TH as REF
+/// (DBZH is then the field left out), `--fields` keeps only the fields named
+/// (nothing else to leave out), and `--sweeps-by-elevation` orders the
+/// sweeps from the lowest angle up. A field no sweep has, or a moment Level
+/// II does not have, is a usage error.
+#[test]
+fn convert_to_level2_chooses_fields_moments_and_sweep_order() {
+    let dir = scratch("level2-choose");
+    let out = dir.join("dkrom.ar2v");
+    let input = fixture(DKROM);
+    let convert = |extra: &[&str]| {
+        let mut args = vec![
+            OsStr::new("convert"),
+            input.as_os_str(),
+            OsStr::new("--to"),
+            OsStr::new("level2"),
+            OsStr::new("--force"),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ];
+        args.extend(extra.iter().map(OsStr::new));
+        run(args)
+    };
+
+    let output = convert(&["--map", "TH=REF"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("left out: field DBZH (sweeps 0-9): REF carries TH instead"),
+        "{}",
+        stderr(&output)
+    );
+
+    let output = convert(&["--fields", "DBZH,VRAD"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(!stderr(&output).contains("left out"), "{}", stderr(&output));
+    assert_eq!(sweep_values(&out, "DBZH").len(), 10);
+
+    let output = convert(&["--sweeps", "3,1,0,2", "--sweeps-by-elevation"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let written = json(&run([
+        OsStr::new("info"),
+        OsStr::new("--json"),
+        out.as_os_str(),
+    ]));
+    let angles: Vec<f64> = written["volumes"][0]["sweeps"]
+        .as_array()
+        .expect("sweeps")
+        .iter()
+        .filter_map(|sweep| sweep["fixed_angle_deg"].as_f64())
+        .collect();
+    assert_eq!(angles.len(), 4);
+    assert!(
+        angles.windows(2).all(|pair| pair[0] < pair[1]),
+        "{angles:?}"
+    );
+
+    let output = convert(&["--fields", "DBZH,NOPE"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("no sweep has a field `NOPE`"),
+        "{}",
+        stderr(&output)
+    );
+    let output = convert(&["--map", "TH=XYZ"]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("not a Level II moment"),
+        "{}",
+        stderr(&output)
+    );
     fs::remove_dir_all(&dir).expect("clean up");
 }
 

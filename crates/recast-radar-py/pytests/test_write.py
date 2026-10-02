@@ -117,16 +117,17 @@ def test_level2_and_cfradial1_read_in_pyart_as_the_source(ktlx_trim, tmp_path):
 
 def test_odim_to_level2_reads_in_pyart_as_h5py_reads_the_source(tmp_path):
     """DMI Romo's ODIM_H5 volume written as Level II: Py-ART reads every
-    DBZH and VRAD value the source's h5py reading has (the default coding
-    is exact for 8-bit ODIM data), sweep by sweep, and the fields Level II
-    cannot hold come as WriteWarnings."""
+    DBZH and VRAD value the source's h5py reading has (``precise`` is exact
+    for 8-bit ODIM data; the default, ``standard``, rounds to NOAA's
+    codings), sweep by sweep, and the fields Level II cannot hold come as
+    WriteWarnings."""
     pyart = _pyart()
     h5py = pytest.importorskip("h5py")
     path = data_path("odim-dkrom-20260820-1130-pvol")
     volume = recast_radar.read(path)
     out = tmp_path / "dkrom.ar2v"
     with pytest.warns(recast_radar.WriteWarning, match="left out: field TH"):
-        volume.write(out, "level2")
+        volume.write(out, "level2", quantization="precise")
     written = pyart.io.read_nexrad_archive(str(out))
     with h5py.File(path, "r") as f:
         datasets = sorted((k for k in f if k.startswith("dataset")), key=lambda k: int(k[7:]))
@@ -150,6 +151,47 @@ def test_odim_to_level2_reads_in_pyart_as_h5py_reads_the_source(tmp_path):
                 np.testing.assert_allclose(
                     np.sort(got.compressed()), np.sort(values[valid]), atol=1e-4, err_msg=f"{index} {quantity}"
                 )
+
+
+def test_fields_moments_and_sweep_order_are_chosen(tmp_path):
+    """``field_map`` writes a field as the moment named (TH as REF leaves
+    DBZH out), ``fields`` keeps only the fields named (nothing else is left
+    out), ``sweeps_by_elevation`` orders the sweeps from the lowest angle
+    up, and the default coding is ``standard``. An unknown field or moment
+    is a ValueError."""
+    dkrom = recast_radar.read(data_path("odim-dkrom-20260820-1130-pvol"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", recast_radar.WriteWarning)
+        assert dkrom.to_bytes("level2") == dkrom.to_bytes("level2", quantization="standard")
+        assert dkrom.to_bytes("level2") != dkrom.to_bytes("level2", quantization="precise")
+    with pytest.warns(recast_radar.WriteWarning, match="field DBZH .*REF carries TH instead"):
+        dkrom.to_bytes("level2", field_map={"TH": "REF"})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", recast_radar.WriteWarning)
+        data = dkrom.to_bytes("level2", fields=["DBZH", "VRAD"])
+    assert recast_radar.read(data).nsweeps == dkrom.nsweeps
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", recast_radar.WriteWarning)
+        again = recast_radar.read(dkrom.to_bytes("level2", sweeps=[3, 1, 0, 2], sweeps_by_elevation=True))
+    angles = [again.sweeps[index]["fixed_angle"] for index in range(again.nsweeps)]
+    assert len(angles) == 4 and angles == sorted(angles), angles
+    with pytest.raises(ValueError, match="no sweep has a field `NOPE`"):
+        dkrom.to_bytes("level2", fields=["DBZH", "NOPE"])
+    with pytest.raises(ValueError, match="not a Level II moment"):
+        dkrom.to_bytes("level2", field_map={"TH": "XYZ"})
+
+
+def test_odim_behind_a_wmo_heading_reads_as_the_bare_file():
+    """ECCC volume scans start with a WMO bulletin heading before the HDF5
+    signature: the file reads as it does without one."""
+    path = data_path("odim-bejab-20190606-0000-pvol")
+    bare = path.read_bytes()
+    headed = recast_radar.read(b"IRVX40 CWAO 012240\r\r\n" + bare)
+    plain = recast_radar.read(bare)
+    assert headed.nsweeps == plain.nsweeps
+    assert headed.field_names == plain.field_names
+    headed_tree, plain_tree = headed.to_datatree(), plain.to_datatree()
+    np.testing.assert_array_equal(headed_tree["sweep_0"]["DBZH"].values, plain_tree["sweep_0"]["DBZH"].values)
 
 
 def test_strict_refuses_and_options_reach_the_writer(tmp_path):
@@ -204,5 +246,5 @@ def test_strict_refuses_and_options_reach_the_writer(tmp_path):
             velocity.to_bytes("level2")
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            data = velocity.to_bytes("level2", nyquist_velocity=26.48)
+            data = velocity.to_bytes("level2", nyquist_velocity=26.48, quantization="precise")
         assert recast_radar.read(data).nsweeps == velocity.nsweeps

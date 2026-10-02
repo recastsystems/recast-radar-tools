@@ -181,7 +181,9 @@ pub use values::Values;
 
 /// `true` when the buffer holds the HDF5 format signature where a
 /// superblock may start: offset 0, or after a user block at 512, 1024,
-/// 2048, ... bytes (HDF5 File Format Specification, section II).
+/// 2048, ... bytes (HDF5 File Format Specification, section II), or after a
+/// header of up to 64 KiB that a distributor has put in front of the file
+/// (ECCC volume scans start with a text heading).
 pub fn looks_like_hdf5_bytes(bytes: &[u8]) -> bool {
     superblock::signature_offset(bytes).is_some()
 }

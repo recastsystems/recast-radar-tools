@@ -19,7 +19,7 @@
 //!   float rounding where it reports an exact coding), missing and undetect
 //!   gates as below threshold, and nothing clipped under any policy (the
 //!   writer refuses a value its coding cannot hold);
-//! - under the default policy (`Precise`), no value coded more coarsely
+//! - under `Precise`, no value coded more coarsely
 //!   than its source stores it: exact for float sources on a grid and for
 //!   integer sources whose sweeps share one coding, else within half the
 //!   finest source step; under `Compatible`, NEXRAD's word sizes;
@@ -30,7 +30,7 @@
 //! RHI volumes are refused with a typed error.
 
 use recast_radar_core::model::{
-    CycleBreak, Field, FieldData, FieldName, Gate, LinearTransform, Sweep, Volume,
+    CycleBreak, Field, FieldData, FieldName, FloatCoding, Gate, LinearTransform, Sweep, Volume,
     collection_order, merge_volumes, split_scan_cycles,
 };
 use recast_radar_io::read_supported_volume_bytes;
@@ -42,10 +42,11 @@ use recast_radar_io_nexrad::write::{
 /// Half of one Message 5 angle code.
 const HALF_ANGLE_CODE_DEG: f32 = 180.0 / 65_536.0;
 
-/// The default policy: `Precise`.
+/// The `Precise` policy (the default is `Standard`).
 fn default_options() -> WriteOptions {
-    let options = WriteOptions::default();
-    assert_eq!(options.quantization, Quantization::Precise);
+    assert_eq!(WriteOptions::default().quantization, Quantization::Standard);
+    let mut options = WriteOptions::default();
+    options.quantization = Quantization::Precise;
     options
 }
 
@@ -74,7 +75,7 @@ fn cached(id: &str) -> Option<Volume> {
 /// `DB_PHIDP`, `DB_RHOHV` (and, in 2009-05-01, every field `DB_*`), which
 /// no name table classifies; map them explicitly.
 fn noxp_options() -> WriteOptions {
-    let mut options = WriteOptions::default();
+    let mut options = default_options();
     options.field_map = vec![
         (FieldName::parse("DB_DBZ2"), Moment::Ref),
         (FieldName::parse("DB_VEL2"), Moment::Vel),
@@ -204,7 +205,7 @@ fn assert_compatible_codings(id: &str, summary: &WriteSummary) {
     }
 }
 
-/// The default policy's promise: no value coded more coarsely than its
+/// The `Precise` policy's promise: no value coded more coarsely than its
 /// source stores it. Float sources (on a grid, as every fixture here is)
 /// come back exact; integer sources exact when every sweep's field of the
 /// moment has the same coding, else within half the finest source step.
@@ -601,13 +602,15 @@ fn jma_volumes_come_back_within_the_quantisation_step() {
 /// clips: DMI Romo's RHOHV (steps of 0.0028 from 0) reaches below the
 /// typical RHO coding's 0.208 floor, so RHO takes the coding `Compatible`
 /// chooses instead (a value outside a moment's coding would refuse the
-/// write: `WriteError::ValueOutsideCoding`).
+/// write: `WriteError::ValueOutsideCoding`). It is the default: its PHI
+/// stays in codes up to 1023, which readers keeping NEXRAD's 10 PHI bits
+/// need, where `Precise` codes the 16-bit source PHIDP up to 65535.
 #[test]
 fn standard_quantisation_uses_the_typical_codings_without_clipping() {
     let id = "odim-dkrom-20260820-1130-pvol";
     let volume = decoded(id);
-    let mut options = WriteOptions::default();
-    options.quantization = Quantization::Standard;
+    let options = WriteOptions::default();
+    assert_eq!(options.quantization, Quantization::Standard);
     let (again, summary) = through_level2(id, &volume, &options);
     let (_, compatible_summary) = through_level2(id, &volume, &compatible());
     let typical = |moment: Moment| match moment {
@@ -652,6 +655,48 @@ fn standard_quantisation_uses_the_typical_codings_without_clipping() {
     assert_eq!(coding_of(Moment::Ref), typical(Moment::Ref));
     assert_ne!(coding_of(Moment::Rho), typical(Moment::Rho));
     assert_eq!(again.sweeps.len(), volume.sweeps.len());
+    // PHIDP over 0-360 degrees in steps finer than 8 bits hold (as ECCC's
+    // 16-bit PHIDP is): the default keeps PHI in codes up to 1023, which
+    // readers that keep NEXRAD's 10 PHI bits need; `Precise` does not.
+    let mut volume = volume;
+    for sweep in &mut volume.sweeps {
+        for field in &mut sweep.fields {
+            if field.name == FieldName::Phidp {
+                let count = field.nrays as usize * field.ngates as usize;
+                field.data = FieldData::F32 {
+                    values: (0..count).map(|i| (i % 3600) as f32 / 10.0).collect(),
+                    coding: FloatCoding::default(),
+                };
+            }
+        }
+    }
+    let (_, summary) = through_level2(id, &volume, &WriteOptions::default());
+    let (_, precise) = through_level2(id, &volume, &default_options());
+    let max_phi_code = |summary: &WriteSummary| {
+        summary
+            .moments
+            .iter()
+            .filter(|m| m.moment == Moment::Phi)
+            .flat_map(|m| {
+                let field = volume.sweeps[m.sweep].field(&m.field).unwrap();
+                (0..field.nrays as usize).flat_map(move |row| {
+                    (0..field.ngates as usize).filter_map(move |gate| {
+                        field.value(row, gate).map(|v| v * m.scale + m.offset)
+                    })
+                })
+            })
+            .fold(0.0f32, f32::max)
+    };
+    assert!(
+        max_phi_code(&summary) <= 1023.5,
+        "{}",
+        max_phi_code(&summary)
+    );
+    assert!(
+        max_phi_code(&precise) > 1023.5,
+        "{}",
+        max_phi_code(&precise)
+    );
 }
 
 #[test]

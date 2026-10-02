@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import os
 import warnings
-from typing import Any, Sequence, Union
+from typing import Any, Mapping, Sequence, Union
 
 from . import _native
 from ._native import (
@@ -87,6 +87,9 @@ def _write_options(
     drop_negative_range_gates: bool,
     sweeps: Sequence[int] | None,
     sweeps_in_time_order: bool,
+    sweeps_by_elevation: bool,
+    fields: Sequence[str] | None,
+    field_map: Mapping[str, str] | None,
     position: tuple[float, float, float] | None,
     strict: bool,
 ) -> dict[str, Any]:
@@ -97,6 +100,11 @@ def _write_options(
         "drop_negative_range_gates": drop_negative_range_gates,
         "sweeps": None if sweeps is None else [int(index) for index in sweeps],
         "sweeps_in_time_order": sweeps_in_time_order,
+        "sweeps_by_elevation": sweeps_by_elevation,
+        "fields": None if fields is None else [str(name) for name in fields],
+        "field_map": None
+        if field_map is None
+        else [(str(field), str(moment)) for field, moment in dict(field_map).items()],
         "position": None if position is None else tuple(float(value) for value in position),
         "strict": strict,
     }
@@ -104,17 +112,26 @@ def _write_options(
 
 _WRITE_OPTIONS_DOC = """
     Level II options (``docs/level2/writer.md``): ``quantization`` is
-    ``"precise"`` (the default: never coarser than the source),
-    ``"compatible"`` (NEXRAD's word sizes, which xradar 0.12 reads) or
-    ``"standard"`` (NOAA's codings where they hold every value); no policy
-    clips a value. ``nyquist_velocity`` (m/s) and ``unambiguous_range`` (m)
-    are the radar's own values for radials whose source has none (JMA);
+    ``"standard"`` (the default: NOAA's codings where they hold every value,
+    which GR2Analyst and every Level II reader expect), ``"compatible"``
+    (NEXRAD's word sizes, which xradar 0.12 reads) or ``"precise"`` (never
+    coarser than the source: 16-bit moments and PHI codes past 1023, which
+    readers that keep only NEXRAD's bits misread); no policy clips a value.
+    ``field_map`` writes fields as the moments named, ahead of the field the
+    writer would pick, such as ``{"UPHIDP": "PHI"}`` (moments ``REF``,
+    ``VEL``, ``SW``, ``ZDR``, ``PHI``, ``RHO``, ``CFP``).
+    ``nyquist_velocity`` (m/s) and ``unambiguous_range`` (m) are the radar's
+    own values for radials whose source has none (JMA);
     ``drop_negative_range_gates`` leaves out gates centred before the radar
     (Message 1 volumes).
 
     Every format: ``sweeps`` keeps only those sweeps (0-based indices), in
     that order (Level II holds at most 32); ``sweeps_in_time_order`` puts
-    them in the order their first rays were collected; ``position`` is the
+    them in the order their first rays were collected;
+    ``sweeps_by_elevation`` in order of elevation angle, lowest first;
+    ``fields`` keeps only the fields with those names (such as
+    ``["DBZH", "VRADH", "UPHIDP"]``; a name no sweep has is refused);
+    ``position`` is the
     site position ``(latitude_deg, longitude_deg, height_m)`` to write (a
     Message 1 volume has none). ``strict`` refuses, writing nothing, a write
     that would leave out a field or sweep; otherwise what is left out and
@@ -327,12 +344,15 @@ def write(
     gzip: bool = False,
     site: str | None = None,
     overwrite: bool = False,
-    quantization: str = "precise",
+    quantization: str = "standard",
     nyquist_velocity: float | None = None,
     unambiguous_range: float | None = None,
     drop_negative_range_gates: bool = False,
     sweeps: Sequence[int] | None = None,
     sweeps_in_time_order: bool = False,
+    sweeps_by_elevation: bool = False,
+    fields: Sequence[str] | None = None,
+    field_map: Mapping[str, str] | None = None,
     position: tuple[float, float, float] | None = None,
     strict: bool = False,
 ):
@@ -364,6 +384,9 @@ def write(
             drop_negative_range_gates=drop_negative_range_gates,
             sweeps=sweeps,
             sweeps_in_time_order=sweeps_in_time_order,
+            sweeps_by_elevation=sweeps_by_elevation,
+            fields=fields,
+            field_map=field_map,
             position=position,
             strict=strict,
         ),
@@ -381,12 +404,15 @@ def write_chunks(
     *,
     site: str | None = None,
     overwrite: bool = False,
-    quantization: str = "precise",
+    quantization: str = "standard",
     nyquist_velocity: float | None = None,
     unambiguous_range: float | None = None,
     drop_negative_range_gates: bool = False,
     sweeps: Sequence[int] | None = None,
     sweeps_in_time_order: bool = False,
+    sweeps_by_elevation: bool = False,
+    fields: Sequence[str] | None = None,
+    field_map: Mapping[str, str] | None = None,
     position: tuple[float, float, float] | None = None,
     strict: bool = False,
 ):
@@ -416,6 +442,9 @@ def write_chunks(
             drop_negative_range_gates=drop_negative_range_gates,
             sweeps=sweeps,
             sweeps_in_time_order=sweeps_in_time_order,
+            sweeps_by_elevation=sweeps_by_elevation,
+            fields=fields,
+            field_map=field_map,
             position=position,
             strict=strict,
         ),
@@ -453,12 +482,15 @@ def to_bytes(
     compression: str = "bzip2",
     gzip: bool = False,
     site: str | None = None,
-    quantization: str = "precise",
+    quantization: str = "standard",
     nyquist_velocity: float | None = None,
     unambiguous_range: float | None = None,
     drop_negative_range_gates: bool = False,
     sweeps: Sequence[int] | None = None,
     sweeps_in_time_order: bool = False,
+    sweeps_by_elevation: bool = False,
+    fields: Sequence[str] | None = None,
+    field_map: Mapping[str, str] | None = None,
     position: tuple[float, float, float] | None = None,
     strict: bool = False,
 ) -> bytes:
@@ -476,6 +508,9 @@ def to_bytes(
             drop_negative_range_gates=drop_negative_range_gates,
             sweeps=sweeps,
             sweeps_in_time_order=sweeps_in_time_order,
+            sweeps_by_elevation=sweeps_by_elevation,
+            fields=fields,
+            field_map=field_map,
             position=position,
             strict=strict,
         ),
@@ -524,12 +559,15 @@ def publish(
     keep: int = 30,
     compression: str = "bzip2",
     update_site_config: bool = True,
-    quantization: str = "precise",
+    quantization: str = "standard",
     nyquist_velocity: float | None = None,
     unambiguous_range: float | None = None,
     drop_negative_range_gates: bool = False,
     sweeps: Sequence[int] | None = None,
     sweeps_in_time_order: bool = False,
+    sweeps_by_elevation: bool = False,
+    fields: Sequence[str] | None = None,
+    field_map: Mapping[str, str] | None = None,
     position: tuple[float, float, float] | None = None,
     strict: bool = False,
 ) -> dict:
@@ -560,6 +598,9 @@ def publish(
             drop_negative_range_gates=drop_negative_range_gates,
             sweeps=sweeps,
             sweeps_in_time_order=sweeps_in_time_order,
+            sweeps_by_elevation=sweeps_by_elevation,
+            fields=fields,
+            field_map=field_map,
             position=position,
             strict=strict,
         ),

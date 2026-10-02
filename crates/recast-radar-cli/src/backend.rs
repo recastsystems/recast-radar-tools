@@ -37,6 +37,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use recast_radar_core::model::{Volume, split_scan_cycles};
 use recast_radar_io::FormatMetadata;
+pub use recast_radar_io_nexrad::write::Moment as Level2Moment;
 use thiserror::Error;
 
 /// A radar file format that `convert` can be asked to write.
@@ -121,14 +122,16 @@ pub enum Level2Compression {
 #[non_exhaustive]
 pub enum Level2Quantization {
     /// Never coarser than the source: 16-bit moments for 16-bit and float
-    /// sources (xradar 0.12 misreads 16-bit REF, VEL and SW).
-    #[default]
+    /// sources (xradar 0.12 misreads 16-bit REF, VEL and SW, and readers
+    /// that keep NEXRAD's PHI bits misread PHI codes above 1023).
     Precise,
     /// NEXRAD's word sizes (what xradar 0.12 reads); coarser than a 16-bit
     /// or float source, with the error reported.
     Compatible,
     /// NOAA's current codings where they hold every value, else as
-    /// `compatible`.
+    /// `compatible` (the default: what GR2Analyst and every Level II reader
+    /// expects).
+    #[default]
     Standard,
 }
 
@@ -162,6 +165,54 @@ pub struct WriteOptions {
     /// Refuse, writing nothing, when the output would leave out a field or
     /// a sweep of the volume ([`WriteReport::left_out`]).
     pub strict: bool,
+    /// Level II: fields to write as a given moment, ahead of the field the
+    /// writer would pick for it (UPHIDP as PHI, for example).
+    pub level2_field_map: Vec<FieldMapping>,
+}
+
+/// A field written as a Level II moment: `FIELD=MOMENT`, such as
+/// `UPHIDP=PHI`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FieldMapping {
+    /// The field's name, as the decoded volume has it (`UPHIDP`).
+    pub field: String,
+    /// The Message 31 moment it is written as.
+    pub moment: Level2Moment,
+}
+
+impl FieldMapping {
+    /// `field` as `moment`, the moment named as [`Level2Moment::parse`]
+    /// takes it (REF, VEL, SW, ZDR, PHI, RHO or CFP).
+    pub fn new(field: &str, moment: &str) -> Result<Self, String> {
+        let field = field.trim();
+        if field.is_empty() {
+            return Err(format!("`{field}={moment}` names no field"));
+        }
+        let moment = Level2Moment::parse(moment).ok_or_else(|| {
+            let names: Vec<&str> = Level2Moment::ALL.iter().map(|m| m.name()).collect();
+            format!(
+                "`{}` is not a Level II moment (one of {})",
+                moment.trim(),
+                names.join(", ")
+            )
+        })?;
+        Ok(Self {
+            field: field.to_owned(),
+            moment,
+        })
+    }
+}
+
+impl std::str::FromStr for FieldMapping {
+    type Err = String;
+
+    /// `FIELD=MOMENT`.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let (field, moment) = text
+            .split_once('=')
+            .ok_or_else(|| format!("`{text}` is not FIELD=MOMENT (such as UPHIDP=PHI)"))?;
+        Self::new(field, moment)
+    }
 }
 
 impl WriteOptions {
@@ -279,6 +330,12 @@ pub struct VolumeEdits {
     /// Put the sweeps in the order their first rays were collected (a JMA
     /// cycle is collected from its top sweep down).
     pub sweeps_in_time_order: bool,
+    /// Put the sweeps in order of elevation angle, lowest first, after the
+    /// time order when both are set (sweeps at one angle keep their order).
+    pub sweeps_by_elevation: bool,
+    /// Keep only the fields with these names (exact, as the decoded volume
+    /// has them); a name no sweep has is refused.
+    pub fields: Option<Vec<String>>,
     /// Make one volume of each scan cycle ([`split_scan_cycles`]) after the
     /// other edits: [`VolumeEdits::apply_each`].
     pub split_scan_cycles: bool,
@@ -291,6 +348,8 @@ impl VolumeEdits {
     pub fn is_empty(&self) -> bool {
         self.sweeps.is_none()
             && !self.sweeps_in_time_order
+            && !self.sweeps_by_elevation
+            && self.fields.is_none()
             && !self.split_scan_cycles
             && self.position.is_none()
     }
@@ -348,6 +407,45 @@ impl VolumeEdits {
                     .unwrap_or(f64::INFINITY)
             };
             edited.sweeps.sort_by(|a, b| start(a).total_cmp(&start(b)));
+        }
+        if self.sweeps_by_elevation {
+            // A sweep without a finite angle goes last.
+            let angle = |sweep: &recast_radar_core::model::Sweep| {
+                let angle = f64::from(sweep.fixed_angle_deg);
+                if angle.is_finite() {
+                    angle
+                } else {
+                    f64::INFINITY
+                }
+            };
+            edited.sweeps.sort_by(|a, b| angle(a).total_cmp(&angle(b)));
+        }
+        if let Some(names) = &self.fields {
+            if let Some(missing) = names.iter().find(|name| {
+                !edited.sweeps.iter().any(|sweep| {
+                    sweep
+                        .fields
+                        .iter()
+                        .any(|field| field.name.as_str() == *name)
+                })
+            }) {
+                let mut present: Vec<&str> = edited
+                    .sweeps
+                    .iter()
+                    .flat_map(|sweep| sweep.fields.iter().map(|field| field.name.as_str()))
+                    .collect();
+                present.sort_unstable();
+                present.dedup();
+                return Err(format!(
+                    "no sweep has a field `{missing}` (the fields are {})",
+                    present.join(", ")
+                ));
+            }
+            for sweep in &mut edited.sweeps {
+                sweep
+                    .fields
+                    .retain(|field| names.iter().any(|name| field.name.as_str() == name));
+            }
         }
         if let Some(position) = self.position {
             edited.location.latitude_deg = Some(position.latitude_deg);
@@ -786,6 +884,23 @@ impl fmt::Debug for Backends {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn field_mappings_parse_field_equals_moment() {
+        let mapping: FieldMapping = "UPHIDP=phi".parse().expect("parse");
+        assert_eq!(mapping.field, "UPHIDP");
+        assert_eq!(mapping.moment, Level2Moment::Phi);
+        assert_eq!(
+            " DB_DBZ2 = REF "
+                .parse::<FieldMapping>()
+                .expect("parse")
+                .field,
+            "DB_DBZ2"
+        );
+        for bad in ["UPHIDP", "=PHI", "UPHIDP=PHASE"] {
+            assert!(bad.parse::<FieldMapping>().is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn this_build_links_every_writer_and_the_publisher() {

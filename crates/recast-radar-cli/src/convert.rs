@@ -36,6 +36,7 @@ fn write_options(level2: &Level2Args, site: Option<String>) -> WriteOptions {
     options.unambiguous_range_m = level2.unambiguous_range;
     options.drop_negative_range_gates = level2.drop_negative_range_gates;
     options.strict = level2.strict;
+    options.level2_field_map = level2.field_map.clone();
     options
 }
 
@@ -45,6 +46,8 @@ fn volume_edits(edit: &EditArgs, input: &InputArgs) -> Result<VolumeEdits, CliEr
     let mut edits = VolumeEdits {
         sweeps: edit.sweeps.as_ref().map(|list| list.0.clone()),
         sweeps_in_time_order: edit.sweeps_in_time_order,
+        sweeps_by_elevation: edit.sweeps_by_elevation,
+        fields: edit.fields.clone(),
         split_scan_cycles: edit.split_scan_cycles,
         position: edit.position,
     };
