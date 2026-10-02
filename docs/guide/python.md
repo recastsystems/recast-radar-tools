@@ -298,7 +298,7 @@ Every write function (`write`, `to_bytes`, `convert`, `publish`,
 |---|---|
 | `sweeps=[0, 2, 5]` | keep only these sweeps (0-based), in this order; Level II holds at most 32 |
 | `sweeps_in_time_order=True` | put the sweeps in the order their first rays were collected |
-| `sweeps_by_elevation=True` | put the sweeps in order of elevation angle, lowest first |
+| `sweeps_by_elevation=True` | put the sweeps in order of elevation angle, lowest first; Level II writes its cuts in that order instead of the order they were collected (ECCC scans from the top down) |
 | `fields=["DBZH", "VRADH", "UPHIDP"]` | keep only these fields (names as `field_names` lists them); a name no sweep has is a `ValueError` |
 | `position=(lat, lon, height_m)` | the site position to write (a Message 1 volume has none) |
 | `quantization="standard"` | Level II value coding: `"standard"` (the default: NOAA's codings where they hold every value, which GR2Analyst and every Level II reader expect), `"compatible"` (NEXRAD's word sizes, which xradar 0.12 reads), `"precise"` (never coarser than the source: 16-bit moments and PHI codes past 1023, which readers keeping NEXRAD's bits misread) |

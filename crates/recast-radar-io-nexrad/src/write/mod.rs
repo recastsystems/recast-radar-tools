@@ -219,6 +219,12 @@ pub struct WriteOptions {
     /// Explicit field-to-moment assignments, applied before the automatic
     /// mapping (for example a DORADE `DB_DBZ2` field to [`Moment::Ref`]).
     pub field_map: Vec<(FieldName, Moment)>,
+    /// Write the cuts in the order of `Volume::sweeps` instead of the order
+    /// they were collected (the default for volumes not decoded from Level
+    /// II): for a volume put in order of elevation, lowest first, whose
+    /// radar scans from the top down (ECCC). Rays within a cut are still
+    /// written from the earliest collected.
+    pub keep_sweep_order: bool,
     /// Nyquist velocity (m/s) written in the RAD block of every radial
     /// whose source has none (`Sweep::ray_vars.nyquist_velocity_mps` absent,
     /// not finite or not positive); `None` writes 0 there, which readers
@@ -249,6 +255,7 @@ impl Default for WriteOptions {
             max_range_error_m: None,
             drop_negative_range_gates: false,
             field_map: Vec::new(),
+            keep_sweep_order: false,
             nyquist_velocity_mps: None,
             unambiguous_range_m: None,
         }

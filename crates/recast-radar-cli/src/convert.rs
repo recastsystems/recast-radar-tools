@@ -29,7 +29,7 @@ fn site_override(site: &Option<String>) -> Result<Option<String>, CliError> {
 }
 
 /// The writer options of the command line.
-fn write_options(level2: &Level2Args, site: Option<String>) -> WriteOptions {
+fn write_options(level2: &Level2Args, edit: &EditArgs, site: Option<String>) -> WriteOptions {
     let mut options = WriteOptions::new(level2.level2_compression, site);
     options.level2_quantization = level2.quantization;
     options.nyquist_velocity_mps = level2.nyquist;
@@ -37,6 +37,8 @@ fn write_options(level2: &Level2Args, site: Option<String>) -> WriteOptions {
     options.drop_negative_range_gates = level2.drop_negative_range_gates;
     options.strict = level2.strict;
     options.level2_field_map = level2.field_map.clone();
+    // Sweeps put in order of elevation are written in that order.
+    options.level2_keep_sweep_order = edit.sweeps_by_elevation;
     options
 }
 
@@ -125,7 +127,7 @@ fn convert(args: &ConvertArgs, backends: &Backends, out: &mut Vec<u8>) -> Result
     if args.chunks && !writer.supports_chunks() {
         return Err(BackendError::ChunksUnavailable(args.to).into());
     }
-    let options = write_options(&args.level2, site_override(&args.site)?);
+    let options = write_options(&args.level2, &args.edit, site_override(&args.site)?);
     let edits = volume_edits(&args.edit, &args.input)?;
     let loaded = open::load_one(
         &args.inputs,
@@ -310,7 +312,7 @@ fn publish_all(args: &PublishArgs, backends: &Backends, out: &mut Vec<u8>) -> Re
     let mut request = PublishRequest::new(args.dir.clone());
     request.site = site_override(&args.site)?;
     request.keep = args.keep as usize;
-    request.options = write_options(&args.level2, request.site.clone());
+    request.options = write_options(&args.level2, &args.edit, request.site.clone());
     request.update_site_config = !args.no_site_config;
     let edits = volume_edits(&args.edit, &args.input)?;
     let options = OpenOptions::from_args(&args.input, true);

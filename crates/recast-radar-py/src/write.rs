@@ -110,6 +110,7 @@ impl WriteArgs {
         edits.sweeps = sweeps;
         edits.sweeps_in_time_order = sweeps_in_time_order;
         edits.sweeps_by_elevation = sweeps_by_elevation;
+        options.level2_keep_sweep_order = sweeps_by_elevation;
         edits.fields = fields;
         edits.position = match position {
             Some((latitude_deg, longitude_deg, altitude_m)) => {

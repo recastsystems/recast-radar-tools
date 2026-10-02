@@ -68,6 +68,7 @@ fn level2_options(options: &WriteOptions) -> level2::WriteOptions {
     out.nyquist_velocity_mps = options.nyquist_velocity_mps;
     out.unambiguous_range_m = options.unambiguous_range_m;
     out.drop_negative_range_gates = options.drop_negative_range_gates;
+    out.keep_sweep_order = options.level2_keep_sweep_order;
     out.field_map = options
         .level2_field_map
         .iter()

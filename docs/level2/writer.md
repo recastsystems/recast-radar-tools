@@ -58,6 +58,7 @@ the bzip2 encoder, "Compression seam" below):
 | `max_range_error_m` | `None` | largest gate position error accepted, metres at the last gate; `None` is half a gate |
 | `drop_negative_range_gates` | `false` | leave out gates centred before the radar instead of refusing |
 | `field_map` | empty | explicit field name to moment assignments, applied first |
+| `keep_sweep_order` | `false` | write the cuts in the order of `Volume::sweeps`, not the order they were collected (a top-down ECCC scan put lowest first) |
 | `nyquist_velocity_mps` | `None` | the radar's Nyquist velocity, written in the RAD block of every radial whose source has none (absent, not finite or not positive); `None` writes 0 there, which readers take as unknown. 0.01 to 327.67 m/s |
 | `unambiguous_range_m` | `None` | the same for the radar's unambiguous range; 0.1 to 3276.7 km |
 

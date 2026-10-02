@@ -350,7 +350,8 @@ The refusal says where the second cycle begins; `--split-scan-cycles` or
 one cycle's `--sweeps` writes it. `--merge` pairs the sweeps of its parts
 only when they were collected together (first rays at most 60 s apart) and
 keeps any other sweep as a sweep of its own. The writer writes a foreign
-volume's cuts in the order they were collected and stamps the volume with
+volume's cuts in the order they were collected (with `--sweeps-by-elevation`,
+lowest first: ECCC scans from the top down) and stamps the volume with
 its earliest radial. Level II takes more:
 
 | Option | Effect |

@@ -420,9 +420,11 @@ pub(crate) fn plan_with_codings<'a>(
     // Level II stores radials in the order they were collected: a foreign
     // volume's cuts in the order their sweeps were collected, each from its
     // earliest ray. A Level II source keeps the order it is given (its own,
-    // or the one a caller chose for its cuts).
+    // or the one a caller chose for its cuts), and so do the cuts of any
+    // volume under `WriteOptions::keep_sweep_order` (ECCC scans from the top
+    // down; readers such as GR2Analyst expect the lowest cut first).
     let keep_order = volume.provenance.source_format == SourceFormat::NexradLevel2;
-    if !keep_order {
+    if !keep_order && !options.keep_sweep_order {
         let mut rank = vec![0; volume.sweeps.len()];
         for (position, index) in collection_order(volume).into_iter().enumerate() {
             if let Some(slot) = rank.get_mut(index) {

@@ -168,6 +168,10 @@ pub struct WriteOptions {
     /// Level II: fields to write as a given moment, ahead of the field the
     /// writer would pick for it (UPHIDP as PHI, for example).
     pub level2_field_map: Vec<FieldMapping>,
+    /// Level II: write the sweeps in the order the volume has them rather
+    /// than the order they were collected (set with
+    /// [`VolumeEdits::sweeps_by_elevation`]).
+    pub level2_keep_sweep_order: bool,
 }
 
 /// A field written as a Level II moment: `FIELD=MOMENT`, such as

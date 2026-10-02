@@ -699,6 +699,43 @@ fn standard_quantisation_uses_the_typical_codings_without_clipping() {
     );
 }
 
+/// A foreign volume's cuts are written in the order they were collected;
+/// under `keep_sweep_order`, in the order the volume has them (ECCC scans
+/// from the top down, and a caller puts the cuts lowest first). DMI Romo's
+/// sweeps reversed: written back in collection order by default, reversed
+/// with the option.
+#[test]
+fn keep_sweep_order_writes_the_cuts_as_given() {
+    let id = "odim-dkrom-20260820-1130-pvol";
+    let mut volume = decoded(id);
+    let collected: Vec<f32> = volume.sweeps.iter().map(|s| s.fixed_angle_deg).collect();
+    volume.sweeps.reverse();
+    let angles = |written: &Volume| -> Vec<f32> {
+        written.sweeps.iter().map(|s| s.fixed_angle_deg).collect()
+    };
+    let close = |a: &[f32], b: &[f32]| {
+        a.len() == b.len()
+            && a.iter()
+                .zip(b)
+                .all(|(a, b)| (a - b).abs() <= HALF_ANGLE_CODE_DEG * 2.0)
+    };
+    let (by_time, _) = through_level2(id, &volume, &WriteOptions::default());
+    assert!(
+        close(&angles(&by_time), &collected),
+        "{:?}",
+        angles(&by_time)
+    );
+    let mut options = WriteOptions::default();
+    options.keep_sweep_order = true;
+    let (as_given, _) = through_level2(id, &volume, &options);
+    let reversed: Vec<f32> = collected.iter().rev().copied().collect();
+    assert!(
+        close(&angles(&as_given), &reversed),
+        "{:?}",
+        angles(&as_given)
+    );
+}
+
 #[test]
 fn rhi_volumes_are_refused() {
     for id in [

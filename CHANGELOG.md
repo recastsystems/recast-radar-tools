@@ -30,7 +30,9 @@ share one version. The Python package is published to PyPI as
 - `--map FIELD=MOMENT` (Python `field_map={"UPHIDP": "PHI"}`) writes a field
   as the Level II moment named, ahead of the field the writer would pick.
 - `--sweeps-by-elevation` (Python `sweeps_by_elevation=True`) orders the
-  sweeps from the lowest elevation angle up.
+  sweeps from the lowest elevation angle up, and the Level II writer writes
+  its cuts in that order (`WriteOptions::keep_sweep_order`) instead of the
+  order they were collected: ECCC scans from the top down.
 - `recast_radar_io_nexrad::write::Moment::parse` and
   `Moment::standard_coding`.
 
